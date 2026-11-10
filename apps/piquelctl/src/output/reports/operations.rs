@@ -3,7 +3,8 @@
 use crate::deployments::Deployed;
 use piqueld_client::{
     AcceptedOperation, ApplicationLogs, BuildLogPage, BuildRecord, DeletedApplication, Event,
-    Operation, OperationState, Page, Phase, SavedApplication, system::BuiltOn,
+    Operation, OperationState, Page, Phase, SavedApplication, observability::Timestamp,
+    system::BuiltOn,
 };
 use serde::Serialize;
 
@@ -70,8 +71,12 @@ report!(Page<BuildRecord>, self, out, {
             (None, None) => String::new(),
         };
         out.line(format_args!(
-            "{}  {}  {}  {:?}  {}{origin}",
-            build.id, build.environment_id, subject, build.state, build.started_at_ms
+            "{}  {}  {}  {}  {}{origin}",
+            build.id,
+            build.environment_id,
+            subject,
+            build.state,
+            Timestamp(build.started_at_ms)
         ))?;
     }
     out.next_cursor(self.next_cursor.as_deref())
@@ -91,7 +96,7 @@ report!(Page<Event>, self, out, {
         out.line(format_args!(
             "{}  {}  {}  {}  attempt {}  {} {} {} {}{}",
             event.id,
-            event.created_at_ms,
+            Timestamp(event.created_at_ms),
             event.kind,
             event.operation_id.as_deref().unwrap_or("-"),
             event.attempt.map_or_else(|| "-".into(), |v| v.to_string()),
