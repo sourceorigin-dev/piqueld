@@ -1,6 +1,6 @@
 use super::*;
 use piqueld::api::{Mutation, MutationResponse};
-use piqueld_core::api::{BuildRecord, BuildState};
+use piqueld_core::api::{BuildRecord, BuildState, BuiltOn};
 
 impl ControllerHarness {
     /// Deploys `environment` again, building every Git source when
@@ -72,6 +72,11 @@ async fn a_deployment_reuses_the_image_of_an_unchanged_build_unless_it_rebuilds_
         (built.reused_build, &reused.image_id),
         (None, &built.image_id)
     );
+    // Only a build that built an image ran somewhere.
+    assert_eq!(
+        (built.built_on, reused.built_on),
+        (Some(BuiltOn::Host), None)
+    );
     let output = harness
         .store
         .build_logs(reused.id, None, None)
@@ -118,6 +123,7 @@ async fn a_build_machine_image_runs_by_its_repository_digest_and_is_reused() {
     );
     let built = harness.builds(environment).await.remove(0);
     assert_eq!(built.image_id.as_deref(), Some(pushed.as_str()));
+    assert_eq!(built.built_on, Some(BuiltOn::BuildMachine));
     let running = || async {
         harness
             .store

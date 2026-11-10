@@ -5,7 +5,10 @@ use crate::{profiles::ProfileSummary, support::join_or};
 use piqueld_client::{
     DnsStatus, ImageStatus, PreviewUsage, SystemStatus, TelemetryStatus,
     observability::{Bytes, DaemonStats, Uptime},
-    system::{HostConfiguration, IngressStatus, PublicIngressStatus, SystemCheck},
+    system::{
+        BuilderCheck, BuilderStatus, HostConfiguration, IngressStatus, PublicIngressStatus,
+        SystemCheck,
+    },
 };
 use serde::Serialize;
 use std::time::Duration;
@@ -24,6 +27,9 @@ report!(StatusReport<'_> as SystemStatus = status, self, out, {
         s.status, s.daemon_version, s.api_version, s.instance_id
     ))?;
     out.label("Transport", self.transport)?;
+    if let Some(builder) = &s.builder {
+        builder.render_human(out)?;
+    }
     s.images.render_human(out)?;
     let tailnet = &s.tailscale;
     if tailnet.enabled {
@@ -135,6 +141,39 @@ report!(TelemetryStatus, self, out, {
     }
     out.label("Telemetry exports", self.exported())
 });
+
+// The build machine images build on, and how its latest check went.
+report!(BuilderStatus, self, out, {
+    out.label(
+        "Build machine",
+        format_args!(
+            "{} pushing to {} ({})",
+            self.endpoint,
+            self.repository,
+            checked(self.last_check.as_ref())
+        ),
+    )
+});
+
+// One check of the build machine, as `builder check` makes it.
+report!(BuilderCheck, self, out, {
+    out.label("Build machine", checked(Some(self)))
+});
+
+/// How a check of the build machine went, or that none was made yet.
+fn checked(check: Option<&BuilderCheck>) -> String {
+    match check {
+        None => "not checked yet".to_owned(),
+        Some(check) if check.reachable => {
+            format!("reachable at Unix ms {}", check.checked_at_ms)
+        }
+        Some(check) => format!(
+            "unreachable at Unix ms {}: {}",
+            check.checked_at_ms,
+            check.message.as_deref().unwrap_or("no reason given")
+        ),
+    }
+}
 
 // The built images cleanup kept, and what it removed since the daemon started.
 report!(ImageStatus, self, out, {

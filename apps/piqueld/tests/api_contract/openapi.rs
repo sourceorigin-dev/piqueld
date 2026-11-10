@@ -112,6 +112,7 @@ async fn routed_statuses_and_media_types_are_documented_in_openapi() {
         (Method::GET, "/environments/{id}/status", 404),
         (Method::GET, "/environments/{id}/deployments", 404),
         (Method::GET, "/operations/{id}", 404),
+        (Method::POST, "/system/builder/check", 404),
         (Method::POST, "/applications/apply", 400),
         (Method::POST, "/applications/plan", 400),
         (Method::GET, "/environments/{id}/exec", 426),
