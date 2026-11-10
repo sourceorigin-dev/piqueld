@@ -4728,7 +4728,7 @@
                         "$ref": "#/components/schemas/Phase"
                       }
                     ],
-                    "description": "Current execution phase, retained on failure."
+                    "description": "The phase of the latest step the current attempt journaled, retained\non failure: an action, or a recorded plan (`preparing`, `planning`).\nAbsent while the operation is requested."
                   },
                   {
                     "enum": [
@@ -4740,7 +4740,7 @@
                 ]
               },
               "resource": {
-                "description": "Logical or Docker resource currently being processed.",
+                "description": "The resource of that step: a service's manifest name, another\nresource's Docker name, or what blocks a recorded plan.",
                 "nullable": true,
                 "type": "string"
               },
@@ -5650,7 +5650,7 @@
                               "$ref": "#/components/schemas/Phase"
                             }
                           ],
-                          "description": "Current execution phase, retained on failure."
+                          "description": "The phase of the latest step the current attempt journaled, retained\non failure: an action, or a recorded plan (`preparing`, `planning`).\nAbsent while the operation is requested."
                         },
                         {
                           "enum": [
@@ -5662,7 +5662,7 @@
                       ]
                     },
                     "resource": {
-                      "description": "Logical or Docker resource currently being processed.",
+                      "description": "The resource of that step: a service's manifest name, another\nresource's Docker name, or what blocks a recorded plan.",
                       "nullable": true,
                       "type": "string"
                     },
@@ -9530,7 +9530,7 @@
                     "$ref": "#/components/schemas/Phase"
                   }
                 ],
-                "description": "Current execution phase, retained on failure."
+                "description": "The phase of the latest step the current attempt journaled, retained\non failure: an action, or a recorded plan (`preparing`, `planning`).\nAbsent while the operation is requested."
               },
               {
                 "enum": [
@@ -9542,7 +9542,7 @@
             ]
           },
           "resource": {
-            "description": "Logical or Docker resource currently being processed.",
+            "description": "The resource of that step: a service's manifest name, another\nresource's Docker name, or what blocks a recorded plan.",
             "nullable": true,
             "type": "string"
           },
