@@ -47,6 +47,29 @@
       },
       "type": "object"
     },
+    "BuildConfig": {
+      "additionalProperties": false,
+      "description": "A build machine that builds this installation's images instead of\nthis host. piqueld still checks repositories out here, and sends each build\nto the machine's `BuildKit` daemon, which pushes the image to a registry\nthis host's Docker Engine pulls it from. Set both settings, or neither: without\nthem, images build on this host's Docker Engine.",
+      "properties": {
+        "builder": {
+          "default": null,
+          "description": "The build machine's `BuildKit` daemon, as `tcp://host:port`. The\nconnection is neither authenticated nor encrypted, so only this host\nshould be able to reach that port, over a network that encrypts its\ntraffic, such as a tailnet whose access rules allow nothing else.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repository": {
+          "default": null,
+          "description": "The image repository the build machine pushes to and this host pulls\nfrom, as `registry-host[:port]/path`, without a tag. Both reach it\nunder this name, without credentials, and Docker requires HTTPS of a\nregistry on another machine. Anyone who can reach the registry can\npull every image, build arguments included, or push to it, so only\nthis host and the build machine should be able to. Every image goes\nto this one repository, by digest, so they share their layers.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "BuildHistoryConfig": {
       "additionalProperties": false,
       "description": "How much output of each build is kept, and for how long. Builds\nthemselves are listed until their environment is deleted.",
@@ -634,6 +657,10 @@
     "auth": {
       "$ref": "#/definitions/AuthConfig",
       "description": "The website's origin and API token lifetimes."
+    },
+    "build": {
+      "$ref": "#/definitions/BuildConfig",
+      "description": "A build machine that builds images instead of this host."
     },
     "build_history": {
       "$ref": "#/definitions/BuildHistoryConfig",

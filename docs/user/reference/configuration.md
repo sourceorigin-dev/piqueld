@@ -239,6 +239,57 @@ won't serve by itself is found in the history of every branch. `GET /api/v1/syst
 preview deploy --local` can refuse a snapshot that would not fit before
 packing it.
 
+## Build machine
+
+`[build]` names a build machine: another machine that builds images instead
+of the host, which keeps builds from competing with the applications the host
+runs. Without it, images build on the host's Docker Engine.
+
+```toml
+[build]
+builder = "tcp://build.example.ts.net:1234"
+repository = "build.example.ts.net:5000/piqueld"
+```
+
+Set both settings, or neither. The host still checks repositories out, so Git
+credentials stay there, and sends each build's files to the build machine,
+which needs:
+
+- **A BuildKit daemon** listening where `builder` says, as `tcp://host:port`.
+  The connection is neither authenticated nor encrypted, so only the host
+  should be able to reach that port, over a network that encrypts its
+  traffic, such as a tailnet whose access rules allow nothing else. The
+  build's files and arguments travel over it, and the image digest it
+  returns is what the host runs.
+- **An image registry** holding the repository `repository` names, as
+  `registry-host[:port]/path` without a tag. BuildKit pushes every image
+  there by digest, and the host's Docker Engine pulls it under the same name,
+  so only the layers the host lacks travel. Neither sends credentials, so
+  anyone who can reach the registry can pull every image, with its build
+  arguments, or push to it: only the host and the build machine should be
+  able to. Docker requires HTTPS of a registry on another machine. piqueld
+  never deletes images from the registry, only from the host's engine, so
+  the registry keeps every build. Pushed by digest, they have no tag: the
+  registry's garbage collection frees none of them, and its
+  `--delete-untagged` mode deletes all of them, including those a restore
+  pulls again.
+
+Images are built for the platform of the host's Docker Engine, whatever the
+build machine's, which then needs emulation for another architecture.
+
+The host's `docker` command still needs the Buildx plugin. The daemon keeps
+Buildx's configuration in `<data_dir>/buildx`, which it rewrites at startup,
+so nothing depends on the daemon user's Docker configuration.
+
+The build machine only has to be reachable while a deployment builds.
+Services keep running without it, and so do restores, promotions and
+deployments that [reuse their
+images](../applications/git-builds.md#how-it-builds). While it is unreachable,
+a deployment that has to build fails with `git_build_failed`. Restoring a
+deployment whose image the host no longer has pulls it from the registry
+again, so that restore needs the registry, and the build machine too when it
+hosts the registry.
+
 ## TCP listen modes and Tailscale
 
 `server.listen_mode` selects `off` (Unix socket only), `localhost` (127.0.0.1

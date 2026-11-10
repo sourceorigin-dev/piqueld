@@ -94,3 +94,50 @@ async fn a_deployment_reuses_the_image_of_an_unchanged_build_unless_it_rebuilds_
     assert_eq!(harness.image_builds().await, 3);
     assert_eq!(harness.builds(environment).await[0].reused_build, None);
 }
+
+#[tokio::test]
+async fn a_build_machine_image_runs_by_its_repository_digest_and_is_reused() {
+    let repository = piqueld_core::build_machine::BuildRepository::try_from(
+        "build.example.ts.net:5000/piqueld".to_owned(),
+    )
+    .unwrap();
+    let harness = ControllerHarness::with_docker(FakeDocker {
+        build_repository: Some(repository),
+        ..FakeDocker::default()
+    })
+    .await;
+    let fixture = git_fixture::GitBuildFixture::new();
+    let mut input = manifest();
+    input.spec.services[0].source = fixture.source.clone();
+    let first = harness.apply(input, Some(0)).await;
+    harness.finish(&first).await;
+    let environment = &first.environment_id;
+    let pushed = format!(
+        "build.example.ts.net:5000/piqueld@sha256:{}",
+        "b".repeat(64)
+    );
+    let built = harness.builds(environment).await.remove(0);
+    assert_eq!(built.image_id.as_deref(), Some(pushed.as_str()));
+    let running = || async {
+        harness
+            .store
+            .get(environment)
+            .await
+            .unwrap()
+            .resolved
+            .unwrap()
+            .services[0]
+            .image
+            .to_string()
+    };
+    assert_eq!(running().await, pushed);
+
+    // The engine has it under its repository digest, so it is reused.
+    harness.redeploy(environment, false).await;
+    assert_eq!(harness.image_builds().await, 1);
+    assert_eq!(
+        harness.builds(environment).await[0].reused_build,
+        Some(built.id)
+    );
+    assert_eq!(running().await, pushed);
+}

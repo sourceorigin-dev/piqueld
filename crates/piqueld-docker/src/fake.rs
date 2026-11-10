@@ -98,6 +98,9 @@ pub struct FakeDocker {
     pub local_images: Arc<Mutex<Vec<LocalImage>>>,
     /// Holds builds once their image exists, until released.
     pub build_gate: Option<Arc<Gate>>,
+    /// Pushes builds to this repository by digest, as a build machine does,
+    /// instead of keeping them local only.
+    pub build_repository: Option<piqueld_core::build_machine::BuildRepository>,
 }
 
 /// A Docker secret's value and the labels of the environment that owns it.
@@ -543,7 +546,7 @@ impl DockerApi for FakeDocker {
         &self,
         build: &ImageBuild<'_>,
         _log: Option<&dyn crate::command::OutputLog>,
-    ) -> Result<Sha256Digest, DockerError> {
+    ) -> Result<piqueld_core::BuiltImage, DockerError> {
         if !build.context.is_dir() {
             return Err(DockerError::Validation("find the build context"));
         }
@@ -563,9 +566,13 @@ impl DockerApi for FakeDocker {
                 source: source.into(),
             }
         })?;
+        let pushed = self
+            .build_repository
+            .as_ref()
+            .map(|repository| repository.image(&id));
         self.add_image(LocalImage {
             id: id.clone(),
-            repo_digests: Vec::new(),
+            repo_digests: pushed.iter().cloned().collect(),
             labels: BTreeMap::from([
                 (MANAGED_LABEL.into(), "true".into()),
                 (INSTANCE_LABEL.into(), build.owner.to_string()),
@@ -577,7 +584,7 @@ impl DockerApi for FakeDocker {
         if let Some(gate) = &self.build_gate {
             gate.pass().await;
         }
-        Ok(id)
+        Ok(pushed.map_or_else(|| id.into(), piqueld_core::BuiltImage::Pushed))
     }
     /// Creates `request` in a task of its service, picked as the adapter
     /// picks one: the managed service of `instance`'s `environment` with
