@@ -44,6 +44,8 @@ pub struct FakeDocker {
     pub releasing_networks: Arc<AtomicUsize>,
     /// Fails observations as if Docker were unavailable.
     pub fail_observations: Arc<AtomicBool>,
+    /// Fails builds as if the build machine were unreachable.
+    pub builder_unavailable: Arc<AtomicBool>,
     /// Leaves ensured services updating.
     pub stall_convergence: Arc<AtomicBool>,
     /// Fails ensured services' rollouts.
@@ -549,6 +551,13 @@ impl DockerApi for FakeDocker {
     ) -> Result<piqueld_core::BuiltImage, DockerError> {
         if !build.context.is_dir() {
             return Err(DockerError::Validation("find the build context"));
+        }
+        if self.builder_unavailable.load(Ordering::SeqCst) {
+            return Err(crate::BuilderUnavailable {
+                address: "build.example.ts.net:1234".into(),
+                source: std::io::ErrorKind::ConnectionRefused.into(),
+            }
+            .into());
         }
         let contents = tokio::fs::read_to_string(&build.dockerfile)
             .await
