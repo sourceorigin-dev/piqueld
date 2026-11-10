@@ -1131,7 +1131,7 @@ async fn wait_until_stopped(
     let mut wait = Wait::start(console, id);
     loop {
         let polled = async {
-            Ok((
+            Ok::<_, ClientError>((
                 client.environment_status(id).await?,
                 client.environment(id).await?,
                 client.operation(operation).await?,
