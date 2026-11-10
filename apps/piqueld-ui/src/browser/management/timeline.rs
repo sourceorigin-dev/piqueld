@@ -1191,7 +1191,7 @@ async fn find_build(
     // An older deployment's builds are a few pages back at most.
     for _ in 0..5 {
         let page = client
-            .builds(None, Some(environment), cursor.as_deref())
+            .builds(None, Some(environment), cursor.as_deref(), None)
             .await?;
         if let Some(build) = page.items.into_iter().find(runs) {
             return Ok(Some(build));

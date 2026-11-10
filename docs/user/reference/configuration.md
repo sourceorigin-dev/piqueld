@@ -307,7 +307,7 @@ doesn't:
 To see whether the build machine answers, run `piquelctl builder check`, which
 checks it now, or `piquelctl status`, which shows its latest check. The
 dashboard shows it at the top of the **Builds** page, with **Check now**. Each
-build shows where it ran: `piquelctl builds list` ends its line with `on the
+build shows where it ran: `piquelctl build list` ends its line with `on the
 build machine` or `on the host`, and the dashboard lists it as **Built on**.
 
 ## TCP listen modes and Tailscale
