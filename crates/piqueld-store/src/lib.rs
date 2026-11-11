@@ -33,7 +33,7 @@ pub use build::{BuildOutcome, ReusableBuild};
 pub use journal::JournalAction;
 pub use observability::DESTINATION_CHANGED;
 pub use observability::{ContainerCursors, DestinationError, RetryError, traffic};
-pub use secret::SecretDeletion;
+pub use secret::{SecretDeletion, SecretPrecondition};
 mod operation;
 mod preview;
 mod promotion;
