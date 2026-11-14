@@ -11,9 +11,21 @@ runs this worktree's isolated development instance (`just dev`, see
 `docs/dev/development.md`) on its own localhost port, for testing changes through
 the manifest, CLI, and dashboard preview.
 
+## Issues
+
+Issues live in Linear, in the `PQD` team of the `sourceorigin` workspace, which
+also holds `sourceorigin-dev/infra`. Read, create and update them through the
+Linear MCP server. New issues go to Triage with a Type label (Feature, Bug, Task,
+Security or Epic) and a title following the commit convention below.
+
+GitHub issues are only for outside reports. Linear copies new ones into Triage,
+so never triage or close them on GitHub.
+
 ## Commits & Pull Requests
 
 Titles should follow the `feat(server): add docker swarm reconciliation` convention.
+A pull request names its Linear issue in the description: `Fixes PQD-123`
+closes the issue when it merges, and `Part of PQD-123` only links it.
 
 Open pull requests as drafts and mark them ready for review once the work is
 done. Drafts run only the quick CI jobs; marking a pull request ready runs the
