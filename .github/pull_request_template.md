@@ -2,7 +2,7 @@
 
 ## What and why
 
-<!-- What this changes, and the issue it closes, such as "Closes #123". -->
+<!-- What this changes, and the Linear issue it closes, such as "Fixes PQD-123". -->
 
 ## Checklist
 
