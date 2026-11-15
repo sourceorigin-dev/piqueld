@@ -208,8 +208,9 @@ pub struct ImageBuild<'a> {
 }
 
 impl ImageBuild<'_> {
-    /// The repository and tag naming the image `id` this build produced,
-    /// `piqueld-build/<owner>:<id's hex digits>`, so `docker image prune`
+    /// The repository and tag naming the image `id` this build produced on
+    /// the engine's own builder, `piqueld-build/<owner>:<id's hex digits>`,
+    /// so `docker image prune`
     /// doesn't take it for a dangling image and break restoring or rolling
     /// back to it. Cleanup removes the image by ID, which removes this tag
     /// too, unless someone tagged the image as well.

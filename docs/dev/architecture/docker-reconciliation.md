@@ -341,9 +341,11 @@ and images built by hand or before these labels existed are left alone, as are
 pulled registry images. An image ID covers its labels, so they can't change
 under it; removal still rechecks them, then removes the image by ID, without
 force and without its untagged parents. Cleanup never runs a broad prune.
-Each build is also tagged `piqueld-build/<instance ID>:<image ID hex>`, so an
-operator's `docker image prune` doesn't take it for a dangling image and break
-restoring or rolling back to it. Removing the image by ID removes that tag,
+Each build on the engine's own builder is also tagged
+`piqueld-build/<instance ID>:<image ID hex>` on the engine, so an operator's
+`docker image prune` doesn't take it for a dangling image and break restoring or
+rolling back to it. A build machine's image needs no tag: the engine pulls it by
+its repository digest, which names it, and pulls it again if it goes missing. Removing the image by ID removes that tag,
 its only one unless someone tagged the image too: Docker then refuses to
 remove it without force, and cleanup keeps it.
 
