@@ -569,7 +569,7 @@ impl DockerApi for BollardDocker {
         // would hold the config digest, which that store does not know the
         // image by. A build on the engine's own builder is then tagged (see
         // `ImageBuild::tag`); a build machine's image is pulled by its
-        // digest, which names it already.
+        // digest only, and pulled again if it goes missing.
         use anyhow::Context;
         #[derive(serde::Deserialize)]
         struct Metadata {

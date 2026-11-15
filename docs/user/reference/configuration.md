@@ -171,11 +171,13 @@ built on the same Docker Engine, images built by hand, and pulled registry
 images are never removed. Builds on the host are tagged
 `piqueld-build/<instance>:<image ID>`, where `<instance>` is the installation's
 ID that `piquelctl status` prints, so `docker image prune` leaves them. Images
-from a [build machine](#build-machine) are named by their repository digest,
-so it leaves those too. `docker image prune --all` still removes any
-that no container uses, and restoring or rolling back to one then fails with
-`image_unavailable`. Images built before piqueld tagged builds stay untagged,
-so `docker image prune` can still remove them until `keep_deployments` newer
+from a [build machine](#build-machine) have no tag: on Docker's legacy image
+store, `docker image prune` may remove them, and piqueld then pulls them again
+from the registry when a restore or rollback needs them.
+`docker image prune --all` removes any image no container uses, and restoring
+or rolling back to a build from the host then fails with `image_unavailable`.
+Images built on the host before piqueld tagged builds stay untagged, so
+`docker image prune` can still remove them until `keep_deployments` newer
 deployments replace them. See
 [image retention](../../dev/architecture/docker-reconciliation.md#image-retention).
 
