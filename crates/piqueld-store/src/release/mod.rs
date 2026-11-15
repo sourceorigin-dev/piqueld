@@ -118,36 +118,6 @@ impl Store {
         Ok(())
     }
 
-    /// Records releases for deployments prepared before releases existed
-    /// (migration `0022_releases.sql`), oldest first, so their environments
-    /// show what they run. Runs on every start: once recorded, only
-    /// deployments whose records no longer decode match, which are logged and
-    /// skipped. Previews record no releases, so their deployments never match.
-    pub(super) async fn record_missing_releases(&self) -> Result<(), StoreError> {
-        let prepared = sqlx::query!(
-            r#"SELECT d.id AS "id!",d.environment_id,d.created_at_ms,o.target_json AS "target_json!" FROM deployments d JOIN operations o ON o.id=d.id JOIN environments e ON e.id=d.environment_id AND e.kind='environment' WHERE d.release_id IS NULL AND o.target_json IS NOT NULL ORDER BY d.created_at_ms,d.id"#
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(StoreError::database)?;
-        for row in prepared {
-            let recorded = async {
-                let target = serde_json::from_str(&row.target_json).map_err(StoreError::corrupt)?;
-                let environment =
-                    EnvironmentId::parse(row.environment_id).map_err(StoreError::corrupt)?;
-                let (_writer, mut tx) = self.begin_immediate().await?;
-                Self::record_release_on(&mut tx, &row.id, &environment, &target, row.created_at_ms)
-                    .await?;
-                tx.commit().await.map_err(StoreError::database)
-            }
-            .await;
-            if let Err(error) = recorded {
-                tracing::warn!(deployment_id = %row.id, %error, "deployment release not recorded");
-            }
-        }
-        Ok(())
-    }
-
     /// The release environment `id`'s current runtime target runs, if any.
     /// # Errors
     /// Returns storage or decoding errors.

@@ -83,7 +83,7 @@ impl Store {
                         id: r.id,
                         event_id: r.event_id,
                         destination: r.destination,
-                        subject: match Self::subject(r.subject_json) {
+                        subject: match Self::subject(&r.subject_json) {
                             Ok(subject) => subject,
                             Err(error) => return Some(Err(error)),
                         },
@@ -103,13 +103,9 @@ impl Store {
             next_cursor,
         })
     }
-    /// Decodes a delivery's stored subject; deliveries queued before
-    /// subjects were stored have an empty one.
-    fn subject(json: Option<String>) -> Result<NotificationSubject, StoreError> {
-        json.map(|json| serde_json::from_str(&json))
-            .transpose()
-            .map(Option::unwrap_or_default)
-            .map_err(StoreError::corrupt)
+    /// Decodes a delivery's stored subject.
+    fn subject(json: &str) -> Result<NotificationSubject, StoreError> {
+        serde_json::from_str(json).map_err(StoreError::corrupt)
     }
     /// Retries a failed delivery only while its destination still exists,
     /// unchanged, enabled, receiving its category and, unless it is a
@@ -889,7 +885,7 @@ impl Store {
                 id: row.id,
                 event_id: row.event_id,
                 destination: row.destination,
-                subject: Self::subject(row.subject_json)?,
+                subject: Self::subject(&row.subject_json)?,
                 category,
                 state: DeliveryState::Pending,
                 attempts: row.attempts + 1,

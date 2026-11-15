@@ -578,9 +578,7 @@ pub struct ApplyApplicationRequest {
 pub struct AcceptedOperation {
     /// Asynchronous operation identifier.
     pub operation_id: String,
-    /// Environment the operation changes. Receipts stored before environments
-    /// existed name it `application_id`.
-    #[serde(alias = "application_id")]
+    /// Environment the operation changes.
     pub environment_id: String,
     /// Accepted intent revision.
     pub generation: u64,

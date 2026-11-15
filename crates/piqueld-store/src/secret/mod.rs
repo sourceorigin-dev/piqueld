@@ -532,27 +532,20 @@ impl Store {
         swarm_name: &str,
     ) -> Result<Zeroizing<Vec<u8>>, StoreError> {
         let id = environment.as_str();
-        let row=sqlx::query!(r#"SELECT NULL AS "application_id?: String",name AS "name!",generation AS "generation!",nonce AS "nonce!",ciphertext AS "ciphertext!",available AS "available!",NULL AS "moved_from?: String" FROM secret_versions WHERE environment_id=?1 AND swarm_name=?2
-            UNION ALL SELECT v.application_id,v.name,v.generation,v.nonce,v.ciphertext,v.available,v.moved_from FROM application_secret_copies c JOIN application_secret_versions v ON v.application_id=c.application_id AND v.name=c.name AND v.generation=c.generation WHERE c.environment_id=?1 AND c.swarm_name=?2"#,id,swarm_name).fetch_optional(&self.pool).await.map_err(StoreError::database)?.ok_or(StoreError::NotFound)?;
+        let row=sqlx::query!(r#"SELECT NULL AS "application_id?: String",name AS "name!",generation AS "generation!",nonce AS "nonce!",ciphertext AS "ciphertext!",available AS "available!" FROM secret_versions WHERE environment_id=?1 AND swarm_name=?2
+            UNION ALL SELECT v.application_id,v.name,v.generation,v.nonce,v.ciphertext,v.available FROM application_secret_copies c JOIN application_secret_versions v ON v.application_id=c.application_id AND v.name=c.name AND v.generation=c.generation WHERE c.environment_id=?1 AND c.swarm_name=?2"#,id,swarm_name).fetch_optional(&self.pool).await.map_err(StoreError::database)?.ok_or(StoreError::NotFound)?;
         if row.available == 0 {
             return Err(StoreError::SecretUnavailable { names: row.name });
         }
-        // Values moved from an environment keep its context until re-encrypted.
-        let moved = row
-            .moved_from
-            .map(EnvironmentId::parse)
-            .transpose()
-            .map_err(StoreError::corrupt)?;
         let application = row
             .application_id
             .map(ApplicationId::parse)
             .transpose()
             .map_err(StoreError::corrupt)?;
-        let owner = match (&moved, &application) {
-            (Some(moved), _) => SecretOwner::Environment(moved),
-            (None, Some(application)) => SecretOwner::Application(application),
-            (None, None) => SecretOwner::Environment(environment),
-        };
+        let owner = application.as_ref().map_or(
+            SecretOwner::Environment(environment),
+            SecretOwner::Application,
+        );
         let cipher =
             SecretCipher::load(&self.secret_key_path, true).map_err(StoreError::SecretSource)?;
         cipher

@@ -44,12 +44,11 @@ schema changes, `user_version`, and matching instance metadata together. A
 restart or later migration failure can resume from any committed version
 without changing the instance identity.
 
-Each file in
 [`crates/piqueld-store/migrations/`](https://github.com/sourceorigin-dev/piqueld/tree/main/crates/piqueld-store/migrations)
-explains in its comments what it changes and what it does to existing data.
-The migration tests cover upgrading populated databases, the data moves of
-`0012`, `0014`, `0021` and `0022`, and reopening every committed version after
-a later migration fails.
+holds the migrations. `0001_schema.sql` creates the whole schema, grouped by
+area, with comments explaining each table; each later file explains in its
+comments what it changes and what it does to existing data. The migration
+tests cover reopening every committed version after a later migration fails.
 
 ### Adding a migration
 
@@ -65,4 +64,4 @@ enforced, so it must not start or commit a transaction itself, and
 `PRAGMA foreign_keys` has no effect there. Never edit or renumber a released
 migration's statements: databases that already applied it would not run it
 again. Work that needs the daemon, such as re-encrypting secrets or hashing
-releases, runs in `Store::open` after the migrations instead.
+releases, belongs in `Store::open`, after the migrations.

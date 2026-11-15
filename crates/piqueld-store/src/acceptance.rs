@@ -10,14 +10,6 @@ use piqueld_core::{ApplicationId, EnvironmentId, EnvironmentName};
 use sha2::{Digest, Sha256};
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
-/// Application deletion as serialized before environments existed, in its
-/// original field order, so its request fingerprint still matches.
-#[derive(serde::Serialize)]
-struct LegacyDelete<'a> {
-    kind: &'static str,
-    id: &'a ApplicationId,
-}
-
 /// An authorized request: a replay, or one to execute.
 enum Checked {
     /// The response stored for the request it repeats.
@@ -82,18 +74,9 @@ impl Store {
                 .await
                 .map_err(StoreError::database)?;
         let fingerprint = Self::mutation_fingerprint(&mutation, expected_generation, force)?;
-        let checked = Self::check_request_on(
-            &mut tx,
-            actor,
-            &mutation,
-            [
-                Some(&fingerprint),
-                Self::legacy_fingerprint(&mutation, expected_generation, force)?.as_ref(),
-            ],
-            request_id,
-            now,
-        )
-        .await?;
+        let checked =
+            Self::check_request_on(&mut tx, actor, &mutation, &fingerprint, request_id, now)
+                .await?;
         let (caller, creating) = match checked {
             Checked::Replay(response) => return Ok((response, false)),
             Checked::New { caller, creating } => (caller, creating),
@@ -160,8 +143,8 @@ impl Store {
     }
 
     /// Checks that `actor` may submit `mutation` (see `check_request_on`), and
-    /// returns the stored response when `request_id` replays a request with
-    /// one of `fingerprints`, so callers can return it before checking
+    /// returns the stored response when `request_id` replays the same
+    /// request, so callers can return it before checking
     /// preconditions that may have changed since it was accepted, and refuse
     /// a caller before doing any work for it.
     ///
@@ -177,15 +160,9 @@ impl Store {
     ) -> Result<Option<MutationResponse>, StoreError> {
         let mut tx = self.snapshot().await?;
         let fingerprint = Self::mutation_fingerprint(mutation, expected_generation, force)?;
-        let checked = Self::check_request_on(
-            &mut tx,
-            actor,
-            mutation,
-            [Some(&fingerprint), None],
-            request_id,
-            now_ms(),
-        )
-        .await?;
+        let checked =
+            Self::check_request_on(&mut tx, actor, mutation, &fingerprint, request_id, now_ms())
+                .await?;
         Ok(match checked {
             Checked::Replay(response) => Some(response),
             Checked::New { .. } => None,
@@ -194,20 +171,20 @@ impl Store {
 
     /// Loads `actor`'s authority and checks that it may submit `mutation`
     /// against the current application, before any replay, then returns the
-    /// stored response when `request_id` replays one of `fingerprints` (see
+    /// stored response when `request_id` replays `fingerprint` (see
     /// `replay_on`). Replaying a save may also pass the check a creation
     /// passes, since it may have created that application.
     async fn check_request_on(
         tx: &mut Transaction<'_, Sqlite>,
         actor: Actor<'_>,
         mutation: &Mutation,
-        fingerprints: [Option<&String>; 2],
+        fingerprint: &str,
         request_id: Option<&str>,
         now: i64,
     ) -> Result<Checked, StoreError> {
         let caller = actor.load(tx).await?;
         let owner = caller.as_ref().map(|authority| authority.user_id.as_str());
-        let replay = Self::replay_on(tx, request_id, owner, fingerprints, now).await;
+        let replay = Self::replay_on(tx, request_id, owner, fingerprint, now).await;
         let replaying = matches!(replay, Ok(Some(_)));
         let creating = match &caller {
             Some(authority) => {
@@ -362,34 +339,15 @@ impl Store {
         ))
     }
 
-    /// Fingerprints the form a request had before environments existed, when
-    /// it differs, so receipts accepted by an older daemon still replay.
-    /// Deleting an application was then `{"kind":"delete","id":...}`.
-    fn legacy_fingerprint(
-        mutation: &Mutation,
-        expected_generation: Option<u64>,
-        force: bool,
-    ) -> Result<Option<String>, StoreError> {
-        let Mutation::DeleteApplication { id, environments } = mutation else {
-            return Ok(None);
-        };
-        if !environments.is_empty() {
-            return Ok(None);
-        }
-        let legacy = LegacyDelete { kind: "delete", id };
-        Self::mutation_fingerprint(&legacy, expected_generation, force).map(Some)
-    }
-
     /// Returns the stored response for an unexpired receipt of `owner` (the
     /// account, or `None` for the daemon and the host operator, which may act
-    /// on everything) with one of the request's
-    /// `fingerprints`, `ReplayConflict` for another owner's or a mismatched
-    /// one, or `None` without a receipt.
+    /// on everything) with the request's `fingerprint`, `ReplayConflict` for
+    /// another owner's or a mismatched one, or `None` without a receipt.
     async fn replay_on(
         connection: &mut SqliteConnection,
         request_id: Option<&str>,
         owner: Option<&str>,
-        fingerprints: [Option<&String>; 2],
+        fingerprint: &str,
         now: i64,
     ) -> Result<Option<MutationResponse>, StoreError> {
         let Some(request_id) = request_id else {
@@ -399,9 +357,7 @@ impl Store {
             .fetch_optional(connection).await.map_err(StoreError::database)?;
         receipt
             .map(|receipt| {
-                if receipt.user_id.as_deref() != owner
-                    || !fingerprints.contains(&Some(&receipt.fingerprint))
-                {
+                if receipt.user_id.as_deref() != owner || receipt.fingerprint != fingerprint {
                     return Err(StoreError::ReplayConflict);
                 }
                 serde_json::from_str(&receipt.response_json).map_err(StoreError::corrupt)
@@ -1129,57 +1085,6 @@ impl Store {
 mod tests {
     use super::super::testing::template;
     use super::*;
-
-    /// Application deletions accepted before environments existed must still replay.
-    #[tokio::test]
-    async fn application_deletions_accepted_before_environments_replay() {
-        let (_directory, store) = Store::temporary().await;
-        let id = ApplicationId::parse("app-legacy-01").unwrap();
-        let original = Sha256::digest(br#"[{"kind":"delete","id":"app-legacy-01"},3,false]"#);
-        let fingerprint = format!("{original:x}");
-        let response = r#"{"Operation":{"operation_id":"operation-1","application_id":"app-legacy-01","generation":4}}"#;
-        sqlx::query!(
-            "INSERT INTO request_receipts(request_id,fingerprint,response_json,expires_at_ms) VALUES('legacy-delete',?1,?2,?3)",
-            fingerprint,
-            response,
-            i64::MAX
-        )
-        .execute(&store.pool)
-        .await
-        .unwrap();
-        let delete = || Mutation::DeleteApplication {
-            id: id.clone(),
-            environments: Vec::new(),
-        };
-        let (MutationResponse::Operation(replayed), wake) = store
-            .accept(
-                crate::Actor::Daemon,
-                delete(),
-                Some(3),
-                false,
-                Some("legacy-delete"),
-            )
-            .await
-            .unwrap()
-        else {
-            panic!("legacy operation response")
-        };
-        assert!(!wake);
-        assert_eq!(replayed.operation_id, "operation-1");
-        assert_eq!(replayed.environment_id, "app-legacy-01");
-        assert!(matches!(
-            store
-                .accept(
-                    crate::Actor::Daemon,
-                    delete(),
-                    Some(2),
-                    false,
-                    Some("legacy-delete")
-                )
-                .await,
-            Err(StoreError::ReplayConflict)
-        ));
-    }
 
     /// Saves a manifest declaring `staging` and `preview`, then creates the
     /// environment `qa`.

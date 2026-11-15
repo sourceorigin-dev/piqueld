@@ -15,7 +15,7 @@ and runtime planning belong to the controller. SQLite transactions also guard
 lifecycle writes and queue writers asynchronously; they do
 not implement another scheduler or persist an execution plan.
 
-`0001_control_plane.sql` creates the consolidated prototype schema, including
-receipts and progress fields; later numbered migrations extend it. Earlier
-prototypes require a fresh database.
+`0001_schema.sql` creates the consolidated schema; later numbered migrations
+extend it. Databases created before the schema was consolidated require a
+fresh database.
 See [persistence](../persistence.md) for the schema lifecycle.

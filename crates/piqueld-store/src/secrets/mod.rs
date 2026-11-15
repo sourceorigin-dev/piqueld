@@ -91,8 +91,7 @@ pub(crate) enum SecretOwner<'a> {
 }
 
 impl<'a> SecretOwner<'a> {
-    /// Context version and owner ID. Environment and verifier contexts
-    /// predate application stores and are unchanged.
+    /// Context version and owner ID.
     fn context(self) -> (&'static str, &'a str) {
         match self {
             Self::Environment(id) => ("piqueld-secret-v1", id.as_str()),

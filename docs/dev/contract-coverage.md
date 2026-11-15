@@ -15,7 +15,7 @@ when changing behavior. To see which code they run, use
 | Links: validation, resolution, network projection, revocation | `piqueld-core/src/links.rs` unit tests, `tests/manifests.rs`, `tests/resource_planning.rs`, `piqueld/tests/fake_docker/environments.rs`, and `docker_integration.rs` |
 | Operation transitions and failure classification | Core lifecycle tests and `piqueld/tests/fake_docker/`, by area: `controller.rs`, `rollouts.rs`, `jobs.rs` and others |
 | HTTP lifecycle, preconditions, force, receipts, pagination | `piqueld/tests/api_contract/`, mainly `acceptance.rs`, `applications.rs` and `transport.rs` |
-| Persistence, restart recovery, transaction rollback | `piqueld/tests/persistence.rs` and `sqlx_stack.rs` |
+| Persistence, restart recovery, migrations, transaction rollback | `piqueld/tests/persistence.rs` and `piqueld-store` unit tests |
 | Transport errors, cancellation, redirects, decoding | `piqueld-client/tests/transports.rs`, `generated_contract.rs`, and browser transport tests |
 | Data and runtime directory privacy, daemon exclusivity | `piqueld/tests/data_dir.rs`, `runtime_dir.rs`, and `daemon_exclusivity.rs` |
 | CLI commands, output, exit codes, connection profiles | `piquelctl/tests/cli.rs` and `profiles.rs` |

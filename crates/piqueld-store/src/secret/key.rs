@@ -175,10 +175,9 @@ impl Store {
     ) -> Result<Ciphertext, StoreError> {
         use futures_util::TryStreamExt;
         use piqueld_core::{ApplicationId, EnvironmentId};
-        // Values moved from an environment keep its context until re-encrypted.
         let mut rows = sqlx::query!(
             r#"SELECT 'environment' AS "kind!: String",environment_id AS "owner!",name AS "name!",generation AS "generation!",nonce AS "nonce!",ciphertext AS "ciphertext!" FROM secret_versions WHERE available=1
-            UNION ALL SELECT IIF(moved_from IS NULL,'application','environment'),COALESCE(moved_from,application_id),name,generation,nonce,ciphertext FROM application_secret_versions WHERE available=1
+            UNION ALL SELECT 'application',application_id,name,generation,nonce,ciphertext FROM application_secret_versions WHERE available=1
             UNION ALL SELECT 'webhook',application_id,'webhook',1,nonce,ciphertext FROM webhook_secrets
             UNION ALL SELECT 'destination',id,'url',1,nonce,ciphertext FROM notification_destinations"#
         )
@@ -304,7 +303,7 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         sqlx::query!(
-            "UPDATE application_secret_versions SET available=0,nonce=X'',ciphertext=X'',moved_from=NULL WHERE available=1"
+            "UPDATE application_secret_versions SET available=0,nonce=X'',ciphertext=X'' WHERE available=1"
         )
         .execute(&mut *tx)
         .await

@@ -2,7 +2,7 @@
 //! mount a stored secret its access list allows; values are encrypted for
 //! the application and copied into each environment's own Docker secrets.
 use super::{
-    Envelope, NormalizedApplication, SecretOwner, SecretScope, SecretSource, Store, StoreError,
+    NormalizedApplication, SecretOwner, SecretScope, SecretSource, Store, StoreError,
     deletion::SecretDeletion, now_ms,
 };
 use crate::{Actor, Attribution};
@@ -465,78 +465,6 @@ impl Store {
             Self::secret_event_on(&mut tx, scope, event, actor, now_ms()).await?;
         }
         tx.commit().await.map_err(StoreError::database)
-    }
-
-    /// Re-encrypts values that migration 0021 moved from environments into
-    /// application stores, binding each to its application. Without a usable
-    /// master key they stay readable in their former context until a later
-    /// start re-encrypts them.
-    /// # Errors
-    /// Returns database or corruption errors.
-    pub async fn reencrypt_moved_secrets(&self) -> Result<(), StoreError> {
-        let pending = sqlx::query_scalar!(
-            "SELECT COUNT(*) FROM application_secret_versions WHERE moved_from IS NOT NULL"
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(StoreError::database)?;
-        if pending == 0 {
-            return Ok(());
-        }
-        let (_writer, mut tx) = self.begin_immediate().await?;
-        match self.reencrypt_moved_secrets_on(&mut tx).await {
-            Ok(()) => {
-                tx.commit().await.map_err(StoreError::database)?;
-                tracing::info!(pending, "re-encrypted secrets moved to application stores");
-                Ok(())
-            }
-            Err(StoreError::SecretSource(error)) => {
-                tracing::warn!(
-                    ?error,
-                    pending,
-                    "secrets moved to application stores keep their environment encryption until the master key is usable"
-                );
-                Ok(())
-            }
-            Err(error) => Err(error),
-        }
-    }
-
-    /// Re-encrypts every moved value in `tx`; see `reencrypt_moved_secrets`.
-    async fn reencrypt_moved_secrets_on(
-        &self,
-        tx: &mut Transaction<'static, Sqlite>,
-    ) -> Result<(), StoreError> {
-        let cipher = self.verified_secret_cipher(tx).await?;
-        let rows = sqlx::query!(r#"SELECT application_id,name,generation,nonce,ciphertext,moved_from AS "moved_from!" FROM application_secret_versions WHERE moved_from IS NOT NULL"#)
-            .fetch_all(&mut **tx).await.map_err(StoreError::database)?;
-        for row in rows {
-            let application =
-                ApplicationId::parse(row.application_id.clone()).map_err(StoreError::corrupt)?;
-            let moved = EnvironmentId::parse(row.moved_from).map_err(StoreError::corrupt)?;
-            let value = cipher
-                .decrypt(
-                    SecretOwner::Environment(&moved),
-                    &row.name,
-                    row.generation,
-                    &Envelope {
-                        nonce: row.nonce,
-                        ciphertext: row.ciphertext,
-                    },
-                )
-                .map_err(StoreError::SecretSource)?;
-            let envelope = cipher
-                .encrypt(
-                    SecretOwner::Application(&application),
-                    &row.name,
-                    row.generation,
-                    &value,
-                )
-                .map_err(StoreError::SecretSource)?;
-            sqlx::query!("UPDATE application_secret_versions SET nonce=?4,ciphertext=?5,moved_from=NULL WHERE application_id=?1 AND name=?2 AND generation=?3",row.application_id,row.name,row.generation,envelope.nonce,envelope.ciphertext)
-                .execute(&mut **tx).await.map_err(StoreError::database)?;
-        }
-        Ok(())
     }
 }
 
