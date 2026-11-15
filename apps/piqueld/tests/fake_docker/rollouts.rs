@@ -1011,3 +1011,46 @@ async fn restoring_a_deployment_runs_its_image_again_without_jobs() {
     assert_eq!(image().await, original);
     assert_eq!(harness.started_jobs().await, ["migrate", "migrate"]);
 }
+
+#[tokio::test]
+async fn an_unreachable_build_machine_fails_the_deployment_as_builder_unavailable() {
+    let harness = ControllerHarness::new().await;
+    harness
+        .docker
+        .builder_unavailable
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let fixture = git_fixture::GitBuildFixture::new();
+    let mut input = manifest();
+    input.spec.services[0].source = fixture.source.clone();
+    let deployment = harness.apply(input, Some(0)).await;
+    harness.scan().await;
+    let failure = harness.operation(&deployment.id).await;
+    assert_eq!(failure.state, OperationState::Failed);
+    assert_eq!(failure.phase.as_deref(), Some("building_git"));
+    assert_eq!(failure.error_code.as_deref(), Some("builder_unavailable"));
+    // Nothing was built, so the output doesn't say a build failed.
+    let build = harness
+        .store
+        .builds(
+            None,
+            Some(&deployment.environment_id),
+            &piqueld_core::access::Scope::All,
+            None,
+            1,
+        )
+        .await
+        .unwrap()
+        .items
+        .remove(0);
+    let output = harness
+        .store
+        .build_logs(build.id, None, None)
+        .await
+        .unwrap();
+    assert!(
+        !output
+            .items
+            .iter()
+            .any(|chunk| chunk.text.contains("Build failed"))
+    );
+}

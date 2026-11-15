@@ -405,7 +405,19 @@ impl<D: DockerApi> ApplicationRuntime<D> {
                 let (commit, image_id) = self
                     .prepare_git(environment, name, &source, repository, build)
                     .await
-                    .map_err(BoundaryError::GitBuild)?;
+                    // An unreachable build machine is not a failed build.
+                    .map_err(|error| {
+                        if matches!(
+                            error.downcast_ref(),
+                            Some(DockerError::BuilderUnavailable(_))
+                        ) {
+                            error
+                                .downcast()
+                                .map_or_else(BoundaryError::GitBuild, BoundaryError::Runtime)
+                        } else {
+                            BoundaryError::GitBuild(error)
+                        }
+                    })?;
                 Ok(ResolvedSource::Git {
                     requested: source,
                     commit,
@@ -478,13 +490,19 @@ impl<D: DockerApi> ApplicationRuntime<D> {
                 Ok((commit, earlier.image))
             }
             Err(error) => {
-                attempt
-                    .log
-                    .append(
-                        format!("\nERROR Build failed: {error}\n").as_bytes(),
-                        piqueld_core::api::LogStream::Stderr,
-                    )
-                    .await?;
+                // An unreachable build machine said so already, and built nothing.
+                if !matches!(
+                    error.downcast_ref(),
+                    Some(DockerError::BuilderUnavailable(_))
+                ) {
+                    attempt
+                        .log
+                        .append(
+                            format!("\nERROR Build failed: {error}\n").as_bytes(),
+                            piqueld_core::api::LogStream::Stderr,
+                        )
+                        .await?;
+                }
                 attempt
                     .finish(piqueld_core::api::BuildState::Failed, None)
                     .await?;
