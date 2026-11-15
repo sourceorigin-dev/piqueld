@@ -90,9 +90,7 @@ impl OperationState {
 pub struct Operation {
     /// Stable operation identifier.
     pub id: String,
-    /// Environment the operation changes. Records stored before environments
-    /// existed name it `application_id`; the value is the same.
-    #[serde(alias = "application_id")]
+    /// Environment the operation changes.
     pub environment_id: EnvironmentId,
     /// Requested change.
     pub kind: OperationKind,

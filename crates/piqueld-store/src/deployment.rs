@@ -326,7 +326,7 @@ impl Store {
         let before = Paging::cursor(cursor)?;
         let app_id = app.as_str();
         let mut tx = self.snapshot().await?;
-        // Separate queries, so a cursor seeks `deployment_application`.
+        // Separate queries, so a cursor seeks `deployment_environment`.
         let mut rows = if let Some(before) = before {
             sqlx::query_as!(
                 DeploymentRow,

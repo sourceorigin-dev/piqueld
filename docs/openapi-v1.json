@@ -5,7 +5,7 @@
         "description": "Operation accepted by a mutation endpoint.",
         "properties": {
           "environment_id": {
-            "description": "Environment the operation changes. Receipts stored before environments\nexisted name it `application_id`.",
+            "description": "Environment the operation changes.",
             "type": "string"
           },
           "generation": {
@@ -3348,7 +3348,7 @@
             "description": "Operation accepted by a mutation endpoint.",
             "properties": {
               "environment_id": {
-                "description": "Environment the operation changes. Receipts stored before environments\nexisted name it `application_id`.",
+                "description": "Environment the operation changes.",
                 "type": "string"
               },
               "generation": {
@@ -4632,7 +4632,7 @@
               },
               "environment_id": {
                 "$ref": "#/components/schemas/EnvironmentId",
-                "description": "Environment the operation changes. Records stored before environments\nexisted name it `application_id`; the value is the same."
+                "description": "Environment the operation changes."
               },
               "error_code": {
                 "description": "Stable failure code, when present.",
@@ -5507,7 +5507,7 @@
                     },
                     "environment_id": {
                       "$ref": "#/components/schemas/EnvironmentId",
-                      "description": "Environment the operation changes. Records stored before environments\nexisted name it `application_id`; the value is the same."
+                      "description": "Environment the operation changes."
                     },
                     "error_code": {
                       "description": "Stable failure code, when present.",
@@ -6914,7 +6914,7 @@
         "type": "object"
       },
       "EnvironmentId": {
-        "description": "Stable internal environment identity, assigned by persistence as\n`env-…`. Docker names, ownership labels, secret encryption context, and\nhistory all derive from it. Environments migrated from\nsingle-environment applications, and the `production` environments of\napplications created before every environment got its own ID, keep\ntheir application's `app-…` ID.",
+        "description": "Stable internal environment identity, assigned by persistence as\n`env-…`. Docker names, ownership labels, secret encryption context, and\nhistory all derive from it.",
         "type": "string"
       },
       "EnvironmentKind": {
@@ -9138,7 +9138,7 @@
           },
           "environment_id": {
             "$ref": "#/components/schemas/EnvironmentId",
-            "description": "Environment the operation changes. Records stored before environments\nexisted name it `application_id`; the value is the same."
+            "description": "Environment the operation changes."
           },
           "error_code": {
             "description": "Stable failure code, when present.",

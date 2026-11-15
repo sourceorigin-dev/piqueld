@@ -74,8 +74,9 @@ impl KeyFailure {
 }
 
 /// What a ciphertext belongs to. Its encryption context binds the owner, so a
-/// value cannot be moved to another owner. Older `production` environments
-/// share their application's ID, so the two stores use distinct contexts.
+/// value cannot be moved to another owner. The environment and application
+/// stores use distinct contexts, so an environment and an application with
+/// the same ID never decrypt each other's values.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum SecretOwner<'a> {
     /// An environment's generated secret.
@@ -91,8 +92,7 @@ pub(crate) enum SecretOwner<'a> {
 }
 
 impl<'a> SecretOwner<'a> {
-    /// Context version and owner ID. Environment and verifier contexts
-    /// predate application stores and are unchanged.
+    /// Context version and owner ID.
     fn context(self) -> (&'static str, &'a str) {
         match self {
             Self::Environment(id) => ("piqueld-secret-v1", id.as_str()),
@@ -286,7 +286,7 @@ mod tests {
             EnvironmentId::parse("app-aaaaaaaa").unwrap(),
             EnvironmentId::parse("app-bbbbbbbb").unwrap(),
         );
-        // Older production environments share their application's ID.
+        // An application with the same ID as the environment.
         let application = ApplicationId::parse("app-aaaaaaaa").unwrap();
         let owner = SecretOwner::Environment(&environment);
         let mut encrypted = cipher

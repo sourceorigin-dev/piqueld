@@ -669,8 +669,6 @@ impl Store {
     /// 3. Applies each pending migration in its own `BEGIN IMMEDIATE` transaction
     ///    (see `apply_migration`), so every committed version is reopenable.
     /// 4. Re-reads and validates the instance ID and recorded schema version.
-    /// 5. Re-encrypts secrets migration 0021 moved into application stores.
-    /// 6. Records releases for deployments prepared before migration 0022.
     ///
     /// # Errors
     /// Returns a sanitized storage or schema compatibility error.
@@ -745,7 +743,7 @@ impl Store {
         if metadata_version != SCHEMA_VERSION {
             return Err(StoreError::SchemaMismatch);
         }
-        let store = Self {
+        Ok(Self {
             pool,
             instance_id,
             build_history: piqueld_config::BuildHistoryConfig::default(),
@@ -759,10 +757,7 @@ impl Store {
             audit_days: 0,
             previews: piqueld_core::manifest::PreviewLimits::default(),
             access_changes: tokio::sync::watch::Sender::new(()),
-        };
-        store.reencrypt_moved_secrets().await?;
-        store.record_missing_releases().await?;
-        Ok(store)
+        })
     }
 
     /// Applies one migration and records `version` in a single immediate

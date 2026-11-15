@@ -435,9 +435,9 @@ async fn delivery_retries_need_system_operate_and_name_refusals() {
     let operator = seed_account(&database, "operator", &[("system:operate", None)]).await;
     let mut connection = sqlite::connect(&database).await;
     sqlx::query(
-        "INSERT INTO notification_deliveries(id,event_id,destination,category,state,
+        "INSERT INTO notification_deliveries(id,event_id,destination,category,subject_json,state,
             created_at_ms,retry_started_at_ms,next_attempt_ms,updated_at_ms)
-        SELECT 'delivery-01',MIN(id),'ops','deployment_failures','pending',1,1,1,1 FROM events",
+        SELECT 'delivery-01',MIN(id),'ops','deployment_failures','{}','pending',1,1,1,1 FROM events",
     )
     .execute(&mut connection)
     .await
