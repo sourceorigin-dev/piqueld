@@ -21,10 +21,7 @@ validated_string!(
 validated_string!(
     /// Stable internal environment identity, assigned by persistence as
     /// `env-…`. Docker names, ownership labels, secret encryption context, and
-    /// history all derive from it. Environments migrated from
-    /// single-environment applications, and the `production` environments of
-    /// applications created before every environment got its own ID, keep
-    /// their application's `app-…` ID.
+    /// history all derive from it.
     EnvironmentId,
     EnvironmentIdError,
     "environment IDs must be 8-64 lowercase ASCII letters, digits, or internal hyphens",

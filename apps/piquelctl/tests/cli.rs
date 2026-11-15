@@ -428,8 +428,7 @@ fn app_view(id: &str, name: &str) -> Value {
 }
 
 /// An environment of application `application`. The fixtures' `production`
-/// environments share their application's ID, as those of applications
-/// created before environments had their own IDs do.
+/// environments share their application's ID, for brevity.
 fn environment(application: &str, id: &str, name: &str) -> Value {
     json!({
         "id": id,

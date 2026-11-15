@@ -72,8 +72,7 @@ impl Store {
     const SECRET_DELETED: &str = "Deleted secret and its runtime versions";
 
     /// Lists an environment's generated secrets without accessing the master
-    /// key or decrypting values. Secrets set manually before application
-    /// stores existed may also remain here, until deleted.
+    /// key or decrypting values.
     /// # Errors
     /// Returns application absence or database errors.
     pub async fn secrets(
