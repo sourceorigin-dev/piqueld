@@ -1,15 +1,20 @@
 use crate::auth::Identity;
-use axum::{Extension, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{
+    Extension,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use piqueld_core::access::{AppPermission, GlobalPermission};
-use piqueld_core::api::{DnsStatus, Envelope, SystemStatus};
+use piqueld_core::api::{BuilderCheck, DnsStatus, Envelope, SystemStatus};
 
-use super::{ApiState, ok};
+use super::{ApiError, ApiState, ok};
 
 /// Gets daemon status.
 ///
-/// DNS providers and certificates are empty without `system:read`; see
-/// [`redact_dns`]. Preview counts per application list only readable
-/// applications.
+/// DNS providers and certificates are empty without `system:read`, and the
+/// build machine is absent; see [`redact_host`]. Preview counts per
+/// application list only readable applications.
 #[utoipa::path(
     get,
     path = "/api/v1/system/status",
@@ -26,16 +31,52 @@ pub(super) async fn status(
     let mut status = state
         .system_status(&identity.grants.app_scope(AppPermission::Read))
         .await;
-    redact_dns(&identity, &mut status.dns);
+    redact_host(&identity, &mut status);
     ok(status)
 }
 
-/// Empties `dns` without `system:read`: providers and certificates are host
-/// configuration, naming every application's routed hostnames.
+/// Empties host configuration in `status` without `system:read`: DNS
+/// providers and certificates, which name every application's routed
+/// hostnames, and the build machine.
+fn redact_host(identity: &Identity, status: &mut SystemStatus) {
+    if !identity.grants.has_global(GlobalPermission::SystemRead) {
+        status.dns = DnsStatus::default();
+        status.builder = None;
+    }
+}
+
+/// Empties `dns` without `system:read`; see [`redact_host`].
 fn redact_dns(identity: &Identity, dns: &mut DnsStatus) {
     if !identity.grants.has_global(GlobalPermission::SystemRead) {
         *dns = DnsStatus::default();
     }
+}
+
+/// Checks the build machine now.
+///
+/// Connects to its `BuildKit` daemon, as before each build, and returns that
+/// check, which the system status then shows as its latest. It names no
+/// address, so it needs no `system:read`. 404 `builder_not_configured` when
+/// the host builds images itself.
+#[utoipa::path(
+    post,
+    path = "/api/v1/system/builder/check",
+    operation_id = "checkBuilder",
+    summary = "Check the build machine now",
+    responses(
+        (status = 200, description = "Success", body = Envelope<BuilderCheck>),
+        (status = 404, response = inline(super::openapi::ApiErrorResponse)),
+    )
+)]
+pub(super) async fn check_builder(State(state): State<ApiState>) -> Result<Response, ApiError> {
+    let check = state.check_builder().await.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            "builder_not_configured",
+            "this host has no build machine; it builds images itself",
+        )
+    })?;
+    Ok(ok(check).into_response())
 }
 
 /// Checks DNS provider credentials now.
@@ -128,4 +169,30 @@ pub(super) async fn checks(
 ) -> Result<impl IntoResponse, super::ApiError> {
     let _admitted = state.admit(crate::api::Expensive::Checks)?;
     Ok(ok(state.system_checks().await?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use piqueld_core::access::Grants;
+    use piqueld_core::api::BuilderStatus;
+
+    #[test]
+    fn the_build_machine_shows_only_with_system_read() {
+        let builder = BuilderStatus {
+            endpoint: "tcp://build.example.ts.net:1234".into(),
+            repository: "build.example.ts.net:5000/piqueld".into(),
+            last_check: None,
+        };
+        let mut identity = Identity::operator(piqueld_core::auth::HostOperator { uid: 1000 }, None);
+        for (grants, shown) in [(Grants::default(), false), (Grants::admin(), true)] {
+            identity.grants = grants;
+            let mut status = SystemStatus {
+                builder: Some(builder.clone()),
+                ..SystemStatus::default()
+            };
+            redact_host(&identity, &mut status);
+            assert_eq!(status.builder.is_some(), shown);
+        }
+    }
 }

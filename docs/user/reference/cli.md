@@ -395,7 +395,10 @@ and each DNS-01 certificate with its hostnames, expiry and last error.
 of at the next hourly discovery, then prints the same DNS lines. `status` also
 reports how many images this installation built that
 [image cleanup](../../dev/architecture/docker-reconciliation.md#image-retention) kept, and the total
-size of those it removed since the daemon started.
+size of those it removed since the daemon started. With a
+[build machine](configuration.md#build-machine), it shows its address, its
+repository and its latest check, with `system:read`. `piquelctl builder check`
+checks it now, with `system:operate`, and exits 6 while it is unreachable.
 
 `status` answers whether the daemon and its subsystems are up. Two more
 read-only commands, both requiring `system:read`, show what the dashboard's
@@ -439,6 +442,7 @@ written to stderr, so stdout remains valid JSON.
 | `settings` | `HostConfiguration` |
 | `doctor` | `{ "connection": { "endpoint": string, "endpoint_source": string, "credential": string }, "checks": [SystemCheck] or null }`; `checks` is null when the daemon could not be asked |
 | `dns refresh` | `DnsStatus` |
+| `builder check` | `BuilderCheck` |
 | `login` | `User` |
 | `whoami` | `Session` |
 | `account list` / `account access` / `account update` | `{ "accounts": [Account], "operator_sessions": [OperatorSessionView] }` |
