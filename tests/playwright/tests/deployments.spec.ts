@@ -124,6 +124,42 @@ test('a deployment\'s timeline lays its steps out by stage, and shows the one pi
   await expect(deploymentRows(page)).toHaveCount(1);
 });
 
+test('a job step shows the output of its own run, whose build starts just before it', async ({ page, account }) => {
+  void account;
+  const { app, env, deployment } = await deployed(page);
+  const id = deployment.operation.id as string;
+  const operation = { ...deployment.operation, state: 'succeeded', started_at_ms: 0, finished_at_ms: 20_000 };
+  const timeline = {
+    operation,
+    steps: [{
+      phase: 'run_job', resource: 'migrate', state: 'succeeded', action_id: 'job-2', attempt: 1,
+      started_at_ms: 10_000, finished_at_ms: 15_000, retries: 0,
+    }],
+    cursor: 42,
+  };
+  await serveDeployments(page, env, () => ({ items: [{ ...deployment, operation }], next_cursor: null }));
+  await page.route(url => url.pathname === `/api/v1/operations/${id}/timeline/stream`, (route: Route) =>
+    route.fulfill({ contentType: 'text/event-stream', body: `event: timeline\ndata: ${JSON.stringify(timeline)}\n\n` }));
+  const build = (number: number, started: number, finished: number) => ({
+    id: number, environment_id: env, operation_id: id, service: 'web', job: 'migrate',
+    source: { type: 'image', image: 'nginx:alpine' }, state: 'succeeded',
+    started_at_ms: started, finished_at_ms: finished, log_bytes: 9, log_truncated: false, log_expired: false,
+  });
+  // The run's build is recorded a moment before its step starts; an earlier
+  // run's ended before it.
+  await page.route(url => url.pathname === '/api/v1/builds', (route: Route) =>
+    route.fulfill({ json: { data: { items: [build(2, 9_999, 15_000), build(1, 1_000, 5_000)], next_cursor: null } } }));
+  for (const [number, text] of [[2, 'migrated\n'], [1, 'earlier run\n']] as const) {
+    await page.route(url => url.pathname === `/api/v1/builds/${number}/logs`, (route: Route) =>
+      route.fulfill({ json: { data: { items: [{ offset: 0, timestamp_ms: 10_000, stream: 'stdout', text }], truncated: false, expired: false } } }));
+  }
+
+  await page.goto(`/dashboard/applications/${app}/environments/${env}/deployments/${id}`);
+  const output = page.getByRole('region', { name: 'Output of Run job migrate' });
+  await expect(output).toContainText('migrated');
+  await expect(output).not.toContainText('earlier run');
+});
+
 test('a running deployment\'s progress shows on the Overview and Deployments tabs, from one stream', async ({ page, account }) => {
   void account;
   const { app, env, deployment } = await deployed(page);

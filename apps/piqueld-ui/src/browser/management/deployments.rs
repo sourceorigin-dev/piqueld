@@ -26,8 +26,8 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use piqueld_client::{
     AcceptedOperation, ApplyApplicationRequest, Build, Client, DeploymentView, EnvironmentId,
-    EnvironmentView, HealthCheck, ManifestChange, ManifestRevision, Operation, Page, PlanView,
-    RuntimeCoverage, SecretProblem, Service, Source, Template, ValidatedRollout,
+    EnvironmentView, HealthCheck, MAX_PAGE_SIZE, ManifestChange, ManifestRevision, Operation, Page,
+    PlanView, RuntimeCoverage, SecretProblem, Service, Source, Template, ValidatedRollout,
     access::AppPermission,
 };
 use std::fmt::Display;
@@ -1143,8 +1143,11 @@ impl ShownDeployment {
             let mut cursor = None;
             let mut newest = true;
             loop {
+                // Most pages show a recent deployment, on the first page;
+                // older ones are looked for as many at a time as allowed.
+                let limit = if newest { PAGE } else { MAX_PAGE_SIZE };
                 let result = client
-                    .deployments(&environment, cursor.as_deref(), Some(PAGE))
+                    .deployments(&environment, cursor.as_deref(), Some(limit))
                     .await;
                 if !alive.get() {
                     return;
@@ -1170,6 +1173,33 @@ impl ShownDeployment {
                     ));
                 }
             }
+        });
+    }
+
+    /// Reads deployment `operation` of `environment`, then again for its
+    /// outcome and flags once `live` shows it ended while shown, unless the
+    /// history read already saw it end: when the first snapshot shows it
+    /// ended, only if that read saw it running.
+    fn follow(self, live: LiveTimeline, environment: String, operation: String) {
+        self.load(environment.clone(), operation.clone());
+        Effect::new(move |was: Option<Option<bool>>| {
+            let ended = live.ended();
+            let running = |unread: bool| {
+                self.deployment.with_untracked(|deployment| {
+                    deployment
+                        .as_ref()
+                        .map_or(unread, |deployment| !deployment.operation.state.terminal())
+                })
+            };
+            let stale = match was {
+                Some(Some(false)) => running(true),
+                Some(None) => running(false),
+                _ => false,
+            };
+            if ended == Some(true) && stale {
+                self.load(environment.clone(), operation.clone());
+            }
+            ended
         });
     }
 }
@@ -1208,14 +1238,7 @@ pub(super) fn DeploymentPage(operation: String) -> impl IntoView {
         });
     });
     let shown = ShownDeployment::new();
-    Effect::new({
-        let environment = environment.clone();
-        move |_| {
-            // Read again once it ended, for its outcome and flags.
-            live.live();
-            shown.load(environment.clone(), operation.clone());
-        }
-    });
+    shown.follow(live, environment.clone(), operation);
     // The operation as its newest snapshot has it, which runs ahead of the
     // history's.
     let deployment = Signal::derive(move || {

@@ -96,10 +96,9 @@ impl LiveTimeline {
             .with(|t| t.as_ref().map(|t| t.operation.clone()))
     }
 
-    /// Whether the operation may still change: true until a snapshot shows
-    /// it ended.
-    pub(super) fn live(self) -> bool {
-        self.live.get()
+    /// Whether the operation ended, once a snapshot arrived.
+    pub(super) fn ended(self) -> Option<bool> {
+        self.timeline.with(|t| t.as_ref().map(Timeline::ended))
     }
 
     /// Follows the timeline again once `operation`, as the page last polled
@@ -712,7 +711,8 @@ fn StepDetail(
             .get()
             .and_then(|id| live.waterfall.with(|w| w.row(&id).cloned()))
     });
-    // A build or job that started, which has output; remounted per step.
+    // A build or job that started, which has output; remounted per step,
+    // and per run of it: a retry's output is not the failed run's.
     let output = Memo::new(move |_| {
         row.with(|row| {
             row.as_ref()
@@ -720,7 +720,13 @@ fn StepDetail(
                     row.step.state.started()
                         && matches!(row.step.key.phase, Phase::BuildGit | Phase::RunJob)
                 })
-                .map(|row| row.id.clone())
+                .map(|row| {
+                    (
+                        row.id.clone(),
+                        row.step.action_id.clone(),
+                        row.step.started_at_ms.unwrap_or_default(),
+                    )
+                })
         })
     });
     let running = Signal::derive(move || {
@@ -830,7 +836,7 @@ fn StepDetail(
                 output
                     .get()
                     .filter(|_| logs)
-                    .map(|id| {
+                    .map(|(id, _, since)| {
                         let operation = live.operation.get_value();
                         let environment = live
                             .timeline
@@ -843,6 +849,7 @@ fn StepDetail(
                                 environment={environment}
                                 operation={operation}
                                 id={id}
+                                since={since}
                                 running={running}
                             />
                         }
@@ -862,6 +869,7 @@ fn StepOutput(
     environment: String,
     operation: String,
     id: RowId,
+    since: i64,
     running: Signal<bool>,
 ) -> impl IntoView {
     let lines = RwSignal::new(None::<Vec<LogLine>>);
@@ -885,7 +893,7 @@ fn StepOutput(
             let ran = !running.get_untracked();
             if !document_hidden() {
                 if build.is_none() {
-                    match find_build(&client, &environment, &operation, &id.key).await {
+                    match find_build(&client, &environment, &operation, &id.key, since).await {
                         Ok(found) => build = found,
                         Err(e) => error.set(Some(e.user_message())),
                     }
@@ -942,17 +950,23 @@ fn StepOutput(
     }
 }
 
-/// The build record of `operation` running the build or job step `key`,
-/// looked up in `environment`'s newest builds; `None` until it is recorded.
+/// The build record of `operation` running the build or job step `key` in
+/// the run that started at `since_ms`, looked up in `environment`'s newest
+/// builds; `None` until it is recorded. A job's build starts just before its
+/// step does, so an earlier run's is told apart by having ended before.
 async fn find_build(
     client: &Client,
     environment: &str,
     operation: &str,
     key: &StepKey,
+    since_ms: i64,
 ) -> Result<Option<BuildRecord>, piqueld_client::ClientError> {
     let resource = key.resource.as_deref();
     let runs = |build: &BuildRecord| {
         build.operation_id == operation
+            && build
+                .finished_at_ms
+                .is_none_or(|finished| finished >= since_ms)
             && match key.phase {
                 Phase::RunJob => build.job.as_deref() == resource,
                 _ => build.job.is_none() && Some(build.service.as_str()) == resource,
