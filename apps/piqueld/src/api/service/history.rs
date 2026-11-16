@@ -1,4 +1,4 @@
-//! Durable history, manifest export, and runtime logs.
+//! Durable history, manifest export, runtime logs, and traffic.
 
 use super::{ApplicationError, ApplicationService};
 use piqueld_core::{
@@ -6,8 +6,13 @@ use piqueld_core::{
     api::{
         ApplicationLogs, BuildLogPage, BuildRecord, DeploymentView, LogStream, Page, ReleaseView,
     },
+    observability::TrafficReport,
 };
 use piqueld_store::StoreError;
+use piqueld_store::traffic::{DAY_MS, TrafficQuery};
+
+/// The longest traffic window a report covers.
+const MAX_TRAFFIC_WINDOW_MS: i64 = 400 * DAY_MS;
 
 /// Saved configuration rendered for download or export.
 pub struct ManifestExport {
@@ -150,6 +155,29 @@ impl ApplicationService {
         stream: Option<LogStream>,
     ) -> Result<BuildLogPage, ApplicationError> {
         Ok(self.store.build_logs(id, before, stream).await?)
+    }
+
+    /// Environment `id`'s traffic over a window of at most
+    /// [`MAX_TRAFFIC_WINDOW_MS`], and whether the gateway counts it now.
+    /// # Errors
+    /// Returns invalid query, absence, or storage errors.
+    pub async fn traffic(
+        &self,
+        id: &EnvironmentId,
+        query: TrafficQuery<'_>,
+    ) -> Result<TrafficReport, ApplicationError> {
+        let length = query.until_ms.checked_sub(query.since_ms);
+        if query.since_ms < 0 || !length.is_some_and(|ms| (1..=MAX_TRAFFIC_WINDOW_MS).contains(&ms))
+        {
+            return Err(ApplicationError::InvalidTrafficQuery);
+        }
+        self.store.get(id).await?;
+        let mut report = self.store.traffic(id, query).await?;
+        report.counting = self
+            .ingress
+            .as_ref()
+            .is_some_and(|ingress| ingress.counts_traffic());
+        Ok(report)
     }
 
     /// Reads bounded runtime logs for an existing environment.

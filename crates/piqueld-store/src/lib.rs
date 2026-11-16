@@ -31,7 +31,7 @@ pub use auth::{
 pub use build::{BuildOutcome, ReusableBuild};
 pub use journal::JournalAction;
 pub use observability::DESTINATION_CHANGED;
-pub use observability::{ContainerCursors, DestinationError, RetryError};
+pub use observability::{ContainerCursors, DestinationError, RetryError, traffic};
 pub use secret::SecretDeletion;
 mod operation;
 mod preview;
@@ -602,6 +602,8 @@ pub struct Store {
     daemon_event_days: u64,
     /// Audit trail retention in days; zero keeps it forever.
     audit_days: u64,
+    /// Traffic count retention in days; zero keeps them forever.
+    traffic_days: u64,
     /// How many previews may exist and what their services may use.
     previews: piqueld_core::manifest::PreviewLimits,
     /// Signalled after each committed change to accounts, credentials, or
@@ -755,6 +757,7 @@ impl Store {
             stats_cache: std::sync::Arc::default(),
             daemon_event_days: 0,
             audit_days: 0,
+            traffic_days: 0,
             previews: piqueld_core::manifest::PreviewLimits::default(),
             access_changes: tokio::sync::watch::Sender::new(()),
         })

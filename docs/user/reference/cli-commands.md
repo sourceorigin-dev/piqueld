@@ -3142,6 +3142,7 @@ Commands:
 - [`piquelctl env restore`](#piquelctl-env-restore): Deploy an earlier, succeeded deployment again exactly as it ran: its rendered manifest, images and pinned secret versions. Jobs don't run, and volume contents and migrations stay as they are.
 - [`piquelctl env wait`](#piquelctl-env-wait): Wait until a deployment of an environment is ready.
 - [`piquelctl env url`](#piquelctl-env-url): Print the URLs of an environment's routes, and whether each is ready.
+- [`piquelctl env traffic`](#piquelctl-env-traffic): Show how many people visit an environment, and the requests its routes served, over a time window.
 
 ## `piquelctl env list`
 
@@ -3668,6 +3669,28 @@ Arguments:
 Options:
 
 - `--route <NAME>`: Print only the URL of the route with this name, with a warning while it is pending.
+
+## `piquelctl env traffic`
+
+Show how many people visit an environment, and the requests its routes served, over a time window.
+
+The gateway counts the requests each route that proxies to a service serves: visitors, page views, requests and errors, the most viewed pages and the sites that link to them. Bots count as requests, never as visitors or page views. piqueld keeps hourly totals, never the requests themselves. Points are hourly for windows of up to two days, daily beyond. Needs the `logs:read` permission.
+
+```text
+piquelctl env traffic [OPTIONS] <APPLICATION> [ENVIRONMENT]
+```
+
+Arguments:
+
+- `<APPLICATION>`: Application name or stable ID.
+- `[ENVIRONMENT]`: Environment name or stable ID. You can omit it when the application has exactly one environment.
+
+Options:
+
+- `--service <SERVICE>`: Only the routes to this service.
+- `--hostname <HOSTNAME>`: Only the route with this hostname, such as app.example.com or *.example.com.
+- `--since <SINCE>`: Start this long ago, such as 24h or 7d; defaults to 30 days before the end.
+- `--until <UNTIL>`: End this long ago; defaults to now.
 
 ## `piquelctl preview`
 

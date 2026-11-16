@@ -38,6 +38,7 @@
 - [History and diagnostics](user/operations/history.md)
 - [Audit trail](user/operations/audit.md)
 - [Notifications](user/operations/notifications.md)
+- [Seeing who visits an application](user/operations/traffic.md)
 - [Exporting telemetry](user/operations/telemetry.md)
 - [Deploying an observability stack](user/operations/observability-stack.md)
 - [Backups and upgrades](user/operations/backups.md)

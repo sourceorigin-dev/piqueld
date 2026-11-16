@@ -177,6 +177,7 @@ impl DaemonConfig {
                 retention.finished_operation_days.to_string(),
             ),
             ("Events (days)", retention.event_days.to_string()),
+            ("Traffic (days)", retention.traffic_days.to_string()),
             ("Build output (days)", builds.log_retention_days.to_string()),
             (
                 "Build output limit (bytes)",
@@ -233,6 +234,7 @@ impl DaemonConfig {
                 "Webhook hostname",
                 or_none(ingress.webhook_hostname.as_ref()),
             ),
+            ("Traffic counting", ingress.traffic.to_string()),
         ])
     }
 

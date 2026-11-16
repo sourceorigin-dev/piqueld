@@ -206,6 +206,24 @@ impl Client {
             .data()
             .await
     }
+    /// Gets the traffic of environment `id`'s routes over a window, in Unix
+    /// ms: the daemon's default, the last 30 days, without bounds. `service`
+    /// and `hostname` narrow it to some routes.
+    /// # Errors
+    /// Returns transport, decoding or API errors.
+    pub async fn environment_traffic(
+        &self,
+        id: &str,
+        since: Option<i64>,
+        until: Option<i64>,
+        service: Option<&str>,
+        hostname: Option<&str>,
+    ) -> Result<TrafficReport, ClientError> {
+        self.generated
+            .environment_traffic(id, hostname, service, since, until)
+            .data()
+            .await
+    }
     /// Gets one page of webhook delivery outcomes, newest first.
     /// # Errors
     /// Returns invalid page size, transport, decoding or API errors.

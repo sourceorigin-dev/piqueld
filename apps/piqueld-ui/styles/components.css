@@ -947,6 +947,160 @@
         margin-left: auto;
     }
 
+    /* Traffic: a column per point of the window from one baseline, under
+       a scale at its top, middle and zero. Columns keep a 2px gap and cap
+       at 24px wide; hovering or focusing one opens its counts. */
+    /* The chart's measure picker keeps its width beside a long title. */
+    .traffic-measure {
+        flex: none;
+        min-width: 128px;
+    }
+
+    .traffic-chart {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        column-gap: 10px;
+        row-gap: 6px;
+    }
+
+    .traffic-scale {
+        position: relative;
+        min-width: 28px;
+        font-size: 11.5px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .traffic-scale span {
+        position: absolute;
+        right: 0;
+        transform: translateY(50%);
+        line-height: 1;
+    }
+
+    .traffic-scale .scale-top {
+        bottom: 100%;
+    }
+
+    .traffic-scale .scale-middle {
+        bottom: 50%;
+    }
+
+    .traffic-scale .scale-zero {
+        bottom: 0;
+    }
+
+    .traffic-plot {
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 200px;
+        border-bottom: 1px solid var(--line-strong);
+        /* Gridlines at the top and the middle of the scale. */
+        background: linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% 50%;
+    }
+
+    .traffic-plot.dense {
+        gap: 0;
+    }
+
+    .traffic-column {
+        position: relative;
+        display: flex;
+        flex: 1 1 0;
+        align-items: flex-end;
+        justify-content: center;
+        min-width: 0;
+        height: 100%;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    }
+
+    .traffic-column:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 1px;
+    }
+
+    .traffic-column > i {
+        width: 100%;
+        max-width: 24px;
+        border-radius: 4px 4px 0 0;
+        background: var(--accent);
+    }
+
+    .traffic-column:hover > i,
+    .traffic-column:focus-visible > i {
+        background: var(--ink);
+    }
+
+    .traffic-tip {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 50%;
+        z-index: 2;
+        min-width: 168px;
+        padding: 9px 11px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-sm);
+        background: var(--surface-muted);
+        box-shadow: var(--shadow-panel);
+        font-size: 12px;
+        white-space: nowrap;
+        transform: translateX(-50%);
+        pointer-events: none;
+    }
+
+    .tip-start .traffic-tip {
+        left: 0;
+        transform: none;
+    }
+
+    .tip-end .traffic-tip {
+        right: 0;
+        left: auto;
+        transform: none;
+    }
+
+    .traffic-column:hover .traffic-tip,
+    .traffic-column:focus-visible .traffic-tip {
+        display: grid;
+        gap: 6px;
+    }
+
+    .traffic-tip dl {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        column-gap: 16px;
+        row-gap: 2px;
+        color: var(--ink-soft);
+    }
+
+    .traffic-tip dd {
+        text-align: right;
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .traffic-axis {
+        display: flex;
+        grid-column: 2;
+        justify-content: space-between;
+        font-size: 11.5px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .traffic-ranks {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+        gap: 16px;
+    }
+
+    .traffic-value {
+        overflow-wrap: anywhere;
+    }
+
     /* Event timeline: when, what, and a toggle for every recorded field. */
     .event {
         display: grid;

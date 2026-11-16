@@ -293,6 +293,12 @@ Type: array of strings. Optional.
 
 This server's public IPv4 and IPv6 addresses, such as `["203.0.113.10", "2001:db8::10"]`. Public routes in zones whose DNS provider sets `manage_records` get A and AAAA records to them; without any, those records stay manual. Unused with `tunnel`.
 
+### `ingress.traffic`
+
+Type: boolean. Default: `true`.
+
+Count the requests each route serves, for each environment's traffic page, while `ingress.enabled` is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses. While the daemon isn't connected to the gateway, such as while it restarts, the gateway writes its requests, visitors' addresses and paths included, to its own Docker log, which keeps up to 30 MB.
+
 ### `ingress.tunnel`
 
 Type: table. Optional.
@@ -450,6 +456,12 @@ Days application events are kept; `0` keeps them forever. Deleting an applicatio
 Type: integer. Default: `10`.
 
 Days finished operations are kept; `0` keeps them forever. Older ones are removed during reconciliation, except each environment's latest operation and those in its deployment history or with job cleanup pending.
+
+### `retention.traffic_days`
+
+Type: integer. Default: `90`.
+
+Days each environment's traffic counts are kept; `0` keeps them forever. Deleting an environment also removes its counts.
 
 ## `[server]` table
 

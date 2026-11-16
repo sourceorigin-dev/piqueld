@@ -284,8 +284,9 @@ gateway.
 ## Webhook and dashboard sockets
 
 The gateway's control mount, `<data_dir>/ingress/control`, holds Caddy's admin
-socket and two daemon sockets, bound with a umask that leaves them to the
-daemon's user, which the gateway runs as:
+socket and the daemon's sockets, bound with a umask that leaves them to the
+daemon's user, which the gateway runs as: the two below, and
+[`traffic.sock`](#traffic-counting).
 
 - `webhooks.sock` serves only `POST /hooks/github/{id}`
   (`api/http/webhooks.rs`), with its own router and none of the API's
@@ -324,6 +325,47 @@ The endpoint never reads the payload: sync resolves branch heads with
 `git ls-remote` itself, and it doesn't check that the application syncs with
 `webhook`. Signature failures log a warning and 503s an error; nothing is
 audited.
+
+## Traffic counting
+
+While `ingress.traffic` and `ingress.enabled` are set, the daemon counts the
+requests each route proxies (`ingress/traffic.rs`), for the API's
+`GET /api/v1/environments/{id}/traffic`, `piquelctl env traffic` and the
+environment's **Traffic** tab.
+
+- The `public`, `tunnel` and `private` servers set
+  `logs.default_logger_name = "traffic"`, and the `traffic` log writes their
+  access log, and nothing else, as JSON to `traffic.sock` through Caddy's
+  `net` writer, with integer times and durations in ns. The `default` log
+  excludes it. With `soft_start`, Caddy loads its configuration when the
+  socket is down, writes lines to its output meanwhile, and dials again at
+  most every 10 seconds; the diagnostics relay skips those lines, but Docker
+  keeps them in the gateway's capped `local` log. Caddy writes synchronously,
+  so a daemon alive but not reading the socket would hold up the requests
+  being logged once the socket buffer fills. HTTP servers only redirect, so
+  they log nothing.
+- Each route proxying to a service starts with three `log_append` handlers,
+  `piqueld_environment`, `piqueld_service` and `piqueld_hostname`, the route's
+  hostname as configured, so a wildcard's requests count under one route.
+  Lines without them, from the probe endpoint, redirects, the webhook and
+  dashboard hostnames and the final 404, aren't counted. Caddy redacts
+  cookies and credentials in logged headers.
+- The daemon binds the socket at startup, before Swarm, reads every
+  connection Caddy opens line by line, up to 1 MiB a line, and adds each
+  line to an in-memory tally of hourly `traffic_hours` rows and daily
+  `traffic_ranks` rows (pages, referring hostnames), flushed every minute and
+  on shutdown by `Store::record_traffic`. A failed flush drops its counts
+  with a warning. Rows of environments deleted meanwhile are skipped, and
+  each route, day and kind keeps at most 100 distinct values.
+- Visitors are hashes of the route, the client address (`client_ip`, which
+  the tunnel and the apps node's PROXY header set) and the user agent, with
+  a `RandomState` replaced at each UTC day, kept in memory only, up to
+  200,000 a day; a visitor counts in the hour of their first page view of
+  the day, so hours add up to days. A page view is a successful `GET` whose
+  `Sec-Fetch-Dest` is `document`, or, without that header, answered with
+  HTML, from a user agent that doesn't look like a bot.
+- `retention.traffic_days` prunes both tables during reconciliation; deleting
+  an environment cascades.
 
 ## Hostname reservations
 
@@ -600,8 +642,10 @@ private test certificates and randomly allocated loopback host ports
 unknown-host rejection, network separation, gateway replacement failure and
 recovery, unrelated deployments during a stalled gateway update, withdrawals
 with a broken application network, a backend cutover held behind a failing
-health check, and forwarded client addresses arriving from the injected
-ingress range.
+health check, forwarded client addresses arriving from the injected
+ingress range, and traffic counting: its gateway logs to the daemon
+throughout, and browser, bot and probe requests to a new route add up to the
+expected page views, visitors, pages and referring sites.
 
 With Pebble-issued DNS-01 certificates (`tests/dns01.rs`), it checks that a
 public wildcard route serves two names below it with their own `Host`, that an

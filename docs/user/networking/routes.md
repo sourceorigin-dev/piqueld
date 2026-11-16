@@ -27,6 +27,9 @@ see [private routes](private-routes.md).
 piqueld doesn't put a sign-in in front of your routes: anyone can open a
 public route, so your application handles its own authentication.
 
+The gateway also counts each route's requests, so you can
+[see who visits an application](../operations/traffic.md).
+
 ## Enable the gateway
 
 1. Enable it in your configuration, with

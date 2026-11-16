@@ -198,6 +198,16 @@ pub(crate) enum EnvCommand {
     Wait(WaitArgs<EnvironmentArgs>),
     /// Print the URLs of an environment's routes, and whether each is ready.
     Url(UrlArgs<EnvironmentArgs>),
+    /// Show how many people visit an environment, and the requests its
+    /// routes served, over a time window.
+    ///
+    /// The gateway counts the requests each route that proxies to a service
+    /// serves: visitors, page views, requests and errors, the most viewed
+    /// pages and the sites that link to them. Bots count as requests, never
+    /// as visitors or page views. piqueld keeps hourly totals, never the
+    /// requests themselves. Points are hourly for windows of up to two
+    /// days, daily beyond. Needs the `logs:read` permission.
+    Traffic(crate::traffic::TrafficArgs),
 }
 
 // An application and, when it has several, one of its environments.
@@ -309,6 +319,7 @@ impl EnvCommand {
             Self::Restore(args) => args.run(console, client).await,
             Self::Wait(args) => args.run(console, client).await,
             Self::Url(args) => args.run(console, client).await,
+            Self::Traffic(args) => args.run(client, console).await,
         }
     }
 }

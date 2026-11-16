@@ -418,7 +418,7 @@ fn dns_label(name: &str, value: &str) -> Result<(), ConfigError> {
 
 /// The managed Caddy gateway that serves applications' routes.
 // Defaulted field by field, like `DaemonConfig`, for its subtables.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IngressConfig {
     /// Run the managed gateway and serve public routes on ports 80 and 443,
@@ -452,6 +452,37 @@ pub struct IngressConfig {
     // which the public listener or the tunnel forwards the webhook path to.
     #[serde(default)]
     pub webhook_hostname: Option<piqueld_core::manifest::Hostname>,
+    /// Count the requests each route serves, for each environment's
+    /// traffic page, while `ingress.enabled` is set. piqueld stores hourly
+    /// totals, not the requests themselves or visitors' addresses. While the
+    /// daemon isn't connected to the gateway, such as while it restarts, the
+    /// gateway writes its requests, visitors' addresses and paths included, to
+    /// its own Docker log, which keeps up to 30 MB.
+    //
+    // Caddy writes an access log line per request to a socket in the
+    // gateway's control mount, which the daemon counts (`ingress::traffic`).
+    #[serde(default = "enabled")]
+    #[schema(default = true)]
+    pub traffic: bool,
+}
+
+/// `true`, the default of settings on unless turned off.
+const fn enabled() -> bool {
+    true
+}
+
+impl Default for IngressConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            public_addresses: Vec::new(),
+            acme: AcmeConfig::default(),
+            private: PrivateIngressConfig::default(),
+            tunnel: TunnelConfig::default(),
+            webhook_hostname: None,
+            traffic: enabled(),
+        }
+    }
 }
 
 impl IngressConfig {
@@ -908,6 +939,9 @@ pub struct RetentionConfig {
     pub daemon_event_days: u64,
     /// Days the audit trail of API requests is kept; `0` keeps it forever.
     pub audit_days: u64,
+    /// Days each environment's traffic counts are kept; `0` keeps them
+    /// forever. Deleting an environment also removes its counts.
+    pub traffic_days: u64,
 }
 
 impl Default for RetentionConfig {
@@ -917,6 +951,7 @@ impl Default for RetentionConfig {
             event_days: 90,
             daemon_event_days: 90,
             audit_days: 365,
+            traffic_days: 90,
         }
     }
 }

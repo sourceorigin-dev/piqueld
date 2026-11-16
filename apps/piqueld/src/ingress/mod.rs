@@ -8,6 +8,7 @@ mod configuration;
 mod gateway;
 mod node;
 mod records;
+mod traffic;
 mod tunnel;
 mod wire;
 
@@ -36,6 +37,7 @@ use std::{
 };
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
+pub use traffic::Traffic;
 pub use wire::ResponseError;
 use wire::UnixApi;
 
@@ -146,6 +148,9 @@ pub struct Ingress {
     /// Public hostname whose webhook path the gateway forwards to the
     /// daemon's webhook socket, `ingress.webhook_hostname`.
     webhooks: Option<Hostname>,
+    /// Whether the gateway logs each routed request to the daemon, which
+    /// counts it, `ingress.traffic`.
+    traffic: bool,
     #[cfg(test)]
     issuer: Option<serde_json::Value>,
     #[cfg(test)]
@@ -212,6 +217,7 @@ impl Ingress {
             withdrawing: parking_lot::Mutex::default(),
             gateway_converged: std::sync::atomic::AtomicBool::new(false),
             webhooks: None,
+            traffic: false,
             #[cfg(test)]
             issuer: None,
             #[cfg(test)]
@@ -237,7 +243,37 @@ impl Ingress {
         .with_private(&config.ingress.private)
         .with_tunnel(&config.ingress.tunnel)
         .with_public_addresses(&config.ingress.public_addresses)
-        .with_webhooks(config.ingress.webhook_hostname.clone()))
+        .with_webhooks(config.ingress.webhook_hostname.clone())
+        .with_traffic(config.ingress.traffic))
+    }
+
+    /// Counts the requests each route serves when `traffic` is set.
+    #[must_use]
+    pub fn with_traffic(mut self, traffic: bool) -> Self {
+        self.traffic = traffic;
+        self
+    }
+
+    /// Whether the gateway logs each routed request for the daemon to count:
+    /// `ingress.traffic`, while ingress is enabled.
+    #[must_use]
+    pub fn counts_traffic(&self) -> bool {
+        self.traffic && self.enabled
+    }
+
+    /// Binds the socket the gateway writes its access log to, while it
+    /// [counts traffic](Self::counts_traffic), and returns its reader.
+    ///
+    /// # Errors
+    /// Returns directory preparation or binding errors.
+    pub async fn bind_traffic(&self) -> Result<Option<Traffic>> {
+        if !self.counts_traffic() {
+            return Ok(None);
+        }
+        let listener = Self::bind_control(&self.directory, traffic::TRAFFIC_SOCKET)
+            .await
+            .context("failed to bind the gateway's traffic socket")?;
+        Ok(Some(Traffic::new(listener, Arc::clone(&self.store))))
     }
 
     /// Points direct public routes' managed A/AAAA records at `addresses`.

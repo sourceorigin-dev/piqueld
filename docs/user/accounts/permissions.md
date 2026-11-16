@@ -107,7 +107,7 @@ its deployments.
 | `previews:deploy` | Creating, deploying and restoring [previews](#let-agents-and-ci-manage-previews), including from a local worktree, and reading their logs |
 | `previews:delete` | Deleting and pruning previews |
 | `secrets:write` | Storing, regenerating and deleting secret values, and choosing which environments may mount them |
-| `logs:read` | Reading runtime, build and job logs, which may contain sensitive output |
+| `logs:read` | Reading runtime, build and job logs, which may contain sensitive output, and the [traffic](../operations/traffic.md) of the application's routes |
 | `apps:exec` | Running commands in running containers, with `piquelctl app exec`, `preview exec` and the dashboard's **Terminal** tab. A command reaches everything its container can, including secret values |
 | `events:read` | Reading the application's history, diagnostics and deployment analytics |
 

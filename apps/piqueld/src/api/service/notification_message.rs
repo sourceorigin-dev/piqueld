@@ -122,7 +122,7 @@ impl Notification<'_> {
             "color": heading.color,
             "fields": fields,
             "footer": {"text": format!("piqueld · {host}")},
-            "timestamp": rfc3339(self.event.created_at_ms),
+            "timestamp": piqueld_core::observability::UtcTime(self.event.created_at_ms).rfc3339(),
         });
         if let Some(path) = self.link() {
             embed["url"] = json!(format!("{dashboard}{path}"));
@@ -167,45 +167,10 @@ fn truncate(value: &str, max: usize) -> String {
     cut
 }
 
-/// `ms` since the Unix epoch as an RFC 3339 UTC timestamp, such as
-/// `2026-10-22T12:33:42.269Z`, which Discord shows in each reader's time zone.
-fn rfc3339(ms: i64) -> String {
-    let (days, time) = (ms.div_euclid(86_400_000), ms.rem_euclid(86_400_000));
-    // Howard Hinnant's `civil_from_days`.
-    let days = days + 719_468;
-    let era = days.div_euclid(146_097);
-    let day_of_era = days.rem_euclid(146_097);
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_index = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
-    let month = if month_index < 10 {
-        month_index + 3
-    } else {
-        month_index - 9
-    };
-    let year = year_of_era + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
-        time / 3_600_000,
-        time / 60_000 % 60,
-        time / 1000 % 60,
-        time % 1000
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use piqueld_core::{ApplicationId, EnvironmentId, observability::Diagnostic};
-
-    #[test]
-    fn timestamps_are_rfc3339_utc() {
-        assert_eq!(rfc3339(0), "1970-01-01T00:00:00.000Z");
-        assert_eq!(rfc3339(951_782_400_000), "2000-02-29T00:00:00.000Z");
-        assert_eq!(rfc3339(1_792_672_425_063), "2026-10-22T12:33:45.063Z");
-    }
 
     /// A failure names its application and environment, with the next step,
     /// and links to its diagnostic; only the category message can ping.

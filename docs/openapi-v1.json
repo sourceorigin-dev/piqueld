@@ -6354,6 +6354,83 @@
         ],
         "type": "object"
       },
+      "Envelope_TrafficReport": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "description": "Requests an environment's routes served over a window, as hourly totals\nthe gateway counted. Requests to redirect routes, and the gateway's own\nprobes, aren't counted.",
+            "properties": {
+              "bucket_ms": {
+                "description": "Length of each `series` point in ms: an hour for windows of up to two\ndays, a day for longer ones.",
+                "format": "int64",
+                "type": "integer"
+              },
+              "counting": {
+                "description": "Whether the daemon counts traffic now, with `ingress.enabled` and\n`ingress.traffic` set. Counts recorded before stay readable.",
+                "type": "boolean"
+              },
+              "pages": {
+                "description": "The 20 most viewed pages, by path without the query, most views\nfirst. Pages are counted per UTC day, so they cover the whole days the\nwindow touches.",
+                "items": {
+                  "$ref": "#/components/schemas/TrafficRank"
+                },
+                "type": "array"
+              },
+              "referrers": {
+                "description": "The 20 other sites whose links led to the most page views, by\nhostname, most views first, over the same days as `pages`.",
+                "items": {
+                  "$ref": "#/components/schemas/TrafficRank"
+                },
+                "type": "array"
+              },
+              "routes": {
+                "description": "Totals of each route that served requests, most requests first.",
+                "items": {
+                  "$ref": "#/components/schemas/RouteTraffic"
+                },
+                "type": "array"
+              },
+              "series": {
+                "description": "Totals of each `bucket_ms` of the window, oldest first, without gaps.",
+                "items": {
+                  "$ref": "#/components/schemas/TrafficPoint"
+                },
+                "type": "array"
+              },
+              "since_ms": {
+                "description": "Start of the window, inclusive, in Unix ms: the start of its first\npoint.",
+                "format": "int64",
+                "type": "integer"
+              },
+              "totals": {
+                "$ref": "#/components/schemas/TrafficCounts",
+                "description": "Totals over the window."
+              },
+              "until_ms": {
+                "description": "End of the window, exclusive, in Unix ms: the end of the hour the\nrequested end falls in, since counts are hourly.",
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "since_ms",
+              "until_ms",
+              "bucket_ms",
+              "counting",
+              "totals",
+              "series",
+              "routes",
+              "pages",
+              "referrers"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "Envelope_Vec_DeletedPreview": {
         "description": "Successful API response envelope.",
         "properties": {
@@ -11158,6 +11235,29 @@
           }
         ]
       },
+      "RouteTraffic": {
+        "description": "The totals of one route of an environment.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/TrafficCounts",
+            "description": "The route's totals over the window."
+          },
+          "hostname": {
+            "description": "The route's hostname, such as `app.example.com` or `*.example.com`.",
+            "type": "string"
+          },
+          "service": {
+            "description": "The service the route sends requests to.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "hostname",
+          "counts"
+        ],
+        "type": "object"
+      },
       "RouteUrl": {
         "allOf": [
           {
@@ -12590,6 +12690,162 @@
         },
         "required": [
           "branch"
+        ],
+        "type": "object"
+      },
+      "TrafficCounts": {
+        "description": "Request totals.",
+        "properties": {
+          "bytes_sent": {
+            "description": "Response body bytes sent.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "client_errors": {
+            "description": "Requests answered with a 4xx status.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "mean_duration_ms": {
+            "description": "Mean time to answer a request, in ms; `None` without requests.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "page_views": {
+            "description": "Successful requests for HTML pages from browsers, not bots.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "requests": {
+            "description": "Requests served, bots' included.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "server_errors": {
+            "description": "Requests answered with a 5xx status.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "visitors": {
+            "description": "Distinct browsers with a page view, each counted once a day per\nroute, in the hour of their first page view that day, so returning\nones count again each day: an estimate, from their address and user\nagent.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requests",
+          "page_views",
+          "visitors",
+          "client_errors",
+          "server_errors",
+          "bytes_sent"
+        ],
+        "type": "object"
+      },
+      "TrafficPoint": {
+        "description": "The totals of one point of a [`TrafficReport`]'s series.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/TrafficCounts",
+            "description": "Totals from `start_ms` until the next point."
+          },
+          "start_ms": {
+            "description": "Start of the point, in Unix ms.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_ms",
+          "counts"
+        ],
+        "type": "object"
+      },
+      "TrafficRank": {
+        "description": "One page or referring site, and its page views.",
+        "properties": {
+          "page_views": {
+            "description": "Page views over the window.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "value": {
+            "description": "A path, such as `/play`, or a hostname, such as `news.example.com`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "page_views"
+        ],
+        "type": "object"
+      },
+      "TrafficReport": {
+        "description": "Requests an environment's routes served over a window, as hourly totals\nthe gateway counted. Requests to redirect routes, and the gateway's own\nprobes, aren't counted.",
+        "properties": {
+          "bucket_ms": {
+            "description": "Length of each `series` point in ms: an hour for windows of up to two\ndays, a day for longer ones.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "counting": {
+            "description": "Whether the daemon counts traffic now, with `ingress.enabled` and\n`ingress.traffic` set. Counts recorded before stay readable.",
+            "type": "boolean"
+          },
+          "pages": {
+            "description": "The 20 most viewed pages, by path without the query, most views\nfirst. Pages are counted per UTC day, so they cover the whole days the\nwindow touches.",
+            "items": {
+              "$ref": "#/components/schemas/TrafficRank"
+            },
+            "type": "array"
+          },
+          "referrers": {
+            "description": "The 20 other sites whose links led to the most page views, by\nhostname, most views first, over the same days as `pages`.",
+            "items": {
+              "$ref": "#/components/schemas/TrafficRank"
+            },
+            "type": "array"
+          },
+          "routes": {
+            "description": "Totals of each route that served requests, most requests first.",
+            "items": {
+              "$ref": "#/components/schemas/RouteTraffic"
+            },
+            "type": "array"
+          },
+          "series": {
+            "description": "Totals of each `bucket_ms` of the window, oldest first, without gaps.",
+            "items": {
+              "$ref": "#/components/schemas/TrafficPoint"
+            },
+            "type": "array"
+          },
+          "since_ms": {
+            "description": "Start of the window, inclusive, in Unix ms: the start of its first\npoint.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/TrafficCounts",
+            "description": "Totals over the window."
+          },
+          "until_ms": {
+            "description": "End of the window, exclusive, in Unix ms: the end of the hour the\nrequested end falls in, since counts are hourly.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "since_ms",
+          "until_ms",
+          "bucket_ms",
+          "counting",
+          "totals",
+          "series",
+          "routes",
+          "pages",
+          "referrers"
         ],
         "type": "object"
       },
@@ -30488,6 +30744,114 @@
         },
         "summary": "Grants or revokes an environment's telemetry.",
         "x-piqueld-access": "telemetry:grant"
+      }
+    },
+    "/api/v1/environments/{id}/traffic": {
+      "get": {
+        "description": "The gateway counts the requests each route proxying to a service serves,\nwhile `ingress.traffic` is set, and keeps hourly totals for\n`retention.traffic_days`. The series has hourly points for windows of up\nto two days, and daily ones beyond. A window that ends before it starts,\nor spans more than 400 days, fails with 400 `traffic_query_invalid`.",
+        "operationId": "environmentTraffic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Start of the window in Unix ms; 30 days before its end by default.",
+            "in": "query",
+            "name": "since_ms",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "End of the window in Unix ms, exclusive; now by default.",
+            "in": "query",
+            "name": "until_ms",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only the routes to this service.",
+            "in": "query",
+            "name": "service",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only the route with this hostname, such as `*.example.com`.",
+            "in": "query",
+            "name": "hostname",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TrafficReport"
+                }
+              }
+            },
+            "description": "The environment's traffic"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Gets the traffic of an environment's routes.",
+        "x-piqueld-access": "logs:read"
       }
     },
     "/api/v1/events": {

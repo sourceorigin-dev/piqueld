@@ -412,6 +412,10 @@ pub struct DeploymentAnalytics {
 
 mod diagnostic;
 pub use diagnostic::{DeploymentFailure, DiagnosticCode};
+mod time;
+pub use time::UtcTime;
+mod traffic;
+pub use traffic::{RouteTraffic, TrafficCounts, TrafficPoint, TrafficRank, TrafficReport};
 
 #[cfg(test)]
 mod tests {

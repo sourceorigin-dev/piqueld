@@ -44,6 +44,9 @@ pub enum ApplicationError {
     /// Workload log bounds or service filter are invalid.
     #[error("invalid log query")]
     InvalidLogQuery,
+    /// A traffic window ends before it starts, or is too long.
+    #[error("invalid traffic query")]
+    InvalidTrafficQuery,
     /// The requested service has no running task to execute a command in.
     #[error("service has no running task")]
     ServiceNotRunning,

@@ -12,6 +12,7 @@ mod secrets;
 mod services;
 mod settings;
 mod terminal;
+mod traffic;
 mod variables;
 
 use super::format::timestamp;
@@ -313,11 +314,11 @@ impl EditorContext {
         })
     }
 
-    /// Whether the caller may not open tab `tab`: logs need `logs:read`, the
-    /// terminal `apps:exec`, and history `events:read`.
+    /// Whether the caller may not open tab `tab`: logs and traffic need
+    /// `logs:read`, the terminal `apps:exec`, and history `events:read`.
     fn tab_hidden(self, tab: &str) -> bool {
         match tab {
-            "Logs" => !self.can(AppPermission::LogsRead),
+            "Logs" | "Traffic" => !self.can(AppPermission::LogsRead),
             "Terminal" => !self.can(AppPermission::Exec),
             "Events" => !self.can(AppPermission::EventsRead),
             _ => false,
@@ -1487,6 +1488,15 @@ fn EnvironmentPage() -> impl IntoView {
                 view! {
                     <Show when={move || tabs.selected.get() == "Logs"}>
                         <ApplicationLogs />
+                    </Show>
+                },
+            )}
+        {tabs
+            .panel(
+                "Traffic",
+                view! {
+                    <Show when={move || tabs.selected.get() == "Traffic"}>
+                        <traffic::EnvironmentTraffic />
                     </Show>
                 },
             )}

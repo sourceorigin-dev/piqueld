@@ -27,11 +27,12 @@ pub const APPLICATION_TABS: [&str; 14] = [
 ];
 
 /// Tabs of environment and preview pages.
-pub const ENVIRONMENT_TABS: [&str; 6] = [
+pub const ENVIRONMENT_TABS: [&str; 7] = [
     "Overview",
     "Deployments",
     "Secrets",
     "Logs",
+    "Traffic",
     "Terminal",
     "Events",
 ];
@@ -43,9 +44,9 @@ pub enum Page {
     Application,
     /// One service's shared configuration.
     Service(String),
-    /// One environment's runtime, deployments, secrets, logs, terminal, and history.
+    /// One environment's runtime, deployments, secrets, logs, traffic, terminal, and history.
     Environment(String),
-    /// One preview's branch, runtime, deployments, secrets, logs, terminal, and history.
+    /// One preview's branch, runtime, deployments, secrets, logs, traffic, terminal, and history.
     Preview(String),
 }
 

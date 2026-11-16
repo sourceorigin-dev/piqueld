@@ -43,7 +43,7 @@ environments. Clicking anywhere on an environment's row opens its own page,
 `/dashboard/applications/<app>/environments/<environment>`, with a breadcrumb
 back to the application. Its Overview shows the runtime status, the environment's
 source, and renames or deletes the environment; its other tabs are Deployments,
-Secrets, Logs, Terminal, and Events. The environment's Secrets tab lists each secret the
+Secrets, Logs, [Traffic](operations/traffic.md), Terminal, and Events. The environment's Secrets tab lists each secret the
 manifest it deploys mounts and where the value comes from: generated for the
 environment, the application's secret store (with its version), missing from the
 store, which would fail the next deploy with `secret_missing`, not allowed by the

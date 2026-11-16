@@ -23,6 +23,14 @@ pub(crate) struct AnalyticsArgs {
     /// The environment of --app, by name or ID; required when it has several.
     #[arg(long, requires = "app")]
     env: Option<String>,
+    #[command(flatten)]
+    window: Window,
+}
+
+// A time window ending some time ago, shared with `env traffic`; `///` on
+// fields is user-facing help.
+#[derive(Debug, Args)]
+pub(crate) struct Window {
     /// Start this long ago, such as 24h or 7d; defaults to 30 days before the end.
     #[arg(long, value_parser = crate::cli::parse_duration)]
     since: Option<Duration>,
@@ -35,7 +43,7 @@ impl AnalyticsArgs {
     /// Prints the analytics, then warns when the window reaches before
     /// retained history.
     pub(crate) async fn run(&self, client: &Client, console: &mut Console) -> Result<()> {
-        let (since, until) = self.window()?;
+        let (since, until) = self.window.bounds()?;
         let selected = match &self.app {
             Some(application) => {
                 Some(environments::select(client, application, self.env.as_deref()).await?)
@@ -72,10 +80,12 @@ impl AnalyticsArgs {
         }
         Ok(())
     }
+}
 
+impl Window {
     /// The window's Unix millisecond bounds; `None` leaves the daemon's
     /// defaults, now and 30 days before the end.
-    fn window(&self) -> Result<(Option<i64>, Option<i64>)> {
+    pub(crate) fn bounds(&self) -> Result<(Option<i64>, Option<i64>)> {
         if let (Some(since), Some(until)) = (self.since, self.until)
             && since < until
         {
