@@ -188,6 +188,7 @@ pub(super) async fn stream(
         batch_size,
         after,
         pending: VecDeque::from(initial),
+        behind: checkpoint > after,
         checkpoint,
         done: false,
     };
@@ -218,6 +219,9 @@ struct Follow {
     pending: VecDeque<Event>,
     /// Newest event ID read, matching or not.
     checkpoint: i64,
+    /// Whether the last read moved on, so more may be stored: the stream
+    /// reads again without waiting for a write until one finds nothing new.
+    behind: bool,
     /// Whether a final message was sent.
     done: bool,
 }
@@ -246,6 +250,7 @@ impl Follow {
                         self.visible = visible;
                         self.pending.clear();
                         self.checkpoint = self.after;
+                        self.behind = true;
                     }
                     Ok(_) => {}
                     Err(Ended::Shutdown) => return None,
@@ -282,7 +287,9 @@ impl Follow {
             }
             // Woken for a recheck, the read is cheap; the loop rechecks
             // before sending anything it reads.
-            self.lease.wait(self.written.changed()).await;
+            if !self.behind {
+                self.lease.wait(self.written.changed()).await;
+            }
             tokio::time::sleep_until(self.read_at + PACE).await;
             self.read_at = tokio::time::Instant::now();
             match self
@@ -292,6 +299,7 @@ impl Follow {
             {
                 Ok((items, next)) => {
                     self.pending.extend(items);
+                    self.behind = next > self.checkpoint;
                     self.checkpoint = next;
                 }
                 Err(error) => {

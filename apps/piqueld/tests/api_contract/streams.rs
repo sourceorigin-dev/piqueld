@@ -220,6 +220,37 @@ async fn event_stream_replays_after_cursor_and_rejects_pruned_history() {
     assert_eq!(response.status, StatusCode::GONE);
 }
 
+/// An event stream replays history a batch at a time, without waiting for
+/// a write between batches.
+#[tokio::test]
+async fn event_stream_replays_its_whole_backlog_in_small_batches() {
+    let temp = tempfile::tempdir().unwrap();
+    let api = AcceptanceApi::start(&temp).await;
+    let app = api.deploy().await;
+    api.finish_operation(&app.operation_id, None).await;
+    let stored = api
+        .client
+        .events(None, None, None, false, None, 100)
+        .await
+        .unwrap()
+        .items;
+    assert!(stored.len() > 2, "{stored:?}");
+    let response = api
+        .router()
+        .open(request("/api/v1/events/stream?limit=1"))
+        .await;
+    let mut body = response.into_body();
+    let last = format!(
+        "id: v1:{}",
+        stored.iter().map(|event| event.id).max().unwrap()
+    );
+    let replayed =
+        tokio::time::timeout(Duration::from_secs(2), read_stream(&mut body, Some(&last)))
+            .await
+            .expect("the stream replays every stored event without a write");
+    assert_eq!(replayed.matches("event: event").count(), stored.len());
+}
+
 /// A timeline stream sends the operation's whole timeline, then sends it
 /// again as soon as an event changes it.
 #[tokio::test]
