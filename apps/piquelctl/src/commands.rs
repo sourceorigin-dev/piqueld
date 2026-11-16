@@ -805,7 +805,10 @@ struct TimelineFollower<'a> {
 enum TimelineSource {
     /// No stream is open: the next read opens one.
     Closed,
-    Streaming(TimelineStream),
+    /// A stream, ended unless it sends anything, even a keep-alive, by this
+    /// instant: kept across reads cancelled before it, so frequent waits
+    /// don't keep a stale stream open.
+    Streaming(TimelineStream, time::Instant),
     /// Polling instead; the next poll is due at this instant.
     Polling(time::Instant),
 }
@@ -842,19 +845,24 @@ impl<'a> TimelineFollower<'a> {
                             self.source = TimelineSource::Polling(time::Instant::now());
                         }
                         opened => match wait.read(opened)? {
-                            Some(stream) => self.source = TimelineSource::Streaming(stream),
+                            Some(stream) => {
+                                self.source = TimelineSource::Streaming(
+                                    stream,
+                                    time::Instant::now() + Self::IDLE,
+                                );
+                            }
                             None => wait.pause().await,
                         },
                     }
                     continue;
                 }
                 // Silence past the keep-alives counts as the stream ending.
-                TimelineSource::Streaming(stream) => {
-                    match time::timeout(Self::IDLE, stream.next())
-                        .await
-                        .ok()
-                        .flatten()
-                    {
+                TimelineSource::Streaming(stream, idle) => {
+                    let received = time::timeout_at(*idle, stream.next()).await.ok().flatten();
+                    if matches!(received, Some(Ok(_))) {
+                        *idle = time::Instant::now() + Self::IDLE;
+                    }
+                    match received {
                         // A keep-alive.
                         Some(Ok(None)) => continue,
                         Some(Ok(Some(timeline))) => Ok(timeline),
@@ -876,7 +884,7 @@ impl<'a> TimelineFollower<'a> {
                 return Ok(timeline);
             }
             // The stream ends after a failure.
-            if matches!(self.source, TimelineSource::Streaming(_)) {
+            if matches!(self.source, TimelineSource::Streaming(..)) {
                 self.source = TimelineSource::Closed;
             }
             wait.pause().await;
