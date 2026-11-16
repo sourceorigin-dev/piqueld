@@ -123,15 +123,22 @@ fn traffic(report: TrafficReport, measure: RwSignal<Measure>) -> AnyView {
                 <label class="field traffic-measure">
                     <span>"Show"</span>
                     // The report, and this picker with it, is drawn again on
-                    // each refresh, so it shows the measure kept outside.
-                    <select prop:value={move || measure.get().label()} on:change={move |e| {
+                    // each refresh, so each option says whether it is the
+                    // measure kept outside.
+                    <select on:change={move |e| {
                         let chosen = event_target_value(&e);
                         if let Some(choice) = Measure::ALL.into_iter().find(|m| m.label() == chosen) {
                             measure.set(choice);
                         }
                     }}>
                         {Measure::ALL
-                            .map(|choice| view! { <option value={choice.label()}>{choice.label()}</option> })
+                            .map(|choice| {
+                                view! {
+                                    <option value={choice.label()} prop:selected={move || measure.get() == choice}>
+                                        {choice.label()}
+                                    </option>
+                                }
+                            })
                             .collect_view()}
                     </select>
                 </label>

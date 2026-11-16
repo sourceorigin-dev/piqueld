@@ -368,9 +368,10 @@ mod tests {
         assert!(!line("/missing", 404, BROWSER, "text/html").page_view());
         let bot = r#""User-Agent":["Googlebot/2.1"],"Sec-Fetch-Dest":["document"]"#;
         assert!(!line("/", 200, bot, "text/html").page_view());
-        // Without `Sec-Fetch-Dest`, an HTML answer is a page.
+        // Prefetches may never be seen.
         let prefetch = format!(r#"{BROWSER},"Sec-Purpose":["prefetch"]"#);
         assert!(!line("/", 200, &prefetch, "text/html").page_view());
+        // Without `Sec-Fetch-Dest`, an HTML answer is a page.
         let old = r#""User-Agent":["Mozilla/5.0"]"#;
         assert!(line("/", 200, old, "text/html; charset=utf-8").page_view());
         assert!(!line("/app.js", 200, old, "text/javascript").page_view());

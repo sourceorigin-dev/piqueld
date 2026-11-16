@@ -35,9 +35,9 @@ traffic = false
 In the dashboard, open the environment's page and select the **Traffic** tab.
 Choose the **Period** and, to see one service's routes only, the **Service**.
 
-- The tiles show the **Visitors a day** on average over the period, with
-  their sum, and the period's **Page views**, **Requests** with their server
-  errors, and **Mean response** time.
+- The tiles show the **Visitors a day** on average, from the period's first
+  request, with their sum, and the period's **Page views**, **Requests** with
+  their server errors, and **Mean response** time.
 - The chart shows visitors per hour for a period of 24 hours, and per day for
   longer ones. Choose page views or requests in **Show**. Point at a column,
   or focus it with the keyboard, to read all its counts.
@@ -53,7 +53,7 @@ With `piquelctl`:
 $ piquelctl env traffic sc2dle production --since 3d
 Environment: sc2dle / production
 Window: 2026-11-13 to 2026-11-16 UTC
-Visitors a day: 426 on average (1707 over the window)
+Visitors a day: 475 on average (1707 over the window)
 Page views: 3677
 Requests: 27504 (350 client errors, 4 server errors)
 Mean response: 15 ms

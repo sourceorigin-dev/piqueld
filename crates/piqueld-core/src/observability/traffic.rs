@@ -34,14 +34,64 @@ pub struct TrafficReport {
 }
 
 impl TrafficReport {
-    /// Visitors on an average day of the window. `totals.visitors` adds up
-    /// each day's, so a person coming back every day of a 30-day window
-    /// counts 30 times there, once here.
+    /// Visitors on an average day, to the nearest one, from the first point
+    /// with requests, so days before counting started or after retention
+    /// pruned them don't lower it, until the end of the window, and over at
+    /// least a day. `totals.visitors` adds up each day's, so a person coming
+    /// back every day of a 30-day window counts 30 times there, once here.
     #[must_use]
     pub fn daily_visitors(&self) -> i64 {
         const DAY_MS: i64 = 86_400_000;
-        let days = (self.until_ms - self.since_ms + DAY_MS - 1) / DAY_MS;
-        self.totals.visitors / days.max(1)
+        let first = self
+            .series
+            .iter()
+            .find(|point| point.counts.requests > 0)
+            .map_or(self.since_ms, |point| point.start_ms);
+        let length = (self.until_ms - first).max(DAY_MS);
+        (self.totals.visitors * DAY_MS + length / 2) / length
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TrafficCounts, TrafficPoint, TrafficReport};
+
+    const HOUR_MS: i64 = 3_600_000;
+
+    /// A report from 0 until `hours`, with `visitors` in all, whose first
+    /// requests came `from` hours in.
+    fn report(hours: i64, visitors: i64, from: i64) -> TrafficReport {
+        let counts = |requests| TrafficCounts {
+            requests,
+            ..TrafficCounts::default()
+        };
+        TrafficReport {
+            until_ms: hours * HOUR_MS,
+            totals: TrafficCounts {
+                visitors,
+                ..TrafficCounts::default()
+            },
+            series: (0..hours)
+                .map(|hour| TrafficPoint {
+                    start_ms: hour * HOUR_MS,
+                    counts: counts(i64::from(hour >= from)),
+                })
+                .collect(),
+            ..TrafficReport::default()
+        }
+    }
+
+    #[test]
+    fn daily_visitors_average_over_the_counted_part_of_the_window() {
+        // A 24-hour period starts on the hour, so it runs a little longer.
+        assert_eq!(report(24, 300, 0).daily_visitors(), 300);
+        assert_eq!(report(25, 300, 0).daily_visitors(), 288);
+        assert_eq!(report(30 * 24, 9_000, 0).daily_visitors(), 300);
+        assert_eq!(report(30 * 24, 20, 0).daily_visitors(), 1);
+        // Days before the first request don't count; at least a day does.
+        assert_eq!(report(30 * 24, 1_500, 25 * 24).daily_visitors(), 300);
+        assert_eq!(report(1, 40, 0).daily_visitors(), 40);
+        assert_eq!(report(30 * 24, 0, 30 * 24).daily_visitors(), 0);
     }
 }
 
