@@ -413,11 +413,12 @@ Then check that the gateway stopped, as [above](#turn-the-gateway-off).
   the route from the server itself, so a router that can't loop the server's
   public address back to it keeps the route `pending`, even when it works from
   elsewhere. When the route's [DNS state](dns-records.md#check-that-it-works)
-  is `managed` or `pending`, the check asks the zone's name servers for the
+  is `managed` or `pending`, the check asks the zone's nameservers for the
   hostname's addresses, over TCP port 53, so the server must be allowed to
   reach them. A hosts file entry or local DNS override then doesn't change
-  where the check connects. Otherwise it asks the server's resolver, which may still hold an old
-  answer: on systemd-resolved, run `resolvectl flush-caches`.
+  where the check connects. Otherwise it asks the server's resolver, which
+  may still hold an old answer: on systemd-resolved, run
+  `resolvectl flush-caches`.
 - **`Waiting for the gateway configuration to be applied`.** Check **HTTPS
   ingress** in **System status**. The gateway needs Docker Engine 28+ and,
   unless public routes use a

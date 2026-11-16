@@ -374,7 +374,7 @@ zone's authoritative nameservers over TCP, without recursion, a cache or the
 hosts file. An answer the host's resolver cached before piqueld wrote the
 records, such as NXDOMAIN, then can't hold a working route `pending`. In any
 other state, including before a records pass has seen the route (after a
-restart, or between the gateway applying a new route and the next pass), the
+restart, or when the gateway applies a new route before a pass has run), the
 host's resolver answers.
 Finding the nameservers still asks the host's resolver for the zone's NS
 records. Resolving and probing share a 10-second deadline.
