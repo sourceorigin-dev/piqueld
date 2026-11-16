@@ -26,7 +26,7 @@ use piqueld_core::{
 use piqueld_store::{Store, ingress::RoutingTable, now_ms};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -109,8 +109,6 @@ pub struct Ingress {
     /// Docker client used only for streaming image pulls, which needs
     /// Docker's socket only once it pulls.
     images: piqueld_docker::BollardDocker,
-    /// Public HTTPS client for route probes; never follows redirects or proxies.
-    client: reqwest::Client,
     store: Arc<Store>,
     /// Gateway writer lock serializing configuration and lifecycle changes.
     update: Mutex<()>,
@@ -189,7 +187,6 @@ impl Ingress {
             docker: UnixApi::new(socket.into(), request_timeout),
             images: piqueld_docker::BollardDocker::connect(socket)
                 .context("Docker socket is not UTF-8")?,
-            client: Self::probe_client().build()?,
             store,
             update: Mutex::new(()),
             requester: Mutex::new(None),
@@ -807,8 +804,7 @@ impl Ingress {
             if is_private {
                 self.probe_private(&hostname, &private.addresses).await
             } else {
-                self.probe_https(&self.client, &format!("https://{hostname}"))
-                    .await
+                self.probe_public(&hostname).await
             }
         }
         .await;
@@ -828,9 +824,29 @@ impl Ingress {
         }
     }
 
+    /// Verifies a public route at the addresses its DNS records hold, pinned so
+    /// the probe never reads this host's resolver cache; see [`Dns::resolve`].
+    async fn probe_public(&self, hostname: &Hostname) -> Result<()> {
+        let addresses: Vec<SocketAddr> = self
+            .certificates
+            .dns
+            .resolve(hostname)
+            .await?
+            .into_iter()
+            // Port 0 keeps the URL's port.
+            .map(|ip| SocketAddr::new(ip, 0))
+            .collect();
+        let client = Self::probe_client()
+            .resolve_to_addrs(hostname.as_str(), &addresses)
+            .build()?;
+        self.probe_https(&client, &format!("https://{hostname}"))
+            .await
+    }
+
     /// Verifies a private route without crossing the tailnet:
     ///
-    /// 1. Public DNS must answer exactly the apps node's tailnet addresses.
+    /// 1. Public DNS must answer exactly the apps node's tailnet addresses,
+    ///    resolved as [`Dns::resolve`] does.
     /// 2. The private listener, reached over the edge network with a PROXY
     ///    header naming a tailnet client and the hostname as SNI, must serve
     ///    a trusted certificate and this installation's probe endpoint.
@@ -839,11 +855,7 @@ impl Ingress {
             .iter()
             .filter_map(|address| address.parse().ok())
             .collect();
-        let resolved: BTreeSet<IpAddr> = tokio::net::lookup_host((hostname.as_str(), 443))
-            .await
-            .with_context(|| format!("resolve {hostname}"))?
-            .map(|address| address.ip())
-            .collect();
+        let resolved = self.certificates.dns.resolve(hostname).await?;
         anyhow::ensure!(
             !expected.is_empty() && resolved == expected,
             "DNS answers {resolved:?} instead of the apps node's addresses {expected:?}"

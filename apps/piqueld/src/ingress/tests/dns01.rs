@@ -13,7 +13,7 @@ use hyper::Method;
 use piqueld_config::AcmeConfig;
 use piqueld_config::dns::{
     Dns,
-    provider::{DnsProvider, Record, challtestsrv::Challtestsrv},
+    provider::{DnsProvider, DnsProviderConfig, Record, challtestsrv::Challtestsrv},
 };
 use piqueld_core::{
     event::Event,
@@ -22,7 +22,12 @@ use piqueld_core::{
 };
 use piqueld_store::ingress::AcmeChallenge;
 use serde_json::json;
-use std::{collections::BTreeSet, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeSet,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 use tokio_util::sync::CancellationToken;
 
 const PEBBLE_IMAGE: &str = "ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199";
@@ -39,6 +44,19 @@ fn hosts(names: &[&str]) -> BTreeSet<Hostname> {
         .iter()
         .map(|name| Hostname::parse(*name).unwrap())
         .collect()
+}
+
+/// The provider writing into `challtestsrv`, which serves `example.test`.
+fn challtestsrv() -> Challtestsrv {
+    Challtestsrv {
+        management: format!("http://127.0.0.1:{}", port("PIQUELD_CHALLTESTSRV_API_PORT")),
+        zones: hosts(&["example.test"]).into_iter().collect(),
+    }
+}
+
+/// `challtestsrv`'s DNS server, the zone's only nameserver.
+fn challtestsrv_dns() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], port("PIQUELD_CHALLTESTSRV_DNS_PORT")))
 }
 
 fn routes(names: &[&str]) -> BTreeSet<RouteHostname> {
@@ -162,19 +180,12 @@ impl Scenario {
 
     /// A second manager of this scenario's gateway, issuing from Pebble.
     fn pebble_ingress(&self, root: &std::path::Path) -> Ingress {
-        let mut dns = Dns::new(vec![
-            DnsProvider::Challtestsrv(Challtestsrv {
-                management: format!("http://127.0.0.1:{}", port("PIQUELD_CHALLTESTSRV_API_PORT")),
-                zones: hosts(&["example.test"]).into_iter().collect(),
-            })
-            .into(),
-        ])
-        .unwrap();
+        let mut dns = Dns::new(vec![DnsProvider::Challtestsrv(challtestsrv()).into()]).unwrap();
         // One nameserver whose first address refuses connections, like an
         // IPv6 address on an IPv4-only host: its second address answers.
         dns.nameservers = Some(vec![vec![
             SocketAddr::from(([127, 0, 0, 1], 1)),
-            SocketAddr::from(([127, 0, 0, 1], port("PIQUELD_CHALLTESTSRV_DNS_PORT"))),
+            challtestsrv_dns(),
         ]]);
         let mut ingress = Ingress::new(
             true,
@@ -460,6 +471,7 @@ impl Scenario {
         let root_path = self.directory.path().join("pebble.minica.pem");
         tokio::fs::write(&root_path, &root).await.unwrap();
         let ingress = self.pebble_ingress(&root_path);
+        Self::route_checks_resolve_authoritatively().await;
         let admin = self.deploy_private_route().await;
         let desired = routes(&["admin.example.test", "www.example.test", "example.test"]);
         let now = piqueld_store::now_ms();
@@ -769,6 +781,36 @@ impl Scenario {
             [] as [String; 0]
         );
         assert_eq!(ingress.store.acme_challenges().await.unwrap(), []);
+    }
+
+    /// While a provider manages a zone's records, route checks resolve its
+    /// hostnames on the zone's nameserver, `challtestsrv`, so they find
+    /// records the host's resolver has no answer for, as when it cached
+    /// NXDOMAIN before piqueld published them.
+    async fn route_checks_resolve_authoritatively() {
+        let provider = challtestsrv();
+        let mut dns = Dns::new(vec![DnsProviderConfig {
+            provider: DnsProvider::Challtestsrv(provider.clone()),
+            manage_records: true,
+        }])
+        .unwrap();
+        dns.nameservers = Some(vec![vec![challtestsrv_dns()]]);
+        dns.discover().await;
+        let addresses: [IpAddr; 2] = ["192.0.2.7".parse().unwrap(), "2001:db8::7".parse().unwrap()];
+        provider
+            .answer(dns.http(), "fresh.example.test", &addresses)
+            .await;
+        assert!(
+            tokio::net::lookup_host(("fresh.example.test", 0))
+                .await
+                .is_err(),
+            "the system resolver must have no answer"
+        );
+        let hostname = Hostname::parse("fresh.example.test").unwrap();
+        assert_eq!(
+            dns.resolve(&hostname).await.unwrap(),
+            BTreeSet::from(addresses)
+        );
     }
 
     /// Unneeded certificates are kept until they expire, then deleted.

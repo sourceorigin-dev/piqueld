@@ -4,6 +4,7 @@
 use super::{ApiError, Found, Provider, Record, RecordId, Zone, send};
 use piqueld_core::manifest::Hostname;
 use serde_json::json;
+use std::net::IpAddr;
 
 /// A `challtestsrv` management API serving fixed zones.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -43,6 +44,24 @@ impl Challtestsrv {
         self.manage(http, endpoint, &json!({"host":format!("{name}.")}))
             .await
             .unwrap();
+    }
+
+    /// Answers A and AAAA queries for `name` with `addresses`.
+    ///
+    /// # Panics
+    /// If `challtestsrv` refuses the change.
+    pub async fn answer(&self, http: &reqwest::Client, name: &str, addresses: &[IpAddr]) {
+        let (ipv4, ipv6): (Vec<IpAddr>, Vec<IpAddr>) =
+            addresses.iter().partition(|ip| ip.is_ipv4());
+        for (endpoint, family) in [("add-a", ipv4), ("add-aaaa", ipv6)] {
+            self.manage(
+                http,
+                endpoint,
+                &json!({"host":format!("{name}."),"addresses":family}),
+            )
+            .await
+            .unwrap();
+        }
     }
 }
 

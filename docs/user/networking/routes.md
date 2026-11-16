@@ -412,7 +412,11 @@ Then check that the gateway stopped, as [above](#turn-the-gateway-off).
   other, and that ports 80 and 443 are open to the internet. piqueld checks
   the route from the server itself, so a router that can't loop the server's
   public address back to it keeps the route `pending`, even when it works from
-  elsewhere.
+  elsewhere. When a provider
+  [manages the zone's records](dns-records.md), the check asks the zone's
+  name servers for the hostname's addresses. Otherwise it asks the server's
+  resolver, which may still hold an old answer: on systemd-resolved, run
+  `resolvectl flush-caches`.
 - **`Waiting for the gateway configuration to be applied`.** Check **HTTPS
   ingress** in **System status**. The gateway needs Docker Engine 28+ and,
   unless public routes use a
