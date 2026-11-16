@@ -35,14 +35,15 @@ impl Scenario {
         let _servers = self.traffic_backend();
         let original = self.gateway.caddy.get("/config/").await.unwrap();
         let mut configuration = original.clone();
-        for route in configuration["apps"]["http"]["servers"]["public"]["routes"]
+        // Counted routes tag their requests before proxying them.
+        let handlers = configuration["apps"]["http"]["servers"]["public"]["routes"]
             .as_array_mut()
             .unwrap()
-        {
-            if route["handle"][0]["handler"] == "reverse_proxy" {
-                route["handle"][0]["upstreams"][0]["dial"] =
-                    "unix//control/test-backend.sock".into();
-            }
+            .iter_mut()
+            .filter_map(|route| route["handle"].as_array_mut())
+            .flatten();
+        for handler in handlers.filter(|handler| handler["handler"] == "reverse_proxy") {
+            handler["upstreams"][0]["dial"] = "unix//control/test-backend.sock".into();
         }
         self.gateway
             .caddy

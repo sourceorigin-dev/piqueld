@@ -193,6 +193,10 @@ and deleting the application removes them. Event streaming detects
 retention gaps conservatively across both scopes. Deleting an application's
 history intentionally removes that data rather than exposing deletion tombstones.
 
+The traffic the gateway counts is kept for `retention.traffic_days` and
+removed with its environment; see
+[traffic counting](ingress.md#traffic-counting).
+
 ## API and dashboard
 
 The API reference's [event history](../../user/reference/api.md#event-history)

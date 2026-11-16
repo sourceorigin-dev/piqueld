@@ -43,10 +43,16 @@
 //! A wildcard host matches every name one label below its parent, except
 //! the exact hostnames of any listener: exact routes, and the webhook and
 //! dashboard hostnames, always win, so a wildcard never captures them.
+//!
+//! While the daemon [counts traffic](Ingress::counts_traffic), the HTTPS and
+//! tunnel servers log each request to its traffic socket, and each route
+//! proxying to a service tags its requests with the environment, service
+//! and route hostname the daemon counts them under (see `traffic`).
 
 use super::{
     DASHBOARD_SOCKET, Ingress, WEBHOOK_SOCKET,
     node::{PRIVATE_HTTP_PORT, PRIVATE_HTTPS_PORT, TAILNET_RANGES},
+    traffic::{ACCESS_LOGGER, TRAFFIC_SOCKET},
     tunnel::TUNNEL_PORT,
 };
 use crate::api::{WEBHOOK_BODY_LIMIT, WEBHOOK_PATH};
@@ -156,12 +162,13 @@ impl Ingress {
                 let host = matcher(&route.hostname);
                 let mut probe = host.clone();
                 probe["path"] = json!(["/.well-known/piqueld-ingress"]);
-                let handler = Self::handler(id, route, tunnel.is_some());
+                let mut handle = self.traffic_tags(id, route);
+                handle.push(Self::handler(id, route, tunnel.is_some()));
                 listener.serve(&route.hostname, &host, [
                     // A bounded, side-effect-free endpoint lets the daemon distinguish
                     // this gateway from a different server behind an incorrect DNS record.
                     json!({"match":[probe],"handle":[{"handler":"static_response","body":self.instance_id}],"terminal":true}),
-                    json!({"match":[host],"handle":[handler],"terminal":true}),
+                    json!({"match":[host],"handle":handle,"terminal":true}),
                 ]);
             }
         }
@@ -226,6 +233,7 @@ impl Ingress {
             "admin":{"listen":"unix//control/admin.sock"},
             "apps":{"http":{"servers":servers}}
         });
+        self.log_traffic(&mut configuration);
         let pems = self.certificates.loaded();
         if !pems.is_empty() {
             configuration["apps"]["tls"]["certificates"]["load_pem"] = pems
@@ -239,6 +247,49 @@ impl Ingress {
         }
         configuration
     }
+    /// Makes `configuration`'s HTTPS and tunnel servers log each request to
+    /// the daemon's traffic socket, while it counts traffic. Times and
+    /// durations are integers, in ns. Caddy dials the socket again at most
+    /// every 10 seconds once it fails, such as while the daemon restarts,
+    /// writing to its output meanwhile, and starts without it rather than
+    /// refusing the configuration.
+    fn log_traffic(&self, configuration: &mut Value) {
+        if !self.counts_traffic() {
+            return;
+        }
+        let servers = &mut configuration["apps"]["http"]["servers"];
+        for server in ["public", "tunnel", "private"] {
+            if let Some(server) = servers.get_mut(server) {
+                server["logs"] = json!({"default_logger_name":"traffic"});
+            }
+        }
+        configuration["logging"] = json!({"logs":{
+            "default":{"exclude":[ACCESS_LOGGER]},
+            "traffic":{
+                "writer":{"output":"net","address":format!("unix//control/{TRAFFIC_SOCKET}"),"soft_start":true},
+                "encoder":{"format":"json","time_format":"unix_nano","duration_format":"nano"},
+                "include":[ACCESS_LOGGER]
+            }
+        }});
+    }
+
+    /// Handlers tagging the access log line of each request `route` of
+    /// environment `id` proxies, while the daemon counts traffic: requests
+    /// to redirects aren't counted.
+    fn traffic_tags(&self, id: &EnvironmentId, route: &ValidatedRoute) -> Vec<Value> {
+        match &route.target {
+            RouteTarget::Service { service, .. } if self.counts_traffic() => [
+                ("piqueld_environment", id.to_string()),
+                ("piqueld_service", service.to_string()),
+                ("piqueld_hostname", route.hostname.to_string()),
+            ]
+            .into_iter()
+            .map(|(key, value)| json!({"handler":"log_append","key":key,"value":value}))
+            .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// What serves `route` of environment `id`: a reverse proxy to its Swarm
     /// service, or its redirect. `tunnel` says whether public routes arrive
     /// through the Cloudflare Tunnel.

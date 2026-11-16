@@ -266,6 +266,11 @@ in
             example = "hooks.example.com";
             description = "Public hostname on which the gateway forwards GitHub push webhooks, and only them, to piqueld, for applications whose repository syncs with `webhook`. It gets a public route's DNS records, managed when a provider sets manage_records, and applications may not route it or its subdomains. Without ingress.enabled, the daemon still serves the webhook socket for another proxy running as its user. Restart piqueld to apply.";
           };
+          ingress.traffic = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Count the requests each route serves, for each environment's traffic page, while ingress.enabled is set. piqueld keeps hourly totals, never the requests themselves or visitors' addresses. Restart piqueld to apply.";
+          };
           dns.providers = lib.mkOption {
             type = lib.types.listOf (
               lib.types.submodule {
@@ -358,6 +363,11 @@ in
             type = lib.types.ints.unsigned;
             default = 90;
             description = "Days to retain daemon diagnostics independently of application deletion; zero disables pruning.";
+          };
+          retention.traffic_days = lib.mkOption {
+            type = lib.types.ints.unsigned;
+            default = 90;
+            description = "Days to retain each environment's traffic counts; zero disables pruning. Deleting an environment also removes them.";
           };
           retention.audit_days = lib.mkOption {
             type = lib.types.ints.unsigned;

@@ -596,6 +596,11 @@
       "rustType": "piqueld_core::api::Envelope<piqueld_core::observability::DeploymentAnalytics>"
     },
     {
+      "schema": "Envelope_TrafficReport",
+      "name": "EnvelopeTrafficReport",
+      "rustType": "piqueld_core::api::Envelope<piqueld_core::observability::TrafficReport>"
+    },
+    {
       "schema": "Envelope_Page_NotificationDelivery",
       "name": "EnvelopePageNotificationDelivery",
       "rustType": "piqueld_core::api::Envelope<piqueld_core::api::Page<piqueld_core::observability::NotificationDelivery>>"

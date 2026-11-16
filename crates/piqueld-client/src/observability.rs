@@ -112,6 +112,42 @@ impl fmt::Display for Elapsed {
     }
 }
 
+/// A time, in Unix ms, in UTC to the minute: `2026-11-16 13:05`, or only its
+/// day with `{:#}`: `2026-11-16`. `piquelctl` shows traffic windows this way.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UtcTime(pub i64);
+
+impl fmt::Display for UtcTime {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const DAY_MS: i64 = 86_400_000;
+        let (days, minutes) = (
+            self.0.div_euclid(DAY_MS),
+            self.0.rem_euclid(DAY_MS) / 60_000,
+        );
+        // The proleptic Gregorian date of a day count from 1970-01-01, in
+        // 400-year eras starting on March 1st, from Howard Hinnant's
+        // `civil_from_days`.
+        let days = days + 719_468;
+        let (era, day_of_era) = (days.div_euclid(146_097), days.rem_euclid(146_097));
+        let year_of_era =
+            (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+        let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let shifted_month = (5 * day_of_year + 2) / 153;
+        let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+        let month = if shifted_month < 10 {
+            shifted_month + 3
+        } else {
+            shifted_month - 9
+        };
+        let year = era * 400 + year_of_era + i64::from(month <= 2);
+        write!(formatter, "{year:04}-{month:02}-{day:02}")?;
+        if !formatter.alternate() {
+            write!(formatter, " {:02}:{:02}", minutes / 60, minutes % 60)?;
+        }
+        Ok(())
+    }
+}
+
 impl Client {
     /// Reads a filtered page of durable history.
     /// # Errors
@@ -206,6 +242,24 @@ impl Client {
             .data()
             .await
     }
+    /// Gets the traffic of environment `id`'s routes over a window, in Unix
+    /// ms: the daemon's default, the last 30 days, without bounds. `service`
+    /// and `hostname` narrow it to some routes.
+    /// # Errors
+    /// Returns transport, decoding or API errors.
+    pub async fn environment_traffic(
+        &self,
+        id: &str,
+        since: Option<i64>,
+        until: Option<i64>,
+        service: Option<&str>,
+        hostname: Option<&str>,
+    ) -> Result<TrafficReport, ClientError> {
+        self.generated
+            .environment_traffic(id, hostname, service, since, until)
+            .data()
+            .await
+    }
     /// Gets one page of webhook delivery outcomes, newest first.
     /// # Errors
     /// Returns invalid page size, transport, decoding or API errors.
@@ -278,7 +332,7 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use super::{Bytes, Elapsed, Uptime};
+    use super::{Bytes, Elapsed, Uptime, UtcTime};
     use std::time::Duration;
 
     #[test]
@@ -293,6 +347,19 @@ mod tests {
             (u64::MAX, "16777216.0 TiB"),
         ] {
             assert_eq!(Bytes(bytes).to_string(), text);
+        }
+    }
+
+    #[test]
+    fn utc_times_read_as_calendar_dates() {
+        for (ms, text, day) in [
+            (0, "1970-01-01 00:00", "1970-01-01"),
+            (951_782_400_000, "2000-02-29 00:00", "2000-02-29"),
+            (1_794_834_486_832, "2026-11-16 13:08", "2026-11-16"),
+            (-60_000, "1969-12-31 23:59", "1969-12-31"),
+        ] {
+            assert_eq!(UtcTime(ms).to_string(), text);
+            assert_eq!(format!("{:#}", UtcTime(ms)), day);
         }
     }
 

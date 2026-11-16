@@ -1,10 +1,12 @@
 //! Cached local measurements and bounded historical aggregates, alongside the
 //! diagnostic event history (`event`), notification destinations
-//! (`destinations`) and delivery (`notifications`).
+//! (`destinations`) and delivery (`notifications`), and the traffic the
+//! gateway counts (`traffic`).
 mod containers;
 mod destinations;
 mod event;
 mod notifications;
+pub mod traffic;
 
 pub use containers::ContainerCursors;
 pub use destinations::DestinationError;
@@ -24,6 +26,7 @@ impl Store {
     pub fn with_observability(mut self, config: &piqueld_config::DaemonConfig) -> Self {
         self.daemon_event_days = config.retention.daemon_event_days;
         self.audit_days = config.retention.audit_days;
+        self.traffic_days = config.retention.traffic_days;
         self
     }
     /// Returns a snapshot cached for five seconds to avoid expensive per-request scans.

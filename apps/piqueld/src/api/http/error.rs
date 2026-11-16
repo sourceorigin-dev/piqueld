@@ -595,6 +595,11 @@ impl From<ApplicationError> for ApiError {
                 "logs_query_invalid",
                 "Tail must be 1–1000 and time window 1–86400 seconds",
             ),
+            ApplicationError::InvalidTrafficQuery => Self::new(
+                StatusCode::BAD_REQUEST,
+                "traffic_query_invalid",
+                "The window must start at or after Unix ms 0, end after it starts, and span at most 400 days",
+            ),
             ApplicationError::ServiceNotRunning => Self::new(
                 StatusCode::CONFLICT,
                 "service_not_running",

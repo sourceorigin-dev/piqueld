@@ -125,7 +125,7 @@ neither), `build.unavailable`, `ingress.enabled`, `ingress.public_addresses`,
 `_file` settings), `ingress.private.dashboard_hostname` (which also puts the
 Tailscale CLI on the service's `PATH`), `ingress.tunnel.enabled`, `ingress.tunnel.credentials_file`
 (also a systemd credential, required while the tunnel is enabled),
-`ingress.webhook_hostname`, `dns.providers`, all three `reconciliation`
+`ingress.webhook_hostname`, `ingress.traffic`, `dns.providers`, all three `reconciliation`
 intervals/timeouts, the `retention` periods, both `build_history` limits,
 the five [`previews`](configuration.md#previews) limits,
 [`snapshots.max_upload_bytes`](configuration.md#local-snapshots),

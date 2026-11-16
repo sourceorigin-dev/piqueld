@@ -603,11 +603,15 @@ dedicated public hostname, for applications whose repository syncs with
 forwards to it while ingress is enabled. It is read once at startup. See
 [push webhooks](../networking/webhooks.md).
 
+`ingress.traffic`, on by default, makes the gateway count each route's
+requests, for each environment's traffic; it is read once at startup. See
+[seeing who visits an application](../operations/traffic.md).
+
 Gateway certificates, accepted configuration, and the private administration socket
 live below `<data_dir>/ingress`. Only dedicated subdirectories are mounted into
 Caddy; it receives neither the Docker socket nor the daemon API socket/database.
 The control mount also holds the webhook socket, which serves only webhook
-deliveries.
+deliveries, and the traffic socket the gateway writes its access log to.
 See [Serving an application over HTTPS](../networking/routes.md) for route
 status, and [managing DNS records](../networking/dns-records.md) for DNS.
 

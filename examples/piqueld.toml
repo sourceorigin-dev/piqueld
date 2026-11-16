@@ -66,6 +66,9 @@ public_addresses = []
 # Without ingress, the daemon still serves the webhook socket for another proxy
 # running as its user. Restart to apply.
 # webhook_hostname = "hooks.example.com"
+# Count the requests each route serves, for each environment's traffic page.
+# piqueld keeps hourly totals, never the requests or visitors' addresses.
+traffic = true
 
 # Private routes, served to the tailnet through a second tailnet node, the apps
 # node: a Tailscale container beside the gateway, named
@@ -119,6 +122,7 @@ finished_operation_days = 10
 event_days = 90
 daemon_event_days = 90
 audit_days = 365
+traffic_days = 90
 
 [build_history]
 # Metadata remains until application deletion; these limits apply only to output.

@@ -1198,6 +1198,11 @@ impl Ingress {
                 .container_logs(&name, &format!("tail=100&since={from}&until={now}"))
                 .await?;
             for line in lines {
+                // Access log lines reach the output only while the daemon's
+                // traffic socket is down; they aren't diagnostics.
+                if line.contains(super::traffic::ACCESS_LOGGER) {
+                    continue;
+                }
                 if name == self.name {
                     tracing::info!(gateway=%name,caddy=%line,"Caddy diagnostic");
                 } else if name == self.tunnel_name() {

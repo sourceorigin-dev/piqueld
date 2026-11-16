@@ -10140,6 +10140,82 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
+    /*Gets the traffic of an environment's routes
+
+    The gateway counts the requests each route proxying to a service serves,
+    while `ingress.traffic` is set, and keeps hourly totals for
+    `retention.traffic_days`. The series has hourly points for windows of up
+    to two days, and daily ones beyond. A window that ends before it starts,
+    or spans more than 400 days, fails with 400 `traffic_query_invalid`.
+
+    Sends a `GET` request to `/api/v1/environments/{id}/traffic`
+
+    Arguments:
+    - `id`
+    - `hostname`: Only the route with this hostname, such as `*.example.com`.
+    - `service`: Only the routes to this service.
+    - `since_ms`: Start of the window in Unix ms; 30 days before its end by default.
+    - `until_ms`: End of the window in Unix ms, exclusive; now by default.
+    */
+    pub async fn environment_traffic<'a>(
+        &'a self,
+        id: &'a str,
+        hostname: Option<&'a str>,
+        service: Option<&'a str>,
+        since_ms: Option<i64>,
+        until_ms: Option<i64>,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::observability::TrafficReport>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!(
+            "{}/api/v1/environments/{}/traffic",
+            self.baseurl,
+            encode_path(&id.to_string()),
+        );
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .get(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .query(&progenitor_client::QueryParam::new("hostname", &hostname))
+            .query(&progenitor_client::QueryParam::new("service", &service))
+            .query(&progenitor_client::QueryParam::new("since_ms", &since_ms))
+            .query(&progenitor_client::QueryParam::new("until_ms", &until_ms))
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "environment_traffic",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            400u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            404u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            503u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
     /*Lists structured events
 
     Oldest first unless `descending=true`. Follow `next_cursor` to load more.

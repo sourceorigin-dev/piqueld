@@ -289,6 +289,11 @@
           },
           "type": "array"
         },
+        "traffic": {
+          "default": true,
+          "description": "Count the requests each route serves, for each environment's\ntraffic page, while `ingress.enabled` is set. piqueld keeps hourly\ntotals, never the requests themselves or visitors' addresses.",
+          "type": "boolean"
+        },
         "tunnel": {
           "$ref": "#/definitions/TunnelConfig",
           "description": "The Cloudflare Tunnel that replaces ports 80 and 443 for public routes."
@@ -499,6 +504,13 @@
         "finished_operation_days": {
           "default": 10,
           "description": "Days finished operations are kept; `0` keeps them forever. Older ones\nare removed during reconciliation, except each environment's latest\noperation and those in its deployment history or with job cleanup\npending.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "traffic_days": {
+          "default": 90,
+          "description": "Days each environment's traffic counts are kept; `0` keeps them\nforever. Deleting an environment also removes its counts.",
           "format": "int64",
           "minimum": 0,
           "type": "integer"

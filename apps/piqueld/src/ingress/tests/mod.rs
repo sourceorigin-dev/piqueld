@@ -201,6 +201,10 @@ struct Scenario {
     client: reqwest::Client,
     tls_port: u16,
     plain_port: u16,
+    /// Stops counting the gateway's traffic, then flushes the counts.
+    counting: CancellationToken,
+    /// The traffic counter, until a step stops it.
+    counter: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Scenario {
@@ -234,7 +238,13 @@ impl Scenario {
                 .parse()
                 .unwrap(),
         );
+        // Counted from the start, so Caddy dials the traffic socket as soon
+        // as it loads its first configuration.
+        gateway.traffic = true;
         let gateway = Arc::new(gateway);
+        let counting = CancellationToken::new();
+        let traffic = gateway.bind_traffic().await.unwrap().unwrap();
+        let counter = tokio::spawn(traffic.run(counting.clone()));
         let sources = Arc::new(Sources::open(directory.path()).await.unwrap());
         let controller = Controller::new(Arc::clone(&docker), Arc::clone(&store), sources)
             .with_ingress(Arc::clone(&gateway));
@@ -272,6 +282,7 @@ impl Scenario {
             .resolve("two.example.test", "127.0.0.1:443".parse().unwrap())
             .resolve("www.example.test", "127.0.0.1:443".parse().unwrap())
             .resolve("three.example.test", "127.0.0.1:443".parse().unwrap())
+            .resolve("four.example.test", "127.0.0.1:443".parse().unwrap())
             .build()
             .unwrap();
         let scenario = Self {
@@ -285,6 +296,8 @@ impl Scenario {
             client,
             tls_port,
             plain_port,
+            counting,
+            counter: tokio::sync::Mutex::new(Some(counter)),
         };
         scenario.await_certificate("one.example.test").await;
         scenario
@@ -1051,6 +1064,75 @@ impl Scenario {
         );
     }
 
+    /// The gateway logs each request a route proxies to the daemon, which
+    /// counts it under the route's environment. Probes aren't counted, and
+    /// bots aren't visitors.
+    async fn count_routed_requests(&self) {
+        let id = deploy(
+            &self.store,
+            &self.controller,
+            application("four", "four.example.test", "<html>four</html>"),
+        )
+        .await;
+        self.await_certificate("four.example.test").await;
+        let url = format!("{}play?day=3", self.url("four.example.test"));
+        for _ in 0..3 {
+            let response = self
+                .client
+                .get(&url)
+                .header("User-Agent", "Mozilla/5.0 Firefox/150.0")
+                .header("Sec-Fetch-Dest", "document")
+                .header("Referer", "https://news.example.org/item?id=1")
+                .send()
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+        }
+        let bot = self.client.get(&url).header("User-Agent", "Googlebot/2.1");
+        assert!(bot.send().await.unwrap().status().is_success());
+        let probe = format!(
+            "{}.well-known/piqueld-ingress",
+            self.url("four.example.test")
+        );
+        self.client.get(probe).send().await.unwrap();
+        // Lines reach the daemon as Caddy writes them; stopping the counter
+        // flushes them.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        self.counting.cancel();
+        let counter = self.counter.lock().await.take().unwrap();
+        counter.await.unwrap();
+        let now = piqueld_store::now_ms();
+        let report = self
+            .store
+            .traffic(
+                &id,
+                piqueld_store::traffic::TrafficQuery {
+                    since_ms: now - 3_600_000,
+                    until_ms: now + 3_600_000,
+                    service: None,
+                    hostname: None,
+                },
+            )
+            .await
+            .unwrap();
+        let totals = &report.totals;
+        assert_eq!((totals.page_views, totals.visitors), (3, 1), "{report:?}");
+        // Waiting for the certificate sent HEAD requests too; they count as
+        // requests, never as page views.
+        assert!(totals.requests >= 4, "{report:?}");
+        assert_eq!(report.routes.len(), 1);
+        assert_eq!(
+            (
+                report.routes[0].service.as_str(),
+                report.routes[0].hostname.as_str()
+            ),
+            ("web", "four.example.test")
+        );
+        assert_eq!(report.pages[0].value, "/play");
+        assert_eq!(report.pages[0].page_views, 3);
+        assert_eq!(report.referrers[0].value, "news.example.org");
+    }
+
     async fn disable_and_restore_deployed_routes(&self) {
         let disabled = Arc::new(
             Ingress::new(
@@ -1277,6 +1359,7 @@ async fn ingress_caddy_routes_tls_network_changes_and_disable() {
     scenario.restart_without_daemon().await;
     Box::pin(scenario.repoint_after_backend_convergence()).await;
     scenario.forwarded_client_addresses().await;
+    scenario.count_routed_requests().await;
     scenario.disable_and_restore_deployed_routes().await;
 }
 
@@ -1726,6 +1809,72 @@ async fn networks_exposing_the_private_listener_are_detached_before_caddy_reload
     assert!(position(&format!("/networks/{overlap}/disconnect")) < load);
     assert!(position("/networks/unknown/disconnect") < load);
     assert!(load < position("/networks/stale/disconnect"));
+}
+
+#[tokio::test]
+async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
+    let (engine, ingress) = private_ingress().await;
+    let table: RoutingTable = [
+        (
+            EnvironmentId::parse("env-public").unwrap(),
+            routes(Visibility::Public, "www.example.com"),
+        ),
+        (
+            EnvironmentId::parse("env-private").unwrap(),
+            routes(Visibility::Private, "admin.example.com"),
+        ),
+    ]
+    .into();
+    let edge = ["172.20.0.0/16".to_owned()];
+    let build = |ingress: &Ingress| ingress.build_configuration(&table, &[], Some(&edge), None);
+
+    // Without counting, nothing is logged or tagged.
+    let configuration = build(&ingress);
+    assert!(configuration.get("logging").is_none());
+    let servers = &configuration["apps"]["http"]["servers"];
+    assert!(servers["public"].get("logs").is_none());
+    assert!(ingress.bind_traffic().await.unwrap().is_none());
+
+    let ingress = ingress.with_traffic(true);
+    let configuration = build(&ingress);
+    let servers = &configuration["apps"]["http"]["servers"];
+    for (server, environment, host) in [
+        ("public", "env-public", "www.example.com"),
+        ("private", "env-private", "admin.example.com"),
+    ] {
+        assert_eq!(
+            servers[server]["logs"],
+            json!({"default_logger_name":"traffic"})
+        );
+        // The probe endpoint isn't tagged, so it isn't counted.
+        let routes = servers[server]["routes"].as_array().unwrap();
+        assert_eq!(routes[0]["handle"][0]["handler"], "static_response");
+        let handle = routes[1]["handle"].as_array().unwrap();
+        assert_eq!(
+            handle[..3],
+            [
+                json!({"handler":"log_append","key":"piqueld_environment","value":environment}),
+                json!({"handler":"log_append","key":"piqueld_service","value":"web"}),
+                json!({"handler":"log_append","key":"piqueld_hostname","value":host}),
+            ]
+        );
+        assert_eq!(handle[3]["handler"], "reverse_proxy");
+    }
+    // HTTP servers only redirect, so they log nothing.
+    assert!(servers["public_http"].get("logs").is_none());
+    let logs = &configuration["logging"]["logs"];
+    assert_eq!(
+        logs["default"]["exclude"],
+        json!(["http.log.access.traffic"])
+    );
+    assert_eq!(
+        logs["traffic"]["writer"],
+        json!({"output":"net","address":"unix//control/traffic.sock","soft_start":true})
+    );
+
+    ingress.bind_traffic().await.unwrap().unwrap();
+    let socket = engine.directory.path().join("ingress/control/traffic.sock");
+    assert!(socket.exists());
 }
 
 #[tokio::test]

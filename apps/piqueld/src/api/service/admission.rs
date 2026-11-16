@@ -8,7 +8,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 /// Kinds of expensive work, each with its own budget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Expensive {
-    /// Deployment analytics, aggregated over a time window.
+    /// Deployment analytics or traffic, aggregated over a time window.
     Analytics,
     /// Recent container output, read from Docker.
     Logs,

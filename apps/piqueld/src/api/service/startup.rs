@@ -38,11 +38,11 @@ impl ApplicationService {
     ///    yet, register the build machine if one is configured, and
     ///    interrupt stale actions.
     /// 4. Build the ingress, reconciliation controller, and service.
-    /// 5. Bind the webhook listener, then record the daemon start, which
-    ///    notifies as `daemon_started`.
+    /// 5. Bind the webhook listener and the gateway's traffic socket, then
+    ///    record the daemon start, which notifies as `daemon_started`.
     /// 6. Spawn one task joining notification observation, notification
     ///    webhook delivery, sync, the listener receiving GitHub webhooks,
-    ///    telemetry export from the journal, and, once `establish_swarm`
+    ///    telemetry export from the journal, traffic counting, and, once `establish_swarm`
     ///    reaches a Swarm manager, reconciliation, image cleanup and ingress.
     ///    Until then requested operations wait. Readiness probes Docker
     ///    directly, so it reports ready up to `MAX_SWARM_RETRY_DELAY` before
@@ -97,6 +97,7 @@ impl ApplicationService {
             .bind_webhooks()
             .await
             .context("failed to bind the webhook socket")?;
+        let traffic = ingress.bind_traffic().await?;
         // Every listener is bound, so the daemon can serve.
         service
             .store
@@ -141,14 +142,17 @@ impl ApplicationService {
                 );
                 result
             };
-            let (result, (), (), (), (), ()) = tokio::join!(
+            let (result, (), (), (), (), (), _) = tokio::join!(
                 runtime,
                 background
                     .observe_notifications(scan_interval.as_secs(), cancellation.child_token()),
                 background.deliver_notifications(cancellation.child_token()),
                 background.sync(cancellation.child_token()),
                 background.serve_webhooks(webhook_listener, cancellation.child_token()),
-                background.export_telemetry(journaled, cancellation.child_token())
+                background.export_telemetry(journaled, cancellation.child_token()),
+                futures_util::future::OptionFuture::from(
+                    traffic.map(|traffic| traffic.run(cancellation.child_token()))
+                )
             );
             result
         });

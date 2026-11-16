@@ -30,6 +30,11 @@ pub(super) struct Refresh(RwSignal<u64>);
 impl Refresh {
     /// Starts the 5-second interval, cleared when the owning view unmounts.
     pub(super) fn new() -> Self {
+        Self::every(Duration::from_secs(5))
+    }
+
+    /// Starts an interval of `period`, cleared when the owning view unmounts.
+    pub(super) fn every(period: Duration) -> Self {
         let revision = RwSignal::new(0_u64);
         if let Ok(handle) = set_interval_with_handle(
             move || {
@@ -37,7 +42,7 @@ impl Refresh {
                     revision.update(|r| *r = r.wrapping_add(1));
                 }
             },
-            Duration::from_secs(5),
+            period,
         ) {
             on_cleanup(move || handle.clear());
         }
@@ -58,17 +63,17 @@ impl Refresh {
 /// How many days of history a page reads, from its period picker; `0` reads
 /// all retained history.
 #[derive(Clone, Copy)]
-struct Period(RwSignal<u32>);
+pub(super) struct Period(RwSignal<u32>);
 
 impl Period {
     /// Starts at the last 30 days.
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self(RwSignal::new(30))
     }
 
     /// Unix milliseconds the period starts at, or `None` (no lower bound)
     /// for all history. Tracked.
-    fn since(self) -> Option<i64> {
+    pub(super) fn since(self) -> Option<i64> {
         let days = self.0.get();
         (days != 0).then(|| now_ms().saturating_sub(i64::from(days) * 86_400_000))
     }
@@ -76,7 +81,7 @@ impl Period {
     /// The picker. Its longest choice is all retained history with `all`,
     /// else 365 days; `changed` runs after a choice so lists can restart at
     /// the newest page.
-    fn select(self, all: bool, changed: impl Fn() + 'static) -> AnyView {
+    pub(super) fn select(self, all: bool, changed: impl Fn() + 'static) -> AnyView {
         view! {
             <label class="field">
                 <span>"Period"</span>

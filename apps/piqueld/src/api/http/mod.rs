@@ -43,6 +43,7 @@ mod operations;
 mod previews;
 mod secrets;
 mod system;
+mod traffic;
 mod ui;
 mod webhooks;
 pub use webhooks::webhook_router;
@@ -381,6 +382,7 @@ fn documented_router() -> OpenApiRouter<ApiState> {
         .routes(authenticated!(observability::audit))
         .routes(granted!(Global(AuditRead) => observability::verify_audit))
         .routes(granted!(App(LogsRead) => logs::get))
+        .routes(granted!(App(LogsRead) => traffic::get))
         .routes(granted!(App(Exec) => exec::exec))
         .routes(authenticated!(builds::list))
         .routes(granted!(App(LogsRead) => builds::logs))
