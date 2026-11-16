@@ -610,9 +610,10 @@ never manifests, environment values, or raw Docker errors. Failure events preser
 `error_code`, `phase`, and `resource`; an operation's `phase` and `resource` are
 those of the latest step its current attempt journaled: an action, such as
 `building_git` on `web`, or a recorded plan, `preparing` or `planning`, whose
-resource names what blocks it, if anything. A failed operation shows its
-latest failed action instead, if it has one, since a source prepared alongside
-it may finish after the failure. A requested operation has none, and so has
+resource names what blocks it, if anything. A failed operation shows the
+step it failed on instead: its latest failed action as it failed, if it had
+one, since a source prepared alongside it may finish after the failure, and
+cleanup failing later changes nothing. A requested operation has none, and so has
 one whose events expired with `retention.event_days`.
 `phase` names what a journaled action does, such as `building_git`,
 `run_job` or `ensure_service`. Some events carry a `detail` object tagged by

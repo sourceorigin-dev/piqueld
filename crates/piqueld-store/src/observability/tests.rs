@@ -1485,4 +1485,15 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
         (failed.phase, failed.resource.as_deref()),
         (Some(Phase::Planning), Some("data"))
     );
+    // Cleanup failing afterwards, under the operation, names nothing.
+    let cleanup = store
+        .begin_action(Some(&operation.id), Phase::RemoveJobs, None)
+        .await
+        .unwrap();
+    store.finish_action(&cleanup, Some(busy)).await.unwrap();
+    let failed = store.operation(&operation.id).await.unwrap();
+    assert_eq!(
+        (failed.phase, failed.resource.as_deref()),
+        (Some(Phase::Planning), Some("data"))
+    );
 }
