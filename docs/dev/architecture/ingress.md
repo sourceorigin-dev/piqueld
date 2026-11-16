@@ -372,9 +372,10 @@ Both probes resolve the hostname first (`Ingress::resolve`). While the route's
 DNS state is `managed` or `pending`, `Dns::resolve_authoritatively` asks the
 zone's authoritative nameservers over TCP, without recursion, a cache or the
 hosts file. An answer the host's resolver cached before piqueld wrote the
-records, such as NXDOMAIN, then can't hold a working route `pending`, and the
-check never asks the host's resolver before the records exist. In any other
-state, the operator writes the records and the host's resolver answers.
+records, such as NXDOMAIN, then can't hold a working route `pending`. In any
+other state, including before a records pass has seen the route (after a
+restart, or between the gateway applying a new route and the next pass), the
+host's resolver answers.
 Finding the nameservers still asks the host's resolver for the zone's NS
 records. Resolving and probing share a 10-second deadline.
 

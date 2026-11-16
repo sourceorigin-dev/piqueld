@@ -834,10 +834,10 @@ impl Ingress {
 
     /// Addresses `hostname`, served for `route`, resolves to for its check.
     /// While piqueld manages the route's records, or will once it can write
-    /// them, the zone's authoritative nameservers answer: the check sees what
-    /// piqueld wrote, and never seeds this host's cache with an answer from
-    /// before. In any other state, the operator writes the records and the
-    /// host's resolver answers.
+    /// them, the zone's authoritative nameservers answer, so the check sees
+    /// what piqueld wrote rather than an answer this host cached before. In
+    /// any other state, including before a records pass has seen the route,
+    /// the host's resolver answers.
     async fn resolve(
         &self,
         route: &RouteHostname,
