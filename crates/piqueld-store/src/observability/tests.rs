@@ -1384,13 +1384,18 @@ async fn migration_types_the_phases_recorded_before_them() {
 }
 
 #[tokio::test]
-async fn timeline_expectations_count_the_successful_attempts_of_earlier_operations() {
+async fn timeline_expectations_count_each_earlier_operations_last_run_of_a_step() {
     let (_temp, store) = Store::temporary().await;
     let op = application(&store).await;
-    // A slow build in a failed first attempt, then a quick one that succeeded.
-    for (attempt, duration) in [(1, 90_000), (2, 1_000)] {
+    // A slow build in a failed first attempt, then a quick one in the
+    // second; its job only ran in the first, which the second reused.
+    for (attempt, phase, duration) in [
+        (1, Phase::BuildGit, 90_000),
+        (1, Phase::RunJob, 4_000),
+        (2, Phase::BuildGit, 1_000),
+    ] {
         let action = store
-            .begin_action(Some(&op.id), Phase::BuildGit, Some("web"))
+            .begin_action(Some(&op.id), phase, Some("web"))
             .await
             .unwrap();
         store.finish_action(&action, None).await.unwrap();
@@ -1402,29 +1407,34 @@ async fn timeline_expectations_count_the_successful_attempts_of_earlier_operatio
             .await
             .unwrap();
     }
-    sqlx::query("UPDATE operations SET state='succeeded', attempt=2, finished_at_ms=created_at_ms WHERE id=?1")
-        .bind(&op.id)
-        .execute(&store.pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE operations SET state='succeeded', attempt=2, finished_at_ms=created_at_ms WHERE id=?1",
+    )
+    .bind(&op.id)
+    .execute(&store.pool)
+    .await
+    .unwrap();
     let expected = async |operation: Operation| {
         let baseline = store.timeline_baseline(&operation).await.unwrap();
         baseline
             .expected
             .iter()
-            .map(|step| step.duration_ms)
+            .map(|step| (step.key.phase, step.duration_ms))
             .collect::<Vec<_>>()
     };
     let next = Operation {
         id: "operation-next".into(),
         ..op.clone()
     };
-    assert_eq!(expected(next).await, [1_000]);
+    assert_eq!(
+        expected(next).await,
+        [(Phase::BuildGit, 1_000), (Phase::RunJob, 4_000)]
+    );
     // An operation created before it expects nothing from it.
     let earlier = Operation {
         id: "operation-earlier".into(),
         created_at_ms: op.created_at_ms - 1,
         ..op
     };
-    assert_eq!(expected(earlier).await, Vec::<u64>::new());
+    assert_eq!(expected(earlier).await, []);
 }

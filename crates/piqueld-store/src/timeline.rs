@@ -12,8 +12,8 @@ pub struct Baseline {
     /// The steps of the environment's latest successful operation of the
     /// same kind, in the order they ran.
     pub forecast: Vec<StepKey>,
-    /// The median duration of each step across the attempts that succeeded
-    /// of recent successful operations.
+    /// The median duration of each step across recent successful
+    /// operations, each counting its last succeeded run of it.
     pub expected: Vec<ExpectedStep>,
 }
 
@@ -64,17 +64,13 @@ impl Store {
         .map_err(StoreError::database)?;
         tx.commit().await.map_err(StoreError::database)?;
         let mut forecast = Vec::new();
-        let mut durations = BTreeMap::<(String, Option<String>), Vec<u64>>::new();
-        // Only the attempt that succeeded counts: a failed one's steps would
-        // weigh more for an operation that took several.
-        let succeeded = actions.into_iter().filter(|action| {
-            previous
-                .iter()
-                .any(|row| row.id == action.operation_id && Some(row.attempt) == action.attempt)
-        });
-        for action in succeeded {
+        // Each operation's last succeeded run of each step, in any attempt:
+        // an operation retried, or run again to repair it, weighs as much as
+        // the others.
+        let mut last = BTreeMap::<(String, String, Option<String>), u64>::new();
+        for action in actions {
             let duration = u64::try_from(action.duration_ms).map_err(StoreError::corrupt)?;
-            if action.operation_id == latest.id {
+            if action.operation_id == latest.id && action.attempt == Some(latest.attempt) {
                 let key = StepKey {
                     phase: decode_name(&action.phase)?,
                     resource: action.resource.clone(),
@@ -83,8 +79,15 @@ impl Store {
                     forecast.push(key);
                 }
             }
+            last.insert(
+                (action.operation_id, action.phase, action.resource),
+                duration,
+            );
+        }
+        let mut durations = BTreeMap::<(String, Option<String>), Vec<u64>>::new();
+        for ((_, phase, resource), duration) in last {
             durations
-                .entry((action.phase, action.resource))
+                .entry((phase, resource))
                 .or_default()
                 .push(duration);
         }
