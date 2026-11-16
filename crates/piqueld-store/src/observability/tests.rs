@@ -1335,8 +1335,28 @@ async fn migration_types_the_phases_recorded_before_them() {
             .await
             .unwrap();
     }
+    // Attempts save the operation as it ended, with its phase.
+    for (attempt, phase) in [(1, "running_job"), (2, "preparing_sources"), (3, "deploy")] {
+        sqlx::raw_sql(&format!(
+            "PRAGMA foreign_keys = OFF; INSERT INTO deployment_attempts(deployment_id,attempt,outcome_json) \
+             VALUES('operation-1',{attempt},'{{\"phase\":\"{phase}\"}}')"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
     pool.close().await;
     let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
+    let attempts: Vec<Option<String>> = sqlx::query_scalar(
+        "SELECT json_extract(outcome_json,'$.phase') FROM deployment_attempts ORDER BY attempt",
+    )
+    .fetch_all(&store.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        attempts,
+        [Some("run_job".into()), Some("preparing".into()), None]
+    );
     let events = store
         .filtered_events(&EventFilter::default(), &Visibility::ALL, None, 10)
         .await

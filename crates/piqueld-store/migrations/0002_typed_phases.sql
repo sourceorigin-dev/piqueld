@@ -1,7 +1,8 @@
 -- Journaled phases are typed: `phase` only names what an action does.
 -- Typed configuration edits recorded the edited field there; it moves into
 -- the event's structured detail. Progress names that were never actions take
--- the name of the action they stood for, and any other value is cleared.
+-- the name of the action they stood for, and any other value is cleared, in
+-- events, operations, and the operations saved as deployment attempts.
 ALTER TABLE events ADD COLUMN detail_json TEXT;
 
 UPDATE events
@@ -12,6 +13,13 @@ UPDATE events SET phase = 'run_job' WHERE phase = 'running_job';
 UPDATE operations SET phase = 'run_job' WHERE phase = 'running_job';
 UPDATE events SET phase = 'preparing' WHERE phase = 'preparing_sources';
 UPDATE operations SET phase = 'preparing' WHERE phase = 'preparing_sources';
+UPDATE deployment_attempts
+SET outcome_json = json_set(outcome_json, '$.phase',
+    CASE json_extract(outcome_json, '$.phase')
+        WHEN 'running_job' THEN 'run_job'
+        ELSE 'preparing'
+    END)
+WHERE json_extract(outcome_json, '$.phase') IN ('running_job', 'preparing_sources');
 
 CREATE TEMP TABLE known_phases(name TEXT PRIMARY KEY);
 INSERT INTO known_phases(name) VALUES
@@ -58,4 +66,6 @@ UPDATE events SET phase = NULL
 WHERE phase IS NOT NULL AND phase NOT IN (SELECT name FROM known_phases);
 UPDATE operations SET phase = NULL
 WHERE phase IS NOT NULL AND phase NOT IN (SELECT name FROM known_phases);
+UPDATE deployment_attempts SET outcome_json = json_set(outcome_json, '$.phase', NULL)
+WHERE json_extract(outcome_json, '$.phase') NOT IN (SELECT name FROM known_phases);
 DROP TABLE known_phases;
