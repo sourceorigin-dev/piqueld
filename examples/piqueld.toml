@@ -67,7 +67,9 @@ public_addresses = []
 # running as its user. Restart to apply.
 # webhook_hostname = "hooks.example.com"
 # Count the requests each route serves, for each environment's traffic page.
-# piqueld stores hourly totals, not the requests or visitors' addresses.
+# piqueld stores hourly totals, not the requests or visitors' addresses. While
+# the daemon can't read them, such as while it restarts, the gateway writes the
+# requests, addresses and paths included, to its own Docker log (up to 30 MB).
 traffic = true
 
 # Private routes, served to the tailnet through a second tailnet node, the apps

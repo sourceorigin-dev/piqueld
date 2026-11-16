@@ -297,7 +297,7 @@ This server's public IPv4 and IPv6 addresses, such as `["203.0.113.10", "2001:db
 
 Type: boolean. Default: `true`.
 
-Count the requests each route serves, for each environment's traffic page, while `ingress.enabled` is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses; while the daemon restarts, the gateway's own log holds the requests it serves.
+Count the requests each route serves, for each environment's traffic page, while `ingress.enabled` is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses. While the daemon can't read the gateway's requests, such as while it restarts, the gateway writes them, visitors' addresses and paths included, to its own Docker log, which keeps up to 30 MB.
 
 ### `ingress.tunnel`
 

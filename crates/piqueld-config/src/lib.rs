@@ -454,8 +454,10 @@ pub struct IngressConfig {
     pub webhook_hostname: Option<piqueld_core::manifest::Hostname>,
     /// Count the requests each route serves, for each environment's
     /// traffic page, while `ingress.enabled` is set. piqueld stores hourly
-    /// totals, not the requests themselves or visitors' addresses; while the
-    /// daemon restarts, the gateway's own log holds the requests it serves.
+    /// totals, not the requests themselves or visitors' addresses. While the
+    /// daemon can't read the gateway's requests, such as while it restarts,
+    /// the gateway writes them, visitors' addresses and paths included, to
+    /// its own Docker log, which keeps up to 30 MB.
     //
     // Caddy writes an access log line per request to a socket in the
     // gateway's control mount, which the daemon counts (`ingress::traffic`).
