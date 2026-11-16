@@ -212,7 +212,9 @@ impl Store {
         let since = query.since_ms - query.since_ms.rem_euclid(bucket);
         // Counts are hourly, so the hour `until_ms` falls in is included
         // whole, and the window says so.
-        let until = (query.until_ms + HOUR_MS - 1)
+        let until = query
+            .until_ms
+            .saturating_add(HOUR_MS - 1)
             .div_euclid(HOUR_MS)
             .saturating_mul(HOUR_MS)
             .max(since);
@@ -424,6 +426,12 @@ mod tests {
             (partial.until_ms, partial.totals.requests),
             (day + 2 * HOUR_MS, 6)
         );
+        // The latest end the API accepts still rounds to a whole hour.
+        let latest = store
+            .traffic(&id, window(i64::MAX - DAY_MS, i64::MAX))
+            .await
+            .unwrap();
+        assert_eq!(latest.until_ms % HOUR_MS, 0);
         let report = store
             .traffic(&id, window(day, day + 2 * DAY_MS))
             .await
