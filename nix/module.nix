@@ -269,7 +269,7 @@ in
           ingress.traffic = lib.mkOption {
             type = lib.types.bool;
             default = true;
-            description = "Count the requests each route serves, for each environment's traffic page, while ingress.enabled is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses. While the daemon can't read the gateway's requests, such as while it restarts, the gateway writes them, visitors' addresses and paths included, to its own Docker log, which keeps up to 30 MB. Restart piqueld to apply.";
+            description = "Count the requests each route serves, for each environment's traffic page, while ingress.enabled is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses. While the daemon isn't connected to the gateway, such as while it restarts, the gateway writes its requests, visitors' addresses and paths included, to its own Docker log, which keeps up to 30 MB. Restart piqueld to apply.";
           };
           dns.providers = lib.mkOption {
             type = lib.types.listOf (

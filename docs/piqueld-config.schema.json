@@ -291,7 +291,7 @@
         },
         "traffic": {
           "default": true,
-          "description": "Count the requests each route serves, for each environment's\ntraffic page, while `ingress.enabled` is set. piqueld stores hourly\ntotals, not the requests themselves or visitors' addresses. While the\ndaemon can't read the gateway's requests, such as while it restarts,\nthe gateway writes them, visitors' addresses and paths included, to\nits own Docker log, which keeps up to 30 MB.",
+          "description": "Count the requests each route serves, for each environment's\ntraffic page, while `ingress.enabled` is set. piqueld stores hourly\ntotals, not the requests themselves or visitors' addresses. While the\ndaemon isn't connected to the gateway, such as while it restarts, the\ngateway writes its requests, visitors' addresses and paths included, to\nits own Docker log, which keeps up to 30 MB.",
           "type": "boolean"
         },
         "tunnel": {
