@@ -9769,6 +9769,7 @@
         "description": "Which of an operation's steps a recorded plan lists.",
         "enum": [
           "preparation",
+          "jobs",
           "runtime"
         ],
         "type": "string"

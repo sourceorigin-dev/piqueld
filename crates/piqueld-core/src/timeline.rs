@@ -436,8 +436,10 @@ string_enum! {
     #[serde]
     /// Which of an operation's steps a recorded plan lists.
     pub enum PlanCoverage {
-        /// Preparing sources and running jobs, before the runtime is planned.
+        /// Preparing sources, before the runtime is planned.
         Preparation => "preparation",
+        /// Running jobs, once sources are prepared.
+        Jobs => "jobs",
         /// Everything left: preparation is done by the time the runtime is
         /// planned.
         Runtime => "runtime",
@@ -448,7 +450,8 @@ impl PlanCoverage {
     /// Whether a plan of this coverage replaces the steps left of `stage`.
     const fn covers(self, stage: Stage) -> bool {
         match self {
-            Self::Preparation => matches!(stage, Stage::Prepare | Stage::Jobs),
+            Self::Preparation => matches!(stage, Stage::Prepare),
+            Self::Jobs => matches!(stage, Stage::Jobs),
             Self::Runtime => !matches!(stage, Stage::Daemon),
         }
     }
@@ -539,6 +542,7 @@ mod tests {
     fn plans_replace_the_forecast_and_actions_fill_them_in() {
         let mut timeline = timeline(&[
             (Phase::BuildGit, "web", 30_000),
+            (Phase::RunJob, "migrate", 4_000),
             (Phase::EnsureService, "web", 2_000),
             (Phase::WaitForService, "web", 10_000),
         ]);
@@ -546,15 +550,31 @@ mod tests {
             states(&timeline),
             [
                 (Phase::BuildGit, StepState::Forecast),
+                (Phase::RunJob, StepState::Forecast),
                 (Phase::EnsureService, StepState::Forecast),
                 (Phase::WaitForService, StepState::Forecast),
             ]
         );
-        // Preparation replaces only its own stages' forecast.
+        // Each plan replaces only its own stage's forecast.
+        apply(
+            &mut timeline,
+            vec![planned(
+                PlanCoverage::Preparation,
+                &[key(Phase::BuildGit, "web")],
+            )],
+        );
+        assert_eq!(
+            states(&timeline),
+            [
+                (Phase::BuildGit, StepState::Planned),
+                (Phase::RunJob, StepState::Forecast),
+                (Phase::EnsureService, StepState::Forecast),
+                (Phase::WaitForService, StepState::Forecast),
+            ]
+        );
         apply(
             &mut timeline,
             vec![
-                planned(PlanCoverage::Preparation, &[key(Phase::BuildGit, "web")]),
                 action("action_started", "a1", Phase::BuildGit, "web", 100),
                 action("action_succeeded", "a1", Phase::BuildGit, "web", 25_100),
                 planned(

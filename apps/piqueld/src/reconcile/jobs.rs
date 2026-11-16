@@ -67,7 +67,7 @@ impl<D: DockerApi> Controller<D> {
                         resource: Some(job.logical_name.to_string()),
                     })
                     .collect(),
-                PlanCoverage::Preparation,
+                PlanCoverage::Jobs,
             )
             .await?;
         let ownership = self.ownership_labels(&operation.environment_id);

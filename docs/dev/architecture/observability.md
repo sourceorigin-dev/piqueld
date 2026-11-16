@@ -25,8 +25,8 @@ a projection of the journal, never stored: `piqueld_core::timeline::Timeline`
 folds an operation's events with `Timeline::apply`. Action events fill in
 the steps started; `plan_recorded` events, whose detail lists the steps the
 operation plans next, replace the steps left. Source preparation records
-one plan of its sources and jobs one of their runs (`PlanCoverage::Preparation`),
-and the convergence loop records the runtime plan (`PlanCoverage::Runtime`)
+one plan of its sources (`PlanCoverage::Preparation`), jobs one of their runs
+(`PlanCoverage::Jobs`), and the convergence loop records the runtime plan (`PlanCoverage::Runtime`)
 only when it differs from the previous one without the step just run, so a
 deployment records a handful, not one per action.
 
