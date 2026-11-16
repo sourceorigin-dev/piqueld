@@ -612,7 +612,8 @@ those of the latest step its current attempt journaled: an action, such as
 `building_git` on `web`, or a recorded plan, `preparing` or `planning`, whose
 resource names what blocks it, if anything. A failed operation shows its
 latest failed action instead, if it has one, since a source prepared alongside
-it may finish after the failure. A requested operation has none.
+it may finish after the failure. A requested operation has none, and so has
+one whose events expired with `retention.event_days`.
 `phase` names what a journaled action does, such as `building_git`,
 `run_job` or `ensure_service`. Some events carry a `detail` object tagged by
 its `type` field: typed configuration edits (`application_edited`) record
