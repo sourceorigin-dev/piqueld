@@ -43,10 +43,11 @@ const MAX_LINE: u64 = 1024 * 1024;
 /// Visitors remembered per day. Past it, every visitor not yet seen counts
 /// as new, so a flood of addresses can't grow memory without bound.
 const MAX_VISITORS: usize = 200_000;
-/// Distinct pages and referring sites counted between two flushes; later
-/// new ones aren't. Single-page applications answer every path with HTML, so
-/// a scan of random paths would otherwise add a row, and a statement under
-/// the store's writer lock, per path.
+/// Distinct pages and referring sites counted between two flushes, across
+/// every route; later new ones aren't, until the next flush, while those
+/// already counted, and every total, still are. Single-page applications
+/// answer every path with HTML, so a scan of random paths would otherwise
+/// add a row, and a statement under the store's writer lock, per path.
 const MAX_RANKS: usize = 1_000;
 /// The longest page path counted; longer ones are cut.
 const MAX_PATH: usize = 256;
@@ -400,6 +401,26 @@ mod tests {
         assert_eq!(access.referrer().as_deref(), Some("news.example.org"));
         assert_eq!(referred("https://app.example.com/other").referrer(), None);
         assert_eq!(referred("not a url").referrer(), None);
+    }
+
+    #[test]
+    fn ranks_stop_at_their_limit_between_flushes() {
+        let mut counter = Counter::default();
+        for index in 0..MAX_RANKS {
+            counter.count(&line(&format!("/{index}"), 200, BROWSER, "text/html"));
+        }
+        counter.count(&line("/new", 200, BROWSER, "text/html"));
+        counter.count(&line("/0", 200, BROWSER, "text/html"));
+        let ranks = &counter.tally.ranks;
+        assert_eq!(ranks.len(), MAX_RANKS);
+        assert!(ranks.keys().all(|key| key.3 != "/new"));
+        let first = ranks.iter().find(|(key, _)| key.3 == "/0").unwrap();
+        assert_eq!(*first.1, 2);
+        // Totals still count every page view.
+        assert_eq!(
+            counter.tally.hours.values().next().unwrap().page_views,
+            1_002
+        );
     }
 
     #[test]
