@@ -151,13 +151,13 @@ pub enum ActionKind {
 
 impl ActionKind {
     /// Resource named by this action, without configuration or secret
-    /// values: a desired service by its name in the manifest, other
+    /// values: a desired service or volume by its name in the manifest, other
     /// resources by their Docker name.
     #[must_use]
     pub fn resource_name(&self) -> &str {
         match self {
             Self::EnsureNetwork { network } => network.name.as_str(),
-            Self::EnsureVolume { volume } => volume.name.as_str(),
+            Self::EnsureVolume { volume } => volume.logical_name.as_str(),
             Self::EnsureService { service } => service.logical_name.as_str(),
             Self::WaitForService { logical_name, .. } => logical_name.as_str(),
             Self::RemoveService { name }
@@ -270,20 +270,20 @@ impl ActionKind {
 
 impl fmt::Display for ActionKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (verb, resource) = match self {
-            Self::BuildGit { service } => ("BUILD GIT", service.as_str()),
-            Self::ResolveImage { service, .. } => ("RESOLVE IMAGE", service.as_str()),
-            Self::EnsureNetwork { network } => ("ENSURE NETWORK", network.name.as_str()),
-            Self::EnsureVolume { volume } => ("ENSURE VOLUME", volume.name.as_str()),
-            Self::EnsureService { service } => ("ENSURE SERVICE", service.logical_name.as_str()),
-            Self::WaitForService { logical_name, .. } => ("WAIT SERVICE", logical_name.as_str()),
-            Self::WaitForServiceRemoval { service } => ("WAIT SERVICE REMOVAL", service.as_str()),
-            Self::RemoveService { name } => ("REMOVE SERVICE", name.as_str()),
-            Self::RemoveNetwork { name } => ("REMOVE NETWORK", name.as_str()),
-            Self::RetainVolume { name } => ("RETAIN VOLUME", name.as_str()),
-            Self::RunJob { job } => ("RUN JOB", job.as_str()),
+        let verb = match self {
+            Self::BuildGit { .. } => "BUILD GIT",
+            Self::ResolveImage { .. } => "RESOLVE IMAGE",
+            Self::EnsureNetwork { .. } => "ENSURE NETWORK",
+            Self::EnsureVolume { .. } => "ENSURE VOLUME",
+            Self::EnsureService { .. } => "ENSURE SERVICE",
+            Self::WaitForService { .. } => "WAIT SERVICE",
+            Self::WaitForServiceRemoval { .. } => "WAIT SERVICE REMOVAL",
+            Self::RemoveService { .. } => "REMOVE SERVICE",
+            Self::RemoveNetwork { .. } => "REMOVE NETWORK",
+            Self::RetainVolume { .. } => "RETAIN VOLUME",
+            Self::RunJob { .. } => "RUN JOB",
         };
-        write!(formatter, "{verb} {resource}")
+        write!(formatter, "{verb} {}", self.resource_name())
     }
 }
 
