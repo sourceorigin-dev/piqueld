@@ -255,6 +255,8 @@ impl Timeline {
                 Step::pending(key, StepState::Forecast, expected)
             })
             .collect();
+        let steps = std::mem::take(&mut timeline.steps);
+        timeline.set_steps(steps);
         timeline
     }
 
@@ -308,17 +310,22 @@ impl Timeline {
 
     /// Updates the operation as read after its events changed it. Once it is
     /// requested or runs again, the steps earlier attempts started are
-    /// dropped.
+    /// dropped, and once it ended, its forecast.
     pub fn set_operation(&mut self, operation: Operation) {
         self.operation = operation;
         let steps = std::mem::take(&mut self.steps);
-        self.steps = steps
-            .into_iter()
-            .filter(|step| {
-                step.attempt
-                    .is_none_or(|attempt| self.current_attempt(attempt))
-            })
-            .collect();
+        self.set_steps(steps);
+    }
+
+    /// Keeps the `steps` the timeline shows: those of the current attempt,
+    /// and forecast ones only while the operation may still run them.
+    fn set_steps(&mut self, mut steps: Vec<Step>) {
+        steps.retain(|step| {
+            step.attempt
+                .is_none_or(|attempt| self.current_attempt(attempt))
+                && !(step.state == StepState::Forecast && self.operation.state.terminal())
+        });
+        self.steps = steps;
     }
 
     /// Whether `attempt` is the operation's current run. A timeline shows
@@ -601,6 +608,28 @@ mod tests {
             (Some(100), Some(25_100), Some(30_000))
         );
         assert_eq!(timeline.steps[2].expected_ms, Some(2_000));
+    }
+
+    #[test]
+    fn an_operation_that_ended_forecasts_nothing() {
+        let mut timeline = timeline(&[
+            (Phase::BuildGit, "web", 30_000),
+            (Phase::EnsureService, "web", 2_000),
+        ]);
+        apply(
+            &mut timeline,
+            vec![
+                action("action_started", "a1", Phase::BuildGit, "web", 0),
+                action("action_failed", "a1", Phase::BuildGit, "web", 100),
+            ],
+        );
+        let mut failed = timeline.operation.clone();
+        failed.state = OperationState::Failed;
+        // Followed live, as a new read does.
+        timeline.set_operation(failed.clone());
+        assert_eq!(states(&timeline), [(Phase::BuildGit, StepState::Failed)]);
+        let read = Timeline::new(failed, vec![key(Phase::EnsureService, "web")], Vec::new());
+        assert_eq!(states(&read), Vec::new());
     }
 
     #[test]

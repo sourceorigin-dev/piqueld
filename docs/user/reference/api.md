@@ -849,7 +849,7 @@ Steps left come from the operation's latest recorded plan: a
 records one when it starts preparing its sources, one before its jobs, and
 one each time its runtime plan changes. Until it has planned that far, the
 steps of the environment's previous successful operation stand in, as
-`forecast`.
+`forecast`; an operation that already ended has no forecast.
 
 `GET /api/v1/operations/{id}/timeline/stream` sends a `timeline` message with
 the whole timeline at once, then again each time an event changes it, at
