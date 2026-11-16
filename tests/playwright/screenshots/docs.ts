@@ -139,7 +139,7 @@ export async function shoot(page: Page, name: string, through?: Locator, from?: 
       await test.info().attach(`${name} fingerprint`, { body: drawn, contentType: 'text/plain' });
       throw new Error(`docs/images/${name}.png shows an older version of its page: run just docs-screenshots`);
     }
-    await writeFile(file, Png.withFingerprint(await page.screenshot(), current));
+    await writeFile(file, Png.withFingerprint(await page.screenshot({ animations: 'disabled' }), current));
   }
   // A refresh already under way when the clock stopped redraws it anyway.
   expect(frozen, 'a refresh redrew the page while it was saved').toEqual(expect.arrayContaining(await varying(page)));

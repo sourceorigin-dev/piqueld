@@ -1177,29 +1177,28 @@ impl ShownDeployment {
     }
 
     /// Reads deployment `operation` of `environment`, then again for its
-    /// outcome and flags once `live` shows it ended while shown, unless the
-    /// history read already saw it end: when the first snapshot shows it
-    /// ended, only if that read saw it running.
+    /// outcome and flags whenever `live` shows it ended while the record
+    /// read is still running or of an earlier attempt: a read that crossed
+    /// its end, or a rerun under the same ID.
     fn follow(self, live: LiveTimeline, environment: String, operation: String) {
         self.load(environment.clone(), operation.clone());
-        Effect::new(move |was: Option<Option<bool>>| {
-            let ended = live.ended();
-            let running = |unread: bool| {
-                self.deployment.with_untracked(|deployment| {
-                    deployment
-                        .as_ref()
-                        .map_or(unread, |deployment| !deployment.operation.state.terminal())
+        // Only a change reruns the effect, which would abandon a read under
+        // way; a read that lands current turns it back.
+        let stale = Memo::new(move |_| {
+            let Some(ended) = live.operation().filter(|_| live.ended() == Some(true)) else {
+                return false;
+            };
+            self.deployment.with(|deployment| {
+                deployment.as_ref().is_some_and(|deployment| {
+                    !deployment.operation.state.terminal()
+                        || deployment.operation.attempt < ended.attempt
                 })
-            };
-            let stale = match was {
-                Some(Some(false)) => running(true),
-                Some(None) => running(false),
-                _ => false,
-            };
-            if ended == Some(true) && stale {
+            })
+        });
+        Effect::new(move |_| {
+            if stale.get() {
                 self.load(environment.clone(), operation.clone());
             }
-            ended
         });
     }
 }

@@ -56,7 +56,7 @@ test('an earlier deployment is restored from the deployment history', async ({ p
   await expect(page.getByText('Origin', { exact: true })).toBeVisible();
   await expect(restoreButton).toHaveCount(0);
   // Nor its live events, which need events:read.
-  await expect(page.getByRole('complementary', { name: 'Live events' })).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'Live events', includeHidden: true })).toHaveCount(0);
 });
 
 test('the current deployment is offered for restore after a newer one failed', async ({ page, account }) => {

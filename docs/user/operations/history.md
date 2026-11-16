@@ -42,8 +42,8 @@ To follow a deployment's steps in the dashboard:
   [deployment timelines](../dashboard.md#deployment-timelines).
 - Afterwards, the same page's **Timeline** tab shows its steps the same way,
   and **All events** lists every event, with the filters of the Events page.
-  **Attempts** lists each time piqueld tried it, with a link to that
-  attempt's events.
+  **Attempts** lists each time piqueld tried it, each with a link to the
+  operation's events, where each event shows its attempt.
 
 With `piquelctl`, run `piquelctl operation <operation-id>`, which also waits
 for it to finish.

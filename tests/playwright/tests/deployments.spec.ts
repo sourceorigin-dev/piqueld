@@ -160,6 +160,34 @@ test('a job step shows the output of its own run, whose build starts just before
   await expect(output).not.toContainText('earlier run');
 });
 
+test('a deployment\'s page reads it again once it ran again under its ID', async ({ page, account }) => {
+  void account;
+  const { app, env, deployment } = await deployed(page);
+  const id = deployment.operation.id as string;
+  const failed = { ...deployment.operation, state: 'failed', attempt: 1, started_at_ms: 0, finished_at_ms: 5_000 };
+  // Started again, it ran and succeeded between two polls of the page.
+  const rerun = { ...failed, state: 'succeeded', attempt: 2, finished_at_ms: 9_000 };
+  let latest: Record<string, unknown> = failed;
+  let reads = 0;
+  await serveDeployments(page, env, () => ({ items: [{ ...deployment, operation: latest }], next_cursor: null }));
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.pathname === `/api/v1/environments/${env}/deployments` && url.searchParams.get('limit') === '20') reads += 1;
+  });
+  await rewrite(page, `/api/v1/environments/${env}`, detail => { detail.latest_operation = latest; });
+  await page.route(url => url.pathname === `/api/v1/operations/${id}/timeline/stream`, (route: Route) => {
+    const timeline = { operation: latest, steps: [], cursor: latest.attempt };
+    return route.fulfill({ contentType: 'text/event-stream', body: `event: timeline\ndata: ${JSON.stringify(timeline)}\n\n` });
+  });
+
+  await page.goto(`/dashboard/applications/${app}/environments/${env}/deployments/${id}`);
+  await expect(page.getByRole('region', { name: 'Deployment progress' })).toBeVisible();
+  await expect.poll(() => reads).toBe(1);
+  latest = rerun;
+  // Its record is read again for the rerun's outcome and flags.
+  await expect.poll(() => reads, { timeout: 20_000 }).toBe(2);
+});
+
 test('a running deployment\'s progress shows on the Overview and Deployments tabs, from one stream', async ({ page, account }) => {
   void account;
   const { app, env, deployment } = await deployed(page);
@@ -186,12 +214,13 @@ test('a running deployment\'s progress shows on the Overview and Deployments tab
   });
 
   await page.goto(`/dashboard/applications/${app}/environments/${env}`);
-  // Nothing above the tabs follows it: the Overview shows it in brief, linking to its page.
-  await expect(page.getByRole('region', { name: 'Deployment progress' })).toHaveCount(0);
+  // The Overview shows it in brief, linking to its page, and nothing above
+  // the tabs follows it.
   const running = page.getByRole('region', { name: 'Running deployment' });
   await expect(running).toContainText('Deploying');
   await expect(running).toContainText('1/3');
   await expect(running).toContainText('left');
+  await expect(page.getByRole('region', { name: 'Deployment progress' })).toHaveCount(0);
   await environmentTab(page, 'Deployments').click();
   await expect(deploymentRows(page).first().locator('.progress-compact')).toContainText('1/3');
   expect(streams).toBe(1);

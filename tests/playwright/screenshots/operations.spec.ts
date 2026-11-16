@@ -40,7 +40,6 @@ test('deployment timeline', async ({ page, cli, account }) => {
   // The last step is shown once the timeline arrived.
   await expect(timeline.getByRole('region', { name: 'Step detail' }).getByRole('heading')).toBeVisible();
   await expect(timeline.getByRole('complementary', { name: 'Live events' }).getByRole('listitem').first()).toBeVisible();
-  await page.locator('main').evaluate(main => Promise.all(main.getAnimations({ subtree: true }).map(animation => animation.finished)));
   await shoot(page, 'operations/deployment-timeline', timeline);
 });
 

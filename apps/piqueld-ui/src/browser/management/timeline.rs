@@ -489,7 +489,19 @@ pub(super) fn OperationTimeline(live: LiveTimeline) -> impl IntoView {
             </section>
             {feed
                 .then(|| {
-                    view! { <EventFeed operation={live.operation.get_value()} live={live.live} /> }
+                    {
+                        let attempt = Memo::new(move |_| {
+                            live.timeline
+                                .with(|t| t.as_ref().map_or(0, |t| t.operation.attempt))
+                        });
+                        view! {
+                            <EventFeed
+                                operation={live.operation.get_value()}
+                                live={live.live}
+                                attempt={attempt}
+                            />
+                        }
+                    }
                 })}
         </div>
     }
@@ -863,7 +875,7 @@ fn StepDetail(
 
 /// The end of a build or job step's output, scrolled to its newest line,
 /// read again every 2 seconds while the step runs (and the page is
-/// visible), then once more after it ended.
+/// visible), then until a read made after it ended succeeds.
 #[component]
 fn StepOutput(
     environment: String,
@@ -892,10 +904,11 @@ fn StepOutput(
         loop {
             let ran = !running.get_untracked();
             if !document_hidden() {
+                let mut failed = None;
                 if build.is_none() {
                     match find_build(&client, &environment, &operation, &id.key, since).await {
                         Ok(found) => build = found,
-                        Err(e) => error.set(Some(e.user_message())),
+                        Err(e) => failed = Some(e.user_message()),
                     }
                 }
                 if let Some(build) = &build {
@@ -905,11 +918,13 @@ fn StepOutput(
                             all.drain(..all.len().saturating_sub(TAIL));
                             lines.set(Some(all));
                         }
-                        Err(e) => error.set(Some(e.user_message())),
+                        Err(e) => failed = Some(e.user_message()),
                     }
                 }
-                // Read after it ended: final.
-                if ran {
+                let done = failed.is_none();
+                error.set(failed);
+                // Read after it ended, without failing: final.
+                if ran && done {
                     break;
                 }
             }
@@ -992,10 +1007,11 @@ async fn find_build(
 /// The operation's events as they are recorded, newest first, keeping the
 /// newest `FEED`, with a link to all of them. Its stream replays the
 /// operation's history, then follows it; it closes a moment after the
-/// operation ended, once its last events arrived. Events arriving together
-/// are drawn in one frame.
+/// operation ended, once its last events arrived, and opens again for a
+/// newer `attempt`, even one that ended before the page saw it run. Events
+/// arriving together are drawn in one frame.
 #[component]
-fn EventFeed(operation: String, live: Memo<bool>) -> impl IntoView {
+fn EventFeed(operation: String, live: Memo<bool>, attempt: Memo<u64>) -> impl IntoView {
     let events = RwSignal::new(VecDeque::<Event>::new());
     let pending = StoredValue::new_local(Vec::<Event>::new());
     let settled = StoredValue::new(false);
@@ -1045,13 +1061,16 @@ fn EventFeed(operation: String, live: Memo<bool>) -> impl IntoView {
     };
     open();
     let alive = Alive::new();
-    Effect::new(move |_| {
-        if live.get() {
+    Effect::new(move |was: Option<u64>| {
+        let attempt = attempt.get();
+        let rerun = was.is_some_and(|was| was != attempt);
+        if live.get() || rerun {
             // The operation runs again: follow its new events.
             if stream.with_value(Option::is_none) {
                 open();
             }
-        } else {
+        }
+        if !live.get_untracked() {
             let alive = alive.clone();
             spawn_local(async move {
                 TimeoutFuture::new(2_000).await;
@@ -1060,6 +1079,7 @@ fn EventFeed(operation: String, live: Memo<bool>) -> impl IntoView {
                 }
             });
         }
+        attempt
     });
     on_cleanup(move || {
         let _ = stream.try_set_value(None);
