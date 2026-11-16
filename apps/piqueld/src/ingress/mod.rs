@@ -833,16 +833,20 @@ impl Ingress {
     }
 
     /// Addresses `hostname`, served for `route`, resolves to for its check.
-    /// While piqueld manages the route's records, the zone's authoritative
-    /// nameservers answer, so the check sees what piqueld wrote rather than an
-    /// answer this host cached before. Records the operator writes go through
-    /// the host's resolver.
+    /// While piqueld manages the route's records, or will once it can write
+    /// them, the zone's authoritative nameservers answer: the check sees what
+    /// piqueld wrote, and never seeds this host's cache with an answer from
+    /// before. In any other state, the operator writes the records and the
+    /// host's resolver answers.
     async fn resolve(
         &self,
         route: &RouteHostname,
         hostname: &Hostname,
     ) -> Result<BTreeSet<IpAddr>> {
-        if self.route_dns(route).state == DnsRecordState::Managed {
+        if matches!(
+            self.route_dns(route).state,
+            DnsRecordState::Managed | DnsRecordState::Pending
+        ) {
             return self
                 .certificates
                 .dns
