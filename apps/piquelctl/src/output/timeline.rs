@@ -352,11 +352,7 @@ impl View {
         let took = Elapsed::from_millis(
             operation.finished_at_ms.unwrap_or(now_ms) - operation.started_at_ms?,
         );
-        let succeeded = timeline
-            .steps
-            .iter()
-            .all(|step| step.state == StepState::Succeeded);
-        Some(match timeline.usual_ms().filter(|_| succeeded) {
+        Some(match timeline.comparable_usual_ms() {
             Some(usual) => format!("{took} (usual {})", Elapsed(Duration::from_millis(usual))),
             None => took.to_string(),
         })

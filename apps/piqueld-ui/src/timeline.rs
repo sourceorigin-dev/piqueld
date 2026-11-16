@@ -313,7 +313,8 @@ pub struct Progress {
     pub elapsed_ms: u64,
     /// How much longer it should take, while it runs.
     pub left_ms: Option<u64>,
-    /// How long it usually takes.
+    /// How long it usually takes, while it runs; once it ended, only when
+    /// its run compares with the usual one.
     pub usual_ms: Option<u64>,
 }
 
@@ -346,7 +347,11 @@ impl Progress {
                 .collect(),
             elapsed_ms: started.map_or(0, |started| u64::try_from(end - started).unwrap_or(0)),
             left_ms: timeline.remaining_ms(now_ms),
-            usual_ms: timeline.usual_ms(),
+            usual_ms: if timeline.operation.state.terminal() {
+                timeline.comparable_usual_ms()
+            } else {
+                timeline.usual_ms()
+            },
         }
     }
 

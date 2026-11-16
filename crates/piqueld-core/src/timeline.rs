@@ -477,6 +477,21 @@ impl Timeline {
         )
     }
 
+    /// [`Self::usual_ms`], to compare with how long the operation took: only
+    /// once it and every step succeeded, each with an expectation, since a
+    /// failed or stopped run's steps are not the usual ones, and a step new
+    /// to it would count only in how long it took.
+    #[must_use]
+    pub fn comparable_usual_ms(&self) -> Option<u64> {
+        (self.operation.state == OperationState::Succeeded
+            && self
+                .steps
+                .iter()
+                .all(|step| step.state == StepState::Succeeded && step.expected_ms.is_some()))
+        .then(|| self.usual_ms())
+        .flatten()
+    }
+
     /// How long steps of the given phases and durations take: one after
     /// another, except sources, which are prepared at once. Steps without a
     /// duration are skipped; `None` when none has one.
@@ -803,6 +818,50 @@ mod tests {
             ]
         );
         assert_eq!(timeline.steps[0].retries, 2);
+    }
+
+    #[test]
+    fn only_a_run_whose_steps_all_succeeded_compares_with_the_usual() {
+        let run = |last: &str, state: OperationState| {
+            let mut timeline = timeline(&[
+                (Phase::BuildGit, "web", 30_000),
+                (Phase::EnsureService, "web", 2_000),
+            ]);
+            apply(
+                &mut timeline,
+                vec![
+                    action("action_started", "a1", Phase::BuildGit, "web", 0),
+                    action("action_succeeded", "a1", Phase::BuildGit, "web", 5_000),
+                    action("action_started", "a2", Phase::EnsureService, "web", 5_000),
+                    action(last, "a2", Phase::EnsureService, "web", 6_000),
+                ],
+            );
+            timeline.operation.state = state;
+            timeline.comparable_usual_ms()
+        };
+        assert_eq!(
+            run("action_succeeded", OperationState::Succeeded),
+            Some(32_000)
+        );
+        // A run that failed after 6 s is not 26 s faster than usual, even
+        // when it failed after its last step succeeded.
+        assert_eq!(run("action_failed", OperationState::Failed), None);
+        assert_eq!(run("action_succeeded", OperationState::Failed), None);
+        // Nor is one with a step it never ran before, whose usual time would
+        // only count its known steps.
+        let mut timeline = timeline(&[(Phase::BuildGit, "web", 30_000)]);
+        apply(
+            &mut timeline,
+            vec![
+                action("action_started", "a1", Phase::BuildGit, "web", 0),
+                action("action_succeeded", "a1", Phase::BuildGit, "web", 30_000),
+                action("action_started", "a2", Phase::RunJob, "migrate", 30_000),
+                action("action_succeeded", "a2", Phase::RunJob, "migrate", 90_000),
+            ],
+        );
+        timeline.operation.state = OperationState::Succeeded;
+        assert_eq!(timeline.usual_ms(), Some(30_000));
+        assert_eq!(timeline.comparable_usual_ms(), None);
     }
 
     #[test]
