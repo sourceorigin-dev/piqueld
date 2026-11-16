@@ -252,7 +252,8 @@ impl Waterfall {
                 let slow = started
                     && matches!(
                         (duration_ms, step.expected_ms),
-                        (Some(duration), Some(usual)) if duration > usual + (usual / 4).max(1_000)
+                        (Some(duration), Some(usual))
+                            if duration > usual && Step::noticeable(duration, usual)
                     );
                 Row {
                     id,

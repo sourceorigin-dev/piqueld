@@ -291,7 +291,7 @@ impl Step {
     }
 
     /// How long it usually takes, when it succeeded in noticeably more or
-    /// less time than that: half of it, and a second at least.
+    /// less time than that.
     #[must_use]
     pub fn unusual_ms(&self) -> Option<u64> {
         if self.state != StepState::Succeeded {
@@ -299,7 +299,14 @@ impl Step {
         }
         let expected = self.expected_ms?;
         let took = self.duration_ms(self.finished_at_ms?)?;
-        (took.abs_diff(expected) >= (expected / 2).max(1_000)).then_some(expected)
+        Self::noticeable(took, expected).then_some(expected)
+    }
+
+    /// Whether taking `took_ms` differs noticeably from the usual
+    /// `expected_ms`: by half of it, and a second at least.
+    #[must_use]
+    pub fn noticeable(took_ms: u64, expected_ms: u64) -> bool {
+        took_ms.abs_diff(expected_ms) >= (expected_ms / 2).max(1_000)
     }
 }
 
