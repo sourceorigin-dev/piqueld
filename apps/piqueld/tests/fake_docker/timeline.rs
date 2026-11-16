@@ -60,3 +60,37 @@ async fn deployments_record_their_steps_and_forecast_the_next_one() {
         "{deployed:#?}"
     );
 }
+
+#[tokio::test]
+async fn a_timeline_followed_across_a_rerun_shows_what_a_new_read_does() {
+    let harness = ControllerHarness::new().await;
+    let first = harness.apply(manifest(), Some(0)).await;
+    harness.finish(&first).await;
+    // Its rollout fails, leaving the rest of its plan, if any, never run.
+    harness
+        .docker
+        .fail_convergence
+        .store(true, Ordering::SeqCst);
+    let mut scaled = manifest();
+    for service in &mut scaled.spec.services {
+        service.replicas = 2.into();
+    }
+    let failed = harness.apply(scaled, None).await;
+    assert_eq!(harness.scan_result(&failed).await.0, OperationState::Failed);
+    let applications = harness.applications();
+    let mut followed = applications.timeline(&failed.id).await.unwrap();
+
+    harness
+        .docker
+        .fail_convergence
+        .store(false, Ordering::SeqCst);
+    let rerun = applications
+        .reconcile(&failed.environment_id, None)
+        .await
+        .unwrap();
+    assert_eq!(rerun.id, failed.id);
+    assert!(applications.advance_timeline(&mut followed).await.unwrap());
+    let read = applications.timeline(&failed.id).await.unwrap();
+    assert_eq!(followed.operation.attempt, read.operation.attempt);
+    assert_eq!(steps(&followed), steps(&read));
+}
