@@ -1384,7 +1384,7 @@ async fn migration_types_the_phases_recorded_before_them() {
 }
 
 #[tokio::test]
-async fn timeline_expectations_count_only_the_attempt_that_succeeded() {
+async fn timeline_expectations_count_the_successful_attempts_of_earlier_operations() {
     let (_temp, store) = Store::temporary().await;
     let op = application(&store).await;
     // A slow build in a failed first attempt, then a quick one that succeeded.
@@ -1407,17 +1407,24 @@ async fn timeline_expectations_count_only_the_attempt_that_succeeded() {
         .execute(&store.pool)
         .await
         .unwrap();
-    let next = Operation {
-        id: "operation-next".into(),
-        ..op
-    };
-    let baseline = store.timeline_baseline(&next).await.unwrap();
-    assert_eq!(
+    let expected = async |operation: Operation| {
+        let baseline = store.timeline_baseline(&operation).await.unwrap();
         baseline
             .expected
             .iter()
             .map(|step| step.duration_ms)
-            .collect::<Vec<_>>(),
-        [1_000]
-    );
+            .collect::<Vec<_>>()
+    };
+    let next = Operation {
+        id: "operation-next".into(),
+        ..op.clone()
+    };
+    assert_eq!(expected(next).await, [1_000]);
+    // An operation created before it expects nothing from it.
+    let earlier = Operation {
+        id: "operation-earlier".into(),
+        created_at_ms: op.created_at_ms - 1,
+        ..op
+    };
+    assert_eq!(expected(earlier).await, Vec::<u64>::new());
 }

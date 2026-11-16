@@ -19,7 +19,8 @@ pub struct Baseline {
 
 impl Store {
     /// The baseline of `operation`'s timeline: what the environment's recent
-    /// successful operations of its kind ran, in two indexed reads.
+    /// successful operations of its kind before it ran, in two indexed
+    /// reads, so an old deployment is not compared with later ones.
     ///
     /// # Errors
     /// Returns storage errors, or corruption for an unknown stored phase.
@@ -29,10 +30,12 @@ impl Store {
         let mut tx = self.snapshot().await?;
         let previous = sqlx::query!(
             r#"SELECT id AS "id!", attempt FROM operations
-            WHERE environment_id=?1 AND kind=?2 AND state='succeeded' AND id<>?3
-            ORDER BY created_at_ms DESC, id DESC LIMIT ?4"#,
+            WHERE environment_id=?1 AND kind=?2 AND state='succeeded'
+            AND (created_at_ms, id) < (?3, ?4)
+            ORDER BY created_at_ms DESC, id DESC LIMIT ?5"#,
             environment,
             kind,
+            operation.created_at_ms,
             operation.id,
             BASELINE_OPERATIONS,
         )
