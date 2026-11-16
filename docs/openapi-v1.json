@@ -6407,7 +6407,7 @@
                 "description": "Totals over the window."
               },
               "until_ms": {
-                "description": "End of the window, exclusive, in Unix ms.",
+                "description": "End of the window, exclusive, in Unix ms: the end of the hour the\nrequested end falls in, since counts are hourly.",
                 "format": "int64",
                 "type": "integer"
               }
@@ -12728,7 +12728,7 @@
             "type": "integer"
           },
           "visitors": {
-            "description": "Distinct browsers with a page view, each counted once a day per\nroute, so returning ones count again each day: an estimate, from\ntheir address and user agent.",
+            "description": "Distinct browsers with a page view, each counted once a day per\nroute, in the hour of their first page view that day, so returning\nones count again each day: an estimate, from their address and user\nagent.",
             "format": "int64",
             "type": "integer"
           }
@@ -12831,7 +12831,7 @@
             "description": "Totals over the window."
           },
           "until_ms": {
-            "description": "End of the window, exclusive, in Unix ms.",
+            "description": "End of the window, exclusive, in Unix ms: the end of the hour the\nrequested end falls in, since counts are hourly.",
             "format": "int64",
             "type": "integer"
           }

@@ -210,7 +210,12 @@ impl Store {
             DAY_MS
         };
         let since = query.since_ms - query.since_ms.rem_euclid(bucket);
-        let until = query.until_ms.max(since);
+        // Counts are hourly, so the hour `until_ms` falls in is included
+        // whole, and the window says so.
+        let until = (query.until_ms + HOUR_MS - 1)
+            .div_euclid(HOUR_MS)
+            .saturating_mul(HOUR_MS)
+            .max(since);
         let id = id.as_str();
         let rows = sqlx::query!(
             r#"SELECT (hour_ms-?2)/?6 AS "point!: i64",service,hostname,
@@ -410,6 +415,15 @@ mod tests {
         store.record_traffic(&tally).await.unwrap();
         store.record_traffic(&tally).await.unwrap();
 
+        // A window ending within an hour includes that hour whole.
+        let partial = store
+            .traffic(&id, window(day, day + HOUR_MS + 1))
+            .await
+            .unwrap();
+        assert_eq!(
+            (partial.until_ms, partial.totals.requests),
+            (day + 2 * HOUR_MS, 6)
+        );
         let report = store
             .traffic(&id, window(day, day + 2 * DAY_MS))
             .await

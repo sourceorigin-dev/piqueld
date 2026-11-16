@@ -291,7 +291,7 @@
         },
         "traffic": {
           "default": true,
-          "description": "Count the requests each route serves, for each environment's\ntraffic page, while `ingress.enabled` is set. piqueld keeps hourly\ntotals, never the requests themselves or visitors' addresses.",
+          "description": "Count the requests each route serves, for each environment's\ntraffic page, while `ingress.enabled` is set. piqueld stores hourly\ntotals, not the requests themselves or visitors' addresses; while the\ndaemon restarts, the gateway's own log holds the requests it serves.",
           "type": "boolean"
         },
         "tunnel": {

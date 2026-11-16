@@ -297,7 +297,7 @@ This server's public IPv4 and IPv6 addresses, such as `["203.0.113.10", "2001:db
 
 Type: boolean. Default: `true`.
 
-Count the requests each route serves, for each environment's traffic page, while `ingress.enabled` is set. piqueld keeps hourly totals, never the requests themselves or visitors' addresses.
+Count the requests each route serves, for each environment's traffic page, while `ingress.enabled` is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses; while the daemon restarts, the gateway's own log holds the requests it serves.
 
 ### `ingress.tunnel`
 

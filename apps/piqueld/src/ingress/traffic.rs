@@ -43,6 +43,11 @@ const MAX_LINE: u64 = 1024 * 1024;
 /// Visitors remembered per day. Past it, every visitor not yet seen counts
 /// as new, so a flood of addresses can't grow memory without bound.
 const MAX_VISITORS: usize = 200_000;
+/// Distinct pages and referring sites counted between two flushes; later
+/// new ones aren't. Single-page applications answer every path with HTML, so
+/// a scan of random paths would otherwise add a row, and a statement under
+/// the store's writer lock, per path.
+const MAX_RANKS: usize = 1_000;
 /// The longest page path counted; longer ones are cut.
 const MAX_PATH: usize = 256;
 /// User agent fragments of bots, crawlers, scripts and monitors, lowercase.
@@ -107,17 +112,20 @@ impl Traffic {
                 }
             }
         };
+        // Only the wait is cancelled: a flush already running took the tally,
+        // so dropping it would lose its counts.
         let flush = async {
             let mut interval = tokio::time::interval(FLUSH_INTERVAL);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            loop {
-                interval.tick().await;
+            while cancellation
+                .run_until_cancelled(interval.tick())
+                .await
+                .is_some()
+            {
                 self.flush().await;
             }
         };
-        cancellation
-            .run_until_cancelled(async { tokio::join!(accept, flush) })
-            .await;
+        tokio::join!(cancellation.run_until_cancelled(accept), flush);
         self.flush().await;
     }
 
@@ -216,12 +224,12 @@ impl Counter {
             if (full && !self.visitors.contains(&visitor)) || self.visitors.insert(visitor) {
                 counts.visitors = 1;
             }
+            let ranks = &mut self.tally.ranks;
             let mut rank = |kind, value: String| {
-                *self
-                    .tally
-                    .ranks
-                    .entry((route.clone(), day, kind, value))
-                    .or_default() += 1;
+                let key = (route.clone(), day, kind, value);
+                if ranks.len() < MAX_RANKS || ranks.contains_key(&key) {
+                    *ranks.entry(key).or_default() += 1;
+                }
             };
             rank(RankKind::Page, access.path());
             if let Some(referrer) = access.referrer() {

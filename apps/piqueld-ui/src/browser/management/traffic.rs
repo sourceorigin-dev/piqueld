@@ -13,6 +13,8 @@ use piqueld_client::observability::{
 };
 use std::time::Duration;
 
+/// Points past which the chart's columns touch, without gaps.
+const DENSE: usize = 100;
 /// How often the tab reads the counts again; the daemon adds new ones every
 /// minute.
 const REFRESH: Duration = Duration::from_mins(1);
@@ -230,7 +232,10 @@ fn chart(report: &TrafficReport, measure: Measure) -> AnyView {
                 <span class="scale-middle">{format!("{:#}", Count(top / 2))}</span>
                 <span class="scale-zero">"0"</span>
             </div>
-            <div class="traffic-plot">{columns}</div>
+            // A year of daily points has no room for gaps between columns.
+            <div class={if points > DENSE { "traffic-plot dense" } else { "traffic-plot" }}>
+                {columns}
+            </div>
             <div class="traffic-axis" aria-hidden="true">
                 <span>{first}</span>
                 <span>{last}</span>

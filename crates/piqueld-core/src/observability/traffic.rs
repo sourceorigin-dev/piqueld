@@ -10,7 +10,8 @@ pub struct TrafficReport {
     /// Start of the window, inclusive, in Unix ms: the start of its first
     /// point.
     pub since_ms: i64,
-    /// End of the window, exclusive, in Unix ms.
+    /// End of the window, exclusive, in Unix ms: the end of the hour the
+    /// requested end falls in, since counts are hourly.
     pub until_ms: i64,
     /// Length of each `series` point in ms: an hour for windows of up to two
     /// days, a day for longer ones.
@@ -103,8 +104,9 @@ pub struct TrafficCounts {
     /// Successful requests for HTML pages from browsers, not bots.
     pub page_views: i64,
     /// Distinct browsers with a page view, each counted once a day per
-    /// route, so returning ones count again each day: an estimate, from
-    /// their address and user agent.
+    /// route, in the hour of their first page view that day, so returning
+    /// ones count again each day: an estimate, from their address and user
+    /// agent.
     pub visitors: i64,
     /// Requests answered with a 4xx status.
     pub client_errors: i64,

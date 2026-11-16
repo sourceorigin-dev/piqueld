@@ -1001,6 +1001,10 @@
         background: linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% 50%;
     }
 
+    .traffic-plot.dense {
+        gap: 0;
+    }
+
     .traffic-column {
         position: relative;
         display: flex;

@@ -67,7 +67,7 @@ public_addresses = []
 # running as its user. Restart to apply.
 # webhook_hostname = "hooks.example.com"
 # Count the requests each route serves, for each environment's traffic page.
-# piqueld keeps hourly totals, never the requests or visitors' addresses.
+# piqueld stores hourly totals, not the requests or visitors' addresses.
 traffic = true
 
 # Private routes, served to the tailnet through a second tailnet node, the apps

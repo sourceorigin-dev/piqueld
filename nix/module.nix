@@ -269,7 +269,7 @@ in
           ingress.traffic = lib.mkOption {
             type = lib.types.bool;
             default = true;
-            description = "Count the requests each route serves, for each environment's traffic page, while ingress.enabled is set. piqueld keeps hourly totals, never the requests themselves or visitors' addresses. Restart piqueld to apply.";
+            description = "Count the requests each route serves, for each environment's traffic page, while ingress.enabled is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses; while the daemon restarts, the gateway's own log holds the requests it serves. Restart piqueld to apply.";
           };
           dns.providers = lib.mkOption {
             type = lib.types.listOf (

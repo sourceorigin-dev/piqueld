@@ -76,16 +76,18 @@ routes. Add `--json` for the full report.
 - **Requests** are every request a route sends to its service, bots'
   included, with how many failed with a 4xx or 5xx status, the bytes sent and
   the time to answer.
-- **Page views** are successful requests from browsers for a page: those
-  that load a document, as browsers say with `Sec-Fetch-Dest`, or that are
-  answered with HTML. Scripts, images and API calls aren't page views.
+- **Page views** are successful `GET` requests from browsers for a page:
+  those that load a document, as browsers say with `Sec-Fetch-Dest`, or that
+  are answered with HTML. Scripts, images, API calls, and pages a browser
+  only prefetches aren't page views.
 - **Visitors** are the distinct browsers with a page view on a route each UTC
   day, told apart by their address and user agent. A visitor coming back
   another day counts again, and several people behind one address with the
   same browser count once.
 - **Top pages** count page views by path, without the query string. **Referring
   sites** count them by the hostname of the `Referer` header, unless it is the
-  route's own.
+  route's own. Both are counted per UTC day, so they cover the whole days a
+  period touches.
 
 Requests from bots, crawlers, scripts such as `curl`, and uptime monitors
 count as requests, but never as page views or visitors. The gateway's own
