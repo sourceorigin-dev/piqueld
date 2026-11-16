@@ -24,8 +24,7 @@ use piqueld_client::{
 };
 use std::{collections::HashMap, fmt, io, sync::Arc, time::Duration};
 
-/// Step rows a terminal shows at most: beyond them, the earliest steps that
-/// succeeded fold into one row, then the last steps left into another.
+/// Step rows a terminal shows at most; see [`Rows`].
 const MAX_ROWS: usize = 15;
 /// Frames of a spinner, one per redraw.
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -269,41 +268,34 @@ impl View {
         frame: usize,
         max_rows: usize,
     ) -> fmt::Result {
-        let steps = &timeline.steps;
-        let succeeded = steps
-            .iter()
-            .take_while(|step| step.state == StepState::Succeeded)
-            .count();
-        let folded = match steps.len().checked_sub(max_rows) {
-            Some(over) if over > 0 => succeeded.min(over + 1),
-            _ => 0,
-        };
-        let folded = if folded > 1 { folded } else { 0 };
-        if folded > 0 {
+        let rows = Rows::new(&timeline.steps, max_rows);
+        if rows.folded > 0 {
             out.write_str("\n  ")?;
-            self.paint(out, "32", '✓')?;
-            write!(out, " {folded} steps done")?;
+            if rows.failed > 0 {
+                self.paint(out, "31", '✗')?;
+                write!(
+                    out,
+                    " {} steps finished, {} failed or interrupted",
+                    rows.folded, rows.failed
+                )?;
+            } else {
+                self.paint(out, "32", '✓')?;
+                write!(out, " {} steps done", rows.folded)?;
+            }
         }
-        let budget = max_rows - usize::from(folded > 0);
-        let mut shown = &steps[folded..];
-        let more = if shown.len() > budget {
-            shown = &shown[..budget - 1];
-            steps.len() - folded - shown.len()
-        } else {
-            0
-        };
-        let width = shown
+        let width = rows
+            .shown
             .iter()
             .map(|step| StepLabel(step).width())
             .max()
             .unwrap_or(0);
-        for step in shown {
+        for step in &rows.shown {
             self.row(out, step, width, now_ms, frame)?;
         }
-        if more > 0 {
+        if rows.more > 0 {
             out.write_str("\n  ")?;
             self.paint(out, "2", '○')?;
-            write!(out, " {more} more steps")?;
+            write!(out, " {} more steps", rows.more)?;
         }
         Ok(())
     }
@@ -360,6 +352,98 @@ impl View {
             Some(usual) => format!("{took} (usual {})", Elapsed(Duration::from_millis(usual))),
             None => took.to_string(),
         })
+    }
+}
+
+/// The steps a timeline of more than `MAX_ROWS` draws: the earliest that
+/// finished fold into one row, wherever they are, those that succeeded
+/// first, so steps running or retrying stay drawn; then the last steps
+/// left, which come after them, fold into another.
+struct Rows<'a> {
+    /// Steps folded as finished.
+    folded: usize,
+    /// Of them, those that failed or were interrupted.
+    failed: usize,
+    /// Steps drawn, in order.
+    shown: Vec<&'a Step>,
+    /// Steps left that are not drawn.
+    more: usize,
+}
+
+impl<'a> Rows<'a> {
+    fn new(steps: &'a [Step], max_rows: usize) -> Self {
+        // Folding n steps into one row saves n - 1 rows.
+        let over = steps.len().saturating_sub(max_rows);
+        let needed = if over > 0 { over + 1 } else { 0 };
+        let count = |failed: bool| {
+            steps
+                .iter()
+                .filter(|step| Self::folds(step, failed))
+                .count()
+        };
+        let succeeded = count(false).min(needed);
+        // Failed steps fold only as far as needed to keep the steps under
+        // way drawn: until then, cutting the steps left is enough.
+        let under_way = steps
+            .iter()
+            .filter(|step| step.state.started() && !step.state.finished())
+            .count();
+        (0..=count(true).min(needed - succeeded))
+            .map(|failed| Self::folding(steps, max_rows, succeeded, failed))
+            .find(|rows| {
+                rows.shown
+                    .iter()
+                    .filter(|step| step.state.started() && !step.state.finished())
+                    .count()
+                    == under_way
+            })
+            .unwrap_or_else(|| Self::folding(steps, max_rows, succeeded, needed - succeeded))
+    }
+
+    /// Folds the earliest `succeeded` steps that succeeded and `failed` that
+    /// failed, then cuts the last steps past `max_rows`.
+    fn folding(steps: &'a [Step], max_rows: usize, succeeded: usize, failed: usize) -> Self {
+        let (succeeded, failed) = if succeeded + failed > 1 {
+            (succeeded, failed)
+        } else {
+            (0, 0)
+        };
+        let (mut folding_succeeded, mut folding_failed) = (succeeded, failed);
+        let mut shown: Vec<_> = steps
+            .iter()
+            .filter(|step| {
+                let quota = if Self::folds(step, false) {
+                    &mut folding_succeeded
+                } else if Self::folds(step, true) {
+                    &mut folding_failed
+                } else {
+                    return true;
+                };
+                let fold = *quota > 0;
+                *quota -= usize::from(fold);
+                !fold
+            })
+            .collect();
+        let folded = succeeded + failed;
+        let budget = max_rows - usize::from(folded > 0);
+        let more = if shown.len() > budget {
+            shown.truncate(budget - 1);
+            steps.len() - folded - shown.len()
+        } else {
+            0
+        };
+        Self {
+            folded,
+            failed,
+            shown,
+            more,
+        }
+    }
+
+    /// Whether `step` finished, and failed or was interrupted when `failed`,
+    /// succeeded otherwise.
+    fn folds(step: &Step, failed: bool) -> bool {
+        step.state.finished() && (step.state != StepState::Succeeded) == failed
     }
 }
 
@@ -446,5 +530,61 @@ impl fmt::Display for StepDetail<'_> {
             (StepState::Interrupted, _) => formatter.write_str("  interrupted"),
             _ => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn step(phase: &str, state: &str) -> Step {
+        serde_json::from_value(serde_json::json!({
+            "phase": phase, "resource": "web", "state": state,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn steps_running_after_others_succeeded_stay_drawn() {
+        // A build running, fourteen done, a second running, then four left.
+        let mut steps = vec![step("building_git", "running")];
+        steps.extend((0..14).map(|_| step("building_git", "succeeded")));
+        steps.push(step("building_git", "running"));
+        steps.extend((0..4).map(|_| step("ensure_service", "planned")));
+        let rows = Rows::new(&steps, 15);
+        assert_eq!(rows.folded, 6);
+        assert_eq!(rows.shown.len() + 1, 15);
+        let running = |rows: &Rows| {
+            rows.shown
+                .iter()
+                .filter(|step| step.state == StepState::Running)
+                .count()
+        };
+        assert_eq!(running(&rows), 2);
+        assert_eq!(rows.folded + rows.shown.len() + rows.more, steps.len());
+
+        // Failed repairs piling up during a long build fold too, once no
+        // succeeded step is left to fold.
+        let mut steps: Vec<_> = (0..18).map(|_| step("ensure_service", "failed")).collect();
+        steps.push(step("building_git", "running"));
+        steps.extend((0..3).map(|_| step("ensure_service", "planned")));
+        let rows = Rows::new(&steps, 15);
+        assert_eq!((rows.folded, rows.failed), (6, 6));
+        assert_eq!(running(&rows), 1);
+        assert_eq!(rows.folded + rows.shown.len() + rows.more, steps.len());
+
+        // A failure stays drawn when cutting the steps left is enough.
+        let mut steps: Vec<_> = (0..3).map(|_| step("building_git", "succeeded")).collect();
+        steps.push(step("building_git", "failed"));
+        steps.push(step("building_git", "running"));
+        steps.extend((0..15).map(|_| step("ensure_service", "planned")));
+        let rows = Rows::new(&steps, 15);
+        assert_eq!((rows.folded, rows.failed), (3, 0));
+        assert_eq!(running(&rows), 1);
+        assert!(
+            rows.shown
+                .iter()
+                .any(|step| step.state == StepState::Failed)
+        );
     }
 }
