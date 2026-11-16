@@ -3,7 +3,7 @@
 //! The certificates serve a private route on the private listener, which this
 //! test reaches through a relay adding a PROXY header, as the apps node does.
 use super::Scenario;
-use crate::ingress::{Ingress, certificates::Certificates, node::proxy_relay};
+use crate::ingress::{Ingress, certificates::Certificates, node::proxy_relay, records::RouteDns};
 use hickory_resolver::{
     Resolver,
     config::{ConnectionConfig, NameServerConfig, ResolverConfig},
@@ -16,13 +16,19 @@ use piqueld_config::dns::{
     provider::{DnsProvider, Record, challtestsrv::Challtestsrv},
 };
 use piqueld_core::{
+    api::DnsRecordState,
     event::Event,
     manifest::{Hostname, RouteHostname},
     observability::EventFilter,
 };
 use piqueld_store::ingress::AcmeChallenge;
 use serde_json::json;
-use std::{collections::BTreeSet, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeSet,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 use tokio_util::sync::CancellationToken;
 
 const PEBBLE_IMAGE: &str = "ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199";
@@ -39,6 +45,19 @@ fn hosts(names: &[&str]) -> BTreeSet<Hostname> {
         .iter()
         .map(|name| Hostname::parse(*name).unwrap())
         .collect()
+}
+
+/// The provider writing into `challtestsrv`, which serves `example.test`.
+fn challtestsrv() -> Challtestsrv {
+    Challtestsrv {
+        management: format!("http://127.0.0.1:{}", port("PIQUELD_CHALLTESTSRV_API_PORT")),
+        zones: hosts(&["example.test"]).into_iter().collect(),
+    }
+}
+
+/// `challtestsrv`'s DNS server, the zone's only nameserver.
+fn challtestsrv_dns() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], port("PIQUELD_CHALLTESTSRV_DNS_PORT")))
 }
 
 fn routes(names: &[&str]) -> BTreeSet<RouteHostname> {
@@ -162,19 +181,12 @@ impl Scenario {
 
     /// A second manager of this scenario's gateway, issuing from Pebble.
     fn pebble_ingress(&self, root: &std::path::Path) -> Ingress {
-        let mut dns = Dns::new(vec![
-            DnsProvider::Challtestsrv(Challtestsrv {
-                management: format!("http://127.0.0.1:{}", port("PIQUELD_CHALLTESTSRV_API_PORT")),
-                zones: hosts(&["example.test"]).into_iter().collect(),
-            })
-            .into(),
-        ])
-        .unwrap();
+        let mut dns = Dns::new(vec![DnsProvider::Challtestsrv(challtestsrv()).into()]).unwrap();
         // One nameserver whose first address refuses connections, like an
         // IPv6 address on an IPv4-only host: its second address answers.
         dns.nameservers = Some(vec![vec![
             SocketAddr::from(([127, 0, 0, 1], 1)),
-            SocketAddr::from(([127, 0, 0, 1], port("PIQUELD_CHALLTESTSRV_DNS_PORT"))),
+            challtestsrv_dns(),
         ]]);
         let mut ingress = Ingress::new(
             true,
@@ -460,6 +472,7 @@ impl Scenario {
         let root_path = self.directory.path().join("pebble.minica.pem");
         tokio::fs::write(&root_path, &root).await.unwrap();
         let ingress = self.pebble_ingress(&root_path);
+        Self::route_checks_resolve_authoritatively(&ingress).await;
         let admin = self.deploy_private_route().await;
         let desired = routes(&["admin.example.test", "www.example.test", "example.test"]);
         let now = piqueld_store::now_ms();
@@ -769,6 +782,36 @@ impl Scenario {
             [] as [String; 0]
         );
         assert_eq!(ingress.store.acme_challenges().await.unwrap(), []);
+    }
+
+    /// A route check resolves a hostname whose records piqueld manages on its
+    /// zone's nameserver, `challtestsrv`, so it finds records the host's
+    /// resolver has no answer for, as when it cached NXDOMAIN before piqueld
+    /// published them. Records the operator writes go through that resolver.
+    async fn route_checks_resolve_authoritatively(ingress: &Ingress) {
+        let dns = &ingress.certificates.dns;
+        dns.discover().await;
+        let addresses: [IpAddr; 2] = ["192.0.2.7".parse().unwrap(), "2001:db8::7".parse().unwrap()];
+        challtestsrv()
+            .answer(dns.http(), "fresh.example.test", &addresses)
+            .await;
+        let route = RouteHostname::parse("fresh.example.test").unwrap();
+        let hostname = Hostname::parse("fresh.example.test").unwrap();
+        assert!(
+            ingress.resolve(&route, &hostname).await.is_err(),
+            "the host's resolver must have no answer"
+        );
+        ingress.records.write().insert(
+            route.clone(),
+            RouteDns {
+                state: DnsRecordState::Managed,
+                message: None,
+            },
+        );
+        assert_eq!(
+            ingress.resolve(&route, &hostname).await.unwrap(),
+            BTreeSet::from(addresses)
+        );
     }
 
     /// Unneeded certificates are kept until they expire, then deleted.

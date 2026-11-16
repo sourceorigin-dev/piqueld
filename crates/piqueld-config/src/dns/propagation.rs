@@ -1,16 +1,22 @@
-//! Waits for a published TXT record on a zone's authoritative nameservers,
-//! queried directly over TCP without caching, so a CA resolving the name
-//! afterwards finds it. OVH can take several minutes to propagate changes.
+//! Queries a zone's authoritative nameservers directly over TCP without
+//! caching: to wait for a published TXT record, so a CA resolving the name
+//! afterwards finds it (OVH can take several minutes to propagate changes),
+//! and to resolve a route's hostname for its check, so a stale answer cached
+//! on this host cannot hide records piqueld published since.
 use super::Dns;
 use anyhow::{Context, Result, anyhow, ensure};
 use hickory_resolver::{
     Resolver, TokioResolver,
-    config::{ConnectionConfig, NameServerConfig, ResolverConfig, ResolverOpts},
+    config::{ConnectionConfig, NameServerConfig, ResolveHosts, ResolverConfig, ResolverOpts},
     net::runtime::TokioRuntimeProvider,
     proto::rr::RData,
 };
 use piqueld_core::manifest::Hostname;
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    collections::BTreeSet,
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
 impl Dns {
     /// Polls every 5s until every authoritative nameserver of `zone` serves
@@ -65,24 +71,12 @@ impl Dns {
     }
 
     /// Whether the nameserver at `address` serves `value` in a TXT record at
-    /// `name`, asked over TCP without recursion or caching.
+    /// `name`.
     async fn serves(address: SocketAddr, name: &str, value: &str) -> Result<bool> {
-        let mut connection = ConnectionConfig::tcp();
-        connection.port = address.port();
-        let mut options = ResolverOpts::default();
-        options.cache_size = 0;
-        options.recursion_desired = false;
-        let resolver = Resolver::builder_with_config(
-            ResolverConfig::from_parts(
-                None,
-                Vec::new(),
-                vec![NameServerConfig::new(address.ip(), true, vec![connection])],
-            ),
-            TokioRuntimeProvider::default(),
-        )
-        .with_options(options)
-        .build()?;
-        match resolver.txt_lookup(format!("{name}.")).await {
+        match Self::authoritative([address])?
+            .txt_lookup(format!("{name}."))
+            .await
+        {
             Ok(lookup) => Ok(lookup.answers().iter().any(|record| {
                 matches!(&record.data, RData::TXT(txt)
                     if txt.txt_data.iter().any(|part| &**part == value.as_bytes()))
@@ -90,6 +84,48 @@ impl Dns {
             Err(error) if error.is_no_records_found() => Ok(false),
             Err(error) => Err(error).with_context(|| format!("query {address}")),
         }
+    }
+
+    /// Addresses `hostname` has on the authoritative nameservers of the zone
+    /// owning it, so a route check sees the records piqueld wrote rather than
+    /// an answer this host cached before.
+    ///
+    /// # Errors
+    /// Fails when no provider zone contains `hostname`, or the lookup fails or
+    /// finds no address.
+    pub async fn resolve_authoritatively(&self, hostname: &Hostname) -> Result<BTreeSet<IpAddr>> {
+        let (_, zone) = self.zone_for(hostname).await?;
+        let nameservers = self.nameservers(&zone.name).await?.into_iter().flatten();
+        Ok(Self::authoritative(nameservers)?
+            .lookup_ip(format!("{hostname}."))
+            .await
+            .with_context(|| format!("resolve {hostname} on the nameservers of {}", zone.name))?
+            .iter()
+            .collect())
+    }
+
+    /// A resolver asking the nameservers at `addresses` over TCP, without
+    /// recursion, caching or the hosts file. It moves on to the next address
+    /// when one does not answer.
+    fn authoritative(addresses: impl IntoIterator<Item = SocketAddr>) -> Result<TokioResolver> {
+        let nameservers = addresses
+            .into_iter()
+            .map(|address| {
+                let mut connection = ConnectionConfig::tcp();
+                connection.port = address.port();
+                NameServerConfig::new(address.ip(), true, vec![connection])
+            })
+            .collect();
+        let mut options = ResolverOpts::default();
+        options.cache_size = 0;
+        options.recursion_desired = false;
+        options.use_hosts_file = ResolveHosts::Never;
+        Ok(Resolver::builder_with_config(
+            ResolverConfig::from_parts(None, Vec::new(), nameservers),
+            TokioRuntimeProvider::default(),
+        )
+        .with_options(options)
+        .build()?)
     }
 
     /// Addresses of each authoritative nameserver of `zone`, from its NS

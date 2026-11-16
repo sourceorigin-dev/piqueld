@@ -7,7 +7,7 @@
 //!
 //! [`Dns`] discovers each provider's zones and assigns every hostname to the
 //! provider with the longest matching zone. It also waits for records to
-//! propagate to a zone's nameservers.
+//! propagate to a zone's nameservers, and resolves route hostnames on them.
 mod propagation;
 pub mod provider;
 mod zones;
@@ -52,8 +52,8 @@ pub struct Dns {
     /// whole discovery, so discoveries never overlap and an older one cannot
     /// overwrite a newer result.
     refreshed: Mutex<Option<Instant>>,
-    /// Addresses of each nameserver queried for propagation instead of each
-    /// zone's NS records.
+    /// Addresses of each nameserver queried for propagation and route
+    /// hostnames instead of each zone's NS records.
     #[cfg(any(test, feature = "testing"))]
     pub nameservers: Option<Vec<Vec<std::net::SocketAddr>>>,
 }

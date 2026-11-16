@@ -368,15 +368,26 @@ Each route's state (`Ingress::route_state`) is, in order:
 While a route isn't ready, a DNS records problem replaces its message with
 `DNS records (<state>): <problem>`.
 
-A `ready` public route means an HTTPS request from the daemon validated a
-publicly trusted certificate and reached this gateway's probe endpoint. A
-`ready` private route means the host's resolver answers exactly the apps
-node's tailnet addresses, the node is logged in, and the private listener,
-reached over the edge network through a local relay sending a PROXY header for
-`100.100.100.100` and the hostname as SNI, served a trusted certificate and the
-endpoint. The tailnet hop itself is not probed. A wildcard is probed on the
-first name in `a`–`z`, `0`–`9` below its parent that no exact route claims
-(`RouteHostname::served`).
+Both probes resolve the hostname first (`Ingress::resolve`). While the route's
+DNS state is `managed` or `pending`, `Dns::resolve_authoritatively` asks the
+zone's authoritative nameservers over TCP, without recursion, a cache or the
+hosts file. An answer the host's resolver cached before piqueld wrote the
+records, such as NXDOMAIN, then can't hold a working route `pending`. In any
+other state, including before a records pass has seen the route (after a
+restart, or when the gateway applies a new route before a pass has run), the
+host's resolver answers.
+Finding the nameservers still asks the host's resolver for the zone's NS
+records. Resolving and probing share a 10-second deadline.
+
+A `ready` public route means an HTTPS request from the daemon, pinned to the
+resolved addresses, validated a publicly trusted certificate and reached this
+gateway's probe endpoint. A `ready` private route means the resolved addresses
+are exactly the apps node's tailnet addresses, the node is logged in, and the
+private listener, reached over the edge network through a local relay sending
+a PROXY header for `100.100.100.100` and the hostname as SNI, served a trusted
+certificate and the endpoint. The tailnet hop itself is not probed. A wildcard
+is probed on the first name in `a`–`z`, `0`–`9` below its parent that no exact
+route claims (`RouteHostname::served`).
 
 The endpoint never invokes the application: a ready route is neither a backend
 health check nor proof of reachability from every network. Applications should
