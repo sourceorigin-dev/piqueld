@@ -368,12 +368,14 @@ Each route's state (`Ingress::route_state`) is, in order:
 While a route isn't ready, a DNS records problem replaces its message with
 `DNS records (<state>): <problem>`.
 
-Both probes resolve the hostname with `Dns::resolve`. When a provider with
-`manage_records` owns its zone, it asks the zone's authoritative nameservers
-over TCP, without recursion or a cache, so an answer the host's resolver cached
-before piqueld wrote the records (such as NXDOMAIN) can't hold a working route
-`pending`. Other hostnames go through the host's resolver. Finding the
-nameservers still asks the host's resolver for the zone's NS records.
+Both probes resolve the hostname first (`Ingress::resolve`). While the route's
+DNS state is `managed`, `Dns::resolve_authoritatively` asks the zone's
+authoritative nameservers over TCP, without recursion, a cache or the hosts
+file. An answer the host's resolver cached before piqueld wrote the records,
+such as NXDOMAIN, then can't hold a working route `pending`. Records the
+operator writes go through the host's resolver. Finding the nameservers still
+asks the host's resolver for the zone's NS records. Resolving and probing
+share a 10-second deadline.
 
 A `ready` public route means an HTTPS request from the daemon, pinned to the
 resolved addresses, validated a publicly trusted certificate and reached this

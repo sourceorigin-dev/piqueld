@@ -3,7 +3,7 @@
 //! The certificates serve a private route on the private listener, which this
 //! test reaches through a relay adding a PROXY header, as the apps node does.
 use super::Scenario;
-use crate::ingress::{Ingress, certificates::Certificates, node::proxy_relay};
+use crate::ingress::{Ingress, certificates::Certificates, node::proxy_relay, records::RouteDns};
 use hickory_resolver::{
     Resolver,
     config::{ConnectionConfig, NameServerConfig, ResolverConfig},
@@ -13,9 +13,10 @@ use hyper::Method;
 use piqueld_config::AcmeConfig;
 use piqueld_config::dns::{
     Dns,
-    provider::{DnsProvider, DnsProviderConfig, Record, challtestsrv::Challtestsrv},
+    provider::{DnsProvider, Record, challtestsrv::Challtestsrv},
 };
 use piqueld_core::{
+    api::DnsRecordState,
     event::Event,
     manifest::{Hostname, RouteHostname},
     observability::EventFilter,
@@ -471,7 +472,7 @@ impl Scenario {
         let root_path = self.directory.path().join("pebble.minica.pem");
         tokio::fs::write(&root_path, &root).await.unwrap();
         let ingress = self.pebble_ingress(&root_path);
-        Self::route_checks_resolve_authoritatively().await;
+        Self::route_checks_resolve_authoritatively(&ingress).await;
         let admin = self.deploy_private_route().await;
         let desired = routes(&["admin.example.test", "www.example.test", "example.test"]);
         let now = piqueld_store::now_ms();
@@ -783,32 +784,32 @@ impl Scenario {
         assert_eq!(ingress.store.acme_challenges().await.unwrap(), []);
     }
 
-    /// While a provider manages a zone's records, route checks resolve its
-    /// hostnames on the zone's nameserver, `challtestsrv`, so they find
-    /// records the host's resolver has no answer for, as when it cached
-    /// NXDOMAIN before piqueld published them.
-    async fn route_checks_resolve_authoritatively() {
-        let provider = challtestsrv();
-        let mut dns = Dns::new(vec![DnsProviderConfig {
-            provider: DnsProvider::Challtestsrv(provider.clone()),
-            manage_records: true,
-        }])
-        .unwrap();
-        dns.nameservers = Some(vec![vec![challtestsrv_dns()]]);
+    /// A route check resolves a hostname whose records piqueld manages on its
+    /// zone's nameserver, `challtestsrv`, so it finds records the host's
+    /// resolver has no answer for, as when it cached NXDOMAIN before piqueld
+    /// published them. Records the operator writes go through that resolver.
+    async fn route_checks_resolve_authoritatively(ingress: &Ingress) {
+        let dns = &ingress.certificates.dns;
         dns.discover().await;
         let addresses: [IpAddr; 2] = ["192.0.2.7".parse().unwrap(), "2001:db8::7".parse().unwrap()];
-        provider
+        challtestsrv()
             .answer(dns.http(), "fresh.example.test", &addresses)
             .await;
-        assert!(
-            tokio::net::lookup_host(("fresh.example.test", 0))
-                .await
-                .is_err(),
-            "the system resolver must have no answer"
-        );
+        let route = RouteHostname::parse("fresh.example.test").unwrap();
         let hostname = Hostname::parse("fresh.example.test").unwrap();
+        assert!(
+            ingress.resolve(&route, &hostname).await.is_err(),
+            "the host's resolver must have no answer"
+        );
+        ingress.records.write().insert(
+            route.clone(),
+            RouteDns {
+                state: DnsRecordState::Managed,
+                message: None,
+            },
+        );
         assert_eq!(
-            dns.resolve(&hostname).await.unwrap(),
+            ingress.resolve(&route, &hostname).await.unwrap(),
             BTreeSet::from(addresses)
         );
     }

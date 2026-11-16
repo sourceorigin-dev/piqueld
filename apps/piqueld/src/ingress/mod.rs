@@ -20,7 +20,10 @@ use piqueld_config::{
 };
 use piqueld_core::{
     EnvironmentId,
-    api::{DnsRecords, IngressStatus, PrivateIngressStatus, PublicIngressStatus, RouteStatus},
+    api::{
+        DnsRecordState, DnsRecords, IngressStatus, PrivateIngressStatus, PublicIngressStatus,
+        RouteStatus,
+    },
     manifest::{Hostname, RouteHostname, ValidatedRoute, Visibility},
 };
 use piqueld_store::{Store, ingress::RoutingTable, now_ms};
@@ -796,18 +799,23 @@ impl Ingress {
         if is_private && !private.healthy {
             return ("pending", private.message.clone());
         }
-        let result = async {
+        // DNS lookups run outside the probe client's own timeout.
+        let result = tokio::time::timeout(Duration::from_secs(10), async {
             let hostname = route
                 .hostname
                 .served(exact)
                 .context("every one-character name below the wildcard has its own exact route")?;
+            let resolved = self.resolve(&route.hostname, &hostname).await?;
             if is_private {
-                self.probe_private(&hostname, &private.addresses).await
+                self.probe_private(&hostname, &resolved, &private.addresses)
+                    .await
             } else {
-                self.probe_public(&hostname).await
+                self.probe_public(&hostname, &resolved).await
             }
-        }
-        .await;
+        })
+        .await
+        .context("the route check took over 10s")
+        .and_then(|result| result);
         match result {
             Ok(()) if is_private => ("ready", "DNS points at the apps node and the private listener serves trusted HTTPS; the tailnet hop and backend health are reported separately".into()),
             Ok(()) if self.tunnel.is_some() => ("ready", "DNS and trusted HTTPS through the Cloudflare Tunnel verified from this daemon; backend health is reported separately".into()),
@@ -824,18 +832,36 @@ impl Ingress {
         }
     }
 
-    /// Verifies a public route at the addresses its DNS records hold, pinned so
-    /// the probe never reads this host's resolver cache; see [`Dns::resolve`].
-    async fn probe_public(&self, hostname: &Hostname) -> Result<()> {
-        let addresses: Vec<SocketAddr> = self
-            .certificates
-            .dns
-            .resolve(hostname)
-            .await?
-            .into_iter()
-            // Port 0 keeps the URL's port.
-            .map(|ip| SocketAddr::new(ip, 0))
-            .collect();
+    /// Addresses `hostname`, served for `route`, resolves to for its check.
+    /// While piqueld manages the route's records, the zone's authoritative
+    /// nameservers answer, so the check sees what piqueld wrote rather than an
+    /// answer this host cached before. Records the operator writes go through
+    /// the host's resolver.
+    async fn resolve(
+        &self,
+        route: &RouteHostname,
+        hostname: &Hostname,
+    ) -> Result<BTreeSet<IpAddr>> {
+        if self.route_dns(route).state == DnsRecordState::Managed {
+            return self
+                .certificates
+                .dns
+                .resolve_authoritatively(hostname)
+                .await;
+        }
+        Ok(tokio::net::lookup_host((hostname.as_str(), 0))
+            .await
+            .with_context(|| format!("resolve {hostname}"))?
+            .map(|address| address.ip())
+            .collect())
+    }
+
+    /// Verifies a public route at its `resolved` addresses, pinned so the
+    /// probe does not resolve `hostname` again.
+    async fn probe_public(&self, hostname: &Hostname, resolved: &BTreeSet<IpAddr>) -> Result<()> {
+        // Port 0 keeps the URL's port.
+        let addresses: Vec<SocketAddr> =
+            resolved.iter().map(|ip| SocketAddr::new(*ip, 0)).collect();
         let client = Self::probe_client()
             .resolve_to_addrs(hostname.as_str(), &addresses)
             .build()?;
@@ -845,19 +871,23 @@ impl Ingress {
 
     /// Verifies a private route without crossing the tailnet:
     ///
-    /// 1. Public DNS must answer exactly the apps node's tailnet addresses,
-    ///    resolved as [`Dns::resolve`] does.
+    /// 1. Its `resolved` addresses must be exactly the apps node's tailnet
+    ///    addresses.
     /// 2. The private listener, reached over the edge network with a PROXY
     ///    header naming a tailnet client and the hostname as SNI, must serve
     ///    a trusted certificate and this installation's probe endpoint.
-    async fn probe_private(&self, hostname: &Hostname, addresses: &[String]) -> Result<()> {
+    async fn probe_private(
+        &self,
+        hostname: &Hostname,
+        resolved: &BTreeSet<IpAddr>,
+        addresses: &[String],
+    ) -> Result<()> {
         let expected: BTreeSet<IpAddr> = addresses
             .iter()
             .filter_map(|address| address.parse().ok())
             .collect();
-        let resolved = self.certificates.dns.resolve(hostname).await?;
         anyhow::ensure!(
-            !expected.is_empty() && resolved == expected,
+            !expected.is_empty() && *resolved == expected,
             "DNS answers {resolved:?} instead of the apps node's addresses {expected:?}"
         );
         let (relay, _relay) = node::proxy_relay(self.private_listener().await?, PROBE_CLIENT)

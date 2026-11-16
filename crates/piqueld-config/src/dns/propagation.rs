@@ -7,7 +7,7 @@ use super::Dns;
 use anyhow::{Context, Result, anyhow, ensure};
 use hickory_resolver::{
     Resolver, TokioResolver,
-    config::{ConnectionConfig, NameServerConfig, ResolverConfig, ResolverOpts},
+    config::{ConnectionConfig, NameServerConfig, ResolveHosts, ResolverConfig, ResolverOpts},
     net::runtime::TokioRuntimeProvider,
     proto::rr::RData,
 };
@@ -86,25 +86,15 @@ impl Dns {
         }
     }
 
-    /// Addresses `hostname` resolves to. When a provider manages the records
-    /// of the zone owning it, they are asked of the zone's authoritative
-    /// nameservers, so a route check sees the records piqueld wrote rather
-    /// than an answer this host cached before. Other hostnames, whose records
-    /// the operator writes, go through the system resolver.
+    /// Addresses `hostname` has on the authoritative nameservers of the zone
+    /// owning it, so a route check sees the records piqueld wrote rather than
+    /// an answer this host cached before.
     ///
     /// # Errors
-    /// Fails when the lookup fails or finds no address.
-    pub async fn resolve(&self, hostname: &Hostname) -> Result<BTreeSet<IpAddr>> {
-        let zone = match self.zone_for(hostname).await {
-            Ok((index, zone)) if self.manages_records(index) => zone,
-            _ => {
-                return Ok(tokio::net::lookup_host((hostname.as_str(), 0))
-                    .await
-                    .with_context(|| format!("resolve {hostname}"))?
-                    .map(|address| address.ip())
-                    .collect());
-            }
-        };
+    /// Fails when no provider zone contains `hostname`, or the lookup fails or
+    /// finds no address.
+    pub async fn resolve_authoritatively(&self, hostname: &Hostname) -> Result<BTreeSet<IpAddr>> {
+        let (_, zone) = self.zone_for(hostname).await?;
         let nameservers = self.nameservers(&zone.name).await?.into_iter().flatten();
         Ok(Self::authoritative(nameservers)?
             .lookup_ip(format!("{hostname}."))
@@ -115,8 +105,8 @@ impl Dns {
     }
 
     /// A resolver asking the nameservers at `addresses` over TCP, without
-    /// recursion or caching. It moves on to the next address when one does
-    /// not answer.
+    /// recursion, caching or the hosts file. It moves on to the next address
+    /// when one does not answer.
     fn authoritative(addresses: impl IntoIterator<Item = SocketAddr>) -> Result<TokioResolver> {
         let nameservers = addresses
             .into_iter()
@@ -129,6 +119,7 @@ impl Dns {
         let mut options = ResolverOpts::default();
         options.cache_size = 0;
         options.recursion_desired = false;
+        options.use_hosts_file = ResolveHosts::Never;
         Ok(Resolver::builder_with_config(
             ResolverConfig::from_parts(None, Vec::new(), nameservers),
             TokioRuntimeProvider::default(),
