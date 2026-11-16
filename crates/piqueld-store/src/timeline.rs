@@ -12,7 +12,8 @@ pub struct Baseline {
     /// The steps of the environment's latest successful operation of the
     /// same kind, in the order they ran.
     pub forecast: Vec<StepKey>,
-    /// The median duration of each step across recent successful operations.
+    /// The median duration of each step across the attempts that succeeded
+    /// of recent successful operations.
     pub expected: Vec<ExpectedStep>,
 }
 
@@ -61,9 +62,16 @@ impl Store {
         tx.commit().await.map_err(StoreError::database)?;
         let mut forecast = Vec::new();
         let mut durations = BTreeMap::<(String, Option<String>), Vec<u64>>::new();
-        for action in actions {
+        // Only the attempt that succeeded counts: a failed one's steps would
+        // weigh more for an operation that took several.
+        let succeeded = actions.into_iter().filter(|action| {
+            previous
+                .iter()
+                .any(|row| row.id == action.operation_id && Some(row.attempt) == action.attempt)
+        });
+        for action in succeeded {
             let duration = u64::try_from(action.duration_ms).map_err(StoreError::corrupt)?;
-            if action.operation_id == latest.id && action.attempt == Some(latest.attempt) {
+            if action.operation_id == latest.id {
                 let key = StepKey {
                     phase: decode_name(&action.phase)?,
                     resource: action.resource.clone(),

@@ -1382,3 +1382,42 @@ async fn migration_types_the_phases_recorded_before_them() {
         ]
     );
 }
+
+#[tokio::test]
+async fn timeline_expectations_count_only_the_attempt_that_succeeded() {
+    let (_temp, store) = Store::temporary().await;
+    let op = application(&store).await;
+    // A slow build in a failed first attempt, then a quick one that succeeded.
+    for (attempt, duration) in [(1, 90_000), (2, 1_000)] {
+        let action = store
+            .begin_action(Some(&op.id), Phase::BuildGit, Some("web"))
+            .await
+            .unwrap();
+        store.finish_action(&action, None).await.unwrap();
+        sqlx::query("UPDATE events SET attempt=?1, duration_ms=?2 WHERE action_id=?3")
+            .bind(attempt)
+            .bind(duration)
+            .bind(&action.id)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query("UPDATE operations SET state='succeeded', attempt=2, finished_at_ms=created_at_ms WHERE id=?1")
+        .bind(&op.id)
+        .execute(&store.pool)
+        .await
+        .unwrap();
+    let next = Operation {
+        id: "operation-next".into(),
+        ..op
+    };
+    let baseline = store.timeline_baseline(&next).await.unwrap();
+    assert_eq!(
+        baseline
+            .expected
+            .iter()
+            .map(|step| step.duration_ms)
+            .collect::<Vec<_>>(),
+        [1_000]
+    );
+}
