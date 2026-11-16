@@ -735,7 +735,8 @@ pub(crate) enum Settled<T> {
 
 /// Follows an operation like [`wait_for_operation`], through a [`Wait`]
 /// shown as its timeline. A failure the daemon retries on its own keeps the
-/// wait going, until the timeline shows the retry. Once it succeeded or was
+/// wait going, until the timeline shows the retry or another operation
+/// replaces it. Once it succeeded or was
 /// superseded, `settle` decides whether waiting is over; while it is not,
 /// `settle` runs again each `SETTLE_INTERVAL`, or as soon as the timeline
 /// changes, so a retry that ends differently counts.
@@ -750,9 +751,17 @@ pub(crate) async fn wait_for_operation_until<T>(
     let mut timeline = timelines.next(&mut wait).await?;
     loop {
         wait.progress.update(&timeline);
-        if !timeline.operation.state.terminal() || wait.retried(client, &timeline.operation).await?
-        {
+        if !timeline.operation.state.terminal() {
             timeline = timelines.next(&mut wait).await?;
+            continue;
+        }
+        if wait.retried(client, &timeline.operation).await? {
+            // Checked again each `SETTLE_INTERVAL`: a deployment accepted
+            // before the retry replaces the failed operation without an
+            // event on its timeline.
+            if let Ok(next) = time::timeout(SETTLE_INTERVAL, timelines.next(&mut wait)).await {
+                timeline = next?;
+            }
             continue;
         }
         let outcome = OperationProgress::outcome(&timeline.operation);
