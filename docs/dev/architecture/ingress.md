@@ -339,8 +339,11 @@ environment's **Traffic** tab.
   `net` writer, with integer times and durations in ns. The `default` log
   excludes it. With `soft_start`, Caddy loads its configuration when the
   socket is down, writes lines to its output meanwhile, and dials again at
-  most every 10 seconds; the diagnostics relay skips those lines. HTTP servers
-  only redirect, so they log nothing.
+  most every 10 seconds; the diagnostics relay skips those lines, but Docker
+  keeps them in the gateway's capped `local` log. Caddy writes synchronously,
+  so a daemon alive but not reading the socket would hold up the requests
+  being logged once the socket buffer fills. HTTP servers only redirect, so
+  they log nothing.
 - Each route proxying to a service starts with three `log_append` handlers,
   `piqueld_environment`, `piqueld_service` and `piqueld_hostname`, the route's
   hostname as configured, so a wildcard's requests count under one route.

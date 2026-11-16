@@ -444,7 +444,7 @@ mod tests {
         assert_eq!(daily.series.len(), 7);
         assert_eq!(daily.series[1].counts.requests, 2);
         assert_eq!(daily.totals.requests, 2);
-        assert!(daily.pages.is_empty());
+        assert_eq!(daily.pages, []);
     }
 
     #[tokio::test]

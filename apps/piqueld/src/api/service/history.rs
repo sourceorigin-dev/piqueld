@@ -166,8 +166,9 @@ impl ApplicationService {
         id: &EnvironmentId,
         query: TrafficQuery<'_>,
     ) -> Result<TrafficReport, ApplicationError> {
-        let length = query.until_ms - query.since_ms;
-        if query.since_ms < 0 || !(1..=MAX_TRAFFIC_WINDOW_MS).contains(&length) {
+        let length = query.until_ms.checked_sub(query.since_ms);
+        if query.since_ms < 0 || !length.is_some_and(|ms| (1..=MAX_TRAFFIC_WINDOW_MS).contains(&ms))
+        {
             return Err(ApplicationError::InvalidTrafficQuery);
         }
         self.store.get(id).await?;

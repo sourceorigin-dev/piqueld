@@ -33,6 +33,18 @@ pub struct TrafficReport {
     pub referrers: Vec<TrafficRank>,
 }
 
+impl TrafficReport {
+    /// Visitors on an average day of the window. `totals.visitors` adds up
+    /// each day's, so a person coming back every day of a 30-day window
+    /// counts 30 times there, once here.
+    #[must_use]
+    pub fn daily_visitors(&self) -> i64 {
+        const DAY_MS: i64 = 86_400_000;
+        let days = (self.until_ms - self.since_ms + DAY_MS - 1) / DAY_MS;
+        self.totals.visitors / days.max(1)
+    }
+}
+
 /// Request totals.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, ToSchema)]
 pub struct TrafficCounts {
@@ -41,7 +53,8 @@ pub struct TrafficCounts {
     /// Successful requests for HTML pages from browsers, not bots.
     pub page_views: i64,
     /// Distinct browsers with a page view, each counted once a day per
-    /// route: an estimate, from their address and user agent.
+    /// route, so returning ones count again each day: an estimate, from
+    /// their address and user agent.
     pub visitors: i64,
     /// Requests answered with a 4xx status.
     pub client_errors: i64,

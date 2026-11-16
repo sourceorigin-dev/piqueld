@@ -5,8 +5,8 @@ sites send them, without adding analytics to the application or running a
 telemetry stack.
 
 piqueld's [gateway](../networking/routes.md) counts the requests each route
-serves. It keeps hourly totals, never the requests themselves, visitors'
-addresses or cookies, so there is nothing to ask visitors' consent for.
+serves. It keeps hourly totals, not the requests themselves, visitors'
+addresses or cookies; see [what is counted](#what-is-counted).
 
 ## Before you start
 
@@ -35,8 +35,9 @@ traffic = false
 In the dashboard, open the environment's page and select the **Traffic** tab.
 Choose the **Period** and, to see one service's routes only, the **Service**.
 
-- The tiles show the period's **Visitors**, **Page views**, **Requests** with
-  their server errors, and **Mean response** time.
+- The tiles show the **Visitors a day** on average over the period, with
+  their sum, and the period's **Page views**, **Requests** with their server
+  errors, and **Mean response** time.
 - The chart shows visitors per hour for a period of 24 hours, and per day for
   longer ones. Choose page views or requests in **Show**. Point at a column,
   or focus it with the keyboard, to read all its counts.
@@ -52,7 +53,7 @@ With `piquelctl`:
 $ piquelctl env traffic sc2dle production --since 3d
 Environment: sc2dle / production
 Window: 2026-11-13 to 2026-11-16 UTC
-Visitors: 1707
+Visitors a day: 426 on average (1707 over the window)
 Page views: 3677
 Requests: 27504 (350 client errors, 4 server errors)
 Mean response: 15 ms
@@ -94,6 +95,11 @@ Counts are kept for
 [`retention.traffic_days`](../reference/configuration-settings.md#retentiontraffic_days),
 90 by default. Deleting an environment deletes its counts.
 
+While the daemon restarts, the gateway can't hand it requests, so it writes
+them, addresses and paths included, to its own container log instead, for up
+to 10 seconds after the daemon is back. Docker keeps that log, capped at
+30 MB, like the gateway's other output.
+
 ## Troubleshooting
 
 - **The tab says piqueld isn't counting traffic.** Set `ingress.enabled` and
@@ -106,6 +112,9 @@ Counts are kept for
   the browser loads. Navigating within an application that changes pages
   without loading one isn't a page view; its API calls still count as
   requests.
+- **Visitors over a period add up to more people than use the application.**
+  A visitor counts once a day, so someone coming back every day counts every
+  day. **Visitors a day** shows how many people visit on an average day.
 - **Visitors seem high after a restart.** The daemon remembers the day's
   visitors in memory only, so those coming back after it restarts count again
   that day.

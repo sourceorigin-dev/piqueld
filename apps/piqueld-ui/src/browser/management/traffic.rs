@@ -100,7 +100,11 @@ fn traffic(report: TrafficReport, measure: RwSignal<Measure>) -> AnyView {
     view! {
         {counting}
         <div class="metrics">
-            {metric("Visitors", Count(totals.visitors).to_string(), Some("distinct browsers, per day"))}
+            {metric(
+                "Visitors a day",
+                Count(report.daily_visitors()).to_string(),
+                Some(format!("on average; {} over the period", Count(totals.visitors))),
+            )}
             {metric("Page views", Count(totals.page_views).to_string(), Some("pages loaded in a browser"))}
             {metric("Requests", Count(totals.requests).to_string(), Some(errors))}
             {metric("Mean response", mean, Some(sent))}
@@ -118,7 +122,9 @@ fn traffic(report: TrafficReport, measure: RwSignal<Measure>) -> AnyView {
                 </div>
                 <label class="field traffic-measure">
                     <span>"Show"</span>
-                    <select on:change={move |e| {
+                    // The report, and this picker with it, is drawn again on
+                    // each refresh, so it shows the measure kept outside.
+                    <select prop:value={move || measure.get().label()} on:change={move |e| {
                         let chosen = event_target_value(&e);
                         if let Some(choice) = Measure::ALL.into_iter().find(|m| m.label() == chosen) {
                             measure.set(choice);

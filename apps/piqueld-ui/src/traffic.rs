@@ -49,7 +49,8 @@ impl fmt::Display for Count {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let n = self.0;
         if formatter.alternate() && n.abs() >= 10_000 {
-            let (unit, suffix) = if n.abs() >= 1_000_000 {
+            // From 999,950 on, a thousand thousands round to a million.
+            let (unit, suffix) = if n.abs() >= 999_950 {
                 (1_000_000, "M")
             } else {
                 (1_000, "K")
@@ -117,6 +118,7 @@ mod tests {
             (12_940, "12,940", "12.9K"),
             (20_000, "20,000", "20K"),
             (4_210_000, "4,210,000", "4.2M"),
+            (999_960, "999,960", "1M"),
             (-1_000, "-1,000", "-1,000"),
         ] {
             assert_eq!(Count(n).to_string(), full);

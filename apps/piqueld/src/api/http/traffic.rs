@@ -42,7 +42,9 @@ pub(super) async fn get(
     let id = EnvironmentId::parse(id)?;
     let until_ms = params.until_ms.unwrap_or_else(piqueld_store::now_ms);
     let query = TrafficQuery {
-        since_ms: params.since_ms.unwrap_or(until_ms - 30 * DAY_MS),
+        since_ms: params
+            .since_ms
+            .unwrap_or(until_ms.saturating_sub(30 * DAY_MS)),
         until_ms,
         service: params.service.as_deref(),
         hostname: params.hostname.as_deref(),

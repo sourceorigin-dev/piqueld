@@ -134,6 +134,8 @@ impl Traffic {
             match read {
                 Ok(0) => return,
                 Ok(_) if line.last() == Some(&b'\n') => {}
+                // The connection closed mid-line.
+                Ok(_) if (line.len() as u64) < MAX_LINE => return,
                 // Cut off before its end: skip the rest of the line.
                 Ok(_) => {
                     tracing::debug!("skipped an access log line longer than 1 MiB");
@@ -297,7 +299,8 @@ impl AccessLine {
 
     /// Whether this is a browser loading a page: a successful `GET` for a
     /// document, as `Sec-Fetch-Dest` says, or, from browsers that don't send
-    /// it, answered with HTML.
+    /// it, answered with HTML. Prefetches and prerenders, which
+    /// `Sec-Purpose` marks, may never be seen, so they aren't.
     fn page_view(&self) -> bool {
         let document = match self.request.headers.get("Sec-Fetch-Dest") {
             Some(destination) => destination == "document",
@@ -309,6 +312,7 @@ impl AccessLine {
         self.request.method == "GET"
             && (matches!(self.status, 200..300) || self.status == 304)
             && document
+            && self.request.headers.get("Sec-Purpose").is_none()
             && !self.bot()
     }
 
@@ -365,6 +369,8 @@ mod tests {
         let bot = r#""User-Agent":["Googlebot/2.1"],"Sec-Fetch-Dest":["document"]"#;
         assert!(!line("/", 200, bot, "text/html").page_view());
         // Without `Sec-Fetch-Dest`, an HTML answer is a page.
+        let prefetch = format!(r#"{BROWSER},"Sec-Purpose":["prefetch"]"#);
+        assert!(!line("/", 200, &prefetch, "text/html").page_view());
         let old = r#""User-Agent":["Mozilla/5.0"]"#;
         assert!(line("/", 200, old, "text/html; charset=utf-8").page_view());
         assert!(!line("/app.js", 200, old, "text/javascript").page_view());

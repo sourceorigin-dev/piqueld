@@ -76,7 +76,10 @@ report!(TrafficView<'_> as TrafficReport = traffic, self, out, {
     out.label("Environment", &self.environment)?;
     out.label("Window", format_args!("{} to {} UTC", time(t.since_ms), time(t.until_ms)))?;
     let totals = &t.totals;
-    out.label("Visitors", totals.visitors)?;
+    out.label(
+        "Visitors a day",
+        format_args!("{} on average ({} over the window)", t.daily_visitors(), totals.visitors),
+    )?;
     out.label("Page views", totals.page_views)?;
     out.label(
         "Requests",
