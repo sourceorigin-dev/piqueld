@@ -37,7 +37,7 @@ impl TrafficReport {
     /// Visitors on an average day, to the nearest one, from the first point
     /// with requests, so days before counting started or after retention
     /// pruned them don't lower it, until the end of the window, and over at
-    /// least a day. `totals.visitors` adds up each day's, so a person coming
+    /// least a day. A quiet start of the window counts as not started. `totals.visitors` adds up each day's, so a person coming
     /// back every day of a 30-day window counts 30 times there, once here.
     #[must_use]
     pub fn daily_visitors(&self) -> i64 {

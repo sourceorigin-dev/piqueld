@@ -36,7 +36,7 @@ In the dashboard, open the environment's page and select the **Traffic** tab.
 Choose the **Period** and, to see one service's routes only, the **Service**.
 
 - The tiles show the **Visitors a day** on average, from the period's first
-  request, with their sum, and the period's **Page views**, **Requests** with
+  day (or hour) with requests, with their sum, and the period's **Page views**, **Requests** with
   their server errors, and **Mean response** time.
 - The chart shows visitors per hour for a period of 24 hours, and per day for
   longer ones. Choose page views or requests in **Show**. Point at a column,
