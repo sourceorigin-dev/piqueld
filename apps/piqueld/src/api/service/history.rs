@@ -1,8 +1,10 @@
 //! Durable history, manifest export, runtime logs, and traffic.
 
 use super::{ApplicationError, ApplicationService};
+use piqueld_core::observability::EventFilter;
+use piqueld_core::timeline::Timeline;
 use piqueld_core::{
-    ApplicationId, EnvironmentId, Operation,
+    ApplicationId, EnvironmentId, Operation, OperationState,
     api::{
         ApplicationLogs, BuildLogPage, BuildRecord, DeploymentView, LogStream, Page, ReleaseView,
     },
@@ -10,6 +12,7 @@ use piqueld_core::{
 };
 use piqueld_store::StoreError;
 use piqueld_store::traffic::{DAY_MS, TrafficQuery};
+use piqueld_store::{MAX_PAGE_SIZE, Visibility};
 
 /// The longest traffic window a report covers.
 const MAX_TRAFFIC_WINDOW_MS: i64 = 400 * DAY_MS;
@@ -40,6 +43,63 @@ impl ApplicationService {
     /// Returns absence or storage errors.
     pub async fn operation(&self, id: &str) -> Result<Operation, ApplicationError> {
         Ok(self.store.operation(id).await?)
+    }
+
+    /// Operation `id`'s timeline as of now: its steps, from its events, and
+    /// what its environment's recent successful operations expect.
+    /// # Errors
+    /// Returns absence, expired history, or storage errors.
+    pub async fn timeline(&self, id: &str) -> Result<Timeline, ApplicationError> {
+        let operation = self.store.operation(id).await?;
+        let baseline = self.store.timeline_baseline(&operation).await?;
+        let mut timeline = Timeline::new(operation, baseline.forecast, baseline.expected);
+        self.advance_timeline(&mut timeline).await?;
+        Ok(timeline)
+    }
+
+    /// Applies the events of `timeline`'s operation newer than its cursor,
+    /// reading the operation again when there were any. A timeline shows
+    /// every step of an operation the caller may read, including failures
+    /// of shared infrastructure that history only shows `system:read`. Once
+    /// the operation is requested or runs again, the timeline is read anew,
+    /// so a stream open across a rerun shows what a new read would.
+    /// Returns whether it changed.
+    /// # Errors
+    /// Returns absence, expired history, or storage errors.
+    pub async fn advance_timeline(
+        &self,
+        timeline: &mut Timeline,
+    ) -> Result<bool, ApplicationError> {
+        let filter = EventFilter {
+            operation_id: Some(timeline.operation.id.clone()),
+            ..EventFilter::default()
+        };
+        let from = timeline.cursor;
+        loop {
+            let (events, _) = self
+                .store
+                .stream_events(&filter, &Visibility::ALL, timeline.cursor, MAX_PAGE_SIZE)
+                .await?;
+            for event in &events {
+                timeline.apply(event);
+            }
+            if events.len() < MAX_PAGE_SIZE {
+                break;
+            }
+        }
+        let advanced = timeline.cursor > from;
+        if advanced {
+            let operation = self.store.operation(&timeline.operation.id).await?;
+            let requested = |operation: &Operation| operation.state == OperationState::Requested;
+            if operation.attempt != timeline.operation.attempt
+                || (requested(&operation) && !requested(&timeline.operation))
+            {
+                *timeline = Box::pin(self.timeline(&operation.id)).await?;
+            } else {
+                timeline.set_operation(operation);
+            }
+        }
+        Ok(advanced)
     }
 
     /// Lists deployment snapshots, newest first, `limit` per page (up to
