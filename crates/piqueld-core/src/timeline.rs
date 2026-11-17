@@ -14,13 +14,25 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// What a step does and on what: a journaled action's identity.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, ToSchema)]
 pub struct StepKey {
     /// What the step does.
     pub phase: Phase,
     /// The logical or Docker resource it acts on, when it names one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
+}
+
+/// The step as people read it: its phase's label, then its resource, such
+/// as "Build web".
+impl std::fmt::Display for StepKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.phase.label())?;
+        match &self.resource {
+            Some(resource) => write!(formatter, " {resource}"),
+            None => Ok(()),
+        }
+    }
 }
 
 string_enum! {
@@ -39,7 +51,67 @@ string_enum! {
     }
 }
 
+impl Stage {
+    /// The stage as a heading, such as "Roll out".
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Prepare => "Prepare",
+            Self::Jobs => "Jobs",
+            Self::Rollout => "Roll out",
+            Self::Daemon => "Daemon",
+        }
+    }
+}
+
 impl Phase {
+    /// What a step of this phase does, as people read it: "Build" for
+    /// `building_git`. Followed by the step's resource, it names the step.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Preparing => "Prepare",
+            Self::FetchManifest => "Fetch manifest",
+            Self::BuildGit => "Build",
+            Self::ResolveImage => "Resolve image",
+            Self::Planning => "Plan",
+            Self::RunJob => "Run job",
+            Self::RemoveJobs => "Remove earlier jobs",
+            Self::EnsureNetwork => "Ensure network",
+            Self::EnsureVolume => "Ensure volume",
+            Self::EnsureService => "Update service",
+            Self::WaitForService => "Wait for service",
+            Self::WaitForServiceRemoval => "Wait for service removal",
+            Self::RemoveService => "Remove service",
+            Self::RemoveNetwork => "Remove network",
+            Self::RetainVolume => "Keep volume",
+            Self::DetachNetwork => "Detach network",
+            Self::RemoveVolumes => "Remove volumes",
+            Self::RemoveSecrets => "Remove secrets",
+            Self::Routing => "Apply routes",
+            Self::Observation => "Observe",
+            Self::EnsureSwarm => "Ensure Swarm",
+            Self::RemoveImage => "Remove image",
+            Self::IngressCreateNetwork => "Create ingress network",
+            Self::IngressStartGateway => "Start gateway",
+            Self::IngressStopGateway => "Stop gateway",
+            Self::IngressRemoveContainer => "Remove ingress container",
+            Self::IngressPullImage => "Pull gateway image",
+            Self::IngressReplaceGateway => "Replace gateway",
+            Self::IngressStartTunnel => "Start tunnel",
+            Self::IngressStartTailnet => "Start tailnet node",
+            Self::IngressRecoverGateway => "Recover gateway",
+            Self::IngressConfigureRoutes => "Configure gateway routes",
+            Self::IngressDnsCreate => "Create DNS records",
+            Self::IngressDnsUpdate => "Update DNS records",
+            Self::IngressDnsDelete => "Delete DNS records",
+            Self::IngressCertificateIssue => "Issue certificate",
+            Self::IngressCertificateRenew => "Renew certificate",
+            Self::IngressCertificateDelete => "Delete certificate",
+            Self::IngressCertificateChallengeDelete => "Delete certificate challenge",
+        }
+    }
+
     /// The stage of an operation this phase belongs to.
     #[must_use]
     pub const fn stage(self) -> Stage {
@@ -91,54 +163,6 @@ impl Phase {
     pub const fn concurrent(self) -> bool {
         matches!(self, Self::BuildGit | Self::ResolveImage)
     }
-
-    /// What a step of this phase does, as people read it, followed by the
-    /// resource it acts on, if any: `Build` api, `Wait for` web. The
-    /// dashboard and `piquelctl` name steps this way.
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Preparing => "Prepare",
-            Self::FetchManifest => "Fetch manifest",
-            Self::BuildGit => "Build",
-            Self::ResolveImage => "Resolve",
-            Self::Planning => "Plan",
-            Self::RunJob => "Job",
-            Self::RemoveJobs => "Remove jobs",
-            Self::EnsureNetwork => "Create network",
-            Self::EnsureVolume => "Create volume",
-            Self::EnsureService => "Update",
-            Self::WaitForService => "Wait for",
-            Self::WaitForServiceRemoval => "Wait for removal of",
-            Self::RemoveService => "Remove",
-            Self::RemoveNetwork => "Remove network",
-            Self::RetainVolume => "Keep volume",
-            Self::DetachNetwork => "Detach",
-            Self::RemoveVolumes => "Remove volumes",
-            Self::RemoveSecrets => "Remove secrets",
-            Self::Routing => "Route",
-            Self::Observation => "Observe",
-            Self::EnsureSwarm => "Set up Swarm",
-            Self::RemoveImage => "Remove image",
-            Self::IngressCreateNetwork => "Create ingress network",
-            Self::IngressStartGateway => "Start gateway",
-            Self::IngressStopGateway => "Stop gateway",
-            Self::IngressRemoveContainer => "Remove container",
-            Self::IngressPullImage => "Pull gateway image",
-            Self::IngressReplaceGateway => "Replace gateway",
-            Self::IngressStartTunnel => "Start tunnel",
-            Self::IngressStartTailnet => "Start tailnet node",
-            Self::IngressRecoverGateway => "Recover gateway",
-            Self::IngressConfigureRoutes => "Load routes",
-            Self::IngressDnsCreate => "Create DNS records",
-            Self::IngressDnsUpdate => "Update DNS records",
-            Self::IngressDnsDelete => "Delete DNS records",
-            Self::IngressCertificateIssue => "Issue certificate",
-            Self::IngressCertificateRenew => "Renew certificate",
-            Self::IngressCertificateDelete => "Delete certificate",
-            Self::IngressCertificateChallengeDelete => "Delete certificate challenge",
-        }
-    }
 }
 
 impl crate::manifest::ValidatedSource {
@@ -187,10 +211,16 @@ impl StepState {
     pub const fn finished(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Interrupted)
     }
+
+    /// Whether the step started and has not ended: running or retrying.
+    #[must_use]
+    pub const fn running(self) -> bool {
+        matches!(self, Self::Running | Self::Retrying)
+    }
 }
 
 /// One step of an operation.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct Step {
     /// What it does and on what.
     #[serde(flatten)]
@@ -224,7 +254,8 @@ pub struct Step {
 
 impl Step {
     /// A step not started yet, expected to take `expected_ms`.
-    fn pending(key: StepKey, state: StepState, expected_ms: Option<u64>) -> Self {
+    #[must_use]
+    pub const fn pending(key: StepKey, state: StepState, expected_ms: Option<u64>) -> Self {
         Self {
             key,
             state,
@@ -260,7 +291,7 @@ impl Step {
     }
 
     /// How long it usually takes, when it succeeded in noticeably more or
-    /// less time than that: half of it, and a second at least.
+    /// less time than that.
     #[must_use]
     pub fn unusual_ms(&self) -> Option<u64> {
         if self.state != StepState::Succeeded {
@@ -268,7 +299,14 @@ impl Step {
         }
         let expected = self.expected_ms?;
         let took = self.duration_ms(self.finished_at_ms?)?;
-        (took.abs_diff(expected) >= (expected / 2).max(1_000)).then_some(expected)
+        Self::noticeable(took, expected).then_some(expected)
+    }
+
+    /// Whether taking `took_ms` differs noticeably from the usual
+    /// `expected_ms`: by half of it, and a second at least.
+    #[must_use]
+    pub fn noticeable(took_ms: u64, expected_ms: u64) -> bool {
+        took_ms.abs_diff(expected_ms) >= (expected_ms / 2).max(1_000)
     }
 }
 
@@ -404,6 +442,13 @@ impl Timeline {
                 && self.operation.state != OperationState::Requested)
     }
 
+    /// Whether the operation ended and none of its steps still runs, so the
+    /// timeline stays as it is unless the operation is requested again.
+    #[must_use]
+    pub fn ended(&self) -> bool {
+        self.operation.state.terminal() && !self.steps.iter().any(|step| step.state.running())
+    }
+
     /// How much longer the operation should take at `now_ms`: the steps left
     /// run one after another, except sources, which are prepared at once.
     /// `None` once it ended, or when no step left has an expectation.
@@ -412,50 +457,60 @@ impl Timeline {
         if self.operation.state.terminal() {
             return None;
         }
-        let mut known = false;
-        let remaining = Self::span(
+        Self::chain(
             self.steps
                 .iter()
                 .filter(|step| !step.state.finished())
-                .filter_map(|step| {
-                    let remaining = step.remaining_ms(now_ms)?;
-                    known = true;
-                    Some((step.key.phase, remaining))
-                }),
-        );
-        known.then_some(remaining)
+                .map(|step| (step.key.phase, step.remaining_ms(now_ms))),
+        )
     }
 
-    /// How long its steps usually take altogether, counted like
-    /// [`Self::remaining_ms`]: `None` unless every step succeeded and has
-    /// an expectation, since the steps of a failed run are not the usual ones.
+    /// How long the operation's steps usually take altogether, run as
+    /// [`Self::remaining_ms`] runs them. `None` when no step has an
+    /// expectation.
     #[must_use]
     pub fn usual_ms(&self) -> Option<u64> {
-        let steps = self
-            .steps
-            .iter()
-            .map(|step| match step.state {
-                StepState::Succeeded => Some((step.key.phase, step.expected_ms?)),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        (!steps.is_empty()).then(|| Self::span(steps))
+        Self::chain(
+            self.steps
+                .iter()
+                .map(|step| (step.key.phase, step.expected_ms)),
+        )
     }
 
-    /// How long `steps`, each a phase and a duration, take one after
-    /// another, except sources, which are prepared at once.
-    fn span(steps: impl IntoIterator<Item = (Phase, u64)>) -> u64 {
-        let (concurrent, sequential) = steps.into_iter().fold(
-            (0u64, 0u64),
-            |(concurrent, sequential), (phase, duration)| {
-                if phase.concurrent() {
-                    (concurrent.max(duration), sequential)
-                } else {
-                    (concurrent, sequential + duration)
-                }
-            },
-        );
-        concurrent + sequential
+    /// [`Self::usual_ms`], to compare with how long the operation took: only
+    /// once it and every step succeeded, each with an expectation, since a
+    /// failed or stopped run's steps are not the usual ones, and a step new
+    /// to it would count only in how long it took.
+    #[must_use]
+    pub fn comparable_usual_ms(&self) -> Option<u64> {
+        (self.operation.state == OperationState::Succeeded
+            && self
+                .steps
+                .iter()
+                .all(|step| step.state == StepState::Succeeded && step.expected_ms.is_some()))
+        .then(|| self.usual_ms())
+        .flatten()
+    }
+
+    /// How long steps of the given phases and durations take: one after
+    /// another, except sources, which are prepared at once. Steps without a
+    /// duration are skipped; `None` when none has one.
+    fn chain(steps: impl Iterator<Item = (Phase, Option<u64>)>) -> Option<u64> {
+        let mut known = false;
+        let mut sequential = 0u64;
+        let mut concurrent = 0u64;
+        for (phase, duration) in steps {
+            let Some(duration) = duration else {
+                continue;
+            };
+            known = true;
+            if phase.concurrent() {
+                concurrent = concurrent.max(duration);
+            } else {
+                sequential += duration;
+            }
+        }
+        known.then_some(sequential + concurrent)
     }
 
     /// The step an event of a started action belongs to.
@@ -503,7 +558,7 @@ impl Timeline {
             let running = self
                 .steps
                 .iter()
-                .any(|step| step.key == *key && step.state.started() && !step.state.finished());
+                .any(|step| step.key == *key && step.state.running());
             if !running {
                 let expected = self.expected_ms(key);
                 self.steps
@@ -766,6 +821,50 @@ mod tests {
     }
 
     #[test]
+    fn only_a_run_whose_steps_all_succeeded_compares_with_the_usual() {
+        let run = |last: &str, state: OperationState| {
+            let mut timeline = timeline(&[
+                (Phase::BuildGit, "web", 30_000),
+                (Phase::EnsureService, "web", 2_000),
+            ]);
+            apply(
+                &mut timeline,
+                vec![
+                    action("action_started", "a1", Phase::BuildGit, "web", 0),
+                    action("action_succeeded", "a1", Phase::BuildGit, "web", 5_000),
+                    action("action_started", "a2", Phase::EnsureService, "web", 5_000),
+                    action(last, "a2", Phase::EnsureService, "web", 6_000),
+                ],
+            );
+            timeline.operation.state = state;
+            timeline.comparable_usual_ms()
+        };
+        assert_eq!(
+            run("action_succeeded", OperationState::Succeeded),
+            Some(32_000)
+        );
+        // A run that failed after 6 s is not 26 s faster than usual, even
+        // when it failed after its last step succeeded.
+        assert_eq!(run("action_failed", OperationState::Failed), None);
+        assert_eq!(run("action_succeeded", OperationState::Failed), None);
+        // Nor is one with a step it never ran before, whose usual time would
+        // only count its known steps.
+        let mut timeline = timeline(&[(Phase::BuildGit, "web", 30_000)]);
+        apply(
+            &mut timeline,
+            vec![
+                action("action_started", "a1", Phase::BuildGit, "web", 0),
+                action("action_succeeded", "a1", Phase::BuildGit, "web", 30_000),
+                action("action_started", "a2", Phase::RunJob, "migrate", 30_000),
+                action("action_succeeded", "a2", Phase::RunJob, "migrate", 90_000),
+            ],
+        );
+        timeline.operation.state = OperationState::Succeeded;
+        assert_eq!(timeline.usual_ms(), Some(30_000));
+        assert_eq!(timeline.comparable_usual_ms(), None);
+    }
+
+    #[test]
     fn sources_count_once_towards_the_time_left() {
         let mut timeline = timeline(&[
             (Phase::BuildGit, "api", 30_000),
@@ -779,6 +878,8 @@ mod tests {
                 action("action_started", "a2", Phase::BuildGit, "web", 0),
             ],
         );
+        // Usually the longest source's 30 s, then the job's 5 s.
+        assert_eq!(timeline.usual_ms(), Some(35_000));
         // The longest source has 20 s left, then the job's 5 s.
         assert_eq!(timeline.remaining_ms(10_000), Some(25_000));
         // A step running over its expectation counts as about to end.
@@ -831,7 +932,7 @@ mod tests {
     }
 
     #[test]
-    fn only_noticeably_unusual_durations_and_clean_runs_have_a_usual_time() {
+    fn only_noticeably_unusual_durations_are_flagged() {
         let mut timeline = timeline(&[
             (Phase::BuildGit, "api", 30_000),
             (Phase::BuildGit, "web", 20_000),
@@ -850,18 +951,6 @@ mod tests {
         let unusual: Vec<_> = timeline.steps.iter().map(Step::unusual_ms).collect();
         // 20 s over its 30 s is unusual; 1 s over 20 s is not.
         assert_eq!(unusual, [Some(30_000), None, None]);
-        // Every step must have succeeded.
-        assert_eq!(timeline.usual_ms(), None);
-        apply(
-            &mut timeline,
-            vec![action(
-                "action_succeeded",
-                "a3",
-                Phase::EnsureService,
-                "api",
-                51_200,
-            )],
-        );
         // The sources build at once, then the service updates.
         assert_eq!(timeline.usual_ms(), Some(31_000));
     }

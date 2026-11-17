@@ -12,6 +12,7 @@ pub mod overview;
 pub mod secrets;
 pub mod state;
 pub mod terminal;
+pub mod timeline;
 pub mod traffic;
 
 #[cfg(target_arch = "wasm32")]
