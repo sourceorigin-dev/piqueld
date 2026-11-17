@@ -620,6 +620,9 @@ pub(crate) async fn resolve_application(
 pub(crate) struct Wait<P = ProgressTask> {
     pub(crate) progress: P,
     interval: Duration,
+    /// When the pause under way ends, kept if it is cut short so the next
+    /// pause or [`Wait::resume`] finishes it rather than starting over.
+    paused_until: Option<time::Instant>,
     /// Whether the daemon answered a read yet: until then, a failure is more
     /// likely a wrong endpoint than a restart, and ends the wait.
     answered: Cell<bool>,
@@ -649,6 +652,7 @@ impl<P: Progress> Wait<P> {
         Self {
             progress,
             interval: POLL_INTERVAL,
+            paused_until: None,
             answered: Cell::new(false),
             _waiting: Waiting::start(),
         }
@@ -674,10 +678,24 @@ impl<P: Progress> Wait<P> {
         }
     }
 
-    /// Sleeps until the next read.
+    /// Sleeps until the next read, twice as long each time up to
+    /// `MAX_POLL_INTERVAL`. Cancel-safe: a pause cut short ends at the same
+    /// time when resumed.
     pub(crate) async fn pause(&mut self) {
-        time::sleep(self.interval).await;
+        let interval = self.interval;
+        let until = *self
+            .paused_until
+            .get_or_insert_with(|| time::Instant::now() + interval);
+        time::sleep_until(until).await;
+        self.paused_until = None;
         self.interval = (self.interval * 2).min(MAX_POLL_INTERVAL);
+    }
+
+    /// Finishes a pause cut short, if any, before reading again.
+    pub(crate) async fn resume(&mut self) {
+        if self.paused_until.is_some() {
+            self.pause().await;
+        }
     }
 
     /// Whether the daemon retries `operation`'s failure on its own: its code
@@ -834,11 +852,19 @@ impl<'a> TimelineFollower<'a> {
         loop {
             let next = match &mut self.source {
                 TimelineSource::Closed => {
-                    match self
-                        .client
-                        .operation_timeline_stream(self.operation_id)
-                        .await
-                    {
+                    wait.resume().await;
+                    // A daemon that takes the connection but never answers
+                    // counts as unavailable.
+                    let Ok(opened) = time::timeout(
+                        Self::IDLE,
+                        self.client.operation_timeline_stream(self.operation_id),
+                    )
+                    .await
+                    else {
+                        wait.pause().await;
+                        continue;
+                    };
+                    match opened {
                         Err(ClientError::Api { status, .. })
                             if status == StatusCode::SERVICE_UNAVAILABLE =>
                         {
@@ -986,5 +1012,29 @@ impl OperationProgress {
             OperationState::Superseded => TaskOutcome::Skipped,
             _ => TaskOutcome::Failed,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Quiet;
+
+    impl Progress for Quiet {
+        fn show(&self, _: &str) {}
+    }
+
+    #[tokio::test]
+    async fn a_pause_cut_short_ends_when_it_would_have() {
+        let mut wait = Wait::new(Quiet);
+        let started = time::Instant::now();
+        // Cut short, as a wait that checks every second cuts a longer pause.
+        let _ = time::timeout(POLL_INTERVAL / 2, wait.pause()).await;
+        wait.resume().await;
+        let paused = started.elapsed();
+        assert!(paused >= POLL_INTERVAL, "{paused:?}");
+        assert!(paused < POLL_INTERVAL * 3 / 2, "{paused:?}");
+        assert_eq!(wait.interval, POLL_INTERVAL * 2);
     }
 }

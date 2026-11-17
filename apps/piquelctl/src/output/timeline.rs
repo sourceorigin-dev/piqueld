@@ -245,7 +245,10 @@ impl View {
         }
         write!(out, "▏ {done}/{total}")?;
         match timeline.operation.started_at_ms {
-            Some(started) => write!(out, "  {}", Elapsed::from_millis(now_ms - started))?,
+            Some(started) => {
+                let until = timeline.operation.finished_at_ms.unwrap_or(now_ms);
+                write!(out, "  {}", Elapsed::from_millis(until - started))?;
+            }
             None => out.write_str("  queued")?,
         }
         if let Some(left) = timeline.remaining_ms(now_ms) {
