@@ -1438,3 +1438,62 @@ async fn timeline_expectations_count_each_earlier_operations_last_run_of_a_step(
     };
     assert_eq!(expected(earlier).await, []);
 }
+
+/// A failed operation names its failed action, never a request that was
+/// retried and then succeeded: a plan blocked after one names what blocks it.
+#[tokio::test]
+async fn failed_operations_name_their_failure_not_an_earlier_retry() {
+    use piqueld_core::observability::DiagnosticCode;
+    use piqueld_core::timeline::PlanCoverage;
+    let (_directory, store) = Store::temporary().await;
+    let operation = application(&store).await;
+    let action = store
+        .begin_action(Some(&operation.id), Phase::EnsureService, Some("web"))
+        .await
+        .unwrap();
+    store.action_request(&action, 1).await.unwrap();
+    let busy = Diagnostic::new(
+        "diagnostic-1".into(),
+        DiagnosticCode::DockerUnavailable,
+        "Docker is unavailable".into(),
+    );
+    store
+        .action_retry(&action, 1, std::time::Duration::from_secs(1), &busy)
+        .await
+        .unwrap();
+    store.finish_action(&action, None).await.unwrap();
+    store
+        .record_plan(
+            &operation.id,
+            Vec::new(),
+            PlanCoverage::Runtime,
+            Some("data"),
+        )
+        .await
+        .unwrap();
+    store
+        .transition_operation(
+            &operation.id,
+            OperationState::Running,
+            OperationState::Failed,
+            Some(("ownership_conflict", "a volume is not ours")),
+        )
+        .await
+        .unwrap();
+    let failed = store.operation(&operation.id).await.unwrap();
+    assert_eq!(
+        (failed.phase, failed.resource.as_deref()),
+        (Some(Phase::Planning), Some("data"))
+    );
+    // Cleanup failing afterwards, under the operation, names nothing.
+    let cleanup = store
+        .begin_action(Some(&operation.id), Phase::RemoveJobs, None)
+        .await
+        .unwrap();
+    store.finish_action(&cleanup, Some(busy)).await.unwrap();
+    let failed = store.operation(&operation.id).await.unwrap();
+    assert_eq!(
+        (failed.phase, failed.resource.as_deref()),
+        (Some(Phase::Planning), Some("data"))
+    );
+}

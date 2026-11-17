@@ -141,7 +141,8 @@ with `--env` when the application has several.
 | [`retention.finished_operation_days`](../reference/configuration-settings.md#retentionfinished_operation_days) | `10` | Finished operations other than deployments |
 
 `0` keeps everything. Deployment history is kept until its environment is
-deleted. Build output has its own limits, of
+deleted, but a deployment's steps, its phase and resource included, come
+from its events: once they expire, its page and timeline show none. Build output has its own limits, of
 [size](../reference/configuration-settings.md#build_historylog_max_bytes) and
 [age](../reference/configuration-settings.md#build_historylog_retention_days).
 
