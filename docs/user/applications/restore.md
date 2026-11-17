@@ -201,7 +201,9 @@ It runs the release of the deployment it restored.
 
 - **Restoring fails with `deployment_not_restorable`.** That deployment never
   succeeded. Restore one that did.
-- **The deployment to restore isn't listed.** piqueld removed it from the
+- **The deployment to restore isn't listed.** The list shows deployments a
+  page at a time, so select **Load older deployments** until it appears. If it
+  still isn't listed, piqueld removed it from the
   [deployment history](../operations/history.md#how-long-history-is-kept), and
   it can't be restored any more. By default, an environment keeps its newest
   50 deployments and those from the last 90 days. A preview's deployment can
