@@ -40,7 +40,7 @@ def area(p):
         return f"{parts[0]}/{parts[1]}"
     if p.startswith("tests/playwright/"):
         return "tests/playwright"
-    if parts[0] in ("docs", "migrations", "deploy", "nix", "examples", "scripts"):
+    if parts[0] in ("docs", "deploy", "nix", "examples", "scripts"):
         return parts[0]
     return "root & CI"
 
@@ -137,14 +137,8 @@ def test_files(rs, sources):
 
 others = [p for p in files if not p.endswith(".rs") and os.path.isfile(p)]
 cloc = {}
-listing = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"piqueld-stats-{os.getpid()}.txt")
-with open(listing, "w") as f:
-    f.write("\n".join(others))
-try:
-    report = subprocess.run(["cloc", "--by-file", "--csv", "--quiet", f"--list-file={listing}"],
-                            capture_output=True, text=True, check=True).stdout
-finally:
-    os.unlink(listing)
+report = subprocess.run(["cloc", "--by-file", "--csv", "--quiet", "--list-file=-"], input="\n".join(others),
+                        capture_output=True, text=True, check=True).stdout
 for row in csv.reader(io.StringIO(report)):
     if len(row) >= 5 and row[0] not in ("language", "SUM"):
         cloc[row[1].removeprefix("./")] = (row[0], int(row[2]), int(row[3]), int(row[4]))
