@@ -999,8 +999,9 @@ it surfaces before a deploy. A name both declared and stored fails with
 
 Values never appear in responses, manifests or deployment snapshots. Deployments
 pin immutable versions during effective-input preparation; retries preserve those
-pins. Earlier ciphertext versions remain until logical-secret, environment or
-application deletion. Each environment that mounts a stored version gets its own
+pins. Earlier ciphertext versions remain while a deployment in the
+[deployment history](../operations/history.md#how-long-history-is-kept) pins
+them, and are then deleted with their Docker secrets. Each environment that mounts a stored version gets its own
 Docker secret for it.
 
 Quota enforcement never evicts pinned versions. To retire a secret, save and deploy

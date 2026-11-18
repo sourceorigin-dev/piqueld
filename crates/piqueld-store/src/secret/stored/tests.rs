@@ -442,7 +442,12 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
         .await
         .unwrap();
     deploy(&store, &production).await.unwrap();
-    // The third is never deployed, and the fourth is current.
+    // The third generated version is current, but no deployment pins it.
+    store
+        .regenerate_secret(Daemon, &production, "session", 2)
+        .await
+        .unwrap();
+    // The third stored version is never deployed, and the fourth is current.
     put(2).await.unwrap();
     put(3).await.unwrap();
 
@@ -468,7 +473,10 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
         .unwrap();
     store.forget_uncopied_secret_versions().await.unwrap();
     assert!(store.unused_secret_versions().await.unwrap().is_empty());
-    assert_eq!(generations(&store, "secret_versions", "session").await, [2]);
+    assert_eq!(
+        generations(&store, "secret_versions", "session").await,
+        [2, 3]
+    );
     assert_eq!(
         generations(&store, "application_secret_copies", "stripe-prod").await,
         [2]

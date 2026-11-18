@@ -189,7 +189,7 @@ async fn missing_secret_key_fails_rollout_before_docker_mutation() {
     );
 }
 
-/// Whether `environment` still records the stored-secret copy `swarm_name`.
+/// Whether the store still records the stored-secret copy `swarm_name`.
 async fn copy_recorded(harness: &ControllerHarness, swarm_name: &str) -> bool {
     sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM application_secret_copies WHERE swarm_name=?1",

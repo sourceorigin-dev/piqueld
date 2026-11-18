@@ -785,7 +785,10 @@ impl<D: DockerApi> Controller<D> {
     /// any more (see `Store::unused_secret_versions`), one journaled
     /// `remove_secrets` daemon action per environment, then their records
     /// once Docker confirmed. A failed removal keeps the records, so the next
-    /// pass retries it.
+    /// pass retries it: one refused removal, such as a secret a service still
+    /// mounts, fails its environment's whole batch until a later rollout
+    /// releases it. It runs in the discovery pass, so a slow engine delays
+    /// discovery by up to the removal's request timeout.
     async fn collect_secret_versions(&self) -> Result<(), StoreError> {
         for (environment, names) in self.store.unused_secret_versions().await? {
             let journal = self
