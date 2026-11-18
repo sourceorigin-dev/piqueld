@@ -238,9 +238,10 @@ impl SetArgs {
             return Ok(None);
         }
         let mut url = read_hidden(console, "destination URL", self.url_file.clone(), 8192).await?;
-        // A file's trailing newline doesn't count. Check before trimming, so
-        // input `read_hidden` cut short at its cap is refused, not shortened.
-        if url.pop_if(|byte| *byte == b'\n').is_some() {
+        // A file's trailing newline doesn't count; `read_hidden` already
+        // dropped stdin's. Check before trimming, so input `read_hidden` cut
+        // short at its cap is refused, not shortened.
+        if self.url_file.is_some() && url.pop_if(|byte| *byte == b'\n').is_some() {
             url.pop_if(|byte| *byte == b'\r');
         }
         if url.len() > 8192 {

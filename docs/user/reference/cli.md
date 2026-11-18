@@ -235,9 +235,8 @@ the application changed meanwhile; it still asks for confirmation. It fails,
 before deploying anything, with `promotion_source_not_ready` unless the source's
 current deployment succeeded and runs healthy now, `release_incompatible`,
 `image_unavailable`, or `secrets_unavailable` listing every unusable secret.
-`env source --promote-from`
-fails with `application_busy` while a deployment of the environment is in
-progress.
+`env source --promote-from` fails with `application_busy` while a deployment of
+the environment is in progress.
 `environment_not_promoted` means the environment builds its own source.
 `env promote --plan` prints the release and its provenance and images, its
 origin, the rendered changes, the runtime plan, new (empty) volumes, and each

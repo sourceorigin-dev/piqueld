@@ -3918,14 +3918,17 @@ fn json_errors_are_one_envelope_on_stderr() {
 }
 
 /// `notification set --url-stdin` refuses a URL longer than any webhook's
-/// rather than cutting it, also when whitespace pads it past the read limit.
+/// rather than cutting it, also when whitespace or blank lines pad it past the
+/// read limit.
 #[test]
 fn notification_urls_over_8_kib_are_refused() {
     let prefix = "https://discord.com/api/webhooks/";
     let exact = format!("{prefix}{}", "a".repeat(8192 - prefix.len()));
+    let short = &exact[1..];
     for input in [
         format!("{prefix}{}", "a".repeat(8192)),
         format!("    {exact}"),
+        format!("{short}\r\n\r\nmore"),
     ] {
         let server = start_server(false, 1, |request| match request.path.as_str() {
             "/api/v1/notifications/destinations" => Reply::json(json!([])),
