@@ -1,308 +1,157 @@
 ---
 name: piqueld-cleanup
 description: >
-  Run a repository-wide cleanup of piqueld. First an audit: measure the code
-  (lines, tests, comments, generated share, largest files, panics and lint
-  suppressions), check coverage, untested areas, module layout and stale
-  allows, and suggest fixes. Then the area pass: one agent per area removes
-  duplication and inconsistency in a reviewed draft refactor PR, a docs pass
-  runs alongside, and the bugs found are reported. Use when asked for a
-  "cleanup pass", "refactor pass", "clean up the codebase", codebase stats or
-  an audit of piqueld, to "deduplicate" or "simplify" piqueld as a whole, or
-  to repeat the October 2026 pass (#241–#249) or the November 2026 audit. Not
-  for cleaning up a single PR or file.
+  Run a repository-wide cleanup of piqueld: an audit that measures the code
+  and suggests fixes, then an area pass where one agent per area opens a
+  reviewed, behavior-preserving refactor PR. Use when asked for a cleanup or
+  refactor pass, codebase stats or an audit, to deduplicate or simplify
+  piqueld as a whole, or to repeat the October 2026 pass (#241–#249) or the
+  November 2026 audit. Not for cleaning up a single PR or file.
 ---
 
-# Run a cleanup pass
+# piqueld cleanup
 
-A cleanup has two parts. The **audit** measures the codebase, checks it for
-known kinds of problems, and suggests fixes that the owner picks from; the
-November 2, 2026 audit led to #354, #355, #357–#359 and #361–#365. The **area
-pass** is a set of pure refactor PRs, one per area of the workspace, written
-in parallel and each reviewed before the owner merges it. It does not fix
-bugs. It writes them down, and they are fixed afterwards in their own PRs. The
-first pass (#241–#246, #248 and #249, October 17–18, 2026) removed about 3,700
-lines net, most of them from tests, with no change to any API, schema,
-manifest, CLI output or configuration format. Its docs PR (#247) ran alongside
-it.
+You orchestrate a cleanup of the whole repository in two parts: an audit, then
+an area pass. Run both unless the owner asks for one. Delegates write the
+code. You split the work, brief them, route reviews and report.
 
-Run the audit first, then the area pass, unless the owner asks for only one.
-The audit's numbers size the areas, and rerunning it at the end shows what
-the pass changed.
-
-You are the orchestrator. You split the work, brief the agents, route reviews,
-and keep the owner informed. You write little code yourself.
+Work from a checkout of `origin/main` that contains this skill, since the
+delegates read their briefs from it. Keep a ledger in your scratchpad: each
+agent, branch, PR, review state and finding. It survives compaction and
+restarts.
 
 ## Audit
 
-Follow [references/audit.md](references/audit.md): run
-`scripts/stats.py`, chart the numbers, run the checks, and send the owner a
-ranked list of suggestions. Act only on the ones the owner picks. Changes that
-touch many areas, such as splitting large files, either merge before the area
-pass starts or go to the area agents as part of their tasks.
+1. Measure: `python3 -I .agents/skills/piqueld-cleanup/scripts/stats.py .
+   --json <scratchpad>/stats.json`. It needs `cloc`. Chart the result with the
+   `dataviz` skill, `html_preview` and `html_render`, including growth over
+   time from the JSON.
+2. Look for: low coverage (`just coverage`), areas with few tests, generated
+   files missing from `.gitattributes`, files to split by area, `mod.rs`
+   files with no children (a module is `foo/mod.rs` only when it has
+   children), `unwrap`/`expect` that can panic in production, `#[allow]` that
+   should be a narrow `#[expect(..., reason = "...")]`, any `unsafe` or TODO,
+   and duplication built up since the last pass.
+3. Send the owner the charts and a ranked list of suggestions, each with the
+   numbers and paths behind it. Open nothing yet.
+4. For each suggestion the owner picks, start a thread with
+   `t3_thread_launch`: Claude Opus 5.5, a worktree off `origin/main`, and a
+   message that stands alone (goal, numbers, scope, what to report). An audit
+   of many sites ends with a table of each site, its verdict and why.
 
-## 1. Plan the split
+Changes that move code in many areas, such as file splits, merge before the
+area pass starts or go into the area agents' tasks. The November 2026 audit
+led to #354, #355, #357, #358, #359, #361–#364 and #365.
 
-Delegated agents start from your current commit and read their briefs from
-this skill's `references/`, so run the pass from a checkout of
-`origin/main` (or a branch off it) that contains this skill.
+## Area pass
 
-Fetch `origin/main` and measure the areas with the audit's numbers, or rerun
-`scripts/stats.py` (it leaves out generated files). Start from this split,
-which kept the first pass's PRs almost free of conflicts:
+### Split
 
-| Area | Paths | Title scope |
+Start from this split and adjust it to the code. Split an area over about
+30,000 lines along a module boundary, and merge small ones. Every file has
+exactly one owner.
+
+| Area | Paths | Scope |
 | --- | --- | --- |
-| Core | `crates/piqueld-core/**` | `core` |
-| Store | `apps/piqueld/src/store/**` | `store` |
-| Daemon API | `apps/piqueld/src/{api,auth,config,application,bin}/**`, the top-level files in `apps/piqueld/src` except `certificate.rs`, `apps/piqueld/{build.rs,build,examples}` | `server` |
-| Daemon runtime | `apps/piqueld/src/{docker,reconcile,ingress,dns,tailnet,git,secrets,telemetry}/**`, `apps/piqueld/src/certificate.rs` | `server` |
-| Daemon tests | `apps/piqueld/tests/**` | `server` |
-| CLI | `apps/piquelctl/**` | `cli` |
-| Dashboard | `apps/piqueld-ui/**`, `tests/playwright/**` | `ui` |
-| Tooling | `crates/piqueld-{client,probe,generated}/**` except generated code, `tools/**`, `scripts/**`, `nix/**`, `deploy/**`, `.github/**`, and the root build files (`justfile`, `Cargo.toml`, `flake.nix`, `deny.toml`) | dominant scope |
+| Core | `crates/piqueld-core` | `core` |
+| Store | `crates/piqueld-store` | `store` |
+| Docker and config | `crates/piqueld-docker`, `crates/piqueld-config` | `docker`, `config` |
+| Daemon API | `apps/piqueld/src/{api,auth,application}`, its top-level files except `certificate.rs`, `apps/piqueld/{build.rs,build,examples}` | `server` |
+| Daemon runtime | `apps/piqueld/src/{ingress,reconcile,telemetry,git,tailnet}`, `apps/piqueld/src/certificate.rs` | `server` |
+| Daemon tests | `apps/piqueld/tests` | `server` |
+| CLI | `apps/piquelctl` | `cli` |
+| Dashboard | `apps/piqueld-ui`, `tests/playwright` | `ui` |
+| Tooling | the other crates (generated code excluded), `tools`, `scripts`, `nix`, `deploy`, `apps/site`, `.github`, root build files | per change |
 
-Nobody edits `migrations/**` (no schema changes) or generated files (they
-change only through `just generate`). Markdown belongs to the docs lane.
+Nobody edits `migrations` or generated files. Markdown belongs to the docs
+lane. Branches are `refactor/cleanup-<area>-<YYYY-MM-DD>`.
 
-Name each branch `refactor/cleanup-<area>-<YYYY-MM-DD>`, with the pass's
-start date. The first pass's `refactor/cleanup-<area>` branches still exist.
+Builds run in parallel on a machine with no swap. Pick one
+`CARGO_BUILD_JOBS` value for every agent that compiles, and pass it to each.
+4 worked for 8 implementers and their reviewers on 16 cores and 58 GB.
 
-Adjust the split to the code as it is now:
+Tell the owner the split in one message and start without waiting.
 
-- Put any new top-level module in the area that already owns its neighbours.
-- Split an area that has grown past about 30,000 lines along a module
-  boundary. Merge areas that are small.
-- Give every file exactly one owner. In the first pass, the runtime and tests
-  agents both edited `apps/piqueld/tests/fake_docker.rs`, and the second one
-  merged needed a manual rebase.
+### Start the agents
 
-Run all areas at once unless the owner has asked for fewer threads. Cap the
-builds of every agent that compiles (implementers, reviewers and the docs
-lane) so they fit the machine together. There is no swap, and 8 unbounded
-builds run out of memory. In the first pass, `CARGO_BUILD_JOBS=4` for 8
-implementers and their reviewers on 16 cores and 58 GB worked, because they
-rarely all build at the same moment. Scale it to `nproc` and `free -g`, and
-pass the value to every task.
+Call `orchestrator_capabilities` once. For each area, start a `delegate_task`
+on Claude Opus 5.5 with `isolation: "worktree"` and `role: "implementation"`.
+The task says to follow `.agents/skills/piqueld-cleanup/references/agent-brief.md`,
+and names the area, paths, packages, branch, title scope, what the other
+areas own, and `CARGO_BUILD_JOBS`.
 
-Tell the owner the split in one short message, then start. Don't wait for
-approval: the split is cheap to change, and the owner can interrupt.
+Start a docs lane the same way, on `docs/cleanup-pass-<YYYY-MM-DD>`. It
+follows the `piqueld-docs` skill, fixes drift between the docs and the code,
+runs `just docs` and opens a draft PR. It reports stale `///` comments and
+clap help instead of editing them. Those comments sit in the area agents'
+files and feed generated output.
 
-## 2. Start the agents
+### Review
 
-Call `orchestrator_capabilities` once to confirm the provider and model IDs.
+As each draft PR opens, call `link_pull_request` and start a review: a
+`delegate_task` on GPT 6.1 Sol with `role: "review"`,
+`isolation: "worktree"` and `target.options: { reasoningEffort: "high" }`.
+It follows `references/review-brief.md`. Give it the PR number, the head SHA,
+`CARGO_BUILD_JOBS`, and a focus list: every "unchanged" claim in the PR
+description, and every merged helper or test that could have changed
+behavior.
 
-For each area, start a `delegate_task` with `isolation: "worktree"`,
-`role: "implementation"`, Claude Opus 5.5 as the target, and a task that:
+- Check each finding against the code before acting on it.
+- Send real findings to the implementer.
+- After a fix that rewrites code, run a new, narrower review.
+- Judgment calls go to the owner, with your recommendation.
+- If Sol is over its limit, review with Opus instead and say so.
 
-1. Tells it to read `.agents/skills/piqueld-cleanup/references/agent-brief.md`
-   in its checkout and follow it.
-2. Names its area, its paths, its package or packages, its branch and its
-   title scope.
-3. Lists what the other agents own, so it knows what not to touch.
-4. Lists its area's typical targets and its checks, from
-   [Area notes](#area-notes) below.
-5. Gives its `CARGO_BUILD_JOBS` value.
+When a PR's review is clean and it is rebased, mark it ready. Follow its CI
+with `babysit-pr`, and update its note to name who reviewed it. The owner
+merges, through the merge queue.
 
-Then start the docs lane: one more `delegate_task`, isolated and with Claude
-Opus 5.5 like the others, on branch `docs/cleanup-pass-<YYYY-MM-DD>`. Its task
-tells it to:
+When something lands on `main`, have each agent rebase and apply its cleanup
+to the new code. Review any logic the rebase merged. Suggest merging core
+first, because everything depends on it.
 
-- Follow the `piqueld-docs` skill, check every page against the code, and fix
-  drift in `docs/`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`,
-  `tests/README.md` and `examples/`.
-- Report stale `///` doc comments and clap help instead of editing them.
-  Those feed generated pages, the OpenAPI document and `--help`, which the
-  refactor PRs must leave unchanged, and they live in files the area agents
-  own. In the first pass the docs agent edited them, merged first, and left
-  all eight refactor PRs to resolve doc-comment conflicts.
-- Run `just docs`, open a draft PR with the `file-pr` skill, and end with the
-  same final report as the area agents: the PR, the checks, and the bigger
-  issues it found.
+### Report
 
-Review its PR like the others, with a focus list of the claims it changed.
+When every PR is reviewed and green, send the owner one report:
 
-Keep the stale doc comments it reports for a follow-up PR after the area PRs
-merge (see [Follow up after the merge](#6-follow-up-after-the-merge)).
+1. The PRs: area, link, lines added and removed.
+2. Decisions only the owner can make, with your recommendation.
+3. Deliberate behavior changes, with their PR and commit.
+4. Merge order and the PRs that share files.
+5. Bugs found but not fixed: `file:line`, what goes wrong, impact.
+6. Design issues and cross-area duplication.
+7. Features missing from one of the three surfaces (`AGENTS.md`).
 
-Keep a ledger file under `/tmp/piqueld-cleanup-<date>/`: each area's agent,
-branch, PR, review state, and every finding the agents and reviewers report.
-The first pass's thread was compacted four times and its server restarted
-once. The ledger is what survives that.
+First have Sol check every bug and parity gap against current `main`. Number
+the items `NEW-1`, `NEW-2` and so on, never `#1`, which GitHub links to an
+issue or PR.
 
-## 3. Review each PR as it opens
+### After the merge
 
-When an agent reports its draft PR, link it with `link_pull_request` and
-start a review right away. Don't wait for the other areas.
+Rerun the stats and compare them with the audit. Then offer the follow-ups,
+and start each one only when the owner asks:
 
-Each review is a new `delegate_task` with `role: "review"`,
-`isolation: "worktree"`, and GPT 6.1 Sol as the target with
-`target.options: { reasoningEffort: "high" }`. Its task tells it to read
-`.agents/skills/piqueld-cleanup/references/review-brief.md`, and gives it the
-PR number, the head commit SHA it reviews, its `CARGO_BUILD_JOBS` value, and a
-focus list. Write the focus list from the PR description: list each
-"unchanged" or "byte-identical" claim the author makes, and each place a
-merged helper, macro or test could have changed behavior. Every regression the
-first pass's reviewers found came from checking claims like these (see
-[Area notes](#area-notes)).
+1. Cross-area PRs for duplication the areas held back.
+2. A doc-comment PR for what the docs lane reported. It changes generated
+   output on purpose.
+3. Linear issues for the bugs and parity gaps, following `AGENTS.md`.
+4. Fix rounds: at most 3 PRs at a time, sharing no files, Opus implementing
+   and Sol reviewing. Check each item is still open first.
 
-When a review comes back:
+## Lessons from the first pass
 
-- Check its findings against the code before you act on them.
-- Send real findings back to the area's implementer, so it fixes them with
-  the context it already has. Fix a one-line nit yourself.
-- After a fix that rewrites code, start a new, narrower review of what
-  changed. Don't reuse the old reviewer.
-- A finding that is a judgment call, like the error-precedence change in
-  #245, goes to the owner with both sides and your recommendation.
-
-Mark a PR ready for review only once its review is clean and it is rebased on
-`origin/main`. That starts the slow CI jobs (Docker, Playwright, macOS, Nix),
-which must pass before the PR can merge. Follow them with the `babysit-pr`
-skill, and send a real failure back to the implementer. Update the note at the
-end of the description to name the reviewers that actually reviewed it, for
-example `Written by Claude Opus 5.5 in Claude Code and reviewed by GPT 6.1 Sol
-(via T3 Code)`.
-
-If Sol is over its usage limit, tell the owner and run the same review with a
-Claude Opus reviewer instead of waiting for the reset. The first pass lost no
-time this way, while waiting would have cost hours. Sol stays the default.
-
-## 4. Keep the PRs current
-
-The owner keeps merging features during the pass. When something lands on
-`main`:
-
-- Have each open PR's agent rebase, and apply its area's cleanup to the new
-  code, so the PR doesn't land with a fresh copy of the pattern it removed.
-- If the rebase merged real logic, start a short review of only that part.
-- An area PR that updated a doc reference can conflict with the docs PR.
-  Resolve it against the code as it is after the rebase, and rerun
-  `just docs`.
-
-Suggest merging the core PR first: the daemon and the client depend on it, and
-the CLI and dashboard through the client.
-
-## 5. Report
-
-When every PR's latest head is reviewed and its CI is green, send the owner
-one report:
-
-1. A table of the PRs: area, link, lines added and removed.
-2. Decisions only the owner can make, with your recommendation for each.
-3. Every deliberate behavior change, and the PR and commit it is in.
-4. Merge notes: suggested order, and the PRs that share a file.
-5. Bugs found but not fixed. For each: `file:line`, what goes wrong, impact.
-6. Design issues and cross-area duplication, each with a suggested fix.
-7. Features missing from a surface: in the manifest but not the CLI or the
-   dashboard, or the other way around (see `AGENTS.md`).
-
-Before you send it, have one Sol task check every bug and parity gap against
-current `main`. In the first pass it dropped 2 of 38 as not bugs and flagged 2
-as product decisions.
-
-Number the items `NEW-1`, `NEW-2`, …, never `#1`: on GitHub `#N` links to
-issue or PR N.
-
-## 6. Follow up after the merge
-
-The pass isn't done when the area PRs merge. Rerun `scripts/stats.py` on the
-new `main` and show the owner its summary next to the audit's. Then offer, in
-this order:
-
-1. **Cross-area PRs.** Duplication that crossed areas was held back so the
-   agents wouldn't collide. Once the area PRs merge, open one small PR per
-   theme. The first pass produced #264 (std locks to `parking_lot`), #265
-   (client helpers and the wasm32 lint) and #266 (limits and helpers shared
-   across crates).
-2. **A doc-comment PR** for the stale `///` comments and clap help the docs
-   lane reported. It regenerates the generated pages, OpenAPI document and
-   CLI reference on purpose, so its review checks the new text against the
-   code.
-3. **Issues for parity gaps,** once the owner agrees. The first pass filed
-   #250–#263.
-4. **Fix rounds** for the verified bugs, grouped by area so the PRs in a round
-   don't share files. The owner merges a round before the next one starts. Run
-   at most 3 at a time, with Opus implementing and Sol reviewing before each
-   PR opens. Before each round, check that every item is still open. Features
-   keep landing, and some items get fixed or changed along the way.
-
-Start each of these only when the owner asks.
-
-## Area notes
-
-Typical targets, checks, and what the first pass's reviews caught. Give each
-agent its row, and use the "caught" column in its reviewer's focus list.
-
-**Core.** Targets: shared validation error constructors, error codes as
-constants in `codes.rs`, validators as methods, one `string_enum!` macro for
-string-backed enums, shared traits for keyed edits. Check that
-`just openapi-check` regenerates nothing. Caught: a blanket text replace
-(`resources.` to `self.`) changed three validation error paths and their
-order. Reviewers compare error codes, paths and order over many manifests on
-`main` and on the branch.
-
-**Store.** Targets: one paging and cursor helper, shared row decoding, one
-"single write behind the writer queue" helper, shared test fixtures, and
-`foo.rs` with `foo_tests.rs` as `foo/mod.rs` with `foo/tests.rs`. Run the
-store tests plus the `api_contract`, `persistence` and `sqlx_stack`
-integration tests. Caught: merging near-identical queries behind an optional
-filter stopped two of them using their index. Reviewers compare
-`EXPLAIN QUERY PLAN` on `main` and on the branch. Also caught: a missing row
-that was an error became a quiet `false`, and test helpers that stopped
-asserting.
-
-**Daemon API.** Targets: shared request extractors instead of decoding in
-each handler, splitting long `mod.rs` files, cookie names and lifetimes
-defined once. Run the daemon tests (`api_contract` covers the HTTP layer) and
-`just openapi-check`. Caught: decoding everything in an extractor changed
-which error a request with several faults gets (#245; the owner kept the new
-order).
-
-**Daemon runtime.** Targets: one helper for Docker "not found" responses,
-ownership checks and journal entries; shared container spec bases; DNS
-provider boilerplate. Run `just docker-test` (real Docker, in
-Docker-in-Docker) if the Docker adapter changed; CI runs it too. Caught: renamed
-log fields (`network_id` became `id`, which breaks log filters), and a test
-that built its expected bytes with the production function. Reviewers
-re-serialize the container specs on both sides and compare the bytes and
-hashes, since a changed spec replaces running containers.
-
-**Daemon tests.** Targets: setup moved into `tests/support/`, one harness per
-binary, table-driven cases. Every behavior asserted before is still asserted,
-and the PR accounts for every test it merged or removed: compare test names
-and per-file counts with `main`, and explain each difference. Caught: a wait shortened
-from 10 to 2 seconds (a new flake), and a helper that became a free function.
-
-**CLI.** Targets: one place that owns confirmation prompts, commands as
-methods on their argument structs, shared report and table rendering. Every
-command's `--help`, human output, JSON output and exit code stays
-byte-identical: compare `--help` for every command against a build of `main`.
-
-**Dashboard.** Targets: one client error path, a shared draft and save type
-for forms, shared view helpers, CSS duplicates, Playwright helpers. Run wasm32
-Clippy (`just lint` covers it), the unit tests, and
-`pnpm --dir tests/playwright check`. Caught: a lost test assertion, a
-behavior change hidden in an 8,000-line commit (split it into logical commits,
-with the fix in its own `fix(ui):` commit), and a module-wide lint exception
-(put `#[expect(..., reason = "...")]` on each item instead).
-
-**Tooling.** Targets: client wrapper boilerplate behind extension traits,
-error helpers as constructors, xtask command helpers, NixOS module tables.
-Never edit generated code. Check the client natively and for wasm32, and
-compare the NixOS module's evaluated output before and after. The probe is
-size-sensitive, so don't add dependencies. Caught: a merged test that lost a
-check, and changed xtask error messages.
-
-## When things go wrong
-
-- **Flaky tests.** `fake_docker` timing tests can fail under the load of 8
-  parallel builds, and one Playwright step
-  (`tests/playwright/tests/branches.spec.ts`, the webhook secret) is flaky in
-  CI. Rerun once, compare with `main`, and say so in the report. Don't let an
-  agent change a test to make it pass.
-- **Session or usage limits.** Background work stops when the Claude session
-  hits its limit or the T3 server restarts. Afterwards, check each agent's
-  state against the ledger and restart only what didn't finish.
-- **Waiting on a bot.** CodeRabbit runs out of free reviews and may never
-  review a PR. Don't hold a PR for it. Tell the owner it's ready and why.
+- Reviews caught these regressions by checking "unchanged" claims:
+  - a blanket replace rewrote error paths
+  - merged queries lost their index
+  - an extractor changed which error wins
+  - log fields were renamed
+  - a test wait was cut from 10 to 2 seconds
+  - assertions were dropped
+  - expected test bytes were built by the code under test
+  - a fix was hidden in an 8,000-line commit
+- `fake_docker` timing tests and Playwright's `branches.spec.ts` flake under
+  load. Rerun once and compare with `main`. Never change a test to make it
+  pass.
+- A usage limit or a T3 restart stops background work. Check the ledger and
+  restart only what didn't finish.
+- Don't hold a PR for CodeRabbit.
