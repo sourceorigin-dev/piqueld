@@ -33,15 +33,17 @@ Export `CARGO_BUILD_JOBS` for every cargo command. For your packages, run:
 - `cargo fmt`
 - `cargo clippy --locked -p <pkg> --all-targets --all-features -- -D warnings`
 - the wasm32 Clippy line from `just lint`, if your packages build for wasm32
-- `cargo nextest run --locked --all-features` over every test binary that
-  covers code you changed
+- `cargo nextest run --locked --all-features -p <pkg>` over every test
+  binary that covers code you changed
 - `just openapi-check`, if you touched anything the generated files are built
   from
 - `just setup-playwright`, then `just test-playwright` and
   `just docs-screenshots --update-snapshots=none`, if you touched the
-  dashboard or its specs
+  dashboard, its specs or the daemon's HTTP API
 - `just docker-test`, if you touched `crates/piqueld-docker`, the daemon's
-  ingress or reconcile code, or `apps/piqueld/tests/docker_integration.rs`
+  `application`, `git`, `ingress` or `reconcile` code, or
+  `apps/piqueld/tests/docker_integration.rs` and the `tests/support` files it
+  includes
 
 Draft CI skips the Playwright and Docker suites, so run them here. Don't run
 `just validate`, `just lint` or `just test`: they build the whole workspace.

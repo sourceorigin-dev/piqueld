@@ -93,7 +93,7 @@ files and feed generated output.
 As each draft PR opens, call `link_pull_request` and start a review: a
 `delegate_task` on GPT 6.1 Sol with `role: "review"`,
 `isolation: "worktree"` and `target.options: { reasoningEffort: "high" }`.
-It follows `references/review-brief.md`. Give it the PR number, the head SHA,
+It follows `.agents/skills/piqueld-cleanup/references/review-brief.md`. Give it the PR number, the head SHA,
 `CARGO_BUILD_JOBS`, and a focus list: every "unchanged" claim in the PR
 description, and every merged helper or test that could have changed
 behavior.
