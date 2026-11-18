@@ -10,6 +10,16 @@ use piqueld_core::{ApplicationId, EnvironmentId, EnvironmentName, EventDetail};
 use sha2::{Digest, Sha256};
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
+/// A save as fingerprinted: its mutation without the inspected application
+/// ID, in `Mutation::Save`'s serialized form.
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", rename = "save")]
+struct SaveIdentity<'a> {
+    application: &'a piqueld_core::manifest::ApplicationTemplate,
+    expected_application_id: Option<String>,
+    deploy: bool,
+}
+
 /// An authorized request: a replay, or one to execute.
 enum Checked {
     /// The response stored for the request it repeats.
@@ -73,7 +83,7 @@ impl Store {
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(StoreError::database)?;
-        let fingerprint = Self::mutation_fingerprint(&mutation, expected_generation, force)?;
+        let fingerprint = Self::mutation_fingerprint(&mutation, force)?;
         let checked =
             Self::check_request_on(&mut tx, actor, &mutation, &fingerprint, request_id, now)
                 .await?;
@@ -154,12 +164,11 @@ impl Store {
         &self,
         actor: Actor<'_>,
         mutation: &Mutation,
-        expected_generation: Option<u64>,
         force: bool,
         request_id: Option<&str>,
     ) -> Result<Option<MutationResponse>, StoreError> {
         let mut tx = self.snapshot().await?;
-        let fingerprint = Self::mutation_fingerprint(mutation, expected_generation, force)?;
+        let fingerprint = Self::mutation_fingerprint(mutation, force)?;
         let checked =
             Self::check_request_on(&mut tx, actor, mutation, &fingerprint, request_id, now_ms())
                 .await?;
@@ -323,18 +332,37 @@ impl Store {
         Ok(matches!(target, Target::New))
     }
 
-    /// Hashes the full request (mutation, precondition, and `force`) so a reused
-    /// request ID can be told apart from an exact retry.
-    fn mutation_fingerprint(
-        mutation: &impl serde::Serialize,
-        expected_generation: Option<u64>,
-        force: bool,
-    ) -> Result<String, StoreError> {
+    /// Hashes the request so a reused request ID can be told apart from a
+    /// rerun of the same command. It covers the mutation and `force`, but
+    /// not the preconditions the caller inspected beforehand, the expected
+    /// generation and application ID: a rerun inspects them again after the
+    /// first run changed them, and must still replay.
+    fn mutation_fingerprint(mutation: &Mutation, force: bool) -> Result<String, StoreError> {
+        match mutation {
+            Mutation::Save {
+                application,
+                expected_application_id: Some(_),
+                deploy,
+            } => Self::fingerprint(
+                &SaveIdentity {
+                    application: application.as_ref(),
+                    expected_application_id: None,
+                    deploy: *deploy,
+                },
+                force,
+            ),
+            mutation => Self::fingerprint(mutation, force),
+        }
+    }
+
+    /// Hashes `request` and `force`. `null` stands where the expected
+    /// generation once was, so receipts of requests sent without one keep
+    /// their fingerprint.
+    fn fingerprint(request: &impl serde::Serialize, force: bool) -> Result<String, StoreError> {
         Ok(format!(
             "{:x}",
             Sha256::digest(
-                serde_json::to_vec(&(mutation, expected_generation, force))
-                    .map_err(StoreError::corrupt)?
+                serde_json::to_vec(&(request, None::<u64>, force)).map_err(StoreError::corrupt)?
             )
         ))
     }
@@ -1389,7 +1417,7 @@ mod tests {
         let deploy = Mutation::deploy(EnvironmentId::parse("input-app").unwrap());
         let original = Sha256::digest(br#"[{"kind":"deploy","id":"input-app"},null,false]"#);
         assert_eq!(
-            Store::mutation_fingerprint(&deploy, None, false).unwrap(),
+            Store::mutation_fingerprint(&deploy, false).unwrap(),
             format!("{original:x}")
         );
     }
