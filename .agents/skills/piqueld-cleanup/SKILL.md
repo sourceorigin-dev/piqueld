@@ -5,8 +5,8 @@ description: >
   and suggests fixes, then an area pass where one agent per area opens a
   reviewed, behavior-preserving refactor PR. Use when asked for a cleanup or
   refactor pass, codebase stats or an audit, to deduplicate or simplify
-  piqueld as a whole, or to repeat the October 2026 pass (#241–#249) or the
-  November 2026 audit. Not for cleaning up a single PR or file.
+  piqueld as a whole, or to repeat the October 2026 pass or the November
+  2026 audit. Not for cleaning up a single PR or file.
 ---
 
 # piqueld cleanup
@@ -46,21 +46,21 @@ area pass starts or go into the area agents' tasks.
 
 ### Split
 
-Start from this split and adjust it to the code. Split an area whose source
-and test lines in the script's by-area table pass about 30,000, along a
-module boundary, and merge small areas. Every file has exactly one owner.
+Start from this split and adjust it to the code. Split an area over about
+30,000 lines of source and tests along a module boundary, and merge small
+areas. Every file has exactly one owner.
 
 | Area | Paths | Scope |
 | --- | --- | --- |
 | Core | `crates/piqueld-core` | `core` |
 | Store | `crates/piqueld-store` | `store` |
-| Docker and config | `crates/piqueld-docker`, `crates/piqueld-config` | `docker`, `config` |
+| Docker and config | `crates/piqueld-docker`, `crates/piqueld-config` | `docker` |
 | Daemon runtime | `apps/piqueld/src/{ingress,reconcile,telemetry,git,tailnet}`, `apps/piqueld/src/certificate.rs` | `server` |
 | Daemon tests | `apps/piqueld/tests` | `server` |
 | Daemon API | the rest of `apps/piqueld` | `server` |
 | CLI | `apps/piquelctl` | `cli` |
 | Dashboard | `apps/piqueld-ui`, `tests/playwright` | `ui` |
-| Tooling | every other hand-written file: the other crates, `tools`, `nix`, `deploy`, `apps/site`, `examples`, `scripts`, dot-directories, root files | per change |
+| Tooling | every other hand-written file: the other crates, `tools`, `nix`, `deploy`, `apps/site`, `examples`, `scripts`, dot-directories, root files | none: `refactor: …` |
 
 Nobody edits `crates/piqueld-store/migrations` or generated files. `docs/`
 and Markdown belong to the docs lane. Branches are

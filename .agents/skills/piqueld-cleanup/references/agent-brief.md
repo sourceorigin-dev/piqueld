@@ -33,12 +33,15 @@ Export `CARGO_BUILD_JOBS` for every cargo command. For your packages, run:
 - `cargo fmt`
 - `cargo clippy --locked -p <pkg> --all-targets --all-features -- -D warnings`
 - the wasm32 Clippy line from `just lint`, if your packages build for wasm32
-- `cargo nextest run --locked` over every test binary that covers code you
-  changed
-- `just openapi-check`, if you touched a serialized type
-- `just test-playwright` (with `pnpm --dir tests/playwright check` for
-  types), if you touched the dashboard or its specs
-- `just docker-test`, if you touched the Docker adapter or its tests
+- `cargo nextest run --locked --all-features` over every test binary that
+  covers code you changed
+- `just openapi-check`, if you touched anything the generated files are built
+  from
+- `just setup-playwright`, then `just test-playwright` and
+  `just docs-screenshots --update-snapshots=none`, if you touched the
+  dashboard or its specs
+- `just docker-test`, if you touched `crates/piqueld-docker`, the daemon's
+  ingress or reconcile code, or `apps/piqueld/tests/docker_integration.rs`
 
 Draft CI skips the Playwright and Docker suites, so run them here. Don't run
 `just validate`, `just lint` or `just test`: they build the whole workspace.
@@ -52,8 +55,7 @@ and never change a test just to make it pass.
 ## Delivery
 
 - Make small, logical commits with conventional messages and no
-  `Co-Authored-By` line. In the first pass, a fix hid in an 8,000-line
-  commit.
+  `Co-Authored-By` line.
 - Rebase on `origin/main`, and clean up any new code the rebase brings in.
 - Open a **draft** PR with `file-pr`, despite its default, titled
   `refactor(<scope>): <what got simpler>`. Its description says:
