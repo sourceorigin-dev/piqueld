@@ -636,7 +636,7 @@ piquelctl secrets recover-key [OPTIONS]
 
 Options:
 
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl notification`
 
@@ -687,7 +687,7 @@ Options:
   - `json`: Versioned JSON describing the event.
   - `discord`: A Discord webhook message.
 - `--url-file <PATH>`: Read the webhook URL from this file.
-- `--url-stdin`: Read the webhook URL from standard input.
+- `--url-stdin`: Read the webhook URL from standard input. A terminal asks for it without echo.
 - `--enabled <BOOL>`: Whether to send notifications.
 
   `false` pauses the destination and cancels its pending deliveries. `true` resumes it, without sending what happened meanwhile. Values: `true`, `false`.
@@ -901,7 +901,7 @@ Options:
 
 - `--deploy`: Also deploy the saved configuration.
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl app service`
 
@@ -952,7 +952,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--git <URL|self>`: Build this Git repository with Docker instead of running an image. It takes a clone URL, a path on the daemon's host, or `self`: the manifest's own repository, at the commit the manifest was read from.
 - `--branch <BRANCH>`: Branch to build when no commit is pinned. Default: `main`. `self` doesn't take one.
 - `--commit <COMMIT>`: Build this full commit hash instead of the branch head. `self` doesn't take one.
@@ -982,7 +982,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service rename`
 
@@ -1006,7 +1006,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service replicas`
 
@@ -1028,7 +1028,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service source`
 
@@ -1070,7 +1070,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service source git`
 
@@ -1094,7 +1094,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--branch <BRANCH>`: Branch to build when no commit is pinned. Default: `main`. `self` doesn't take one.
 - `--commit <COMMIT>`: Build this full commit hash instead of the branch head. `self` doesn't take one.
 - `--dockerfile <PATH>`: Dockerfile path, relative to the repository root. Default: `Dockerfile`.
@@ -1122,7 +1122,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service source branch`
 
@@ -1144,7 +1144,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service source commit`
 
@@ -1166,7 +1166,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--clear`: Remove the pinned commit and build the branch head again.
 
 ## `piquelctl app service source dockerfile`
@@ -1189,7 +1189,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service source context`
 
@@ -1211,7 +1211,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service env`
 
@@ -1247,7 +1247,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service env remove`
 
@@ -1271,7 +1271,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service command`
 
@@ -1295,7 +1295,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service arguments`
 
@@ -1319,7 +1319,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service depends-on`
 
@@ -1343,7 +1343,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service rollout`
 
@@ -1366,7 +1366,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--order <ORDER>`: `stop-first` stops the old task before starting its replacement, and `start-first` starts the replacement first. By default, the order is `stop-first` when the service mounts a volume writable, else `start-first`.
 - `--monitor-seconds <SECONDS>`: Seconds Docker watches each replacement task for failure, from 1 to 3600. By default, 30.
 
@@ -1392,7 +1392,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service mount`
 
@@ -1428,7 +1428,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--read-only`: Mount the volume read-only. A writable mount makes the service's rollouts stop the old task first.
 
 ## `piquelctl app service mount remove`
@@ -1451,7 +1451,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service secret`
 
@@ -1505,7 +1505,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service secret remove`
 
@@ -1529,7 +1529,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service health`
 
@@ -1576,7 +1576,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--path <PATH>`: Request path, starting with `/`. Default: `/health`.
 - `--interval <SECONDS>`: Seconds between checks, from 1 to 3600. Default: `10`.
 - `--check-timeout <SECONDS>`: Seconds before a check counts as failed, from 1 to the interval. Default: `3`.
@@ -1605,7 +1605,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--interval <SECONDS>`: Seconds between checks, from 1 to 3600. Default: `10`.
 - `--check-timeout <SECONDS>`: Seconds before a check counts as failed, from 1 to the interval. Default: `3`.
 - `--start-period <SECONDS>`: Seconds after the container starts during which failed checks don't count, up to 3600. A passing check makes the container healthy at once. Default: `0`.
@@ -1630,7 +1630,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service health port`
 
@@ -1652,7 +1652,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service health path`
 
@@ -1674,7 +1674,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service health command-elements`
 
@@ -1696,7 +1696,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service health interval`
 
@@ -1718,7 +1718,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service health timeout`
 
@@ -1740,7 +1740,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service health start-period`
 
@@ -1762,7 +1762,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service health retries`
 
@@ -1784,7 +1784,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app service cpu`
 
@@ -1806,7 +1806,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--clear`: Remove the CPU limit.
 
 ## `piquelctl app service memory`
@@ -1829,7 +1829,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--clear`: Remove the memory limit.
 
 ## `piquelctl app file`
@@ -1881,7 +1881,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--content <TEXT>`: The file's content. Variables in it are never rendered.
 - `--from <LOCAL_FILE>`: Read the content from this local file now, and save it in the manifest.
 - `--path <REPOSITORY_PATH>`: Read the content from this file in the manifest's repository, relative to its root, each time a deployment fetches the manifest. Only repository-backed applications can use it.
@@ -1907,7 +1907,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app volume`
 
@@ -1943,7 +1943,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app volume remove`
 
@@ -1966,7 +1966,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app route`
 
@@ -2020,7 +2020,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--visibility <VISIBILITY>`: `public` serves everyone, `private` only devices on the tailnet. The environment's visibility ceiling can make it stricter. Default: `private`. Values: `public`, `private`.
 - `--name <NAME>`: Stable route name, unique within the application. It selects the route in every environment and preview, such as with `env url --route`.
 
@@ -2044,7 +2044,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--status <STATUS>`: HTTP status of the redirect: `301`, `302`, `303`, `307` or `308`. Default: `308`.
 - `--no-preserve-path`: Drop the request path and query instead of appending them to the destination.
 - `--visibility <VISIBILITY>`: `public` serves everyone, `private` only devices on the tailnet. The environment's visibility ceiling can make it stricter. Default: `private`. Values: `public`, `private`.
@@ -2072,7 +2072,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app route name`
 
@@ -2096,7 +2096,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app route remove`
 
@@ -2117,7 +2117,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app job`
 
@@ -2156,7 +2156,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--timeout-seconds <SECONDS>`: Seconds the job may run before it fails the deployment, from 1 to 86400. By default, the job's current timeout, or 300 for a new job.
 - `--volume-access <ACCESS>`: How the job mounts its service's volumes. By default, the job's current access, or `read-only` for a new job.
   - `read-only`: Mount every volume read-only, so the job runs beside the services.
@@ -2187,7 +2187,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app job remove`
 
@@ -2208,7 +2208,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app export`
 
@@ -2257,7 +2257,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--applications <APPS>`: Applications whose environments may import the service. Separate several with commas, or repeat the option. Required.
 - `--previews`: Let previews of those applications import it too. Without it, previews can't, even if they could before.
 
@@ -2280,7 +2280,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app import`
 
@@ -2332,7 +2332,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--environment <ENV>`: Environment of the exporting application to reach, such as `staging` or `${{ vars.auth_env }}`. By default, the one named like the importing environment.
 
 ## `piquelctl app import remove`
@@ -2355,7 +2355,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app variable`
 
@@ -2394,7 +2394,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--string`: Keep the value as text even when it looks like a boolean or an integer.
 
 ## `piquelctl app variable unset`
@@ -2420,7 +2420,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app repository`
 
@@ -2462,7 +2462,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--branch <BRANCH>`: Branch the environments follow. Default: `main`.
 - `--commit <COMMIT>`: Pin this full commit hash instead of following the branch.
 - `--sync <MODE>`: Whether to deploy pushes, as `app repository sync` sets it. Default: `off`.
@@ -2491,7 +2491,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app repository url`
 
@@ -2512,7 +2512,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app repository path`
 
@@ -2533,7 +2533,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app repository sync`
 
@@ -2559,7 +2559,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--interval <SECONDS>`: Seconds between polls with `poll`, from 60 to 86400. By default, 300.
 
 ## `piquelctl app repository reset`
@@ -2582,7 +2582,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app repository webhook`
 
@@ -2627,7 +2627,7 @@ Arguments:
 
 Options:
 
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app list`
 
@@ -2748,7 +2748,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--bytes <BYTES>`: Generate this many random bytes (16–512), encoded as text.
 - `--encoding <ENCODING>`: Text encoding of the random bytes.
 
@@ -2778,7 +2778,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app secret`
 
@@ -2932,7 +2932,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation; `0` requires that it doesn't exist.
 
   Defaults to the generation it inspects, or `0` when no application has the manifest's name.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--force`: Replace whichever application has the manifest's name now, or create it.
 
   It skips the generation and identity checks, but still asks for confirmation.
@@ -2959,7 +2959,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Defaults to the generation it inspects.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--force`: Skip the generation check.
 
   It still asks for confirmation.
@@ -2984,7 +2984,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 
 ## `piquelctl app stop`
@@ -3006,7 +3006,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 
 ## `piquelctl app start`
@@ -3028,7 +3028,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 
 ## `piquelctl app deploy`
@@ -3050,7 +3050,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 - `--branch <BRANCH>`: Fetch the repository manifest from this branch, for this deployment only.
 
@@ -3081,7 +3081,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl app manifest`
 
@@ -3184,7 +3184,7 @@ Options:
 - `--commit <SHA>`: Deploy this commit of `--branch` instead of the branch's head: a full commit hash of 40 or 64 lowercase hexadecimal characters.
 - `--promote-from <ENV>`: Make the environment promoted: it never builds, and only receives releases promoted from this environment of the application, given by name or stable ID, with `env promote`.
 - `--expected-generation <GENERATION>`: Change the environment only if the application's generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the command.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--force`: Change the environment even if the application changed since the command read it. It still asks for confirmation.
 
 ## `piquelctl env source`
@@ -3207,7 +3207,7 @@ Options:
 - `--promote-from <ENV>`: Receive releases promoted from this environment of the application, given by name or stable ID.
 - `--tracking`: Stop receiving promoted releases and build again: the saved manifest, or the branch `spec.manifest` names. Use `env branch` afterwards to follow another branch.
 - `--expected-generation <GENERATION>`: Change the environment only if the application's generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the command.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--force`: Change the environment even if the application changed since the command read it. It still asks for confirmation.
 
 ## `piquelctl env promote`
@@ -3230,10 +3230,11 @@ Options:
 - `--deployment <ID>`: Promote the release of this deployment of the source environment. The command fails if it is no longer the source's current deployment.
 - `--release <ID>`: Deploy this earlier release of the application instead, with the environment's current secrets.
 - `--plan`: Show what would be deployed, and any secret it can't use, without deploying. The command exits with code 3 if the promotion would be refused. With `--release`, you can plan for any environment, promoted or not.
+- `--force`: Promote even if the application changed since the command read it. It still asks for confirmation.
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 
 ## `piquelctl env branch`
@@ -3256,7 +3257,7 @@ Options:
 
 - `--commit <SHA>`: Deploy this commit of the branch instead of the branch's head: a full commit hash of 40 or 64 lowercase hexadecimal characters. Without it, the environment follows the branch's head, unpinning any commit.
 - `--expected-generation <GENERATION>`: Change the environment only if the application's generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the command.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--force`: Change the environment even if the application changed since the command read it. It still asks for confirmation.
 
 ## `piquelctl env sync`
@@ -3326,7 +3327,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl env rollback`
 
@@ -3353,7 +3354,7 @@ Options:
 - `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 
 ## `piquelctl env rename`
 
@@ -3374,7 +3375,7 @@ Arguments:
 Options:
 
 - `--expected-generation <GENERATION>`: Change the environment only if the application's generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the command.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--force`: Change the environment even if the application changed since the command read it. It still asks for confirmation.
 
 ## `piquelctl env delete`
@@ -3397,7 +3398,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Defaults to the generation it inspects.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--force`: Skip the generation check.
 
   It still asks for confirmation.
@@ -3423,7 +3424,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 - `--branch <BRANCH>`: Fetch the repository manifest from this branch, for this deployment only.
 
@@ -3453,7 +3454,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 
 ## `piquelctl env stop`
@@ -3476,7 +3477,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 
 ## `piquelctl env start`
@@ -3499,7 +3500,7 @@ Options:
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation.
 
   Without it, a deployment uses the generation it inspects, and a retry checks none.
-- `--yes`: Skip the confirmation prompt.
+- `-y, --yes`: Skip the confirmation prompt.
 - `--no-wait`: Return once the daemon accepts the operation, without waiting for it to end.
 
 ## `piquelctl env secret`
@@ -3507,16 +3508,8 @@ Options:
 List, regenerate, or delete an environment's generated secrets.
 
 ```text
-piquelctl env secret [OPTIONS] <APPLICATION> <COMMAND>
+piquelctl env secret [OPTIONS] <COMMAND>
 ```
-
-Arguments:
-
-- `<APPLICATION>`: Application name or stable ID.
-
-Options:
-
-- `--env <ENV>`: Environment name or stable ID. You can omit it when the application has exactly one environment.
 
 Commands:
 
@@ -3531,8 +3524,13 @@ List the environment's generated secrets.
 It shows each secret's version, never its value.
 
 ```text
-piquelctl env secret <APPLICATION> list [OPTIONS]
+piquelctl env secret list [OPTIONS] <APPLICATION> [ENVIRONMENT]
 ```
+
+Arguments:
+
+- `<APPLICATION>`: Application name or stable ID.
+- `[ENVIRONMENT]`: Environment name or stable ID. You can omit it when the application has exactly one environment.
 
 ## `piquelctl env secret regenerate`
 
@@ -3541,11 +3539,13 @@ Generate a new value for a generated secret.
 Use it to rotate a value, or to replace one that `secrets recover-key` discarded. The next deployment uses it; running services keep theirs until then. Needs `secrets:write`.
 
 ```text
-piquelctl env secret <APPLICATION> regenerate [OPTIONS] <NAME>
+piquelctl env secret regenerate [OPTIONS] <APPLICATION> <ENVIRONMENT> <NAME>
 ```
 
 Arguments:
 
+- `<APPLICATION>`: Application name or stable ID.
+- `<ENVIRONMENT>`: Environment name or stable ID.
 - `<NAME>`: Secret name.
 
 Options:
@@ -3562,11 +3562,13 @@ Delete a generated secret that nothing uses.
 It fails while the configuration or a deployment still uses the secret. A later deployment that mounts it generates a new value. Needs `secrets:write`.
 
 ```text
-piquelctl env secret <APPLICATION> delete [OPTIONS] <NAME>
+piquelctl env secret delete [OPTIONS] <APPLICATION> <ENVIRONMENT> <NAME>
 ```
 
 Arguments:
 
+- `<APPLICATION>`: Application name or stable ID.
+- `<ENVIRONMENT>`: Environment name or stable ID.
 - `<NAME>`: Secret name.
 
 Options:
@@ -3631,7 +3633,7 @@ Arguments:
 
 Options:
 
-- `--yes`: Skip the interactive confirmation prompt.
+- `-y, --yes`: Skip the interactive confirmation prompt.
 - `--no-wait`: Return after the daemon accepts the restore.
 
 ## `piquelctl env wait`
@@ -3857,7 +3859,7 @@ Arguments:
 Options:
 
 - `--slot <SLOT>`: The preview's slot. Needed to address a preview with a slot by its branch.
-- `--yes`: Skip the interactive confirmation prompt.
+- `-y, --yes`: Skip the interactive confirmation prompt.
 - `--no-wait`: Return after the daemon accepts the restore.
 
 ## `piquelctl preview wait`
@@ -3944,7 +3946,7 @@ Arguments:
 Options:
 
 - `--slot <SLOT>`: The preview's slot. Needed to address a preview with a slot by its branch.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--no-wait`: Return once the daemon accepts the deletion, without waiting for it to finish.
 
 ## `piquelctl preview prune`
@@ -3964,7 +3966,7 @@ Arguments:
 Options:
 
 - `--branch-gone`: Select the previews whose branch no longer exists. Required. Required.
-- `--yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--no-wait`: Return once the daemon accepts the deletion, without waiting for it to finish.
 
 ## `piquelctl builds`

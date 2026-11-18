@@ -562,7 +562,7 @@ pub(crate) struct CreateArgs {
     #[command(flatten)]
     pub(crate) deployment: DeploymentArgs,
     /// Skip the confirmation prompt.
-    #[arg(long)]
+    #[arg(long, short)]
     pub(crate) yes: bool,
 }
 
@@ -633,7 +633,7 @@ pub(crate) struct ApplyArgs {
     pub(crate) expected_generation: Option<u64>,
 
     /// Skip the confirmation prompt.
-    #[arg(long)]
+    #[arg(long, short)]
     pub(crate) yes: bool,
 
     /// Replace whichever application has the manifest's name now, or create it.
@@ -679,7 +679,7 @@ pub(crate) struct DeletionFlags {
     pub(crate) expected_generation: Option<u64>,
 
     /// Skip the confirmation prompt.
-    #[arg(long)]
+    #[arg(long, short)]
     pub(crate) yes: bool,
 
     /// Skip the generation check.
@@ -834,7 +834,7 @@ pub(crate) struct OperationFlags {
     #[arg(long, value_name = "GENERATION")]
     pub(crate) expected_generation: Option<u64>,
     /// Skip the confirmation prompt.
-    #[arg(long)]
+    #[arg(long, short)]
     pub(crate) yes: bool,
     /// Return once the daemon accepts the operation, without waiting for it to end.
     #[arg(long)]
