@@ -27,6 +27,7 @@ impl Store {
         self.daemon_event_days = config.retention.daemon_event_days;
         self.audit_days = config.retention.audit_days;
         self.traffic_days = config.retention.traffic_days;
+        self.deployment_retention = super::history::DeploymentRetention::new(config);
         self
     }
     /// Returns a snapshot cached for five seconds to avoid expensive per-request scans.
