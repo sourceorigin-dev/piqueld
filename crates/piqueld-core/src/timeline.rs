@@ -94,6 +94,7 @@ impl Phase {
             Self::EnsureSwarm => "Ensure Swarm",
             Self::RemoveImage => "Remove image",
             Self::IngressCreateNetwork => "Create ingress network",
+            Self::IngressRemoveNetwork => "Remove ingress network",
             Self::IngressStartGateway => "Start gateway",
             Self::IngressStopGateway => "Stop gateway",
             Self::IngressRemoveContainer => "Remove ingress container",
@@ -139,6 +140,7 @@ impl Phase {
             Self::EnsureSwarm
             | Self::RemoveImage
             | Self::IngressCreateNetwork
+            | Self::IngressRemoveNetwork
             | Self::IngressStartGateway
             | Self::IngressStopGateway
             | Self::IngressRemoveContainer

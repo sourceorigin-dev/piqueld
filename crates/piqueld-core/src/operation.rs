@@ -200,6 +200,8 @@ string_enum! {
         RemoveImage => "remove_image",
         /// Create the managed ingress gateway's network.
         IngressCreateNetwork => "ingress_create_network",
+        /// Remove the network of the disabled managed ingress gateway.
+        IngressRemoveNetwork => "ingress_remove_network",
         /// Start the managed ingress gateway.
         IngressStartGateway => "ingress_start_gateway",
         /// Stop the managed ingress gateway.

@@ -161,7 +161,7 @@ impl Ingress {
     /// failure is returned. Once they are all gone, removes the edge network
     /// they joined, as best-effort cleanup: ingress is disabled whether or
     /// not it goes, so a failure, or a network another installation owns,
-    /// is only logged. Records nothing if none exist.
+    /// is only logged. Records nothing if none of them, or the network, exist.
     pub(super) async fn stop_gateway(&self) -> Result<()> {
         let mut existing = Vec::new();
         let mut failure = None;
@@ -212,7 +212,9 @@ impl Ingress {
         };
         self.check_owner(&network["Labels"])?;
         let id = network["Id"].as_str().context("network ID missing")?;
-        let journal = self.journal("ingress_remove_network", &self.name).await?;
+        let journal = self
+            .journal(Phase::IngressRemoveNetwork, &self.name)
+            .await?;
         let result = self
             .docker
             .send(&journal, Method::DELETE, &format!("/networks/{id}"), None)
