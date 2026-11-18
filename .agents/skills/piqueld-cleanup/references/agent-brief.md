@@ -40,10 +40,8 @@ Export `CARGO_BUILD_JOBS` for every cargo command. For your packages, run:
 - `just setup-playwright`, then `just test-playwright` and
   `just docs-screenshots --update-snapshots=none`, if you touched the
   dashboard, its specs or the daemon's HTTP API
-- `just docker-test`, if you touched `crates/piqueld-docker`, the daemon's
-  `application`, `git`, `ingress` or `reconcile` code, or
-  `apps/piqueld/tests/docker_integration.rs` and the `tests/support` files it
-  includes
+- `just docker-test`, if you touched `crates/piqueld-docker`,
+  `crates/piqueld-core` or `apps/piqueld`
 
 Draft CI skips the Playwright and Docker suites, so run them here. Don't run
 `just validate`, `just lint` or `just test`: they build the whole workspace.
