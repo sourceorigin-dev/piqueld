@@ -85,7 +85,8 @@ pub(crate) struct SetArgs {
     /// Read the webhook URL from this file.
     #[arg(long, value_name = "PATH", conflicts_with = "url_stdin")]
     url_file: Option<PathBuf>,
-    /// Read the webhook URL from standard input.
+    /// Read the webhook URL from standard input. A terminal asks for it
+    /// without echo.
     #[arg(long)]
     url_stdin: bool,
     /// Whether to send notifications.
@@ -237,16 +238,17 @@ impl SetArgs {
             return Ok(None);
         }
         let url = read_hidden(console, "destination URL", self.url_file.clone(), 8192).await?;
+        let url = String::from_utf8(url).map_err(|_| {
+            CliError::new(ErrorKind::Input, "the destination URL must be UTF-8 text")
+        })?;
+        let url = url.trim();
         if url.len() > 8192 {
             return Err(CliError::new(
                 ErrorKind::Input,
                 "the destination URL must be at most 8192 bytes",
             ));
         }
-        let url = String::from_utf8(url).map_err(|_| {
-            CliError::new(ErrorKind::Input, "the destination URL must be UTF-8 text")
-        })?;
-        Ok(Some(url.trim().to_owned()))
+        Ok(Some(url.to_owned()))
     }
 }
 

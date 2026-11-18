@@ -683,7 +683,7 @@ Options:
   - `json`: Versioned JSON describing the event.
   - `discord`: A Discord webhook message.
 - `--url-file <PATH>`: Read the webhook URL from this file.
-- `--url-stdin`: Read the webhook URL from standard input.
+- `--url-stdin`: Read the webhook URL from standard input. A terminal asks for it without echo.
 - `--enabled <BOOL>`: Whether to send notifications.
 
   `false` pauses the destination and cancels its pending deliveries. `true` resumes it, without sending what happened meanwhile. Values: `true`, `false`.

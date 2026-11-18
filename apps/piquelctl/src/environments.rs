@@ -676,11 +676,11 @@ impl PromoteArgs {
                 ),
             )
             .await?;
-        request.expected_generation = (!self.force).then(|| {
-            self.flags
-                .expected_generation
-                .unwrap_or(application.generation)
-        });
+        request.expected_generation = expected_generation(
+            self.force,
+            self.flags.expected_generation,
+            application.generation,
+        );
         let accepted =
             retry_transport(|| client.promote_environment(id, &request, self.force)).await?;
         let report = PromotionReport::new(&application, &accepted);

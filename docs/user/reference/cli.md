@@ -231,7 +231,8 @@ deployment, after confirmation (`--yes`), and waits for it unless `--no-wait`.
 earlier release of the application with the environment's current secrets.
 `--expected-generation N` pins the application revision; by default the
 inspected one is sent. `--force` sends none, so the promotion goes ahead even if
-the application changed meanwhile; it still asks for confirmation. It fails, before deploying anything, with
+the application changed meanwhile; it still asks for confirmation. It fails,
+before deploying anything, with
 `promotion_source_not_ready` unless the source's current deployment succeeded
 and runs healthy now, `release_incompatible`, `image_unavailable`, or
 `secrets_unavailable` listing every unusable secret. `env source --promote-from`
