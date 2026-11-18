@@ -250,12 +250,10 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub async fn finish_build(&self, id: i64, outcome: &BuildOutcome) -> Result<(), StoreError> {
-        let state = match outcome.state {
-            BuildState::Running => return Err(StoreError::InvalidInput),
-            BuildState::Succeeded => "succeeded",
-            BuildState::Failed => "failed",
-            BuildState::Interrupted => "interrupted",
-        };
+        if outcome.state == BuildState::Running {
+            return Err(StoreError::InvalidInput);
+        }
+        let state = outcome.state.as_str();
         let now = now_ms();
         self.write(sqlx::query!(
             "UPDATE builds SET state=?1,finished_at_ms=?2,image_id=?3,reused_build_id=?4 WHERE id=?5 AND state='running'",

@@ -112,6 +112,28 @@ impl fmt::Display for Elapsed {
     }
 }
 
+/// A time the API reports in Unix milliseconds, as a UTC date and time to
+/// the second: `2026-01-01 00:00:00Z`, which [`UtcTime`] reads to the
+/// minute. `piquelctl` shows times this way.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Timestamp(pub i64);
+
+impl Timestamp {
+    /// From Unix seconds, which account and credential expiries use.
+    #[must_use]
+    pub const fn from_secs(seconds: i64) -> Self {
+        Self(seconds.saturating_mul(1_000))
+    }
+}
+
+impl fmt::Display for Timestamp {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // `UtcTime` reads to the minute; the seconds follow.
+        let second = self.0.div_euclid(1_000).rem_euclid(60);
+        write!(formatter, "{}:{second:02}Z", UtcTime(self.0))
+    }
+}
+
 impl Client {
     /// Reads a filtered page of durable history.
     /// # Errors
@@ -296,7 +318,7 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use super::{Bytes, Elapsed, Uptime};
+    use super::{Bytes, Elapsed, Timestamp, Uptime};
     use std::time::Duration;
 
     #[test]
@@ -341,5 +363,17 @@ mod tests {
         }
         assert_eq!(Elapsed::from_millis_f64(3_245.7).to_string(), "3.2 s");
         assert_eq!(Elapsed::from_millis_f64(f64::NAN).to_string(), "0 ms");
+    }
+
+    #[test]
+    fn timestamps_are_utc_dates_and_times() {
+        for (milliseconds, text) in [
+            (0, "1970-01-01 00:00:00Z"),
+            (-1, "1969-12-31 23:59:59Z"),
+            (1_767_225_599_999, "2025-12-31 23:59:59Z"),
+            (1_792_839_646_134, "2026-10-24 11:00:46Z"),
+        ] {
+            assert_eq!(Timestamp(milliseconds).to_string(), text);
+        }
     }
 }

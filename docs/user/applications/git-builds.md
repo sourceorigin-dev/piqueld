@@ -311,12 +311,12 @@ List the application's builds by its ID, which `app show` prints:
 
 ```console
 $ piquelctl builds list --application app-01a16d91fb2c7b93bfe138a7d95dc56f
-1  env-01a16d91fb2c7b93bfe138a7d95dc560  web  Succeeded  1792839646134  on the host
+1  env-01a16d91fb2c7b93bfe138a7d95dc560  web  succeeded  2026-10-24 11:00:46Z  on the host
 ```
 
 Each line is a build: its number, the environment's ID, the service, its
-state, and when it started, in Unix milliseconds. A build that built an image
-ends with where it ran, `on the host` or `on the build machine` (see
+state, and when it started, in UTC. A build that built an image ends with
+where it ran, `on the host` or `on the build machine` (see
 [Build machine](../reference/configuration.md#build-machine)). A build that
 reused an image ends with `reused #<number>` instead, the build that produced
 it, and the dashboard marks it **Reused**. Read a build's output by its number:
