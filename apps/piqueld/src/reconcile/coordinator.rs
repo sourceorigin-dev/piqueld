@@ -793,7 +793,7 @@ impl<D: DockerApi> Controller<D> {
                 .begin_application_action(
                     piqueld_store::Attribution::default(),
                     &environment,
-                    "remove_secrets",
+                    piqueld_core::Phase::RemoveSecrets,
                     None,
                 )
                 .await?;

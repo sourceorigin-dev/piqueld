@@ -257,7 +257,7 @@ async fn history_passes_remove_versions_no_deployment_pins_from_docker_then_the_
             .unwrap()
             .items;
         events.iter().any(|event| {
-            event.phase.as_deref() == Some("remove_secrets") && event.kind == "action_failed"
+            event.phase == Some(piqueld_core::Phase::RemoveSecrets) && event.kind == "action_failed"
         })
     })
     .await;
