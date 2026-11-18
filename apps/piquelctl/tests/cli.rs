@@ -3918,45 +3918,51 @@ fn json_errors_are_one_envelope_on_stderr() {
 }
 
 /// `notification set --url-stdin` refuses a URL longer than any webhook's
-/// rather than cutting it.
+/// rather than cutting it, also when whitespace pads it past the read limit.
 #[test]
 fn notification_urls_over_8_kib_are_refused() {
-    let server = start_server(false, 1, |request| match request.path.as_str() {
-        "/api/v1/notifications/destinations" => Reply::json(json!([])),
-        path => panic!("unexpected path {path}"),
-    });
-    let mut child = server
-        .command()
-        .args([
-            "--json",
-            "notification",
-            "set",
-            "ops",
-            "--kind",
-            "discord",
-            "--url-stdin",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("piquelctl process");
-    let url = format!("https://discord.com/api/webhooks/{}", "a".repeat(8192));
-    child
-        .stdin
-        .take()
-        .expect("child stdin")
-        .write_all(url.as_bytes())
-        .expect("URL is written");
-    let output = child.wait_with_output().expect("piquelctl exits");
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
-    assert!(
-        support::json_error(&output)["message"]
-            .as_str()
-            .unwrap()
-            .contains("at most 8192 bytes")
-    );
-    let _ = server.finish();
+    let prefix = "https://discord.com/api/webhooks/";
+    let exact = format!("{prefix}{}", "a".repeat(8192 - prefix.len()));
+    for input in [
+        format!("{prefix}{}", "a".repeat(8192)),
+        format!("    {exact}"),
+    ] {
+        let server = start_server(false, 1, |request| match request.path.as_str() {
+            "/api/v1/notifications/destinations" => Reply::json(json!([])),
+            path => panic!("unexpected path {path}"),
+        });
+        let mut child = server
+            .command()
+            .args([
+                "--json",
+                "notification",
+                "set",
+                "ops",
+                "--kind",
+                "discord",
+                "--url-stdin",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("piquelctl process");
+        child
+            .stdin
+            .take()
+            .expect("child stdin")
+            .write_all(input.as_bytes())
+            .expect("URL is written");
+        let output = child.wait_with_output().expect("piquelctl exits");
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(
+            support::json_error(&output)["message"]
+                .as_str()
+                .unwrap()
+                .contains("at most 8192 bytes")
+        );
+        let _ = server.finish();
+    }
 }
 
 /// `notification deliveries` reads the requested page, showing when each

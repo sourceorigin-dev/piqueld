@@ -237,18 +237,22 @@ impl SetArgs {
         if self.url_file.is_none() && !self.url_stdin {
             return Ok(None);
         }
-        let url = read_hidden(console, "destination URL", self.url_file.clone(), 8192).await?;
-        let url = String::from_utf8(url).map_err(|_| {
-            CliError::new(ErrorKind::Input, "the destination URL must be UTF-8 text")
-        })?;
-        let url = url.trim();
+        let mut url = read_hidden(console, "destination URL", self.url_file.clone(), 8192).await?;
+        // A file's trailing newline doesn't count. Check before trimming, so
+        // input `read_hidden` cut short at its cap is refused, not shortened.
+        if url.pop_if(|byte| *byte == b'\n').is_some() {
+            url.pop_if(|byte| *byte == b'\r');
+        }
         if url.len() > 8192 {
             return Err(CliError::new(
                 ErrorKind::Input,
                 "the destination URL must be at most 8192 bytes",
             ));
         }
-        Ok(Some(url.to_owned()))
+        let url = String::from_utf8(url).map_err(|_| {
+            CliError::new(ErrorKind::Input, "the destination URL must be UTF-8 text")
+        })?;
+        Ok(Some(url.trim().to_owned()))
     }
 }
 
