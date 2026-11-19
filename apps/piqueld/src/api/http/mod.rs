@@ -36,6 +36,7 @@ mod events;
 mod exec;
 mod extract;
 mod lease;
+mod live;
 mod logs;
 mod observability;
 mod openapi;

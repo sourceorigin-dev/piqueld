@@ -38,7 +38,8 @@ impl Default for ConnectionTiming {
     }
 }
 
-/// Why a long-lived connection ended early.
+/// Why a long-lived connection ended early. A live event stream tells its
+/// client with [`Ended::message`], in `live.rs`.
 pub(super) enum Ended {
     /// The daemon is shutting down; clients reconnect once it is back.
     Shutdown,
