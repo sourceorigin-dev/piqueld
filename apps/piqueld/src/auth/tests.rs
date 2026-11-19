@@ -120,15 +120,19 @@ impl Fixture {
     /// signed in, like one opened by redeeming a link, returning its secret
     /// and identity.
     async fn stale_session(&self, identity: &Identity) -> (String, Identity) {
-        self.stale(identity, Auth::browser_session(None).unwrap())
-            .await
+        self.stale(
+            identity,
+            Auth::browser_session(None).expect("the system RNG yields a credential secret"),
+        )
+        .await
     }
 
     /// Adds a CLI login to `identity`'s account that no passkey proved
     /// recently, returning its secret and identity.
     async fn stale_login(&self, identity: &Identity) -> (String, Identity) {
         let login = Auth::new_credential(CredentialKind::Cli, "piquelctl", None, None);
-        self.stale(identity, login.unwrap()).await
+        let login = login.expect("the system RNG yields a credential secret");
+        self.stale(identity, login).await
     }
 
     /// Stores the credential with `secret` for `identity`'s account,
@@ -1186,7 +1190,10 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     let (secret, login) = f.stale_login(&alice).await;
     let (_, browser) = f.stale_session(&alice).await;
     let action = SensitiveAction::CreateToken;
-    let start = f.auth.device_confirm(&login, None, action).unwrap();
+    let start = f
+        .auth
+        .device_confirm(&login, None, action)
+        .expect("a CLI login may start a confirmation");
     let code = &start.user_code;
     assert!(matches!(
         f.auth.device_inspect(code, &bob),
@@ -1195,14 +1202,30 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     assert!(f.auth.device_approve(code, &bob).is_err());
     let refused = Denied::Reauthenticate(Reauthenticate::Stale);
     assert_eq!(denied_auth(f.auth.device_approve(code, &browser)), refused);
-    let request = f.auth.device_inspect(code, &alice).unwrap();
-    let confirms = request.confirms.unwrap();
+    let request = f
+        .auth
+        .device_inspect(code, &alice)
+        .expect("the request is shown to its own account");
+    let confirms = request.confirms.expect("the request confirms a login");
     assert_eq!(confirms.action, action);
     assert_eq!(Some(confirms.login.as_str()), login.credential_id());
-    let credentials = async || f.auth.directory(&alice).await.unwrap().credentials.len();
+    let credentials = async || {
+        f.auth
+            .directory(&alice)
+            .await
+            .expect("the account's directory is readable")
+            .credentials
+            .len()
+    };
     let before = credentials().await;
-    f.auth.device_approve(code, &alice).unwrap();
-    let done = f.auth.device_poll(&start.device_code).await.unwrap();
+    f.auth
+        .device_approve(code, &alice)
+        .expect("the approver may approve the request");
+    let done = f
+        .auth
+        .device_poll(&start.device_code)
+        .await
+        .expect("the poll answers");
     assert_eq!(done.status, "complete");
     assert!(done.token.is_none());
     assert!(f.fresh(&secret).await);
@@ -1210,9 +1233,14 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
 
     // A login revoked before the poll is not revived.
     let (_, revoked) = f.stale_login(&alice).await;
-    let start = f.auth.device_confirm(&revoked, None, action).unwrap();
-    f.auth.device_approve(&start.user_code, &alice).unwrap();
-    f.auth.logout(&revoked).await.unwrap();
+    let start = f
+        .auth
+        .device_confirm(&revoked, None, action)
+        .expect("a CLI login may start a confirmation");
+    f.auth
+        .device_approve(&start.user_code, &alice)
+        .expect("the approver may approve the request");
+    f.auth.logout(&revoked).await.expect("signing out succeeds");
     assert!(matches!(
         f.auth.device_poll(&start.device_code).await,
         Err(AuthError::Unauthorized)
@@ -1221,7 +1249,11 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     let (_, token) = f
         .account("ci", CredentialKind::Token, None, &Grants::admin())
         .await;
-    let token = f.auth.authenticate(&token).await.unwrap();
+    let token = f
+        .auth
+        .authenticate(&token)
+        .await
+        .expect("the stored credential authenticates");
     assert!(matches!(
         f.auth.device_confirm(&token, None, action),
         Err(AuthError::Denied(Denied::Reauthenticate(
@@ -1290,7 +1322,10 @@ async fn device_logins_can_request_limited_sessions() {
     ));
     let read_only = Preset::ReadOnly.grants(&Scope::All);
     let start = f.auth.device_start(None, Some(read_only.clone())).unwrap();
-    let request = f.auth.device_inspect(&start.user_code, &alice).unwrap();
+    let request = f
+        .auth
+        .device_inspect(&start.user_code, &alice)
+        .expect("the request is shown to its own account");
     assert_eq!(request.grants.as_ref(), Some(&read_only));
     f.auth.device_approve(&start.user_code, &alice).unwrap();
     let result = f.auth.device_poll(&start.device_code).await.unwrap();

@@ -212,7 +212,8 @@ fn refused_sensitive_actions_confirm_the_login_then_retry_once() {
                 }))
             }
             ("POST", "/api/v1/auth/device/confirm") => {
-                let body: Value = serde_json::from_slice(&request.body).unwrap();
+                let body: Value =
+                    serde_json::from_slice(&request.body).expect("the CLI sends a JSON body");
                 assert_eq!(body, json!({"action": "recover_secret_key"}));
                 Reply::bare(&json!({
                     "device_code": "device",
