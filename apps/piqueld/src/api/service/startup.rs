@@ -81,7 +81,7 @@ impl ApplicationService {
             Arc::clone(&sources),
         )
         .with_config(&config.reconciliation)
-        .with_images(&config.images)
+        .with_images(config)
         .with_ingress(Arc::clone(&ingress))
         .with_telemetry(telemetry.sockets().cloned());
         let service = Self::new(store, reconciler.runtime(Arc::clone(&wake)), sources)?

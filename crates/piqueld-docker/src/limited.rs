@@ -189,8 +189,9 @@ impl<D: DockerApi> DockerApi for LimitedDocker<D> {
         &self,
         instance: &piqueld_core::InstanceId,
         id: &piqueld_core::Sha256Digest,
+        node: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<(), DockerError> {
-        self.inner.remove_image(instance, id).await
+        self.inner.remove_image(instance, id, node).await
     }
     async fn prune_health_probes(
         &self,

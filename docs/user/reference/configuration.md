@@ -174,7 +174,11 @@ retaining the attempt and an explicit expired indicator.
 `[images]` controls cleanup of the images this installation builds. It keeps
 what every environment and preview runs or is deploying, plus each
 environment's last `keep_deployments` successful deployments, so their releases
-can be promoted again, and removes the rest one by one, by ID. Images other installations
+can be promoted again, and removes the rest one by one, by ID, on this host
+and then on each [worker node](#worker-nodes), where previews pull their
+images. A worker whose engine doesn't answer, such as while it is off, is
+skipped until a later pass; `piquelctl status` and the dashboard show each
+worker's last cleanup. Images other installations
 built on the same Docker Engine, images built by hand, and pulled registry
 images are never removed. Builds on the host are tagged
 `piqueld-build/<instance>:<image ID>`, where `<instance>` is the installation's

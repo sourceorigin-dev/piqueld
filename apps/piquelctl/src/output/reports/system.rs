@@ -3,7 +3,7 @@
 use super::health;
 use crate::{profiles::ProfileSummary, support::join_or};
 use piqueld_client::{
-    DnsStatus, ImageStatus, PreviewUsage, SystemStatus, TelemetryStatus,
+    DnsStatus, ImageStatus, PreviewUsage, SystemStatus, TelemetryStatus, WorkerImageStatus,
     observability::{Bytes, DaemonStats, Timestamp, Uptime},
     system::{
         BuilderCheck, BuilderStatus, HostConfiguration, IngressStatus, NodeState, NodeStatus,
@@ -239,6 +239,30 @@ report!(ImageStatus, self, out, {
             ),
         ),
         None => out.label("Built images", "not cleaned up yet"),
+    }?;
+    self.workers
+        .iter()
+        .try_for_each(|worker| worker.render_human(out))
+});
+
+// One worker node's built images, and whether the latest cleanup reached it.
+report!(WorkerImageStatus, self, out, {
+    let label = format!("Built images on {}", self.node);
+    let skipped = self
+        .skipped
+        .as_ref()
+        .map_or_default(|reason| format!("; the latest cleanup skipped it: {reason}"));
+    match self.cleaned_at_ms {
+        Some(at) => out.label(
+            &label,
+            format_args!(
+                "{} kept; cleanup removed {} bytes of images since the daemon started (last run at {}){skipped}",
+                self.images,
+                self.reclaimed_bytes,
+                Timestamp(at)
+            ),
+        ),
+        None => out.label(&label, format_args!("not cleaned up yet{skipped}")),
     }
 });
 

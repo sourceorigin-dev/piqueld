@@ -8342,7 +8342,7 @@
         "type": "string"
       },
       "ImageStatus": {
-        "description": "The images this installation built, as of the last cleanup.",
+        "description": "The images this installation built, as of the last cleanup: on this\nhost, then on each worker node.",
         "properties": {
           "cleaned_at_ms": {
             "description": "When cleanup last ran, in Unix milliseconds; absent before it first\nran.",
@@ -8351,7 +8351,7 @@
             "type": "integer"
           },
           "images": {
-            "description": "Built images still present after the last cleanup.",
+            "description": "Built images still present on this host after the last cleanup.",
             "format": "int32",
             "minimum": 0,
             "type": "integer"
@@ -8361,6 +8361,13 @@
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "workers": {
+            "description": "Each worker node's images, in name order.",
+            "items": {
+              "$ref": "#/components/schemas/WorkerImageStatus"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -14495,6 +14502,44 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "WorkerImageStatus": {
+        "description": "The images this installation built on one worker node, as of the last\ncleanup that reached it.",
+        "properties": {
+          "cleaned_at_ms": {
+            "description": "When cleanup last reached it, in Unix milliseconds; absent before.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "images": {
+            "description": "Built images still present on it after the last cleanup.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "node": {
+            "description": "The worker's name under `[nodes]`.",
+            "type": "string"
+          },
+          "reclaimed_bytes": {
+            "description": "Total size of the images cleanup removed from it since the daemon\nstarted.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "Why the latest cleanup skipped it, such as its engine not answering\nwhile the machine is off; absent when it reached it.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "images",
+          "reclaimed_bytes"
+        ],
         "type": "object"
       }
     },

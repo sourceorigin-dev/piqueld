@@ -494,7 +494,8 @@ pub trait DockerApi: Send + Sync + 'static {
         &self,
         node: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<Vec<LocalImage>, DockerError>;
-    /// Removes one image `instance` built, by ID, after rechecking its labels:
+    /// Removes one image `instance` built from the engine of `node`, a
+    /// worker or this host, by ID, after rechecking its labels:
     /// without force, so an image a container uses or that is tagged several
     /// times fails, and without removing untagged parents. A missing image
     /// counts as removed.
@@ -502,6 +503,7 @@ pub trait DockerApi: Send + Sync + 'static {
         &self,
         instance: &InstanceId,
         id: &piqueld_core::Sha256Digest,
+        node: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<(), DockerError>;
     /// Removes `instance`'s `piqueld-probe` configs of other versions that no
     /// service mounts, such as those older daemons published.

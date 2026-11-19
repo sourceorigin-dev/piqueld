@@ -5,7 +5,7 @@ pub use piqueld_core::api::{
     IngressStatus, NodeState, NodeStatus, PrivateIngressStatus, PublicIngressStatus,
     ReadinessStatus, RouteStatus, SnapshotLimits, SwarmStatus, SystemCheck, SystemCheckId,
     SystemChecks, SystemStatus, TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver,
-    TelemetryStatus,
+    TelemetryStatus, WorkerImageStatus,
 };
 
 use crate::{Client, ClientError, client::EnvelopedCall};

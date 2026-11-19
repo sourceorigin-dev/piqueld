@@ -716,10 +716,42 @@ fn preview_row(usage: Option<&PreviewUsage>) -> AnyView {
     )
 }
 
-/// Row for the images this installation built: how many cleanup kept, and
-/// what it removed since the daemon started.
+/// Rows for the images this installation built: how many cleanup kept, and
+/// what it removed since the daemon started, on this host then on each
+/// worker node.
 fn images_row(images: &ImageStatus) -> AnyView {
-    match images.cleaned_at_ms {
+    let workers = images.workers.iter().map(|worker| {
+        let name = format!("Built images on {}", worker.node);
+        match (worker.cleaned_at_ms, &worker.skipped) {
+            (_, Some(reason)) => status_row(
+                name,
+                Tone::Neutral,
+                "Skipped",
+                format!("The latest cleanup couldn't reach it: {reason}. It cleans up once the worker answers."),
+                None,
+            ),
+            (Some(at), None) => status_row(
+                name,
+                Tone::Ok,
+                "Cleaned up",
+                format!(
+                    "{} kept. Cleanup removed {} since the daemon started, last {}.",
+                    worker.images,
+                    Bytes(worker.reclaimed_bytes),
+                    timestamp(at)
+                ),
+                None,
+            ),
+            (None, None) => status_row(
+                name,
+                Tone::Pending,
+                "Not cleaned up",
+                "Cleanup hasn't reached it since the daemon started.",
+                None,
+            ),
+        }
+    });
+    let host = match images.cleaned_at_ms {
         Some(at) => status_row(
             "Built images",
             Tone::Ok,
@@ -739,7 +771,12 @@ fn images_row(images: &ImageStatus) -> AnyView {
             "Cleanup hasn't run since the daemon started.",
             None,
         ),
+    };
+    view! {
+        {host}
+        {workers.collect_view()}
     }
+    .into_any()
 }
 
 /// Rows for telemetry export: one per collector, with the receiving service

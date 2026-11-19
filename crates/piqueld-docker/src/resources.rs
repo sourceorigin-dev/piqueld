@@ -684,9 +684,15 @@ impl DockerApi for BollardDocker {
         &self,
         instance: &piqueld_core::InstanceId,
         id: &piqueld_core::Sha256Digest,
+        node: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<(), DockerError> {
         DockerTimeout::Request
-            .run("remove image", self.remove_built_image(instance, id))
+            .run("remove image", async {
+                self.engine_for(node)
+                    .await?
+                    .remove_built_image(instance, id)
+                    .await
+            })
             .await
     }
 

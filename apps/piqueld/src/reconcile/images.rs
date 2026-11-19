@@ -3,9 +3,13 @@
 use super::{Controller, DockerApi, OperationError};
 use piqueld_core::Phase;
 use piqueld_core::{
-    InstanceId, ServiceImage, ServiceName, api::ImageStatus, resource::ResolvedSource,
+    ImmutableImage, InstanceId, ServiceImage, ServiceName,
+    api::{ImageStatus, WorkerImageStatus},
+    nodes::NodeName,
+    resource::ResolvedSource,
 };
 use piqueld_docker::LocalImage;
+use std::collections::BTreeSet;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Notify, OwnedRwLockReadGuard, RwLock, watch};
 use tokio_util::sync::CancellationToken;
@@ -26,6 +30,9 @@ pub(super) struct ImageRetention {
     interval: Duration,
     /// Wakes cleanup when an operation finishes.
     requested: Notify,
+    /// The worker nodes cleaned up after this host, whose previews pull
+    /// images there.
+    workers: Vec<NodeName>,
     status: watch::Sender<ImageStatus>,
 }
 
@@ -42,8 +49,15 @@ impl ImageRetention {
             keep_deployments: config.keep_deployments,
             interval: Duration::from_secs(config.cleanup_interval_seconds),
             requested: Notify::new(),
+            workers: Vec::new(),
             status: watch::Sender::default(),
         }
+    }
+
+    /// Cleans up `workers` too, after this host.
+    pub(super) fn with_workers(mut self, workers: impl IntoIterator<Item = NodeName>) -> Self {
+        self.workers = workers.into_iter().collect();
+        self
     }
 
     /// Asks for a cleanup soon, e.g. once a deployment finished.
@@ -127,13 +141,17 @@ impl<D: DockerApi> Controller<D> {
 
     /// Removes each image this installation built that no retention root
     /// keeps, by ID or repository digest, and no container uses, one by one,
-    /// by ID, then health probe configs no service mounts. Returns `false`
-    /// without doing anything while an operation runs or a promotion may be
-    /// recording images; the next request or period cleans up instead.
+    /// by ID, then health probe configs no service mounts: on this host, then
+    /// on each worker node, whose previews pulled their images there. A
+    /// worker whose engine doesn't answer, such as while it is off, is
+    /// skipped until the next pass. Returns `false` without doing anything
+    /// while an operation runs or a promotion may be recording images; the
+    /// next request or period cleans up instead.
     ///
     /// # Errors
-    /// Returns storage errors, or Docker errors listing images or pruning
-    /// probe configs. A failed removal is journaled and the image kept.
+    /// Returns storage errors, or this host's Docker errors listing images or
+    /// pruning probe configs. A failed removal is journaled and the image
+    /// kept.
     pub async fn clean_images(&self) -> Result<bool, OperationError> {
         let Ok(_exclusive) = self.images.in_use.try_write() else {
             return Ok(false);
@@ -143,29 +161,70 @@ impl<D: DockerApi> Controller<D> {
             .store
             .retained_images(self.images.keep_deployments)
             .await?;
+        let (kept, reclaimed) = self.clean_node(instance, &retained, None).await?;
+        // Old probe configs are about as long-lived as old images.
+        self.docker.prune_health_probes(instance).await?;
+        let now = piqueld_store::now_ms();
+        let mut workers = Vec::new();
+        for node in &self.images.workers {
+            workers.push((node, self.clean_node(instance, &retained, Some(node)).await));
+        }
+        self.images.status.send_modify(|status| {
+            status.images = kept;
+            status.reclaimed_bytes += reclaimed;
+            status.cleaned_at_ms = Some(now);
+            status.workers = workers
+                .into_iter()
+                .map(|(node, result)| {
+                    let earlier = status
+                        .workers
+                        .iter()
+                        .find(|worker| worker.node == node.as_str())
+                        .cloned()
+                        .unwrap_or_default();
+                    match result {
+                        Ok((images, reclaimed)) => WorkerImageStatus {
+                            node: node.to_string(),
+                            images,
+                            reclaimed_bytes: earlier.reclaimed_bytes + reclaimed,
+                            cleaned_at_ms: Some(now),
+                            skipped: None,
+                        },
+                        Err(error) => WorkerImageStatus {
+                            node: node.to_string(),
+                            skipped: Some(error.to_string()),
+                            ..earlier
+                        },
+                    }
+                })
+                .collect();
+        });
+        Ok(true)
+    }
+
+    /// Cleans up the images on `node`, a worker or this host, returning how
+    /// many it kept and the size of those it removed.
+    async fn clean_node(
+        &self,
+        instance: &InstanceId,
+        retained: &BTreeSet<ImmutableImage>,
+        node: Option<&NodeName>,
+    ) -> Result<(u32, u64), OperationError> {
         let (mut kept, mut reclaimed) = (0_u32, 0_u64);
-        for image in self.docker.images(None).await? {
+        for image in self.docker.images(node).await? {
             if !image.built_by(instance) {
                 continue;
             }
             if image.used
-                || image.retained_by(&retained)
-                || !self.remove_image(instance, &image).await?
+                || image.retained_by(retained)
+                || !self.remove_image(instance, &image, node).await?
             {
                 kept += 1;
             } else {
                 reclaimed += image.size;
             }
         }
-        // Old probe configs are about as long-lived as old images.
-        self.docker.prune_health_probes(instance).await?;
-        let now = piqueld_store::now_ms();
-        self.images.status.send_modify(|status| {
-            status.images = kept;
-            status.reclaimed_bytes += reclaimed;
-            status.cleaned_at_ms = Some(now);
-        });
-        Ok(true)
+        Ok((kept, reclaimed))
     }
 
     /// Cleans up every interval and after operations finish, until
@@ -194,6 +253,7 @@ impl<D: DockerApi> Controller<D> {
         &self,
         instance: &InstanceId,
         image: &LocalImage,
+        node: Option<&NodeName>,
     ) -> Result<bool, piqueld_store::StoreError> {
         let journal = self
             .store
@@ -201,7 +261,7 @@ impl<D: DockerApi> Controller<D> {
             .await?;
         let removed = self
             .request_once(&journal, async {
-                Ok(self.docker.remove_image(instance, &image.id).await?)
+                Ok(self.docker.remove_image(instance, &image.id, node).await?)
             })
             .await;
         // Unlike `close_action`, only failing to open or close the journal
