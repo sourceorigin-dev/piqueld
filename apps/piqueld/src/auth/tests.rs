@@ -255,6 +255,11 @@ fn team_lead() -> Grants {
 }
 
 fn denied(result: Result<piqueld_core::auth::Managed>) -> Denied {
+    denied_auth(result.map(|_| ()))
+}
+
+/// Why an authentication action was refused.
+fn denied_auth(result: Result<()>) -> Denied {
     match result {
         Err(AuthError::Denied(denied) | AuthError::Store(StoreError::Denied(denied))) => denied,
         other => panic!("expected a refusal: {other:?}"),
@@ -988,6 +993,95 @@ async fn confirming_with_a_passkey_refreshes_only_the_confirming_session() {
     ));
 }
 
+/// Creating any credential or link, and handing out `admin`,
+/// `accounts:manage` or `system:operate`, need a recent passkey sign-in.
+/// Other grant changes don't, and neither does the host operator.
+#[tokio::test]
+async fn minting_and_privileged_grants_need_a_recent_sign_in() {
+    let f = Fixture::new().await;
+    let fresh = f.identity("alice", &Grants::admin()).await;
+    f.passkey(&fresh).await;
+    let (_, stale) = f.stale_session(&fresh).await;
+    let bob = f.identity("bob", &developer()).await;
+    let bob_id = bob.account().id.clone();
+    let grants = |grants: Grants| Manage::SetGrants {
+        user_id: bob_id.clone(),
+        grants,
+    };
+    let minting = || {
+        [
+            Manage::CreateToken {
+                grants: Preset::ReadOnly.grants(&Scope::All),
+                name: "ci".into(),
+                days: Some(1),
+                tailnet: None,
+            },
+            Manage::CreateInvitation {
+                grants: Grants::default(),
+            },
+            Manage::CreateEnrollment {
+                user_id: bob_id.clone(),
+            },
+            grants(Grants::admin()),
+            grants(team_lead()),
+        ]
+    };
+    let refused = Denied::Reauthenticate(Reauthenticate::Stale);
+    for command in minting() {
+        assert_eq!(denied(f.auth.manage(&stale, command).await), refused);
+    }
+    let start = f.auth.device_start(None, None).unwrap();
+    assert_eq!(
+        denied_auth(f.auth.device_approve(&start.user_code, &stale)),
+        refused
+    );
+    // Narrowing or widening ordinary access needs no passkey.
+    let read_only = Preset::ReadOnly.grants(&Scope::All);
+    f.auth.manage(&stale, grants(read_only)).await.unwrap();
+    f.auth.manage(&stale, grants(developer())).await.unwrap();
+    for command in minting() {
+        f.auth.manage(&fresh, command).await.unwrap();
+    }
+    f.auth.manage(&stale, grants(developer())).await.unwrap();
+    let operator = Identity::operator(HostOperator { uid: 0 }, None);
+    f.auth
+        .manage(&operator, grants(Grants::admin()))
+        .await
+        .unwrap();
+}
+
+/// A CLI login inherits the passkey proof its approval recorded, and an
+/// approval whose proof is too old by the time the CLI polls is refused for
+/// good, even if the approver has confirmed again since.
+#[tokio::test]
+async fn device_logins_inherit_their_approvals_passkey_proof() {
+    let f = Fixture::new().await;
+    let alice = f.identity("alice", &Grants::admin()).await;
+    let start = f.auth.device_start(None, None).unwrap();
+    f.auth.device_approve(&start.user_code, &alice).unwrap();
+    let issued = f.auth.device_poll(&start.device_code).await.unwrap();
+    let login = f.auth.authenticate(&issued.token.unwrap()).await.unwrap();
+    login.require_fresh().unwrap();
+
+    let start = f.auth.device_start(None, None).unwrap();
+    f.auth.device_approve(&start.user_code, &alice).unwrap();
+    let key = Auth::hash(&start.device_code);
+    let old = now_secs() - Reauthenticate::WINDOW_SECS - 1;
+    if let Some(approval) = &mut f.auth.0.devices.lock().get_mut(&key).unwrap().approved_by {
+        approval.authenticated_at = Some(old);
+    }
+    assert!(matches!(
+        f.auth.device_poll(&start.device_code).await,
+        Err(AuthError::Store(StoreError::Denied(
+            Denied::Reauthenticate(Reauthenticate::Stale)
+        )))
+    ));
+    assert!(matches!(
+        f.auth.device_poll(&start.device_code).await,
+        Err(AuthError::Unauthorized)
+    ));
+}
+
 /// `auth.max_token_days` bounds new tokens, and secrets issued before the
 /// `pqd_` prefix still authenticate, including ones that happen to start
 /// with it.
@@ -1077,7 +1171,7 @@ async fn device_logins_can_request_limited_sessions() {
 async fn deleting_an_issuer_invalidates_its_invitations_and_credentials() {
     let f = Fixture::new().await;
     let (token, alice) = f
-        .signed_in("alice", CredentialKind::Token, None, &Grants::admin())
+        .signed_in("alice", CredentialKind::Cli, None, &Grants::admin())
         .await;
     let bob = f.identity("bob", &Grants::admin()).await;
     f.passkey(&bob).await;
@@ -1279,8 +1373,12 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
         cancelled.abort();
         assert!(cancelled.await.unwrap_err().is_cancelled());
         drop(writer);
-        let prepared = f.auth.0.devices.lock()[&key].prepared.clone().unwrap();
-        let credential = prepared.credential(None);
+        let (prepared, approval) = {
+            let device = &f.auth.0.devices.lock()[&key];
+            (device.prepared.clone(), device.approved_by.clone())
+        };
+        let prepared = prepared.unwrap();
+        let credential = prepared.credential(None, &approval.unwrap());
         let store = &f.auth.0.store;
         let stored = store.issue_for_credential_owner(alice.caller().unwrap(), &credential);
         assert!(stored.await.unwrap().is_some());

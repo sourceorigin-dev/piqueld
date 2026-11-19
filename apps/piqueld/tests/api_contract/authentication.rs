@@ -101,6 +101,7 @@ async fn device_sign_ins_are_audited() {
         .call(&f.deployer, "POST", poll, json!({"device_code": pending}))
         .await;
     assert_eq!(body["status"], "authorization_pending");
+    sign_in_with_passkey(&database(&f.temp), "deployer").await;
     let approve = json!({"user_code": user_code});
     let (status, _) = f
         .router
@@ -443,6 +444,7 @@ async fn tailnet_bound_token(temp: &TempDir) -> (ApiState, piqueld::auth::Auth, 
     let state = state(temp).await;
     let database = database(temp);
     let admin = seed_account(&database, "admin", &[("admin", None)]).await;
+    sign_in_with_passkey(&database, "admin").await;
     let store = Store::open_unsynced(&database).await.unwrap();
     let tokens = TokenPolicy {
         max_days: None,

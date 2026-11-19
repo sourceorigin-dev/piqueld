@@ -75,7 +75,7 @@ The dashboard's **Audit** page lists the trail, newest first, and filters it
 by outcome. On the **Accounts** page, each session and token's **Activity**
 link shows its requests.
 
-![The Audit page: a green banner reports the chain intact with 5 records, above the requests that created an account and deployed an application, with their outcome, account, credential and source](../../images/operations/audit.png)
+![The Audit page: a green banner reports the chain intact with 7 records, above the requests that created an account, confirmed its passkey, created a token and deployed an application, with their outcome, account, credential and source](../../images/operations/audit.png)
 
 With `piquelctl`:
 

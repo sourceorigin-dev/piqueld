@@ -591,6 +591,22 @@ impl Grants {
         scope
     }
 
+    /// Whether these grants, replacing `before`, add privileged access:
+    /// `admin` on an application `before` lacks it on, or `accounts:manage`
+    /// or `system:operate`, which `before` lacks. Handing that out needs a
+    /// recent passkey sign-in; removing access never does.
+    #[must_use]
+    pub fn escalates(&self, before: &Self) -> bool {
+        let privileged = [
+            GlobalPermission::AccountsManage,
+            GlobalPermission::SystemOperate,
+        ];
+        !before.admin_scope().covers(&self.admin_scope())
+            || privileged
+                .into_iter()
+                .any(|permission| self.has_global(permission) && !before.has_global(permission))
+    }
+
     /// Whether an installation-wide permission is held.
     #[must_use]
     pub fn has_global(&self, permission: GlobalPermission) -> bool {

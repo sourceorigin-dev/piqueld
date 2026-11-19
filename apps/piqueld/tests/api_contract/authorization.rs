@@ -269,6 +269,7 @@ async fn own_audit_trails_reveal_nothing_hidden() {
     // Usernames match regardless of case, like accounts' own.
     f.audit(&f.auditor, "/api/v1/audit?username=DEPLOYER", 2)
         .await;
+    sign_in_with_passkey(&database(&f.temp), "deployer").await;
     let create = serde_json::json!({
         "action": "create_token",
         "grants": [{"permission": "apps:deploy", "applications": [f.blog]}],

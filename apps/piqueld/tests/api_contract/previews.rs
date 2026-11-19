@@ -281,6 +281,9 @@ impl PreviewFixture {
             limited,
             agent: String::new(),
         };
+        for name in ["owner", "limited"] {
+            sign_in_with_passkey(&fixture.database, name).await;
+        }
         let request = fixture.token(&Self::AGENT);
         let (status, created) = fixture
             .router

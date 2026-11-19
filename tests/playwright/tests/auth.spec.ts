@@ -166,13 +166,13 @@ test('a confirmation pending when the session ends is cancelled, never retried a
   expect(invitations).toBe(1);
 });
 
-test('adding a passkey asks to confirm with an existing one, then continues once', async ({ page, account, passkeys }) => {
-  void account;
+test('adding a passkey asks to confirm with an existing one, then continues once', async ({ page, daemon, passkeys }) => {
+  // Unlike the `account` fixture's, the setup link's session isn't confirmed.
+  await register(page, daemon.setup, 'alice');
   const alice = await openAccount(page, 'alice', 'Access');
   await alice.getByRole('button', { name: 'Add passkey', exact: true }).click();
   const adding = page.getByRole('dialog', { name: 'Add passkey' });
   await adding.getByLabel('Passkey name', { exact: true }).fill('Phone');
-  // The account signed up through its setup link, which is no passkey sign-in.
   const confirming = page.getByRole('dialog', { name: 'Confirm with your passkey' });
   await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
   await confirming.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -535,7 +535,12 @@ test('the dashboard creates an API token within its form and its account\'s limi
   await expect(form.getByRole('alert')).toHaveText('Enter a positive number of days, or leave blank');
   await days.fill('30');
   await create.click();
+  // Bob signed up through his invitation, which is no passkey sign-in, so
+  // creating a token first asks him to confirm; then it goes through.
+  const confirming = page.getByRole('dialog', { name: 'Confirm with your passkey' });
+  await confirming.getByRole('button', { name: 'Confirm with passkey', exact: true }).click();
   await expect(form).toBeHidden();
+  await expect(confirming).toHaveCount(0);
   const token = await done(page);
 
   const row = bob.getByRole('row').filter({ has: page.getByRole('cell', { name: 'ci', exact: true }) });

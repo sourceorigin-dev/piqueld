@@ -180,9 +180,8 @@ pub(super) struct Device {
     expires: i64,
     /// Earliest time the CLI may poll again without receiving `slow_down`.
     pub(super) next_poll: i64,
-    /// Credential and account IDs of the approving session; the issued token
-    /// belongs to its owner.
-    approved_by: Option<(String, String)>,
+    /// The approving session; the issued token belongs to its owner.
+    pub(super) approved_by: Option<Approval>,
     /// Grants the issued CLI session is limited to; `None` for the approver's
     /// full access.
     grants: Option<Grants>,
@@ -192,6 +191,15 @@ pub(super) struct Device {
     pub(super) prepared: Option<Prepared>,
     /// Whether a poll is issuing the session (see [`Issuing`]).
     issuing: bool,
+}
+
+/// Who approved a device login, and when their passkey last proved them
+/// present, which the issued CLI session inherits.
+#[derive(Clone)]
+pub(super) struct Approval {
+    credential_id: String,
+    user_id: String,
+    pub(super) authenticated_at: Option<i64>,
 }
 
 /// The CLI session an approved device login issues: its secret, credential
@@ -208,8 +216,13 @@ pub(super) struct Prepared {
 }
 
 impl Prepared {
-    /// The credential to store for the session, limited to `grants`.
-    pub(super) fn credential<'a>(&self, grants: Option<&'a Grants>) -> NewCredential<'a> {
+    /// The credential to store for the session, limited to `grants`, proved
+    /// when the approval was.
+    pub(super) fn credential<'a>(
+        &self,
+        grants: Option<&'a Grants>,
+        approval: &Approval,
+    ) -> NewCredential<'a> {
         NewCredential {
             id: self.id.clone(),
             secret_hash: Auth::hash(&self.token),
@@ -217,7 +230,7 @@ impl Prepared {
             name: CLI_SESSION,
             expires_at: Some(self.expires_at),
             grants,
-            authenticated_at: None,
+            authenticated_at: approval.authenticated_at,
         }
     }
 }
@@ -458,19 +471,30 @@ impl Auth {
         })
     }
     /// Marks a pending device login as approved by the caller's credential,
-    /// which must belong to an account, have its full access, and hold any
-    /// requested grants. Both are checked again when the session is issued.
+    /// which must belong to an account, have its full access, hold any
+    /// requested grants, and have recently signed in with a passkey. All are
+    /// checked again when the session is issued, against the passkey proof
+    /// recorded here.
     pub(crate) fn device_approve(&self, code: &str, identity: &Identity) -> Result<()> {
         let caller = identity.caller()?;
         if identity.scoped {
             return Err(Denied::Scoped.into());
         }
+        identity.require_fresh()?;
+        let authenticated_at = match &identity.credential {
+            Credential::Account { proof, .. } => proof.authenticated_at,
+            Credential::Operator { .. } => None,
+        };
         let mut devices = self.0.devices.lock();
         let device = Self::pending_device(&mut devices, code)?;
         if let Some(grants) = &device.grants {
             identity.grants.may_grant(grants)?;
         }
-        device.approved_by = Some((caller.credential_id.to_owned(), caller.user_id.to_owned()));
+        device.approved_by = Some(Approval {
+            credential_id: caller.credential_id.to_owned(),
+            user_id: caller.user_id.to_owned(),
+            authenticated_at,
+        });
         tracing::info!(
             user_id = %caller.user_id,
             requester = %device
@@ -545,17 +569,22 @@ impl Auth {
                 }
             }
         } else {
-            let (credential_id, user_id) = &approver;
-            let approver = Caller {
-                credential_id,
-                user_id,
+            let caller = Caller {
+                credential_id: &approver.credential_id,
+                user_id: &approver.user_id,
             };
-            let credential = prepared.credential(grants.as_ref());
-            let issued = self
-                .0
-                .store
-                .issue_for_credential_owner(approver, &credential);
-            issued.await?.ok_or(AuthError::Unauthorized)?
+            let credential = prepared.credential(grants.as_ref(), &approver);
+            let issued = self.0.store.issue_for_credential_owner(caller, &credential);
+            match issued.await {
+                Ok(user) => user.ok_or(AuthError::Unauthorized)?,
+                // Refused for good, e.g. an approval older than its passkey
+                // proof allows: the CLI signs in again for a new approval.
+                Err(error @ StoreError::Denied(_)) => {
+                    issuing.finish();
+                    return Err(error.into());
+                }
+                Err(error) => return Err(error.into()),
+            }
         };
         issuing.finish();
         Ok(DeviceToken {

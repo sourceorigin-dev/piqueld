@@ -204,9 +204,15 @@ may remove them too. To end only the passkey, clear
 
 ## Confirm with your passkey
 
-Some actions need a passkey sign-in within the last 2 minutes: adding a
-passkey, and [recovering a lost secret key](recovery.md#a-lost-secret-key).
-They protect the account if someone gets hold of a signed-in browser.
+Some actions need a passkey sign-in within the last 2 minutes. They protect
+the account if someone gets hold of a signed-in browser or CLI login:
+
+- adding a passkey;
+- creating an API token, an invitation or an enrollment link;
+- giving an account `admin`, `accounts:manage` or `system:operate`, which it
+  didn't hold (removing access never asks);
+- approving a [CLI login](cli-and-tokens.md#sign-piquelctl-in);
+- [recovering a lost secret key](recovery.md#a-lost-secret-key).
 
 When your sign-in is older, the dashboard shows **Confirm with your passkey**
 over the form. Select **Confirm with passkey** and use your passkey; the

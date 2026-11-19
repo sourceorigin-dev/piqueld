@@ -146,6 +146,14 @@ profiles, delete them, remove or rename their passkeys, and revoke their
 credentials and invitations. A limited credential without `audit:read` reads
 only its own requests in the audit trail, rather than its account's.
 
+Creating any credential or link also needs a recent passkey sign-in
+(`Authority::require_fresh`, see
+[authentication](authentication.md#credentials-and-cookies)), checked after
+the scope and grant checks in the same transaction. So does `set_user_grants`
+when `Grants::escalates`: the new grants add `admin` on an application, or
+`accounts:manage` or `system:operate`, compared with the account's grants
+in the transaction. Removing access never needs it.
+
 Deleting an application removes the grants on it once the application row is
 finally deleted, after its last environment.
 

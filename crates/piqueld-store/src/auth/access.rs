@@ -486,8 +486,10 @@ impl Store {
 
     /// Replaces an account's grants, if `actor` may change that account, holds
     /// every new grant, and is not scoped: access handed to another account
-    /// outlives the credential handing it out. Refuses to leave no
-    /// administrator able to sign in.
+    /// outlives the credential handing it out. Adding `admin`,
+    /// `accounts:manage` or `system:operate` also needs a recent passkey
+    /// sign-in (see [`Grants::escalates`]). Refuses to leave no administrator
+    /// able to sign in.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -500,6 +502,9 @@ impl Store {
         let (_writer, mut tx) = self.begin_immediate().await?;
         if let Some(caller) = Self::check_account_on(&mut tx, actor, user_id).await? {
             caller.may_hand_out(Some(grants))?;
+            if grants.escalates(&Holder::User(user_id).grants(&mut tx).await?) {
+                caller.require_fresh()?;
+            }
         }
         let how = "by an account change";
         Self::replace_user_grants_on(&mut tx, user_id, grants, actor.attribution(), how).await?;

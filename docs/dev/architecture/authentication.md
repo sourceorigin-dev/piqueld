@@ -179,6 +179,9 @@ write's transaction; `Actor::require_fresh` exempts the host operator, and
 `Identity::require_fresh` refuses early. Adding a passkey to one's own
 account checks it at registration start, before any passkey is created, and
 again when storing it; secret key recovery checks it with `system:operate`.
+Creating tokens, invitations and enrollment links checks it, and so does
+granting `admin`, `accounts:manage` or `system:operate` (see
+[authorization](authorization.md#limited-credentials)).
 
 A browser session confirms through `POST /auth/reauthenticate/start` and
 `/finish`: a passkey ceremony bound to the ceremony cookie and to the session
@@ -280,6 +283,12 @@ comparison cannot tell callers apart.
   the 30-day CLI session, named `piquelctl`. If the approver's session ends
   before the next poll, no credential is issued. Approval doesn't create an
   account.
+- Approval also needs a recent passkey sign-in, and records the approver's
+  `authenticated_at`. The poll checks that recorded time, not the approver's
+  current one, so confirming again later for something else doesn't extend
+  an approval. The issued session inherits it. An approval whose proof is
+  too old by the time the poll issues it is refused with 403 and dropped; the
+  CLI signs in again.
 - One poll at a time issues the session, without holding the pending logins
   while it writes; a concurrent poll gets `authorization_pending`. The first
   poll after approval prepares the session's secret and ID and stores them.

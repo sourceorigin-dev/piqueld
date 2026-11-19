@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { deploymentRows, environmentTab, expect, openDeployment, rewrite } from '../fixtures.js';
+import { deploymentRows, environmentTab, expect, openDeployment, register, rewrite } from '../fixtures.js';
 import { test, audit, deliveries, destination, environment, errors, manifest, notifications, Piquelctl, shoot, steadyDeployment, telemetryGrant } from './docs.js';
 
 // docs/user/operations: a deployment that fails, what it notifies, the
@@ -86,8 +86,11 @@ test('telemetry', async ({ page, cli, account }) => {
   await shoot(page, 'operations/telemetry-grant', await telemetryGrant(page, 'collector', 'production'));
 });
 
-test('audit', async ({ page, cli, account }) => {
-  void account;
+test('audit', async ({ page, daemon, cli, passkeys }) => {
+  void passkeys;
+  // Not the `account` fixture, which confirms its passkey too: the trail
+  // shows the guide's one confirmation, before creating piquelctl's token.
+  await register(page, daemon.setup, 'alice');
   const piquelctl = await Piquelctl.signIn(page, cli);
   await piquelctl.apply(await manifest(firstApp));
   await piquelctl.run(['audit', '--limit', '3']);

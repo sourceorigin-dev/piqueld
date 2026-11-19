@@ -663,7 +663,10 @@ pub(super) async fn directory(
 /// Anyone may manage their own account. Changing other accounts requires
 /// `accounts:manage` and every grant the account holds; handing out grants
 /// requires holding them (403 `permission_denied` or `permission_exceeded`).
-#[utoipa::path(post,path="/api/v1/auth/manage",operation_id="authManage",request_body=Manage,responses((status=200,body=Managed)))]
+/// Creating tokens, invitations or enrollment links, and handing out `admin`,
+/// `accounts:manage` or `system:operate`, need a passkey sign-in within the
+/// last 2 minutes.
+#[utoipa::path(post,path="/api/v1/auth/manage",operation_id="authManage",request_body=Manage,responses((status=200,body=Managed),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn manage(
     Extension(auth): Extension<Auth>,
     Extension(identity): Extension<Identity>,
@@ -743,8 +746,9 @@ pub(super) fn device_start_route<S: Clone + Send + Sync + 'static>(
 /// Public. Poll at most every five seconds: the status is
 /// `authorization_pending` until approval, `slow_down` when polled too fast, and
 /// `complete` with a 30-day token exactly once after approval. Expired or unknown
-/// codes fail with 401.
-#[utoipa::path(post,path="/api/v1/auth/device/poll",operation_id="authDevicePoll",request_body=DevicePoll,responses((status=200,body=DeviceToken)))]
+/// codes fail with 401. An approval whose passkey sign-in is over 2 minutes
+/// old by then fails with 403 `reauthentication_required`; sign in again.
+#[utoipa::path(post,path="/api/v1/auth/device/poll",operation_id="authDevicePoll",request_body=DevicePoll,responses((status=200,body=DeviceToken),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn device_poll(
     Extension(auth): Extension<Auth>,
     ApiJson(input): ApiJson<DevicePoll>,
@@ -773,8 +777,10 @@ pub(super) async fn device_inspect(
 }
 /// Approves a pending device sign-in.
 ///
-/// The device's next poll receives a token for the signed-in user.
-#[utoipa::path(post,path="/api/v1/auth/device/approve",operation_id="authDeviceApprove",request_body=DeviceApprove,responses((status=200,body=Managed)))]
+/// The device's next poll receives a token for the signed-in user. Needs a
+/// passkey sign-in within the last 2 minutes; the issued login counts as
+/// signed in when that was.
+#[utoipa::path(post,path="/api/v1/auth/device/approve",operation_id="authDeviceApprove",request_body=DeviceApprove,responses((status=200,body=Managed),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn device_approve(
     Extension(auth): Extension<Auth>,
     Extension(identity): Extension<Identity>,
