@@ -960,7 +960,8 @@ async fn secret_key_check_reports_the_key_without_changing_it() {
 
 /// Each stage of a requested secret deletion commits with its own audit
 /// record, while resuming a reservation and a stale completion change
-/// nothing, record nothing, and leave their request's background record. Key recovery records what it discarded.
+/// nothing, record nothing, and leave their request's background record.
+/// Key recovery records what it discarded.
 #[tokio::test]
 async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
     let temp = tempfile::tempdir().expect("a temporary directory is created");

@@ -145,11 +145,9 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         let change = reserving.then(|| Self::deletion_change(name, &deletion_id, "reserved"));
-        let appended = author
-            .record_on(&mut tx, 200, change.as_deref(), (None, Some(id)))
+        author
+            .commit_recorded(tx, 200, change.as_deref(), (None, Some(id)))
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
         Ok(SecretDeletion {
             id: deletion_id,
             versions: BTreeMap::from([(application.clone(), versions)]),
@@ -186,11 +184,9 @@ impl Store {
             Self::secret_event_on(&mut tx, scope, event, by, super::now_ms()).await?;
             change = Some(Self::deletion_change(name, deletion_id, "completed"));
         }
-        let appended = author
-            .record_on(&mut tx, 200, change.as_deref(), (None, Some(id)))
+        author
+            .commit_recorded(tx, 200, change.as_deref(), (None, Some(id)))
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
         Ok(())
     }
 

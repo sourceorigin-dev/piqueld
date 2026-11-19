@@ -342,21 +342,17 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
         let discarded = usage.versions + stored.versions;
-        let message = format!(
-            "Recovered the secret master key; discarded {discarded} values across {} environments and {} applications, and {destinations} notification destinations",
+        let counts = format!(
+            "{discarded} values across {} environments and {} applications, and {destinations} notification destinations",
             usage.environments, stored.applications
         );
+        let message = format!("Recovered the secret master key; discarded {counts}");
         let recovered = crate::SecurityEvent::SecretKeyRecovered;
         Self::security_event_on(&mut tx, recovered, &message, by).await?;
-        let change = format!(
-            "secret key recovery discarded {discarded} values across {} environments and {} applications, and {destinations} notification destinations",
-            usage.environments, stored.applications
-        );
-        let appended = author
-            .record_on(&mut tx, 200, Some(&change), (None, None))
+        let change = format!("secret key recovery discarded {counts}");
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
         SecretCipher::retire(&self.secret_key_path, now).map_err(StoreError::SecretSource)?;
         Ok(SecretKeyRecovery {
             affected_environments: usage.environments,
