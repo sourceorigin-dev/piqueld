@@ -66,15 +66,20 @@ impl Ownership {
         ])
     }
 
-    /// The environment desired ownership `labels` name. `None` unless the
-    /// managed marker is `"true"`, the spec hash is a valid `sha256:` digest,
-    /// and both the environment and instance identities parse.
-    pub(super) fn labelled_environment(labels: &BTreeMap<String, String>) -> Option<EnvironmentId> {
-        if labels.get(MANAGED_LABEL).map(String::as_str) != Some("true")
-            || labels
+    /// Whether `labels` carry the managed marker `"true"` and a valid
+    /// `sha256:` spec hash, as every resource piqueld manages does.
+    fn is_managed(labels: &BTreeMap<String, String>) -> bool {
+        labels.get(MANAGED_LABEL).map(String::as_str) == Some("true")
+            && labels
                 .get(SPEC_HASH_LABEL)
-                .is_none_or(|hash| !valid_sha256(hash))
-        {
+                .is_some_and(|hash| valid_sha256(hash))
+    }
+
+    /// The environment desired ownership `labels` name. `None` unless they
+    /// are [managed](Self::is_managed) and both the environment and instance
+    /// identities parse.
+    pub(super) fn labelled_environment(labels: &BTreeMap<String, String>) -> Option<EnvironmentId> {
+        if !Self::is_managed(labels) {
             return None;
         }
         InstanceId::parse(labels.get(INSTANCE_LABEL)?.as_str()).ok()?;
@@ -148,11 +153,7 @@ impl OwnershipState {
         instance: &InstanceId,
         application: &EnvironmentId,
     ) -> Self {
-        if labels.get(MANAGED_LABEL).map(String::as_str) != Some("true")
-            || labels
-                .get(SPEC_HASH_LABEL)
-                .is_none_or(|hash| !valid_sha256(hash))
-        {
+        if !Ownership::is_managed(labels) {
             return Self::Invalid;
         }
         if labels.get(INSTANCE_LABEL).map(String::as_str) != Some(instance.as_str())

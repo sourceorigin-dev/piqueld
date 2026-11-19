@@ -127,6 +127,17 @@ impl ResolvedApplication {
         })
     }
 
+    /// The ownership of the environment's resources that belong to no
+    /// single service: its networks and volumes.
+    fn ownership(&self) -> Ownership {
+        Ownership {
+            instance_id: self.instance_id.clone(),
+            environment_id: self.id.clone(),
+            service: None,
+            spec_hash: self.spec_hash.clone(),
+        }
+    }
+
     /// Whether `observed` runs every one of its services exactly as
     /// desired (no field the planner compares drifts), converged: what
     /// promoting a release requires of its source environment right now.
@@ -199,13 +210,7 @@ impl ResolvedApplication {
                 .chain(accepted)
                 .any(|route| route.target.service().is_some())
         {
-            let labels = Ownership {
-                instance_id: self.instance_id.clone(),
-                environment_id: self.id.clone(),
-                service: None,
-                spec_hash: self.spec_hash.clone(),
-            }
-            .labels();
+            let labels = self.ownership().labels();
             self.networks.push(DesiredNetwork { name, labels });
             self.networks
                 .sort_by(|left, right| left.name.cmp(&right.name));
@@ -247,12 +252,7 @@ impl ResolvedApplication {
         links: &[crate::links::Link],
         observed: &ObservedApplication,
     ) -> Self {
-        let ownership = Ownership {
-            instance_id: self.instance_id.clone(),
-            environment_id: self.id.clone(),
-            service: None,
-            spec_hash: self.spec_hash.clone(),
-        };
+        let ownership = self.ownership();
         for link in links {
             if link.importer == self.id && !self.services.is_empty() {
                 let name = DockerNetworkName::for_link(&self.id, &link.exporter);
