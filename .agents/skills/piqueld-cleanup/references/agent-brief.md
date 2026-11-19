@@ -17,8 +17,8 @@ is `foo/mod.rs` only when it has children.
   labels, log fields, timeouts and query plans. `git diff origin/main` shows
   no change to a migration or a generated file. Don't use blanket search and
   replace.
-- **Report bugs instead of fixing them.** Each one gets its own issue and fix
-  PR. If a cleanup can't be done without changing behavior, report it too.
+- **Report bugs instead of fixing them.** The orchestrator opens an issue and
+  a fix PR for each. If a cleanup can't be done without changing behavior, report it too.
 - **Stay in your area.** Edit another area only when a rename forces it, and
   report what crosses areas: another lane cleans up between them.
 - **Keep the docs references right.** If you rename something a page in
@@ -46,7 +46,7 @@ Export `CARGO_BUILD_JOBS` for every cargo command. For your packages, run:
 Draft CI skips the Playwright and Docker suites, so run them here. Don't run
 `just validate`, `just lint` or `just test`: they build the whole workspace.
 
-Prove each "unchanged" claim against `origin/main`: `--help` output, specs,
+Prove each "unchanged" claim against the PR's base: `--help` output, specs,
 query plans, error codes, the NixOS module's output. Before you call a failing
 test unrelated, check that it fails on `main` too. The `fake_docker` timing
 tests and Playwright's `branches.spec.ts` flake under load. Rerun them once,
@@ -55,13 +55,16 @@ and never change a test just to make it pass.
 ## Delivery
 
 - Split your work into focused PRs: one kind of cleanup in one part of your
-  area each, small enough to review in one sitting. Branch each from
-  `origin/main` as `<prefix><topic>`, and keep your PRs from sharing files.
-  If one needs another, stack it on that branch and say so in its
+  area each, small enough to review in one sitting. Branch each from a
+  freshly fetched `origin/main` as `<prefix><topic>`, and keep your PRs from
+  sharing files. If one needs another, stack it: branch from the other PR's
+  branch, open it with that branch as its base, and say so in its
   description.
 - Make small, logical commits with conventional messages and no
   `Co-Authored-By` line.
-- Rebase on `origin/main`, and clean up any new code the rebase brings in.
+- Rebase on `origin/main` (a stacked PR on its base branch), and clean up any
+  new code the rebase brings in. When a stacked PR's base merges, retarget it
+  to `main` and rebase.
 - Open each PR as a **draft** with `file-pr`, despite its default, titled
   `refactor(<scope>): <what got simpler>`. Its description says:
   - `Part of PQD-<n>`

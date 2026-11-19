@@ -8,14 +8,15 @@ Review read-only. Don't push, comment or edit. Use `gh pr view <N>`, `gh pr
 diff <N>`, and `git fetch origin main pull/<N>/head` to check out the head SHA
 your task gives. Export the `CARGO_BUILD_JOBS` your task gives.
 
-Check every claim in your focus list yourself, against `origin/main`. Then
-look for, most important first:
+Check every claim in your focus list yourself, against the base branch your
+task gives (`origin/main` unless the PR is stacked). Then look for, most
+important first:
 
 1. Hidden behavior changes: error codes, messages, paths and precedence,
    defaults, serialization, Docker names, log fields, timeouts, locking, and
    query plans (compare `EXPLAIN QUERY PLAN`).
 2. Lost coverage: dropped assertions or cases, and expected values built by
-   the code under test. Compare test names and counts per file with `main`.
+   the code under test. Compare test names and counts per file with the base.
 3. Abstractions that make the code harder to read.
 4. Missed cleanup and stale doc comments in the touched files, briefly.
 

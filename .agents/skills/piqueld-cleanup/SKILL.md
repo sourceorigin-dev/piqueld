@@ -13,15 +13,15 @@ description: >
 # piqueld cleanup
 
 You orchestrate a cleanup of the whole repository in two parts: an audit, then
-a cleanup pass. The pass runs area lanes, a boundary lane and a docs lane, and
-every bug it finds gets an issue and a fix PR. Run both parts unless the owner
-asks for one. Delegates write the code. You split the work, brief them, route
-reviews and report.
+a cleanup pass. Run both unless the owner asks for one. Delegates write the
+code. You split the work, brief them, route reviews and report.
 
 Work from a checkout of `origin/main` that contains this skill, since the
 delegates read their briefs from it. Keep a ledger in your scratchpad: each
-agent, branch, PR, review state and finding. After compaction, a usage limit
-or a T3 restart, check the ledger and restart only what didn't finish.
+agent, branch, PR, review state and finding, and the files each task or open
+PR holds. Start no task on files another one holds: it waits until that PR
+merges. After compaction, a usage limit or a T3 restart, check the ledger and
+restart only what didn't finish.
 
 ## Audit
 
@@ -43,7 +43,7 @@ or a T3 restart, check the ledger and restart only what didn't finish.
    verdict and why.
 
 Changes that move code in many areas, such as file splits, merge before the
-area pass starts or go into the area agents' tasks.
+cleanup pass starts or go into the area agents' tasks.
 
 ## Cleanup pass
 
@@ -72,6 +72,8 @@ PRs, on branches named `refactor/cleanup-<YYYY-MM-DD>-<area>-<topic>`.
 Builds run in parallel on a machine with no swap. Pick one
 `CARGO_BUILD_JOBS` value for every agent that compiles, and pass it to each.
 4 worked for 8 implementers and their reviewers on 16 cores and 58 GB.
+Count the fix and boundary delegates and every reviewer too, and run at most 8
+reviews at a time.
 
 Create one Linear issue for the pass, as `AGENTS.md` describes. Each PR says
 `Part of PQD-<n>`. Tell the owner the split in one message and start without
@@ -98,7 +100,8 @@ Review each focused PR on its own as its agent reports it. Call
 `role: "review"`, `isolation: "worktree"` and
 `target.options: { reasoningEffort: "high" }`.
 It follows `.agents/skills/piqueld-cleanup/references/review-brief.md`.
-Give it the PR number, the head SHA, `CARGO_BUILD_JOBS`, and a focus list:
+Give it the PR number, the head SHA, the base branch (the parent PR's branch
+for a stacked PR), `CARGO_BUILD_JOBS`, and a focus list:
 every "unchanged" claim in the PR description, and every merged helper or
 test that could have changed behavior.
 
@@ -118,8 +121,8 @@ first, because everything depends on it.
 
 ### Boundary lane
 
-The area agents each see one area. Start one more Opus delegate,
-`role: "research"`, to look at how the areas fit together:
+The area agents each see one area. Alongside them, start one more Opus
+delegate, `role: "research"`, to look at how the areas fit together:
 
 - the dependency direction and layering between the crates, and logic that
   sits in the wrong crate
@@ -134,32 +137,40 @@ It edits nothing. It reports themes, each with the files involved and the
 change it proposes. Add the cross-area issues the area agents report to that
 list. Themes that need a design decision go to the owner first.
 
-Once the area PRs that touch a theme's files have merged, start one Opus
-implementation delegate per theme. It follows the agent brief, with the
-theme's files as its area, and opens focused PRs on
-`refactor/cleanup-<YYYY-MM-DD>-boundary-<topic>`. Review them like the others.
+Once a theme's files are free (its owners have reported and their PRs have
+merged), start one Opus implementation delegate per theme. Merge themes that
+share files, or run them one after another. Each follows the agent brief, with
+the theme's files as its area, runs `just boundary` too, and opens focused PRs
+on `refactor/cleanup-<YYYY-MM-DD>-boundary-<topic>`. Review them like the
+others.
 
 ### Bugs
 
 Every bug an agent or reviewer reports gets an issue and a fix PR:
 
 1. Check it against current `main`, with a Sol delegate when there are many.
-   Ask the owner about anything that might be intended.
-2. Open a Linear issue as `AGENTS.md` describes, with type Bug. Include the
-   `file:line`, what goes wrong and how to reproduce it.
-3. Start an Opus implementation delegate in a worktree, on `fix/<topic>`,
-   with the issue and `CARGO_BUILD_JOBS`. It writes a test that fails without
-   the fix, makes the smallest fix, runs the agent brief's checks, and opens a
-   draft PR with `file-pr` that says `Fixes PQD-<n>`.
-4. Review it with a Sol delegate that checks the test fails without the fix,
-   the fix is correct and minimal, and nothing else changed.
+   Merge duplicate reports, skip bugs that already have a Linear issue
+   (`list_issues`), and ask the owner about anything that might be intended.
+2. Open a Linear issue as `AGENTS.md` describes, with type Bug (Security for
+   a vulnerability). Include the `file:line`, what goes wrong and how to
+   reproduce it.
+3. Once its files are free (their owner has reported, and their PRs have
+   merged), start an Opus implementation delegate in a worktree, on
+   `fix/<topic>` from a freshly fetched `origin/main`, with the issue and
+   `CARGO_BUILD_JOBS`. It writes a test that fails without the fix, makes the
+   smallest fix, runs the agent brief's checks, and opens a draft PR with
+   `file-pr` that says `Fixes PQD-<n>`.
+4. Review and ship it as in Review, but without the review brief, which
+   treats any behavior change as a finding. The reviewer's task says to check
+   that the test fails without the fix, the fix is correct and minimal, and
+   nothing else changed.
 
-Start a fix only once no open cleanup PR touches its files. Until then it
-waits in the ledger. Run at most 3 fixes at a time.
+Run at most 3 fixes at a time.
 
 ### Report
 
-When every area PR is reviewed and green, send the owner one report:
+When every area and docs PR is reviewed and green, send the owner one
+report:
 
 1. The PRs by area: link, lines added and removed, merge order, and the PRs
    that are stacked.
@@ -175,9 +186,10 @@ an issue or PR.
 
 ### After the merge
 
-Rerun the stats and compare them with the audit. Start the boundary PRs and
-the fixes that were waiting on the area PRs. Then offer these follow-ups, and
-start each one only when the owner asks:
+Rerun the stats and compare them with the audit. Start the boundary themes
+and fixes whose files are now free, and report again when their PRs are
+reviewed and green. Then offer these follow-ups, and start each one only when
+the owner asks:
 
 1. A doc-comment PR for what the docs lane reported. It changes generated
    output on purpose.
