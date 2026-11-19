@@ -148,21 +148,22 @@ export const test = base.extend<{ gitHost: GitHost }>({
  * `--update-snapshots=none`, as in CI, a page that no longer matches fails
  * instead. */
 export async function shoot(page: Page, name: string, through?: Locator, from?: Locator) {
+  // Stop the dashboard's timers, without running any, so no refresh starts
+  // while the page is measured and frozen. Fixing the time first makes
+  // pausing at it skip nothing, however long the calls take.
+  const now = Date.now();
+  await page.clock.setFixedTime(now);
+  await page.clock.pauseAt(now);
   // A page draws parts of itself, such as the sidebar's daemon status or an
   // environment's services, as their requests return, so a busy machine
-  // would otherwise shoot it half drawn.
+  // would otherwise shoot it half drawn. Requests already under way still
+  // finish with the clock paused.
   await expect.poll(() => page.evaluate(() => (window as unknown as { settled(): Promise<boolean> }).settled()),
     { message: 'the page is still loading' }).toBe(true);
   const top = await from?.evaluate(element => element.getBoundingClientRect().top + scrollY - 12) ?? 0;
   const bottom = await through?.evaluate(element => element.getBoundingClientRect().bottom + scrollY + 12);
   await page.setViewportSize({ width: 1280, height: bottom ? Math.ceil(bottom - top) : 800 });
   await page.evaluate(top => scrollTo(0, top), top);
-  // Stop the dashboard's timers, without running any, so no refresh redraws
-  // what `freeze` replaced. Fixing the time first makes pausing at it skip
-  // nothing, however long the calls take.
-  const now = Date.now();
-  await page.clock.setFixedTime(now);
-  await page.clock.pauseAt(now);
   const frozen = await freeze(page);
   const file = new URL(`images/${name}.png`, docs);
   const drawn = await fingerprint(page);
@@ -175,7 +176,7 @@ export async function shoot(page: Page, name: string, through?: Locator, from?: 
     }
     await writeFile(file, Png.withFingerprint(await page.screenshot({ animations: 'disabled' }), current));
   }
-  // A refresh already under way when the clock stopped redraws it anyway.
+  // A live stream's message, which no clock delays, redraws it anyway.
   expect(frozen, 'a refresh redrew the page while it was saved').toEqual(expect.arrayContaining(await varying(page)));
   // Catch up with the time spent paused, so later pages read the daemon's
   // new timestamps as just now.

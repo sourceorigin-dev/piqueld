@@ -168,9 +168,9 @@ guide. `screenshots/docs.ts` holds the helpers:
 - `shoot(page, '<section>/<name>', through, from)`, which saves the page,
   1280 pixels wide and cut just below the element `through`, as
   `docs/images/<section>/<name>.png`. With `from`, the image starts just above
-  that element instead of at the top of the page. It first waits until the
-  page has no request still loading, so a busy machine doesn't save it half
-  drawn. Then it replaces IDs and digests with fixed ones, and moves every
+  that element instead of at the top of the page. It first stops the page's
+  timers, so no refresh starts, and waits until the page has no request still
+  loading, so a busy machine doesn't save it half drawn. Then it replaces IDs and digests with fixed ones, and moves every
   date by the same amount, the earliest to a fixed one, so the images don't
   change from run to run.
 
