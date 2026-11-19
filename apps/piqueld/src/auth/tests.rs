@@ -696,7 +696,7 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
     assert_eq!(
         denied(
             f.auth
-                .manage(&ops, Manage::RevokeAll { user_id: bob.id() },)
+                .manage(&ops, Manage::RevokeAll { user_id: bob.id() })
                 .await
         ),
         Denied::Missing(Permission::Global(GlobalPermission::AccountsManage))
