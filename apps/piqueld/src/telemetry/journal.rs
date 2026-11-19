@@ -32,8 +32,8 @@ use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
-/// Open attempts remembered at most; beyond it, the oldest are forgotten and
-/// lose their attempt span.
+/// Open attempts remembered at most; beyond it, every open attempt is
+/// forgotten and loses its attempt span.
 const OPEN_ATTEMPTS: usize = 10_000;
 
 /// What the exporter looked up about an event.
@@ -73,18 +73,27 @@ impl Journal {
 
     /// Whether recording `event` needs its operation as stored now.
     pub(crate) fn needs_operation(event: &Event) -> bool {
-        Self::ENDS_ATTEMPTS.contains(&event.kind.as_str())
+        Self::attempt_outcome(&event.kind).is_some()
     }
 
-    /// Event kinds that may end an attempt and, with it, the operation.
-    const ENDS_ATTEMPTS: [&str; 6] = [
-        "operation_succeeded",
-        "operation_failed",
-        "operation_cancelled",
-        "operation_superseded",
-        "operation_interrupted",
-        "reconciliation_requested",
+    /// Event kinds that may end an attempt and, with it, the operation, with
+    /// the attempt's outcome.
+    const ENDS_ATTEMPTS: [(&str, &str); 6] = [
+        ("operation_succeeded", "succeeded"),
+        ("operation_failed", "failed"),
+        ("operation_cancelled", "cancelled"),
+        ("operation_superseded", "superseded"),
+        ("operation_interrupted", "interrupted"),
+        ("reconciliation_requested", "requeued"),
     ];
+
+    /// The outcome of the attempt an event of `kind` ends, if it ends one.
+    fn attempt_outcome(kind: &str) -> Option<&'static str> {
+        Self::ENDS_ATTEMPTS
+            .iter()
+            .find(|(ends, _)| *ends == kind)
+            .map(|(_, outcome)| *outcome)
+    }
 
     /// Exports `event` as a log record, plus any span it ends and the
     /// deployment or build it finishes.
@@ -112,8 +121,8 @@ impl Journal {
             "action_succeeded" | "action_failed" | "action_outcome_unknown" => {
                 self.action(event, context).into_iter().collect()
             }
-            kind if Self::ENDS_ATTEMPTS.contains(&kind) => self.operation(event, context),
-            _ => Vec::new(),
+            kind => Self::attempt_outcome(kind)
+                .map_or_default(|outcome| self.operation(event, context, outcome)),
         }
     }
 
@@ -138,16 +147,12 @@ impl Journal {
                 }
             });
         }
-        let (trace, parent) = match (&event.operation_id, event.attempt) {
-            (Some(operation), Some(attempt)) => (
-                trace_id(&["operation", operation]),
-                span_id(&["attempt", operation, &attempt.to_string()]),
-            ),
-            (Some(operation), None) => (
-                trace_id(&["operation", operation]),
-                span_id(&["operation", operation]),
-            ),
-            (None, _) => (trace_id(&["action", action]), SpanId::INVALID),
+        let (trace, parent) = match &event.operation_id {
+            Some(operation) => {
+                let parent = Key::within(operation, event.attempt);
+                (parent.trace(), parent.span())
+            }
+            None => (Key::Action(action).trace(), SpanId::INVALID),
         };
         let end = time(event.created_at_ms);
         let mut attributes = common_attributes(event, context);
@@ -169,7 +174,7 @@ impl Journal {
         );
         Some(span(
             trace,
-            span_id(&["action", action]),
+            Key::Action(action).span(),
             parent,
             // Names stay few; the resource, often a Docker name, is an attribute.
             phase.to_owned(),
@@ -179,9 +184,14 @@ impl Journal {
         ))
     }
 
-    /// The spans of an ended attempt and, once the operation finished, its
-    /// root span, with deployment metrics.
-    fn operation(&mut self, event: &Event, context: EventContext<'_>) -> Vec<SpanData> {
+    /// The spans of an attempt ended with `outcome` and, once the operation
+    /// finished, its root span, with deployment metrics.
+    fn operation(
+        &mut self,
+        event: &Event,
+        context: EventContext<'_>,
+        outcome: &'static str,
+    ) -> Vec<SpanData> {
         let Some(id) = &event.operation_id else {
             return Vec::new();
         };
@@ -204,17 +214,9 @@ impl Journal {
         if event.kind == "operation_failed" && kind == Some(OperationKind::Delete) {
             return Vec::new();
         }
-        let outcome = match event.kind.as_str() {
-            "operation_succeeded" => "succeeded",
-            "operation_failed" => "failed",
-            "operation_cancelled" => "cancelled",
-            "operation_superseded" => "superseded",
-            "operation_interrupted" => "interrupted",
-            _ => "requeued",
-        };
         let end = time(event.created_at_ms);
-        let trace = trace_id(&["operation", id]);
-        let root = span_id(&["operation", id]);
+        let trace = Key::Operation(id).trace();
+        let root = Key::Operation(id).span();
         let status = failure(event);
         let mut spans = Vec::new();
         let started = self.open.remove(&(id.clone(), attempt));
@@ -223,7 +225,7 @@ impl Journal {
             attributes.push(KeyValue::new("piqueld.outcome", outcome));
             spans.push(span(
                 trace,
-                span_id(&["attempt", id, &attempt.to_string()]),
+                Key::Attempt(id, attempt).span(),
                 root,
                 format!("attempt {attempt}"),
                 (time(started), end),
@@ -315,23 +317,20 @@ impl Journal {
             .into_iter()
             .filter_map(|(key, value)| Some((key, AnyValue::from(value?)))),
         );
-        if let Some(operation) = &event.operation_id {
-            let span = match (&event.action_id, event.attempt) {
-                (Some(action), _) => span_id(&["action", action]),
-                (None, Some(attempt)) => span_id(&["attempt", operation, &attempt.to_string()]),
-                (None, None) => span_id(&["operation", operation]),
-            };
-            record.set_trace_context(
-                trace_id(&["operation", operation]),
-                span,
-                Some(TraceFlags::SAMPLED),
-            );
-        } else if let Some(action) = &event.action_id {
-            record.set_trace_context(
-                trace_id(&["action", action]),
-                span_id(&["action", action]),
-                Some(TraceFlags::SAMPLED),
-            );
+        let span = match (&event.operation_id, &event.action_id) {
+            (Some(operation), Some(action)) => Some((
+                Key::Operation(operation).trace(),
+                Key::Action(action).span(),
+            )),
+            (Some(operation), None) => {
+                let span = Key::within(operation, event.attempt);
+                Some((span.trace(), span.span()))
+            }
+            (None, Some(action)) => Some((Key::Action(action).trace(), Key::Action(action).span())),
+            (None, None) => None,
+        };
+        if let Some((trace, span)) = span {
+            record.set_trace_context(trace, span, Some(TraceFlags::SAMPLED));
         }
         self.logger.emit(record);
     }
@@ -409,42 +408,76 @@ fn failure(event: &Event) -> Status {
     }
 }
 
-/// The first 16 bytes of the SHA-256 of `parts`.
-#[expect(
-    clippy::expect_used,
-    reason = "SHA-256 digests are 32 bytes, so the slice has exactly 16."
-)]
-fn trace_id(parts: &[&str]) -> TraceId {
-    TraceId::from_bytes(
-        digest(parts)[..16]
-            .try_into()
-            .expect("digest returns 32 bytes; this slice contains exactly 16 bytes"),
-    )
+/// What a span stands for, from which its ID and its trace's are derived,
+/// so the same journal entry always gets the same IDs.
+#[derive(Clone, Copy)]
+enum Key<'a> {
+    /// An operation, whose span roots its trace.
+    Operation(&'a str),
+    /// An attempt of an operation, in the operation's trace.
+    Attempt(&'a str, u64),
+    /// An action; one outside any operation roots its own trace.
+    Action(&'a str),
 }
 
-/// Bytes 16..24 of the SHA-256 of `parts`, so a trace's root span never
-/// shares its trace ID's bytes.
-#[expect(
-    clippy::expect_used,
-    reason = "SHA-256 digests are 32 bytes, so the slice has exactly 8."
-)]
-fn span_id(parts: &[&str]) -> SpanId {
-    SpanId::from_bytes(
-        digest(parts)[16..24]
-            .try_into()
-            .expect("digest returns 32 bytes; this slice contains exactly 8 bytes"),
-    )
-}
-
-/// SHA-256 of `parts` separated by NUL bytes, which IDs never contain.
-fn digest(parts: &[&str]) -> [u8; 32] {
-    let mut hash = Sha256::new();
-    hash.update("piqueld");
-    for part in parts {
-        hash.update([0]);
-        hash.update(part);
+impl<'a> Key<'a> {
+    /// The span of operation `id` an event of its `attempt`, if any, belongs to.
+    fn within(id: &'a str, attempt: Option<u64>) -> Self {
+        attempt.map_or(Self::Operation(id), |attempt| Self::Attempt(id, attempt))
     }
-    hash.finalize().into()
+
+    /// The trace this span belongs to: its operation's, or a lone action's
+    /// own. The first 16 bytes of its digest.
+    #[expect(
+        clippy::expect_used,
+        reason = "SHA-256 digests are 32 bytes, so the slice has exactly 16."
+    )]
+    fn trace(self) -> TraceId {
+        let key = match self {
+            Self::Attempt(id, _) => Self::Operation(id),
+            key => key,
+        };
+        TraceId::from_bytes(
+            key.digest()[..16]
+                .try_into()
+                .expect("digest returns 32 bytes; this slice contains exactly 16 bytes"),
+        )
+    }
+
+    /// Bytes 16..24 of its digest, so a trace's root span never shares its
+    /// trace ID's bytes.
+    #[expect(
+        clippy::expect_used,
+        reason = "SHA-256 digests are 32 bytes, so the slice has exactly 8."
+    )]
+    fn span(self) -> SpanId {
+        SpanId::from_bytes(
+            self.digest()[16..24]
+                .try_into()
+                .expect("digest returns 32 bytes; this slice contains exactly 8 bytes"),
+        )
+    }
+
+    /// SHA-256 of its kind and IDs separated by NUL bytes, which IDs never
+    /// contain.
+    fn digest(self) -> [u8; 32] {
+        let attempt;
+        let parts: &[&str] = match self {
+            Self::Operation(id) => &["operation", id],
+            Self::Attempt(id, number) => {
+                attempt = number.to_string();
+                &["attempt", id, &attempt]
+            }
+            Self::Action(id) => &["action", id],
+        };
+        let mut hash = Sha256::new();
+        hash.update("piqueld");
+        for part in parts {
+            hash.update([0]);
+            hash.update(part);
+        }
+        hash.finalize().into()
+    }
 }
 
 /// Unix milliseconds as a timestamp.
