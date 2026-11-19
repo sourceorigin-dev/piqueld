@@ -10,6 +10,9 @@ use piqueld_core::{
     manifest::{PreviewLimits, SecretMount, ValidatedTemplate, parse_template_toml},
 };
 
+/// The repository `template` reads its manifest from, unless saved.
+const NOTES: &str = "https://example.com/notes.git";
+
 /// The `notes` application, repository-backed unless `saved`, whose `web`
 /// service mounts the stored secret `stripe`.
 fn template(saved: bool) -> ValidatedTemplate {
@@ -37,6 +40,18 @@ async fn save(store: &Store, saved: bool) -> ApplicationId {
     ApplicationId::parse(saved.application_id).unwrap()
 }
 
+/// Accepts `mutation`, which creates or deploys a preview, without a
+/// revision.
+async fn preview(store: &Store, mutation: PreviewMutation) -> Result<CreatedPreview, StoreError> {
+    match store
+        .accept(Daemon, Mutation::Preview(mutation), None, false, None)
+        .await?
+    {
+        (MutationResponse::Preview(created), _) => Ok(*created),
+        _ => panic!("preview"),
+    }
+}
+
 /// Creates the preview of `branch` and `slot`, without a revision.
 async fn create(
     store: &Store,
@@ -44,15 +59,12 @@ async fn create(
     branch: &str,
     slot: Option<&str>,
 ) -> Result<CreatedPreview, StoreError> {
-    let mutation = Mutation::Preview(PreviewMutation::Create {
+    let mutation = PreviewMutation::Create {
         application: application.clone(),
         branch: GitBranch::parse(branch).unwrap(),
         slot: slot.map(|slot| PreviewSlot::parse(slot).unwrap()),
-    });
-    match store.accept(Daemon, mutation, None, false, None).await? {
-        (MutationResponse::Preview(created), _) => Ok(*created),
-        _ => panic!("preview"),
-    }
+    };
+    preview(store, mutation).await
 }
 
 #[tokio::test]
@@ -348,13 +360,7 @@ async fn pruning_keeps_a_preview_once_the_repository_changed() {
     ));
     assert!(!store.get(&preview.id).await.unwrap().delete_intent());
     store
-        .accept(
-            Daemon,
-            prune("https://example.com/notes.git"),
-            None,
-            false,
-            None,
-        )
+        .accept(Daemon, prune(NOTES), None, false, None)
         .await
         .unwrap();
     assert!(store.get(&preview.id).await.unwrap().delete_intent());
@@ -367,7 +373,7 @@ async fn local(
     (branch, slot): (&str, Option<&str>),
     (repository, commit): (&str, &str),
 ) -> Result<CreatedPreview, StoreError> {
-    let mutation = Mutation::Preview(PreviewMutation::Local {
+    let mutation = PreviewMutation::Local {
         application: application.clone(),
         branch: GitBranch::parse(branch).unwrap(),
         slot: slot.map(|slot| PreviewSlot::parse(slot).unwrap()),
@@ -376,11 +382,24 @@ async fn local(
             commit: commit.into(),
             base: Some("b".repeat(40)),
         },
-    });
-    match store.accept(Daemon, mutation, None, false, None).await? {
-        (MutationResponse::Preview(created), _) => Ok(*created),
-        _ => panic!("preview"),
-    }
+    };
+    preview(store, mutation).await
+}
+
+/// Opens a store, saves the repository-backed application in it, and
+/// deploys a local snapshot of `feat/x` to a new preview of it.
+async fn local_preview() -> (tempfile::TempDir, Store, ApplicationId, CreatedPreview) {
+    let (temp, store) = Store::temporary().await;
+    let application = save(&store, false).await;
+    let created = local(
+        &store,
+        &application,
+        ("feat/x", None),
+        (NOTES, &"1".repeat(40)),
+    )
+    .await
+    .unwrap();
+    (temp, store, application, created)
 }
 
 /// `preview deploy --local` creates previews as `preview create` does,
@@ -394,13 +413,12 @@ async fn local_snapshots_create_previews_within_limits_and_record_their_provenan
         ..PreviewLimits::default()
     });
     let application = save(&store, false).await;
-    let notes = "https://example.com/notes.git";
     let (first, second) = ("1".repeat(40), "2".repeat(40));
-    let created = local(&store, &application, ("feat/x", None), (notes, &first))
+    let created = local(&store, &application, ("feat/x", None), (NOTES, &first))
         .await
         .unwrap();
     assert!(created.created);
-    let again = local(&store, &application, ("feat/x", None), (notes, &second))
+    let again = local(&store, &application, ("feat/x", None), (NOTES, &second))
         .await
         .unwrap();
     assert_eq!(
@@ -430,7 +448,7 @@ async fn local_snapshots_create_previews_within_limits_and_record_their_provenan
             &store,
             &application,
             ("feat/x", Some("agent-2")),
-            (notes, &first)
+            (NOTES, &first)
         )
         .await,
         Err(StoreError::PreviewLimitReached(_))
@@ -453,17 +471,7 @@ async fn local_snapshots_create_previews_within_limits_and_record_their_provenan
 /// can't be a promotion source.
 #[tokio::test]
 async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
-    let (_temp, store) = Store::temporary().await;
-    let application = save(&store, false).await;
-    let notes = "https://example.com/notes.git";
-    let created = local(
-        &store,
-        &application,
-        ("feat/x", None),
-        (notes, &"1".repeat(40)),
-    )
-    .await
-    .unwrap();
+    let (_temp, store, application, created) = local_preview().await;
     let preview = created.preview;
     // As preparing a deployment does.
     let prepared = async |operation: &str| {
@@ -479,7 +487,7 @@ async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
     let prune = || {
         Mutation::Preview(PreviewMutation::Prune {
             id: preview.id.clone(),
-            repository: notes.into(),
+            repository: NOTES.into(),
         })
     };
     assert!(matches!(
@@ -529,17 +537,7 @@ async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
 /// counts as running one, however many restores lie in between.
 #[tokio::test]
 async fn restored_local_snapshots_are_still_local() {
-    let (_temp, store) = Store::temporary().await;
-    let application = save(&store, false).await;
-    let notes = "https://example.com/notes.git";
-    let created = local(
-        &store,
-        &application,
-        ("feat/x", None),
-        (notes, &"1".repeat(40)),
-    )
-    .await
-    .unwrap();
+    let (_temp, store, _, created) = local_preview().await;
     let preview = created.preview.id;
     let restore = |of: &str| serde_json::json!({"type": "restore", "deployment": of}).to_string();
     let mut restored = created.operation.operation_id;
