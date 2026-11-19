@@ -612,8 +612,8 @@ impl Store {
             .map(StoredEnvironmentRow::decode).transpose()
     }
 
-    /// Reads an environment that must exist on an existing connection or
-    /// transaction, failing with `NotFound` otherwise.
+    /// Reads an environment on an existing connection or transaction,
+    /// failing with `NotFound` when it doesn't exist.
     pub(super) async fn existing_environment_on(
         connection: &mut SqliteConnection,
         id: &str,
