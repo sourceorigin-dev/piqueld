@@ -722,6 +722,7 @@ impl DockerApi for FakeDocker {
         &self,
         instance: &InstanceId,
         id: &Sha256Digest,
+        _node: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<(), DockerError> {
         let mut images = self.local_images.lock().await;
         if images

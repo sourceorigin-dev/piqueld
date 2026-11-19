@@ -121,10 +121,13 @@ impl<D> Controller<D> {
         self
     }
 
-    /// Applies the daemon's image retention configuration.
+    /// Applies the daemon's image retention configuration, `[images]`, on
+    /// this host and on the worker nodes `[nodes]` names, where previews
+    /// pull their images.
     #[must_use]
-    pub fn with_images(mut self, config: &piqueld_config::ImagesConfig) -> Self {
-        self.images = images::ImageRetention::new(config);
+    pub fn with_images(mut self, config: &piqueld_config::DaemonConfig) -> Self {
+        self.images =
+            images::ImageRetention::new(&config.images).with_workers(config.nodes.keys().cloned());
         self
     }
 

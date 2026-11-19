@@ -1169,7 +1169,7 @@ async fn git_build_runs_as_a_local_swarm_image() {
         )
     );
     assert!(matches!(
-        docker.remove_image(&other, &id).await,
+        docker.remove_image(&other, &id, None).await,
         Err(DockerError::OwnershipConflict)
     ));
     eventually(Duration::from_mins(1), POLL, async || {
@@ -1177,7 +1177,7 @@ async fn git_build_runs_as_a_local_swarm_image() {
     })
     .await
     .expect("the removed service's containers go");
-    docker.remove_image(&owner, &id).await.unwrap();
+    docker.remove_image(&owner, &id, None).await.unwrap();
     assert!(built().await.is_none());
 }
 

@@ -182,6 +182,9 @@ node it was created on, so the previews that existed before stay on the host
 until you delete them, and changing `node` never moves a preview or its
 volumes.
 
+Image cleanup removes the images previews no longer use from the worker too,
+once it answers.
+
 The preview's page shows where it runs under **Runs on**. With
 `piquelctl`, `preview show` says `Runs on: worker node nixosbtw`, and
 `preview list` has a `NODE` column.

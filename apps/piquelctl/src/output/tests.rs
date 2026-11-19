@@ -494,6 +494,7 @@ fn status_and_dns_refresh_list_images_dns_providers_certificate_failures_and_pre
             images: 4,
             reclaimed_bytes: 2048,
             cleaned_at_ms: Some(7),
+            workers: Vec::new(),
         },
         ..SystemStatus::default()
     };

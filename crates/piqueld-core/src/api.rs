@@ -1096,10 +1096,11 @@ impl SnapshotLimits {
     }
 }
 
-/// The images this installation built, as of the last cleanup.
+/// The images this installation built, as of the last cleanup: on this
+/// host, then on each worker node.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct ImageStatus {
-    /// Built images still present after the last cleanup.
+    /// Built images still present on this host after the last cleanup.
     pub images: u32,
     /// Total size of the images cleanup removed since the daemon started.
     /// Layers they shared with kept images stay, so less space may be freed.
@@ -1108,6 +1109,29 @@ pub struct ImageStatus {
     /// ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cleaned_at_ms: Option<i64>,
+    /// Each worker node's images, in name order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workers: Vec<WorkerImageStatus>,
+}
+
+/// The images this installation built on one worker node, as of the last
+/// cleanup that reached it.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct WorkerImageStatus {
+    /// The worker's name under `[nodes]`.
+    pub node: String,
+    /// Built images still present on it after the last cleanup.
+    pub images: u32,
+    /// Total size of the images cleanup removed from it since the daemon
+    /// started.
+    pub reclaimed_bytes: u64,
+    /// When cleanup last reached it, in Unix milliseconds; absent before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleaned_at_ms: Option<i64>,
+    /// Why the latest cleanup skipped it, such as its engine not answering
+    /// while the machine is off; absent when it reached it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
 }
 
 /// A change to a manifest field. Environment and process values are redacted.

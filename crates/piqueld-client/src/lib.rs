@@ -115,6 +115,7 @@ pub use previews::{
 pub use system::{
     CertificateStatus, DnsProviderStatus, DnsStatus, ImageStatus, SnapshotLimits, SystemStatus,
     TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver, TelemetryStatus,
+    WorkerImageStatus,
 };
 
 pub use piqueld_core::api::{
