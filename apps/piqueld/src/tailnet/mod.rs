@@ -16,7 +16,11 @@ pub use whois::{LookupTimedOut, TailnetLookup, Whois};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use std::{
-    collections::BTreeMap, io::ErrorKind, net::SocketAddr, path::PathBuf, process::Stdio,
+    collections::BTreeMap,
+    io::ErrorKind,
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+    process::Stdio,
     time::Duration,
 };
 use tokio::{
@@ -31,16 +35,19 @@ const COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The `tailscale` CLI, pointed at the node's `tailscaled` socket.
-#[derive(Clone)]
 struct Cli {
     socket: PathBuf,
 }
 
-/// The fields piqueld reads from `tailscale status --json`.
+/// The fields piqueld reads from a `tailscaled`'s status, which `tailscale
+/// status --json` and the `LocalAPI`'s `/localapi/v0/status` both report.
 #[derive(Deserialize)]
-struct Status {
+pub(crate) struct Status {
     #[serde(rename = "BackendState")]
-    backend_state: String,
+    pub(crate) backend_state: String,
+    /// Interactive login URL while the node needs login.
+    #[serde(rename = "AuthURL", default)]
+    pub(crate) auth_url: String,
     #[serde(rename = "Self")]
     node: Option<NodeStatus>,
 }
@@ -49,6 +56,31 @@ struct Status {
 struct NodeStatus {
     #[serde(rename = "DNSName")]
     dns_name: String,
+    /// `null` until the node has logged in.
+    #[serde(rename = "TailscaleIPs")]
+    addresses: Option<Vec<IpAddr>>,
+}
+
+impl Status {
+    /// Whether the node is logged in and connected.
+    pub(crate) fn running(&self) -> bool {
+        self.backend_state == "Running"
+    }
+
+    /// The node's DNS name, without its trailing dot, once it has one.
+    pub(crate) fn dns_name(&self) -> Option<String> {
+        self.node
+            .as_ref()
+            .map(|node| node.dns_name.trim_end_matches('.').to_owned())
+            .filter(|name| !name.is_empty())
+    }
+
+    /// The node's tailnet addresses, none before it has logged in.
+    pub(crate) fn addresses(&self) -> impl Iterator<Item = IpAddr> {
+        self.node
+            .iter()
+            .flat_map(|node| node.addresses.iter().flatten().copied())
+    }
 }
 
 /// The node's TCP ports in `tailscale serve status --json`, by number.
@@ -244,8 +276,8 @@ mod tests {
             r#"{"BackendState":"Running","Self":{"DNSName":"piqueld.tail.ts.net."}}"#,
         )
         .unwrap();
-        assert_eq!(status.backend_state, "Running");
-        assert_eq!(status.node.unwrap().dns_name, "piqueld.tail.ts.net.");
+        assert!(status.running());
+        assert_eq!(status.dns_name().unwrap(), "piqueld.tail.ts.net");
     }
 
     /// A port forwarding to a live listener is refused, and one whose
