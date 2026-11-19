@@ -1873,6 +1873,51 @@ fn secret_values_from_stdin_drop_one_trailing_newline() {
     }
 }
 
+/// `app secret access` changes access from the access it listed, sent as
+/// `expected`, so a change made meanwhile conflicts (exit 3) instead of
+/// being overwritten.
+#[test]
+fn secret_access_changes_send_the_listed_access_as_expected() {
+    let listed = json!({"environments": "all", "previews": false});
+    let secret = json!({
+        "name": "database-password", "generation": 2, "updated_at_ms": 1, "access": listed
+    });
+    let refusal = json!({
+        "code": "secret_access_conflict",
+        "message": "the access changed since it was read",
+        "request_id": "request-01"
+    });
+    let server = start_server(false, 3, move |request| {
+        match request.path.split('?').next().unwrap() {
+            "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
+            "/api/v1/applications/app-notes-01/secrets" => Reply::json(json!([secret])),
+            "/api/v1/applications/app-notes-01/secrets/database-password/access" => {
+                Reply::status("409 Conflict", &refusal)
+            }
+            path => panic!("unexpected path {path}"),
+        }
+    });
+    let output = run(
+        &server,
+        &[
+            "app",
+            "secret",
+            "app-notes-01",
+            "access",
+            "database-password",
+            "--previews",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(3), "{output:?}");
+    let requests = server.finish();
+    assert_eq!(requests[2].method, "PUT");
+    let body: Value = serde_json::from_slice(&requests[2].body).unwrap();
+    assert_eq!(
+        body,
+        json!({"environments": "all", "previews": true, "expected": listed})
+    );
+}
+
 /// The host operator's socket commands never send a credential, which the
 /// daemon would honour instead of the operator, even with `PIQUELD_TOKEN`.
 #[test]

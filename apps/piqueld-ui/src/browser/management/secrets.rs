@@ -235,9 +235,10 @@ impl AccessForm {
 }
 
 /// The application's secret store: manually set values (never read back),
-/// their versions and access lists. Writes are guarded by generation and
-/// clear the value field as soon as they are submitted; after a failure,
-/// actions stay disabled until the list is refreshed. On an environment's
+/// their versions and access lists. Value writes are guarded by generation
+/// and clear the value field as soon as they are submitted; access-only
+/// writes are guarded by the access the form read. After a failure, actions
+/// stay disabled until the list is refreshed. On an environment's
 /// page, given the secrets its manifest `mounts`, it lists only the secrets
 /// that environment may mount or mounts, and new ones default to it alone;
 /// `changed` runs after every write. Writing needs `secrets:write`.
@@ -363,11 +364,14 @@ pub(super) fn StoredSecrets(
             return;
         }
         let (id, name, access) = (id.get_value(), name.get_untracked(), form.access());
+        // The access the form was loaded from, so a concurrent change fails
+        // with `secret_access_conflict` instead of being overwritten.
+        let expected = existing(&name).map(|(_, access)| access);
         feedback.send(
             context,
             async move {
                 Client::browser()
-                    .set_secret_access(&id, &name, &access)
+                    .set_secret_access(&id, &name, &access, expected.as_ref())
                     .await
             },
             move |secret| saved(secret, "Access saved. It applies to later deployments."),

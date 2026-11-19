@@ -880,7 +880,7 @@ async fn stored_secret_writes_use_the_callers_current_grants() {
         .await
         .unwrap();
     store
-        .set_secret_access(caller, app.id(), "stripe", &access)
+        .set_secret_access(caller, app.id(), "stripe", &access, None)
         .await
         .unwrap();
     assert_eq!(
@@ -895,7 +895,7 @@ async fn stored_secret_writes_use_the_callers_current_grants() {
         Err(StoreError::Denied(denied)) if denied == refused
     ));
     assert!(matches!(
-        store.set_secret_access(caller, app.id(), "stripe", &access).await,
+        store.set_secret_access(caller, app.id(), "stripe", &access, None).await,
         Err(StoreError::Denied(denied)) if denied == refused
     ));
     assert!(matches!(
