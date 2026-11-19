@@ -17,17 +17,18 @@ const PACE: Duration = Duration::from_millis(100);
 pub(super) trait Follow: Send + 'static {
     /// The next message, or `None` once the stream ended.
     fn next(&mut self) -> impl Future<Output = Option<ServerEvent>> + Send;
-}
 
-/// Serves `follow`'s messages as server-sent events until it ends.
-pub(super) fn serve(
-    follow: impl Follow,
-) -> Sse<impl Stream<Item = Result<ServerEvent, Infallible>>> {
-    let stream = futures_util::stream::unfold(follow, |mut follow| async move {
-        let message = follow.next().await?;
-        Some((Ok(message), follow))
-    });
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    /// Serves this stream's messages as server-sent events until it ends.
+    fn serve(self) -> Sse<impl Stream<Item = Result<ServerEvent, Infallible>> + Send + 'static>
+    where
+        Self: Sized,
+    {
+        let stream = futures_util::stream::unfold(self, |mut follow| async move {
+            let message = follow.next().await?;
+            Some((Ok(message), follow))
+        });
+        Sse::new(stream).keep_alive(KeepAlive::default())
+    }
 }
 
 /// `message` named `kind` with `data` as JSON, or a `stream_error` message

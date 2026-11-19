@@ -116,7 +116,7 @@ pub(super) async fn stream_timeline(
         sent: false,
         done: false,
     };
-    Ok(live::serve(follow))
+    Ok(follow.serve())
 }
 
 /// A live timeline stream: the timeline as last sent, and the caller's access.
@@ -156,8 +156,11 @@ impl Follow for FollowTimeline {
             }
             if !self.sent {
                 self.sent = true;
-                let message = ServerEvent::default();
-                return Some(live::json(message, "timeline", &self.timeline));
+                return Some(live::json(
+                    ServerEvent::default(),
+                    "timeline",
+                    &self.timeline,
+                ));
             }
             self.pace.wait(&self.lease, false).await;
             let Ok(changed) = self.state.advance_timeline(&mut self.timeline).await else {

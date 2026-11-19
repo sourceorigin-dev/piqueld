@@ -185,7 +185,7 @@ pub(super) async fn stream(
         checkpoint,
         done: false,
     };
-    Ok(live::serve(follow))
+    Ok(follow.serve())
 }
 
 /// A live event stream's position and access.
