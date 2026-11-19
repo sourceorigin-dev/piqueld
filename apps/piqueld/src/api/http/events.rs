@@ -4,7 +4,7 @@ use super::{
     auth::TailnetSource,
     lease::{Ended, Lease},
     ok,
-    openapi::ApiErrorResponse,
+    openapi::ApiErrors,
 };
 use crate::{api::Expensive, auth::Identity};
 use axum::{
@@ -88,7 +88,7 @@ impl QueryParams for EventQuery {
 /// Lists structured events.
 ///
 /// Oldest first unless `descending=true`. Follow `next_cursor` to load more.
-#[utoipa::path(get,path="/api/v1/events",operation_id="listEvents",params(EventQuery),responses((status=200,description="Structured history",body=Envelope<Page<Event>>),(status=400,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/events",operation_id="listEvents",params(EventQuery),responses((status=200,description="Structured history",body=Envelope<Page<Event>>),ApiErrors<400, 503>))]
 pub(super) async fn list(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -108,7 +108,7 @@ pub(super) async fn list(
 ///
 /// The distinct `kind` values of the events the caller may read, in name
 /// order, for filtering `GET /api/v1/events` by `kind`.
-#[utoipa::path(get,path="/api/v1/events/kinds",operation_id="listEventKinds",responses((status=200,description="Event kinds, in name order",body=Envelope<EventKinds>),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/events/kinds",operation_id="listEventKinds",responses((status=200,description="Event kinds, in name order",body=Envelope<EventKinds>),ApiErrors<503>))]
 pub(super) async fn kinds(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -138,7 +138,7 @@ pub(super) const PACE: std::time::Duration = std::time::Duration::from_millis(10
 ///   how soon).
 ///
 /// The stream also ends, without a message, when the daemon shuts down.
-#[utoipa::path(get,path="/api/v1/events/stream",operation_id="streamEvents",params(EventQuery),responses((status=200,description="Resumable SSE; IDs are v1:<event-id>",body=String,content_type="text/event-stream"),(status=400,response=inline(ApiErrorResponse)),(status=410,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/events/stream",operation_id="streamEvents",params(EventQuery),responses((status=200,description="Resumable SSE; IDs are v1:<event-id>",body=String,content_type="text/event-stream"),ApiErrors<400, 410, 503>))]
 pub(super) async fn stream(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,

@@ -1,8 +1,6 @@
 //! Diagnostics, daemon resources, deployment analytics, notification
 //! destinations and deliveries, and the audit trail.
-use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrorResponse,
-};
+use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use crate::auth::Identity;
 use axum::{Extension, extract::State, response::IntoResponse};
 use piqueld_core::{
@@ -20,7 +18,7 @@ use piqueld_core::{
 ///
 /// Server errors expose this ID as `details.diagnostic_id`; the response is the
 /// event that recorded the failure, with its context.
-#[utoipa::path(get,path="/api/v1/diagnostics/{id}",operation_id="getDiagnostic",params(("id"=String,Path)),responses((status=200,body=Envelope<Event>),(status=404,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/diagnostics/{id}",operation_id="getDiagnostic",params(("id"=String,Path)),responses((status=200,body=Envelope<Event>),ApiErrors<404, 503>))]
 pub(super) async fn diagnostic(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -43,7 +41,7 @@ pub(super) async fn diagnostic(
 ///
 /// Reports process, database, disk, retained history, and queue statistics.
 /// Measurements the host cannot provide are omitted rather than reported as zero.
-#[utoipa::path(get,path="/api/v1/system/resources",operation_id="systemResources",responses((status=200,body=Envelope<DaemonStats>),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/system/resources",operation_id="systemResources",responses((status=200,body=Envelope<DaemonStats>),ApiErrors<503>))]
 pub(super) async fn resources(
     State(state): State<ApiState>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -64,7 +62,7 @@ pub(super) struct AnalyticsQuery {
 /// Gets deployment analytics for a time window.
 ///
 /// Aggregates deployment outcomes; the window defaults to the last 30 days.
-#[utoipa::path(get,path="/api/v1/analytics/deployments",operation_id="deploymentAnalytics",params(AnalyticsQuery),responses((status=200,body=Envelope<DeploymentAnalytics>),(status=400,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/analytics/deployments",operation_id="deploymentAnalytics",params(AnalyticsQuery),responses((status=200,body=Envelope<DeploymentAnalytics>),ApiErrors<400, 503>))]
 pub(super) async fn analytics(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -96,7 +94,7 @@ pub(super) struct DeliveryQuery {
 /// Lists webhook notification deliveries.
 ///
 /// Follow `next_cursor` to load more deliveries.
-#[utoipa::path(get,path="/api/v1/notifications/deliveries",operation_id="notificationDeliveries",params(DeliveryQuery),responses((status=200,body=Envelope<Page<NotificationDelivery>>),(status=400,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/notifications/deliveries",operation_id="notificationDeliveries",params(DeliveryQuery),responses((status=200,body=Envelope<Page<NotificationDelivery>>),ApiErrors<400, 503>))]
 pub(super) async fn deliveries(
     State(state): State<ApiState>,
     ApiQuery(query): ApiQuery<DeliveryQuery>,
@@ -113,7 +111,7 @@ pub(super) async fn deliveries(
 /// Schedules another attempt using the current destination configuration.
 /// Needs `system:operate`. A delivery that exists but cannot be retried fails
 /// with 409 `delivery_not_retryable`, whose message says why.
-#[utoipa::path(post,path="/api/v1/notifications/deliveries/{id}/retry",operation_id="retryNotificationDelivery",params(("id"=String,Path)),responses((status=200,body=Envelope<bool>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=409,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(post,path="/api/v1/notifications/deliveries/{id}/retry",operation_id="retryNotificationDelivery",params(("id"=String,Path)),responses((status=200,body=Envelope<bool>),ApiErrors<400, 404, 409, 503>))]
 pub(super) async fn retry_delivery(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -126,7 +124,7 @@ pub(super) async fn retry_delivery(
 ///
 /// Needs `system:read` or `notifications:manage`. URLs are write-only and
 /// never returned.
-#[utoipa::path(get,path="/api/v1/notifications/destinations",operation_id="notificationDestinations",responses((status=200,body=Envelope<Vec<NotificationDestination>>),(status=403,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/notifications/destinations",operation_id="notificationDestinations",responses((status=200,body=Envelope<Vec<NotificationDestination>>),ApiErrors<403, 503>))]
 pub(super) async fn destinations(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -152,7 +150,7 @@ pub(super) async fn destinations(
 /// Invalid URLs fail with 400 `destination_url_invalid`, a missing one with
 /// `destination_url_required`, and unknown applications with
 /// `destination_application_unknown`.
-#[utoipa::path(put,path="/api/v1/notifications/destinations/{name}",operation_id="putNotificationDestination",params(("name"=String,Path)),request_body=DestinationRequest,responses((status=200,body=Envelope<NotificationDestination>),(status=400,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(put,path="/api/v1/notifications/destinations/{name}",operation_id="putNotificationDestination",params(("name"=String,Path)),request_body=DestinationRequest,responses((status=200,body=Envelope<NotificationDestination>),ApiErrors<400, 415, 503>))]
 pub(super) async fn put_destination(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -166,7 +164,7 @@ pub(super) async fn put_destination(
 /// Deletes a notification destination.
 ///
 /// Cancels its pending deliveries; delivery history keeps its name.
-#[utoipa::path(delete,path="/api/v1/notifications/destinations/{name}",operation_id="deleteNotificationDestination",params(("name"=String,Path)),responses((status=200,body=Envelope<bool>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(delete,path="/api/v1/notifications/destinations/{name}",operation_id="deleteNotificationDestination",params(("name"=String,Path)),responses((status=200,body=Envelope<bool>),ApiErrors<400, 404, 503>))]
 pub(super) async fn delete_destination(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -181,7 +179,7 @@ pub(super) async fn delete_destination(
 ///
 /// Sends it at once, outside the delivery queue and history, and reports
 /// whether the receiver acknowledged it.
-#[utoipa::path(post,path="/api/v1/notifications/destinations/{name}/test",operation_id="testNotificationDestination",params(("name"=String,Path)),responses((status=200,body=Envelope<DestinationTest>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(post,path="/api/v1/notifications/destinations/{name}/test",operation_id="testNotificationDestination",params(("name"=String,Path)),responses((status=200,body=Envelope<DestinationTest>),ApiErrors<400, 404, 503>))]
 pub(super) async fn test_destination(
     State(state): State<ApiState>,
     ApiPath(name): ApiPath<String>,
@@ -219,7 +217,7 @@ pub(super) struct AuditQuery {
 /// only its own requests for a scoped credential like an API token, which
 /// must not see what its account does beyond the token's grants. Follow
 /// `next_cursor` to load older requests.
-#[utoipa::path(get,path="/api/v1/audit",operation_id="listAudit",params(AuditQuery),responses((status=200,body=Envelope<Page<AuditEvent>>),(status=400,response=inline(ApiErrorResponse)),(status=403,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/audit",operation_id="listAudit",params(AuditQuery),responses((status=200,body=Envelope<Page<AuditEvent>>),ApiErrors<400, 403, 503>))]
 pub(super) async fn audit(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -266,7 +264,7 @@ pub(super) async fn audit(
 /// record that was edited, inserted, or follows a removed one. Removing the
 /// newest records leaves a valid chain, so compare `head` with a value kept
 /// elsewhere.
-#[utoipa::path(get,path="/api/v1/audit/verify",operation_id="verifyAudit",responses((status=200,body=Envelope<AuditVerification>),(status=403,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/audit/verify",operation_id="verifyAudit",responses((status=200,body=Envelope<AuditVerification>),ApiErrors<403, 503>))]
 pub(super) async fn verify_audit(
     State(state): State<ApiState>,
 ) -> Result<impl IntoResponse, ApiError> {

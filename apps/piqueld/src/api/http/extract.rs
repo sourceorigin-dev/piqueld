@@ -11,9 +11,28 @@ use axum::{
 use piqueld_core::api::ApplyApplicationRequest;
 use piqueld_core::manifest::ValidatedTemplate;
 use serde::de::DeserializeOwned;
+use utoipa::openapi::path::{Parameter, ParameterBuilder, ParameterIn};
+use utoipa::openapi::{ObjectBuilder, Required, Type};
 
 /// Header carrying a mutation's idempotency key.
 pub(super) const IDEMPOTENCY_KEY: &str = "idempotency-key";
+
+/// Documents the optional [`IDEMPOTENCY_KEY`] header of a mutation that takes
+/// one, when listed in its `#[utoipa::path]` `params(...)`.
+pub(super) struct IdempotencyKey;
+
+impl utoipa::IntoParams for IdempotencyKey {
+    fn into_params(_: impl Fn() -> Option<ParameterIn>) -> Vec<Parameter> {
+        vec![
+            ParameterBuilder::new()
+                .name("Idempotency-Key")
+                .parameter_in(ParameterIn::Header)
+                .required(Required::False)
+                .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
+                .build(),
+        ]
+    }
+}
 
 /// Path extractor rejecting undecodable parameters with 400 `path_invalid`.
 pub(super) struct ApiPath<T>(pub(super) T);

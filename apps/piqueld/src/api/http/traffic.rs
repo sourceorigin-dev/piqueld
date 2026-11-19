@@ -1,5 +1,5 @@
 //! The traffic the gateway counted on an environment's routes.
-use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrorResponse};
+use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{extract::State, response::IntoResponse};
 use piqueld_core::{EnvironmentId, api::Envelope, observability::TrafficReport};
 use piqueld_store::traffic::{DAY_MS, TrafficQuery};
@@ -33,7 +33,7 @@ impl QueryParams for TrafficParams {
 /// or spans more than 400 days, fails with 400 `traffic_query_invalid`.
 #[utoipa::path(get,path="/api/v1/environments/{id}/traffic",operation_id="environmentTraffic",params(("id"=String,Path),TrafficParams),
  responses((status=200,description="The environment's traffic",body=Envelope<TrafficReport>),
- (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+ ApiErrors<400, 404, 503>))]
 pub(super) async fn get(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,

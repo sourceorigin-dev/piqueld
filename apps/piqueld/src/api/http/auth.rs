@@ -1,5 +1,5 @@
 //! Authentication HTTP boundary shared by both daemon transports.
-use super::{ApiError, ApiJson};
+use super::{ApiError, ApiJson, openapi::ApiErrors};
 use crate::auth::{Auth, AuthCookie, AuthError, Identity};
 use crate::tailnet::{LookupTimedOut, TailnetLookup};
 use axum::{
@@ -453,8 +453,7 @@ pub(super) async fn status(Extension(auth): Extension<Auth>) -> Result<Json<Auth
 /// Gets the first-account setup link.
 ///
 /// Public, but served only over the Unix socket, whose group access is the trust boundary; other transports return 404. Returns 409 once the first account exists.
-#[utoipa::path(get,path="/api/v1/auth/setup-link",operation_id="authSetupLink",responses((status=200,body=SetupLink),(status=404,response=inline(super::openapi::ApiErrorResponse)),
-    (status=409,response=inline(super::openapi::ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/auth/setup-link",operation_id="authSetupLink",responses((status=200,body=SetupLink),ApiErrors<404, 409>))]
 pub(super) async fn setup_link(
     Extension(auth): Extension<Auth>,
     unix: Option<Extension<super::UnixSocket>>,
@@ -473,8 +472,7 @@ pub(super) async fn setup_link(
 /// valid for 24 hours, replaces any earlier one, and registers a new account
 /// with `admin` on every application. Issuing it raises a `security`
 /// notification.
-#[utoipa::path(post,path="/api/v1/auth/recovery",operation_id="authRecoverAdmin",responses((status=200,body=OperatorLink),(status=404,response=inline(super::openapi::ApiErrorResponse)),
-    (status=409,response=inline(super::openapi::ApiErrorResponse))))]
+#[utoipa::path(post,path="/api/v1/auth/recovery",operation_id="authRecoverAdmin",responses((status=200,body=OperatorLink),ApiErrors<404, 409>))]
 pub(super) async fn recover_admin(
     Extension(auth): Extension<Auth>,
     OperatorPeer(operator): OperatorPeer,
@@ -488,7 +486,7 @@ pub(super) async fn recover_admin(
 /// link works once within ten minutes and signs a browser in as the host
 /// operator, with `admin` on every application, for 12 hours. Issuing it
 /// raises a `security` notification.
-#[utoipa::path(post,path="/api/v1/auth/sign-in-link",operation_id="authSignInLink",responses((status=200,body=OperatorLink),(status=404,response=inline(super::openapi::ApiErrorResponse))))]
+#[utoipa::path(post,path="/api/v1/auth/sign-in-link",operation_id="authSignInLink",responses((status=200,body=OperatorLink),ApiErrors<404>))]
 pub(super) async fn sign_in_link(
     Extension(auth): Extension<Auth>,
     OperatorPeer(operator): OperatorPeer,
@@ -500,7 +498,7 @@ pub(super) async fn sign_in_link(
 /// Public. Signs the browser in as the host operator with a 12-hour session
 /// cookie. Used, expired, and unknown links fail with 401. Rate limited per
 /// client address (429 with `Retry-After`).
-#[utoipa::path(post,path="/api/v1/auth/login/operator",operation_id="authOperatorSignIn",request_body=OperatorSignIn,responses((status=200,body=Session),(status=401,response=inline(super::openapi::ApiErrorResponse))))]
+#[utoipa::path(post,path="/api/v1/auth/login/operator",operation_id="authOperatorSignIn",request_body=OperatorSignIn,responses((status=200,body=Session),ApiErrors<401>))]
 pub(super) async fn operator_sign_in(
     Extension(auth): Extension<Auth>,
     ApiJson(input): ApiJson<OperatorSignIn>,
@@ -643,7 +641,7 @@ pub(super) async fn manage(
 /// `grants`, which the approver must hold, and is echoed back so clients can
 /// tell the limit applies. Pending logins are kept in memory, so bodies over
 /// 16 KiB answer 413. Rate limited per client address (429 with `Retry-After`).
-#[utoipa::path(post,path="/api/v1/auth/device/start",operation_id="authDeviceStart",request_body=DeviceStartRequest,responses((status=200,body=DeviceStart),(status=413,response=inline(super::openapi::ApiErrorResponse))))]
+#[utoipa::path(post,path="/api/v1/auth/device/start",operation_id="authDeviceStart",request_body=DeviceStartRequest,responses((status=200,body=DeviceStart),ApiErrors<413>))]
 pub(super) async fn device_start(
     Extension(auth): Extension<Auth>,
     peer: Option<Extension<ConnectInfo<SocketAddr>>>,

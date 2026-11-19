@@ -1,5 +1,5 @@
 //! Git source build history and captured build output.
-use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrorResponse};
+use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use crate::auth::Identity;
 use axum::{Extension, extract::State, response::IntoResponse};
 use piqueld_core::{
@@ -35,7 +35,7 @@ impl QueryParams for BuildQuery {
 /// records.
 #[utoipa::path(get,path="/api/v1/builds",operation_id="listBuilds",params(BuildQuery),
     responses((status=200,description="Build history, newest first",body=Envelope<Page<BuildRecord>>),
-    (status=400,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 503>))]
 pub(super) async fn list(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -73,7 +73,7 @@ impl QueryParams for OutputQuery {
 ///
 /// Returns the newest bounded page of output in chronological order. Pass the
 /// page's `previous_offset` as `before` to load older output.
-#[utoipa::path(get,path="/api/v1/builds/{id}/logs",operation_id="buildLogs",params(("id"=i64,Path),OutputQuery), responses((status=200,description="Bounded build output",body=Envelope<BuildLogPage>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/builds/{id}/logs",operation_id="buildLogs",params(("id"=i64,Path),OutputQuery), responses((status=200,description="Bounded build output",body=Envelope<BuildLogPage>),ApiErrors<400, 404, 503>))]
 pub(super) async fn logs(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<i64>,

@@ -2,10 +2,9 @@
 //! renaming, deletion, and manifest download. Mutations of applications and
 //! their environments are submitted through [`accept_mutation`].
 use super::access::Audited;
-use super::extract::{IDEMPOTENCY_KEY, ManifestUpload, optional_header};
+use super::extract::{IDEMPOTENCY_KEY, IdempotencyKey, ManifestUpload, optional_header};
 use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok,
-    openapi::ApiErrorResponse,
+    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok, openapi::ApiErrors,
 };
 use crate::api::{Mutation, MutationResponse};
 use crate::auth::Identity;
@@ -50,9 +49,7 @@ impl QueryParams for ListQuery {
     params(ListQuery),
     responses(
         (status = 200, description = "Success", body = Envelope<Page<ApplicationSummary>>),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse)),
+        ApiErrors<400, 500, 503>,
     )
 )]
 pub(super) async fn list(
@@ -80,10 +77,7 @@ pub(super) async fn list(
     params(("id" = String, Path, min_length = 8, max_length = 64)),
     responses(
         (status = 200, description = "Success", body = Envelope<ApplicationView>),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse)),
+        ApiErrors<400, 404, 500, 503>,
     )
 )]
 pub(super) async fn get(
@@ -98,20 +92,12 @@ pub(super) async fn get(
 #[utoipa::path(
     post, path = "/api/v1/applications/apply", operation_id = "applyApplication",
     summary = "Apply an application manifest",
-    params(ApplyQuery,("X-Expected-Generation"=Option<u64>,Header,description="TOML only: required unless forced; zero requires absence. JSON uses `expected_generation` in the request body."),("X-Expected-Application-Id"=Option<String>,Header,description="TOML only: inspected application identity. JSON uses `expected_application_id` in the request body."),("Idempotency-Key"=Option<String>,Header)),
+    params(ApplyQuery,("X-Expected-Generation"=Option<u64>,Header,description="TOML only: required unless forced; zero requires absence. JSON uses `expected_generation` in the request body."),("X-Expected-Application-Id"=Option<String>,Header,description="TOML only: inspected application identity. JSON uses `expected_application_id` in the request body."),IdempotencyKey),
     request_body(content((ApplyApplicationRequest = "application/json"), (String = "application/toml"), (String = "text/toml"))),
     responses(
         (status = 200, description = "Configuration saved", body = Envelope<SavedApplication>),
         (status = 202, description = "Configuration saved and deployment accepted", body = Envelope<SavedApplication>),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 409, response = inline(ApiErrorResponse)),
-        (status = 413, response = inline(ApiErrorResponse)),
-        (status = 415, response = inline(ApiErrorResponse)),
-        (status = 422, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 502, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse))
-    )
+        ApiErrors<400, 409, 413, 415, 422, 500, 502, 503>)
 )]
 pub(super) async fn apply(
     State(state): State<ApiState>,
@@ -178,15 +164,10 @@ impl QueryParams for DeleteApplicationQuery {
 #[utoipa::path(
     delete, path = "/api/v1/applications/{id}", operation_id = "deleteApplication",
     summary = "Delete an application with its environments, retaining their volumes, and its previews",
-    params(("id" = String, Path, min_length = 8, max_length = 64), DeleteApplicationQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id" = String, Path, min_length = 8, max_length = 64), DeleteApplicationQuery,IdempotencyKey),
     responses(
-        (status = 409, response = inline(ApiErrorResponse)),
         (status = 202, description = "Deletion operations", body = Envelope<DeletedApplication>),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse))
-    )
+        ApiErrors<400, 404, 409, 500, 503>)
 )]
 pub(super) async fn delete(
     State(state): State<ApiState>,
@@ -226,15 +207,7 @@ pub(super) async fn delete(
     request_body(content((ApplyApplicationRequest = "application/json"), (String = "application/toml"), (String = "text/toml"))),
     responses(
         (status = 200, description = "Preview", body = Envelope<PlanView>),
-        (status = 409, response = inline(ApiErrorResponse)),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 413, response = inline(ApiErrorResponse)),
-        (status = 415, response = inline(ApiErrorResponse)),
-        (status = 422, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 502, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse))
-    )
+        ApiErrors<400, 409, 413, 415, 422, 500, 502, 503>)
 )]
 pub(super) async fn plan(
     State(state): State<ApiState>,
@@ -327,11 +300,10 @@ fn reply<T: serde::Serialize>(started: bool, data: T) -> Response {
 /// `expected_generation` goes in the JSON body; the new name must not already be
 /// in use, even with `force=true`.
 #[utoipa::path(post,path="/api/v1/applications/{id}/rename",operation_id="renameApplication",
-    params(("id"=String,Path),ForceQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),ForceQuery,IdempotencyKey),
     request_body=RenameApplicationRequest,
     responses((status=200,description="Application renamed without redeployment",body=Envelope<RenamedApplication>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn rename(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -376,8 +348,7 @@ impl QueryParams for ForceQuery {
     responses((status=200,description="Saved application configuration",body=String,content_type="application/toml",
         headers(("Content-Disposition"=String,description="Attachment filename for the saved TOML manifest"),
                 ("Cache-Control"=String,description="no-store"))),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 500, 503>))]
 pub(super) async fn manifest_download(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,

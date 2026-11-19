@@ -1,5 +1,6 @@
 //! Explicit deployment acceptance and durable history.
-use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrorResponse};
+use super::extract::IdempotencyKey;
+use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -97,10 +98,9 @@ impl DeployQuery {
 /// Repeating a request with the same `Idempotency-Key` returns the original
 /// response.
 #[utoipa::path(post,path="/api/v1/environments/{id}/deploy",operation_id="deployEnvironment",
-    params(("id"=String,Path),DeployQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),DeployQuery,IdempotencyKey),
     responses((status=202,description="Deployment accepted",body=Envelope<AcceptedOperation>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=422,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 422, 500, 503>))]
 pub(super) async fn deploy(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
@@ -131,7 +131,7 @@ pub(super) async fn deploy(
 #[utoipa::path(get,path="/api/v1/environments/{id}/deployments",operation_id="listDeployments",
     params(("id"=String,Path),DeploymentsQuery),
     responses((status=200,description="Deployment snapshots, newest first",body=Envelope<Page<DeploymentView>>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 500>))]
 pub(super) async fn list(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,
@@ -156,7 +156,7 @@ pub(super) async fn list(
 #[utoipa::path(get,path="/api/v1/applications/{id}/releases",operation_id="listReleases",
     params(("id"=String,Path),HistoryQuery),
     responses((status=200,description="Releases, newest first (twenty per page)",body=Envelope<Page<ReleaseView>>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 500>))]
 pub(super) async fn releases(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,
@@ -174,7 +174,7 @@ pub(super) async fn releases(
 #[utoipa::path(get,path="/api/v1/environments/{id}/deployments/{deployment}/attempts",operation_id="listDeploymentAttempts",
     params(("id"=String,Path),("deployment"=String,Path),HistoryQuery),
     responses((status=200,description="Retained attempt outcomes, newest first (100 per page)",body=Envelope<Page<Operation>>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 500>))]
 pub(super) async fn attempts(
     State(state): State<ApiState>,
     ApiPath((id, deployment)): ApiPath<(String, String)>,

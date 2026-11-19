@@ -3,10 +3,9 @@
 //! deployments, and secrets use the environment endpoints with its ID.
 use super::access::Audited;
 use super::applications::accept_mutation;
-use super::extract::{IDEMPOTENCY_KEY, content_type, optional_header};
+use super::extract::{IDEMPOTENCY_KEY, IdempotencyKey, content_type, optional_header};
 use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok,
-    openapi::ApiErrorResponse,
+    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok, openapi::ApiErrors,
 };
 use crate::api::{Mutation, MutationResponse, PreviewMutation, Restore};
 use crate::auth::Identity;
@@ -34,13 +33,11 @@ use piqueld_core::{ApplicationId, EnvironmentId, GitBranch, PreviewSlot};
 /// `preview_limit_reached`, whose `details` are a `PreviewLimitReached`
 /// listing the previews it counts. Needs no application revision.
 #[utoipa::path(post,path="/api/v1/applications/{id}/previews",operation_id="createPreview",
-    params(("id"=String,Path),("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),IdempotencyKey),
     request_body=CreatePreviewRequest,
     responses((status=202,description="Preview created and its first deployment accepted",body=Envelope<CreatedPreview>),
     (status=200,description="The preview of this branch and slot already exists",body=Envelope<CreatedPreview>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 500, 503>))]
 pub(super) async fn create(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -104,14 +101,10 @@ pub(super) struct GitBundle(std::marker::PhantomData<()>);
 /// 30 seconds, or an upload not received within 10 minutes, fails with 408
 /// `snapshot_timed_out`. Needs no application revision.
 #[utoipa::path(post,path="/api/v1/applications/{id}/previews/local",operation_id="deployLocalPreview",
-    params(("id"=String,Path),LocalPreviewQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),LocalPreviewQuery,IdempotencyKey),
     request_body(content=inline(GitBundle),content_type="application/octet-stream",description="Git bundle of the snapshot commit"),
     responses((status=202,description="Snapshot received and its deployment accepted",body=Envelope<CreatedPreview>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=408,response=inline(ApiErrorResponse)),(status=409,response=inline(ApiErrorResponse)),
-    (status=413,response=inline(ApiErrorResponse)),
-    (status=415,response=inline(ApiErrorResponse)),(status=422,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 408, 409, 413, 415, 422, 500, 503>))]
 pub(super) async fn deploy_local(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -159,8 +152,7 @@ pub(super) async fn deploy_local(
 #[utoipa::path(get,path="/api/v1/applications/{id}/previews",operation_id="listPreviews",
     params(("id"=String,Path)),
     responses((status=200,description="Success",body=Envelope<Vec<PreviewView>>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 500, 503>))]
 pub(super) async fn list(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,
@@ -172,8 +164,7 @@ pub(super) async fn list(
 #[utoipa::path(get,path="/api/v1/previews/{id}",operation_id="getPreview",
     params(("id"=String,Path,min_length=8,max_length=64)),
     responses((status=200,description="Success",body=Envelope<PreviewView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 500, 503>))]
 pub(super) async fn get(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,
@@ -183,11 +174,9 @@ pub(super) async fn get(
 
 /// Deploys the head of a preview's branch.
 #[utoipa::path(post,path="/api/v1/previews/{id}/deploy",operation_id="deployPreview",
-    params(("id"=String,Path),("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),IdempotencyKey),
     responses((status=202,description="Deployment accepted",body=Envelope<AcceptedOperation>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),
-    (status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn deploy(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -218,13 +207,10 @@ pub(super) async fn deploy(
 /// pulled again by digest (`image_unavailable`), and the secret versions it
 /// pinned still exist (`restore_secrets_unavailable`).
 #[utoipa::path(post,path="/api/v1/previews/{id}/restore",operation_id="restorePreviewDeployment",
-    params(("id"=String,Path),("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),IdempotencyKey),
     request_body=RestoreRequest,
     responses((status=202,description="Restore accepted",body=Envelope<AcceptedOperation>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=502,response=inline(ApiErrorResponse)),
-    (status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 500, 502, 503>))]
 pub(super) async fn restore(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -248,11 +234,9 @@ pub(super) async fn restore(
 /// Deletes a preview with its services, network, secrets, and every volume
 /// it ever created; the deletion verifies the volumes are gone.
 #[utoipa::path(delete,path="/api/v1/previews/{id}",operation_id="deletePreview",
-    params(("id"=String,Path,min_length=8,max_length=64),("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path,min_length=8,max_length=64),IdempotencyKey),
     responses((status=202,description="Deletion operation",body=Envelope<AcceptedOperation>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),
-    (status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn delete(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -283,10 +267,7 @@ pub(super) async fn delete(
     params(("id"=String,Path)),
     request_body=PrunePreviewsRequest,
     responses((status=200,description="Previews whose deletion was accepted",body=Envelope<Vec<DeletedPreview>>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=502,response=inline(ApiErrorResponse)),
-    (status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 500, 502, 503>))]
 pub(super) async fn prune(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,

@@ -2,10 +2,8 @@
 //! secrets of an environment live with their own handlers.
 use super::access::Audited;
 use super::applications::{ForceQuery, GenerationQuery, accept_mutation};
-use super::extract::{IDEMPOTENCY_KEY, optional_header};
-use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, accepted, ok, openapi::ApiErrorResponse,
-};
+use super::extract::{IDEMPOTENCY_KEY, IdempotencyKey, optional_header};
+use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, accepted, ok, openapi::ApiErrors};
 use crate::api::{Mutation, PromotionMutation, Restore, SourceChoice};
 use crate::auth::Identity;
 use axum::{
@@ -39,12 +37,10 @@ use piqueld_core::{
 /// (`promotion_source_invalid`). The inspected application
 /// `expected_generation` goes in the JSON body.
 #[utoipa::path(post,path="/api/v1/applications/{id}/environments",operation_id="createEnvironment",
-    params(("id"=String,Path),ForceQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),ForceQuery,IdempotencyKey),
     request_body=CreateEnvironmentRequest,
     responses((status=200,description="Environment created",body=Envelope<EnvironmentView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=422,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 422, 500, 503>))]
 pub(super) async fn create(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -98,10 +94,7 @@ pub(super) async fn create(
     params(("id" = String, Path, min_length = 8, max_length = 64)),
     responses(
         (status = 200, description = "Success", body = Envelope<EnvironmentView>),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse)),
+        ApiErrors<400, 404, 500, 503>,
     )
 )]
 pub(super) async fn get(
@@ -122,11 +115,7 @@ pub(super) async fn get(
     params(("id" = String, Path, min_length = 8, max_length = 64)),
     responses(
         (status = 200, description = "Success", body = Envelope<EnvironmentDetailView>),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 502, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse)),
+        ApiErrors<400, 404, 500, 502, 503>,
     )
 )]
 pub(super) async fn detail(
@@ -150,10 +139,7 @@ pub(super) async fn detail(
     params(("id" = String, Path, min_length = 8, max_length = 64)),
     responses(
         (status = 200, description = "Success", body = Envelope<EnvironmentStatusView>),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse)),
+        ApiErrors<400, 404, 500, 503>,
     )
 )]
 pub(super) async fn status(
@@ -171,12 +157,10 @@ pub(super) async fn status(
 /// `expected_generation` goes in the JSON body; the new name must not already
 /// be used by another environment of the application, even with `force=true`.
 #[utoipa::path(post,path="/api/v1/environments/{id}/rename",operation_id="renameEnvironment",
-    params(("id"=String,Path),ForceQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),ForceQuery,IdempotencyKey),
     request_body=EnvironmentRequest,
     responses((status=200,description="Environment renamed without redeployment",body=Envelope<EnvironmentView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 500, 503>))]
 pub(super) async fn rename(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -211,12 +195,10 @@ pub(super) async fn rename(
 /// which have no branch, with `environment_promoted` (409). The inspected
 /// application `expected_generation` goes in the JSON body.
 #[utoipa::path(put,path="/api/v1/environments/{id}/branch",operation_id="setEnvironmentBranch",
-    params(("id"=String,Path),ForceQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),ForceQuery,IdempotencyKey),
     request_body=EnvironmentBranchRequest,
     responses((status=200,description="Environment follows the branch from its next deployment",body=Envelope<EnvironmentView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=422,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 422, 500, 503>))]
 pub(super) async fn branch(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -249,12 +231,10 @@ pub(super) async fn branch(
 /// deploys changes. Opting in while the application syncs also needs
 /// `apps:deploy`, since pushes then deploy the environment.
 #[utoipa::path(put,path="/api/v1/environments/{id}/sync",operation_id="setEnvironmentSync",
-    params(("id"=String,Path),("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),IdempotencyKey),
     request_body=EnvironmentSyncRequest,
     responses((status=200,description="Environment sync changed",body=Envelope<EnvironmentView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 500, 503>))]
 pub(super) async fn sync(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -288,13 +268,10 @@ pub(super) async fn sync(
 /// unmounts the directory within seconds, which rolls the service. Previews
 /// are never granted it and are `NotFound`. Needs no application revision.
 #[utoipa::path(put,path="/api/v1/environments/{id}/telemetry",operation_id="setEnvironmentTelemetry",
-    params(("id"=String,Path),("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),IdempotencyKey),
     request_body=EnvironmentTelemetryRequest,
     responses((status=200,description="Environment telemetry changed",body=Envelope<EnvironmentView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=403,response=inline(ApiErrorResponse)),
-    (status=404,response=inline(ApiErrorResponse)),(status=409,response=inline(ApiErrorResponse)),
-    (status=415,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),
-    (status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 403, 404, 409, 415, 500, 503>))]
 pub(super) async fn telemetry(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -329,12 +306,10 @@ pub(super) async fn telemetry(
 /// Nothing is deployed. The inspected application `expected_generation`
 /// goes in the JSON body.
 #[utoipa::path(put,path="/api/v1/environments/{id}/source",operation_id="setEnvironmentSource",
-    params(("id"=String,Path),ForceQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),ForceQuery,IdempotencyKey),
     request_body=EnvironmentSourceRequest,
     responses((status=200,description="Environment deploys from its new source from its next deployment or promotion",body=Envelope<EnvironmentView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=422,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 422, 500, 503>))]
 pub(super) async fn source(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -415,13 +390,10 @@ fn selection(request: &PromoteRequest) -> Result<PromotionSelection, ApiError> {
 /// environment (`secrets_unavailable`, listing all of them). The inspected
 /// application `expected_generation` goes in the JSON body.
 #[utoipa::path(post,path="/api/v1/environments/{id}/promote",operation_id="promoteEnvironment",
-    params(("id"=String,Path),ForceQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),ForceQuery,IdempotencyKey),
     request_body=PromoteRequest,
     responses((status=202,description="Promotion accepted with its release pinned",body=Envelope<AcceptedPromotion>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=422,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),
-    (status=502,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 422, 500, 502, 503>))]
 pub(super) async fn promote(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -459,10 +431,7 @@ pub(super) async fn promote(
     params(("id"=String,Path)),
     request_body=PromoteRequest,
     responses((status=200,description="Plan",body=Envelope<PlanView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=422,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),
-    (status=502,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 422, 500, 502, 503>))]
 pub(super) async fn plan_promotion(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,
@@ -477,15 +446,10 @@ pub(super) async fn plan_promotion(
 #[utoipa::path(
     delete, path = "/api/v1/environments/{id}", operation_id = "deleteEnvironment",
     summary = "Delete an environment's services and networks, retaining volumes",
-    params(("id" = String, Path, min_length = 8, max_length = 64), GenerationQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id" = String, Path, min_length = 8, max_length = 64), GenerationQuery,IdempotencyKey),
     responses(
-        (status = 409, response = inline(ApiErrorResponse)),
         (status = 202, description = "Deletion operation", body = Envelope<AcceptedOperation>),
-        (status = 400, response = inline(ApiErrorResponse)),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse))
-    )
+        ApiErrors<400, 404, 409, 500, 503>)
 )]
 pub(super) async fn delete(
     State(state): State<ApiState>,
@@ -516,10 +480,9 @@ pub(super) async fn delete(
 /// optional. Repeating a request with the same `Idempotency-Key` returns the
 /// original response.
 #[utoipa::path(post,path="/api/v1/environments/{id}/reconcile",operation_id="reconcileEnvironment",
-    params(("id"=String,Path),GenerationQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),GenerationQuery,IdempotencyKey),
     responses((status=202,description="Reconciliation accepted",body=Envelope<AcceptedOperation>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn reconcile(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -552,10 +515,9 @@ pub(super) async fn reconcile(
 /// is while it is in progress, which then rolls out with no replicas. 404
 /// when it was never deployed, 409 while it is deleted. `expected_generation` is optional.
 #[utoipa::path(post,path="/api/v1/environments/{id}/stop",operation_id="stopEnvironment",
-    params(("id"=String,Path),GenerationQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),GenerationQuery,IdempotencyKey),
     responses((status=202,description="Stop accepted",body=Envelope<AcceptedOperation>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn stop(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
@@ -585,10 +547,9 @@ pub(super) async fn stop(
 /// is while it is in progress; 404 when it was never deployed.
 /// `expected_generation` is optional.
 #[utoipa::path(post,path="/api/v1/environments/{id}/start",operation_id="startEnvironment",
-    params(("id"=String,Path),GenerationQuery,("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),GenerationQuery,IdempotencyKey),
     responses((status=202,description="Start accepted",body=Envelope<AcceptedOperation>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn start(
     state: State<ApiState>,
     identity: Extension<Identity>,
@@ -613,13 +574,10 @@ pub(super) async fn start(
 /// revision. Previews restore through `restorePreviewDeployment`. Repeating a
 /// request with the same `Idempotency-Key` returns the original response.
 #[utoipa::path(post,path="/api/v1/environments/{id}/restore",operation_id="restoreDeployment",
-    params(("id"=String,Path),("Idempotency-Key"=Option<String>,Header)),
+    params(("id"=String,Path),IdempotencyKey),
     request_body=RestoreRequest,
     responses((status=202,description="Restore accepted",body=Envelope<AcceptedOperation>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=502,response=inline(ApiErrorResponse)),
-    (status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 415, 500, 502, 503>))]
 pub(super) async fn restore(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,

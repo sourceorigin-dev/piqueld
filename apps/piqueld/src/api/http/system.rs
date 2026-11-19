@@ -8,7 +8,7 @@ use axum::{
 use piqueld_core::access::{AppPermission, GlobalPermission};
 use piqueld_core::api::{BuilderCheck, DnsStatus, Envelope, SystemStatus};
 
-use super::{ApiError, ApiState, ok};
+use super::{ApiError, ApiState, ok, openapi::ApiErrors};
 
 /// Gets daemon status.
 ///
@@ -65,7 +65,7 @@ fn redact_dns(identity: &Identity, dns: &mut DnsStatus) {
     summary = "Check the build machine now",
     responses(
         (status = 200, description = "Success", body = Envelope<BuilderCheck>),
-        (status = 404, response = inline(super::openapi::ApiErrorResponse)),
+        ApiErrors<404>,
     )
 )]
 pub(super) async fn check_builder(State(state): State<ApiState>) -> Result<Response, ApiError> {
@@ -120,7 +120,7 @@ pub(super) async fn health() -> impl IntoResponse {
 /// Returns 503 when the daemon has no effective configuration to report.
 #[utoipa::path(get,path="/api/v1/system/configuration",operation_id="systemConfiguration",
     responses((status=200,description="Effective read-only host settings",body=Envelope<piqueld_core::api::HostConfiguration>),
-    (status=503,response=inline(super::openapi::ApiErrorResponse))))]
+    ApiErrors<503>))]
 pub(super) async fn configuration(
     State(state): State<ApiState>,
 ) -> Result<impl IntoResponse, super::ApiError> {
@@ -163,7 +163,7 @@ pub(super) async fn readiness(
 /// `server_busy` while two runs are already in progress.
 #[utoipa::path(get,path="/api/v1/system/checks",operation_id="systemChecks",
     responses((status=200,description="Installation checks",body=Envelope<piqueld_core::api::SystemChecks>),
-    (status=503,response=inline(super::openapi::ApiErrorResponse))))]
+    ApiErrors<503>))]
 pub(super) async fn checks(
     State(state): State<ApiState>,
 ) -> Result<impl IntoResponse, super::ApiError> {
