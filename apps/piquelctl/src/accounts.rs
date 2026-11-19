@@ -182,7 +182,8 @@ pub(crate) enum InvitationCommand {
     List,
     /// Revoke a pending invitation or enrollment link, so it no longer works.
     ///
-    /// An invitation needs `accounts:manage` and every grant it hands out. An
+    /// A pending link hasn't issued anything yet, so this revokes only the
+    /// link, and has no `--no-cascade`. An invitation needs `accounts:manage` and every grant it hands out. An
     /// enrollment link needs what `account enroll` does.
     Revoke {
         /// Invitation ID, from `account invitation list`.

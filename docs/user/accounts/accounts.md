@@ -97,6 +97,11 @@ expire. Enrollment links show **Add a passkey to** and the account's name.
 Select **Revoke** to cancel a link before it's used. Deleting the account that
 issued a link also revokes it.
 
+A pending link hasn't issued anything yet, so revoking it cancels only the
+link, and there's no **Also revoke what it issued** option. Once used, the
+link no longer appears here: to take back the passkey and session it gave,
+revoke [the credential that created it](#what-revoking-also-revokes).
+
 With `piquelctl`, list the links to find the one to revoke, then revoke it by
 its ID:
 
