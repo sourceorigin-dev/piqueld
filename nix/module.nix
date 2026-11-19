@@ -124,6 +124,11 @@ in
       default = "/run/piqueld";
       description = "Runtime directory below /run containing piqueld.sock. Group members can connect; account authentication is still required.";
     };
+    swarmInterface = lib.mkOption {
+      type = lib.types.str;
+      default = "tailscale0";
+      description = "Network interface worker nodes reach this host's Swarm over, the one docker.swarm_address belongs to. With nodes, the firewall opens the Swarm's ports on it only.";
+    };
     checkConfig = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -191,7 +196,26 @@ in
           docker.auto_initialize_swarm = lib.mkOption {
             type = lib.types.bool;
             default = true;
-            description = "Initialize an inactive Docker Engine as a single-node Swarm.";
+            description = "Initialize an inactive Docker Engine as a Swarm manager, on docker.swarm_address.";
+          };
+          docker.swarm_address = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            example = "100.64.0.1";
+            description = "IP address this host's Swarm listens on and advertises to its worker nodes, such as the host's tailnet address. Required by nodes. Null initializes the Swarm on 127.0.0.1, which no other machine can join. Swarm can't move an existing manager to another address: run `piqueld swarm recreate` with the daemon stopped to re-create the Swarm on this one.";
+          };
+          nodes = lib.mkOption {
+            type = lib.types.attrsOf (
+              lib.types.submodule {
+                options.docker = lib.mkOption {
+                  type = lib.types.strMatching "tcp://.+:[0-9]+";
+                  example = "tcp://nixosbtw.example.ts.net:2375";
+                  description = "The worker's Docker Engine, as tcp://host:port. The connection is neither authenticated nor encrypted, and controls the worker's engine, so only this host should be able to reach that port, over an encrypted network such as a tailnet.";
+                };
+              }
+            );
+            default = { };
+            description = "Worker nodes: other machines joined to this host's Swarm, by name, such as nodes.nixosbtw. Each needs docker.swarm_address; services.piqueld-worker sets a worker up.";
           };
           build.builder = lib.mkOption {
             type = lib.types.nullOr (lib.types.strMatching "tcp://.+:[0-9]+");
@@ -491,6 +515,19 @@ in
       home = cfg.dataDir;
     };
     virtualisation.docker.enable = true;
+    # The Swarm's manager API, node gossip and overlay traffic, for workers.
+    networking.firewall.interfaces = lib.mkIf (cfg.settings.nodes != { }) {
+      ${cfg.swarmInterface} = {
+        allowedTCPPorts = [
+          2377
+          7946
+        ];
+        allowedUDPPorts = [
+          7946
+          4789
+        ];
+      };
+    };
     # apps/piqueld/piqueld.service is this unit for hosts without NixOS;
     # keep the two in step.
     systemd.services.piqueld = {

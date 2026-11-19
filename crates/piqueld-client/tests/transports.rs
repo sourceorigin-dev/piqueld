@@ -30,6 +30,7 @@ async fn status() -> Json<Envelope<SystemStatus>> {
             snapshots: None,
             telemetry: piqueld_core::api::TelemetryStatus::default(),
             builder: None,
+            swarm: None,
         },
     })
 }

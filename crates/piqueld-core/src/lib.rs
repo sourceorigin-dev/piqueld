@@ -21,6 +21,7 @@ pub mod json_schema;
 pub mod links;
 pub mod manifest;
 pub mod names;
+pub mod nodes;
 pub mod observability;
 pub mod operation;
 pub mod planner;

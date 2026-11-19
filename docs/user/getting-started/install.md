@@ -12,7 +12,7 @@ You need:
 - **Docker Engine on that host, dedicated to piqueld.** piqueld runs your
   applications as Docker Swarm services and manages the engine's services,
   networks and volumes. If the engine isn't part of a Swarm yet, piqueld makes
-  it a single-node Swarm when it starts. Install it with
+  it the manager of a new Swarm when it starts. Install it with
   [Docker's guide](https://docs.docker.com/engine/install/); on NixOS, the
   module enables it.
 - **`git` and `ssh` on the host**, which piqueld fetches your repositories

@@ -362,7 +362,7 @@ async fn readiness_distinguishes_engine_reachability_and_does_not_gate_saves() {
         piqueld_core::api::DependencyStatus::Ready
     ));
     assert!(
-        matches!(readiness.swarm, piqueld_core::api::DependencyStatus::Failed { message } if message == "A compatible single-node Swarm manager is required")
+        matches!(readiness.swarm, piqueld_core::api::DependencyStatus::Failed { message } if message == "Docker Engine must be the only manager of its Swarm, whose other nodes are the workers [nodes] names")
     );
     let response = api.router().send(request("/api/v1/system/readiness")).await;
     assert_eq!(response.status, StatusCode::SERVICE_UNAVAILABLE);

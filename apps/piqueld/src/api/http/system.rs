@@ -42,6 +42,7 @@ fn redact_host(identity: &Identity, status: &mut SystemStatus) {
     if !identity.grants.has_global(GlobalPermission::SystemRead) {
         status.dns = DnsStatus::default();
         status.builder = None;
+        status.swarm = None;
     }
 }
 

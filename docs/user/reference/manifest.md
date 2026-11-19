@@ -381,7 +381,7 @@ part of that source's identity, so changing any of them triggers a rebuild. All
 service sources are prepared before any application rollout. A failed checkout or
 build preserves the existing running deployment. Normal reconciliation
 reuses prepared images; explicit deploy resolves and builds sources again.
-Local images are supported only on the existing single-node Swarm topology.
+Services run on the host, where the images piqueld builds are.
 
 A repository-backed application can build from its own manifest repository:
 

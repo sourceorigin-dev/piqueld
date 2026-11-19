@@ -6015,7 +6015,7 @@
               },
               "swarm": {
                 "$ref": "#/components/schemas/DependencyStatus",
-                "description": "Docker is a compatible single-node Swarm manager."
+                "description": "Docker is the only manager of its Swarm, whose other nodes are the\nconfigured workers."
               }
             },
             "required": [
@@ -6335,6 +6335,25 @@
               "status": {
                 "description": "Machine-readable service status.",
                 "type": "string"
+              },
+              "swarm": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/SwarmStatus"
+                      }
+                    ],
+                    "description": "This host's Swarm and its worker nodes, when the configuration names\na Swarm address or worker nodes and the caller has `system:read`."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
               },
               "tailscale": {
                 "$ref": "#/components/schemas/TailnetStatus",
@@ -9163,6 +9182,54 @@
         ],
         "type": "object"
       },
+      "NodeState": {
+        "description": "What Swarm reports about a worker node.",
+        "enum": [
+          "ready",
+          "down",
+          "not_joined",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "NodeStatus": {
+        "description": "A worker node the configuration names: what Swarm reports about it, and\nwhether its Docker Engine answers.",
+        "properties": {
+          "docker": {
+            "description": "Its Docker Engine, as `tcp://host:port`.",
+            "type": "string"
+          },
+          "engine_reachable": {
+            "description": "Whether its Docker Engine answered just now; absent while Swarm\nreports the node down, when piqueld doesn't try.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "message": {
+            "description": "Why its Docker Engine didn't answer.",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "Its name under `[nodes]`.",
+            "type": "string"
+          },
+          "node_id": {
+            "description": "Its Swarm node ID, once it joined and piqueld matched it.",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/NodeState",
+            "description": "What Swarm reports about it."
+          }
+        },
+        "required": [
+          "name",
+          "docker",
+          "state"
+        ],
+        "type": "object"
+      },
       "NormalizedApplication": {
         "description": "Canonical desired application plus persistence-assigned identity.\n\nConfiguration is immutable. Export input with [`Self::to_manifest`] and\nvalidate edits before constructing a replacement.\n\n```compile_fail\nfn bypass_validation(app: &mut piqueld_core::NormalizedApplication) {\n    app.spec.services.clear();\n}\n```",
         "properties": {
@@ -10408,7 +10475,7 @@
           },
           "swarm": {
             "$ref": "#/components/schemas/DependencyStatus",
-            "description": "Docker is a compatible single-node Swarm manager."
+            "description": "Docker is the only manager of its Swarm, whose other nodes are the\nconfigured workers."
           }
         },
         "required": [
@@ -12464,6 +12531,32 @@
         ],
         "type": "object"
       },
+      "SwarmStatus": {
+        "description": "This host's Swarm, as its worker nodes see it.",
+        "properties": {
+          "address": {
+            "description": "The address the Swarm's manager, this host, advertises to workers;\nabsent when Docker couldn't be read.",
+            "nullable": true,
+            "type": "string"
+          },
+          "configured_address": {
+            "description": "`docker.swarm_address`. When it differs from `address`, workers can't\nstay joined until `piqueld swarm recreate` re-creates the Swarm on\nit.",
+            "nullable": true,
+            "type": "string"
+          },
+          "workers": {
+            "description": "The worker nodes `[nodes]` names, in name order.",
+            "items": {
+              "$ref": "#/components/schemas/NodeStatus"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "workers"
+        ],
+        "type": "object"
+      },
       "SyncCheck": {
         "description": "The last time sync listed an application's branches, and why it failed.",
         "properties": {
@@ -12662,6 +12755,25 @@
           "status": {
             "description": "Machine-readable service status.",
             "type": "string"
+          },
+          "swarm": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SwarmStatus"
+                  }
+                ],
+                "description": "This host's Swarm and its worker nodes, when the configuration names\na Swarm address or worker nodes and the caller has `system:read`."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
           },
           "tailscale": {
             "$ref": "#/components/schemas/TailnetStatus",

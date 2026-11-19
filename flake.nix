@@ -32,6 +32,7 @@
           imports = [ ./nix/module.nix ];
           services.piqueld.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.combined;
         };
+        piqueld-worker = ./nix/worker-module.nix;
         piquelctl = { lib, pkgs, ... }: {
           imports = [ ./nix/cli-module.nix ];
           programs.piquelctl.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.cli;

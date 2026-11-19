@@ -101,8 +101,8 @@ const IMAGE_UNAVAILABLE: &str = "The image was removed and could not be pulled a
 const ENVIRONMENT_PROMOTED: &str = "The environment was made promoted after this deployment was requested, and promoted environments never build. Promote a release into it instead.";
 /// Guidance for a telemetry collector that keeps failing.
 const TELEMETRY_EXPORT: &str = "Check that the collector at telemetry.endpoint is reachable and accepts the configured headers. Records are dropped until it does.";
-/// Guidance for a Docker Engine that is not the manager of a single-node Swarm.
-const SWARM: &str = "Make Docker Engine the active manager of a single-node Swarm. Reconciliation retries once it is.";
+/// Guidance for a Docker Engine that is not the manager of its Swarm.
+const SWARM: &str = "Make Docker Engine the active manager of its Swarm, and every other node a worker the daemon's [nodes] names, whose Docker Engine answers, or remove that node with docker node rm; the daemon's log names it. Reconciliation retries once it is.";
 /// Guidance for a build machine the host could not reach.
 const BUILDER_UNAVAILABLE: &str = "Start the build machine and check that this host can reach its BuildKit daemon, then retry the deployment.";
 /// Guidance for transient failures that reconciliation retries on its own.

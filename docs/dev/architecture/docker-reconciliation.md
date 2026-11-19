@@ -1,6 +1,6 @@
 # Docker reconciliation
 
-The daemon controls one local Docker Engine running a single-node Swarm. It
+The daemon controls one local Docker Engine, the only manager of its Swarm. It
 manages private overlay networks, named volumes, Swarm secrets and configs, and
 replicated services and jobs, verifies ownership before mutations, and retains
 environments' volumes on deletion (deleting a preview removes its own). Service
@@ -12,12 +12,26 @@ can set the order and the monitor window explicitly; observed services whose
 order or monitor differs from the effective setting are updated with `rollout`
 drift. Tasks are pinned
 to the local manager's immutable node ID so local images and volumes cannot move
-to a subsequently joined node. Preparation, job starts, and resource creation or
-updates recheck the supported single-node topology; an unsupported topology blocks
-that work and is retried with backoff after the operator restores it. Observation
-and removals only need the local manager, so status, health, and deletion keep
-working if another node joins. Existing unpinned services acquire the constraint
-during their next reconciliation.
+to a worker node. Preparation, job starts, and resource creation or
+updates recheck the topology (`validate_topology` in
+`crates/piqueld-docker/src/nodes.rs`): the local engine is the only manager,
+and every other node is a worker labelled `io.piqueld.node=<name>` with a name
+`[nodes]` configures. A node that joined without the label is matched first:
+the daemon asks each configured worker's engine, over TCP, for its Swarm node
+ID, labels the node it matches, and removes a down node that carried the same
+name, left behind when the worker joined again. Workers are only contacted
+while an unlabelled node exists, so an offline worker doesn't slow down
+changes. An unsupported topology blocks that work and is retried with backoff
+after the operator restores it. Observation and removals only need the local
+manager, so status, health, and deletion keep working whatever joins. Existing
+unpinned services acquire the constraint during their next reconciliation.
+
+The Swarm is initialized on `docker.swarm_address`, or loopback. Swarm keeps a
+manager's raft address for good: `swarm init --force-new-cluster` with a new
+`--advertise-addr` changes the node's address but not the raft member's, so a
+worker reconnecting after a restart still dials the old one. `piqueld swarm
+recreate` therefore leaves the Swarm and initializes a new one, and the next
+start redeploys every environment into it.
 
 The deployable unit is an environment of an application. Every environment
 deploys its application's saved manifest into its own network, services, and

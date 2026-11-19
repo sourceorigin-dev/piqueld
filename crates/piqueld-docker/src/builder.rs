@@ -10,7 +10,8 @@
 //! build.example.ts.net:5000/piqueld@sha256:<64 hex>
 //! ```
 use anyhow::Context;
-use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild, WhenUnavailable};
+use piqueld_core::build_machine::{BuildRepository, RemoteBuild, WhenUnavailable};
+use piqueld_core::nodes::TcpEndpoint;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
@@ -35,7 +36,7 @@ pub struct RemoteBuilder {
     /// Buildx's configuration directory, `<data_dir>/buildx`.
     config: PathBuf,
     /// Where its `BuildKit` daemon listens.
-    endpoint: BuilderEndpoint,
+    endpoint: TcpEndpoint,
     /// Where the build machine pushes images.
     pub(super) repository: BuildRepository,
     /// What a build does while the build machine can't be reached.
@@ -187,7 +188,7 @@ mod tests {
     fn builder(daemon: std::net::SocketAddr) -> RemoteBuilder {
         RemoteBuilder {
             config: PathBuf::from("/var/lib/piqueld/buildx"),
-            endpoint: BuilderEndpoint::try_from(format!("tcp://{daemon}")).unwrap(),
+            endpoint: TcpEndpoint::try_from(format!("tcp://{daemon}")).unwrap(),
             repository: BuildRepository::try_from("build.example.ts.net:5000/piqueld".to_owned())
                 .unwrap(),
             unavailable: WhenUnavailable::Fail,

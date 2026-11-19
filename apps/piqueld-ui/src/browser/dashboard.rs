@@ -18,8 +18,8 @@ use piqueld_client::{
     access::{GlobalPermission, Permission},
     observability::Bytes,
     system::{
-        CertificateStatus, DependencyStatus, DnsProviderStatus, ImageStatus, PublicIngressStatus,
-        ReadinessStatus, TelemetryStatus,
+        CertificateStatus, DependencyStatus, DnsProviderStatus, ImageStatus, NodeState, NodeStatus,
+        PublicIngressStatus, ReadinessStatus, SwarmStatus, TelemetryStatus,
     },
 };
 
@@ -340,6 +340,9 @@ pub(super) fn ReadinessPanel() -> impl IntoView {
                             })
                     }} {move || signals.readiness.get().map(|status| readiness_rows(&status))}
                     {move || {
+                        signals.system.get().and_then(|system| system.swarm).map(|swarm| swarm_rows(&swarm))
+                    }}
+                    {move || {
                         signals
                             .system
                             .get()
@@ -460,6 +463,83 @@ fn readiness_rows(status: &ReadinessStatus) -> AnyView {
         {private_row}
     }
     .into_any()
+}
+
+/// Rows for the Swarm: the address workers join it at, or how to move it
+/// there, then one row per worker node.
+fn swarm_rows(swarm: &SwarmStatus) -> AnyView {
+    let configured = swarm.configured_address.as_deref().unwrap_or("none");
+    let address = match (&swarm.address, swarm.needs_recreate()) {
+        (Some(address), true) => status_row(
+            "Swarm",
+            Tone::Bad,
+            "Re-create",
+            format!(
+                "It advertises {address}, where workers can't stay joined. Stop piqueld and run piqueld swarm recreate to move it to {configured}."
+            ),
+            None,
+        ),
+        (Some(address), false) => status_row(
+            "Swarm",
+            Tone::Ok,
+            "Ready",
+            format!("Workers join it at {address}."),
+            None,
+        ),
+        (None, _) => status_row(
+            "Swarm",
+            Tone::Neutral,
+            "Unknown",
+            "Docker didn't say which address the Swarm advertises.",
+            None,
+        ),
+    };
+    view! {
+        {address}
+        {swarm.workers.iter().map(worker_row).collect_view()}
+    }
+    .into_any()
+}
+
+/// Row for one worker node: what Swarm reports, and whether its Docker
+/// Engine answers. A worker down while its machine is off is expected.
+fn worker_row(worker: &NodeStatus) -> AnyView {
+    let name = format!("Worker {}", worker.name);
+    let engine = &worker.docker;
+    let unreachable = worker.message.as_deref().unwrap_or("no answer");
+    let (tone, label, summary) = match (&worker.state, worker.engine_reachable) {
+        (NodeState::Ready, Some(false)) => (
+            Tone::Bad,
+            "Engine unreachable",
+            format!("Swarm hears from it, but its Docker Engine at {engine} doesn't answer: {unreachable}."),
+        ),
+        (NodeState::Ready, _) => (
+            Tone::Ok,
+            "Ready",
+            format!("Its Docker Engine answers at {engine}."),
+        ),
+        (NodeState::Down, _) => (
+            Tone::Neutral,
+            "Down",
+            "Swarm doesn't hear from it, such as while the machine is off. What runs on the host carries on.".to_owned(),
+        ),
+        (NodeState::NotJoined, Some(false)) => (
+            Tone::Bad,
+            "Not joined",
+            format!("piqueld can't match it to a Swarm node: its Docker Engine at {engine} doesn't answer: {unreachable}."),
+        ),
+        (NodeState::NotJoined, _) => (
+            Tone::Pending,
+            "Not joined",
+            "No node of the Swarm is this worker yet. Join it with docker swarm join, and piqueld matches it before its next change.".to_owned(),
+        ),
+        (NodeState::Unknown, _) => (
+            Tone::Neutral,
+            "Unknown",
+            "The Swarm couldn't be read.".to_owned(),
+        ),
+    };
+    status_row(name, tone, label, summary, None)
 }
 
 /// Row for one DNS provider: its kind, discovered zones, health and whether

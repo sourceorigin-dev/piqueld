@@ -6,8 +6,8 @@ use piqueld_client::{
     DnsStatus, ImageStatus, PreviewUsage, SystemStatus, TelemetryStatus,
     observability::{Bytes, DaemonStats, Timestamp, Uptime},
     system::{
-        BuilderCheck, BuilderStatus, HostConfiguration, IngressStatus, PublicIngressStatus,
-        SystemCheck,
+        BuilderCheck, BuilderStatus, HostConfiguration, IngressStatus, NodeState, NodeStatus,
+        PublicIngressStatus, SwarmStatus, SystemCheck,
     },
 };
 use serde::Serialize;
@@ -29,6 +29,9 @@ report!(StatusReport<'_> as SystemStatus = status, self, out, {
     out.label("Transport", self.transport)?;
     if let Some(builder) = &s.builder {
         builder.render_human(out)?;
+    }
+    if let Some(swarm) = &s.swarm {
+        swarm.render_human(out)?;
     }
     s.images.render_human(out)?;
     let tailnet = &s.tailscale;
@@ -152,6 +155,54 @@ report!(BuilderStatus, self, out, {
             self.repository,
             checked(self.last_check.as_ref())
         ),
+    )
+});
+
+// The address workers reach the Swarm at, and each worker node. A Swarm
+// created on another address than `docker.swarm_address` says how to fix it.
+report!(SwarmStatus, self, out, {
+    out.label(
+        "Swarm address",
+        self.address
+            .as_deref()
+            .unwrap_or("unknown: Docker couldn't be read"),
+    )?;
+    if self.needs_recreate() {
+        out.label(
+            "Swarm problem",
+            format_args!(
+                "workers can't stay joined until the Swarm moves to docker.swarm_address {}: stop piqueld and run `piqueld swarm recreate`",
+                self.configured_address.as_deref().unwrap_or_default()
+            ),
+        )?;
+    }
+    if self.workers.is_empty() {
+        return out.label("Worker nodes", "none");
+    }
+    self.workers
+        .iter()
+        .try_for_each(|worker| worker.render_human(out))
+});
+
+// One worker node: its Swarm state, then whether its Docker Engine answered.
+report!(NodeStatus, self, out, {
+    let state = match self.state {
+        NodeState::Ready => "ready",
+        NodeState::Down => "down",
+        NodeState::NotJoined => "not joined",
+        NodeState::Unknown => "unknown",
+    };
+    let engine = match (self.engine_reachable, &self.message) {
+        (None, _) => String::new(),
+        (Some(true), _) => ", engine reachable".to_owned(),
+        (Some(false), message) => format!(
+            ", engine unreachable: {}",
+            message.as_deref().unwrap_or("no reason given")
+        ),
+    };
+    out.label(
+        "Worker node",
+        format_args!("{} at {} ({state}{engine})", self.name, self.docker),
     )
 });
 

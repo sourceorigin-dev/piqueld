@@ -41,6 +41,15 @@ hostname = "piqueld-dev"
 [docker]
 socket = "/var/run/docker.sock"
 auto_initialize_swarm = true
+# The address the Swarm listens on and advertises to worker nodes, such as
+# this host's tailnet address; required by [nodes]. Without it, the Swarm is
+# created on 127.0.0.1, which no other machine can join.
+# swarm_address = "100.64.0.1"
+
+# Worker nodes: other machines joined to this host's Swarm, by name, each
+# with its Docker Engine. Only this host should be able to reach that port.
+# [nodes.nixosbtw]
+# docker = "tcp://100.64.0.2:2375"
 
 [build]
 # Build images on another machine instead of this host: its BuildKit daemon,

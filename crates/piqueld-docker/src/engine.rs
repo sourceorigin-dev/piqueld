@@ -1,13 +1,14 @@
-use super::{
-    Arc, BollardDocker, BollardResult, Docker, DockerError, ListNodesOptions, Path, ResourceKind,
-    ServiceSpec,
-};
+use super::{Arc, BollardDocker, Docker, DockerError, Path, ResourceKind, ServiceSpec};
 use futures_util::TryStreamExt as _;
 use http_body_util::{BodyExt, Full};
 use hyper::{Method, Request, StatusCode, body::Bytes, header};
 use hyper_util::rt::TokioIo;
 use std::time::Duration;
-use tokio::net::UnixStream;
+use tokio::net::{TcpStream, UnixStream};
+
+/// A connection to an engine, over its Unix socket or TCP.
+trait EngineStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> EngineStream for T {}
 
 // A valid API request may be 2 MiB; Docker adds service metadata around that
 // specification when it is inspected.
@@ -88,11 +89,25 @@ impl BollardDocker {
         socket
             .to_str()
             .ok_or(DockerError::Unavailable("connect to Docker Engine"))?;
-        Ok(Self {
+        Ok(Self::at(super::EngineAddress::Socket(Arc::from(socket))))
+    }
+
+    /// Opens a connection handle to a worker node's engine at `endpoint`.
+    /// Nothing connects until the first request.
+    #[must_use]
+    pub fn connect_tcp(endpoint: piqueld_core::nodes::TcpEndpoint) -> Self {
+        Self::at(super::EngineAddress::Tcp(endpoint))
+    }
+
+    /// A handle to the engine at `address`, without a build machine or
+    /// worker nodes.
+    fn at(address: super::EngineAddress) -> Self {
+        Self {
             docker: Arc::default(),
-            socket: Arc::from(socket),
+            address,
             builder: None,
-        })
+            nodes: Arc::default(),
+        }
     }
 
     /// Builds images on `builder`'s build machine instead of the engine.
@@ -118,15 +133,20 @@ impl BollardDocker {
         if let Some(docker) = self.docker.get() {
             return Ok(docker);
         }
-        let socket = self
-            .socket
-            .to_str()
-            .ok_or(DockerError::Unavailable("connect to Docker Engine"))?;
-        let docker = Docker::connect_with_unix(
-            socket,
-            BOLLARD_HEADER_TIMEOUT_SECS,
-            bollard::API_DEFAULT_VERSION,
-        )
+        let docker = match &self.address {
+            super::EngineAddress::Socket(socket) => Docker::connect_with_unix(
+                socket
+                    .to_str()
+                    .ok_or(DockerError::Unavailable("connect to Docker Engine"))?,
+                BOLLARD_HEADER_TIMEOUT_SECS,
+                bollard::API_DEFAULT_VERSION,
+            ),
+            super::EngineAddress::Tcp(endpoint) => Docker::connect_with_http(
+                &endpoint.to_string(),
+                BOLLARD_HEADER_TIMEOUT_SECS,
+                bollard::API_DEFAULT_VERSION,
+            ),
+        }
         .map_err(|error| DockerError::unavailable("connect to Docker Engine", error))?;
         Ok(self.docker.get_or_init(|| docker))
     }
@@ -203,7 +223,8 @@ impl BollardDocker {
     /// Performs one raw Engine request with a JSON `body` through Docker's
     /// Unix socket, for endpoints Bollard lacks or misrepresents.
     ///
-    /// 1. Connect and perform an HTTP/1 handshake on the Unix socket.
+    /// 1. Connect and perform an HTTP/1 handshake on the engine's Unix
+    ///    socket or TCP address.
     /// 2. Send one `Connection: close` request and pass the response to
     ///    `read`.
     ///
@@ -218,10 +239,20 @@ impl BollardDocker {
     ) -> Result<T, WireError> {
         let deadline = tokio::time::Instant::now() + SERVICE_REQUEST_TIMEOUT;
         let connect = "connect to Docker Engine";
-        let stream = tokio::time::timeout_at(deadline, UnixStream::connect(self.socket.as_ref()))
-            .await
-            .map_err(|source| DockerError::unavailable(connect, source))?
-            .map_err(|source| DockerError::unavailable(connect, source))?;
+        let stream: Box<dyn EngineStream> = match &self.address {
+            super::EngineAddress::Socket(socket) => Box::new(
+                tokio::time::timeout_at(deadline, UnixStream::connect(socket.as_ref()))
+                    .await
+                    .map_err(|source| DockerError::unavailable(connect, source))?
+                    .map_err(|source| DockerError::unavailable(connect, source))?,
+            ),
+            super::EngineAddress::Tcp(endpoint) => Box::new(
+                tokio::time::timeout_at(deadline, TcpStream::connect(endpoint.address()))
+                    .await
+                    .map_err(|source| DockerError::unavailable(connect, source))?
+                    .map_err(|source| DockerError::unavailable(connect, source))?,
+            ),
+        };
         let open = "open Docker service connection";
         // Elapsed deadlines are unavailability, like every other timeout.
         let (mut sender, connection) = tokio::time::timeout_at(
@@ -245,8 +276,9 @@ impl BollardDocker {
             let request = Request::builder()
                 .method(method)
                 .uri(path)
-                // Docker's Unix-socket HTTP endpoint still requires a Host
-                // header; localhost is the conventional placeholder.
+                // Docker requires a Host header, even on its Unix socket,
+                // where localhost is the conventional placeholder; it
+                // ignores the value.
                 .header(header::HOST, "localhost")
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::CONNECTION, "close")
@@ -451,20 +483,6 @@ impl BollardDocker {
         }
     }
 
-    /// Fetches the local nodes and rejects anything other than one ready,
-    /// reachable, active manager.
-    pub(super) async fn validate_single_node_manager(&self) -> Result<(), DockerError> {
-        let nodes = self
-            .client()?
-            .list_nodes(None::<ListNodesOptions>)
-            .await
-            .or_request("list Swarm nodes")?;
-        if !Self::single_node_manager(&nodes) {
-            return Err(DockerError::IncompatibleSwarm);
-        }
-        Ok(())
-    }
-
     /// Reads the daemon's Swarm membership, labelling failures with `operation`.
     pub(super) async fn swarm_info(
         &self,
@@ -544,22 +562,6 @@ impl BollardDocker {
             .node_id
             .filter(|id| !id.is_empty())
             .ok_or(DockerError::Request("read local Swarm node identity"))
-    }
-
-    /// Returns whether Docker reports exactly one ready, reachable manager.
-    pub(super) fn single_node_manager(nodes: &[bollard::models::Node]) -> bool {
-        nodes.len() == 1
-            && nodes[0].spec.as_ref().and_then(|spec| spec.role)
-                == Some(bollard::models::NodeSpecRoleEnum::MANAGER)
-            && nodes[0].spec.as_ref().and_then(|spec| spec.availability)
-                == Some(bollard::models::NodeSpecAvailabilityEnum::ACTIVE)
-            && nodes[0].status.as_ref().and_then(|status| status.state)
-                == Some(bollard::models::NodeState::READY)
-            && nodes[0]
-                .manager_status
-                .as_ref()
-                .and_then(|status| status.reachability)
-                == Some(bollard::models::Reachability::REACHABLE)
     }
 }
 

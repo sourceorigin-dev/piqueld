@@ -117,7 +117,7 @@ services.piqueld.settings.tailscale = {
 `server.allowed_hosts`, `auth.public_url`, `auth.max_token_days`, `tailscale.enabled`,
 `tailscale.hostname`, `tailscale.auth_key_file`, `tailscale.https_port`,
 `tailscale.socket`, `docker.socket`,
-`docker.auto_initialize_swarm`, `build.builder`, `build.repository` (set both, or
+`docker.auto_initialize_swarm`, `docker.swarm_address`, `nodes`, `build.builder`, `build.repository` (set both, or
 neither), `build.unavailable`, `ingress.enabled`, `ingress.public_addresses`,
 `ingress.acme.directory`,
 `ingress.acme.email`, `ingress.private.enabled`, `ingress.private.hostname`,
@@ -134,6 +134,19 @@ the five [`previews`](configuration.md#previews) limits,
 and `telemetry.containers`, with the daemon's defaults. Reconciliation
 values must be 1–86400 seconds; retention values are nonnegative days, with zero
 disabling pruning. Unknown settings are rejected.
+
+`settings.docker.swarm_address` and `settings.nodes` name the Swarm's
+[worker nodes](configuration.md#worker-nodes). With `nodes`, the module opens
+the Swarm's ports, 2377/tcp, 7946/tcp, 7946/udp and 4789/udp, on
+`services.piqueld.swarmInterface`, `tailscale0` by default, and nowhere
+else.
+
+```nix
+services.piqueld.settings = {
+  docker.swarm_address = "100.64.0.1";
+  nodes.nixosbtw.docker = "tcp://100.64.0.2:2375";
+};
+```
 
 [Notification destinations](../operations/notifications.md) are managed with
 `piquelctl notification` or the dashboard, not the module; the former
@@ -194,3 +207,37 @@ Nix packages and development shells support x86_64 Linux and aarch64 macOS,
 where only the CLI package is available. Configuration and
 package changes require rebuilding NixOS; application state remains under
 `dataDir`.
+
+## Worker nodes
+
+`inputs.piqueld.nixosModules.piqueld-worker` sets up a worker node: its Docker
+Engine listens on `enginePort` too, and it joins the host's Swarm once.
+
+```nix
+{
+  imports = [ inputs.piqueld.nixosModules.piqueld-worker ];
+  services.piqueld-worker = {
+    enable = true;
+    manager = "100.64.0.1"; # the host's docker.swarm_address
+    address = "100.64.0.2"; # this machine's tailnet address
+    joinTokenFile = config.age.secrets.piqueld-worker-token.path;
+  };
+}
+```
+
+- `manager` is the host's `docker.swarm_address`, and `address` this
+  machine's address on the same network.
+- `joinTokenFile` holds the output of `docker swarm join-token --quiet
+  worker` on the host. The module passes it as a systemd credential, and
+  reads it only to join.
+- `interface`, `tailscale0` by default, is the interface the module opens
+  the engine's and the Swarm's ports on. The engine listens on every
+  address, so it starts before the tailnet is up, but the firewall opens its
+  port on `interface` only.
+- `enginePort`, 2375 by default, is the port the host's
+  `nodes.<name>.docker` names.
+
+The join runs as `piqueld-worker-join.service`, which retries every 30
+seconds until it succeeds, such as while the tailnet comes up.
+[Adding a worker node](../operations/worker-nodes.md) walks through the
+whole setup.

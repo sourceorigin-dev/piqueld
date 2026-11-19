@@ -223,17 +223,25 @@
     },
     "DockerConfig": {
       "additionalProperties": false,
-      "description": "The Docker Engine piqueld deploys to. The daemon\nserves its API while Docker is down, and starts deploying once Docker\nanswers as a single-node Swarm manager.",
+      "description": "The Docker Engine piqueld deploys to. The daemon\nserves its API while Docker is down, and starts deploying once Docker\nanswers as the only manager of its Swarm.",
       "properties": {
         "auto_initialize_swarm": {
           "default": true,
-          "description": "Initialize a Docker Engine that is not part of a Swarm as a\nsingle-node Swarm.",
+          "description": "Initialize a Docker Engine that is not part of a Swarm as a\nSwarm manager, on `swarm_address`.",
           "type": "boolean"
         },
         "socket": {
           "default": "/var/run/docker.sock",
           "description": "The absolute path of the Docker Engine's Unix socket.",
           "type": "string"
+        },
+        "swarm_address": {
+          "default": null,
+          "description": "The IP address this host's Swarm listens on and advertises to its\nworker nodes, such as the host's tailnet address. Required by\n`[nodes]`. Without it, piqueld initializes the Swarm on 127.0.0.1,\nwhich no other machine can join. Swarm can't move an existing\nmanager to another address: `piqueld swarm recreate` re-creates the\nSwarm on this one.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -696,6 +704,20 @@
         "local"
       ],
       "type": "string"
+    },
+    "WorkerConfig": {
+      "additionalProperties": false,
+      "description": "A worker node: another machine joined to this host's Swarm, whose\nDocker Engine the daemon reaches for what lives on that machine.",
+      "properties": {
+        "docker": {
+          "description": "The worker's Docker Engine, as `tcp://host:port`. The connection is\nneither authenticated nor encrypted, and controls the worker's\nengine, so only this host should be able to reach that port, over a\nnetwork that encrypts its traffic, such as a tailnet whose access\nrules allow nothing else.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "docker"
+      ],
+      "type": "object"
     }
   },
   "description": "The daemon's configuration file, `/etc/piqueld/config.toml` unless\n`piqueld --config` selects another. Every setting is optional unless it\nsays otherwise. The daemon reads the file once at startup, so restart it\nto apply a change.",
@@ -731,6 +753,17 @@
     "ingress": {
       "$ref": "#/definitions/IngressConfig",
       "description": "The managed HTTP gateway that serves applications' routes."
+    },
+    "nodes": {
+      "additionalProperties": {
+        "$ref": "#/definitions/WorkerConfig"
+      },
+      "description": "Worker nodes: other machines joined to this host's Swarm, each named\nby its `<name>`, such as `nixosbtw`. They need\n`docker.swarm_address`.",
+      "propertyNames": {
+        "description": "The name the daemon's configuration gives a worker node, such as\n`nixosbtw`, under `[nodes.<name>]`.",
+        "type": "string"
+      },
+      "type": "object"
     },
     "previews": {
       "$ref": "#/definitions/PreviewLimits",
