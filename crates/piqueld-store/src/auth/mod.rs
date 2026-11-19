@@ -886,10 +886,10 @@ impl Store {
     }
 
     /// Deletes one credential if `actor` may change its owner, with what it
-    /// issued as `cascade` says, or one host
-    /// operator session, which issues nothing, if `actor` could manage an
-    /// administrator, as that session acts with `admin`. A credential may
-    /// always revoke itself, even a scoped one. Unknown IDs are `NotFound`.
+    /// issued as `cascade` says, or one host operator session, which issues
+    /// nothing, if `actor` could manage an administrator, as that session
+    /// acts with `admin`. A credential may always revoke itself, even a
+    /// scoped one. Unknown IDs are `NotFound`.
     ///
     /// # Errors
     /// Returns a storage error.

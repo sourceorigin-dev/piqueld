@@ -416,7 +416,12 @@ impl TokenCommand {
                         cascade: !no_cascade,
                     })
                     .await?;
-                console.info(format_args!("revoked {id}"))
+                let also = if *no_cascade {
+                    ""
+                } else {
+                    " and what it issued"
+                };
+                console.info(format_args!("revoked {id}{also}"))
             }
             Self::Revoke { user, yes, .. } => {
                 let directory = client.auth_directory().await?;

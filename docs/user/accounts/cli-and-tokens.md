@@ -246,13 +246,15 @@ $ piquelctl token list
   apps:read on blog
   apps:deploy on blog
 $ piquelctl token revoke 01a16b4e-6995-79b2-bfb1-0f72630a4d96
-Info: revoked 01a16b4e-6995-79b2-bfb1-0f72630a4d96
+Info: revoked 01a16b4e-6995-79b2-bfb1-0f72630a4d96 and what it issued
 ```
 
 Your logins are listed as `piquelctl`, and browser sessions as `Browser`.
 Revoking one also revokes the tokens, logins, links and passkeys created
 through it; see
 [what revoking also revokes](accounts.md#what-revoking-also-revokes).
+`piquelctl` then prints `revoked <id> and what it issued`. A daemon older than
+piqueld 0.2.0 revokes only the one credential, and still reports success.
 
 Deleting an application removes every grant on it. A token or limited login
 left with no grant at all can do nothing, and expires a minute later. That

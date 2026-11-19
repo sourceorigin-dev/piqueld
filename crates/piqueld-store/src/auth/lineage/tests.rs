@@ -1,7 +1,7 @@
 use super::*;
 use crate::{Actor, Caller, CredentialKind, NewCredential, NewInvitation, NewPasskey};
 use crate::{PasskeyOwner, now_secs};
-use piqueld_core::access::Grants;
+use piqueld_core::access::{GlobalPermission, Grants, Permission, Scope};
 use piqueld_core::auth::User;
 
 /// The IDs of `node`'s issuers, nearest first.
@@ -258,4 +258,39 @@ async fn revoking_cascades_through_ended_issuers() {
     let alone = store.revoke_credential(Actor::Daemon, "other", Cascade::No);
     alone.await.expect("the other login is revoked alone");
     assert!(!live(&store, "other").await && live(&store, "sibling").await);
+}
+
+/// Authority over the revoked credential's account is enough: a manager who
+/// may change alice's account, but not bob's, still revokes what alice's
+/// login issued in bob's account.
+#[tokio::test]
+async fn revoking_reaches_accounts_the_actor_could_not_change() {
+    let (_dir, store) = Store::temporary().await;
+    // An administrator nothing here touches, so no cascade locks out.
+    let erin = admin_with_passkey(&store, "erin").await;
+    let mut manage = Grants::default();
+    let accounts = Permission::Global(GlobalPermission::AccountsManage);
+    manage
+        .grant(accounts, &Scope::All)
+        .expect("accounts:manage is a valid grant");
+    store.seed_caller("alice", &manage).await;
+    let alice = Caller {
+        credential_id: "alice",
+        user_id: "alice",
+    };
+    invite_and_redeem(&store, alice, "bob").await;
+    let admin = Grants::admin();
+    let promote = store.set_user_grants(Actor::Account(erin), "bob", &admin);
+    promote.await.expect("erin makes bob an administrator");
+    let manager = store.seed_caller("mia", &manage).await;
+
+    let direct = store.revoke_credential(manager, "bob-session", Cascade::No);
+    assert!(
+        matches!(direct.await, Err(StoreError::Denied(_))),
+        "mia may not change bob's account"
+    );
+    let revoke = store.revoke_credential(manager, "alice", Cascade::Yes);
+    revoke.await.expect("mia may change alice's account");
+    assert!(!live(&store, "bob-session").await);
+    assert_eq!(passkeys(&store).await, ["erin-key"]);
 }
