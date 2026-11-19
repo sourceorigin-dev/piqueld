@@ -39,7 +39,7 @@ builds; the Nix packages and development shell provide them.
 ## Origin and passkeys
 
 `auth.public_url` is the single browser origin: WebAuthn, the links piqueld
-prints, and the Origin checks below all use it. `Auth::validate_origin`
+prints, and the Origin checks below all use it. `AuthConfig::validate_origin`
 accepts a bare origin with a DNS hostname, over HTTPS or as
 `http://localhost` or a subdomain of it, such as `http://dev.localhost`, which
 browsers resolve to loopback and treat as a secure context. IP addresses,
@@ -175,7 +175,7 @@ has none until its passkey signs in, and API tokens never have one.
 `reauthentication_required`. Its `step_up` detail is false for API tokens,
 which no passkey can confirm. `Authority::require_fresh` checks it inside a
 write's transaction; `Actor::require_fresh` exempts the host operator, and
-`Identity::require_fresh` refuses early.
+`Identity::require_fresh` refuses early. No endpoint calls these checks yet.
 
 Browser sessions use HTTP-only, `SameSite=Strict` cookies. For HTTPS origins
 they are also `Secure` and use the `__Host-` prefix, so applications on sibling

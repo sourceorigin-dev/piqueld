@@ -108,20 +108,20 @@ credential, setting grants and deleting an account commit through
 
 ## Long-lived connections
 
-Event streams and `apps:exec` command sessions are authorized when they open;
-a `Lease` (`api/http/lease.rs`) then rechecks the caller's access while they
-last. Its first recheck is due at once, so a change made between
+Event streams, operation timeline streams and `apps:exec` command sessions
+are authorized when they open; a `Lease` (`api/http/lease.rs`) then rechecks
+the caller's access while they last. Its first recheck is due at once, so a change made between
 authentication and subscribing is not missed. The lease polls every second
-(`TICK`) and rechecks when an access change was notified, or 30 seconds
+(`ConnectionTiming::tick`) and rechecks when an access change was notified, or 30 seconds
 (`RECHECK`) after the previous recheck started. The periodic recheck catches
 what isn't notified: an expired credential, grants removed with a deleted
 application, creator grants, and a tailnet peer that no longer matches a
 token's binding, which each recheck looks up afresh.
 
-- A stream switches to the caller's new visibility, so it stops sending
-  history the caller may no longer read; once the caller loses access
-  entirely, it ends with an `access_ended` message whose data is the
-  `ErrorBody` the request would now get.
+- An event stream switches to the caller's new visibility, so it stops
+  sending history the caller may no longer read. Once the caller loses access
+  entirely, an event or timeline stream ends with an `access_ended` message
+  whose data is the `ErrorBody` the request would now get.
 - A command session that lost access ends with a `Failed` frame carrying the
   refusal, such as 401, 403, or 404 once the application is hidden, which is
   audited. A 503 `tailnet_unavailable` from a bound token's lookup ends it
