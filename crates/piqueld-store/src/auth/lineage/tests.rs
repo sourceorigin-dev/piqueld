@@ -114,7 +114,10 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         session: credential("redeemed", CredentialKind::Browser),
     };
     assert!(store.add_passkey(redeem, passkey("bob-key")).await.unwrap());
-    let signed_in = credential("signed-in", CredentialKind::Browser);
+    // Proved by its passkey sign-in, as the daemon records it, so it may add
+    // a passkey and create a token.
+    let mut signed_in = credential("signed-in", CredentialKind::Browser);
+    signed_in.authenticated_at = Some(now_secs());
     let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
     store
         .sign_in_with_passkey("bob-key", "bob", stored, &signed_in)
