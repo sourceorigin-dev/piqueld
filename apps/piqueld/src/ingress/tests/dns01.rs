@@ -2,7 +2,10 @@
 //! Both run inside the isolated Docker daemon; the harness publishes their ports.
 //! The certificates serve a private route on the private listener, which this
 //! test reaches through a relay adding a PROXY header, as the apps node does.
-use super::Scenario;
+use super::{
+    port, private_config,
+    scenario::{Scenario, peer_certificate},
+};
 use crate::ingress::{Ingress, certificates::Certificates, node::proxy_relay, records::RouteDns};
 use hickory_resolver::{
     Resolver,
@@ -26,7 +29,6 @@ use serde_json::json;
 use std::{
     collections::BTreeSet,
     net::{IpAddr, SocketAddr},
-    sync::Arc,
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
@@ -35,10 +37,6 @@ const PEBBLE_IMAGE: &str = "ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1
 pub(super) const CURL_IMAGE: &str =
     "alpine/curl:8.22.0@sha256:3f21f10cf24835f7baae20931f18640cc30915ea4151363fe4d8fb59ee296dfb";
 const CHALLTESTSRV_IMAGE: &str = "ghcr.io/letsencrypt/pebble-challtestsrv:2.10.1@sha256:12ce21884def456bcf9786542113949e1f19dc7738d2c70e156c2d0c38a1405b";
-
-fn port(variable: &str) -> u16 {
-    std::env::var(variable).unwrap().parse().unwrap()
-}
 
 fn hosts(names: &[&str]) -> BTreeSet<Hostname> {
     names
@@ -165,7 +163,7 @@ impl Scenario {
     }
 
     /// Removes the Pebble containers and network.
-    pub(super) async fn stop_pebble(&self) {
+    async fn stop_pebble(&self) {
         for path in [
             "/containers/pebble?force=true",
             "/containers/challtestsrv?force=true",
@@ -188,21 +186,7 @@ impl Scenario {
             SocketAddr::from(([127, 0, 0, 1], 1)),
             challtestsrv_dns(),
         ]]);
-        let mut ingress = Ingress::new(
-            true,
-            &self.socket,
-            self.directory.path(),
-            Arc::clone(&self.store),
-        )
-        .unwrap()
-        .with_private(&piqueld_config::PrivateIngressConfig {
-            enabled: true,
-            ..Default::default()
-        });
-        // Same container spec and issuer as the scenario's gateway.
-        ingress.issuer.clone_from(&self.gateway.issuer);
-        ingress.extra_hosts.clone_from(&self.gateway.extra_hosts);
-        ingress.private_port = self.gateway.private_port;
+        let mut ingress = self.replica().with_private(&private_config());
         ingress.certificates = Certificates::new(
             dns,
             AcmeConfig {
@@ -274,13 +258,7 @@ impl Scenario {
     async fn served_certificate(&self, hostname: &str) -> Vec<u8> {
         let (relay, _relay) = self.relay().await;
         let response = self.untrusted(hostname, relay).await.unwrap();
-        response
-            .extensions()
-            .get::<reqwest::tls::TlsInfo>()
-            .unwrap()
-            .peer_certificate()
-            .unwrap()
-            .to_vec()
+        peer_certificate(&response).unwrap()
     }
 
     /// Runs `curl` on `network` and returns its exit code and output.
@@ -374,19 +352,13 @@ impl Scenario {
                 .unwrap()
                 .normalize(piqueld_core::ApplicationId::parse("admin-input").unwrap())
         };
-        let id = super::deploy(&self.store, &self.controller, admin("public")).await;
-        let public = |scheme: &str, port: u16| {
-            self.client
-                .get(format!("{scheme}://127.0.0.1:{port}/"))
-                .header("Host", "admin.example.test")
-                .send()
-        };
-        assert_eq!(public("http", self.plain_port).await.unwrap().status(), 308);
+        let id = self.deploy(admin("public")).await;
+        assert_eq!(self.plain("admin.example.test", "").await.status(), 308);
         let deployed =
             admin("private").with_id(piqueld_core::ApplicationId::parse(id.as_str()).unwrap());
-        super::deploy(&self.store, &self.controller, deployed).await;
+        self.deploy(deployed).await;
         // A forged Host gets a 404, and its SNI no certificate.
-        assert_eq!(public("http", self.plain_port).await.unwrap().status(), 404);
+        assert_eq!(self.plain("admin.example.test", "").await.status(), 404);
         assert!(
             self.untrusted("admin.example.test", self.tls_port)
                 .await
@@ -467,7 +439,7 @@ impl Scenario {
             .contents
     }
 
-    pub(super) async fn dns01_certificates(&self) {
+    async fn dns01_certificates(&self) {
         let root = self.start_pebble().await;
         let root_path = self.directory.path().join("pebble.minica.pem");
         tokio::fs::write(&root_path, &root).await.unwrap();
@@ -501,8 +473,8 @@ impl Scenario {
         );
         let exact = super::application("exact", "exact.tenants.example.test", "exact");
         // Another application's exact name below the wildcard is routed first.
-        super::deploy(&self.store, &self.controller, exact).await;
-        super::deploy(&self.store, &self.controller, tenants).await;
+        self.deploy(exact).await;
+        self.deploy(tenants).await;
         let desired = routes(&["*.tenants.example.test"]);
         let table = self.store.routing_table().await.unwrap();
         assert!(ingress.dns01_hostnames(&table).is_superset(&desired));
@@ -514,11 +486,7 @@ impl Scenario {
         // The certificate `host` is served and its response body, once it answers.
         let answer = |host: &'static str| async move {
             let response = self.untrusted(host, self.tls_port).await.ok()?;
-            let certificate = response
-                .extensions()
-                .get::<reqwest::tls::TlsInfo>()?
-                .peer_certificate()?
-                .to_vec();
+            let certificate = peer_certificate(&response)?;
             Some((certificate, response.text().await.ok()?))
         };
         let wildcard = self.stored_leaf("_wildcard.tenants.example.test.pem").await;
@@ -548,18 +516,12 @@ impl Scenario {
                 .await
                 .is_err()
         );
-        let plain = |host: &'static str| {
-            self.client
-                .get(format!("http://127.0.0.1:{}/", self.plain_port))
-                .header("Host", host)
-                .send()
-        };
         assert_eq!(
-            plain("alice.tenants.example.test").await.unwrap().status(),
+            self.plain("alice.tenants.example.test", "").await.status(),
             308
         );
         assert_eq!(
-            plain("a.b.tenants.example.test").await.unwrap().status(),
+            self.plain("a.b.tenants.example.test", "").await.status(),
             404
         );
     }
@@ -836,4 +798,10 @@ impl Scenario {
                 .exists()
         );
     }
+}
+
+#[tokio::test]
+#[ignore = "requires the isolated Docker harness with loopback test ports"]
+async fn ingress_caddy_dns01_certificates() {
+    Scenario::run(Scenario::dns01_certificates, Scenario::stop_pebble).await;
 }

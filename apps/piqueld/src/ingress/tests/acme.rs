@@ -1,6 +1,6 @@
 //! Real ACME orders and challenges against Caddy's bundled test CA, with short
 //! certificates so renewal is exercised without public DNS or CA rate limits.
-use super::Scenario;
+use super::scenario::{Scenario, peer_certificate};
 use hyper::Method;
 use serde_json::json;
 use std::time::Duration;
@@ -64,62 +64,34 @@ impl Scenario {
             .unwrap();
         // CertMagic's maintenance ticker is created at process startup. Restart
         // from the saved test config so its accelerated renewal interval takes effect.
-        self.gateway
-            .docker
-            .external(
-                Method::POST,
-                &format!("/containers/{}/restart?t=1", self.gateway.name),
-                None,
-            )
-            .await
-            .unwrap();
+        self.restart_gateway().await;
         original
     }
 
-    pub(super) async fn acme_challenges_and_renewal(&self) {
+    async fn acme_challenges_and_renewal(&self) {
         let hosts = ["http-acme.example.test", "alpn-acme.example.test"];
         let original = self.configure_acme_test().await;
-        let root = tokio::fs::read(
-            self.directory
-                .path()
-                .join("ingress/data/caddy/pki/authorities/local/root.crt"),
-        )
-        .await
-        .unwrap();
-        // A new client also discards TLS session tickets. Merely disabling the
-        // HTTP pool can resume an old TLS session and report its old certificate.
-        let client = || {
-            reqwest::Client::builder()
-                .no_proxy()
+        // The certificate the probe endpoint of `host` is served with. A new
+        // client also discards TLS session tickets. Merely disabling the HTTP
+        // pool can resume an old TLS session and report its old certificate.
+        let served = async |host: &str| {
+            let response = Scenario::trusting(&self.root, &hosts)
                 .timeout(Duration::from_secs(3))
                 .tls_info(true)
                 .pool_max_idle_per_host(0)
-                .add_root_certificate(reqwest::Certificate::from_pem(&root).unwrap())
-                .resolve(hosts[0], "127.0.0.1:443".parse().unwrap())
-                .resolve(hosts[1], "127.0.0.1:443".parse().unwrap())
                 .build()
                 .unwrap()
+                .get(format!("{}.well-known/piqueld-ingress", self.url(host)))
+                .send()
+                .await?;
+            let certificate = peer_certificate(&response).unwrap();
+            assert_eq!(response.text().await.unwrap(), self.gateway.instance_id);
+            reqwest::Result::Ok(certificate)
         };
         for host in hosts {
             let first = tokio::time::timeout(Duration::from_mins(1), async {
                 loop {
-                    if let Ok(response) = client()
-                        .get(format!(
-                            "{}{}",
-                            self.url(host),
-                            ".well-known/piqueld-ingress"
-                        ))
-                        .send()
-                        .await
-                    {
-                        let certificate = response
-                            .extensions()
-                            .get::<reqwest::tls::TlsInfo>()
-                            .unwrap()
-                            .peer_certificate()
-                            .unwrap()
-                            .to_vec();
-                        assert_eq!(response.text().await.unwrap(), self.gateway.instance_id);
+                    if let Ok(certificate) = served(host).await {
                         break certificate;
                     }
                     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -131,24 +103,7 @@ impl Scenario {
             // itself, and a fresh TLS handshake must serve the renewed certificate.
             tokio::time::timeout(Duration::from_secs(90), async {
                 loop {
-                    let response = client()
-                        .get(format!(
-                            "{}{}",
-                            self.url(host),
-                            ".well-known/piqueld-ingress"
-                        ))
-                        .send()
-                        .await
-                        .unwrap();
-                    let certificate = response
-                        .extensions()
-                        .get::<reqwest::tls::TlsInfo>()
-                        .unwrap()
-                        .peer_certificate()
-                        .unwrap()
-                        .to_vec();
-                    assert_eq!(response.text().await.unwrap(), self.gateway.instance_id);
-                    if certificate != first {
+                    if served(host).await.unwrap() != first {
                         break;
                     }
                     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -163,4 +118,10 @@ impl Scenario {
             .await
             .unwrap();
     }
+}
+
+#[tokio::test]
+#[ignore = "requires the isolated Docker harness with loopback test ports"]
+async fn ingress_caddy_acme_challenges_and_renewal() {
+    Scenario::run(Scenario::acme_challenges_and_renewal, async |_| {}).await;
 }
