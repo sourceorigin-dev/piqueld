@@ -110,10 +110,14 @@ credential, setting grants and deleting an account commit through
 
 Event streams, operation timeline streams and `apps:exec` command sessions
 are authorized when they open; a `Lease` (`api/http/lease.rs`) then rechecks
-the caller's access while they last. Its first recheck is due at once, so a change made between
-authentication and subscribing is not missed. The lease polls every second
-(`ConnectionTiming::tick`) and rechecks when an access change was notified, or 30 seconds
-(`RECHECK`) after the previous recheck started. The periodic recheck catches
+the caller's access while they last. Its first recheck is due at once, so a
+change made between authentication and subscribing is not missed. A recheck is
+due when an access change was notified, or 30 seconds (`RECHECK`) after the
+previous recheck started. A stream waits with `Lease::wait`, which wakes when
+the stream has an item to send, access changes, the daemon shuts down, or the
+next recheck is due, and rechecks before sending once one is. A command
+session runs `Lease::ended`, which looks for a due recheck every second
+(`ConnectionTiming::tick`). The periodic recheck catches
 what isn't notified: an expired credential, grants removed with a deleted
 application, creator grants, and a tailnet peer that no longer matches a
 token's binding, which each recheck looks up afresh.
