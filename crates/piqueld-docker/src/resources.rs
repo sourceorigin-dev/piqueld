@@ -567,7 +567,9 @@ impl DockerApi for BollardDocker {
         // and, with the containerd image store, change that ID, so identical
         // builds would never share a release. Without them, `--iidfile`
         // would hold the config digest, which that store does not know the
-        // image by.
+        // image by. A build on the engine's own builder is then tagged (see
+        // `ImageBuild::tag`); a build machine's image is pulled by its
+        // digest only, and pulled again if it goes missing.
         use anyhow::Context;
         #[derive(serde::Deserialize)]
         struct Metadata {
@@ -612,6 +614,17 @@ impl DockerApi for BollardDocker {
             let digest = piqueld_core::resource::Sha256Digest::parse(metadata.digest)
                 .context("validate built image digest")?;
             let Some(remote) = builder else {
+                let (repo, tag) = build.tag(&digest);
+                self.client()?
+                    .tag_image(
+                        digest.as_str(),
+                        Some(bollard::query_parameters::TagImageOptions {
+                            repo: Some(repo),
+                            tag: Some(tag),
+                        }),
+                    )
+                    .await
+                    .context("tag built image")?;
                 return Ok(digest.into());
             };
             // The build machine pushed it: the engine has to pull it.
@@ -661,9 +674,15 @@ impl DockerApi for BollardDocker {
             .await
     }
 
-    async fn prune_health_probes(&self) -> Result<(), DockerError> {
+    async fn prune_health_probes(
+        &self,
+        instance: &piqueld_core::InstanceId,
+    ) -> Result<(), DockerError> {
         DockerTimeout::Request
-            .run("prune health probes", self.remove_stale_health_probes())
+            .run(
+                "prune health probes",
+                self.remove_stale_health_probes(instance),
+            )
             .await
     }
 

@@ -9737,6 +9737,7 @@
           "ensure_swarm",
           "remove_image",
           "ingress_create_network",
+          "ingress_remove_network",
           "ingress_start_gateway",
           "ingress_stop_gateway",
           "ingress_remove_container",
