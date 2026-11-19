@@ -714,11 +714,8 @@ impl<D: DockerApi> Controller<D> {
         let Some(action) = plan.next_repair() else {
             return Ok(false);
         };
-        if matches!(
-            action.kind,
-            piqueld_core::ActionKind::RemoveService { .. }
-                | piqueld_core::ActionKind::RemoveNetwork { .. }
-        ) && !accepted_routes.is_empty()
+        if action.kind.destructive()
+            && !accepted_routes.is_empty()
             && target.routes != accepted_routes
         {
             return Ok(false);
@@ -732,19 +729,18 @@ impl<D: DockerApi> Controller<D> {
                 Some(action.kind.resource_name()),
             )
             .await?;
-        let result = match self
-            .service_secrets(action.kind.secrets(), &ownership)
-            .await
-        {
-            Ok(secrets) => match self.store.action_request(&journal, 1).await {
-                Ok(()) => self
+        let result = async {
+            let secrets = self
+                .service_secrets(action.kind.secrets(), &ownership)
+                .await?;
+            self.request_once(&journal, async {
+                Ok(self
                     .mutate_action(&action.kind, &ownership, &secrets)
-                    .await
-                    .map_err(OperationError::from),
-                Err(error) => Err(error.into()),
-            },
-            Err(error) => Err(error),
-        };
+                    .await?)
+            })
+            .await
+        }
+        .await;
         self.close_action(&journal, result).await.map(|()| true)
     }
 
@@ -783,7 +779,7 @@ impl<D: DockerApi> Controller<D> {
 
     /// Removes the Docker secrets of the secret versions nothing can mount
     /// any more (see `Store::unused_secret_versions`), one journaled
-    /// `remove_secrets` daemon action per environment, then the records of
+    /// `remove_secrets` action per environment, then the records of
     /// those Docker removed. A secret a service still mounts, which Swarm
     /// refuses to remove, is skipped and kept, with its record, until a
     /// later pass finds it unmounted; any other failure fails that
@@ -811,12 +807,7 @@ impl<D: DockerApi> Controller<D> {
                         .await?)
                 })
                 .await;
-            self.store
-                .finish_action(
-                    &journal,
-                    removed.as_ref().err().map(OperationError::diagnostic),
-                )
-                .await?;
+            self.record_outcome(&journal, &removed).await?;
             if let Ok(removed) = removed {
                 for name in names.iter().filter(|name| !removed.contains(name)) {
                     tracing::debug!(%environment, secret = %name, "unused secret version still mounted; kept");
@@ -832,7 +823,5 @@ impl<D: DockerApi> Controller<D> {
 
 /// Whether the plan has work beyond retaining volumes.
 pub(super) fn plan_requires_execution(plan: &Plan) -> bool {
-    plan.actions
-        .iter()
-        .any(|action| !matches!(action.kind, piqueld_core::ActionKind::RetainVolume { .. }))
+    plan.actions.iter().any(|action| action.kind.runs())
 }
