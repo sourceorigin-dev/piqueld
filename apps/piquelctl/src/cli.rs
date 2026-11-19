@@ -41,6 +41,56 @@ macro_rules! one_of {
 }
 pub(crate) use one_of;
 
+/// Implements clap's `Args` for `$choice`, a type holding one of several
+/// arguments: it declares the arguments of `$flags`, which clap requires
+/// exactly one of, and `$choose` turns the parsed `$flags` into the choice.
+/// Flatten it like any `Args`.
+///
+/// ```text
+/// choice_args!(NewSource, NewSourceFlags, |flags| flags.image.map(NewSource::Image).or(…))
+/// ```
+//
+// Clap derives `Args` only for structs, which hold each choice as an
+// `Option`. `$choose` returns `None` only when no choice was given, which
+// clap already rejects while parsing.
+macro_rules! choice_args {
+    ($choice:ty, $flags:ty, |$parsed:ident| $choose:expr) => {
+        impl clap::FromArgMatches for $choice {
+            fn from_arg_matches(
+                matches: &clap::ArgMatches,
+            ) -> std::result::Result<Self, clap::Error> {
+                let $parsed = <$flags as clap::FromArgMatches>::from_arg_matches(matches)?;
+                $choose.ok_or_else(|| {
+                    clap::Error::new(clap::error::ErrorKind::MissingRequiredArgument)
+                })
+            }
+
+            fn update_from_arg_matches(
+                &mut self,
+                matches: &clap::ArgMatches,
+            ) -> std::result::Result<(), clap::Error> {
+                *self = Self::from_arg_matches(matches)?;
+                Ok(())
+            }
+        }
+
+        impl clap::Args for $choice {
+            fn group_id() -> Option<clap::Id> {
+                <$flags as clap::Args>::group_id()
+            }
+
+            fn augment_args(command: clap::Command) -> clap::Command {
+                <$flags as clap::Args>::augment_args(command)
+            }
+
+            fn augment_args_for_update(command: clap::Command) -> clap::Command {
+                <$flags as clap::Args>::augment_args_for_update(command)
+            }
+        }
+    };
+}
+pub(crate) use choice_args;
+
 /// Operate a piqueld control plane.
 ///
 /// `piquelctl` connects to the daemon's Unix socket, `/run/piqueld/piqueld.sock`,
