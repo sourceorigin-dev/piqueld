@@ -11,8 +11,8 @@ when changing behavior. To see which code they run, use
 | Manifest variables: reference syntax, declarations, rendering per environment | `piqueld-core/src/manifest/template_tests/` |
 | Read-only service files and repository file capture | `piqueld-core/tests/service_files.rs` |
 | Git source validation and immutable resolution | `piqueld-core/tests/git_sources.rs` |
-| Ownership, drift fields, cleanup gating, volume retention | `piqueld-core/tests/resource_planning.rs` |
-| Links: validation, resolution, network projection, revocation | `piqueld-core/src/links.rs` unit tests, `tests/manifests.rs`, `tests/resource_planning.rs`, `piqueld/tests/fake_docker/environments.rs`, and `docker_integration.rs` |
+| Ownership, drift fields, cleanup gating, volume retention | `piqueld-core/tests/resource_planning/` |
+| Links: validation, resolution, network projection, revocation | `piqueld-core/src/links.rs` unit tests, `tests/manifests.rs`, `tests/resource_planning/`, `piqueld/tests/fake_docker/environments.rs`, and `docker_integration.rs` |
 | Operation transitions and failure classification | Core lifecycle tests and `piqueld/tests/fake_docker/`, by area: `controller.rs`, `rollouts.rs`, `jobs.rs` and others |
 | HTTP lifecycle, preconditions, force, receipts, pagination | `piqueld/tests/api_contract/`, mainly `acceptance.rs`, `applications.rs` and `transport.rs` |
 | Persistence, restart recovery, migrations, transaction rollback | `piqueld/tests/persistence.rs` and `piqueld-store` unit tests |
