@@ -1820,3 +1820,46 @@ async fn tailnet_bindings_need_the_tailnet_node_or_dashboard_hostname() {
         Err(AuthError::Invalid(message)) if message.contains("tailscale.enabled")
     ));
 }
+
+/// A setup link the daemon can't read is reported, not replaced, so the
+/// link the operator holds keeps working.
+#[tokio::test]
+async fn unreadable_setup_link_is_an_error_and_left_alone() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new().await;
+    let path = f.dir.path().join("setup-link");
+    f.auth.prepare_setup(&path).await.unwrap();
+    let link = std::fs::read_to_string(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let result = f.auth.prepare_setup(&path).await;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(result.is_err());
+    assert_eq!(link, std::fs::read_to_string(&path).unwrap());
+}
+
+/// A setup link that can't be written leaves the stored secret alone, so the
+/// store never accepts a secret no file shows.
+#[tokio::test]
+async fn unwritable_setup_link_keeps_the_stored_secret() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new().await;
+    let directory = f.dir.path().join("setup");
+    std::fs::create_dir(&directory).unwrap();
+    let path = directory.join("setup-link");
+    f.auth.prepare_setup(&path).await.unwrap();
+    let link = std::fs::read_to_string(&path).unwrap();
+    let (_, secret) = link.trim().split_once("#invite=").unwrap();
+    // A directory in the link's place can't be replaced by a file.
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert!(f.auth.prepare_setup(&path).await.is_err());
+    assert!(f.auth.invitation(secret).await.unwrap().is_some());
+    // Nor can a stale link in a read-only directory.
+    std::fs::remove_dir(&path).unwrap();
+    std::fs::write(&path, "stale").unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let result = f.auth.prepare_setup(&path).await;
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(result.is_err());
+    assert!(f.auth.invitation(secret).await.unwrap().is_some());
+}

@@ -225,18 +225,23 @@ impl Auth {
     /// and keeps it in memory for [`Auth::setup_link`]. Repeated startup
     /// preserves the secret of an existing valid link, rebuilding the link for
     /// the current origin; initialized daemons never reopen setup, even if the
-    /// user table is manually emptied.
+    /// user table is manually emptied. The secret is stored only once its
+    /// link is written, so a failure leaves the previous link working.
     /// # Errors
-    /// Returns filesystem or database errors with their underlying cause.
+    /// Returns filesystem or database errors with their underlying cause,
+    /// including a setup file that exists but can't be read.
     pub async fn prepare_setup(&self, path: &Path) -> anyhow::Result<()> {
         use anyhow::Context;
-        use std::io::Write;
         if self.status().await?.initialized {
             return piqueld_config::directories::remove_file(path)
                 .await
                 .context("remove consumed setup link");
         }
-        let existing = std::fs::read_to_string(path).unwrap_or_default();
+        let existing = match tokio::fs::read(path).await {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            read => read.with_context(|| format!("read setup link {}", path.display()))?,
+        };
+        let existing = String::from_utf8_lossy(&existing);
         let preserved = match existing.trim().split_once("#invite=") {
             Some((_, secret)) if self.invitation(secret).await?.is_some() => Some(secret),
             _ => None,
@@ -246,14 +251,11 @@ impl Auth {
             None => Self::secret()?,
         };
         let link = self.link("invite", &secret);
-        let mut file = tempfile::NamedTempFile::new_in(
-            path.parent()
-                .context("setup file needs a parent directory")?,
-        )?;
-        writeln!(file, "{link}")?;
-        file.as_file().sync_all()?;
+        piqueld_config::directories::PrivateFile::at(path)
+            .write(format!("{link}\n"))
+            .await
+            .context("write private setup link")?;
         self.0.store.set_setup_secret(&Self::hash(&secret)).await?;
-        file.persist(path).context("persist private setup link")?;
         *self.0.setup_link.lock().await = Some(link);
         Ok(())
     }
