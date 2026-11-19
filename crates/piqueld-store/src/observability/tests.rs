@@ -1530,8 +1530,8 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
 }
 /// Requested notification and webhook changes commit with their audit
 /// record, which names what changed but never a destination's URL or a
-/// webhook secret: a failed append keeps the previous destinations,
-/// delivery and webhook secret.
+/// webhook secret: a failed append keeps the previous destination, its
+/// URL, the failed delivery and the webhook secret.
 #[tokio::test]
 async fn requested_notification_and_webhook_changes_commit_with_their_audit_record() {
     let (_temp, store) = Store::temporary().await;
@@ -1561,26 +1561,32 @@ async fn requested_notification_and_webhook_changes_commit_with_their_audit_reco
             .put_notification_destination(author, &ops, request)
             .await
     };
-    let first = "https://example.com/private-token";
-    store.refuse_audit(true).await;
-    assert!(put(first).await.is_err());
-    assert!(store.retry_delivery(author, &failure.id).await.is_err());
-    let rotated = store.generate_webhook_secret(author, &application);
-    assert!(rotated.await.is_err());
-    store.refuse_audit(false).await;
-    assert_eq!(store.notification_destinations().await.unwrap().len(), 1);
-    assert!(store.claim_delivery().await.unwrap().is_none());
-    assert_eq!(
-        store.webhook_secret_created(&application).await.unwrap(),
-        None
+    let (first, second) = (
+        "https://example.com/private-token",
+        "https://example.com/other-token",
     );
     put(first).await.unwrap();
-    put("https://example.com/other-token").await.unwrap();
+    let rotate = async || {
+        let (secret, _) = store.generate_webhook_secret(author, &application).await?;
+        Ok::<_, StoreError>(secret)
+    };
+    let kept = rotate().await.unwrap();
+    // Changes whose record can't be written keep what was there.
+    store.refuse_audit(true).await;
+    assert!(put(second).await.is_err());
+    let deleted = store.delete_notification_destination(author, &ops);
+    assert!(deleted.await.is_err());
+    assert!(store.retry_delivery(author, &failure.id).await.is_err());
+    assert!(rotate().await.is_err());
+    store.refuse_audit(false).await;
+    let destination = store.notification_destination(&ops).await.unwrap();
+    assert_eq!(store.destination_url(&destination).unwrap().as_str(), first);
+    assert!(store.claim_delivery().await.unwrap().is_none());
+    let webhook = store.webhook_secret(&application).await.unwrap().unwrap();
+    assert_eq!(webhook.as_slice(), kept.as_bytes());
+    put(second).await.unwrap();
     store.retry_delivery(author, &failure.id).await.unwrap();
-    let (secret, _) = store
-        .generate_webhook_secret(author, &application)
-        .await
-        .unwrap();
+    let secret = rotate().await.unwrap();
     store
         .delete_notification_destination(author, &ops)
         .await
@@ -1591,15 +1597,17 @@ async fn requested_notification_and_webhook_changes_commit_with_their_audit_reco
         actions,
         [
             format!("{route} destination \"ops\" created"),
+            format!("{route} webhook secret generated"),
             format!("{route} destination \"ops\" changed as a new receiver"),
             format!("{route} delivery {} retry queued", failure.id),
             format!("{route} webhook secret generated"),
             format!("{route} destination \"ops\" deleted"),
         ]
     );
+    let secrets = [kept.as_str(), secret.as_str(), first, second];
     assert!(
         !actions
             .iter()
-            .any(|action| action.contains(secret.as_str()))
+            .any(|action| { secrets.iter().any(|secret| action.contains(secret)) })
     );
 }
