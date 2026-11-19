@@ -227,14 +227,18 @@ impl Store {
     /// other failures, such as I/O errors or a key that is not private, are
     /// returned too, all without discarding anything. Repeating it, also after
     /// a crash, never creates a key.
-    /// `actor` needs `system:operate`, checked in the recovering transaction.
+    /// The author's actor needs `system:operate`, checked in the recovering
+    /// transaction, which also records the request's discard, even if
+    /// moving the key aside then fails.
     /// # Errors
     /// Returns [`StoreError::SecretKeyUsable`] for a usable key,
     /// [`StoreError::SecretSource`] for a key that is not lost, or persistence errors.
     pub async fn recover_secret_key(
         &self,
-        actor: crate::Actor<'_>,
+        author: impl Into<crate::Author<'_>>,
     ) -> Result<SecretKeyRecovery, StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let operate = piqueld_core::access::Permission::Global(
             piqueld_core::access::GlobalPermission::SystemOperate,
@@ -272,23 +276,23 @@ impl Store {
             }
             // Nothing stored decrypts, or nothing is stored but a key a crash
             // left unusable before it was moved aside.
-            _ => self.discard_secret_values(tx, actor).await,
+            _ => self.discard_secret_values(tx, author).await,
         }
     }
 
     /// Discards every stored value and webhook secret in `tx`, the key
-    /// recovery `actor` requested, and moves the lost key aside once committed.
+    /// recovery `author` requested, and moves the lost key aside once committed.
     async fn discard_secret_values(
         &self,
         mut tx: sqlx::Transaction<'_, sqlx::Sqlite>,
-        actor: crate::Actor<'_>,
+        author: crate::Author<'_>,
     ) -> Result<SecretKeyRecovery, StoreError> {
         let usage = sqlx::query!("SELECT COUNT(*) AS versions, COUNT(DISTINCT environment_id) AS environments, COUNT(DISTINCT environment_id||char(0)||name) AS secrets FROM secret_versions WHERE available=1")
             .fetch_one(&mut *tx).await.map_err(StoreError::database)?;
         let stored = sqlx::query!("SELECT COUNT(*) AS versions, COUNT(DISTINCT application_id) AS applications, COUNT(DISTINCT application_id||char(0)||name) AS secrets FROM application_secret_versions WHERE available=1")
             .fetch_one(&mut *tx).await.map_err(StoreError::database)?;
         let now = super::now_ms();
-        let by = actor.attribution();
+        let by = author.actor.attribution();
         let operator = by.operator_uid();
         // Each affected environment's and application's history explains why
         // its values need replacing.
@@ -344,7 +348,15 @@ impl Store {
         );
         let recovered = crate::SecurityEvent::SecretKeyRecovered;
         Self::security_event_on(&mut tx, recovered, &message, by).await?;
+        let change = format!(
+            "secret key recovery discarded {discarded} values across {} environments and {} applications, and {destinations} notification destinations",
+            usage.environments, stored.applications
+        );
+        author
+            .record_on(&mut tx, 200, &change, (None, None))
+            .await?;
         tx.commit().await.map_err(StoreError::database)?;
+        author.committed();
         SecretCipher::retire(&self.secret_key_path, now).map_err(StoreError::SecretSource)?;
         Ok(SecretKeyRecovery {
             affected_environments: usage.environments,

@@ -1,6 +1,5 @@
 use super::*;
 use crate::Actor::Daemon;
-use crate::Attribution;
 use piqueld_core::manifest::ApplicationTemplate;
 
 /// The [`prebuilt`](crate::testing::prebuilt) application these tests save.
@@ -133,7 +132,7 @@ async fn deletion_reservations_survive_restart_and_do_not_block_other_writes() {
     assert_eq!(retry.id, deletion.id);
     assert_eq!(retry.versions, deletion.versions);
     store
-        .finish_secret_deletion(Attribution::default(), &env, "token", &retry.id)
+        .finish_secret_deletion(Daemon, &env, "token", &retry.id)
         .await
         .unwrap();
     store
@@ -141,7 +140,7 @@ async fn deletion_reservations_survive_restart_and_do_not_block_other_writes() {
         .await
         .unwrap();
     store
-        .finish_secret_deletion(Attribution::default(), &env, "token", &deletion.id)
+        .finish_secret_deletion(Daemon, &env, "token", &deletion.id)
         .await
         .unwrap();
     let names = store.secret_names(&env).await.unwrap();
@@ -195,7 +194,7 @@ async fn wrong_master_key_blocks_writes_and_original_key_restores_them() {
         .await
         .unwrap();
     store
-        .finish_secret_deletion(Attribution::default(), &env, "token", &deletion.id)
+        .finish_secret_deletion(Daemon, &env, "token", &deletion.id)
         .await
         .unwrap();
     std::fs::remove_file(&key).unwrap();
@@ -244,7 +243,7 @@ async fn retained_version_quota_rejects_writes_without_removing_values() {
         .await
         .unwrap();
     store
-        .finish_secret_deletion(Attribution::default(), &env, "token", &deletion.id)
+        .finish_secret_deletion(Daemon, &env, "token", &deletion.id)
         .await
         .unwrap();
     store
@@ -834,7 +833,7 @@ async fn secret_writes_use_the_callers_current_grants() {
         .unwrap();
     store.interrupt_actions(None).await.unwrap();
     store
-        .finish_secret_deletion(by, &production, "token", &deletion.id)
+        .finish_secret_deletion(caller, &production, "token", &deletion.id)
         .await
         .unwrap();
     let expected = [
@@ -957,4 +956,64 @@ async fn secret_key_check_reports_the_key_without_changing_it() {
         .await
         .unwrap();
     assert_eq!(verifiers, 0);
+}
+
+/// Each stage of a requested secret deletion commits with its own audit
+/// record, while resuming a reservation and a stale completion change
+/// nothing and record nothing. Key recovery records what it discarded.
+#[tokio::test]
+async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
+    let app = application();
+    store
+        .save_application(&ApplicationTemplate::from(&app), None, None)
+        .await
+        .unwrap();
+    let env = store.production(app.id()).await;
+    store
+        .put_secret(Daemon, &env, "token", 0, b"value".to_vec())
+        .await
+        .unwrap();
+    let route = "DELETE /api/v1/environments/{id}/secrets/{name}";
+    let request = crate::testing::audit_request(route);
+    let author = crate::Author {
+        actor: Daemon,
+        request: Some(&request),
+    };
+    // Runtime cleanup failed after the first reservation; the retry resumes it.
+    let deletion = store
+        .begin_secret_deletion(author, &env, "token", 1)
+        .await
+        .unwrap();
+    let retry = store
+        .begin_secret_deletion(author, &env, "token", 1)
+        .await
+        .unwrap();
+    store
+        .finish_secret_deletion(author, &env, "token", &retry.id)
+        .await
+        .unwrap();
+    store
+        .finish_secret_deletion(author, &env, "token", &deletion.id)
+        .await
+        .unwrap();
+    store
+        .put_stored_secret(Daemon, app.id(), "stripe", 0, b"value".to_vec(), None)
+        .await
+        .unwrap();
+    std::fs::write(temp.path().join("secrets.key"), [42; 32]).unwrap();
+    store.recover_secret_key(author).await.unwrap();
+    let id = &deletion.id;
+    assert_eq!(
+        store.audit_actions().await,
+        [
+            format!("{route} secret \"token\" deletion {id} reserved"),
+            format!("{route} secret \"token\" deletion {id} completed"),
+            format!(
+                "{route} secret key recovery discarded 1 values across 0 environments \
+                and 1 applications, and 0 notification destinations"
+            ),
+        ]
+    );
 }
