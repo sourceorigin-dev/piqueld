@@ -155,7 +155,7 @@ The URL is `ready` once all of these hold:
 Until then, it is `pending`, followed by what it waits for.
 
 To see every route of the application, with what each one's hostname needs
-from DNS, open its **Routes** tab: **Deployed routes** lists them. With
+from DNS, open its **Routes** tab: **Where routes are served** lists them. With
 `piquelctl`:
 
 ```console
@@ -182,8 +182,8 @@ A route can answer with a redirect instead, for example from `www` to your
 main hostname.
 
 In the dashboard, add the route on the **Routes** tab, set its
-**Visibility** to **Public** and its **Destination** to **Redirect**, fill in
-**Redirect to**, then select **Save changes** and **Deploy to production**.
+**Visibility** to **Public** and its **Destination** to **A redirect**, fill
+in **Redirect to**, then select **Add route** and **Deploy to production**.
 
 With `piquelctl`, use
 [`app route redirect`](../reference/cli-commands.md#piquelctl-app-route-redirect):
@@ -228,7 +228,7 @@ everything in one save.
 - **In the dashboard**, open the application:
 
   1. On the **Routes** tab, select **Remove** on the `hello.example.com`
-     route, then **Save changes**.
+     route, and confirm.
   2. On the **Environments** tab, select **New environment**, name it
      `staging`, then select **Create environment**. This opens `staging`'s
      page: return to the application through the **hello** breadcrumb.
