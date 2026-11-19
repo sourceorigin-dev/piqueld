@@ -580,3 +580,52 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
         [2, 4]
     );
 }
+
+/// A requested secret change commits with its audit record, naming the
+/// secret, its generation and access but never its value: a failed append
+/// keeps the previous version and access.
+#[tokio::test]
+async fn requested_secret_changes_commit_with_their_audit_record() {
+    let (_temp, store, _, staging) = fixture().await;
+    let application = template().id().clone();
+    let route = "PUT /api/v1/applications/{id}/secrets/{name}";
+    let request = crate::testing::audit_request(route);
+    let author = Author {
+        actor: Daemon,
+        request: Some(&request),
+    };
+    let staging_only = only([&staging]);
+    let put = async |expected, access| {
+        let value = b"hunter2".to_vec();
+        store
+            .put_stored_secret(author, &application, "stripe-dev", expected, value, access)
+            .await
+    };
+    put(0, None).await.unwrap();
+    store.refuse_audit(true).await;
+    assert!(put(1, Some(&staging_only)).await.is_err());
+    let access = store.set_secret_access(author, &application, "stripe-dev", &staging_only, None);
+    assert!(access.await.is_err());
+    store.refuse_audit(false).await;
+    let [kept] = store
+        .stored_secrets(&application)
+        .await
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!(kept.metadata.generation, 1);
+    assert_eq!(kept.access, SecretAccess::default());
+    put(1, Some(&staging_only)).await.unwrap();
+    // Generated secrets, as regenerating stores them, too.
+    let value = b"hunter2".to_vec();
+    let generated = store.put_secret(author, &staging, "session", 0, value);
+    generated.await.unwrap();
+    assert_eq!(
+        store.audit_actions().await,
+        [
+            format!("{route} secret \"stripe-dev\" generation 1"),
+            format!("{route} secret \"stripe-dev\" generation 2 access staging"),
+            format!("{route} secret \"session\" generation 1"),
+        ]
+    );
+}

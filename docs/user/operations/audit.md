@@ -35,14 +35,17 @@ and applications they name.
 
 Routine reads, such as the dashboard refreshing a page, aren't recorded.
 
-A change to an application, environment or preview is saved together with its
-record, so a change piqueld made always has one. Its record also names what
+A change to an application, environment, preview or secret is saved together
+with its record, so a change piqueld made always has one. Its record also names what
 the change started, such as the application's new revision and the operation
 deploying it:
 
 ```text
 POST /api/v1/environments/{id}/deploy generation 4 operation 0190…
 ```
+
+A secret's record names the secret, its new version and who may mount it,
+never its value.
 
 Other records are written in the background. If too many wait at once, or one
 can't be written, it's lost: the next record written then follows a **Failed**

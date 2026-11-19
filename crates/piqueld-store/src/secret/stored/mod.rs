@@ -5,7 +5,7 @@ use super::{
     NormalizedApplication, SecretOwner, SecretScope, SecretSource, Store, StoreError,
     deletion::SecretDeletion, now_ms,
 };
-use crate::{Actor, Attribution};
+use crate::{Actor, Attribution, Author};
 use piqueld_core::{
     ApplicationId, EnvironmentId, ValidationError, ValidationErrors,
     access::Permission,
@@ -123,15 +123,16 @@ impl Store {
     /// secrets, 1000 available versions and 100 MiB. Rejected while the
     /// application or the secret is being deleted, and for names the saved
     /// manifest or an environment's last fetched one declares as generated.
-    /// `actor` needs `secrets:write` on the application, checked in the
-    /// transaction.
+    /// The author's actor needs `secrets:write` on the application, checked
+    /// in the transaction, which also records the request's change (its
+    /// name, generation and any new access; never the value).
     ///
     /// # Errors
     /// Returns invalid input, refusal, conflicts (`SecretAccessConflict`
     /// among them), quota, key or database errors.
     pub async fn put_stored_secret<'a>(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
         name: &str,
         expected: impl Into<SecretPrecondition<'a>>,
@@ -144,6 +145,8 @@ impl Store {
         } = expected.into();
         let value = Zeroizing::new(value);
         Self::check_secret_write(name, &value, expected)?;
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::require_secrets_write_on(&mut tx, actor, application).await?;
         let app = Self::application_on(&mut tx, application.as_str())
@@ -218,22 +221,28 @@ impl Store {
             .execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!("INSERT INTO application_secret_versions(application_id,name,generation,nonce,ciphertext) VALUES(?1,?2,?3,?4,?5)",id,name,generation,envelope.nonce,envelope.ciphertext)
             .execute(&mut *tx).await.map_err(StoreError::database)?;
+        let mut change = format!("secret {name:?} generation {generation}");
         if let Some(access) = access {
-            Self::write_access_on(&mut tx, application, name, access).await?;
+            let description = Self::write_access_on(&mut tx, application, name, access).await?;
+            change = format!("{change} access {description}");
         }
         let (scope, by) = (SecretScope::Application(application), actor.attribution());
         let message = format!("Stored secret version {generation}");
         Self::secret_event_on(&mut tx, scope, ("secret_saved", &message, name), by, now).await?;
         let secret = Self::stored_secret_on(&mut tx, application, name).await?;
+        let target = (Some(application.as_str()), None);
+        author.record_on(&mut tx, 200, &change, target).await?;
         tx.commit().await.map_err(StoreError::database)?;
+        author.committed();
         Ok(secret)
     }
 
     /// Replaces the access list of a stored secret, if it is still
     /// `expected` when given, so a concurrent change isn't lost. A narrower
     /// list only affects later deployments; running ones keep their pinned
-    /// versions. Rejected while the secret is being deleted. `actor` needs
-    /// `secrets:write` on the application, checked in the transaction.
+    /// versions. Rejected while the secret is being deleted. The author's
+    /// actor needs `secrets:write` on the application, checked in the
+    /// transaction, which also records the request's change.
     ///
     /// # Errors
     /// Returns refusal, absence, deletion in progress (`SecretDeleting`), a
@@ -241,12 +250,14 @@ impl Store {
     /// (`InvalidInput`), or database errors.
     pub async fn set_secret_access(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
         name: &str,
         access: &SecretAccess,
         expected: Option<&SecretAccess>,
     ) -> Result<StoredSecret, StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::require_secrets_write_on(&mut tx, actor, application).await?;
         let current = Self::stored_secret_on(&mut tx, application, name).await?;
@@ -260,7 +271,11 @@ impl Store {
         let event = ("secret_access_changed", message.as_str(), name);
         Self::secret_event_on(&mut tx, scope, event, by, now_ms()).await?;
         let secret = Self::stored_secret_on(&mut tx, application, name).await?;
+        let change = format!("secret {name:?} access {description}");
+        let target = (Some(application.as_str()), None);
+        author.record_on(&mut tx, 200, &change, target).await?;
         tx.commit().await.map_err(StoreError::database)?;
+        author.committed();
         Ok(secret)
     }
 
