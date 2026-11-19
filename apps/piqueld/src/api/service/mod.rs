@@ -377,18 +377,18 @@ impl ApplicationService {
     ///
     /// # Errors
     /// Returns a validation, generation or access conflict, or storage error.
-    pub async fn put_stored_secret(
+    pub async fn put_stored_secret<'a>(
         &self,
         actor: Actor<'_>,
         application: &ApplicationId,
         name: &str,
-        expected: piqueld_store::SecretPrecondition<'_>,
+        expected: impl Into<piqueld_store::SecretPrecondition<'a>>,
         value: Vec<u8>,
         access: Option<&SecretAccess>,
     ) -> Result<StoredSecret, ApplicationError> {
         Ok(self
             .store
-            .put_stored_secret_guarded(actor, application, name, expected, value, access)
+            .put_stored_secret(actor, application, name, expected, value, access)
             .await?)
     }
 

@@ -287,7 +287,7 @@ async fn uploads_from_an_outdated_access_read_are_refused() {
         .unwrap();
     let mine = only([&staging]);
     let upload = |expected| {
-        store.put_stored_secret_guarded(
+        store.put_stored_secret(
             Daemon,
             &application,
             secret,

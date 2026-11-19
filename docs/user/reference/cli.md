@@ -1254,8 +1254,8 @@ whether previews may mount it; `--all-environments` never includes previews.
 Unset flags keep the current access. `access`, and `set` when it changes the
 access, send the access they read, so if someone changed it meanwhile, they fail
 with exit 3 and `secret_access_conflict`; run it again to apply your change on
-top of theirs. Environments
-are stored by ID, so renaming one keeps its access and deleting one removes it.
+top of theirs. Environments are stored by ID, so renaming one keeps its access
+and deleting one removes it.
 Deploying, or `app plan --env`, for an environment or preview that mounts a
 secret it may not use fails with `secret_access_denied`.
 

@@ -121,7 +121,8 @@ pub(super) async fn list_stored(
     Ok(ok(state.stored_secrets(&ApplicationId::parse(id)?).await?))
 }
 
-/// Access list supplied with a secret value; see `put_stored`.
+/// Access list supplied with a secret value, and the access the caller
+/// read, which the secret must still have; see `put_stored`.
 #[derive(Default, Deserialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in = Query)]

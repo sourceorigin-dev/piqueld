@@ -68,6 +68,33 @@ test('replacing a stored value keeps an access list changed elsewhere, and acces
   await expect(store.getByRole('button', { name: 'Save access only', exact: true })).toBeDisabled();
 });
 
+test('saving a value that changes access sends the access the form loaded', async ({ page, account }) => {
+  void account;
+  const { app, env } = await apply(page, webManifest('vault'));
+  const path = `applications/${app}/secrets/api-token`;
+  await call(page, 'PUT', `${path}?environments=${env}`, 'first', { 'X-Expected-Generation': '0' });
+  await page.goto(`/dashboard/applications/${app}`);
+  await applicationTab(page, 'Secrets').click();
+  const store = card(page, 'Secret store');
+  const row = store.getByRole('row').filter({ hasText: 'api-token' });
+  await row.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(store.getByLabel('production', { exact: true })).toBeChecked();
+
+  // The upload is guarded by the access the form loaded, so a list changed
+  // meanwhile isn't overwritten.
+  await store.getByLabel('Every environment, including ones created later', { exact: true }).check();
+  await store.getByLabel('Value', { exact: true }).fill('second');
+  confirmNext(page, 'Replace api-token?');
+  const upload = page.waitForRequest(request => sent(request, 'PUT', path));
+  await store.getByRole('button', { name: 'Save secret', exact: true }).click();
+  const query = new URL((await upload).url()).searchParams;
+  expect(query.get('environments')).toBe('all');
+  expect(query.get('expected_environments')).toBe(env);
+  expect(query.get('expected_previews')).toBe('false');
+  await expect(row).toContainText('every environment');
+  await expect(row.getByRole('cell').nth(1)).toHaveText('2');
+});
+
 test('a refused secret write clears the value and waits for a refresh', async ({ page, account }) => {
   void account;
   const { app } = await apply(page, webManifest('vault'));
