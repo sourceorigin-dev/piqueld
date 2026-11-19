@@ -162,6 +162,52 @@ impl Harness {
         assert_eq!(self.provider.changes(), Vec::<String>::new());
     }
 
+    /// Forgets the changes made at the provider so far.
+    fn forget_changes(&self) {
+        let _ = self.provider.changes();
+    }
+
+    /// Changes the address of `host` by hand, as drift piqueld must notice.
+    fn drift(&self, host: &str) {
+        let drifted = self.provider.found(host).unwrap();
+        self.provider
+            .set(
+                host,
+                Some(&drifted[0].id),
+                &Record::A("198.51.100.7".parse().unwrap()),
+            )
+            .unwrap();
+        self.forget_changes();
+    }
+
+    /// Saves a challenge record at `name` in `zone`, holding `value`, as an
+    /// earlier attempt left it.
+    async fn save_challenge(
+        &self,
+        name: &str,
+        zone: &str,
+        value: &str,
+        record_id: Option<String>,
+    ) -> AcmeChallenge {
+        let challenge = AcmeChallenge {
+            name: name.into(),
+            zone: Hostname::parse(zone).unwrap(),
+            value: value.into(),
+            record_id,
+        };
+        self.store.save_acme_challenge(&challenge).await.unwrap();
+        challenge
+    }
+
+    /// Writes a TXT record `value` at `name` in `example.com`, and saves it
+    /// by ID as a challenge record an earlier attempt left.
+    async fn leftover(&self, name: &str, value: &str) {
+        self.provider.insert(name, Record::Txt(value.into()));
+        let id = self.provider.found(name).unwrap()[0].id.clone();
+        self.save_challenge(name, "example.com", value, Some(id.0))
+            .await;
+    }
+
     /// The ownership record of `host` for this installation.
     fn owner(&self, host: &str) -> String {
         format!(
@@ -266,22 +312,13 @@ async fn records_are_written_once_applied_and_never_on_foreign_names() {
     let mut since = 0;
     assert_eq!(harness.journaled(&mut since).await, ["ingress_dns_create"]);
     // An unchanged pass changes nothing and records no history.
-    let _ = harness.provider.changes();
+    harness.forget_changes();
     assert!(harness.pass().await);
     harness.unchanged();
     assert_eq!(harness.journaled(&mut since).await, Vec::<String>::new());
 
     // Drift is repaired: an address piqueld owns is changed by hand.
-    let drifted = harness.provider.found("www.example.com").unwrap();
-    harness
-        .provider
-        .set(
-            "www.example.com",
-            Some(&drifted[0].id),
-            &Record::A("198.51.100.7".parse().unwrap()),
-        )
-        .unwrap();
-    let _ = harness.provider.changes();
+    harness.drift("www.example.com");
     assert!(harness.pass().await);
     assert_eq!(
         harness.provider.changes(),
@@ -377,7 +414,7 @@ async fn a_staged_withdrawal_is_published_by_the_next_pass() {
     assert_eq!(harness.provider.dump(), [format!("{owner} {rival}")]);
 
     harness.provider.fail(None);
-    let _ = harness.provider.changes();
+    harness.forget_changes();
     assert!(harness.pass().await);
     assert_eq!(harness.provider.changes(), ["publish"]);
     assert_eq!(
@@ -396,32 +433,23 @@ async fn a_staged_withdrawal_is_published_by_the_next_pass() {
 async fn saved_challenge_records_are_deleted_after_a_restart() {
     let harness = Harness::new(true).await;
     let txt = |value: &str| Record::Txt(value.into());
-    let created = "_acme-challenge.www.example.com";
-    harness.provider.insert(created, txt("created"));
-    let id = harness.provider.found(created).unwrap()[0].id.clone();
+    harness
+        .leftover("_acme-challenge.www.example.com", "created")
+        .await;
     let unanswered = "_acme-challenge.example.com";
     harness.provider.insert(unanswered, txt("unanswered"));
     harness.provider.insert(unanswered, txt("someone else's"));
-    let zone = Hostname::parse("example.com").unwrap();
-    for (name, value, record_id) in [
-        (created, "created", Some(id.0)),
-        (unanswered, "unanswered", None),
-    ] {
-        let challenge = AcmeChallenge {
-            name: name.into(),
-            zone: zone.clone(),
-            value: value.into(),
-            record_id,
-        };
-        harness.store.save_acme_challenge(&challenge).await.unwrap();
-    }
-    let elsewhere = AcmeChallenge {
-        name: "_acme-challenge.elsewhere.test".into(),
-        zone: Hostname::parse("elsewhere.test").unwrap(),
-        value: "kept".into(),
-        record_id: Some("1".into()),
-    };
-    harness.store.save_acme_challenge(&elsewhere).await.unwrap();
+    harness
+        .save_challenge(unanswered, "example.com", "unanswered", None)
+        .await;
+    let elsewhere = harness
+        .save_challenge(
+            "_acme-challenge.elsewhere.test",
+            "elsewhere.test",
+            "kept",
+            Some("1".into()),
+        )
+        .await;
 
     // Right after a restart, before any zone is discovered.
     let restarted = Harness::undiscovered(&harness.engine, &harness.provider, true, None);
@@ -445,16 +473,9 @@ async fn saved_challenge_records_are_deleted_after_a_restart() {
 #[tokio::test]
 async fn failing_challenge_deletions_back_off() {
     let harness = Harness::new(true).await;
-    let name = "_acme-challenge.www.example.com";
-    harness.provider.insert(name, Record::Txt("left".into()));
-    let id = harness.provider.found(name).unwrap()[0].id.clone();
-    let challenge = AcmeChallenge {
-        name: name.into(),
-        zone: Hostname::parse("example.com").unwrap(),
-        value: "left".into(),
-        record_id: Some(id.0),
-    };
-    harness.store.save_acme_challenge(&challenge).await.unwrap();
+    harness
+        .leftover("_acme-challenge.www.example.com", "left")
+        .await;
     harness.provider.fail(Some(Outage::Delete));
 
     let (token, unneeded) = (CancellationToken::new(), BTreeSet::new());
@@ -485,10 +506,7 @@ async fn wildcards_get_records_with_ownership_beside_their_parent() {
     assert_eq!(
         harness.provider.dump(),
         [
-            format!(
-                "_piqueld._wildcard.tenants.example.com TXT {:?}",
-                harness.store.instance_id().as_str()
-            ),
+            harness.owner("_wildcard.tenants.example.com"),
             format!("*.tenants.example.com A {PUBLIC}"),
         ]
     );
@@ -507,7 +525,7 @@ async fn visibility_changes_withdraw_before_repointing() {
         .await;
     harness.apply().await;
     assert!(harness.pass().await);
-    let _ = harness.provider.changes();
+    harness.forget_changes();
 
     // Public -> private: the deployment withdraws the route first. Until the
     // gateway acknowledges that, the records stay.
@@ -554,7 +572,7 @@ async fn visibility_changes_withdraw_before_repointing() {
     harness
         .node_addresses(&["100.64.0.9", "fd7a:115c:a1e0::5"])
         .await;
-    let _ = harness.provider.changes();
+    harness.forget_changes();
     assert!(harness.pass().await);
     assert_eq!(
         harness.provider.changes(),
@@ -586,7 +604,7 @@ async fn tunnel_mode_replaces_addresses_with_a_proxied_cname() {
     assert!(harness.pass().await);
     let tunnel = harness.restart(Some(tunnel())).await;
     // Until the gateway runs in tunnel mode, the records stay.
-    let _ = harness.provider.changes();
+    harness.forget_changes();
     assert!(Harness::pass_of(&tunnel).await);
     harness.unchanged();
     tunnel.converged();
@@ -632,7 +650,7 @@ async fn disabled_ingress_deletes_records_once_the_gateway_stopped() {
     let harness = Harness::new(true).await;
     harness.applied("www.example.com").await;
     assert!(harness.pass().await);
-    let _ = harness.provider.changes();
+    harness.forget_changes();
     let mut disabled = harness.restart(None).await;
     disabled.enabled = false;
     // The gateway's stop is not confirmed yet: its records stay.
@@ -652,16 +670,7 @@ async fn names_another_installation_claims_are_never_changed() {
     harness
         .provider
         .insert("_piqueld.www.example.com", Record::Txt("other".into()));
-    let drifted = harness.provider.found("www.example.com").unwrap();
-    harness
-        .provider
-        .set(
-            "www.example.com",
-            Some(&drifted[0].id),
-            &Record::A("198.51.100.7".parse().unwrap()),
-        )
-        .unwrap();
-    let _ = harness.provider.changes();
+    harness.drift("www.example.com");
     assert!(harness.pass().await);
     harness.unchanged();
     assert_eq!(
@@ -691,13 +700,13 @@ async fn staged_changes_are_published_after_a_failed_publish() {
     harness.provider.mimic(Mimics::Ovh);
     let id = harness.applied("www.example.com").await;
     assert!(harness.pass().await);
-    let _ = harness.provider.changes();
+    harness.forget_changes();
     // The route is removed, but publishing its deletion fails.
     harness.stage(&id, &[], true).await;
     harness.apply().await;
     harness.provider.fail(Some(Outage::Publish));
     assert!(!harness.pass().await);
-    let _ = harness.provider.changes();
+    harness.forget_changes();
     // Nothing is left to delete; the deletion is still published, once.
     harness.provider.fail(None);
     assert!(harness.pass().await);
@@ -765,7 +774,7 @@ async fn the_webhook_hostname_gets_a_public_routes_records() {
         .await
         .with_webhooks(Some(hooks));
     tunneled.converged();
-    let _ = harness.provider.changes();
+    harness.forget_changes();
     assert!(Harness::pass_of(&tunneled).await);
     assert_eq!(
         harness.provider.changes(),
