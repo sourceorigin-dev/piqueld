@@ -5,6 +5,9 @@ a larger machine on your tailnet. The host stays the Swarm's only manager and
 keeps running the daemon. piqueld reaches each worker through its Docker
 Engine, for what lives on that machine.
 
+[Previews](../applications/previews.md#run-previews-on-another-machine) can
+run on a worker, so they don't take the host's CPU, memory and disk.
+
 This page joins a machine named `nixosbtw` to the Swarm of a host whose
 tailnet address is `100.64.0.1`. The worker's tailnet address is
 `100.64.0.2`.

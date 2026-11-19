@@ -395,7 +395,7 @@ The worker's Docker Engine, as `tcp://host:port`. The connection is neither auth
 
 ## `[previews]` table
 
-How many previews may exist, and what each preview service may use.
+How many previews may exist, what each preview service may use, and where new previews run.
 
 Counts are checked when a preview is created, so lowering one below the current count keeps every existing preview running and only refuses new ones. Resource bounds apply when a preview's manifest is rendered, so a preview picks up changed bounds on its next deployment. Environments are never bounded.
 
@@ -428,6 +428,12 @@ Most replicas a preview service runs; manifests asking for more are capped with 
 Type: integer. Default: `30`.
 
 Previews the whole installation may have; creating more fails with `preview_limit_reached`. `0` refuses every new preview.
+
+### `previews.node`
+
+Type: [node name](#node-name). Optional.
+
+The worker node, one `[nodes]` names, that previews created from now on run on: their services, jobs, volumes and images. Without it, they run on this host. A preview keeps the node it was created on. Needs a build machine (`[build]`), whose registry the worker pulls built images from.
 
 ## `[reconciliation]` table
 
@@ -615,3 +621,9 @@ The path of a file holding a secret, such as an API token. The daemon reads it o
 Type: string.
 
 A fully qualified public DNS name, such as `app.example.com`, in lowercase ASCII, without a scheme, port, path or wildcard. Write Unicode domains in their IDNA (Punycode) form.
+
+### Node name
+
+Type: string.
+
+The name the daemon's configuration gives a worker node, such as `nixosbtw`, under `[nodes.<name>]`.

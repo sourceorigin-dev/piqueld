@@ -177,6 +177,13 @@ impl DaemonConfig {
                 previews.default_memory_bytes.to_string(),
             ),
             ("Replicas per service", previews.max_replicas.to_string()),
+            (
+                "New previews run on",
+                previews
+                    .node
+                    .as_ref()
+                    .map_or_else(|| "This host".into(), |node| format!("Worker node {node}")),
+            ),
         ])
     }
 

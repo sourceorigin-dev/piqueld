@@ -48,6 +48,16 @@ impl EditorContext {
     }
 }
 
+/// Where a preview runs: a worker node, or the host.
+fn runs_on(preview: Option<&piqueld_client::Preview>) -> String {
+    preview
+        .and_then(|preview| preview.node.as_ref())
+        .map_or_else(
+            || "This host".to_owned(),
+            |node| format!("Worker node {node}"),
+        )
+}
+
 /// Badge for where a preview's branch is, with the commits or the reason the
 /// repository could not be read.
 fn branch_state(state: &BranchState) -> (AnyView, Option<String>) {
@@ -521,6 +531,8 @@ pub(super) fn PreviewSettings() -> impl IntoView {
                 <dd>
                     <code>{id}</code>
                 </dd>
+                <dt>"Runs on"</dt>
+                <dd>{runs_on(identity.as_ref())}</dd>
                 <dt>"Branch state"</dt>
                 <dd>
                     {detail(|view| {

@@ -52,6 +52,8 @@ impl BollardDocker {
             ))
             .await
             .or_request("list log tasks")?;
+        // Each container's output is read on its own node's engine.
+        let placements = self.placements().await?;
         let mut result = ApplicationLogs::default();
         let mut bytes = 0usize;
         let since = Self::log_since(since);
@@ -68,7 +70,16 @@ impl BollardDocker {
                 result.truncated = true;
                 continue;
             };
-            let mut logs = self.client()?.logs(
+            // A worker Swarm doesn't hear from has no output to read.
+            let Some((engine, _)) = task
+                .node_id
+                .as_deref()
+                .and_then(|node| placements.engine(node))
+            else {
+                result.truncated = true;
+                continue;
+            };
+            let mut logs = engine.client()?.logs(
                 container,
                 Some(
                     LogsOptionsBuilder::default()

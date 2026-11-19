@@ -120,7 +120,7 @@ socket serves the API alone.
 ## Previews
 
 `[previews]` bounds what [previews](manifest.md#previews), often
-created by agents, may use on the node that also runs production:
+created by agents, may use, and chooses where new ones run:
 
 ```toml
 [previews]
@@ -154,6 +154,14 @@ count keep running and only new ones are refused; `piquelctl status` and the
 dashboard show the overage. Previews pick up changed resource bounds on their
 next deployment; until then, previews deployed before the limits existed run
 without them, which status reports as unlimited replicas. Previews are never deleted automatically.
+
+`node` runs the previews created from then on on a [worker node](#worker-nodes)
+instead of this host: their services, jobs, volumes and images. It names a
+worker `[nodes]` has, and needs a [build machine](#build-machine), whose
+registry the worker pulls built images from. A preview keeps the node it was
+created on, so changing `node` never moves a preview or its volumes; delete
+and create it again to move it. See
+[running previews on a worker](../applications/previews.md#run-previews-on-another-machine).
 
 
 `[build_history]` bounds persisted build output: `log_max_bytes` defaults to

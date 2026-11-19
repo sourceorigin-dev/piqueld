@@ -82,8 +82,9 @@ impl ImagesInUse {
         &self,
         docker: &impl DockerApi,
         sources: impl IntoIterator<Item = (&'a ServiceName, &'a ResolvedSource)>,
+        node: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<(), OperationError> {
-        let present = LocalImage::present(&docker.images().await?);
+        let present = LocalImage::present(&docker.images(node).await?);
         for (service, source) in present.missing(sources) {
             let image = ServiceImage {
                 service: service.clone(),
@@ -95,7 +96,7 @@ impl ImagesInUse {
                     source: None,
                 });
             };
-            if let Err(error) = docker.resolve_image(digest.as_str()).await {
+            if let Err(error) = docker.resolve_image(digest.as_str(), node).await {
                 return Err(OperationError::ImageUnavailable {
                     image,
                     source: Some(error),
@@ -143,7 +144,7 @@ impl<D: DockerApi> Controller<D> {
             .retained_images(self.images.keep_deployments)
             .await?;
         let (mut kept, mut reclaimed) = (0_u32, 0_u64);
-        for image in self.docker.images().await? {
+        for image in self.docker.images(None).await? {
             if !image.built_by(instance) {
                 continue;
             }

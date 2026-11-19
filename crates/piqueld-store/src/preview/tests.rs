@@ -613,3 +613,33 @@ async fn repeated_preview_requests_change_and_record_nothing() {
     repeat(delete()).await;
     assert_eq!(store.audit_actions().await.len(), 2);
 }
+
+/// A preview runs on the node `previews.node` named when it was created, and
+/// keeps it when the setting changes.
+#[tokio::test]
+async fn a_preview_keeps_the_node_it_was_created_on() {
+    let (_temp, store) = Store::temporary().await;
+    let node = piqueld_core::nodes::NodeName::parse("nixosbtw").unwrap();
+    let on_worker = store.clone().with_previews(PreviewLimits {
+        node: Some(node.clone()),
+        ..PreviewLimits::default()
+    });
+    let application = save(&on_worker, false).await;
+    let worker = create(&on_worker, &application, "feat/login", None)
+        .await
+        .unwrap();
+    let host = create(&store, &application, "feat/search", None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.node(&worker.preview.id).await.unwrap(),
+        Some(node.clone())
+    );
+    assert_eq!(worker.preview.kind.node(), Some(&node));
+    // Created again without the setting, the existing preview stays put.
+    let again = create(&store, &application, "feat/login", None)
+        .await
+        .unwrap();
+    assert_eq!(again.preview.kind.node(), Some(&node));
+    assert_eq!(store.node(&host.preview.id).await.unwrap(), None);
+}

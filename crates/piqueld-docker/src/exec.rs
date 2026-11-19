@@ -25,6 +25,8 @@ pub struct Exec {
     pub task: String,
     /// Whether the command has a pseudo-terminal.
     pub tty: bool,
+    /// The worker whose engine runs the task, or `None` on this host.
+    pub node: Option<piqueld_core::nodes::NodeName>,
 }
 
 /// Channels connecting a running command to its client transport.
@@ -65,19 +67,22 @@ impl BollardDocker {
             ))
             .await
             .or_request("list exec tasks")?;
-        let Some((_, task, container)) = tasks
+        // The command runs in the container on the task's own node.
+        let placements = self.placements().await?;
+        let Some((_, task, container, (engine, node))) = tasks
             .into_iter()
             .filter_map(|task| {
                 let rank = Self::exec_rank(Self::task_state(&task))?;
                 let container = Self::task_container(&task)?.to_owned();
-                Some((rank, task.id?, container))
+                let engine = placements.engine(task.node_id.as_deref()?)?;
+                Some((rank, task.id?, container, engine))
             })
             .min_by_key(|(rank, ..)| *rank)
         else {
             return Ok(None);
         };
         let tty = request.tty.is_some();
-        let created = self
+        let created = engine
             .client()?
             .create_exec(
                 &container,
@@ -99,6 +104,7 @@ impl BollardDocker {
             id: created.id,
             task,
             tty,
+            node: node.cloned(),
         }))
     }
 

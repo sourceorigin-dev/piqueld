@@ -672,10 +672,18 @@ impl<'a> ErrorReport<'a> {
             }
         }
         if let Some(environment) = operation.get("environment_id").and_then(Value::as_str) {
-            out.label(
-                "Hint",
-                format_args!("retry with `piquelctl env reconcile <APP> {environment}`"),
-            )?;
+            // Previews aren't environments `env` commands address.
+            if environment.starts_with("preview-") {
+                out.label(
+                    "Hint",
+                    "retry with `piquelctl preview deploy <APP> <BRANCH>`",
+                )?;
+            } else {
+                out.label(
+                    "Hint",
+                    format_args!("retry with `piquelctl env reconcile <APP> {environment}`"),
+                )?;
+            }
         }
         Ok(())
     }

@@ -58,6 +58,7 @@ impl RuntimeBoundary for Runtime {
     async fn reuse_images(
         &self,
         _: &std::collections::BTreeMap<piqueld_core::ServiceName, piqueld_core::ResolvedSource>,
+        _: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<piqueld::reconcile::ImagesInUse, BoundaryError> {
         Err(DockerError::Unavailable("browser fixture").into())
     }
@@ -109,6 +110,7 @@ impl RuntimeBoundary for Runtime {
             id: "fixture-exec".into(),
             task: "fixture-task".into(),
             tty: request.tty.is_some(),
+            node: None,
         }))
     }
     /// Echoes input, reports resizes, and exits with code 3 at Ctrl-D.

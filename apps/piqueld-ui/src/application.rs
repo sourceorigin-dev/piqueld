@@ -452,6 +452,7 @@ mod tests {
             branch: branch.parse().unwrap(),
             slot: None,
             slug: id.parse().unwrap(),
+            node: None,
         }));
         preview
     }

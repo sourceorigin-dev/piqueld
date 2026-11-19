@@ -200,6 +200,7 @@ impl RuntimeBoundary for FakeRuntime {
                 id: id.into(),
                 task: "task-1".into(),
                 tty: request.tty.is_some(),
+                node: None,
             }),
         )
     }
@@ -288,6 +289,7 @@ impl RuntimeBoundary for FakeRuntime {
     async fn reuse_images(
         &self,
         _: &BTreeMap<piqueld_core::ServiceName, piqueld_core::ResolvedSource>,
+        _: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<piqueld::reconcile::ImagesInUse, BoundaryError> {
         Err(piqueld_docker::DockerError::Unavailable("list images").into())
     }

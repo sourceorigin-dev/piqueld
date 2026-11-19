@@ -158,6 +158,9 @@ max_total = 30
 default_cpu_millis = 500
 default_memory_bytes = 536870912
 max_replicas = 1
+# The worker node, one [nodes] names, that new previews run on. Needs a build
+# machine ([build]), whose registry the worker pulls built images from.
+# node = "nixosbtw"
 
 # Largest Git bundle `piquelctl preview deploy --local` may upload.
 [snapshots]

@@ -54,6 +54,7 @@ mod telemetry;
 mod timeline;
 pub use sync::{BranchHead, SyncApplication};
 
+use piqueld_core::nodes::NodeName;
 use piqueld_core::{
     ApplicationId, EnvironmentId, EnvironmentKind, EnvironmentName, EnvironmentSource,
     NormalizedApplication, Preview, PreviewSlot, PreviewSlug, TrackedBranch,
@@ -1083,6 +1084,7 @@ struct EnvironmentRow {
     pinned_commit: Option<String>,
     promoted_from: Option<String>,
     preview_slot: Option<String>,
+    preview_node: Option<String>,
     sync: i64,
     telemetry: i64,
     stopped: i64,
@@ -1120,6 +1122,11 @@ impl EnvironmentRow {
                     .transpose()
                     .map_err(StoreError::corrupt)?,
                 slug: PreviewSlug::parse(self.name.as_str()).map_err(StoreError::corrupt)?,
+                node: self
+                    .preview_node
+                    .map(NodeName::parse)
+                    .transpose()
+                    .map_err(StoreError::corrupt)?,
             })),
             _ => return Err(StoreError::Corrupt),
         };
@@ -1165,6 +1172,7 @@ struct StoredEnvironmentRow {
     pinned_commit: Option<String>,
     promoted_from: Option<String>,
     preview_slot: Option<String>,
+    preview_node: Option<String>,
     sync: i64,
     telemetry: i64,
     stopped: i64,
@@ -1204,6 +1212,7 @@ impl StoredEnvironmentRow {
             pinned_commit: self.pinned_commit,
             promoted_from: self.promoted_from,
             preview_slot: self.preview_slot,
+            preview_node: self.preview_node,
             sync: self.sync,
             telemetry: self.telemetry,
             stopped: self.stopped,

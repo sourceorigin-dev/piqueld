@@ -8,6 +8,7 @@
 //! the node with [`NODE_LABEL`], so it knows the node by name even while the
 //! machine is off.
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// The Swarm node label naming the configured worker a node is, such as
 /// `io.piqueld.node=nixosbtw`. The daemon sets it; a worker without it, or
@@ -21,6 +22,15 @@ crate::names::logical_name!(
     NodeNameError,
     "node names"
 );
+
+impl NodeName {
+    /// The worker `labels` place a resource or a Swarm node on, by their
+    /// [`NODE_LABEL`]; the host when they have none.
+    #[must_use]
+    pub fn labelled(labels: &BTreeMap<String, String>) -> Option<Self> {
+        Self::parse(labels.get(NODE_LABEL)?).ok()
+    }
+}
 
 /// A daemon on another machine, reached at `tcp://host:port`, without
 /// credentials or a path: a build machine's `BuildKit` daemon, or a worker

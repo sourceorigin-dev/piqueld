@@ -7,6 +7,7 @@ use super::{
     ApplicationState, Operation, ResolvedApplication, Store, StoreError, StoredApplication,
     StoredEnvironment, now_ms,
 };
+use piqueld_core::nodes::NodeName;
 use piqueld_core::{
     ApplicationId, EnvironmentId, GitBranch, Preview, PreviewSlot, PreviewSlug,
     access::Scope,
@@ -78,22 +79,24 @@ impl Store {
         }
         let slug = PreviewSlug::derive(&template.metadata().name, branch, slot);
         let id = super::new_id("preview");
-        let (application_id, slug, branch, slot) = (
+        let (application_id, slug, branch, slot, node) = (
             template.id().as_str(),
             slug.as_str(),
             branch.as_str(),
             slot.map(PreviewSlot::as_str),
+            limits.node.as_ref().map(NodeName::as_str),
         );
         // Any unique conflict leaves the row out: the same branch and slot
         // (found below), or a slug naming another environment (not found).
         let created = sqlx::query!(
-            "INSERT INTO environments(id,application_id,name,kind,branch,preview_slot,created_at_ms,updated_at_ms) VALUES(?1,?2,?3,'preview',?4,?5,?6,?6) ON CONFLICT DO NOTHING",
+            "INSERT INTO environments(id,application_id,name,kind,branch,preview_slot,preview_node,created_at_ms,updated_at_ms) VALUES(?1,?2,?3,'preview',?4,?5,?7,?6,?6) ON CONFLICT DO NOTHING",
             id,
             application_id,
             slug,
             branch,
             slot,
-            now
+            now,
+            node
         )
         .execute(&mut **tx)
         .await
@@ -158,7 +161,7 @@ impl Store {
             return Ok(());
         };
         let previews = sqlx::query!(
-            r#"SELECT e.id AS "id!",e.application_id AS "application_id!",e.name AS "slug!",e.branch AS "branch!",e.preview_slot,e.delete_intent AS "deleting!: bool",d.id AS "deployment_id?",d.created_at_ms AS "deployed_at_ms?" FROM environments e LEFT JOIN deployments d ON d.id=(SELECT MAX(id) FROM deployments WHERE environment_id=e.id) WHERE e.kind='preview' AND e.id!=?2 AND (?1 IS NULL OR e.application_id=?1) ORDER BY COALESCE(d.created_at_ms,e.created_at_ms),e.id"#,
+            r#"SELECT e.id AS "id!",e.application_id AS "application_id!",e.name AS "slug!",e.branch AS "branch!",e.preview_slot,e.preview_node,e.delete_intent AS "deleting!: bool",d.id AS "deployment_id?",d.created_at_ms AS "deployed_at_ms?" FROM environments e LEFT JOIN deployments d ON d.id=(SELECT MAX(id) FROM deployments WHERE environment_id=e.id) WHERE e.kind='preview' AND e.id!=?2 AND (?1 IS NULL OR e.application_id=?1) ORDER BY COALESCE(d.created_at_ms,e.created_at_ms),e.id"#,
             scope,
             created
         )
@@ -179,6 +182,11 @@ impl Store {
                         .transpose()
                         .map_err(StoreError::corrupt)?,
                     slug: PreviewSlug::parse(row.slug).map_err(StoreError::corrupt)?,
+                    node: row
+                        .preview_node
+                        .map(NodeName::parse)
+                        .transpose()
+                        .map_err(StoreError::corrupt)?,
                 },
                 deleting: row.deleting,
                 last_deployment: row.deployment_id.zip(row.deployed_at_ms).map(
@@ -316,6 +324,23 @@ impl Store {
             .map_err(StoreError::database)?;
         }
         Ok(())
+    }
+
+    /// The worker node a preview runs on; `None` for one on the host, an
+    /// environment, or one already gone.
+    ///
+    /// # Errors
+    /// Returns a storage or decoding error.
+    pub async fn node(&self, id: &EnvironmentId) -> Result<Option<NodeName>, StoreError> {
+        let id = id.as_str();
+        sqlx::query_scalar!("SELECT preview_node FROM environments WHERE id=?1", id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(StoreError::database)?
+            .flatten()
+            .map(NodeName::parse)
+            .transpose()
+            .map_err(StoreError::corrupt)
     }
 
     /// Every Docker volume a preview's deployments created, including

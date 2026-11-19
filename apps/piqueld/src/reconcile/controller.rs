@@ -240,7 +240,8 @@ impl<D: DockerApi> Controller<D> {
         operation: &Operation,
         names: &[String],
     ) -> Result<(), OperationError> {
-        let ownership = self.ownership_labels(&operation.environment_id);
+        // A preview's volumes live on the worker it runs on.
+        let ownership = self.placed_ownership(&operation.environment_id).await?;
         for name in names {
             self.docker.remove_volume(name, &ownership).await?;
         }
@@ -588,7 +589,7 @@ impl<D: DockerApi> Controller<D> {
             Arc::clone(&self.mutations),
         )
         .with_progress(Arc::clone(&self.store), operation.id.clone())
-        .with_build_priority(&application.environment.kind)
+        .for_kind(&application.environment.kind)
         .with_rebuild(self.store.rebuild_requested(&operation.id).await?);
         let (manifest, snapshot) = Box::pin(self.deployment_manifest(operation, tracking)).await?;
         let runtime = runtime.with_snapshot(snapshot);

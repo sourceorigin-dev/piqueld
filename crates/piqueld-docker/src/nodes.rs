@@ -20,6 +20,13 @@ use std::time::Duration;
 
 /// The port the manager listens on for workers, Docker's default.
 const SWARM_PORT: u16 = 2377;
+/// The MTU of the overlay networks of an environment on a worker, whose
+/// traffic to the host crosses the network between them, such as a tailnet:
+/// Tailscale's 1280 bytes, less the 50 VXLAN adds. Docker's default, 1450,
+/// would fragment every full-size packet.
+pub(super) const OVERLAY_MTU: u16 = 1230;
+/// The network option that sets an overlay network's MTU.
+pub(super) const MTU_OPTION: &str = "com.docker.network.driver.mtu";
 /// Longest a worker's engine gets to answer: it may be off, and the
 /// topology check runs before every change.
 const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
@@ -130,7 +137,107 @@ impl Nodes {
     }
 }
 
+/// Where the Swarm's tasks run: the Swarm node ID of this host, and of each
+/// worker that joined, with whether Swarm hears from it. Read once per
+/// request that places services or reads containers.
+pub(super) struct Placements<'a> {
+    /// This engine, the manager.
+    docker: &'a BollardDocker,
+    /// This host's node ID.
+    own: String,
+    /// Each joined worker's node ID, and whether it is ready, by name.
+    workers: BTreeMap<NodeName, (String, bool)>,
+}
+
+impl Placements<'_> {
+    /// The node ID `labels` place a service or job on: this host's, or the
+    /// joined worker's their [`NODE_LABEL`] names.
+    ///
+    /// # Errors
+    /// [`DockerError::NodeUnavailable`] for a worker that hasn't joined.
+    pub(super) fn node_id(
+        &self,
+        labels: &std::collections::BTreeMap<String, String>,
+    ) -> Result<&str, DockerError> {
+        let Some(node) = NodeName::labelled(labels) else {
+            return Ok(&self.own);
+        };
+        self.workers
+            .get(&node)
+            .map(|(id, _)| id.as_str())
+            .ok_or_else(|| DockerError::NodeUnavailable {
+                node,
+                reason: "it hasn't joined the Swarm".into(),
+            })
+    }
+
+    /// The engine whose containers a task on Swarm node `node_id` runs in,
+    /// and the worker's name; `None` for a worker Swarm doesn't hear from, or
+    /// a node piqueld doesn't know, whose containers can't be read.
+    pub(super) fn engine(&self, node_id: &str) -> Option<(&BollardDocker, Option<&NodeName>)> {
+        if node_id == self.own {
+            return Some((self.docker, None));
+        }
+        let (name, _) = self
+            .workers
+            .iter()
+            .find(|(_, (id, ready))| id == node_id && *ready)?;
+        Some((self.docker.nodes.workers.get(name)?, Some(name)))
+    }
+}
+
 impl BollardDocker {
+    /// Where the Swarm's tasks run (see [`Placements`]). Workers are only
+    /// listed when the configuration names some.
+    pub(super) async fn placements(&self) -> Result<Placements<'_>, DockerError> {
+        let own = self.local_node_id().await?;
+        let mut workers = BTreeMap::new();
+        if !self.nodes.workers.is_empty() {
+            for node in self.swarm_nodes().await? {
+                if let (Some(name), Some(id)) = (Nodes::name(&node), node.id.clone()) {
+                    workers.insert(name, (id, Nodes::ready(&node)));
+                }
+            }
+        }
+        Ok(Placements {
+            docker: self,
+            own,
+            workers,
+        })
+    }
+
+    /// The engine a resource placed on `node` lives on: this one, or the
+    /// worker's, once it answers within [`WORKER_TIMEOUT`].
+    ///
+    /// # Errors
+    /// [`DockerError::NodeUnavailable`] for a worker the configuration
+    /// doesn't name, or whose engine doesn't answer.
+    pub(super) async fn engine_for(&self, node: Option<&NodeName>) -> Result<&Self, DockerError> {
+        let Some(node) = node else {
+            return Ok(self);
+        };
+        let unavailable = |reason: String| DockerError::NodeUnavailable {
+            node: node.clone(),
+            reason,
+        };
+        let engine = self
+            .nodes
+            .workers
+            .get(node)
+            .ok_or_else(|| unavailable("[nodes] doesn't name it".into()))?;
+        engine.answers().await.map_err(unavailable)?;
+        Ok(engine)
+    }
+
+    /// The engine resources carrying `labels` live on (see
+    /// [`Self::engine_for`]).
+    pub(super) async fn engine_of(
+        &self,
+        labels: &std::collections::BTreeMap<String, String>,
+    ) -> Result<&Self, DockerError> {
+        self.engine_for(NodeName::labelled(labels).as_ref()).await
+    }
+
     /// Whether this engine, a worker's, answers within [`WORKER_TIMEOUT`],
     /// or why not.
     async fn answers(&self) -> Result<(), String> {
@@ -417,6 +524,53 @@ mod tests {
         // This engine must be the manager, and in the Swarm.
         assert!(nodes.check("own", &[worker("own", None)]).is_err());
         assert!(nodes.check("own", &[]).is_err());
+    }
+
+    #[test]
+    fn placements_route_by_label_and_task_node() {
+        let name = |value: &str| NodeName::parse(value).unwrap();
+        let docker = BollardDocker::connect(std::path::Path::new("/run/docker.sock"))
+            .unwrap()
+            .with_nodes(Nodes::new(
+                Some("100.64.0.1".parse().unwrap()),
+                ["ready", "down", "left"].map(|worker| {
+                    (
+                        name(worker),
+                        TcpEndpoint::try_from(format!("tcp://{worker}:2375")).unwrap(),
+                    )
+                }),
+            ));
+        let placements = Placements {
+            docker: &docker,
+            own: "own".into(),
+            workers: BTreeMap::from([
+                (name("ready"), ("w1".into(), true)),
+                (name("down"), ("w2".into(), false)),
+            ]),
+        };
+        let on = |worker: &str| BTreeMap::from([(NODE_LABEL.to_owned(), worker.to_owned())]);
+        assert_eq!(placements.node_id(&BTreeMap::new()).unwrap(), "own");
+        assert_eq!(placements.node_id(&on("ready")).unwrap(), "w1");
+        // A worker down still places services; one that left places none.
+        assert_eq!(placements.node_id(&on("down")).unwrap(), "w2");
+        assert!(matches!(
+            placements.node_id(&on("left")),
+            Err(DockerError::NodeUnavailable { .. })
+        ));
+        // Containers are read where the task runs, unless Swarm doesn't
+        // hear from that node.
+        assert!(
+            placements
+                .engine("own")
+                .is_some_and(|(_, node)| node.is_none())
+        );
+        assert!(
+            placements
+                .engine("w1")
+                .is_some_and(|(_, node)| node == Some(&name("ready")))
+        );
+        assert!(placements.engine("w2").is_none());
+        assert!(placements.engine("unknown").is_none());
     }
 
     #[test]

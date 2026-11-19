@@ -33,6 +33,9 @@ pub struct ApplicationRuntime<D> {
     progress: Option<(Arc<piqueld_store::Store>, String)>,
     /// The build queue its Git sources wait in.
     priority: BuildPriority,
+    /// The worker node the environment runs on, whose engine pulls its
+    /// images; this host when `None`.
+    node: Option<piqueld_core::nodes::NodeName>,
     /// Whether Git sources build even when an earlier build's image could
     /// be reused.
     rebuild: bool,
@@ -69,6 +72,7 @@ impl<D> ApplicationRuntime<D> {
             prepare_timeout,
             progress: None,
             priority: BuildPriority::Environment,
+            node: None,
             rebuild: false,
             snapshot: None,
             images,
@@ -93,11 +97,13 @@ impl<D> ApplicationRuntime<D> {
         self
     }
 
-    /// Queues Git source builds as `kind`'s, so environments build before
-    /// previews.
+    /// Prepares sources for an environment of `kind`: Git sources queue as
+    /// its builds, so environments build before previews, and images land
+    /// on the node it runs on.
     #[must_use]
-    pub(crate) fn with_build_priority(mut self, kind: &EnvironmentKind) -> Self {
+    pub(crate) fn for_kind(mut self, kind: &EnvironmentKind) -> Self {
         self.priority = kind.into();
+        self.node = kind.node().cloned();
         self
     }
 
@@ -261,7 +267,7 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
 
     async fn local_images(&self) -> Result<piqueld_core::LocalImages, BoundaryError> {
         let images = DockerTimeout::Request
-            .run("list images", self.docker.images())
+            .run("list images", self.docker.images(None))
             .await?;
         Ok(piqueld_docker::LocalImage::present(&images))
     }
@@ -269,18 +275,22 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
     async fn reuse_images(
         &self,
         sources: &std::collections::BTreeMap<piqueld_core::ServiceName, ResolvedSource>,
+        node: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<ImagesInUse, BoundaryError> {
         let in_use = ImagesInUse::hold(Arc::clone(&self.images)).await;
         // Bounded like preparation: a hung pull would hold cleanup off.
-        tokio::time::timeout(self.prepare_timeout, in_use.ensure(&*self.docker, sources))
-            .await
-            .map_err(|source| {
-                BoundaryError::Runtime(DockerError::unavailable("reuse release images", source))
-            })?
-            .map_err(|error| match error {
-                crate::operations::OperationError::Docker(error) => BoundaryError::Runtime(error),
-                error => BoundaryError::ImageUnavailable(Box::new(error)),
-            })?;
+        tokio::time::timeout(
+            self.prepare_timeout,
+            in_use.ensure(&*self.docker, sources, node),
+        )
+        .await
+        .map_err(|source| {
+            BoundaryError::Runtime(DockerError::unavailable("reuse release images", source))
+        })?
+        .map_err(|error| match error {
+            crate::operations::OperationError::Docker(error) => BoundaryError::Runtime(error),
+            error => BoundaryError::ImageUnavailable(Box::new(error)),
+        })?;
         Ok(in_use)
     }
 
@@ -364,7 +374,10 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         match &source {
             Source::Image { image } => {
                 let digest = DockerTimeout::ImageResolution
-                    .run("resolve image", self.docker.resolve_image(image))
+                    .run(
+                        "resolve image",
+                        self.docker.resolve_image(image, self.node.as_ref()),
+                    )
                     .await?;
                 ResolvedSource::parse_image(image.clone(), digest).map_err(|source| {
                     BoundaryError::Runtime(DockerError::RequestSource {
@@ -424,7 +437,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         let docker = self.docker.as_ref();
         let repository =
             crate::git::snapshot::SnapshotSource::checkout(self.snapshot.as_ref(), repository);
-        let owner = (&self.instance_id, self.priority);
+        let owner = (&self.instance_id, self.priority, self.node.as_ref());
         let Some((store, operation)) = &self.progress else {
             let checkout = self.checkouts.checkout(repository, None).await?;
             let image = checkout.build(build, owner, docker, None).await?;
@@ -508,7 +521,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
             return Ok(None);
         }
         let images = DockerTimeout::Request
-            .run("list images", self.docker.images())
+            .run("list images", self.docker.images(self.node.as_ref()))
             .await?;
         let present = piqueld_docker::LocalImage::present(&images);
         Ok(earlier

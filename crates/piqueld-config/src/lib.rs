@@ -254,6 +254,18 @@ impl DaemonConfig {
         }
         absolute_file("docker.socket", &self.docker.socket)?;
         self.docker.validate(&self.nodes)?;
+        if let Some(node) = &self.previews.node {
+            if !self.nodes.contains_key(node) {
+                return Err(ConfigError::Invalid(format!(
+                    "previews.node must name a worker [nodes] has, not {node}"
+                )));
+            }
+            if self.build.remote.is_none() {
+                return Err(ConfigError::Invalid(
+                    "previews.node needs a build machine ([build]), whose registry the worker pulls built images from".into(),
+                ));
+            }
+        }
         for host in &self.server.allowed_hosts {
             if host.len() > 253 || !host.split('.').all(|label| is_label(label, DNS_LABEL)) {
                 return Err(ConfigError::Invalid(

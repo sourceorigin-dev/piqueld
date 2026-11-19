@@ -1158,6 +1158,32 @@ impl ResolvedApplication {
         self
     }
 
+    /// Places the environment on the worker `node`, or leaves it on the host:
+    /// labels its own networks, volumes, services and jobs with
+    /// [`NODE_LABEL`](crate::nodes::NODE_LABEL), which the Docker boundary
+    /// routes them by. Like links, never part of a prepared target: project
+    /// it last, onto every network the target owns by then.
+    #[must_use]
+    pub fn on_node(mut self, node: Option<&crate::nodes::NodeName>) -> Self {
+        let Some(node) = node else {
+            return self;
+        };
+        let owned = |labels: &BTreeMap<String, String>| {
+            labels.get(APPLICATION_LABEL).map(String::as_str) == Some(self.id.as_str())
+        };
+        let labels = self
+            .networks
+            .iter_mut()
+            .map(|network| &mut network.labels)
+            .chain(self.volumes.iter_mut().map(|volume| &mut volume.labels))
+            .chain(self.services.iter_mut().map(|service| &mut service.labels))
+            .chain(self.jobs.iter_mut().map(|job| &mut job.container.labels));
+        for labels in labels.filter(|labels| owned(labels)) {
+            labels.insert(crate::nodes::NODE_LABEL.into(), node.to_string());
+        }
+        self
+    }
+
     /// Whether the target declares exports or imports, without which it takes
     /// part in no link.
     #[must_use]

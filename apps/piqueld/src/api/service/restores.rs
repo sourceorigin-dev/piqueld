@@ -40,7 +40,12 @@ impl ApplicationService {
             .sources()
             .map(|(service, source)| (service.clone(), source.clone()))
             .collect();
-        let _in_use = self.runtime.reuse_images(&sources).await?;
+        // A preview's images are pulled again on the worker it runs on.
+        let environment = self.store.get(&id).await?;
+        let _in_use = self
+            .runtime
+            .reuse_images(&sources, environment.environment.kind.node())
+            .await?;
         // Boxed: acceptance would otherwise make every restore future large.
         let response = Box::pin(self.accept(author, request, None, false, request_id)).await?;
         Self::restore_response(response)
