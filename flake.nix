@@ -286,6 +286,7 @@
               ]
               ++ lib.optionals stdenv.isLinux [
                 cargo-deny
+                cargo-machete
                 docker-client
                 cmake
                 lld

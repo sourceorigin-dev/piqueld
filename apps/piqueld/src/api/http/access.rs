@@ -1,7 +1,7 @@
 //! Per-route access requirements and their enforcement.
 //!
-//! Every API route is registered through [`public!`], [`authenticated!`], or
-//! [`granted!`], which record the requirement on its `OpenAPI` operation as
+//! Every API route is registered through `public!`, `authenticated!`, or
+//! `granted!`, which record the requirement on its `OpenAPI` operation as
 //! `x-piqueld-access`. Building the router fails for any operation without
 //! one, so routes are denied unless they declare who may call them, and the
 //! published contract documents each requirement. [`enforce`] checks every
@@ -185,8 +185,8 @@ impl RouteAccess {
     /// Indexes the requirement of every documented operation.
     ///
     /// # Panics
-    /// Panics when an operation was registered without [`public!`],
-    /// [`authenticated!`], or [`granted!`], or names an unknown permission, so
+    /// Panics when an operation was registered without `public!`,
+    /// `authenticated!`, or `granted!`, or names an unknown permission, so
     /// an undeclared route can never be served.
     pub(super) fn build(document: &OpenApi) -> Arc<Self> {
         let mut routes = HashMap::new();

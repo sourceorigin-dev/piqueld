@@ -3,8 +3,8 @@
 # Jobs group the `just` validation recipes by what they compile, so each
 # compilation happens once per job instead of once per recipe:
 #
-#   checks             -> fmt-check, deny
-#   rust (lint)        -> lint, openapi-check, boundary
+#   checks             -> fmt-check, audit, unused
+#   rust (lint)        -> lint, doc, openapi-check, boundary
 #   rust (test)        -> test, doc-test
 #   msrv               -> the published crates on the Rust their `rust-version` names
 #   wasm-ui            -> ui-check, check-wasm, test-wasm
@@ -159,9 +159,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
         with:
-          tool: just,cargo-deny
+          tool: just,cargo-deny,cargo-machete
       - run: just fmt-check
-      - run: just deny
+      - run: just audit
+      - run: just unused
 
   # Two parallel halves, so neither waits on the other's compilation: `lint`
   # type-checks the workspace and builds the generators, `test` builds and
@@ -174,7 +175,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -182,6 +183,7 @@ jobs:
           - name: lint
             run: |
               just lint
+              just doc
               just openapi-check
               just boundary
           - name: test
