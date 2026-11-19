@@ -206,12 +206,7 @@ impl<D: DockerApi> Controller<D> {
         // Unlike `close_action`, only failing to open or close the journal
         // action fails cleanup; a removal that fails, or whose intent can't
         // be recorded, keeps the image.
-        self.store
-            .finish_action(
-                &journal,
-                removed.as_ref().err().map(OperationError::diagnostic),
-            )
-            .await?;
+        self.record_outcome(&journal, &removed).await?;
         Ok(removed.is_ok())
     }
 }

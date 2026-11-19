@@ -63,31 +63,24 @@ impl<D: DockerApi> Controller<D> {
         // a failure instead of leaving it for interrupted-action recovery.
         let result = match &action.kind {
             kind if kind.mutates_runtime() => {
-                match self.service_secrets(kind.secrets(), ownership).await {
-                    Ok(secrets) => tokio::time::timeout_at(
+                async {
+                    let secrets = self.service_secrets(kind.secrets(), ownership).await?;
+                    tokio::time::timeout_at(
                         deadline,
                         self.retry(operation, &journal, cancellation, || {
                             self.mutate_action(kind, ownership, &secrets)
                         }),
                     )
                     .await
-                    .unwrap_or(Err(OperationError::ConvergenceTimeout)),
-                    Err(error) => Err(error),
+                    .unwrap_or(Err(OperationError::ConvergenceTimeout))
                 }
+                .await
             }
-            ActionKind::WaitForService { service, .. } => {
+            ActionKind::WaitForService { service, .. }
+            | ActionKind::WaitForServiceRemoval { service } => {
                 let wait = Wait {
                     journal: &journal,
-                    removed: false,
-                    stopped,
-                };
-                self.wait_service(operation, service, wait, cancellation, deadline)
-                    .await
-            }
-            ActionKind::WaitForServiceRemoval { service } => {
-                let wait = Wait {
-                    journal: &journal,
-                    removed: true,
+                    removed: matches!(action.kind, ActionKind::WaitForServiceRemoval { .. }),
                     stopped,
                 };
                 self.wait_service(operation, service, wait, cancellation, deadline)
@@ -114,13 +107,19 @@ impl<D: DockerApi> Controller<D> {
         journal: &JournalAction,
         result: Result<T, OperationError>,
     ) -> Result<T, OperationError> {
-        self.store
-            .finish_action(
-                journal,
-                result.as_ref().err().map(OperationError::diagnostic),
-            )
-            .await?;
+        self.record_outcome(journal, &result).await?;
         result
+    }
+
+    /// Closes `journal` with `result`'s outcome, with its diagnostic when it
+    /// failed.
+    pub(super) async fn record_outcome<T>(
+        &self,
+        journal: &JournalAction,
+        result: &Result<T, OperationError>,
+    ) -> Result<(), StoreError> {
+        let diagnostic = result.as_ref().err().map(OperationError::diagnostic);
+        self.store.finish_action(journal, diagnostic).await
     }
 
     /// Journals `request` as the single attempt of a new `phase` action of
@@ -201,10 +200,7 @@ impl<D: DockerApi> Controller<D> {
     ) -> Result<(), DockerError> {
         // Creating or updating resources requires the supported topology so local
         // images and volumes cannot move. Removals stay safe on any topology.
-        if !matches!(
-            kind,
-            ActionKind::RemoveService { .. } | ActionKind::RemoveNetwork { .. }
-        ) {
+        if !kind.destructive() {
             self.docker.ensure_swarm(false).await?;
         }
         match kind {

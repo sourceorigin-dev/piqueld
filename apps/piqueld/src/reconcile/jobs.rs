@@ -205,13 +205,7 @@ impl<D: DockerApi> Controller<D> {
         } else {
             Ok(())
         };
-        let journaled = self
-            .store
-            .finish_action(
-                &journal,
-                result.as_ref().err().map(OperationError::diagnostic),
-            )
-            .await;
+        let journaled = self.record_outcome(&journal, &result).await;
         if stop {
             // Removing the service also stops a run that timed out or was
             // superseded or cancelled.
