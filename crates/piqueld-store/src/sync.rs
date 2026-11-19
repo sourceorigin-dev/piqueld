@@ -452,11 +452,9 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         let change = "webhook secret generated";
-        let appended = author
-            .record_on(&mut tx, 200, Some(change), (Some(id), None))
+        author
+            .commit_recorded(tx, 200, Some(change), (Some(id), None))
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
         Ok((secret, now))
     }
 

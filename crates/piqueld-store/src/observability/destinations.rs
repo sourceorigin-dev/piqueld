@@ -103,8 +103,29 @@ struct SavedDestination {
     /// Whether it was enabled again: nothing that happened while it was
     /// disabled is sent to it.
     resumed: bool,
-    /// How it changed, for its security event: `created`, `changed` or `disabled`.
-    change: &'static str,
+    /// How it changed, for its security event and audit record.
+    change: DestinationChange,
+}
+
+/// How saving a destination changed it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DestinationChange {
+    /// It is new.
+    Created,
+    /// It existed and stays enabled, or was enabled again.
+    Changed,
+    /// It existed and was disabled.
+    Disabled,
+}
+
+impl std::fmt::Display for DestinationChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Created => "created",
+            Self::Changed => "changed",
+            Self::Disabled => "disabled",
+        })
+    }
 }
 
 /// Which of a destination's pending deliveries to cancel.
@@ -254,17 +275,15 @@ impl Store {
         // Recorded after the event above, so a new receiver never gets it.
         Self::save_rules(&mut tx, &saved, &settings).await?;
         let mut change = format!("destination {:?} {}", name.as_str(), saved.change);
-        if saved.replaced && saved.change != "created" {
+        if saved.replaced && saved.change != DestinationChange::Created {
             change.push_str(" as a new receiver");
         }
         if saved.resumed {
             change.push_str(" and enabled");
         }
-        let appended = author
-            .record_on(&mut tx, 200, Some(&change), (None, None))
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
         Ok(NotificationDestination {
             name: name.clone(),
             settings,
@@ -327,7 +346,7 @@ impl Store {
                 updated_at_ms: now,
                 replaced: true,
                 resumed: false,
-                change: "created",
+                change: DestinationChange::Created,
             });
         };
         let stored = Envelope {
@@ -372,9 +391,9 @@ impl Store {
             replaced,
             resumed: row.enabled == 0 && enabled,
             change: if row.enabled != 0 && !enabled {
-                "disabled"
+                DestinationChange::Disabled
             } else {
-                "changed"
+                DestinationChange::Changed
             },
         })
     }
@@ -526,11 +545,9 @@ impl Store {
         )
         .await?;
         let change = format!("destination {:?} deleted", name.as_str());
-        let appended = author
-            .record_on(&mut tx, 200, Some(&change), (None, None))
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
         Ok(())
     }
 
