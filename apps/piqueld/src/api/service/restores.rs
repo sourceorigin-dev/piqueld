@@ -18,10 +18,11 @@ impl ApplicationService {
     /// Returns those failures, conflict, runtime, or storage errors.
     pub async fn restore(
         &self,
-        actor: super::Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         restore: Restore,
         request_id: Option<&str>,
     ) -> Result<AcceptedOperation, ApplicationError> {
+        let author = author.into();
         let (id, deployment) = restore.parts();
         let (id, deployment) = (id.clone(), deployment.to_owned());
         let request = Mutation::Restore(restore);
@@ -29,7 +30,7 @@ impl ApplicationService {
         // A repeated request returns what it got, whatever changed since.
         if let Some(response) = self
             .store
-            .replay(actor, &request, false, request_id)
+            .replay(author.actor, &request, false, request_id)
             .await?
         {
             return Self::restore_response(response);
@@ -41,7 +42,7 @@ impl ApplicationService {
             .collect();
         let _in_use = self.runtime.reuse_images(&sources).await?;
         // Boxed: acceptance would otherwise make every restore future large.
-        let response = Box::pin(self.accept(actor, request, None, false, request_id)).await?;
+        let response = Box::pin(self.accept(author, request, None, false, request_id)).await?;
         Self::restore_response(response)
     }
 

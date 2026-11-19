@@ -917,7 +917,7 @@
         "description": "One audited API request. Accounts and credentials are copied when\nrecorded, so records outlive them. Request and response bodies are never\nrecorded.",
         "properties": {
           "action": {
-            "description": "Method and route template, e.g. `POST /api/v1/applications/{id}/deploy`,\nfollowed for account management by what it changed, e.g.\n`POST /api/v1/auth/manage revoke_credential \"0190…\"`. A record without a\ncaller reading `audit records missing before this one: N` marks where\nN records could not be written.",
+            "description": "Method and route template, e.g. `POST /api/v1/applications/{id}/deploy`,\nfollowed for account management by what it changed, e.g.\n`POST /api/v1/auth/manage revoke_credential \"0190…\"`, and for a change\nrecorded with it by what it committed, e.g.\n`POST /api/v1/environments/{id}/deploy generation 4 operation 0190…`.\nA record without a\ncaller reading `audit records missing before this one: N` marks where\nN records could not be written.",
             "type": "string"
           },
           "application_id": {
@@ -994,7 +994,7 @@
             "type": "boolean"
           },
           "status": {
-            "description": "HTTP response status.",
+            "description": "HTTP response status. A change recorded with it, in the same\ntransaction, holds the status the API answers that change with,\ne.g. 202 for an accepted deployment, even if sending the response\nthen fails.",
             "format": "int32",
             "minimum": 0,
             "type": "integer"
@@ -4867,7 +4867,7 @@
                   "description": "One audited API request. Accounts and credentials are copied when\nrecorded, so records outlive them. Request and response bodies are never\nrecorded.",
                   "properties": {
                     "action": {
-                      "description": "Method and route template, e.g. `POST /api/v1/applications/{id}/deploy`,\nfollowed for account management by what it changed, e.g.\n`POST /api/v1/auth/manage revoke_credential \"0190…\"`. A record without a\ncaller reading `audit records missing before this one: N` marks where\nN records could not be written.",
+                      "description": "Method and route template, e.g. `POST /api/v1/applications/{id}/deploy`,\nfollowed for account management by what it changed, e.g.\n`POST /api/v1/auth/manage revoke_credential \"0190…\"`, and for a change\nrecorded with it by what it committed, e.g.\n`POST /api/v1/environments/{id}/deploy generation 4 operation 0190…`.\nA record without a\ncaller reading `audit records missing before this one: N` marks where\nN records could not be written.",
                       "type": "string"
                     },
                     "application_id": {
@@ -4944,7 +4944,7 @@
                       "type": "boolean"
                     },
                     "status": {
-                      "description": "HTTP response status.",
+                      "description": "HTTP response status. A change recorded with it, in the same\ntransaction, holds the status the API answers that change with,\ne.g. 202 for an accepted deployment, even if sending the response\nthen fails.",
                       "format": "int32",
                       "minimum": 0,
                       "type": "integer"

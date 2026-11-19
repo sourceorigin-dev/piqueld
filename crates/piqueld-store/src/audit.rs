@@ -6,7 +6,7 @@
 //! `link`, the SHA-256 of its predecessor's link and its own ID and fields
 //! (see [`AuditRow::link_from`]). The oldest retained row extends the newest
 //! pruned one, `audit_chain.pruned_through` with `pruned_link`.
-use super::{Attribution, Paging, Store, StoreError, days_ago_ms, now_ms};
+use super::{Actor, Attribution, Paging, Store, StoreError, days_ago_ms, now_ms};
 use piqueld_core::api::Page;
 use piqueld_core::audit::{AuditEvent, AuditFilter, AuditLink, AuditOutcome, AuditVerification};
 use piqueld_core::auth::HostOperator;
@@ -22,12 +22,26 @@ const AUDIT_PRUNE_BATCH: i64 = 1_000;
 
 /// An audited request to record.
 pub struct NewAuditEvent {
-    /// Method and route template.
+    /// Method and route template, then what the request changed beyond it.
     pub action: String,
     /// Whether it succeeded, was denied, or failed.
     pub outcome: AuditOutcome,
-    /// HTTP status of the response.
+    /// HTTP status of the response, or of the change it records (see
+    /// [`AuditRequest`]).
     pub status: u16,
+    /// Who made the request and from where.
+    pub origin: AuditOrigin,
+    /// Application the route names by ID.
+    pub application_id: Option<String>,
+    /// Environment the route names by ID; its application is recorded too.
+    pub environment_id: Option<String>,
+    /// The permission the route requires.
+    pub permission: Option<&'static str>,
+}
+
+/// Who made an API request and from where, as its audit records name them.
+#[derive(Clone, Debug, Default)]
+pub struct AuditOrigin {
     /// The signed-in account's ID.
     pub user_id: Option<String>,
     /// The signed-in account's name.
@@ -44,14 +58,121 @@ pub struct NewAuditEvent {
     pub tailnet: Option<String>,
     /// The request's ID, as its response reports it.
     pub request_id: Option<String>,
-    /// Application the route names by ID.
-    pub application_id: Option<String>,
-    /// Environment the route names by ID; its application is recorded too.
-    pub environment_id: Option<String>,
-    /// The permission the route requires.
-    pub permission: Option<&'static str>,
     /// The host operator, when it made the request instead of an account.
     pub operator: Option<HostOperator>,
+}
+
+/// An API request whose changes record themselves: each change it commits
+/// appends its own `allowed` record in the change's transaction (see
+/// [`Store::append_audit_on`]), so a committed change always has one. Its
+/// status is the one the API answers that change with, e.g. 202 for an
+/// accepted deployment, even if the response later fails. A request that
+/// commits nothing, or whose response is an error, is still recorded in
+/// the background like any other.
+#[derive(Clone, Debug)]
+pub struct AuditRequest {
+    /// Method and route template, e.g. `POST /api/v1/applications`.
+    pub route: String,
+    /// Who made it and from where.
+    pub origin: AuditOrigin,
+    /// The status its route answers every change with, when that doesn't
+    /// depend on the change, e.g. 200 for a batch of deletions.
+    pub status: Option<u16>,
+    /// Set once a change it made committed with its record.
+    pub recorded: Recorded,
+}
+
+/// Whether a request already recorded a change it committed (see
+/// [`AuditRequest`]), so its success needs no background record. Clones
+/// share the flag.
+#[derive(Clone, Debug, Default)]
+pub struct Recorded(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Recorded {
+    /// Whether a change was recorded.
+    #[must_use]
+    pub fn get(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Notes that a change committed with its record.
+    fn set(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
+impl AuditRequest {
+    /// Its record with `outcome` and `status`, naming `detail` after its
+    /// route when there is one.
+    #[must_use]
+    pub fn event(&self, outcome: AuditOutcome, status: u16, detail: Option<&str>) -> NewAuditEvent {
+        let mut action = self.route.clone();
+        if let Some(detail) = detail {
+            action.push(' ');
+            action.push_str(detail);
+        }
+        NewAuditEvent {
+            action,
+            outcome,
+            status,
+            origin: self.origin.clone(),
+            application_id: None,
+            environment_id: None,
+            permission: None,
+        }
+    }
+}
+
+/// Who submits a write, and the API request it comes from, if any: changes
+/// a request makes record themselves (see [`AuditRequest`]). An [`Actor`]
+/// alone, like the daemon's own work, records none.
+#[derive(Clone, Copy, Debug)]
+pub struct Author<'a> {
+    /// Who acts, re-read inside the writing transaction.
+    pub actor: Actor<'a>,
+    /// The request it acts through.
+    pub request: Option<&'a AuditRequest>,
+}
+
+impl<'a> From<Actor<'a>> for Author<'a> {
+    fn from(actor: Actor<'a>) -> Self {
+        Self {
+            actor,
+            request: None,
+        }
+    }
+}
+
+impl Author<'_> {
+    /// Appends to `db` the record of a change its request commits there:
+    /// `allowed`, with `status` unless its route answers another, and
+    /// `detail`, about `application` and `environment`. Does nothing without a request. Call
+    /// [`Self::committed`] once the transaction commits.
+    /// # Errors
+    /// Returns storage errors, which roll the change back too.
+    pub(crate) async fn record_on(
+        self,
+        db: &mut SqliteConnection,
+        status: u16,
+        detail: &str,
+        (application, environment): (Option<&str>, Option<&str>),
+    ) -> Result<(), StoreError> {
+        let Some(request) = self.request else {
+            return Ok(());
+        };
+        let status = request.status.unwrap_or(status);
+        let mut event = request.event(AuditOutcome::Allowed, status, Some(detail));
+        event.application_id = application.map(str::to_owned);
+        event.environment_id = environment.map(str::to_owned);
+        Store::append_audit_on(db, &event, now_ms()).await
+    }
+
+    /// Notes that the change [`Self::record_on`] recorded committed.
+    pub(crate) fn committed(self) {
+        if let Some(request) = self.request {
+            request.recorded.set();
+        }
+    }
 }
 
 /// Raw `audit_events` row.
@@ -88,18 +209,10 @@ impl NewAuditEvent {
             action: format!("audit records missing before this one: {count}"),
             outcome: AuditOutcome::Failed,
             status: 503,
-            user_id: None,
-            username: None,
-            credential_id: None,
-            credential_kind: None,
-            scoped: None,
-            peer: None,
-            tailnet: None,
-            request_id: None,
+            origin: AuditOrigin::default(),
             application_id: None,
             environment_id: None,
             permission: None,
-            operator: None,
         }
     }
 
@@ -111,19 +224,19 @@ impl NewAuditEvent {
             action: self.action.clone(),
             outcome: self.outcome.as_str().to_owned(),
             status: i64::from(self.status),
-            user_id: self.user_id.clone(),
-            username: self.username.clone(),
-            credential_id: self.credential_id.clone(),
-            credential_kind: self.credential_kind.map(str::to_owned),
-            scoped: self.scoped,
-            peer: self.peer.clone(),
-            request_id: self.request_id.clone(),
+            user_id: self.origin.user_id.clone(),
+            username: self.origin.username.clone(),
+            credential_id: self.origin.credential_id.clone(),
+            credential_kind: self.origin.credential_kind.map(str::to_owned),
+            scoped: self.origin.scoped,
+            peer: self.origin.peer.clone(),
+            request_id: self.origin.request_id.clone(),
             application_id: self.application_id.clone(),
             environment_id: self.environment_id.clone(),
             permission: self.permission.map(str::to_owned),
             link: None,
-            tailnet: self.tailnet.clone(),
-            operator_uid: self.operator.map(|operator| i64::from(operator.uid)),
+            tailnet: self.origin.tailnet.clone(),
+            operator_uid: self.origin.operator.map(|operator| i64::from(operator.uid)),
         }
     }
 }
@@ -269,7 +382,7 @@ impl Store {
             let actor = Attribution {
                 user_id: row.user_id.as_deref(),
                 credential_id: row.credential_id.as_deref(),
-                operator: event.operator,
+                operator: event.origin.operator,
                 ..Attribution::default()
             };
             let (peer, username) = (row.peer.as_deref(), row.username.as_deref());

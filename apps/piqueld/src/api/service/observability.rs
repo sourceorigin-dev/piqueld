@@ -106,7 +106,7 @@ impl ApplicationService {
     /// the trail shows where records are missing.
     pub(crate) fn record_audit(&self, event: NewAuditEvent) {
         let lost = &self.audit_lost;
-        let anonymous = if event.user_id.is_some() || event.operator.is_some() {
+        let anonymous = if event.origin.user_id.is_some() || event.origin.operator.is_some() {
             None
         } else {
             let Ok(slot) = self.anonymous_backlog.clone().try_acquire_owned() else {

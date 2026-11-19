@@ -1,6 +1,7 @@
 //! Previews: disposable deployments of a branch. Creating, deploying,
 //! restoring, and deleting one need no application revision. A preview's status, logs,
 //! deployments, and secrets use the environment endpoints with its ID.
+use super::access::Audited;
 use super::applications::accept_mutation;
 use super::extract::{IDEMPOTENCY_KEY, content_type, optional_header};
 use super::{
@@ -43,6 +44,7 @@ use piqueld_core::{ApplicationId, EnvironmentId, GitBranch, PreviewSlot};
 pub(super) async fn create(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiJson(request): ApiJson<CreatePreviewRequest>,
@@ -52,7 +54,15 @@ pub(super) async fn create(
         branch: GitBranch::parse(request.branch)?,
         slot: request.slot.map(PreviewSlot::parse).transpose()?,
     });
-    accept_mutation(&state, &identity, mutation, None, false, &headers).await
+    accept_mutation(
+        &state,
+        audited.author(&identity),
+        mutation,
+        None,
+        false,
+        &headers,
+    )
+    .await
 }
 
 /// Which preview a local snapshot deploys to.
@@ -105,6 +115,7 @@ pub(super) struct GitBundle(std::marker::PhantomData<()>);
 pub(super) async fn deploy_local(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     ApiQuery(query): ApiQuery<LocalPreviewQuery>,
     headers: HeaderMap,
@@ -126,8 +137,9 @@ pub(super) async fn deploy_local(
         .get(header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok()?.parse().ok());
     let request_id = optional_header(&headers, IDEMPOTENCY_KEY)?;
+    let audited = audited.answering(StatusCode::ACCEPTED);
     let deployed = state.deploy_snapshot(
-        identity.actor(),
+        audited.author(&identity),
         preview,
         (body.into_data_stream(), length),
         request_id.as_deref(),
@@ -179,13 +191,22 @@ pub(super) async fn get(
 pub(super) async fn deploy(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let mutation = Mutation::Preview(PreviewMutation::Deploy {
         id: EnvironmentId::parse(id)?,
     });
-    accept_mutation(&state, &identity, mutation, None, false, &headers).await
+    accept_mutation(
+        &state,
+        audited.author(&identity),
+        mutation,
+        None,
+        false,
+        &headers,
+    )
+    .await
 }
 
 /// Restores an earlier deployment of a preview exactly.
@@ -207,6 +228,7 @@ pub(super) async fn deploy(
 pub(super) async fn restore(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiJson(request): ApiJson<RestoreRequest>,
@@ -218,7 +240,7 @@ pub(super) async fn restore(
     };
     Ok(accepted(
         state
-            .restore(identity.actor(), restore, request_id.as_deref())
+            .restore(audited.author(&identity), restore, request_id.as_deref())
             .await?,
     ))
 }
@@ -234,13 +256,22 @@ pub(super) async fn restore(
 pub(super) async fn delete(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let mutation = Mutation::Preview(PreviewMutation::Delete {
         id: EnvironmentId::parse(id)?,
     });
-    accept_mutation(&state, &identity, mutation, None, false, &headers).await
+    accept_mutation(
+        &state,
+        audited.author(&identity),
+        mutation,
+        None,
+        false,
+        &headers,
+    )
+    .await
 }
 
 /// Deletes previews whose branch is gone.
@@ -259,11 +290,13 @@ pub(super) async fn delete(
 pub(super) async fn prune(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     ApiJson(request): ApiJson<PrunePreviewsRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let application = ApplicationId::parse(id)?;
+    let audited = audited.answering(StatusCode::OK);
     Ok(ok(state
-        .prune_previews(identity.actor(), &application, &request.previews)
+        .prune_previews(audited.author(&identity), &application, &request.previews)
         .await?))
 }

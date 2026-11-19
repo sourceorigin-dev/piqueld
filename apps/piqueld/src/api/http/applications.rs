@@ -1,6 +1,7 @@
 //! Applications: listing, reading, applying and planning whole manifests,
 //! renaming, deletion, and manifest download. Mutations of applications and
 //! their environments are submitted through [`accept_mutation`].
+use super::access::Audited;
 use super::extract::{IDEMPOTENCY_KEY, ManifestUpload, optional_header};
 use super::{
     ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok,
@@ -19,6 +20,7 @@ use piqueld_core::api::{
     Page, PlanView, RenameApplicationRequest, RenamedApplication, SavedApplication,
 };
 use piqueld_core::{ApplicationId, EnvironmentId, EnvironmentName};
+use piqueld_store::Author;
 use serde::Deserialize;
 
 /// Cursor pagination, and a name filter, for the application list.
@@ -114,13 +116,14 @@ pub(super) async fn get(
 pub(super) async fn apply(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiQuery(query): ApiQuery<ApplyQuery>,
     headers: HeaderMap,
     upload: ManifestUpload,
 ) -> Result<Response, ApiError> {
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::save(
             upload.manifest,
             upload.expected_application_id,
@@ -188,6 +191,7 @@ impl QueryParams for DeleteApplicationQuery {
 pub(super) async fn delete(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiQuery(query): ApiQuery<DeleteApplicationQuery>,
@@ -201,7 +205,7 @@ pub(super) async fn delete(
         .collect::<Result<_, _>>()?;
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::DeleteApplication {
             id: ApplicationId::parse(id)?,
             environments,
@@ -287,7 +291,7 @@ impl QueryParams for GenerationQuery {
 /// rename, environment change, or an existing preview.
 pub(super) async fn accept_mutation(
     state: &ApiState,
-    identity: &Identity,
+    author: Author<'_>,
     mutation: Mutation,
     expected: Option<u64>,
     force: bool,
@@ -295,27 +299,26 @@ pub(super) async fn accept_mutation(
 ) -> Result<Response, ApiError> {
     let request_id = optional_header(headers, IDEMPOTENCY_KEY)?;
     let response = state
-        .accept(
-            identity.actor(),
-            mutation,
-            expected,
-            force,
-            request_id.as_deref(),
-        )
+        .accept(author, mutation, expected, force, request_id.as_deref())
         .await?;
+    let started = response.started();
     Ok(match response {
-        MutationResponse::Saved(saved) if saved.operation_id.is_some() => accepted(saved),
-        MutationResponse::Saved(saved) => ok(saved),
-        MutationResponse::Preview(preview) if preview.created => accepted(preview),
-        MutationResponse::Preview(preview) => ok(preview),
-        MutationResponse::Rename(renamed) => ok(renamed),
-        MutationResponse::Environment(environment) => ok(environment),
-        MutationResponse::Operation(operation) => accepted(operation),
-        MutationResponse::Promotion(promotion) => accepted(promotion),
-        MutationResponse::Deleted(deleted) => accepted(deleted),
+        MutationResponse::Saved(saved) => reply(started, saved),
+        MutationResponse::Preview(preview) => reply(started, preview),
+        MutationResponse::Rename(renamed) => reply(started, renamed),
+        MutationResponse::Environment(environment) => reply(started, environment),
+        MutationResponse::Operation(operation) => reply(started, operation),
+        MutationResponse::Promotion(promotion) => reply(started, promotion),
+        MutationResponse::Deleted(deleted) => reply(started, deleted),
         // Only sync submits the mutations answered with this.
         MutationResponse::Synced(_) => return Err(piqueld_store::StoreError::Corrupt.into()),
     })
+}
+
+/// Answers `data` with 202 Accepted when its mutation `started` durable
+/// work, else 200 OK (see `MutationResponse::started`).
+fn reply<T: serde::Serialize>(started: bool, data: T) -> Response {
+    if started { accepted(data) } else { ok(data) }
 }
 
 /// Renames an application.
@@ -332,6 +335,7 @@ pub(super) async fn accept_mutation(
 pub(super) async fn rename(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
@@ -339,7 +343,7 @@ pub(super) async fn rename(
 ) -> Result<Response, ApiError> {
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::Rename {
             id: ApplicationId::parse(id)?,
             name: request.name,

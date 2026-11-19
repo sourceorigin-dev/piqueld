@@ -28,13 +28,19 @@ pub struct AuditEvent {
     pub created_at_ms: i64,
     /// Method and route template, e.g. `POST /api/v1/applications/{id}/deploy`,
     /// followed for account management by what it changed, e.g.
-    /// `POST /api/v1/auth/manage revoke_credential "0190…"`. A record without a
+    /// `POST /api/v1/auth/manage revoke_credential "0190…"`, and for a change
+    /// recorded with it by what it committed, e.g.
+    /// `POST /api/v1/environments/{id}/deploy generation 4 operation 0190…`.
+    /// A record without a
     /// caller reading `audit records missing before this one: N` marks where
     /// N records could not be written.
     pub action: String,
     /// Whether the request was allowed.
     pub outcome: AuditOutcome,
-    /// HTTP response status.
+    /// HTTP response status. A change recorded with it, in the same
+    /// transaction, holds the status the API answers that change with,
+    /// e.g. 202 for an accepted deployment, even if sending the response
+    /// then fails.
     pub status: u16,
     /// Account that made the request, or signed in by it.
     pub user_id: Option<String>,

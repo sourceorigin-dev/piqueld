@@ -1,4 +1,5 @@
 //! Individual typed editing endpoints. Persistence applies changes inside its writer transaction.
+use super::access::Audited;
 use super::{
     ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, applications::accept_mutation,
     openapi::ApiErrorResponse,
@@ -19,6 +20,7 @@ use piqueld_core::{
     },
     manifest::{Mount, Service, ServiceFile, Volume},
 };
+use piqueld_store::Author;
 use utoipa_axum::router::OpenApiRouter;
 
 impl QueryParams for EditOptions {
@@ -32,7 +34,7 @@ impl QueryParams for EditOptions {
 /// deployment.
 async fn submit(
     state: &ApiState,
-    identity: &Identity,
+    author: Author<'_>,
     id: String,
     edit: ApplicationEdit,
     options: EditOptions,
@@ -44,7 +46,7 @@ async fn submit(
         deploy: options.deploy,
     };
     let (expected, force) = (options.expected_generation, options.force);
-    accept_mutation(state, identity, mutation, expected, force, headers).await
+    accept_mutation(state, author, mutation, expected, force, headers).await
 }
 
 // One declaration supplies the handler, its route metadata, and its typed
@@ -67,9 +69,9 @@ macro_rules! edit_endpoint {
                 (status = 400, response = inline(ApiErrorResponse)), (status = 404, response = inline(ApiErrorResponse)),
                 (status = 409, response = inline(ApiErrorResponse)), (status = 422, response = inline(ApiErrorResponse)),
                 (status = 500, response = inline(ApiErrorResponse)), (status = 503, response = inline(ApiErrorResponse))))]
-        async fn $name(State(state): State<ApiState>, Extension(identity): Extension<Identity>, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, headers: HeaderMap) -> Result<Response, ApiError> {
+        async fn $name(State(state): State<ApiState>, Extension(identity): Extension<Identity>, audited: Audited, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, headers: HeaderMap) -> Result<Response, ApiError> {
             let edit = ($edit)(($($part.clone()),+));
-            submit(&state, &identity, edit_endpoint!(@id $($part),+), edit, options, &headers).await
+            submit(&state, audited.author(&identity), edit_endpoint!(@id $($part),+), edit, options, &headers).await
         }
     };
     ($(#[$doc:meta])* $name:ident, $method:ident, $path:literal, ($($part:ident : $part_ty:ty = $label:literal),+), $body:ty, $edit:expr) => {
@@ -83,9 +85,9 @@ macro_rules! edit_endpoint {
                 (status = 409, response = inline(ApiErrorResponse)), (status = 413, response = inline(ApiErrorResponse)),
                 (status = 415, response = inline(ApiErrorResponse)), (status = 422, response = inline(ApiErrorResponse)),
                 (status = 500, response = inline(ApiErrorResponse)), (status = 503, response = inline(ApiErrorResponse))))]
-        async fn $name(State(state): State<ApiState>, Extension(identity): Extension<Identity>, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, headers: HeaderMap, ApiJson(body): ApiJson<$body>) -> Result<Response, ApiError> {
+        async fn $name(State(state): State<ApiState>, Extension(identity): Extension<Identity>, audited: Audited, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, headers: HeaderMap, ApiJson(body): ApiJson<$body>) -> Result<Response, ApiError> {
             let edit = ($edit)(($($part.clone()),+), body);
-            submit(&state, &identity, edit_endpoint!(@id $($part),+), edit, options, &headers).await
+            submit(&state, audited.author(&identity), edit_endpoint!(@id $($part),+), edit, options, &headers).await
         }
     };
     (@id $first:ident $(,$rest:ident)*) => { $first };
@@ -208,6 +210,7 @@ impl QueryParams for CreateQuery {
 async fn create_application(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiQuery(query): ApiQuery<CreateQuery>,
     headers: HeaderMap,
     ApiJson(name): ApiJson<StringValue>,
@@ -221,7 +224,7 @@ async fn create_application(
     .validate_template()?;
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::save(manifest, None, query.deploy),
         Some(0),
         false,

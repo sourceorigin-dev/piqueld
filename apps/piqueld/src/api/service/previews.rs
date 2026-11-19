@@ -1,9 +1,7 @@
 //! Preview queries with their branch state, pruning previews whose branch is
 //! gone, and deploying snapshots of local worktrees. Creating, deploying, and
 //! deleting one are mutations.
-use super::{
-    Actor, ApplicationError, ApplicationService, Mutation, MutationResponse, PreviewMutation,
-};
+use super::{ApplicationError, ApplicationService, Mutation, MutationResponse, PreviewMutation};
 use crate::git::Heads;
 use axum::body::Bytes;
 use futures_util::Stream;
@@ -62,7 +60,7 @@ impl ApplicationService {
     /// errors of creating or deploying a preview.
     pub async fn deploy_snapshot<E: std::error::Error + Send + Sync + 'static>(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         (application, branch, slot): (ApplicationId, GitBranch, Option<PreviewSlot>),
         (bundle, length): (impl Stream<Item = Result<Bytes, E>>, Option<u64>),
         request_id: Option<&str>,
@@ -102,7 +100,7 @@ impl ApplicationService {
         snapshots
             .keep(
                 received,
-                Box::pin(self.accept(actor, mutation, None, false, request_id)),
+                Box::pin(self.accept(author, mutation, None, false, request_id)),
             )
             .await
     }
@@ -114,15 +112,18 @@ impl ApplicationService {
     /// branch may never have been pushed. Fails with
     /// `repository_unavailable`, deleting nothing, when the repository
     /// cannot be read: an unreadable repository never makes a branch gone.
+    /// Each deletion commits, and records itself, on its own, so one that
+    /// fails leaves the earlier ones deleted.
     ///
     /// # Errors
     /// Returns absence, repository, authorization, or storage errors.
     pub async fn prune_previews(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         application: &ApplicationId,
         confirmed: &[EnvironmentId],
     ) -> Result<Vec<DeletedPreview>, ApplicationError> {
+        let author = author.into();
         let listing = self.heads(application).await?.1;
         let heads = listing.as_ref().as_ref().map_err(|error| {
             ApplicationError::RepositoryUnavailable(anyhow::anyhow!("{error:#}"))
@@ -139,7 +140,7 @@ impl ApplicationService {
                 id: preview.id.clone(),
                 repository: heads.url().to_owned(),
             });
-            let operation = match self.accept(actor, mutation, None, false, None).await {
+            let operation = match self.accept(author, mutation, None, false, None).await {
                 Ok(MutationResponse::Operation(operation)) => operation,
                 Err(ApplicationError::Store(StoreError::IdentityConflict)) => continue,
                 Ok(_) => return Err(StoreError::Corrupt.into()),

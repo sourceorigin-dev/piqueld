@@ -1,5 +1,6 @@
 //! Environment lifecycle, status, and repair. Deployment, history, logs, and
 //! secrets of an environment live with their own handlers.
+use super::access::Audited;
 use super::applications::{ForceQuery, GenerationQuery, accept_mutation};
 use super::extract::{IDEMPOTENCY_KEY, optional_header};
 use super::{
@@ -47,6 +48,7 @@ use piqueld_core::{
 pub(super) async fn create(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
@@ -75,7 +77,7 @@ pub(super) async fn create(
     };
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::CreateEnvironment {
             application: ApplicationId::parse(id)?,
             name: EnvironmentName::parse(request.name)?,
@@ -178,6 +180,7 @@ pub(super) async fn status(
 pub(super) async fn rename(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
@@ -185,7 +188,7 @@ pub(super) async fn rename(
 ) -> Result<Response, ApiError> {
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::RenameEnvironment {
             id: EnvironmentId::parse(id)?,
             name: EnvironmentName::parse(request.name)?,
@@ -217,6 +220,7 @@ pub(super) async fn rename(
 pub(super) async fn branch(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
@@ -224,7 +228,7 @@ pub(super) async fn branch(
 ) -> Result<Response, ApiError> {
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::SetBranch {
             id: EnvironmentId::parse(id)?,
             branch: tracked_branch(request.branch, request.commit)?,
@@ -254,6 +258,7 @@ pub(super) async fn branch(
 pub(super) async fn sync(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiJson(request): ApiJson<EnvironmentSyncRequest>,
@@ -262,7 +267,15 @@ pub(super) async fn sync(
         id: EnvironmentId::parse(id)?,
         enabled: request.enabled,
     };
-    accept_mutation(&state, &identity, mutation, None, false, &headers).await
+    accept_mutation(
+        &state,
+        audited.author(&identity),
+        mutation,
+        None,
+        false,
+        &headers,
+    )
+    .await
 }
 
 /// Grants or revokes an environment's telemetry.
@@ -285,6 +298,7 @@ pub(super) async fn sync(
 pub(super) async fn telemetry(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiJson(request): ApiJson<EnvironmentTelemetryRequest>,
@@ -293,7 +307,15 @@ pub(super) async fn telemetry(
         id: EnvironmentId::parse(id)?,
         granted: request.granted,
     };
-    accept_mutation(&state, &identity, mutation, None, false, &headers).await
+    accept_mutation(
+        &state,
+        audited.author(&identity),
+        mutation,
+        None,
+        false,
+        &headers,
+    )
+    .await
 }
 
 /// Changes where an environment's releases come from.
@@ -316,6 +338,7 @@ pub(super) async fn telemetry(
 pub(super) async fn source(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
@@ -323,7 +346,7 @@ pub(super) async fn source(
 ) -> Result<Response, ApiError> {
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::Promotion(PromotionMutation::SetSource {
             id: EnvironmentId::parse(id)?,
             promote_from: request.promote_from.map(EnvironmentId::parse).transpose()?,
@@ -402,6 +425,7 @@ fn selection(request: &PromoteRequest) -> Result<PromotionSelection, ApiError> {
 pub(super) async fn promote(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
@@ -411,7 +435,7 @@ pub(super) async fn promote(
     Ok(accepted(
         state
             .promote(
-                identity.actor(),
+                audited.author(&identity),
                 &EnvironmentId::parse(id)?,
                 selection(&request)?,
                 request.expected_generation,
@@ -466,13 +490,14 @@ pub(super) async fn plan_promotion(
 pub(super) async fn delete(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiQuery(query): ApiQuery<GenerationQuery>,
 ) -> Result<Response, ApiError> {
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::Delete {
             id: EnvironmentId::parse(id)?,
         },
@@ -498,13 +523,14 @@ pub(super) async fn delete(
 pub(super) async fn reconcile(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiQuery(query): ApiQuery<GenerationQuery>,
 ) -> Result<Response, ApiError> {
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::Reconcile {
             id: EnvironmentId::parse(id)?,
         },
@@ -533,13 +559,14 @@ pub(super) async fn reconcile(
 pub(super) async fn stop(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiQuery(query): ApiQuery<GenerationQuery>,
 ) -> Result<Response, ApiError> {
     accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         Mutation::Stop {
             id: EnvironmentId::parse(id)?,
         },
@@ -565,11 +592,12 @@ pub(super) async fn stop(
 pub(super) async fn start(
     state: State<ApiState>,
     identity: Extension<Identity>,
+    audited: Audited,
     id: ApiPath<String>,
     headers: HeaderMap,
     query: ApiQuery<GenerationQuery>,
 ) -> Result<Response, ApiError> {
-    reconcile(state, identity, id, headers, query).await
+    reconcile(state, identity, audited, id, headers, query).await
 }
 
 /// Restores an earlier deployment of an environment exactly.
@@ -595,6 +623,7 @@ pub(super) async fn start(
 pub(super) async fn restore(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiJson(request): ApiJson<RestoreRequest>,
@@ -603,7 +632,7 @@ pub(super) async fn restore(
     Ok(accepted(
         state
             .restore(
-                identity.actor(),
+                audited.author(&identity),
                 Restore::Environment {
                     id: EnvironmentId::parse(id)?,
                     deployment: request.deployment,

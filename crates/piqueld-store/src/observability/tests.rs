@@ -963,18 +963,13 @@ fn refused(peer: &str) -> NewAuditEvent {
         action: "GET /api/v1/applications/{id}".into(),
         outcome: piqueld_core::audit::AuditOutcome::Denied,
         status: 404,
-        user_id: None,
-        username: None,
-        credential_id: None,
-        credential_kind: None,
-        scoped: None,
-        peer: Some(peer.into()),
-        tailnet: None,
-        request_id: None,
+        origin: AuditOrigin {
+            peer: Some(peer.into()),
+            ..AuditOrigin::default()
+        },
         application_id: None,
         environment_id: None,
         permission: None,
-        operator: None,
     }
 }
 
@@ -1087,8 +1082,8 @@ async fn operator_and_anonymous_refusals_burst_separately() {
     let (_temp, store) = Store::temporary().await;
     let socket = |uid: Option<u32>| {
         let mut event = refused("unused");
-        event.peer = None;
-        event.operator = uid.map(|uid| piqueld_core::auth::HostOperator { uid });
+        event.origin.peer = None;
+        event.origin.operator = uid.map(|uid| piqueld_core::auth::HostOperator { uid });
         event
     };
     let bursts = async || {
@@ -1145,8 +1140,9 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
         let mut event = refused(peer);
         // Tailnet identities and the host operator, recorded only on some
         // requests, are linked too.
-        event.tailnet = (peer == "d").then(|| "tag:ci on runner".into());
-        event.operator = (peer == "d").then_some(piqueld_core::auth::HostOperator { uid: 1000 });
+        event.origin.tailnet = (peer == "d").then(|| "tag:ci on runner".into());
+        event.origin.operator =
+            (peer == "d").then_some(piqueld_core::auth::HostOperator { uid: 1000 });
         store.record_audit_at(&event, at).await.unwrap();
     }
     let intact = store.verify_audit().await.unwrap();

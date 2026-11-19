@@ -1,6 +1,8 @@
 //! Atomic acceptance: compare current intent, write the change and its replay receipt together.
 use super::auth::access::{EnvironmentOwner, Holder};
-use super::{Actor, Operation, OperationKind, Store, StoreError, StoredApplication, now_ms};
+use super::{
+    Actor, Author, Operation, OperationKind, Store, StoreError, StoredApplication, now_ms,
+};
 use crate::{Mutation, MutationResponse, PreviewMutation, PromotionMutation};
 use piqueld_core::access::{AppPermission, Grants, Target};
 use piqueld_core::api::{
@@ -61,7 +63,9 @@ impl Store {
     ///    gives an account that created an application through an unscoped
     ///    credential its matching grants there.
     /// 5. Attributes the operations and events it wrote to the caller.
-    /// 6. Stores the replay receipt for 24 hours and commits through hostname
+    /// 6. Stores the replay receipt for 24 hours, and records the change in
+    ///    the audit trail when it comes from an API request (see
+    ///    [`crate::AuditRequest`]), then commits through hostname
     ///    reservation checks of every affected environment.
     ///
     /// The returned flag asks the controller to wake up; replays never wake it.
@@ -70,12 +74,14 @@ impl Store {
     /// Returns a storage error.
     pub async fn accept(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         mut mutation: Mutation,
         mut expected_generation: Option<u64>,
         force: bool,
         request_id: Option<&str>,
     ) -> Result<(MutationResponse, bool), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let now = now_ms();
         let first_event =
@@ -144,11 +150,21 @@ impl Store {
             sqlx::query!("INSERT INTO request_receipts(request_id,fingerprint,response_json,expires_at_ms,user_id) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(request_id) DO UPDATE SET fingerprint=excluded.fingerprint,response_json=excluded.response_json,expires_at_ms=excluded.expires_at_ms,user_id=excluded.user_id",request_id,fingerprint,response_json,expires,owner)
                 .execute(&mut *tx).await.map_err(StoreError::database)?;
         }
+        let response = &accepted.response;
+        author
+            .record_on(
+                &mut tx,
+                response.status(),
+                &response.describe(),
+                response.target(),
+            )
+            .await?;
         Self::commit_environment_changes(
             tx,
             accepted.environments.iter().map(EnvironmentId::as_str),
         )
         .await?;
+        author.committed();
         Ok((accepted.response, accepted.wake))
     }
 
@@ -1420,5 +1436,78 @@ mod tests {
             Store::mutation_fingerprint(&deploy, false).unwrap(),
             format!("{original:x}")
         );
+    }
+
+    /// A change an API request makes commits with its audit record: a
+    /// failed append rolls back the change and its receipt, and a replay
+    /// records nothing new.
+    #[tokio::test]
+    async fn requested_changes_commit_with_their_audit_record() {
+        let (_directory, store) = Store::temporary().await;
+        let request = || crate::AuditRequest {
+            route: "POST /api/v1/applications".into(),
+            origin: crate::AuditOrigin {
+                user_id: Some("alice".into()),
+                ..crate::AuditOrigin::default()
+            },
+            status: None,
+            recorded: crate::Recorded::default(),
+        };
+        let accept = async |request: &crate::AuditRequest| {
+            let author = Author {
+                actor: Actor::Daemon,
+                request: Some(request),
+            };
+            let save = Mutation::save(template("shop", "[spec]"), None, false);
+            store
+                .accept(author, save, Some(0), false, Some("create-shop"))
+                .await
+        };
+        let counts = async || {
+            let mut counts = Vec::new();
+            for table in ["applications", "request_receipts", "events", "audit_events"] {
+                let count = format!("SELECT COUNT(*) FROM {table}");
+                let count: i64 = sqlx::query_scalar(&count)
+                    .fetch_one(&store.pool)
+                    .await
+                    .unwrap();
+                counts.push(count);
+            }
+            counts
+        };
+        let before = counts().await;
+        let refuse = "CREATE TRIGGER refuse BEFORE INSERT ON audit_events \
+            BEGIN SELECT RAISE(ABORT,'refused'); END";
+        sqlx::query(refuse).execute(&store.pool).await.unwrap();
+        let failed = request();
+        assert!(accept(&failed).await.is_err());
+        assert!(!failed.recorded.get());
+        assert_eq!(counts().await, before);
+        sqlx::query("DROP TRIGGER refuse")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let committed = request();
+        let Ok((MutationResponse::Saved(saved), _)) = accept(&committed).await else {
+            panic!("saved response expected")
+        };
+        assert!(committed.recorded.get());
+        let replayed = request();
+        accept(&replayed).await.unwrap();
+        assert!(!replayed.recorded.get());
+        let rows = "SELECT action,outcome,status,user_id,application_id FROM audit_events";
+        let rows = sqlx::query_as::<_, (String, String, i64, String, String)>(rows)
+            .fetch_all(&store.pool)
+            .await
+            .unwrap();
+        let action = format!("POST /api/v1/applications generation {}", saved.generation);
+        let allowed = (
+            action,
+            "allowed".into(),
+            200,
+            "alice".into(),
+            saved.application_id,
+        );
+        assert_eq!(rows, [allowed]);
     }
 }

@@ -307,6 +307,82 @@ pub enum MutationResponse {
     Synced(SyncOutcome),
 }
 
+impl MutationResponse {
+    /// Whether it started durable work: a deployment, a created preview,
+    /// a promotion or a deletion, which the API answers with 202 Accepted
+    /// rather than 200 OK.
+    #[must_use]
+    pub fn started(&self) -> bool {
+        match self {
+            Self::Saved(saved) => saved.operation_id.is_some(),
+            Self::Preview(preview) => preview.created,
+            Self::Operation(_) | Self::Promotion(_) | Self::Deleted(_) => true,
+            Self::Rename(_) | Self::Environment(_) | Self::Synced(_) => false,
+        }
+    }
+
+    /// The HTTP status the API answers it with (see [`Self::started`]).
+    pub(crate) fn status(&self) -> u16 {
+        if self.started() { 202 } else { 200 }
+    }
+
+    /// The application and environment it changed, as its audit record
+    /// names them; an environment's application is recorded with it.
+    pub(crate) fn target(&self) -> (Option<&str>, Option<&str>) {
+        match self {
+            Self::Saved(saved) => (Some(&saved.application_id), None),
+            Self::Rename(renamed) => (Some(&renamed.application_id), None),
+            Self::Deleted(deleted) => (Some(&deleted.application_id), None),
+            Self::Operation(operation) => (None, Some(&operation.environment_id)),
+            Self::Promotion(promotion) => (None, Some(&promotion.operation.environment_id)),
+            Self::Environment(environment) => (None, Some(environment.id.as_str())),
+            Self::Preview(preview) => (None, Some(preview.preview.id.as_str())),
+            Self::Synced(_) => (None, None),
+        }
+    }
+
+    /// What it committed, as its audit record names it after the route:
+    /// the resulting revision, name, and the operations and release it
+    /// started, e.g. `generation 3 operations 0190…`.
+    pub(crate) fn describe(&self) -> String {
+        let operations = |ids: &[&str]| format!("operations {}", ids.join(" "));
+        match self {
+            Self::Saved(saved) => match saved.deployments().as_slice() {
+                [] => format!("generation {}", saved.generation),
+                ids => format!("generation {} {}", saved.generation, operations(ids)),
+            },
+            Self::Rename(renamed) => {
+                format!("generation {} name {:?}", renamed.generation, renamed.name)
+            }
+            Self::Deleted(deleted) => {
+                let ids: Vec<_> = deleted
+                    .operations
+                    .iter()
+                    .map(|operation| operation.operation_id.as_str())
+                    .collect();
+                format!("generation {} {}", deleted.generation, operations(&ids))
+            }
+            Self::Operation(operation) => format!(
+                "generation {} operation {}",
+                operation.generation, operation.operation_id
+            ),
+            Self::Promotion(promotion) => format!(
+                "operation {} release {}",
+                promotion.operation.operation_id, promotion.release_id
+            ),
+            Self::Environment(environment) => {
+                format!("environment {:?}", environment.name.as_str())
+            }
+            Self::Preview(preview) => format!(
+                "preview {:?} operation {}",
+                preview.preview.name.as_str(),
+                preview.operation.operation_id
+            ),
+            Self::Synced(_) => String::new(),
+        }
+    }
+}
+
 impl Mutation {
     /// Application permissions this mutation needs on its application (the
     /// environment's, for environment changes), whose repository connection
