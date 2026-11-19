@@ -8,6 +8,7 @@
 use crate::{
     auth::Credentials,
     cli::one_of,
+    commands::fold_applications,
     error::{CliError, ErrorKind, Result},
     output::{Console, HumanWriter, Report, reports::report},
 };
@@ -640,15 +641,13 @@ fn find(directory: &Directory, account: &str) -> Result<Account> {
 pub(crate) struct Names(BTreeMap<String, String>);
 
 impl Names {
-    /// Lists the applications the caller can read.
+    /// Lists the applications the caller can read, across every page.
     pub(crate) async fn load(client: &Client) -> Self {
-        let mut names = BTreeMap::new();
-        if let Ok(page) = client.applications().await {
-            for application in page.items {
-                names.insert(application.id.to_string(), application.name.clone());
-            }
-        }
-        Self(names)
+        let names = fold_applications(client, BTreeMap::new(), |names, application| {
+            names.insert(application.id.to_string(), application.name);
+        })
+        .await;
+        Self(names.unwrap_or_default())
     }
 
     /// Renders one grant, e.g. `apps:deploy on blog, shop`.
