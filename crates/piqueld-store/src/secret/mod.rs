@@ -123,9 +123,11 @@ impl Store {
             .await?;
         let change = format!("secret {name:?} generation {}", metadata.generation);
         let target = (None, Some(application.as_str()));
-        author.record_on(&mut tx, 200, &change, target).await?;
+        let appended = author
+            .record_on(&mut tx, 200, Some(&change), target)
+            .await?;
         tx.commit().await.map_err(StoreError::database)?;
-        author.committed();
+        appended.committed();
         Ok(metadata)
     }
 
