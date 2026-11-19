@@ -149,23 +149,10 @@ impl Shop {
         accepted
     }
 
+    /// The deployment by operation `id`, of whichever environment it ran in.
     async fn deployment(&self, id: &str) -> DeploymentView {
-        let environment = self
-            .harness
-            .store
-            .operation(id)
-            .await
-            .unwrap()
-            .environment_id;
-        self.harness
-            .store
-            .deployments(&environment, None, 50)
-            .await
-            .unwrap()
-            .items
-            .into_iter()
-            .find(|deployment| deployment.operation.id == id)
-            .unwrap()
+        let environment = self.harness.operation(id).await.environment_id;
+        self.harness.deployment(&environment, id).await
     }
 
     /// The value `environment`'s running `web` gets for `ORIGIN`, and its image.

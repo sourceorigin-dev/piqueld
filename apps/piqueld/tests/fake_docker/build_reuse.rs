@@ -1,51 +1,17 @@
 use super::*;
-use piqueld::api::{Mutation, MutationResponse};
-use piqueld_core::api::{BuildRecord, BuildState, BuiltOn};
+use piqueld_core::api::{BuildState, BuiltOn};
 
 impl ControllerHarness {
     /// Deploys `environment` again, building every Git source when
     /// `rebuild` is set, and waits for it to succeed.
     async fn redeploy(&self, environment: &EnvironmentId, rebuild: bool) {
-        let MutationResponse::Operation(accepted) = self
-            .applications()
-            .accept(
-                Daemon,
-                Mutation::Deploy {
-                    id: environment.clone(),
-                    revision: None,
-                    rebuild,
-                },
-                None,
-                true,
-                None,
-            )
-            .await
-            .unwrap()
-        else {
-            panic!("operation expected")
-        };
-        self.finish(&self.operation(&accepted.operation_id).await)
+        self.finish(&self.request_deploy(environment, None, rebuild).await)
             .await;
     }
 
     /// How many images the engine built.
     async fn image_builds(&self) -> u64 {
         self.docker.registry.lock().await.pulls["git-build"]
-    }
-
-    /// `environment`'s builds, newest first.
-    async fn builds(&self, environment: &EnvironmentId) -> Vec<BuildRecord> {
-        self.store
-            .builds(
-                None,
-                Some(environment),
-                &piqueld_core::access::Scope::All,
-                None,
-                50,
-            )
-            .await
-            .unwrap()
-            .items
     }
 }
 
@@ -54,9 +20,7 @@ async fn a_deployment_reuses_the_image_of_an_unchanged_build_unless_it_rebuilds_
  {
     let harness = ControllerHarness::new().await;
     let fixture = git_fixture::GitBuildFixture::new();
-    let mut input = manifest();
-    input.spec.services[0].source = fixture.source.clone();
-    let first = harness.apply(input, Some(0)).await;
+    let first = harness.deploy_git_build(&fixture).await;
     harness.finish(&first).await;
     let environment = &first.environment_id;
     assert_eq!(harness.image_builds().await, 1);
@@ -112,9 +76,7 @@ async fn a_build_machine_image_runs_by_its_repository_digest_and_is_reused() {
     })
     .await;
     let fixture = git_fixture::GitBuildFixture::new();
-    let mut input = manifest();
-    input.spec.services[0].source = fixture.source.clone();
-    let first = harness.apply(input, Some(0)).await;
+    let first = harness.deploy_git_build(&fixture).await;
     harness.finish(&first).await;
     let environment = &first.environment_id;
     let pushed = format!(

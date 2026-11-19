@@ -7,9 +7,12 @@ use piqueld_core::{EnvironmentName, TrackedBranch};
 use piqueld_store::StoreError;
 use repository::Repository;
 
+/// Where connected applications read their manifest in a [`Repository`].
+const MANIFEST: &str = "app.json";
+
 impl Repository {
-    /// The fixture manifest, connected to `path` in this repository.
-    fn manifest(&self, path: &str) -> ApplicationManifest {
+    /// The fixture manifest, connected to [`MANIFEST`] in this repository.
+    fn manifest(&self) -> ApplicationManifest {
         let mut application = manifest();
         application.spec.manifest = Some(RepositoryManifest {
             repository: GitRepository {
@@ -17,19 +20,24 @@ impl Repository {
                 branch: "main".into(),
                 commit: None,
             },
-            path: path.into(),
+            path: MANIFEST.into(),
             sync: piqueld_core::sync::RepositorySync::Off,
         });
         application
     }
 
-    /// Writes `manifest` to `path`, without committing it.
-    fn write(&self, path: &str, manifest: &ApplicationManifest) {
-        std::fs::write(
-            self.path().join(path),
-            serde_json::to_vec(manifest).unwrap(),
-        )
-        .unwrap();
+    /// [`Self::manifest`] without services, as an application is first
+    /// saved before it fetches its manifest.
+    fn bootstrap(&self) -> ApplicationManifest {
+        let mut bootstrap = self.manifest();
+        bootstrap.spec.services.clear();
+        bootstrap
+    }
+
+    /// Writes `manifest` to [`MANIFEST`] and commits everything, returning
+    /// the commit.
+    fn push(&self, manifest: &ApplicationManifest) -> String {
+        self.commit(&[(MANIFEST, &serde_json::to_vec(manifest).unwrap())])
     }
 
     /// Commits `manifest` and a new `Dockerfile` on `feat/local` of a
@@ -39,10 +47,7 @@ impl Repository {
         let work = self.working_copy();
         work.git(&["switch", "-qc", "feat/local"]);
         let manifest = serde_json::to_vec(manifest).unwrap();
-        let commit = work.commit(&[
-            ("app.json", &manifest),
-            ("Dockerfile", b"FROM alpine:3.21\n"),
-        ]);
+        let commit = work.commit(&[(MANIFEST, &manifest), ("Dockerfile", b"FROM alpine:3.21\n")]);
         (commit, work.bundle("feat/local", Some(base)))
     }
 }
@@ -69,26 +74,31 @@ impl ControllerHarness {
         id: &EnvironmentId,
         revision: Option<ManifestRevision>,
     ) -> Operation {
-        let MutationResponse::Operation(accepted) = self
-            .applications()
-            .accept(
-                Daemon,
-                Mutation::Deploy {
-                    id: id.clone(),
-                    revision,
-                    rebuild: false,
-                },
-                None,
-                true,
-                None,
-            )
-            .await
-            .unwrap()
-        else {
-            panic!("operation expected")
-        };
+        let requested = self.request_deploy(id, revision, false).await;
         self.scan().await;
-        self.operation(&accepted.operation_id).await
+        self.operation(&requested.id).await
+    }
+
+    /// Saves and deploys `manifest`, once `repository` holds it, as a new
+    /// application, and returns the successful deployment.
+    async fn deploy_pushed(
+        &self,
+        repository: &Repository,
+        manifest: &ApplicationManifest,
+    ) -> Operation {
+        repository.push(manifest);
+        let first = self.apply(manifest.clone(), Some(0)).await;
+        self.finish(&first).await;
+        first
+    }
+
+    /// Saves `bootstrap` as a new application, returning it and its
+    /// `production` environment.
+    async fn bootstrap(&self, bootstrap: ApplicationManifest) -> (ApplicationId, EnvironmentId) {
+        let saved = self.save(bootstrap, Some(0)).await;
+        let application = ApplicationId::parse(saved.application_id).unwrap();
+        let environment = self.production_of(&application).await;
+        (application, environment)
     }
 
     /// The warnings recorded on `operation`'s deployment.
@@ -165,19 +175,18 @@ async fn repository_files_are_captured_at_the_fetched_commit() {
     use piqueld_core::manifest::{FileMode, FileSource, ServiceFile};
     let repository = Repository::new();
     let harness = ControllerHarness::new().await;
-    let mut main = repository.manifest("app.json");
+    let mut main = repository.manifest();
     main.spec.services[0].files = vec![ServiceFile {
         target: "/etc/otel.yaml".into(),
         source: FileSource::Path("otel.yaml".into()),
         mode: FileMode::default(),
     }];
-    repository.write("app.json", &main);
     let otel = repository.path().join("otel.yaml");
     std::fs::write(&otel, "home: ${HOME}\n").unwrap();
-    repository.commit(&[]);
-    let first = harness.apply(main.clone(), Some(0)).await;
-    harness.finish(&first).await;
-    let environment = first.environment_id;
+    let environment = harness
+        .deploy_pushed(&repository, &main)
+        .await
+        .environment_id;
     let deployed = async || {
         let current = harness.store.get(&environment).await.unwrap();
         assert!(current.application.application.files().is_empty());
@@ -214,15 +223,14 @@ async fn repository_files_are_captured_at_the_fetched_commit() {
 async fn fetched_connections_are_ignored_with_a_warning() {
     let repository = Repository::new();
     let harness = ControllerHarness::new().await;
-    let initial = repository.manifest("app.json");
+    let initial = repository.manifest();
     let mut redirected = initial.clone();
     let declared = redirected.spec.manifest.as_mut().unwrap();
     declared.path = "next.json".into();
     declared.repository.url = "/elsewhere".into();
     declared.repository.branch = "release".into();
     redirected.spec.services[0].replicas = 2.into();
-    repository.write("app.json", &redirected);
-    repository.commit(&[]);
+    repository.push(&redirected);
     let first = harness.apply(initial.clone(), Some(0)).await;
     harness.finish(&first).await;
     assert_eq!(
@@ -250,8 +258,7 @@ async fn fetched_connections_are_ignored_with_a_warning() {
         .environment
         .insert("REVISION".into(), "${{ git.sha }}".into());
     for file in [branched, bare] {
-        repository.write("app.json", &file);
-        repository.commit(&[]);
+        repository.push(&file);
         let deployed = harness.deploy(&first.environment_id).await;
         assert_eq!(deployed.state, OperationState::Succeeded);
         assert_eq!(harness.warnings(&deployed).await, Vec::<String>::new());
@@ -268,9 +275,8 @@ async fn fetched_connections_are_ignored_with_a_warning() {
 async fn deployments_record_the_branch_head_sync_follows_from() {
     let repository = Repository::new();
     let harness = ControllerHarness::new().await;
-    let main = repository.manifest("app.json");
-    repository.write("app.json", &main);
-    let first = repository.commit(&[]);
+    let main = repository.manifest();
+    let first = repository.push(&main);
     let production = harness.apply(main.clone(), Some(0)).await;
     harness.finish(&production).await;
     let production = production.environment_id;
@@ -302,14 +308,12 @@ async fn deployments_record_the_branch_head_sync_follows_from() {
 async fn environments_on_different_branches_deploy_independently() {
     let repository = Repository::new();
     let harness = ControllerHarness::new().await;
-    let mut main = repository.manifest("app.json");
-    repository.write("app.json", &main);
-    repository.commit(&[]);
+    let mut main = repository.manifest();
+    repository.push(&main);
     repository.git(&["checkout", "-b", "release"]);
     let mut release = main.clone();
     release.spec.services[0].replicas = 3.into();
-    repository.write("app.json", &release);
-    repository.commit(&[]);
+    repository.push(&release);
     repository.git(&["checkout", "main"]);
     let production = harness.apply(main.clone(), Some(0)).await;
     harness.finish(&production).await;
@@ -346,8 +350,7 @@ async fn environments_on_different_branches_deploy_independently() {
     assert_eq!(saved_replicas().await, main.spec.services[0].replicas);
     // A new main commit reaches production only, when it deploys.
     main.spec.services[0].replicas = 2.into();
-    repository.write("app.json", &main);
-    repository.commit(&[]);
+    repository.push(&main);
     let deployed = harness.deploy(&production).await;
     assert_eq!(deployed.state, OperationState::Succeeded);
     assert_eq!(replicas(&production).await.0, Some(2));
@@ -392,11 +395,8 @@ async fn environments_on_different_branches_deploy_independently() {
 async fn deleting_a_preview_removes_every_volume_it_ever_created() {
     let repository = Repository::new();
     let harness = ControllerHarness::new().await;
-    let main = repository.manifest("app.json");
-    repository.write("app.json", &main);
-    repository.commit(&[]);
-    let production = harness.apply(main.clone(), Some(0)).await;
-    harness.finish(&production).await;
+    let main = repository.manifest();
+    let production = harness.deploy_pushed(&repository, &main).await;
     repository.git(&["checkout", "-b", "feat/cache"]);
     let mut cached = main.clone();
     cached
@@ -409,8 +409,7 @@ async fn deleting_a_preview_removes_every_volume_it_ever_created() {
         )
         .unwrap(),
     );
-    repository.write("app.json", &cached);
-    repository.commit(&[]);
+    repository.push(&cached);
     let volumes = async || {
         let observed = harness.docker.observed.lock().await;
         observed
@@ -447,8 +446,7 @@ async fn deleting_a_preview_removes_every_volume_it_ever_created() {
             .is_some()
     );
     // The branch drops the cache volume; the preview keeps it until deleted.
-    repository.write("app.json", &main);
-    repository.commit(&[]);
+    repository.push(&main);
     let (deployed, _) = harness
         .run_preview(Mutation::Preview(PreviewMutation::Deploy {
             id: preview.clone(),
@@ -481,28 +479,23 @@ async fn missing_invalid_and_failed_build_manifests_preserve_accepted_configurat
     let repository = Repository::new();
     repository.commit(&[]);
     let harness = ControllerHarness::new().await;
-    let initial = repository.manifest("app.json");
-    repository.write("app.json", &initial);
-    repository.commit(&[]);
-    let first = harness.apply(initial.clone(), Some(0)).await;
-    harness.finish(&first).await;
+    let initial = repository.manifest();
+    let first = harness.deploy_pushed(&repository, &initial).await;
     let before = harness.store.get(&first.environment_id).await.unwrap();
-    std::fs::remove_file(repository.path().join("app.json")).unwrap();
+    std::fs::remove_file(repository.path().join(MANIFEST)).unwrap();
     repository.commit(&[]);
     let missing = harness.deploy(&first.environment_id).await;
     assert_eq!(missing.error_code.as_deref(), Some("manifest_not_found"));
     let mut invalid = initial.clone();
     invalid.metadata.name = "different-application".into();
-    repository.write("app.json", &invalid);
-    repository.commit(&[]);
+    repository.push(&invalid);
     let invalid = harness.deploy(&first.environment_id).await;
     assert_eq!(invalid.error_code.as_deref(), Some("manifest_invalid"));
     let build = git_fixture::GitBuildFixture::new();
     let mut failing = initial.clone();
     failing.spec.manifest = None;
     failing.spec.services[0].source = build.failing_source();
-    repository.write("app.json", &failing);
-    repository.commit(&[]);
+    repository.push(&failing);
     let failed = harness.deploy(&first.environment_id).await;
     assert_eq!(failed.error_code.as_deref(), Some("git_build_failed"));
     let after = harness.store.get(&first.environment_id).await.unwrap();
@@ -518,11 +511,8 @@ async fn missing_invalid_and_failed_build_manifests_preserve_accepted_configurat
 async fn edits_deploy_until_a_push_changes_the_manifest() {
     let repository = Repository::new();
     let harness = ControllerHarness::new().await;
-    let initial = repository.manifest("app.json");
-    repository.write("app.json", &initial);
-    repository.commit(&[]);
-    let first = harness.apply(initial.clone(), Some(0)).await;
-    harness.finish(&first).await;
+    let initial = repository.manifest();
+    let first = harness.deploy_pushed(&repository, &initial).await;
     let environment = first.environment_id.clone();
     let saved = || async { harness.store.get(&environment).await.unwrap() };
     let id = saved().await.application.application.id().clone();
@@ -549,8 +539,7 @@ async fn edits_deploy_until_a_push_changes_the_manifest() {
     pushed.spec.services[0]
         .environment
         .insert("MODE".into(), "pushed".into());
-    repository.write("app.json", &pushed);
-    repository.commit(&[]);
+    repository.push(&pushed);
     harness.finish(&harness.deploy(&environment).await).await;
     let current = saved().await;
     for deployed in [
@@ -573,20 +562,15 @@ async fn edits_deploy_until_a_push_changes_the_manifest() {
 async fn retry_after_reopening_store_uses_fetched_manifest_and_new_deploy_fetches_again() {
     let repository = Repository::new();
     let mut harness = ControllerHarness::new().await;
-    let initial = repository.manifest("app.json");
-    repository.write("app.json", &initial);
-    repository.commit(&[]);
-    let first = harness.apply(initial.clone(), Some(0)).await;
-    harness.finish(&first).await;
+    let initial = repository.manifest();
+    let first = harness.deploy_pushed(&repository, &initial).await;
     let build = git_fixture::GitBuildFixture::new();
     let mut candidate = initial.clone();
     candidate.spec.services[0].source = build.failing_source();
-    repository.write("app.json", &candidate);
-    repository.commit(&[]);
+    repository.push(&candidate);
     let failed = harness.deploy(&first.environment_id).await;
     assert_eq!(failed.error_code.as_deref(), Some("git_build_failed"));
-    repository.write("app.json", &initial);
-    repository.commit(&[]);
+    repository.push(&initial);
     harness.reopen().await;
     let retry = harness
         .applications()
@@ -609,26 +593,22 @@ async fn retry_after_reopening_store_uses_fetched_manifest_and_new_deploy_fetche
 async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
     let repository = Repository::new();
     let harness = ControllerHarness::new().await;
-    let mut fetched = repository.manifest("app.json");
+    let mut fetched = repository.manifest();
     fetched.spec.services[0].source = self_source();
-    repository.write("app.json", &fetched);
     std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.20\n").unwrap();
-    let main = repository.commit(&[]);
+    let main = repository.push(&fetched);
     repository.git(&["checkout", "-b", "feature"]);
     std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.21\n").unwrap();
     let feature = repository.commit(&[]);
     repository.git(&["checkout", "main"]);
-    let mut bootstrap = repository.manifest("app.json");
-    bootstrap.spec.services.clear();
-    let saved = harness.save(bootstrap, Some(0)).await;
-    let environment = harness.production(&saved).await;
+    let (application, environment) = harness.bootstrap(repository.bootstrap()).await;
     // The override is not saved, and saved configuration keeps "self":
     // only the fetch of `main` itself becomes the saved manifest.
     let expected_spec = fetched
         .clone()
         .validate()
         .unwrap()
-        .normalize(ApplicationId::parse(&saved.application_id).unwrap())
+        .normalize(application)
         .to_manifest()
         .spec;
     let mut saved_main = false;
@@ -657,8 +637,7 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
     // the file's own `spec.manifest` says.
     let mut moved = fetched;
     moved.spec.manifest.as_mut().unwrap().repository.url = "/elsewhere".into();
-    repository.write("app.json", &moved);
-    let head = repository.commit(&[]);
+    let head = repository.push(&moved);
     let deployment = harness.deploy(&environment).await;
     assert_eq!(deployment.state, OperationState::Succeeded);
     let stored = harness.store.get(&environment).await.unwrap();
@@ -675,15 +654,11 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
 async fn local_snapshots_deploy_their_manifest_and_build_self_sources_from_the_snapshot() {
     let repository = Repository::new();
     let harness = ControllerHarness::new().await;
-    let mut fetched = repository.manifest("app.json");
+    let mut fetched = repository.manifest();
     fetched.spec.services[0].source = self_source();
-    repository.write("app.json", &fetched);
     std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.20\n").unwrap();
-    let base = repository.commit(&[]);
-    let mut bootstrap = repository.manifest("app.json");
-    bootstrap.spec.services.clear();
-    let saved = harness.save(bootstrap, Some(0)).await;
-    let application = ApplicationId::parse(saved.application_id).unwrap();
+    let base = repository.push(&fetched);
+    let (application, _) = harness.bootstrap(repository.bootstrap()).await;
 
     // The snapshot changes the manifest and the Dockerfile on a branch
     // the repository never had.
@@ -750,19 +725,15 @@ async fn retry_after_reopening_store_builds_self_sources_at_the_fetched_commit()
     let mut harness = ControllerHarness::new().await;
     repository.commit(&[]);
     repository.git(&["checkout", "-b", "feature"]);
-    let mut fetched = repository.manifest("app.json");
+    let mut fetched = repository.manifest();
     let mut built = fetched.spec.services[0].clone();
     built.name = "built".into();
     built.source = self_source();
     fetched.spec.services.push(built);
-    repository.write("app.json", &fetched);
     let dockerfile = repository.path().join("Dockerfile");
     std::fs::write(&dockerfile, "FROM alpine:3.20\n").unwrap();
-    let pinned = repository.commit(&[]);
-    let mut bootstrap = repository.manifest("app.json");
-    bootstrap.spec.services.clear();
-    let saved = harness.save(bootstrap, Some(0)).await;
-    let environment = harness.production(&saved).await;
+    let pinned = repository.push(&fetched);
+    let (_, environment) = harness.bootstrap(repository.bootstrap()).await;
     // The image service fails preparation after the manifest is fetched.
     harness.docker.arm_tag_flips(100).await;
     let failed = harness
@@ -808,7 +779,7 @@ async fn bootstrap_can_pin_manifest_revision_independently_from_git_build_revisi
     )
     .unwrap();
     let build_commit = build_repository.commit(&[]);
-    let mut fetched = repository.manifest("app.json");
+    let mut fetched = repository.manifest();
     fetched.spec.services[0].source = piqueld_core::Source::Git {
         repository: piqueld_core::manifest::SourceRepository::Git(GitRepository {
             url: build_repository.path().display().to_string(),
@@ -817,16 +788,12 @@ async fn bootstrap_can_pin_manifest_revision_independently_from_git_build_revisi
         }),
         build: git_fixture::dockerfile_build(),
     };
-    repository.write("app.json", &fetched);
-    let pinned = repository.commit(&[]);
-    let mut bootstrap = repository.manifest("app.json");
-    bootstrap.spec.services.clear();
+    let pinned = repository.push(&fetched);
+    let mut bootstrap = repository.bootstrap();
     bootstrap.spec.manifest.as_mut().unwrap().repository.commit = Some(pinned);
     fetched.metadata.name = "wrong-later-name".into();
-    repository.write("app.json", &fetched);
-    repository.commit(&[]);
-    let saved = harness.save(bootstrap, Some(0)).await;
-    let environment = harness.production(&saved).await;
+    repository.push(&fetched);
+    let (_, environment) = harness.bootstrap(bootstrap).await;
     let deployment = harness.deploy(&environment).await;
     assert_eq!(deployment.state, OperationState::Succeeded);
     let resolved = harness
