@@ -1030,24 +1030,39 @@ async fn minting_and_privileged_grants_need_a_recent_sign_in() {
     for command in minting() {
         assert_eq!(denied(f.auth.manage(&stale, command).await), refused);
     }
-    let start = f.auth.device_start(None, None).unwrap();
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("a device login starts");
     assert_eq!(
         denied_auth(f.auth.device_approve(&start.user_code, &stale)),
         refused
     );
     // Narrowing or widening ordinary access needs no passkey.
     let read_only = Preset::ReadOnly.grants(&Scope::All);
-    f.auth.manage(&stale, grants(read_only)).await.unwrap();
-    f.auth.manage(&stale, grants(developer())).await.unwrap();
+    f.auth
+        .manage(&stale, grants(read_only))
+        .await
+        .expect("the account change is allowed");
+    f.auth
+        .manage(&stale, grants(developer()))
+        .await
+        .expect("the account change is allowed");
     for command in minting() {
-        f.auth.manage(&fresh, command).await.unwrap();
+        f.auth
+            .manage(&fresh, command)
+            .await
+            .expect("the account change is allowed");
     }
-    f.auth.manage(&stale, grants(developer())).await.unwrap();
+    f.auth
+        .manage(&stale, grants(developer()))
+        .await
+        .expect("the account change is allowed");
     let operator = Identity::operator(HostOperator { uid: 0 }, None);
     f.auth
         .manage(&operator, grants(Grants::admin()))
         .await
-        .unwrap();
+        .expect("the account change is allowed");
 }
 
 /// A CLI login inherits the passkey proof its approval recorded, and an
@@ -1061,28 +1076,58 @@ async fn device_logins_inherit_their_approvals_passkey_proof() {
     // never the time the CLI polls.
     let proved = now_secs() - 60;
     let session = Auth::new_credential(CredentialKind::Browser, "Browser", None, None);
-    let (secret, mut session) = session.unwrap();
+    let (secret, mut session) = session.expect("the system RNG yields a credential secret");
     session.authenticated_at = Some(proved);
     let store = &f.auth.0.store;
     store
         .insert_credential(&alice.account().id, &session)
         .await
-        .unwrap();
-    let approver = f.auth.authenticate(&secret).await.unwrap();
-    let start = f.auth.device_start(None, None).unwrap();
-    f.auth.device_approve(&start.user_code, &approver).unwrap();
-    let issued = f.auth.device_poll(&start.device_code).await.unwrap();
-    let login = f.auth.authenticate(&issued.token.unwrap()).await.unwrap();
+        .expect("the store keeps the credential");
+    let approver = f
+        .auth
+        .authenticate(&secret)
+        .await
+        .expect("the stored credential authenticates");
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("a device login starts");
+    f.auth
+        .device_approve(&start.user_code, &approver)
+        .expect("the approver may approve the request");
+    let issued = f
+        .auth
+        .device_poll(&start.device_code)
+        .await
+        .expect("the poll answers");
+    let login = f
+        .auth
+        .authenticate(&issued.token.expect("the approved login was issued a token"))
+        .await
+        .expect("the issued login authenticates");
     let Credential::Account { proof, .. } = &login.credential else {
         panic!("a CLI login belongs to an account");
     };
     assert_eq!(proof.authenticated_at, Some(proved));
 
-    let start = f.auth.device_start(None, None).unwrap();
-    f.auth.device_approve(&start.user_code, &alice).unwrap();
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("a device login starts");
+    f.auth
+        .device_approve(&start.user_code, &alice)
+        .expect("the approver may approve the request");
     let key = Auth::hash(&start.device_code);
     let old = now_secs() - Reauthenticate::WINDOW_SECS - 1;
-    if let Some(approval) = &mut f.auth.0.devices.lock().get_mut(&key).unwrap().approved_by {
+    if let Some(approval) = &mut f
+        .auth
+        .0
+        .devices
+        .lock()
+        .get_mut(&key)
+        .expect("the request was approved")
+        .approved_by
+    {
         approval.authenticated_at = Some(old);
     }
     assert!(matches!(
@@ -1392,8 +1437,8 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
             let device = &f.auth.0.devices.lock()[&key];
             (device.prepared.clone(), device.approved_by.clone())
         };
-        let prepared = prepared.unwrap();
-        let credential = prepared.credential(None, &approval.unwrap());
+        let prepared = prepared.expect("the first poll prepared the session");
+        let credential = prepared.credential(None, &approval.expect("the request was approved"));
         let store = &f.auth.0.store;
         let stored = store.issue_for_credential_owner(alice.caller().unwrap(), &credential);
         assert!(stored.await.unwrap().is_some());
