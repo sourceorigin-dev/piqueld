@@ -236,9 +236,9 @@ impl AccessForm {
 
 /// The application's secret store: manually set values (never read back),
 /// their versions and access lists. Value writes are guarded by generation
-/// and clear the value field as soon as they are submitted; access-only
-/// writes are guarded by the access the form read. After a failure, actions
-/// stay disabled until the list is refreshed. On an environment's
+/// and clear the value field as soon as they are submitted; writes that
+/// change access are guarded by the access the form read. After a failure,
+/// actions stay disabled until the list is refreshed. On an environment's
 /// page, given the secrets its manifest `mounts`, it lists only the secrets
 /// that environment may mount or mounts, and new ones default to it alone;
 /// `changed` runs after every write. Writing needs `secrets:write`.
@@ -345,14 +345,23 @@ pub(super) fn StoredSecrets(
         let bytes = value.get_untracked().into_bytes();
         value.set(String::new());
         // Replacing a value sends access only when the form changed it, so the
-        // server keeps a list changed elsewhere.
+        // server keeps a list changed elsewhere, guarded by the list the form
+        // was loaded from, so one changed meanwhile isn't overwritten.
         let access = Some(form.access()).filter(|access| current.as_ref() != Some(access));
+        let expected = current.filter(|_| access.is_some());
         let id = id.get_value();
         feedback.send(
             context,
             async move {
                 Client::browser()
-                    .put_stored_secret(&id, &name, generation, bytes, access.as_ref())
+                    .put_stored_secret(
+                        &id,
+                        &name,
+                        generation,
+                        bytes,
+                        access.as_ref(),
+                        expected.as_ref(),
+                    )
                     .await
             },
             move |secret| saved(secret, "Secret saved. Deploy to use its new version."),
