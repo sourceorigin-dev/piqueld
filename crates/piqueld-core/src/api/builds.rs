@@ -57,7 +57,7 @@ pub struct BuildRecord {
 pub enum BuiltOn {
     /// The host's Docker Engine.
     Host,
-    /// The host's build machine, which pushed it to its registry.
+    /// The host's build machine, which pushed it to the build registry.
     BuildMachine,
 }
 

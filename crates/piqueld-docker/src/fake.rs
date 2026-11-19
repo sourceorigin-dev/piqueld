@@ -104,6 +104,13 @@ pub struct FakeDocker {
     /// Pushes builds to this repository by digest, as a build machine does,
     /// instead of keeping them local only.
     pub build_repository: Option<piqueld_core::build_machine::BuildRepository>,
+    /// The images builds pushed to `build_repository`'s registry.
+    pub pushed_images: Arc<Mutex<BTreeSet<piqueld_core::RepositoryDigest>>>,
+    /// Makes the registry unreachable.
+    pub registry_unreachable: Arc<AtomicBool>,
+    /// The HTTP status the registry refuses to delete each of these images
+    /// with.
+    pub refused_deletes: Arc<Mutex<BTreeMap<piqueld_core::RepositoryDigest, u16>>>,
 }
 
 /// A Docker secret's value and the labels of the environment that owns it.
@@ -571,11 +578,11 @@ impl DockerApi for FakeDocker {
     }
 
     /// Builds image `b`s, unless the Dockerfile says `build-fails`. Build
-    /// output is not recorded.
+    /// output is not recorded, but pushes are, as the engine records them.
     async fn build_image(
         &self,
         build: &ImageBuild<'_>,
-        _log: Option<&dyn crate::command::OutputLog>,
+        log: Option<&dyn crate::command::OutputLog>,
     ) -> Result<piqueld_core::BuiltImage, DockerError> {
         if !build.context.is_dir() {
             return Err(DockerError::Validation("find the build context"));
@@ -618,6 +625,17 @@ impl DockerApi for FakeDocker {
             used: false,
         })
         .await;
+        if let Some(pushed) = &pushed {
+            self.pushed_images.lock().await.insert(pushed.clone());
+            if let Some(log) = log {
+                log.pushed(pushed)
+                    .await
+                    .map_err(|source| DockerError::RequestSource {
+                        operation: "record the pushed image",
+                        source: source.into(),
+                    })?;
+            }
+        }
         if let Some(gate) = &self.build_gate {
             gate.pass().await;
         }
@@ -702,6 +720,58 @@ impl DockerApi for FakeDocker {
         Ok(self.local_images.lock().await.clone())
     }
 
+    fn build_repository(&self) -> Option<&piqueld_core::build_machine::BuildRepository> {
+        self.build_repository.as_ref()
+    }
+
+    async fn check_registry(&self) -> Result<(), DockerError> {
+        let repository = self
+            .build_repository
+            .as_ref()
+            .ok_or(DockerError::Validation(
+                "reach a build registry without a build machine",
+            ))?;
+        if self.registry_unreachable.load(Ordering::SeqCst) {
+            return Err(crate::RegistryError::Unreachable {
+                registry: repository.registry().to_owned(),
+                source: Box::new(std::io::Error::from(std::io::ErrorKind::ConnectionRefused)),
+            }
+            .into());
+        }
+        Ok(())
+    }
+
+    /// Deletes `image` from the registry; one of another repository is
+    /// refused, as by the real registry client.
+    async fn delete_pushed_image(
+        &self,
+        image: &piqueld_core::RepositoryDigest,
+    ) -> Result<(), DockerError> {
+        self.check_registry().await?;
+        if self
+            .build_repository
+            .as_ref()
+            .and_then(|repository| repository.digest_of(image))
+            .is_none()
+        {
+            return Err(crate::RegistryError::NotPushed(image.clone()).into());
+        }
+        if let Some(&status) = self.refused_deletes.lock().await.get(image) {
+            return Err(crate::RegistryError::Refused {
+                image: image.clone(),
+                status: reqwest::StatusCode::from_u16(status).map_err(|source| {
+                    DockerError::RequestSource {
+                        operation: "refuse with a valid HTTP status",
+                        source: source.into(),
+                    }
+                })?,
+                message: String::new(),
+            }
+            .into());
+        }
+        self.pushed_images.lock().await.remove(image);
+        Ok(())
+    }
     async fn prune_health_probes(&self, _instance: &InstanceId) -> Result<(), DockerError> {
         Ok(())
     }

@@ -388,6 +388,32 @@ and its prepared target are saved, so cleanup cannot remove the images in
 between.
 `app releases` shows whether each release's images are present.
 
+With a build machine, a build pushes its image to the registry in
+`build.repository`, by digest and without a provenance attestation, so the
+digest is the image's own manifest. Once the build reports the push, before
+the engine pulls the image, the build's log records it in `pushed_images`,
+which, unlike build records, outlives environments and deployment history. A
+build cancelled between BuildKit's push and that report leaves its image
+unrecorded. After the engine's images, the same cleanup pass reads the
+retention roots again with `images.registry_keep_deployments` (never fewer
+than `images.keep_deployments`), and deletes each recorded image of the
+configured repository that none keeps and the engine no longer has, since
+build reuse deploys only what the engine has: a journaled
+`delete_registry_image` daemon action, a `DELETE /v2/<path>/manifests/<digest>`
+that counts the registry's `MANIFEST_UNKNOWN` as deleted, after which the row
+is removed. Before deleting anything, the pass checks that `GET /v2/`
+succeeds within 5 seconds; while it doesn't, the pass skips the registry
+without journaling anything. A failed deletion keeps its row for the next
+pass. One that fails for the whole registry, because it stops answering,
+refuses this client, doesn't allow deletes or a proxy in front of it fails,
+ends the pass, as does the third failure in a row of single images, such as
+a registry whose storage answers 500 to every deletion, so cleanup delays
+operations by at most three more requests; any other failure only skips that
+image. The registry is reached over HTTPS,
+trusting public certificate authorities, such as the tailnet's, or plain HTTP
+on the host's loopback, as Docker does, without credentials. The registry's
+own garbage collection frees the deleted images' layers.
+
 ## Link networks
 
 A [link](../../user/reference/manifest.md#links) is an overlay network the importing

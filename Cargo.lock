@@ -2789,6 +2789,7 @@ dependencies = [
  "piqueld-build",
  "piqueld-core",
  "piqueld-probe",
+ "reqwest",
  "rustix",
  "serde",
  "serde_json",

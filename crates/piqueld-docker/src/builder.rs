@@ -10,7 +10,7 @@
 //! build.example.ts.net:5000/piqueld@sha256:<64 hex>
 //! ```
 use anyhow::Context;
-use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild, WhenUnavailable};
+use piqueld_core::build_machine::{BuilderEndpoint, RemoteBuild, WhenUnavailable};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
@@ -36,8 +36,9 @@ pub struct RemoteBuilder {
     config: PathBuf,
     /// Where its `BuildKit` daemon listens.
     endpoint: BuilderEndpoint,
-    /// Where the build machine pushes images.
-    pub(super) repository: BuildRepository,
+    /// Where the build machine pushes images, and a client of that
+    /// registry.
+    pub(super) registry: crate::BuildRegistry,
     /// What a build does while the build machine can't be reached.
     pub(super) unavailable: WhenUnavailable,
     /// The latest check of its `BuildKit` daemon; see [`Self::probe`].
@@ -61,7 +62,8 @@ impl RemoteBuilder {
         let builder = Self {
             config: data_dir.join("buildx"),
             endpoint: remote.builder.clone(),
-            repository: remote.repository.clone(),
+            registry: crate::BuildRegistry::new(remote.repository.clone())
+                .context("create the build registry's HTTP client")?,
             unavailable: remote.unavailable,
             last_check: parking_lot::Mutex::default(),
         };
@@ -97,8 +99,8 @@ impl RemoteBuilder {
 
     /// Connects to the build machine's `BuildKit` daemon, waiting up to
     /// [`Self::PROBE_TIMEOUT`], and keeps the check as the latest for
-    /// [`Self::status`]. Its registry is the engine's to reach, not the
-    /// daemon's.
+    /// [`Self::status`]. It checks only `BuildKit`: the build registry is
+    /// reached by the engine, and by image cleanup.
     async fn connect(
         &self,
     ) -> (
@@ -135,7 +137,7 @@ impl RemoteBuilder {
     pub fn status(&self) -> piqueld_core::api::BuilderStatus {
         piqueld_core::api::BuilderStatus {
             endpoint: self.endpoint.to_string(),
-            repository: self.repository.to_string(),
+            repository: self.registry.repository.to_string(),
             last_check: self.last_check.lock().clone(),
         }
     }
@@ -173,23 +175,32 @@ impl RemoteBuilder {
             format!("--platform={platform}"),
             format!(
                 "--output=type=image,name={},push=true,push-by-digest=true",
-                self.repository
+                self.registry.repository
             ),
         ]
+    }
+
+    /// The repository the build machine pushes to, and its registry.
+    #[must_use]
+    pub fn registry(&self) -> &crate::BuildRegistry {
+        &self.registry
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use piqueld_core::build_machine::BuildRepository;
 
     /// A builder whose `BuildKit` daemon listens at `daemon`.
     fn builder(daemon: std::net::SocketAddr) -> RemoteBuilder {
         RemoteBuilder {
             config: PathBuf::from("/var/lib/piqueld/buildx"),
             endpoint: BuilderEndpoint::try_from(format!("tcp://{daemon}")).unwrap(),
-            repository: BuildRepository::try_from("build.example.ts.net:5000/piqueld".to_owned())
-                .unwrap(),
+            registry: crate::BuildRegistry::new(
+                BuildRepository::try_from("build.example.ts.net:5000/piqueld".to_owned()).unwrap(),
+            )
+            .unwrap(),
             unavailable: WhenUnavailable::Fail,
             last_check: parking_lot::Mutex::default(),
         }

@@ -483,7 +483,10 @@ plus the tailnet node when enabled. A Telemetry export card per destination
 shows the `[telemetry]` endpoint and the receiving service of each granted
 environment of a readable application, with whether it is connected. A Built images card shows
 how many images this installation built that image cleanup kept, and the size
-of those it removed since the daemon started. Green and red labels state
+of those it removed since the daemon started. With a build machine, a
+Registry images row shows how many images this host's builds pushed are
+still in the build registry, how many cleanup deleted since the daemon started, and
+why the last cleanup couldn't delete them all, if it couldn't. Green and red labels state
 each result in text, and one refresh updates the complete dashboard status.
 These diagnostics never disable configuration controls.
 

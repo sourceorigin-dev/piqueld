@@ -3,7 +3,7 @@
 use super::health;
 use crate::{profiles::ProfileSummary, support::join_or};
 use piqueld_client::{
-    DnsStatus, ImageStatus, PreviewUsage, SystemStatus, TelemetryStatus,
+    DnsStatus, ImageStatus, PreviewUsage, RegistryImageStatus, SystemStatus, TelemetryStatus,
     observability::{Bytes, DaemonStats, Timestamp, Uptime},
     system::{
         BuilderCheck, BuilderStatus, HostConfiguration, IngressStatus, PublicIngressStatus,
@@ -188,6 +188,25 @@ report!(ImageStatus, self, out, {
             ),
         ),
         None => out.label("Built images", "not cleaned up yet"),
+    }?;
+    if let Some(registry) = &self.registry {
+        registry.render_human(out)?;
+    }
+    Ok(())
+});
+
+// The images this host's builds pushed to the build registry.
+report!(RegistryImageStatus, self, out, {
+    let deleted = format!(
+        "{} in {}; cleanup deleted {} since the daemon started",
+        self.images, self.repository, self.deleted_images
+    );
+    match &self.failure {
+        None => out.label("Registry images", deleted),
+        Some(reason) => out.label(
+            "Registry images",
+            format_args!("{deleted}; the last cleanup couldn't delete them all: {reason}"),
+        ),
     }
 });
 

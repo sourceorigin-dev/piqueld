@@ -143,6 +143,10 @@ impl DaemonConfig {
                 self.images.keep_deployments.to_string(),
             ),
             (
+                "Deployments kept in the registry",
+                self.images.registry_keep_deployments.to_string(),
+            ),
+            (
                 "Cleanup interval (seconds)",
                 self.images.cleanup_interval_seconds.to_string(),
             ),

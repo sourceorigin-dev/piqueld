@@ -203,6 +203,10 @@ impl piqueld_docker::command::OutputLog for BuildLog {
     async fn append(&self, bytes: &[u8], stream: LogStream) -> anyhow::Result<()> {
         Ok(BuildLog::append(self, bytes, stream).await?)
     }
+
+    async fn pushed(&self, image: &piqueld_core::RepositoryDigest) -> anyhow::Result<()> {
+        Ok(self.store.record_pushed_image(image).await?)
+    }
 }
 
 /// A persisted build record that is always given a terminal state.

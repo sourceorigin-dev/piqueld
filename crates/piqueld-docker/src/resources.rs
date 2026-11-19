@@ -638,7 +638,10 @@ impl DockerApi for BollardDocker {
                 return Ok(digest.into());
             };
             // The build machine pushed it: the engine has to pull it.
-            let image = remote.repository.image(&digest);
+            let image = remote.registry.repository.image(&digest);
+            if let Some(log) = log {
+                log.pushed(&image).await?;
+            }
             let pulled = self
                 .resolve_image(image.as_str())
                 .await
@@ -684,6 +687,22 @@ impl DockerApi for BollardDocker {
             .await
     }
 
+    fn build_repository(&self) -> Option<&piqueld_core::build_machine::BuildRepository> {
+        self.builder
+            .as_ref()
+            .map(|builder| &builder.registry().repository)
+    }
+
+    async fn check_registry(&self) -> Result<(), DockerError> {
+        Ok(self.build_registry()?.check().await?)
+    }
+
+    async fn delete_pushed_image(
+        &self,
+        image: &piqueld_core::RepositoryDigest,
+    ) -> Result<(), DockerError> {
+        Ok(self.build_registry()?.delete(image).await?)
+    }
     async fn prune_health_probes(
         &self,
         instance: &piqueld_core::InstanceId,

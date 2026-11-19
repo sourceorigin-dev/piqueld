@@ -178,12 +178,15 @@ from the registry when a restore or rollback needs them.
 or rolling back to a build from the host then fails with `image_unavailable`.
 Images built on the host before piqueld tagged builds stay untagged, so
 `docker image prune` can still remove them until `keep_deployments` newer
-deployments replace them. See
+deployments replace them. With a build machine, cleanup also deletes images
+from the build registry; see [cleaning up the registry](#cleaning-up-the-registry).
+See
 [image retention](../../dev/architecture/docker-reconciliation.md#image-retention).
 
 ```toml
 [images]
 keep_deployments = 3
+registry_keep_deployments = 10
 cleanup_interval_seconds = 3600
 ```
 
@@ -280,12 +283,10 @@ which needs:
   so only the layers the host lacks travel. Neither sends credentials, so
   anyone who can reach the registry can pull every image, with its build
   arguments, or push to it: only the host and the build machine should be
-  able to. Docker requires HTTPS of a registry on another machine. piqueld
-  never deletes images from the registry, only from the host's engine, so
-  the registry keeps every build. Pushed by digest, they have no tag: the
-  registry's garbage collection frees none of them, and its
-  `--delete-untagged` mode deletes all of them, including those a restore
-  pulls again.
+  able to. Docker requires HTTPS of a registry on another machine. Image
+  cleanup deletes the images no deployment keeps,
+  which needs the registry to allow deletes: see
+  [cleaning up the registry](#cleaning-up-the-registry).
 
 Images are built for the platform of the host's Docker Engine, whatever the
 build machine's, which then needs emulation for another architecture.
@@ -319,6 +320,49 @@ checks it now, or `piquelctl status`, which shows its latest check. The
 dashboard shows it at the top of the **Builds** page, with **Check now**. Each
 build shows where it ran: `piquelctl build list` ends its line with `on the
 build machine` or `on the host`, and the dashboard lists it as **Built on**.
+
+### Cleaning up the registry
+
+Image cleanup also deletes from the build registry, wherever it runs, the images the host's builds
+pushed that no deployment keeps there. The registry keeps what every
+environment and preview runs or is deploying, plus each environment's last
+`images.registry_keep_deployments` successful deployments, 10 by default and
+never fewer than `images.keep_deployments`. It also keeps every image the
+host still has, which a deployment may reuse:
+
+```toml
+[images]
+keep_deployments = 3
+registry_keep_deployments = 10
+```
+
+The registry usually has the larger disk, so it can keep more than the host.
+A restore of a deployment whose image the host no longer has pulls it from
+the registry, so it works as long as the registry keeps that deployment.
+
+piqueld deletes each image by digest, through the registry's API over HTTPS,
+without credentials, which needs deletes enabled, such as with
+`REGISTRY_STORAGE_DELETE_ENABLED=true`, and a certificate from a public
+authority, such as the tailnet's. Each deletion is a `delete_registry_image`
+daemon action in [history](../operations/history.md). While the registry
+doesn't answer, or answers with an error, cleanup skips it. A deletion the
+registry refuses fails with `registry_delete_failed`: when the registry
+refuses every deletion, such as with deletes disabled, cleanup stops there,
+and otherwise it goes on with the next image, unless three in a row fail.
+Either way, it tries again at its next run. A registry without deletes
+keeps every image, and each cleanup reports its refusal. Only images
+in `build.repository` are deleted, and only those this host's builds pushed,
+so give each installation its own repository.
+
+Deleting an image frees no disk by itself: the registry's garbage
+collection, run on its machine, frees the layers no other image uses. Run it
+without `--delete-untagged`: piqueld pushes its images by digest, without a
+tag, so that mode would delete all of them.
+
+`piquelctl status` shows how many pushed images the registry still holds, how
+many cleanup deleted since the daemon started, and why the last cleanup
+couldn't delete them all, if it couldn't. The dashboard shows the same in its **Registry images**
+row.
 
 ## TCP listen modes and Tailscale
 

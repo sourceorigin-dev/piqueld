@@ -91,8 +91,8 @@ pub enum BuiltImage {
     /// An image only the local engine has, under Docker's content-addressed
     /// image ID. Rebuilding it may produce another one.
     Local(Sha256Digest),
-    /// An image a build machine pushed to its registry, which Docker pulls
-    /// it from, again if it goes missing.
+    /// An image a build machine pushed to the build registry, which Docker
+    /// pulls it from, again if it goes missing.
     Pushed(RepositoryDigest),
 }
 

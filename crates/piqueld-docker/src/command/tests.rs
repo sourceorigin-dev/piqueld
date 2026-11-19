@@ -76,6 +76,10 @@ impl OutputLog for Appends {
         self.0.lock().push(bytes.to_vec());
         Ok(())
     }
+
+    async fn pushed(&self, _image: &piqueld_core::RepositoryDigest) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// A verbose command appends its output in a few large batches, not once

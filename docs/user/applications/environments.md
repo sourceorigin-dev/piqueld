@@ -438,7 +438,11 @@ Images from a registry are pulled again. Images piqueld built can only be
 deployed while it keeps them: what each environment runs, and its last three
 successful deployments.
 [`images.keep_deployments`](../reference/configuration-settings.md#imageskeep_deployments),
-in the daemon's configuration, changes that number.
+in the daemon's configuration, changes that number. With a [build
+machine](../reference/configuration.md#build-machine), images it built are
+pulled again from the build registry, which keeps those of each environment's last
+[`images.registry_keep_deployments`](../reference/configuration-settings.md#imagesregistry_keep_deployments)
+successful deployments, 10 by default.
 
 To return any environment to a deployment exactly as it ran, with the
 variables and secrets it had, [restore it](restore.md) instead.
