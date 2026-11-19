@@ -17,9 +17,11 @@ const NOTES: &str = "https://example.com/notes.git";
 /// service mounts the stored secret `stripe`.
 fn template(saved: bool) -> ValidatedTemplate {
     let connection = if saved {
-        ""
+        String::new()
     } else {
-        "[spec.manifest]\npath='app.toml'\n[spec.manifest.repository]\nurl='https://example.com/notes.git'\nbranch='main'\n"
+        format!(
+            "[spec.manifest]\npath='app.toml'\n[spec.manifest.repository]\nurl='{NOTES}'\nbranch='main'\n"
+        )
     };
     let mut manifest = parse_template_toml(&format!(
         "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='notes'\n{connection}[[spec.services]]\nname='web'\n[spec.services.source]\ntype='image'\nimage='nginx:alpine'"

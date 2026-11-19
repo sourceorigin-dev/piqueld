@@ -456,9 +456,8 @@ async fn key_recovery_keeps_values_of_a_key_that_is_not_lost() {
 #[tokio::test]
 async fn key_recovery_keeps_values_behind_a_corrupt_verifier() {
     for webhook in [false, true] {
-        let temp = tempfile::tempdir().unwrap();
+        let (temp, store) = Store::temporary().await;
         let key = temp.path().join("secrets.key");
-        let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
         let app = with_secret(&application());
         store
             .save_application(&ApplicationTemplate::from(&app), None, None)
@@ -629,8 +628,7 @@ async fn mounted_declared_secrets_are_generated_once_until_regenerated() {
 /// repository deployment, since `regenerate_secret` reads the accepted one.
 #[tokio::test]
 async fn deployments_replace_generated_values_discarded_by_key_recovery() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
+    let (temp, store) = Store::temporary().await;
     let accepted = ApplicationTemplate::from(&application());
     let first = store.save_application(&accepted, None, None).await.unwrap();
     let (app, env) = (with_generated_secret(&application()), &first.environment_id);
@@ -860,9 +858,8 @@ async fn stored_secret_writes_use_the_callers_current_grants() {
 #[tokio::test]
 async fn secret_key_check_reports_the_key_without_changing_it() {
     use piqueld_core::api::CheckStatus;
-    let temp = tempfile::tempdir().unwrap();
+    let (temp, store) = Store::temporary().await;
     let key = temp.path().join("secrets.key");
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
     let status = async || store.secret_key_check().await.status;
     // A new installation has no key yet, and checking does not create one.
     assert_eq!(status().await, CheckStatus::Pass);
