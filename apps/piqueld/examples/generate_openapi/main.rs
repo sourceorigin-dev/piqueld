@@ -148,6 +148,11 @@ impl Generator {
     private_interfaces,
     reason = "generated constructors take the crate-private ClientState inside this private module"
 )]
+#![expect(
+    clippy::allow_attributes,
+    clippy::allow_attributes_without_reason,
+    reason = "Progenitor marks its own exceptions with plain `#[allow]`"
+)]
 
 {source}"#
         ))
