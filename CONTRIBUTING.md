@@ -15,6 +15,8 @@ to start with. Before working on a larger change, open an issue to discuss it.
   before merging.
 - Titles follow conventional commits, such as
   `feat(server): add docker swarm reconciliation`.
+- Keep pull requests small and focused: one change each. Stack dependent
+  ones, each on the last.
 - A feature is reachable through the manifest, `piquelctl`, and the dashboard;
   a change to one updates the others. Configuration changes also update the
   NixOS module.

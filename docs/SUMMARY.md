@@ -60,6 +60,7 @@
 - [Quickstart](dev/quickstart.md)
 - [Development instances](dev/development.md)
 - [Automated validation](dev/validation.md)
+- [Rust conventions](dev/rust-conventions.md)
 - [Contract coverage](dev/contract-coverage.md)
 - [Changing the documentation](dev/documentation.md)
 - [Releasing piqueld](dev/releasing.md)
