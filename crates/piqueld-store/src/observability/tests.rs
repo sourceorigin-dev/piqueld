@@ -1539,18 +1539,22 @@ async fn requested_notification_and_webhook_changes_commit_with_their_audit_reco
     let op = application(&store).await;
     let application = application_of(&store, &op).await;
     fail(&store, &op).await;
-    let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (failure, _) = store
+        .claim_delivery()
+        .await
+        .expect("deliveries are claimed")
+        .expect("the failure is due for delivery");
     let failed = Some("Receiver rejected alert");
     store
         .complete_delivery(&failure.id, DeliveryState::Failed, failed, 3600)
         .await
-        .unwrap();
+        .expect("the delivery fails");
     let request = crate::testing::audit_request("POST /api/v1/notifications");
     let author = Author {
         actor: Actor::Daemon,
         request: Some(&request),
     };
-    let ops = DestinationName::parse("ops").unwrap();
+    let ops = DestinationName::parse("ops").expect("the name is valid");
     let put = async |url: &str| {
         let url = Some(url.into());
         let request = DestinationRequest {
@@ -1561,16 +1565,14 @@ async fn requested_notification_and_webhook_changes_commit_with_their_audit_reco
             .put_notification_destination(author, &ops, request)
             .await
     };
-    let (first, second) = (
-        "https://example.com/private-token",
-        "https://example.com/other-token",
-    );
-    put(first).await.unwrap();
+    let first = "https://example.com/private-token";
+    let second = "https://example.com/other-token";
+    put(first).await.expect("the destination is created");
     let rotate = async || {
         let (secret, _) = store.generate_webhook_secret(author, &application).await?;
         Ok::<_, StoreError>(secret)
     };
-    let kept = rotate().await.unwrap();
+    let kept = rotate().await.expect("the webhook secret is generated");
     // Changes whose record can't be written keep what was there.
     store.refuse_audit(true).await;
     assert!(put(second).await.is_err());
@@ -1579,18 +1581,40 @@ async fn requested_notification_and_webhook_changes_commit_with_their_audit_reco
     assert!(store.retry_delivery(author, &failure.id).await.is_err());
     assert!(rotate().await.is_err());
     store.refuse_audit(false).await;
-    let destination = store.notification_destination(&ops).await.unwrap();
-    assert_eq!(store.destination_url(&destination).unwrap().as_str(), first);
-    assert!(store.claim_delivery().await.unwrap().is_none());
-    let webhook = store.webhook_secret(&application).await.unwrap().unwrap();
+    let destination = store
+        .notification_destination(&ops)
+        .await
+        .expect("the destination is read");
+    assert_eq!(
+        store
+            .destination_url(&destination)
+            .expect("its URL decrypts")
+            .as_str(),
+        first
+    );
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("deliveries are claimed")
+            .is_none()
+    );
+    let webhook = store
+        .webhook_secret(&application)
+        .await
+        .expect("the webhook secret is read")
+        .expect("the application has a webhook secret");
     assert_eq!(webhook.as_slice(), kept.as_bytes());
-    put(second).await.unwrap();
-    store.retry_delivery(author, &failure.id).await.unwrap();
-    let secret = rotate().await.unwrap();
+    put(second).await.expect("the destination is replaced");
+    store
+        .retry_delivery(author, &failure.id)
+        .await
+        .expect("the failed delivery is retried");
+    let secret = rotate().await.expect("the webhook secret is rotated");
     store
         .delete_notification_destination(author, &ops)
         .await
-        .unwrap();
+        .expect("the destination is deleted");
     let route = "POST /api/v1/notifications";
     let actions = store.audit_actions().await;
     assert_eq!(
