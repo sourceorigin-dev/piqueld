@@ -368,14 +368,12 @@ impl Instance {
         let engine = Engine::host().await?;
         let name = self.container();
         let body = self.engine_container(&name);
-        let existing = match engine
-            .inspect_container(&name, None::<InspectContainerOptions>)
-            .await
-        {
-            Ok(container) => Some(container),
-            Err(error) if Engine::is_not_found(&error) => None,
-            Err(error) => return Err(error).context("inspect the instance's engine"),
-        };
+        let existing = Engine::found(
+            engine
+                .inspect_container(&name, None::<InspectContainerOptions>)
+                .await,
+        )
+        .context("inspect the instance's engine")?;
         let binds = |config: Option<&HostConfig>| config.and_then(|config| config.binds.clone());
         match existing {
             Some(container)

@@ -618,16 +618,16 @@ auto_initialize_swarm = true
     async fn clean(&self) -> Result<()> {
         let engine = Engine::host().await?;
         let container = self.container();
-        match engine
+        let inspected = engine
             .inspect_container(&container, None::<InspectContainerOptions>)
-            .await
+            .await;
+        if let Some(inspected) =
+            Engine::found(inspected).context("inspect the instance's engine")?
         {
-            Ok(inspected) => self.check_owner(
+            self.check_owner(
                 &container,
                 inspected.config.and_then(|config| config.labels),
-            )?,
-            Err(error) if Engine::is_not_found(&error) => {}
-            Err(error) => return Err(error).context("inspect the instance's engine"),
+            )?;
         }
         self.supervisor().stop().await?;
         let dirs = [
@@ -675,13 +675,11 @@ impl Engine {
     /// elsewhere never loses data.
     async fn remove_dev_instance(&self, container: &str, dirs: &[impl AsRef<Path>]) -> Result<()> {
         self.remove(container).await?;
-        if let Err(error) = self
-            .remove_volume(container, None::<RemoveVolumeOptions>)
-            .await
-            && !Self::is_not_found(&error)
-        {
-            return Err(error).context("remove the instance's image store");
-        }
+        Self::found(
+            self.remove_volume(container, None::<RemoveVolumeOptions>)
+                .await,
+        )
+        .context("remove the instance's image store")?;
         let runtime_root =
             fs::canonicalize(Instance::runtime_root()?).context("resolve the runtime root")?;
         for dir in dirs {
