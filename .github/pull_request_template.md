@@ -1,4 +1,5 @@
-<!-- Title: a conventional commit, such as `feat(server): add docker swarm reconciliation`. -->
+<!-- Title: a conventional commit, such as `feat(server): add docker swarm reconciliation`.
+Keep the pull request to one change; stack dependent ones. -->
 
 ## What and why
 

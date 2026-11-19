@@ -1,0 +1,77 @@
+# Rust conventions
+
+piqueld follows the shared
+[engineering standard](https://gist.github.com/PiquelChips/04330e52c03efbe9ce4c889c88673a27),
+also used by SourceOrigin and DirkEngine. This page applies it to piqueld.
+Keep implementations simple, follow neighbouring modules, and share repeated
+logic instead of copying it.
+
+## Crates and boundaries
+
+[Module boundaries](architecture/dependency-flow.md) describes each crate and
+what it may depend on, and `just boundary` checks it. Shared contracts live in
+`piqueld-core`, which knows no server, database, Docker or browser framework;
+the daemon's crates (`piqueld-config`, `piqueld-store`, `piqueld-docker`)
+don't depend on the ones they build alongside. A new dependency between
+crates updates both that page and `tools/xtask/src/boundary.rs`.
+
+A feature reaches every surface it applies to: the manifest, `piquelctl` and
+the dashboard, as `AGENTS.md` says.
+
+## Errors
+
+Library crates return explicit `thiserror` errors, with their source kept by
+`#[source]` or `#[from]`. `anyhow` stays in the applications (`apps/`) and in
+`tools/`, with `.context` on each step. Don't drop a source with
+`map_err(|_| ...)` unless it could hold a secret, and say so in a comment.
+Log an error with `error = %error`, its `Display`, as the daemon does.
+
+Production code never panics without saying why: `expect_used`, `panic`,
+`todo`, `unimplemented` and `dbg_macro` are denied outside tests. Return an
+error when the input can be wrong. An invariant the types can't express keeps
+its `expect`, whose message says what holds, under an
+`#[expect(clippy::expect_used, reason = "...")]` on the smallest item around
+it, such as `reason = "The placeholder IDs are valid constants."`. Tests may
+panic; integration test crates say so once, in an `#![expect]` at their root.
+
+## Lint exceptions
+
+Never `#[allow]`: an exception is `#[expect(lint, reason = "...")]`, which
+fails once the code no longer needs it, and the reason says why the lint is
+wrong there. Generated code is excepted once, by its generator: the OpenAPI
+generator writes the client's header, which excepts Progenitor's own
+`#[allow]`s.
+
+## Types
+
+Validate input once, where it becomes a value: `ApplicationId::parse`,
+`EnvironmentId`, the manifest's `ValidatedTemplate`. Code that takes the
+validated type never checks it again. Match domain enums exhaustively, so a
+new variant fails to compile until every consumer handles it. Behaviour
+belongs on the type that owns it, as a method; free functions are for small
+helpers with no owner. Limits and timeouts are named constants.
+
+## Modules, tests and docs
+
+A module with children is `foo/mod.rs` (`self_named_module_files`). Unit tests
+live in `#[cfg(test)] mod tests;` with a sibling `tests.rs`; a block of 30 lines
+or fewer may stay inline. Tests prove one behaviour each, named for it, and
+assert the outcome; [automated validation](validation.md) lists the suites
+and what each covers.
+
+Every item has a doc comment. Public items' `///` comments on the manifest,
+configuration and CLI types are also the generated references, so keep them
+about what the reader can see and do, and put notes for developers in `//`
+comments ([changing the documentation](documentation.md)). `just doc` builds
+the docs, private items included, with warnings denied.
+
+## Deviations
+
+- `unwrap_used` is off: the tests still call `unwrap` about 4,400 times. They
+  move to `expect("what should have held")` crate by crate (PQD-124); new
+  tests use `expect`.
+- Most unit tests are inline `mod tests { ... }` blocks longer than 30 lines.
+  Move a block to a sibling `tests.rs` when you change it.
+- `just doc` allows links from public items to private ones
+  (`rustdoc::private_intra_doc_links`), since most of the code is internal and
+  documented for its developers.

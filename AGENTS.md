@@ -4,6 +4,19 @@ A pure Rust infrastructure control plane for a single-node Docker Swarm: the
 `piqueld` daemon, the `piquelctl` CLI, and the Leptos dashboard. See
 `docs/README.md` for the documentation index.
 
+## Conventions
+
+Follow `docs/dev/rust-conventions.md`, which applies the shared
+[engineering standard](https://gist.github.com/PiquelChips/04330e52c03efbe9ce4c889c88673a27)
+to piqueld.
+
+## Validation
+
+`just validate` (or `just` alone) formats the code and runs every local check
+CI runs, which `docs/dev/validation.md` lists. Run it before handing work back;
+while iterating, run only what you changed, such as `just test -p <crate>` and
+`just lint`. If a step cannot run, report the exact command and why.
+
 ## Testing
 
 The `piqueld-dev` skill in `.agents/skills` (linked from `.claude/skills`)
@@ -24,6 +37,9 @@ so never triage or close them on GitHub.
 ## Commits & Pull Requests
 
 Titles should follow the `feat(server): add docker swarm reconciliation` convention.
+Keep pull requests small and focused: one change each, which a reviewer can
+read in one sitting. Split refactors from behaviour changes, and stack
+dependent pull requests, each on the last.
 A pull request names its Linear issue in the description: `Fixes PQD-123`
 closes the issue when it merges, and `Part of PQD-123` only links it.
 
