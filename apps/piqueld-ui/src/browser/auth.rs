@@ -73,11 +73,11 @@ enum ActionError {
     Message(String),
 }
 
-impl ActionError {
-    /// The message of a value thrown by the browser's passkey ceremony.
-    fn thrown(error: &JsValue) -> Self {
+/// A value thrown by the browser's passkey ceremony, by its message.
+impl From<JsValue> for ActionError {
+    fn from(error: JsValue) -> Self {
         Self::Message(
-            js_sys::Reflect::get(error, &JsValue::from_str("message"))
+            js_sys::Reflect::get(&error, &JsValue::from_str("message"))
                 .ok()
                 .and_then(|v| v.as_string())
                 .or_else(|| error.as_string())
@@ -90,10 +90,8 @@ impl ActionError {
 /// credential for the matching `finish` endpoint.
 async fn complete(ceremony: Ceremony, registration: bool) -> Result<CeremonyFinish, ActionError> {
     let options = serde_json::to_string(&ceremony.options)?;
-    let promise = passkey(&options, registration).map_err(|e| ActionError::thrown(&e))?;
-    let response = wasm_bindgen_futures::JsFuture::from(promise)
-        .await
-        .map_err(|e| ActionError::thrown(&e))?;
+    let promise = passkey(&options, registration)?;
+    let response = wasm_bindgen_futures::JsFuture::from(promise).await?;
     let response = response
         .as_string()
         .ok_or_else(|| ActionError::Message("Invalid passkey response".into()))?;
