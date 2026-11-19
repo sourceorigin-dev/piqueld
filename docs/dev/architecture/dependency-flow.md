@@ -65,6 +65,7 @@ Inside the daemon:
 | `git` | Isolated, bounded checkouts and local worktree snapshots |
 | `ingress` | The installation-owned Caddy gateway, certificates, and tunnel and tailnet listeners |
 | `tailnet` | The daemon's own tailnet node serving the website |
+| `telemetry` | Export of the daemon's own traces, metrics and logs over OTLP, to the configured endpoint and to granted environments |
 
 The API service validates commands. One store transaction compares current
 intent and revision, accepts a change or no-op, and writes its request receipt.
