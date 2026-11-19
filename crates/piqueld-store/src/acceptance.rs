@@ -1495,8 +1495,8 @@ mod tests {
         let failed = request();
         assert!(accept(&failed).await.is_err());
         assert!(!failed.recorded.get());
-        assert_eq!(counts().await, before);
         store.refuse_audit(false).await;
+        assert_eq!(counts().await, before);
         let committed = request();
         let Ok((MutationResponse::Saved(saved), _)) = accept(&committed).await else {
             panic!("saved response expected")

@@ -44,13 +44,14 @@ pub(super) fn audit_request(route: &str) -> crate::AuditRequest {
 }
 
 impl Store {
-    /// Makes every audit append fail while `refused`, as a full disk would.
+    /// Makes every audit append fail while `refused`, as a full disk would:
+    /// a record at the highest possible ID leaves none for the next one.
     pub(super) async fn refuse_audit(&self, refused: bool) {
         let change = if refused {
-            "CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events \
-            BEGIN SELECT RAISE(ABORT,'refused'); END"
+            "INSERT INTO audit_events(id,created_at_ms,action,outcome,status) \
+            VALUES(9223372036854775807,0,'refused','failed',503)"
         } else {
-            "DROP TRIGGER refuse_audit"
+            "DELETE FROM audit_events WHERE id=9223372036854775807"
         };
         sqlx::query(change).execute(&self.pool).await.unwrap();
     }
