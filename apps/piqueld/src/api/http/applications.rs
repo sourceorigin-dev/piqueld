@@ -1,17 +1,17 @@
 //! Applications: listing, reading, applying and planning whole manifests,
 //! renaming, deletion, and manifest download. Mutations of applications and
-//! their environments are submitted through [`accept_mutation`].
+//! their environments are submitted through a [`Mutator`].
 use super::access::Audited;
 use super::extract::{IDEMPOTENCY_KEY, IdempotencyKey, ManifestUpload, optional_header};
 use super::{
     ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok, openapi::ApiErrors,
 };
-use crate::api::{Mutation, MutationResponse};
+use crate::api::{Mutation, MutationResponse, Restore};
 use crate::auth::Identity;
 use axum::{
     Extension,
-    extract::State,
-    http::{HeaderMap, header},
+    extract::{FromRequestParts, State, rejection::ExtensionRejection},
+    http::{HeaderMap, header, request::Parts},
     response::{IntoResponse, Response},
 };
 use piqueld_core::api::{
@@ -100,26 +100,21 @@ pub(super) async fn get(
         ApiErrors<400, 409, 413, 415, 422, 500, 502, 503>)
 )]
 pub(super) async fn apply(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiQuery(query): ApiQuery<ApplyQuery>,
-    headers: HeaderMap,
     upload: ManifestUpload,
 ) -> Result<Response, ApiError> {
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::save(
-            upload.manifest,
-            upload.expected_application_id,
-            query.deploy,
-        ),
-        upload.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::save(
+                upload.manifest,
+                upload.expected_application_id,
+                query.deploy,
+            ),
+            upload.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 #[derive(Default, Deserialize, utoipa::IntoParams)]
@@ -170,11 +165,8 @@ impl QueryParams for DeleteApplicationQuery {
         ApiErrors<400, 404, 409, 500, 503>)
 )]
 pub(super) async fn delete(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiQuery(query): ApiQuery<DeleteApplicationQuery>,
 ) -> Result<Response, ApiError> {
     let environments = query
@@ -184,18 +176,16 @@ pub(super) async fn delete(
         .filter(|name| !name.is_empty())
         .map(EnvironmentName::parse)
         .collect::<Result<_, _>>()?;
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::DeleteApplication {
-            id: ApplicationId::parse(id)?,
-            environments,
-        },
-        query.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::DeleteApplication {
+                id: ApplicationId::parse(id)?,
+                environments,
+            },
+            query.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 // Dry-runs `apply` with the same body; supplied preconditions are checked, but
@@ -258,34 +248,96 @@ impl QueryParams for GenerationQuery {
     const INVALID_MESSAGE: &'static str = "invalid expected generation";
 }
 
-/// Submits a mutation with the request's `Idempotency-Key` and renders the
-/// acceptance: 202 when a durable operation was started (including a save that
-/// also deploys, a created preview, or a deletion), 200 for a plain save,
-/// rename, environment change, or an existing preview.
-pub(super) async fn accept_mutation(
-    state: &ApiState,
-    author: Author<'_>,
-    mutation: Mutation,
-    expected: Option<u64>,
-    force: bool,
-    headers: &HeaderMap,
-) -> Result<Response, ApiError> {
-    let request_id = optional_header(headers, IDEMPOTENCY_KEY)?;
-    let response = state
-        .accept(author, mutation, expected, force, request_id.as_deref())
-        .await?;
-    let started = response.started();
-    Ok(match response {
-        MutationResponse::Saved(saved) => reply(started, saved),
-        MutationResponse::Preview(preview) => reply(started, preview),
-        MutationResponse::Rename(renamed) => reply(started, renamed),
-        MutationResponse::Environment(environment) => reply(started, environment),
-        MutationResponse::Operation(operation) => reply(started, operation),
-        MutationResponse::Promotion(promotion) => reply(started, promotion),
-        MutationResponse::Deleted(deleted) => reply(started, deleted),
-        // Only sync submits the mutations answered with this.
-        MutationResponse::Synced(_) => return Err(piqueld_store::StoreError::Corrupt.into()),
-    })
+/// The request of a handler submitting a mutation: the caller, acting
+/// through its audited request, and the request's `Idempotency-Key`. It
+/// extracts what the handler's leading `State`, `Extension<Identity>`,
+/// `Audited` and `HeaderMap` would, failing as they would.
+pub(super) struct Mutator {
+    pub(super) state: ApiState,
+    identity: Identity,
+    audited: Audited,
+    headers: HeaderMap,
+}
+
+impl FromRequestParts<ApiState> for Mutator {
+    type Rejection = ExtensionRejection;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &ApiState,
+    ) -> Result<Self, ExtensionRejection> {
+        let Extension(identity) = Extension::from_request_parts(parts, state).await?;
+        let Ok(audited) = Audited::from_request_parts(parts, state).await;
+        Ok(Self {
+            state: state.clone(),
+            identity,
+            audited,
+            headers: parts.headers.clone(),
+        })
+    }
+}
+
+impl Mutator {
+    /// The caller acting through this request.
+    pub(super) fn author(&self) -> Author<'_> {
+        self.audited.author(&self.identity)
+    }
+
+    /// The request's `Idempotency-Key`, refused when repeated or not ASCII.
+    pub(super) fn idempotency_key(&self) -> Result<Option<String>, ApiError> {
+        optional_header(&self.headers, IDEMPOTENCY_KEY)
+    }
+
+    /// Submits `mutation` and renders the acceptance: 202 when a durable
+    /// operation was started (including a save that also deploys, a created
+    /// preview, or a deletion), 200 for a plain save, rename, environment
+    /// change, or an existing preview.
+    pub(super) async fn accept(
+        &self,
+        mutation: Mutation,
+        expected: Option<u64>,
+        force: bool,
+    ) -> Result<Response, ApiError> {
+        let request_id = self.idempotency_key()?;
+        let response = self
+            .state
+            .accept(
+                self.author(),
+                mutation,
+                expected,
+                force,
+                request_id.as_deref(),
+            )
+            .await?;
+        let started = response.started();
+        Ok(match response {
+            MutationResponse::Saved(saved) => reply(started, saved),
+            MutationResponse::Preview(preview) => reply(started, preview),
+            MutationResponse::Rename(renamed) => reply(started, renamed),
+            MutationResponse::Environment(environment) => reply(started, environment),
+            MutationResponse::Operation(operation) => reply(started, operation),
+            MutationResponse::Promotion(promotion) => reply(started, promotion),
+            MutationResponse::Deleted(deleted) => reply(started, deleted),
+            // Only sync submits the mutations answered with this.
+            MutationResponse::Synced(_) => return Err(piqueld_store::StoreError::Corrupt.into()),
+        })
+    }
+
+    /// Restores an earlier deployment of the environment or preview `id`, as
+    /// `restore` names it, answering 202 with the restore's operation.
+    pub(super) async fn restore(
+        &self,
+        id: String,
+        restore: impl FnOnce(EnvironmentId) -> Restore,
+    ) -> Result<Response, ApiError> {
+        let request_id = self.idempotency_key()?;
+        let restore = restore(EnvironmentId::parse(id)?);
+        Ok(accepted(
+            self.state
+                .restore(self.author(), restore, request_id.as_deref())
+                .await?,
+        ))
+    }
 }
 
 /// Answers `data` with 202 Accepted when its mutation `started` durable
@@ -305,26 +357,21 @@ fn reply<T: serde::Serialize>(started: bool, data: T) -> Response {
     responses((status=200,description="Application renamed without redeployment",body=Envelope<RenamedApplication>),
     ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn rename(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<RenameApplicationRequest>,
 ) -> Result<Response, ApiError> {
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::Rename {
-            id: ApplicationId::parse(id)?,
-            name: request.name,
-        },
-        request.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::Rename {
+                id: ApplicationId::parse(id)?,
+                name: request.name,
+            },
+            request.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 #[derive(Default, Deserialize, utoipa::IntoParams)]

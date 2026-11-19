@@ -1,9 +1,10 @@
 //! Explicit deployment acceptance and durable history.
+use super::applications::Mutator;
 use super::extract::IdempotencyKey;
 use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use piqueld_core::{
@@ -102,26 +103,21 @@ impl DeployQuery {
     responses((status=202,description="Deployment accepted",body=Envelope<AcceptedOperation>),
     ApiErrors<400, 404, 409, 422, 500, 503>))]
 pub(super) async fn deploy(
-    State(state): State<ApiState>,
-    axum::Extension(identity): axum::Extension<crate::auth::Identity>,
-    audited: super::access::Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiQuery(mut query): ApiQuery<DeployQuery>,
 ) -> Result<Response, ApiError> {
-    super::applications::accept_mutation(
-        &state,
-        audited.author(&identity),
-        crate::api::Mutation::Deploy {
-            id: EnvironmentId::parse(id)?,
-            revision: query.revision()?,
-            rebuild: query.rebuild,
-        },
-        query.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            crate::api::Mutation::Deploy {
+                id: EnvironmentId::parse(id)?,
+                revision: query.revision()?,
+                rebuild: query.rebuild,
+            },
+            query.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// Lists deployments of an environment, newest first.

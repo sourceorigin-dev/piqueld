@@ -2,7 +2,7 @@
 //! restoring, and deleting one need no application revision. A preview's status, logs,
 //! deployments, and secrets use the environment endpoints with its ID.
 use super::access::Audited;
-use super::applications::accept_mutation;
+use super::applications::Mutator;
 use super::extract::{IDEMPOTENCY_KEY, IdempotencyKey, content_type, optional_header};
 use super::{
     ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok, openapi::ApiErrors,
@@ -39,11 +39,8 @@ use piqueld_core::{ApplicationId, EnvironmentId, GitBranch, PreviewSlot};
     (status=200,description="The preview of this branch and slot already exists",body=Envelope<CreatedPreview>),
     ApiErrors<400, 404, 409, 415, 500, 503>))]
 pub(super) async fn create(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<CreatePreviewRequest>,
 ) -> Result<Response, ApiError> {
     let mutation = Mutation::Preview(PreviewMutation::Create {
@@ -51,15 +48,7 @@ pub(super) async fn create(
         branch: GitBranch::parse(request.branch)?,
         slot: request.slot.map(PreviewSlot::parse).transpose()?,
     });
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        mutation,
-        None,
-        false,
-        &headers,
-    )
-    .await
+    mutator.accept(mutation, None, false).await
 }
 
 /// Which preview a local snapshot deploys to.
@@ -178,24 +167,13 @@ pub(super) async fn get(
     responses((status=202,description="Deployment accepted",body=Envelope<AcceptedOperation>),
     ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn deploy(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let mutation = Mutation::Preview(PreviewMutation::Deploy {
         id: EnvironmentId::parse(id)?,
     });
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        mutation,
-        None,
-        false,
-        &headers,
-    )
-    .await
+    mutator.accept(mutation, None, false).await
 }
 
 /// Restores an earlier deployment of a preview exactly.
@@ -212,23 +190,16 @@ pub(super) async fn deploy(
     responses((status=202,description="Restore accepted",body=Envelope<AcceptedOperation>),
     ApiErrors<400, 404, 409, 415, 500, 502, 503>))]
 pub(super) async fn restore(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<RestoreRequest>,
 ) -> Result<Response, ApiError> {
-    let request_id = optional_header(&headers, IDEMPOTENCY_KEY)?;
-    let restore = Restore::Preview {
-        id: EnvironmentId::parse(id)?,
-        deployment: request.deployment,
-    };
-    Ok(accepted(
-        state
-            .restore(audited.author(&identity), restore, request_id.as_deref())
-            .await?,
-    ))
+    mutator
+        .restore(id, |id| Restore::Preview {
+            id,
+            deployment: request.deployment,
+        })
+        .await
 }
 
 /// Deletes a preview with its services, network, secrets, and every volume
@@ -238,24 +209,13 @@ pub(super) async fn restore(
     responses((status=202,description="Deletion operation",body=Envelope<AcceptedOperation>),
     ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn delete(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let mutation = Mutation::Preview(PreviewMutation::Delete {
         id: EnvironmentId::parse(id)?,
     });
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        mutation,
-        None,
-        false,
-        &headers,
-    )
-    .await
+    mutator.accept(mutation, None, false).await
 }
 
 /// Deletes previews whose branch is gone.
