@@ -583,7 +583,7 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
 
 /// A requested secret change commits with its audit record, naming the
 /// secret, its generation and access but never its value: a failed append
-/// keeps the previous version and access.
+/// keeps the previous version and access, and stores no new version.
 #[tokio::test]
 async fn requested_secret_changes_commit_with_their_audit_record() {
     let (_temp, store, _, staging) = fixture().await;
@@ -620,6 +620,19 @@ async fn requested_secret_changes_commit_with_their_audit_record() {
     let value = b"hunter2".to_vec();
     let generated = store.put_secret(author, &staging, "session", 0, value);
     generated.await.unwrap();
+    // A regeneration whose record can't be written keeps the last version.
+    store.refuse_audit(true).await;
+    let regenerated = store.regenerate_secret(author, &staging, "session", 1);
+    assert!(regenerated.await.is_err());
+    store.refuse_audit(false).await;
+    let [session] = store.secrets(&staging).await.unwrap().try_into().unwrap();
+    assert_eq!((session.name.as_str(), session.generation), ("session", 1));
+    let versions = "SELECT COUNT(*) FROM secret_versions WHERE name='session'";
+    let versions: i64 = sqlx::query_scalar(versions)
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+    assert_eq!(versions, 1);
     assert_eq!(
         store.audit_actions().await,
         [
