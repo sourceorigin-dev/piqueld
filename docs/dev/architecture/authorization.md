@@ -176,9 +176,19 @@ credential only for an enrollment link to the caller's own account, like every
 change to it. Deleting the issuer deletes its links (`ON DELETE CASCADE`), and
 deleting an enrollment's target account deletes its enrollment links.
 
+## Revocation reaches what was issued
+
+Whoever may revoke a credential may revoke everything issued through it (see
+[issuance lineage](authentication.md#issuance-lineage)), even in accounts it
+couldn't change itself: an invitation's account, or an account it enrolled a
+passkey for. The authority checked is the one over the named credential. A
+credential issued through another is access delegated from it, so revoking
+the delegation must not depend on what the delegate has become since.
+
 ## Lockout protection
 
-Setting grants, deleting an account and removing a passkey are refused with
+Setting grants, deleting an account, removing a passkey and a revocation that
+removes passkeys are refused with
 409 `account_lockout` when no account would keep `admin` on every application
 together with a passkey (`crates/piqueld-store/src/auth/access.rs`). The host operator is not an
 account and never counts, and the rule applies to its changes too. Revoking a

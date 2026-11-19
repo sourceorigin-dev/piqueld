@@ -10,6 +10,22 @@
 use crate::{Store, StoreError};
 use sqlx::SqliteConnection;
 
+/// Whether revoking something also revokes what was issued through it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cascade {
+    /// Also revoke everything it issued, and everything they issued in turn,
+    /// in any account, even through issuers that have since ended.
+    Yes,
+    /// Revoke only what was named, leaving what it issued valid.
+    No,
+}
+
+impl From<bool> for Cascade {
+    fn from(cascade: bool) -> Self {
+        if cascade { Self::Yes } else { Self::No }
+    }
+}
+
 /// A credential, invitation or passkey, as a node of the issuance tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Issued<'a> {
@@ -78,6 +94,64 @@ impl<'a> Issued<'a> {
 }
 
 impl Store {
+    /// Deletes `roots` and, with [`Cascade::Yes`], every credential,
+    /// invitation and passkey issued through them. Callers have authorized
+    /// the roots; their authority reaches all they issued. Refuses with
+    /// [`super::Lockout::LastAdmin`] when removed passkeys leave no
+    /// administrator able to sign in. Accounts are never deleted.
+    pub(super) async fn revoke_on(
+        db: &mut SqliteConnection,
+        roots: &[Issued<'_>],
+        cascade: Cascade,
+    ) -> Result<(), StoreError> {
+        let roots = serde_json::to_string(&roots.iter().map(|root| root.key()).collect::<Vec<_>>())
+            .expect("pairs of strings serialize as JSON");
+        // `[[kind, id], …]`: the roots, then what descends from them.
+        let targets = match cascade {
+            Cascade::No => roots,
+            Cascade::Yes => sqlx::query_scalar!(
+                r#"WITH RECURSIVE tree(kind,id) AS (
+                    SELECT value->>0, value->>1 FROM json_each(?1)
+                    UNION
+                    SELECT child.kind, child.id FROM tree
+                    JOIN auth_lineage parent ON parent.kind=tree.kind AND parent.id=tree.id
+                    JOIN auth_lineage child ON child.issued_by=parent.node
+                )
+                SELECT json_group_array(json_array(kind,id)) AS "targets!: String" FROM tree"#,
+                roots
+            )
+            .fetch_one(&mut *db)
+            .await
+            .map_err(StoreError::database)?,
+        };
+        sqlx::query!(
+            "DELETE FROM auth_credentials WHERE id IN (SELECT value->>1 FROM json_each(?1) WHERE value->>0='credential')",
+            targets
+        )
+        .execute(&mut *db)
+        .await
+        .map_err(StoreError::database)?;
+        sqlx::query!(
+            "DELETE FROM auth_invitations WHERE id IN (SELECT value->>1 FROM json_each(?1) WHERE value->>0='invitation')",
+            targets
+        )
+        .execute(&mut *db)
+        .await
+        .map_err(StoreError::database)?;
+        let passkeys = sqlx::query!(
+            "DELETE FROM auth_passkeys WHERE id IN (SELECT value->>1 FROM json_each(?1) WHERE value->>0='passkey')",
+            targets
+        )
+        .execute(&mut *db)
+        .await
+        .map_err(StoreError::database)?
+        .rows_affected();
+        if passkeys > 0 {
+            Self::require_an_admin(db).await?;
+        }
+        Ok(())
+    }
+
     /// Deletes the lineage nodes that neither name a live credential,
     /// invitation or passkey nor have a descendant that does. A removed
     /// node's whole subtree goes with it, so no remaining node loses its
@@ -213,7 +287,8 @@ mod tests {
 
         // Both of bob's sessions and the leaf log out.
         for id in ["redeemed", "signed-in", "leaf"] {
-            store.revoke_credential(Actor::Daemon, id).await.unwrap();
+            let logout = store.revoke_credential(Actor::Daemon, id, Cascade::No);
+            logout.await.unwrap();
         }
         store.prune_auth().await.unwrap();
 
@@ -237,5 +312,102 @@ mod tests {
             "token",
         ];
         assert_eq!(nodes, kept);
+    }
+
+    /// Revoking cascades to everything issued through the credential, in
+    /// other accounts too, even through a session that already logged out,
+    /// and leaves siblings and accounts alone. It refuses, changing nothing,
+    /// when removed passkeys would leave no administrator; without cascade,
+    /// what the credential issued stays valid.
+    #[tokio::test]
+    async fn revoking_cascades_through_ended_issuers() {
+        let (_dir, store) = Store::temporary().await;
+        let Actor::Account(alice) = store.seed_caller("alice", &Grants::admin()).await else {
+            unreachable!("seeded an account caller")
+        };
+        let passkey = |id| NewPasskey {
+            id,
+            name: id,
+            credential: "{}",
+        };
+        let own = PasskeyOwner::Existing(alice, "alice");
+        assert!(store.add_passkey(own, passkey("alice-key")).await.unwrap());
+        let invitation = NewInvitation {
+            id: "invitation".into(),
+            secret_hash: "invitation".into(),
+            expires_at: now_secs() + 3600,
+        };
+        let none = Grants::default();
+        store
+            .create_invitation(alice, &invitation, &none)
+            .await
+            .unwrap();
+        let bob = User {
+            id: "bob".into(),
+            username: "bob".into(),
+            display_name: String::new(),
+        };
+        let redeem = PasskeyOwner::Redeem {
+            user: &bob,
+            invitation_hash: "invitation",
+            session: credential("redeemed", CredentialKind::Browser),
+        };
+        assert!(store.add_passkey(redeem, passkey("bob-key")).await.unwrap());
+        let mut token = credential("token", CredentialKind::Token);
+        token.grants = Some(&none);
+        let redeemed = Caller {
+            credential_id: "redeemed",
+            user_id: "bob",
+        };
+        store.create_token(redeemed, &token, None).await.unwrap();
+        let logout = store.revoke_credential(Actor::Daemon, "redeemed", Cascade::No);
+        logout.await.unwrap();
+        let other = credential("other", CredentialKind::Cli);
+        store.insert_credential("alice", &other).await.unwrap();
+        let sibling = credential("sibling", CredentialKind::Cli);
+        let other = Caller {
+            credential_id: "other",
+            user_id: "alice",
+        };
+        let issue = store.issue_for_credential_owner(other, &sibling);
+        issue.await.unwrap().unwrap();
+        let live = async |id| store.credential_owner(id).await.unwrap().is_some();
+        let passkeys = async || {
+            sqlx::query_scalar!(r#"SELECT id AS "id!" FROM auth_passkeys ORDER BY id"#)
+                .fetch_all(&store.pool)
+                .await
+                .unwrap()
+        };
+
+        // Alice's own passkey descends from her login, and nobody else could
+        // administer the installation without it.
+        let revoke = store.revoke_credential(Actor::Daemon, "alice", Cascade::Yes);
+        assert!(matches!(
+            revoke.await,
+            Err(StoreError::Lockout(crate::Lockout::LastAdmin))
+        ));
+        assert!(live("alice").await && live("token").await);
+        assert_eq!(passkeys().await, ["alice-key", "bob-key"]);
+
+        let carol = store.seed_caller("carol", &Grants::admin()).await;
+        let Actor::Account(carol) = carol else {
+            unreachable!("seeded an account caller")
+        };
+        let own = PasskeyOwner::Existing(carol, "carol");
+        assert!(store.add_passkey(own, passkey("carol-key")).await.unwrap());
+        let revoke = store.revoke_credential(Actor::Daemon, "alice", Cascade::Yes);
+        revoke.await.unwrap();
+        assert!(!live("alice").await && !live("token").await);
+        assert_eq!(passkeys().await, ["carol-key"]);
+        assert!(live("other").await && live("sibling").await);
+        let bob = sqlx::query_scalar!(r#"SELECT id AS "id!" FROM auth_users WHERE id='bob'"#)
+            .fetch_optional(&store.pool)
+            .await
+            .unwrap();
+        assert!(bob.is_some(), "accounts are never deleted");
+
+        let alone = store.revoke_credential(Actor::Daemon, "other", Cascade::No);
+        alone.await.unwrap();
+        assert!(!live("other").await && live("sibling").await);
     }
 }

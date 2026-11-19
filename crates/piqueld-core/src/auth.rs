@@ -319,6 +319,12 @@ pub enum Manage {
     RevokeCredential {
         /// Credential identifier.
         id: String,
+        /// Also revoke every credential, link and passkey issued through it,
+        /// in any account, even through credentials that have since ended.
+        /// Absent means `true`.
+        #[serde(default = "Manage::cascade")]
+        #[schema(default = true)]
+        cascade: bool,
     },
     /// Revoke all sessions and tokens belonging to an account.
     RevokeAll {
@@ -367,9 +373,20 @@ pub enum Manage {
 }
 
 impl Manage {
+    /// Revocations cascade unless asked not to.
+    const fn cascade() -> bool {
+        true
+    }
+
+    /// How [`Self::describe`] marks a revocation that doesn't cascade.
+    const fn alone(cascade: bool) -> &'static str {
+        if cascade { "" } else { " (no cascade)" }
+    }
+
     /// What the action changes, as the audit trail records it: its name, the
     /// account, passkey, credential, or invitation it targets, and the name
-    /// or grants it sets, e.g. `revoke_credential "0190…"` or
+    /// or grants it sets, e.g. `revoke_credential "0190…"`,
+    /// `revoke_credential "0190…" (no cascade)` or
     /// `set_grants "0190…" (apps:read, logs:read)`. Values the caller sent
     /// are quoted and escaped, as they are recorded before validation, even
     /// for refused requests.
@@ -382,7 +399,9 @@ impl Manage {
             Self::DeleteUser { user_id } => format!("delete_user {user_id:?}"),
             Self::RemovePasskey { id } => format!("remove_passkey {id:?}"),
             Self::RenamePasskey { id, name } => format!("rename_passkey {id:?} {name:?}"),
-            Self::RevokeCredential { id } => format!("revoke_credential {id:?}"),
+            Self::RevokeCredential { id, cascade } => {
+                format!("revoke_credential {id:?}{}", Self::alone(*cascade))
+            }
             Self::RevokeAll { user_id } => format!("revoke_all {user_id:?}"),
             Self::SetGrants { user_id, grants } => format!("set_grants {user_id:?} ({grants})"),
             Self::CreateInvitation { grants } => format!("create_invitation ({grants})"),
@@ -499,10 +518,29 @@ mod tests {
     }
 
     /// Account action descriptions quote and escape what the caller sent, so
-    /// it cannot forge lines in the audit trail.
+    /// it cannot forge lines in the audit trail, and mark revocations that
+    /// don't cascade.
     #[test]
     fn descriptions_escape_caller_values() {
-        let revoke = Manage::RevokeCredential { id: "a\nb".into() };
-        assert_eq!(revoke.describe(), r#"revoke_credential "a\nb""#);
+        let revoke = |cascade| Manage::RevokeCredential {
+            id: "a\nb".into(),
+            cascade,
+        };
+        assert_eq!(revoke(true).describe(), r#"revoke_credential "a\nb""#);
+        assert_eq!(
+            revoke(false).describe(),
+            r#"revoke_credential "a\nb" (no cascade)"#
+        );
+    }
+
+    /// An omitted `cascade` cascades, so only an explicit `false` opts out.
+    #[test]
+    fn revocations_cascade_unless_asked_not_to() {
+        let omitted: Manage =
+            serde_json::from_str(r#"{"action":"revoke_credential","id":"a"}"#).unwrap();
+        assert!(matches!(
+            omitted,
+            Manage::RevokeCredential { cascade: true, .. }
+        ));
     }
 }

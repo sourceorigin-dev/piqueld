@@ -162,7 +162,8 @@ lookup. Only SHA-256 hashes are stored. A credential's last-used time is
 refreshed at most once a minute (`TOUCH_INTERVAL`), which keeps ordinary
 requests read-only; a browser session also ends after a day unused. No
 credential is renewed: expiry is fixed when it is issued. Logging out revokes
-the credential of the current request; the host operator on the Unix socket
+the credential of the current request, never what it issued (see
+[issuance lineage](#issuance-lineage)); the host operator on the Unix socket
 has none.
 
 A credential also stores `authenticated_at`, when a passkey last proved its
@@ -230,6 +231,15 @@ logged out, expired or was pruned, and a redeemed invitation, still connect
 what they issued to their own issuer. `prune_auth` forgets the nodes nothing
 live descends from. Authentication never reads the tree, so a credential stays
 valid when its issuer ends.
+
+Explicit revocation cascades by default: `Store::revoke_on` collects the
+named rows and every node below them with one recursive query, then deletes
+their live credentials, invitations and passkeys in the same transaction.
+`Cascade::No` deletes only the named rows. Logout, expiry and pruning never
+cascade. Removing a passkey this way runs the
+[lockout check](authorization.md#lockout-protection), so a cascade that would
+leave no administrator rolls back whole. Accounts are never deleted by a
+cascade.
 
 ## CLI device login
 

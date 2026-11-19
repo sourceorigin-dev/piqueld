@@ -5,7 +5,7 @@ use piqueld_core::access::{Denied, Grants};
 use piqueld_core::auth::{
     DeviceRequest, DeviceStart, DeviceToken, HostOperator, OperatorLink, Principal, Session, User,
 };
-use piqueld_store::{Actor, Caller, NewCredential, Proof, StoreError};
+use piqueld_store::{Actor, Caller, Cascade, NewCredential, Proof, StoreError};
 use std::collections::{HashMap, hash_map::Entry};
 
 /// Seconds a host operator sign-in link stays redeemable.
@@ -324,10 +324,15 @@ impl Auth {
     }
     /// Revokes the credential or host operator session used for the current
     /// request; the host operator over the Unix socket has none. One revoked
-    /// since the request authenticated counts as signed out.
+    /// since the request authenticated counts as signed out. Logging out
+    /// never revokes what the credential issued.
     pub(crate) async fn logout(&self, identity: &Identity) -> Result<()> {
         if let Some(id) = identity.credential_id() {
-            match self.0.store.revoke_credential(identity.actor(), id).await {
+            let revoke = self
+                .0
+                .store
+                .revoke_credential(identity.actor(), id, Cascade::No);
+            match revoke.await {
                 Ok(()) | Err(StoreError::NotFound) => {}
                 Err(error) => return Err(error.into()),
             }

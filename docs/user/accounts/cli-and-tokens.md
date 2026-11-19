@@ -116,7 +116,8 @@ that daemon is renamed too. After a rename on the dashboard, select the login
 by ID, or log in again.
 
 `piquelctl logout` revokes the login and removes it from the file. With
-`--account`, it signs that account out.
+`--account`, it signs that account out. The tokens and logins it created stay
+valid.
 
 `piquelctl` also creates `credentials.json.lock` next to the file. Don't
 delete it while `login` or `logout` is running. Another `piquelctl` waits up
@@ -249,6 +250,9 @@ Info: revoked 01a16b4e-6995-79b2-bfb1-0f72630a4d96
 ```
 
 Your logins are listed as `piquelctl`, and browser sessions as `Browser`.
+Revoking one also revokes the tokens, logins, links and passkeys created
+through it; see
+[what revoking also revokes](accounts.md#what-revoking-also-revokes).
 
 Deleting an application removes every grant on it. A token or limited login
 left with no grant at all can do nothing, and expires a minute later. That

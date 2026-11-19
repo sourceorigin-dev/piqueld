@@ -60,7 +60,9 @@ impl Auth {
                 Self::validate_passkey_name(&name)?;
                 store.rename_passkey(by, &id, &name).await?;
             }
-            Manage::RevokeCredential { id } => store.revoke_credential(by, &id).await?,
+            Manage::RevokeCredential { id, cascade } => {
+                store.revoke_credential(by, &id, cascade.into()).await?;
+            }
             Manage::RevokeAll { user_id } => store.revoke_credentials(by, &user_id).await?,
             Manage::SetGrants { user_id, grants } => {
                 store.set_user_grants(by, &user_id, &grants).await?;

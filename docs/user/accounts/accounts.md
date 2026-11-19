@@ -225,7 +225,8 @@ expires.
 
 ![Sessions and API tokens: alice's browser session with full account access, and the ci token with apps:read and apps:deploy on blog, each with Activity and Revoke buttons](../../images/accounts/sessions-and-tokens.png)
 
-- **Revoke** ends one at once.
+- **Revoke** asks you to confirm, then ends one at once, with
+  [what it issued](#what-revoking-also-revokes).
 - **Revoke all** ends all of them, including the session you're using if it's
   your own account.
 - **Activity** opens its requests in the audit trail.
@@ -244,6 +245,33 @@ Without `--user`, `token revoke --all` signs your own account out everywhere,
 including the `piquelctl` login running it. An API token or
 [limited login](cli-and-tokens.md#ask-for-less-access) can't do this for its
 own account.
+
+### What revoking also revokes
+
+Revoking a session, `piquelctl` login or API token also revokes everything
+issued through it, in any account:
+
+- the API tokens and `piquelctl` logins it created or approved;
+- the invitation and enrollment links it created;
+- the passkeys added with it, or registered through those links;
+- the browser sessions those passkeys signed in;
+- everything those issued in turn.
+
+It reaches them even when credentials in between have since logged out or
+expired. It never deletes an account: someone who loses a passkey this way
+keeps the account and its access, and can get an
+[enrollment link](#to-someone-elses-account) to add a new one.
+
+To revoke only the one credential, clear **Also revoke what it issued** in the
+confirmation dialog. With `piquelctl`, add `--no-cascade`:
+
+```console
+piquelctl token revoke --no-cascade 01a16b4e-6995-79b2-bfb1-0f72630a4d96
+```
+
+Logging out and expiring never revoke what a credential issued. Credentials,
+links and passkeys created before piqueld recorded who issued them are only
+revoked on their own.
 
 ## Delete an account
 
@@ -267,7 +295,8 @@ piquelctl account delete bob
 - **The change is refused with `account_lockout`.** At least one account must
   keep `admin` on every application and a passkey, so that someone can always
   sign in and manage piqueld. piqueld refuses to remove the last such
-  account's access, its last passkey, or the account itself. Make another
+  account's access, its last passkey, or the account itself, including
+  through [what a revocation also revokes](#what-revoking-also-revokes). Make another
   account that has a passkey an administrator first.
 - **The change is refused with `permission_exceeded`.** The account holds
   access you don't, or you're handing out access you don't hold. Ask someone

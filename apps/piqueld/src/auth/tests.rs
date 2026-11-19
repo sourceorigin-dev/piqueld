@@ -1040,7 +1040,10 @@ async fn revoking_unknown_ids_is_not_found() {
     let f = Fixture::new().await;
     let root = f.identity("root", &Grants::admin()).await;
     for command in [
-        Manage::RevokeCredential { id: Auth::id() },
+        Manage::RevokeCredential {
+            id: Auth::id(),
+            cascade: true,
+        },
         Manage::RevokeInvitation { id: Auth::id() },
     ] {
         let result = f.auth.manage(&root, command).await;
@@ -1049,6 +1052,42 @@ async fn revoking_unknown_ids_is_not_found() {
             Err(AuthError::Store(StoreError::NotFound))
         ));
     }
+}
+
+/// Logging out leaves the tokens a login created valid; revoking a login
+/// revokes them too unless asked not to.
+#[tokio::test]
+async fn logout_never_cascades_and_revocation_does_by_default() {
+    let f = Fixture::new().await;
+    let root = f.identity("root", &Grants::admin()).await;
+    let token = async |identity: &Identity| {
+        let create = Manage::CreateToken {
+            grants: Grants::default(),
+            name: "ci".into(),
+            days: None,
+            tailnet: None,
+        };
+        let managed = f.auth.manage(identity, create).await.unwrap();
+        managed.token.unwrap()
+    };
+    let revoke = async |identity: &Identity, cascade| {
+        let id = identity.credential_id().unwrap().to_owned();
+        let revoke = Manage::RevokeCredential { id, cascade };
+        f.auth.manage(&root, revoke).await.unwrap();
+    };
+    let alice = f.identity("alice", &Grants::admin()).await;
+    let after_logout = token(&alice).await;
+    f.auth.logout(&alice).await.unwrap();
+    f.auth.authenticate(&after_logout).await.unwrap();
+
+    let bob = f.identity("bob", &Grants::admin()).await;
+    let kept = token(&bob).await;
+    revoke(&bob, false).await;
+    f.auth.authenticate(&kept).await.unwrap();
+    let carol = f.identity("carol", &Grants::admin()).await;
+    let revoked = token(&carol).await;
+    revoke(&carol, true).await;
+    assert!(f.auth.authenticate(&revoked).await.is_err());
 }
 
 /// Issuing an approved CLI login does not hold up other logins while it
@@ -1109,7 +1148,10 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
     assert_eq!(cli_logins().await, 1);
 
     let (code, credential, token) = committed_then_cancelled(&f, &alice).await;
-    let revoke = Manage::RevokeCredential { id: credential.id };
+    let revoke = Manage::RevokeCredential {
+        id: credential.id,
+        cascade: true,
+    };
     f.auth.manage(&alice, revoke).await.unwrap();
     assert!(matches!(
         f.auth.device_poll(&code).await,

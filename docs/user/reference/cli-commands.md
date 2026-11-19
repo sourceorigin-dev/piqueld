@@ -511,7 +511,7 @@ Options:
 
 Revoke a session or API token by ID, or every one of an account with `--all`.
 
-Give the ID of a credential from `token list`, or of a host operator browser session, from `account list`.
+Give the ID of a credential from `token list`, or of a host operator browser session, from `account list`. Revoking a credential also revokes everything issued through it, in any account: the API tokens, logins, invitation and enrollment links and passkeys it created, the sessions those passkeys signed in, and so on. It reaches them even when credentials in between have since ended.
 
 ```text
 piquelctl token revoke [OPTIONS] [ID]
@@ -523,6 +523,7 @@ Arguments:
 
 Options:
 
+- `--no-cascade`: Revoke only the credential, leaving what was issued through it valid.
 - `--all`: Revoke every session and API token of an account instead.
 
   Without `--user`, revokes yours, including the login this command uses. An API token or limited login can't revoke its own account's.
