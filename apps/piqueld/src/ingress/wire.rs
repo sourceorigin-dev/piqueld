@@ -220,11 +220,17 @@ impl UnixApi {
         .context("ingress HTTP request timed out")?
     }
 
+    /// Requires a successful HTTP status and returns the response's bytes.
+    async fn checked(&self, method: Method, path: &str, value: Option<&Value>) -> Result<Vec<u8>> {
+        let (status, body) = self.request(method, path, value).await?;
+        ResponseError::check(path, status, &body)?;
+        Ok(body)
+    }
+
     /// Requires a successful HTTP status and decodes JSON, or returns `Null`
     /// for an empty response (as returned by Docker start/stop operations).
     async fn json(&self, method: Method, path: &str, value: Option<&Value>) -> Result<Value> {
-        let (status, body) = self.request(method, path, value).await?;
-        ResponseError::check(path, status, &body)?;
+        let body = self.checked(method, path, value).await?;
         if body.is_empty() {
             Ok(Value::Null)
         } else {
@@ -239,9 +245,7 @@ impl UnixApi {
 
     /// Reads a resource's raw bytes, such as multiplexed Docker logs.
     pub(super) async fn read(&self, path: &str) -> Result<Vec<u8>> {
-        let (status, body) = self.request(Method::GET, path, None).await?;
-        ResponseError::check(path, status, &body)?;
-        Ok(body)
+        self.checked(Method::GET, path, None).await
     }
 
     /// Sends a mutating request after committing its intent to `journal`.
