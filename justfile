@@ -15,11 +15,13 @@ validate-cli:
 build-cli:
     @cargo build --release --locked --package piquelctl
 
+[positional-arguments]
 run *ARGS:
-    @cargo run --package piquelctl -- {{ARGS}}
+    @cargo run --package piquelctl -- "$@"
 
+[positional-arguments]
 daemon *ARGS:
-    @cargo run --package piqueld --bin piqueld -- {{ARGS}}
+    @cargo run --package piqueld --bin piqueld -- "$@"
 
 fmt:
     @cargo fmt --all
@@ -129,8 +131,9 @@ ui-check:
 build-embedded:
     @cargo build --release --package piqueld --package piquelctl --bin piqueld --bin piquelctl --features embedded-ui --locked
 
+[positional-arguments]
 daemon-embedded *ARGS:
-    @cargo run --package piqueld --bin piqueld --features embedded-ui -- {{ARGS}}
+    @cargo run --package piqueld --bin piqueld --features embedded-ui -- "$@"
 
 # Isolated development instance for this worktree (docs/dev/development.md).
 [positional-arguments]
@@ -170,8 +173,9 @@ docs:
             target/book
 
 # Serves the documentation book on localhost, rebuilding it on every change.
+[positional-arguments]
 docs-serve *ARGS:
-    @mdbook serve {{ARGS}}
+    @mdbook serve "$@"
 
 # Runs the Docker integration tests against a throwaway Docker-in-Docker engine.
 # ARGS select a suite, `ingress` or `engine`, a shard of it, such as
@@ -187,15 +191,17 @@ setup-playwright:
     @docker pull "mcr.microsoft.com/playwright:v$(node -p 'require("./tests/playwright/package.json").devDependencies["@playwright/test"]')-noble"
 
 # The Rust fixture serves the embedded UI/API with isolated state and no Docker backend.
+[positional-arguments]
 test-playwright *ARGS: build-playwright
-    @cargo xtask playwright {{ARGS}}
+    @cargo xtask playwright "$@"
 
 # Regenerates the dashboard screenshots in docs/images whose page changed,
 # through the browser suite's fixture with deployments to its fake Docker
 # engine. With `--update-snapshots=none`, fails on an outdated one instead:
 # see docs/dev/documentation.md.
+[positional-arguments]
 docs-screenshots *ARGS: build-playwright
-    @cargo xtask playwright --config screenshots.config.ts {{ARGS}}
+    @cargo xtask playwright --config screenshots.config.ts "$@"
 
 # Builds what the browser runs need: the CLI and the Rust fixture, and
 # type-checks the Playwright specs.
