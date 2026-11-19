@@ -51,7 +51,8 @@ impl Fixture {
             display_name: String::new(),
         };
         self.auth.0.store.seed_auth_user(&user, grants).await;
-        let (token, mut credential) = Auth::new_credential(kind, "Test", expires, None).unwrap();
+        let (token, mut credential) = Auth::new_credential(kind, "Test", expires, None)
+            .expect("the system RNG yields a credential secret");
         credential.authenticated_at = (kind != CredentialKind::Token).then(now_secs);
         self.auth
             .0
@@ -117,14 +118,19 @@ impl Fixture {
     /// signed in, like one opened by redeeming a link, returning its secret
     /// and identity.
     async fn stale_session(&self, identity: &Identity) -> (String, Identity) {
-        let (secret, session) = Auth::browser_session(None).unwrap();
+        let (secret, session) =
+            Auth::browser_session(None).expect("the system RNG yields a credential secret");
         self.auth
             .0
             .store
             .insert_credential(&identity.account().id, &session)
             .await
-            .unwrap();
-        let identity = self.auth.authenticate(&secret).await.unwrap();
+            .expect("the store keeps the credential");
+        let identity = self
+            .auth
+            .authenticate(&secret)
+            .await
+            .expect("the stored credential authenticates");
         (secret, identity)
     }
 
@@ -135,7 +141,7 @@ impl Fixture {
         identity: &Identity,
         passkey: &str,
     ) -> std::result::Result<bool, StoreError> {
-        let caller = identity.caller().unwrap();
+        let caller = identity.caller().expect("the identity is an account's");
         let verify = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
         let store = &self.auth.0.store;
         store
@@ -145,7 +151,11 @@ impl Fixture {
 
     /// Whether the credential with `secret` may take sensitive actions now.
     async fn fresh(&self, secret: &str) -> bool {
-        let identity = self.auth.authenticate(secret).await.unwrap();
+        let identity = self
+            .auth
+            .authenticate(secret)
+            .await
+            .expect("the stored credential authenticates");
         identity.require_fresh().is_ok()
     }
 
@@ -800,7 +810,9 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
 async fn identities_refuse_sensitive_actions_without_a_recent_passkey() {
     let f = Fixture::new().await;
     let fresh = f.identity("alice", &Grants::admin()).await;
-    fresh.require_fresh().unwrap();
+    fresh
+        .require_fresh()
+        .expect("a passkey proved the credential's holder just now");
     let (_, stale) = f.stale_session(&fresh).await;
     let (_, token) = f
         .signed_in("ci", CredentialKind::Token, None, &Grants::admin())
@@ -842,7 +854,10 @@ async fn adding_a_passkey_needs_a_recent_sign_in() {
         name: "Key",
         credential: "{}",
     };
-    let owner = PasskeyOwner::Existing(stale.caller().unwrap(), &alice.account().id);
+    let owner = PasskeyOwner::Existing(
+        stale.caller().expect("the identity is an account's"),
+        &alice.account().id,
+    );
     assert!(matches!(
         f.auth.0.store.add_passkey(owner, passkey).await,
         Err(StoreError::Denied(denied)) if denied == refused
@@ -857,7 +872,11 @@ async fn only_browser_sessions_start_a_passkey_confirmation() {
     let (_, token) = f
         .account("ci", CredentialKind::Token, None, &Grants::admin())
         .await;
-    let token = f.auth.authenticate(&token).await.unwrap();
+    let token = f
+        .auth
+        .authenticate(&token)
+        .await
+        .expect("the stored credential authenticates");
     assert!(matches!(
         f.auth.reauthenticate_start(&token, "browser").await,
         Err(AuthError::Denied(Denied::Reauthenticate(
@@ -889,7 +908,7 @@ async fn confirming_with_a_passkey_refreshes_only_the_confirming_session() {
     let (secret, session) = f.stale_session(&alice).await;
     let (sibling_secret, sibling) = f.stale_session(&alice).await;
     let failed = |_: &str| Err::<String, _>(StoreError::Corrupt);
-    let caller = session.caller().unwrap();
+    let caller = session.caller().expect("the identity is an account's");
     let store = &f.auth.0.store;
     assert!(matches!(
         store
@@ -898,21 +917,33 @@ async fn confirming_with_a_passkey_refreshes_only_the_confirming_session() {
         Err(StoreError::Corrupt)
     ));
     assert!(!f.fresh(&secret).await);
-    assert!(!f.confirm(&session, &bobs).await.unwrap());
-    assert!(f.confirm(&session, &key).await.unwrap());
+    assert!(
+        !f.confirm(&session, &bobs)
+            .await
+            .expect("the confirming credential is live")
+    );
+    assert!(
+        f.confirm(&session, &key)
+            .await
+            .expect("the confirming credential is live")
+    );
     assert!(f.fresh(&secret).await);
     assert!(!f.fresh(&sibling_secret).await);
     let (_, token) = f
         .account("ci", CredentialKind::Token, None, &Grants::admin())
         .await;
-    let token = f.auth.authenticate(&token).await.unwrap();
+    let token = f
+        .auth
+        .authenticate(&token)
+        .await
+        .expect("the stored credential authenticates");
     assert!(matches!(
         f.confirm(&token, &key).await,
         Err(StoreError::Denied(Denied::Reauthenticate(
             Reauthenticate::Token
         )))
     ));
-    f.auth.logout(&sibling).await.unwrap();
+    f.auth.logout(&sibling).await.expect("signing out succeeds");
     assert!(matches!(
         f.confirm(&sibling, &key).await,
         Err(StoreError::CredentialRevoked)
