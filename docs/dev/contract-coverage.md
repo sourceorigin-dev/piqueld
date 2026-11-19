@@ -18,7 +18,7 @@ when changing behavior. To see which code they run, use
 | Persistence, restart recovery, migrations, transaction rollback | `piqueld/tests/persistence.rs` and `piqueld-store` unit tests |
 | Transport errors, cancellation, redirects, decoding | `piqueld-client/tests/transports.rs`, `generated_contract.rs`, and browser transport tests |
 | Data and runtime directory privacy, daemon exclusivity | `piqueld/tests/data_dir.rs`, `runtime_dir.rs`, and `daemon_exclusivity.rs` |
-| CLI commands, output, exit codes, connection profiles | `piquelctl/tests/cli.rs` and `profiles.rs` |
+| CLI commands, output, exit codes, connection profiles | `piquelctl/tests/cli/`, by command group, and `profiles.rs` |
 | Docker policy and complete observations | Docker adapter unit tests |
 | Real Swarm health, drift repair, deletion, builds | `piqueld/tests/docker_integration.rs` through `just docker-test` |
 | The fake Docker engine behaving like the real one | `piqueld/tests/support/docker_contract.rs`, run by `fake_docker/main.rs` and `docker_integration.rs` |
