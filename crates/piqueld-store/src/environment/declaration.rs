@@ -190,9 +190,7 @@ impl Store {
         name: &EnvironmentName,
     ) -> Result<crate::StoredEnvironment, StoreError> {
         let id = live.get(name).ok_or(StoreError::NotFound)?;
-        Self::environment_on(tx, id.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)
+        Self::existing_environment_on(tx, id.as_str()).await
     }
 
     /// Blocks declare environments, so an edit through the CLI or dashboard

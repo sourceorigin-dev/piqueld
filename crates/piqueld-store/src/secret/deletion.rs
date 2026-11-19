@@ -105,9 +105,7 @@ impl Store {
     ) -> Result<SecretDeletion, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let id = application.as_str();
-        let app = Self::environment_on(&mut tx, id)
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let app = Self::existing_environment_on(&mut tx, id).await?;
         actor
             .require_on_environment(&mut tx, Self::SECRETS_WRITE, application)
             .await?;

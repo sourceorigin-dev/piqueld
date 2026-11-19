@@ -393,9 +393,7 @@ impl Store {
     /// Returns storage, absence, or illegal transition errors.
     pub async fn request_delete(&self, id: &EnvironmentId) -> Result<Operation, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        let environment = Self::environment_on(&mut tx, id.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let environment = Self::existing_environment_on(&mut tx, id.as_str()).await?;
         let result = Self::delete_environment_on(&mut tx, &environment).await?;
         Self::commit_environment_changes(tx, [id.as_str()]).await?;
         Ok(result)
@@ -410,9 +408,7 @@ impl Store {
         expected: Option<u64>,
     ) -> Result<Operation, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        let environment = Self::environment_on(&mut tx, id.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let environment = Self::existing_environment_on(&mut tx, id.as_str()).await?;
         Self::check_generation(expected, environment.application.generation)?;
         let result = Self::request_deploy_on(&mut tx, &environment).await?;
         Self::commit_environment_changes(tx, [id.as_str()]).await?;
@@ -506,12 +502,11 @@ impl Store {
             return Err(StoreError::IllegalTransition);
         }
         // Boxed: the read would otherwise grow every preparation's future.
-        let kind = Box::pin(Self::environment_on(
+        let kind = Box::pin(Self::existing_environment_on(
             &mut tx,
             operation.environment_id.as_str(),
         ))
         .await?
-        .ok_or(StoreError::NotFound)?
         .environment
         .kind;
         Self::accept_deployment_on(&mut tx, operation, &kind).await?;
@@ -565,9 +560,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error or `NotFound`.
     pub async fn get(&self, id: &EnvironmentId) -> Result<StoredEnvironment, StoreError> {
-        Self::environment_on(&mut *self.connection().await?, id.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)
+        Self::existing_environment_on(&mut *self.connection().await?, id.as_str()).await
     }
 
     /// The application owning environment `id`, and whether it is a
@@ -619,6 +612,17 @@ impl Store {
             .map(StoredEnvironmentRow::decode).transpose()
     }
 
+    /// Reads an environment that must exist on an existing connection or
+    /// transaction, failing with `NotFound` otherwise.
+    pub(super) async fn existing_environment_on(
+        connection: &mut SqliteConnection,
+        id: &str,
+    ) -> Result<StoredEnvironment, StoreError> {
+        Self::environment_on(connection, id)
+            .await?
+            .ok_or(StoreError::NotFound)
+    }
+
     /// Reads an environment and its status from one database snapshot.
     ///
     /// # Errors
@@ -628,9 +632,7 @@ impl Store {
         id: &EnvironmentId,
     ) -> Result<(StoredEnvironment, EnvironmentStatus), StoreError> {
         let mut tx = self.snapshot().await?;
-        let environment = Self::environment_on(&mut tx, id.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let environment = Self::existing_environment_on(&mut tx, id.as_str()).await?;
         let status = Self::status_on(&mut tx, id).await?;
         tx.commit().await.map_err(StoreError::database)?;
         Ok((environment, status))

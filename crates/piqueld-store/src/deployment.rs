@@ -174,9 +174,7 @@ impl Store {
         id: &str,
         environment: &EnvironmentId,
     ) -> Result<(), StoreError> {
-        let environment = Self::environment_on(tx, environment.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let environment = Self::existing_environment_on(tx, environment.as_str()).await?;
         let template = environment.tracking()?.candidate(None)?;
         let rendering = if template.spec().manifest.is_some() {
             None

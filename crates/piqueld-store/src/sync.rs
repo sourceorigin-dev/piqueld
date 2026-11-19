@@ -132,9 +132,7 @@ impl Store {
             since,
         } = listed;
         let (repository, head) = (repository.as_str(), head.as_str());
-        let current = Self::environment_on(tx, id.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let current = Self::existing_environment_on(tx, id.as_str()).await?;
         let connection = current.application.application.spec().manifest.as_ref();
         let following = !current.delete_intent()
             && current.environment.sync_state(connection).listed()
