@@ -6,11 +6,13 @@
 //! Changes to an account take the [`Caller`], whose authority over the account
 //! is checked against both sides' current grants inside the same transaction.
 pub(super) mod access;
+mod lineage;
 mod security;
 pub use security::SecurityEvent;
 
 use super::{Actor, Attribution, Store, StoreError, now_secs};
 use access::{Authority, Caller, Holder};
+use lineage::Issued;
 use piqueld_core::access::{Denied, GlobalPermission, Grants, Permission, Reauthenticate};
 use piqueld_core::auth::{
     Account, CredentialView, Directory, HostOperator, InvitationView, OperatorSessionView,
@@ -147,9 +149,15 @@ pub struct NewCredential<'a> {
 }
 
 impl NewCredential<'_> {
-    /// Inserts the credential for `user_id`, marking it used now. A duplicate ID
-    /// or hash maps to `AlreadyExists`, and a missing account to `NotFound`.
-    async fn insert(&self, db: &mut SqliteConnection, user_id: &str) -> Result<(), StoreError> {
+    /// Inserts the credential for `user_id`, marking it used now, as issued
+    /// by `issuer` (see [`Issued::record`]). A duplicate ID or hash maps to
+    /// `AlreadyExists`, and a missing account to `NotFound`.
+    async fn insert(
+        &self,
+        db: &mut SqliteConnection,
+        user_id: &str,
+        issuer: Option<Issued<'_>>,
+    ) -> Result<(), StoreError> {
         let now = now_secs();
         let kind = self.kind.as_str();
         let scoped = self.grants.is_some();
@@ -171,7 +179,7 @@ impl NewCredential<'_> {
         if let Some(grants) = self.grants {
             Holder::Credential(&self.id).replace(db, grants).await?;
         }
-        Ok(())
+        Issued::Credential(&self.id).record(db, issuer).await
     }
 }
 
@@ -183,6 +191,31 @@ pub struct NewPasskey<'a> {
     pub name: &'a str,
     /// Serialized passkey state, updated after each sign-in.
     pub credential: &'a str,
+}
+
+impl NewPasskey<'_> {
+    /// Inserts the passkey for `user_id` as issued by `issuer` (see
+    /// [`Issued::record`]). A duplicate ID maps to `AlreadyExists`.
+    async fn insert(
+        &self,
+        db: &mut SqliteConnection,
+        user_id: &str,
+        issuer: Option<Issued<'_>>,
+        now: i64,
+    ) -> Result<(), StoreError> {
+        sqlx::query!(
+            "INSERT INTO auth_passkeys(id,user_id,name,credential,created_at) VALUES(?1,?2,?3,?4,?5)",
+            self.id,
+            user_id,
+            self.name,
+            self.credential,
+            now
+        )
+        .execute(&mut *db)
+        .await
+        .map_err(StoreError::constraint)?;
+        Issued::Passkey(self.id).record(db, issuer).await
+    }
 }
 
 /// Who a newly registered passkey belongs to.
@@ -203,6 +236,25 @@ pub enum PasskeyOwner<'a> {
         /// Browser session opened for the account.
         session: NewCredential<'a>,
     },
+}
+
+/// What a redemption consumed.
+enum Redeemed {
+    /// The setup secret or the admin recovery link, which no credential
+    /// issued.
+    Root,
+    /// An invitation or enrollment link, by ID.
+    Invitation(String),
+}
+
+impl Redeemed {
+    /// The lineage node that issued what the redemption creates.
+    fn issuer(&self) -> Option<Issued<'_>> {
+        match self {
+            Self::Root => None,
+            Self::Invitation(id) => Some(Issued::Invitation(id)),
+        }
+    }
 }
 
 /// What an unused setup secret or invitation will do once redeemed.
@@ -529,6 +581,10 @@ impl Store {
     /// expired, when an enrollment invitation targets another account, or when
     /// a signed-in caller adds a passkey to an account that is not its own.
     ///
+    /// The passkey is issued by the caller's credential or the redeemed
+    /// invitation, and the redemption's session by the passkey, as if it
+    /// signed in with it.
+    ///
     /// # Errors
     /// Returns a storage error.
     pub async fn add_passkey(
@@ -538,38 +594,32 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let now = now_secs();
-        let user_id = match &owner {
+        match &owner {
             PasskeyOwner::Existing(caller, user_id) => {
                 let authority = caller.load(&mut tx).await?;
                 authority.require_unscoped()?;
                 if authority.user_id != *user_id {
                     return Ok(false);
                 }
-                *user_id
+                let issuer = Issued::Credential(caller.credential_id);
+                passkey.insert(&mut tx, user_id, Some(issuer), now).await?;
             }
             PasskeyOwner::Redeem {
                 user,
                 invitation_hash,
                 session,
             } => {
-                if !Self::redeem_on(&mut tx, user, invitation_hash, now).await? {
+                let Some(redeemed) = Self::redeem_on(&mut tx, user, invitation_hash, now).await?
+                else {
                     return Ok(false);
-                }
-                session.insert(&mut tx, &user.id).await?;
-                user.id.as_str()
+                };
+                passkey
+                    .insert(&mut tx, &user.id, redeemed.issuer(), now)
+                    .await?;
+                let issuer = Issued::Passkey(passkey.id);
+                session.insert(&mut tx, &user.id, Some(issuer)).await?;
             }
-        };
-        sqlx::query!(
-            "INSERT INTO auth_passkeys(id,user_id,name,credential,created_at) VALUES(?1,?2,?3,?4,?5)",
-            passkey.id,
-            user_id,
-            passkey.name,
-            passkey.credential,
-            now
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(StoreError::constraint)?;
+        }
         tx.commit().await.map_err(StoreError::database)?;
         Ok(true)
     }
@@ -584,14 +634,14 @@ impl Store {
     ///
     /// Invitations carry their issuer's authority, so they are only redeemed
     /// while the issuer could still create them: grants may have changed on
-    /// either side since. Returns `false` when nothing matching is left to
-    /// redeem.
+    /// either side since. Returns what was consumed, or `None` when nothing
+    /// matching is left to redeem.
     async fn redeem_on(
         db: &mut SqliteConnection,
         user: &User,
         invitation_hash: &str,
         now: i64,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<Redeemed>, StoreError> {
         let setup = sqlx::query!(
             "UPDATE auth_setup SET initialized=1,secret_hash=NULL WHERE initialized=0 AND secret_hash=?1",
             invitation_hash
@@ -618,7 +668,7 @@ impl Store {
                 "by an admin recovery link"
             };
             Self::replace_user_grants_on(db, &user.id, &Grants::admin(), daemon, how).await?;
-            return Ok(true);
+            return Ok(Some(Redeemed::Root));
         }
         let Some(invitation) = sqlx::query!(
             r#"SELECT id AS "id!",issuer_id,user_id FROM auth_invitations WHERE secret_hash=?1 AND expires_at>?2"#,
@@ -629,19 +679,19 @@ impl Store {
         .await
         .map_err(StoreError::database)?
         else {
-            return Ok(false);
+            return Ok(None);
         };
         let authority = Holder::User(&invitation.issuer_id).grants(&mut *db).await?;
         if let Some(target) = invitation.user_id {
             let grants = Holder::User(&target).grants(&mut *db).await?;
             let own = invitation.issuer_id == target;
             if target != user.id || authority.may_change_account(own, &grants).is_err() {
-                return Ok(false);
+                return Ok(None);
             }
         } else {
             let grants = Holder::Invitation(&invitation.id).grants(&mut *db).await?;
             if Self::may_invite(&authority, &grants).is_err() {
-                return Ok(false);
+                return Ok(None);
             }
             Self::insert_user_on(db, user, now).await?;
             let issuer = Attribution {
@@ -655,7 +705,7 @@ impl Store {
             .execute(&mut *db)
             .await
             .map_err(StoreError::database)?;
-        Ok(true)
+        Ok(Some(Redeemed::Invitation(invitation.id)))
     }
 
     /// Creates an account; a taken username maps to `AlreadyExists`.
@@ -680,7 +730,8 @@ impl Store {
     /// Verifies a passkey assertion and opens a browser session while holding
     /// the writer lock, so a concurrent deletion or replay cannot resurrect
     /// access. `verify` receives the stored credential and returns its updated
-    /// form. Returns `None` when the passkey does not belong to `user_id`.
+    /// form. The passkey issues the session. Returns `None` when the passkey
+    /// does not belong to `user_id`.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -712,7 +763,8 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        session.insert(&mut tx, user_id).await?;
+        let issuer = Issued::Passkey(passkey_id);
+        session.insert(&mut tx, user_id, Some(issuer)).await?;
         tx.commit().await.map_err(StoreError::database)?;
         Ok(Some(User {
             id: row.id,
@@ -801,7 +853,8 @@ impl Store {
 
     /// Issues `credential` to the account behind the approving credential, if
     /// the approver may still create credentials and holds every grant the new
-    /// one is limited to. Returns `None` when the approving session has ended.
+    /// one is limited to. The approver issues it. Returns `None` when the
+    /// approving session has ended.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -825,7 +878,8 @@ impl Store {
         .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        credential.insert(&mut tx, &user.id).await?;
+        let issuer = Issued::Credential(approver.credential_id);
+        credential.insert(&mut tx, &user.id, Some(issuer)).await?;
         tx.commit().await.map_err(StoreError::database)?;
         Ok(Some(user))
     }
@@ -1103,7 +1157,8 @@ impl Store {
         let authority = caller.load(&mut tx).await?;
         authority.require_unscoped()?;
         Self::may_invite(&authority.grants, grants)?;
-        Self::insert_invitation_on(&mut tx, invitation, &authority.user_id, None).await?;
+        let issuer = &authority.user_id;
+        Self::insert_invitation_on(&mut tx, invitation, issuer, caller.credential_id, None).await?;
         Holder::Invitation(&invitation.id)
             .replace(&mut tx, grants)
             .await?;
@@ -1134,16 +1189,18 @@ impl Store {
         if let Some(authority) = Self::check_account_on(&mut tx, account, user_id).await? {
             authority.require_unscoped()?;
         }
-        Self::insert_invitation_on(&mut tx, invitation, caller.user_id, Some(user_id)).await?;
+        let (issuer, credential) = (caller.user_id, caller.credential_id);
+        Self::insert_invitation_on(&mut tx, invitation, issuer, credential, Some(user_id)).await?;
         tx.commit().await.map_err(StoreError::database)
     }
 
-    /// Inserts an invitation row issued by `issuer`, targeting `user_id` for
-    /// enrollment.
+    /// Inserts an invitation row issued by the account `issuer` through its
+    /// `credential`, targeting `user_id` for enrollment.
     async fn insert_invitation_on(
         db: &mut SqliteConnection,
         invitation: &NewInvitation,
         issuer: &str,
+        credential: &str,
         user_id: Option<&str>,
     ) -> Result<(), StoreError> {
         sqlx::query!(
@@ -1154,10 +1211,13 @@ impl Store {
             invitation.expires_at,
             user_id
         )
-        .execute(db)
+        .execute(&mut *db)
         .await
         .map_err(StoreError::constraint)?;
-        Ok(())
+        let issuer = Issued::Credential(credential);
+        Issued::Invitation(&invitation.id)
+            .record(db, Some(issuer))
+            .await
     }
 
     /// Deletes an unused invitation if `actor` could have created it: it may
@@ -1206,7 +1266,10 @@ impl Store {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let authority = caller.load(&mut tx).await?;
         authority.may_hand_out(credential.grants)?;
-        credential.insert(&mut tx, &authority.user_id).await?;
+        let issuer = Issued::Credential(caller.credential_id);
+        credential
+            .insert(&mut tx, &authority.user_id, Some(issuer))
+            .await?;
         let tailnet = tailnet.map(TailnetBinding::as_str);
         sqlx::query!(
             "UPDATE auth_credentials SET tailnet=?1 WHERE id=?2",
@@ -1224,7 +1287,8 @@ impl Store {
     /// Deletes auth state that can no longer be used: expired credentials
     /// and browser sessions idle for a day, with their grants, and expired
     /// invitations, admin recovery links, and host operator links and
-    /// sessions. Long-lived connections recheck their access when a
+    /// sessions. It then forgets the issuance lineage nothing live needs
+    /// any more. Long-lived connections recheck their access when a
     /// credential went.
     ///
     /// # Errors
@@ -1257,6 +1321,7 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
+        Self::forget_lineage_on(&mut tx).await?;
         if credentials > 0 {
             self.commit_access_change(tx).await
         } else {
@@ -1288,7 +1353,7 @@ impl Store {
         tx.commit().await.unwrap();
     }
 
-    /// Stores a credential for an existing account.
+    /// Stores a credential for an existing account, as a lineage root.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -1298,7 +1363,7 @@ impl Store {
         credential: &NewCredential<'_>,
     ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        credential.insert(&mut tx, user_id).await?;
+        credential.insert(&mut tx, user_id, None).await?;
         tx.commit().await.map_err(StoreError::database)
     }
 
