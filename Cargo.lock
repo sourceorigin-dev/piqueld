@@ -2778,7 +2778,6 @@ dependencies = [
  "bollard",
  "bytes",
  "futures-util",
- "http",
  "http-body-util",
  "hyper",
  "hyper-util",

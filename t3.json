@@ -35,7 +35,7 @@
     },
     {
       "name": "Audit Dependencies",
-      "command": "just deny",
+      "command": "just audit",
       "icon": "lint"
     },
     {

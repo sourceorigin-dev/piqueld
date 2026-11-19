@@ -1,7 +1,7 @@
 # Validation formats Rust sources and checks generated artifacts for freshness.
 default: validate
 
-validate: fmt lint check test doc-test deny openapi-check boundary check-wasm test-playwright docs
+validate: fmt lint check test doc doc-test audit unused openapi-check boundary check-wasm test-playwright docs
 
 build:
     @cargo build --workspace --locked
@@ -30,10 +30,18 @@ fmt-check:
 
 # The native build compiles the browser code out, so the dashboard and client
 # are linted as wasm32 too. Without --no-deps this also lints their workspace
-# dependencies (piqueld-core) as wasm32.
+# dependencies (piqueld-core) as wasm32. The workspace pass unifies features
+# across crates, so a crate can compile there only because another crate
+# enables a feature it needs: linting each crate alone catches that.
+# Clippy with warnings denied: the workspace, wasm32, and each crate alone.
 lint:
-    @cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-    @cargo clippy --locked --target wasm32-unknown-unknown --package piqueld-ui --package piqueld-client -- -D warnings
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --locked --target wasm32-unknown-unknown --package piqueld-ui --package piqueld-client -- -D warnings
+    for manifest in apps/*/Cargo.toml crates/*/Cargo.toml tools/*/Cargo.toml; do
+        cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+    done
 
 check:
     @cargo check --locked --workspace --all-targets
@@ -64,8 +72,19 @@ doc-test:
 coverage *ARGS:
     @cargo xtask coverage "$@"
 
-deny:
+# Advisories, licenses, bans and sources, as deny.toml configures them.
+audit:
     @cargo deny check
+
+# Dependencies a crate declares but never names.
+unused:
+    @cargo machete
+
+# Private items are documented, since most of the code is internal and its docs
+# link to it.
+# Rustdoc warnings, such as broken intra-doc links, fail the build.
+doc:
+    @RUSTDOCFLAGS='-D warnings -A rustdoc::private_intra_doc_links' cargo doc --locked --workspace --no-deps --all-features --document-private-items
 
 # Check generated artifacts against freshly generated endpoint, manifest,
 # configuration, and command-line metadata.

@@ -23,8 +23,10 @@ by version.
 | Capability | Local recipe | CI job |
 | --- | --- | --- |
 | Rust formatting | `fmt-check` | `checks` |
-| Dependency policy and advisories | `deny` | `checks` |
-| All-target, all-feature compilation and Clippy, plus wasm32 Clippy of the dashboard, client, and core | `lint` | `rust (lint)` |
+| Dependency policy and advisories | `audit` | `checks` |
+| Unused dependencies | `unused` | `checks` |
+| All-target, all-feature compilation and Clippy, plus wasm32 Clippy of the dashboard, client, and core, and Clippy of each crate alone | `lint` | `rust (lint)` |
+| Rust documentation, private items included, with warnings denied | `doc` | `rust (lint)` |
 | Native workspace tests, against the real embedded dashboard | `test` | `rust (test)` |
 | Documentation tests | `doc-test` | `rust (test)` |
 | Generated API specification, client, and manifest JSON Schema freshness | `openapi-check` | `rust (lint)` |
