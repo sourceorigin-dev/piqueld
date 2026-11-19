@@ -4,7 +4,7 @@
 use crate::{Store, StoreError, now_secs};
 use piqueld_core::{
     ApplicationId, EnvironmentId,
-    access::{AppPermission, Grants, Permission, Scope, Target},
+    access::{AppPermission, Denied, Grants, Permission, Scope, Target},
     auth::HostOperator,
 };
 use sqlx::SqliteConnection;
@@ -104,6 +104,20 @@ impl<'a> Actor<'a> {
                 .ok_or(StoreError::CredentialRevoked)
             }
             Self::Account(caller) => caller.load(db).await.map(Some),
+        }
+    }
+
+    /// Requires an account caller to have confirmed with a passkey recently
+    /// (see [`Authority::require_fresh`]) before a sensitive action. The host
+    /// operator, the daemon and its automated actors are exempt.
+    ///
+    /// # Errors
+    /// Returns [`Denied::Reauthenticate`], a revoked credential or session,
+    /// or storage errors.
+    pub async fn require_fresh(self, db: &mut SqliteConnection) -> Result<(), StoreError> {
+        match self.load(db).await? {
+            Some(authority) => authority.require_fresh(),
+            None => Ok(()),
         }
     }
 
@@ -237,7 +251,7 @@ impl Caller<'_> {
         let now = now_secs();
         let idle = now - super::SESSION_IDLE_SECS;
         let row = sqlx::query!(
-            r#"SELECT user_id,scoped AS "scoped: bool" FROM auth_credentials WHERE id=?1 AND (expires_at IS NULL OR expires_at>?2) AND (kind!='browser' OR last_used_at>?3)"#,
+            r#"SELECT user_id,kind,authenticated_at,scoped AS "scoped: bool" FROM auth_credentials WHERE id=?1 AND (expires_at IS NULL OR expires_at>?2) AND (kind!='browser' OR last_used_at>?3)"#,
             self.credential_id,
             now,
             idle
@@ -246,7 +260,11 @@ impl Caller<'_> {
         .await
         .map_err(StoreError::database)?
         .ok_or(StoreError::CredentialRevoked)?;
-        Authority::read(db, row.user_id, self.credential_id, row.scoped).await
+        let proof = super::Proof {
+            kind: super::CredentialKind::parse(&row.kind)?,
+            authenticated_at: row.authenticated_at,
+        };
+        Authority::read(db, row.user_id, self.credential_id, row.scoped, proof).await
     }
 }
 
@@ -260,6 +278,8 @@ pub struct Authority {
     pub grants: Grants,
     /// Whether the credential is limited to its own grants.
     pub scoped: bool,
+    /// The credential's class and its last passkey proof.
+    pub proof: super::Proof,
 }
 
 impl Authority {
@@ -269,6 +289,7 @@ impl Authority {
         user_id: String,
         credential_id: &str,
         scoped: bool,
+        proof: super::Proof,
     ) -> Result<Self, StoreError> {
         let mut grants = Holder::User(&user_id).grants(&mut *db).await?;
         if scoped {
@@ -278,7 +299,20 @@ impl Authority {
             user_id,
             grants,
             scoped,
+            proof,
         })
+    }
+
+    /// Requires a passkey sign-in or step-up on this credential within the
+    /// last two minutes (see [`super::Proof::require_fresh`]). Checked inside
+    /// the writing transaction, this is the authoritative freshness check.
+    ///
+    /// # Errors
+    /// Returns [`Denied::Reauthenticate`].
+    pub fn require_fresh(&self) -> Result<(), StoreError> {
+        self.proof
+            .require_fresh(now_secs())
+            .map_err(StoreError::Denied)
     }
 
     /// Requires a credential with the account's full access: scoped
@@ -286,7 +320,7 @@ impl Authority {
     /// they cannot outlive or exceed their own limits.
     pub fn require_unscoped(&self) -> Result<(), StoreError> {
         if self.scoped {
-            Err(StoreError::Denied(piqueld_core::access::Denied::Scoped))
+            Err(StoreError::Denied(Denied::Scoped))
         } else {
             Ok(())
         }
@@ -578,6 +612,7 @@ mod tests {
                 name: id,
                 expires_at: None,
                 grants: scoped,
+                authenticated_at: None,
             };
             store
                 .insert_credential(&user.id, &credential)
@@ -809,6 +844,7 @@ mod tests {
                 name: id,
                 expires_at: None,
                 grants,
+                authenticated_at: None,
             };
             store
                 .insert_credential(&user.id, &credential)

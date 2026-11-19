@@ -194,7 +194,9 @@ impl Auth {
         };
         let redeemed = invitation.is_some();
         let (owner, token) = if let Some(invitation_hash) = &invitation {
-            let (token, session) = Self::browser_session()?;
+            // Registering a passkey proves nothing yet: the session becomes
+            // fresh once the new passkey signs in or steps up.
+            let (token, session) = Self::browser_session(None)?;
             let owner = PasskeyOwner::Redeem {
                 user: &user,
                 invitation_hash,
@@ -221,13 +223,19 @@ impl Auth {
         Ok((user, token))
     }
     /// A week-long browser session, which also ends after a day without use.
-    pub(super) fn browser_session() -> Result<(String, piqueld_store::NewCredential<'static>)> {
-        Self::new_credential(
+    /// `authenticated_at` is when a passkey sign-in proved its holder
+    /// present, if one did.
+    pub(super) fn browser_session(
+        authenticated_at: Option<i64>,
+    ) -> Result<(String, piqueld_store::NewCredential<'static>)> {
+        let (token, mut session) = Self::new_credential(
             CredentialKind::Browser,
             "Browser",
             Some(now_secs() + BROWSER_SESSION_LIFETIME),
             None,
-        )
+        )?;
+        session.authenticated_at = authenticated_at;
+        Ok((token, session))
     }
     /// Starts a usernameless login: no allowed credentials are listed, so the
     /// authenticator offers any discoverable passkey for this relying party.
@@ -257,7 +265,8 @@ impl Auth {
             .ok_or(AuthError::Unauthorized)?;
         let user_id = std::str::from_utf8(handle).map_err(|_| AuthError::Unauthorized)?;
         let credential_id = super::URL_SAFE_NO_PAD.encode(response.get_credential_id());
-        let (token, session) = Self::browser_session()?;
+        // Proof time is taken before verification, so it never postdates it.
+        let (token, session) = Self::browser_session(Some(now_secs()))?;
         // The store verifies the assertion and updates its signature counter
         // under the writer lock, then opens the session in the same transaction.
         let verify = |stored: &str| -> Result<String> {

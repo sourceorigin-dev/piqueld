@@ -338,6 +338,7 @@ mod tests {
             name: "piquelctl",
             expires_at: None,
             grants: None,
+            authenticated_at: None,
         };
         store
             .insert_credential(&user.id, &credential)

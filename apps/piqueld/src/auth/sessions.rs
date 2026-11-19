@@ -5,7 +5,7 @@ use piqueld_core::access::{Denied, Grants};
 use piqueld_core::auth::{
     DeviceRequest, DeviceStart, DeviceToken, HostOperator, OperatorLink, Principal, Session, User,
 };
-use piqueld_store::{Actor, Caller, NewCredential, StoreError};
+use piqueld_store::{Actor, Caller, NewCredential, Proof, StoreError};
 use std::collections::{HashMap, hash_map::Entry};
 
 /// Seconds a host operator sign-in link stays redeemable.
@@ -40,8 +40,8 @@ pub enum Credential {
         user: User,
         /// Credential ID.
         id: String,
-        /// Class of that credential.
-        kind: CredentialKind,
+        /// Class of that credential and its last passkey proof.
+        proof: Proof,
     },
     /// The host operator: the kernel's peer credentials on a token-less Unix
     /// socket request, or a browser `session` opened with a sign-in link.
@@ -124,11 +124,23 @@ impl Identity {
     #[must_use]
     pub const fn kind(&self) -> Option<CredentialKind> {
         match &self.credential {
-            Credential::Account { kind, .. } => Some(*kind),
+            Credential::Account { proof, .. } => Some(proof.kind),
             Credential::Operator { session, .. } if session.is_some() => {
                 Some(CredentialKind::Browser)
             }
             Credential::Operator { .. } => None,
+        }
+    }
+    /// Refuses a sensitive action early unless the caller confirmed with a
+    /// passkey recently (see [`Proof::require_fresh`]); the host operator is
+    /// exempt. The store rechecks this when the action commits.
+    ///
+    /// # Errors
+    /// Returns [`AuthError::Denied`] with [`Denied::Reauthenticate`].
+    pub fn require_fresh(&self) -> Result<()> {
+        match &self.credential {
+            Credential::Account { proof, .. } => Ok(proof.require_fresh(now_secs())?),
+            Credential::Operator { .. } => Ok(()),
         }
     }
     /// This caller, for changes that re-read its grants in their transaction.
@@ -205,6 +217,7 @@ impl Prepared {
             name: CLI_SESSION,
             expires_at: Some(self.expires_at),
             grants,
+            authenticated_at: None,
         }
     }
 }
@@ -301,7 +314,7 @@ impl Auth {
             credential: Credential::Account {
                 user: owner.user,
                 id: owner.credential_id,
-                kind: owner.kind,
+                proof: owner.proof,
             },
             grants: owner.grants,
             scoped: owner.scoped,
