@@ -1,9 +1,8 @@
 # Cleanup pass: reviewer
 
 Review one PR from a piqueld cleanup pass. It claims to be a pure refactor: no
-behavior, output, schema, format or test coverage changes. The only exceptions
-are one-line fixes and deliberate changes, each in its own commit and named in
-the description.
+behavior, output, schema, format or test coverage changes. Bug fixes go in
+their own PRs, so any behavior change here is a finding.
 
 Review read-only. Don't push, comment or edit. Use `gh pr view <N>`, `gh pr
 diff <N>`, and `git fetch origin main pull/<N>/head` to check out the head SHA

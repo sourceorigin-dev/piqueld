@@ -1,7 +1,7 @@
 # Cleanup pass: area agent
 
 You own one area of piqueld in a parallel cleanup pass. Your task names the
-area, paths, packages, branch, title scope, Linear issue and
+area, paths, packages, branch prefix, title scope, Linear issue and
 `CARGO_BUILD_JOBS`, and lists what the other agents own.
 
 Read every file in your area. Make real simplifications, not cosmetic churn,
@@ -17,10 +17,10 @@ is `foo/mod.rs` only when it has children.
   labels, log fields, timeouts and query plans. `git diff origin/main` shows
   no change to a migration or a generated file. Don't use blanket search and
   replace.
-- **Report bugs instead of fixing them.** A one-line fix or a deliberate
-  behavior change goes in its own commit, named in the PR description.
+- **Report bugs instead of fixing them.** Each one gets its own issue and fix
+  PR. If a cleanup can't be done without changing behavior, report it too.
 - **Stay in your area.** Edit another area only when a rename forces it, and
-  report duplication that crosses areas.
+  report what crosses areas: another lane cleans up between them.
 - **Keep the docs references right.** If you rename something a page in
   `docs/` names, update that page (`piqueld-docs` skill) and run `just docs`.
   Don't reword `///` comments that feed generated output.
@@ -54,25 +54,30 @@ and never change a test just to make it pass.
 
 ## Delivery
 
+- Split your work into focused PRs: one kind of cleanup in one part of your
+  area each, small enough to review in one sitting. Branch each from
+  `origin/main` as `<prefix><topic>`, and keep your PRs from sharing files.
+  If one needs another, stack it on that branch and say so in its
+  description.
 - Make small, logical commits with conventional messages and no
   `Co-Authored-By` line.
 - Rebase on `origin/main`, and clean up any new code the rebase brings in.
-- Open a **draft** PR with `file-pr`, despite its default, titled
+- Open each PR as a **draft** with `file-pr`, despite its default, titled
   `refactor(<scope>): <what got simpler>`. Its description says:
   - `Part of PQD-<n>`
   - what was hard to read and how you fixed it
-  - every deliberate change
   - every test you merged or removed
   - what you compared to prove the rest unchanged
-- Don't mark the PR ready.
+- Don't mark a PR ready.
 
 Your final message gives:
 
-1. The PR link.
-2. A summary of the cleanup.
-3. The checks you ran, with their results.
-4. The bigger issues you found, each with `file:line`, what's wrong, why it
-   matters and a fix, checked against the source.
+1. The PR links, in merge order, with what each one cleans up.
+2. The checks you ran for each, with their results.
+3. Bugs: `file:line`, what goes wrong and how to reproduce it.
+4. Issues that cross areas, and other design issues: `file:line`, what's
+   wrong, why it matters and a fix.
 
-When you get review findings, fix them on the branch, rerun the affected
-checks, push, and report what changed.
+Check every item against the source before you report it. When you get review
+findings, fix them on that PR's branch, rerun the affected checks, push, and
+report what changed.
