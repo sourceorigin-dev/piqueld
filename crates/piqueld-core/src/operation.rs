@@ -126,6 +126,17 @@ pub struct Operation {
     pub finished_at_ms: Option<i64>,
 }
 
+impl Operation {
+    /// Whether `attempt` is the operation's current run. A timeline shows
+    /// only that: running an operation again, e.g. to start a stopped
+    /// environment, starts over, and while it is requested again its latest
+    /// attempt is the run before.
+    pub(crate) fn current_attempt(&self, attempt: u64) -> bool {
+        attempt > self.attempt
+            || (attempt == self.attempt && self.state != OperationState::Requested)
+    }
+}
+
 string_enum! {
     #[serde]
     /// Current environment reconciliation status.

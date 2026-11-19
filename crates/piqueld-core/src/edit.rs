@@ -522,32 +522,24 @@ impl ApplicationEdit {
     /// to `new`, or drops them when `new` is `None` because the service was
     /// removed. Renaming an exported service renames its link alias.
     fn retarget_service(manifest: &mut ApplicationManifest, old: &str, new: Option<&String>) {
-        manifest.spec.routes.retain_mut(|route| {
-            if route.service.as_deref() != Some(old) {
-                return true;
-            }
-            route.service = new.cloned();
-            new.is_some()
-        });
-        manifest.spec.jobs.retain_mut(|job| {
-            if job.service != old {
-                return true;
-            }
-            new.inspect(|new| job.service.clone_from(new)).is_some()
-        });
-        manifest.spec.exports.retain_mut(|export| {
-            if export.service != old {
-                return true;
-            }
-            new.inspect(|new| export.service.clone_from(new)).is_some()
-        });
+        // Repoints one reference; returns whether to keep what holds it.
+        let retarget = |service: &mut String| {
+            service.as_str() != old || new.inspect(|new| service.clone_from(new)).is_some()
+        };
+        manifest
+            .spec
+            .routes
+            .retain_mut(|route| route.service.as_mut().is_none_or(retarget));
+        manifest
+            .spec
+            .jobs
+            .retain_mut(|job| retarget(&mut job.service));
+        manifest
+            .spec
+            .exports
+            .retain_mut(|export| retarget(&mut export.service));
         for service in &mut manifest.spec.services {
-            service.depends_on.retain_mut(|dependency| {
-                if dependency != old {
-                    return true;
-                }
-                new.inspect(|new| dependency.clone_from(new)).is_some()
-            });
+            service.depends_on.retain_mut(retarget);
         }
     }
 }

@@ -643,8 +643,7 @@ impl Timeline {
                 Step::pending(key, StepState::Forecast, expected)
             })
             .collect();
-        let steps = std::mem::take(&mut timeline.steps);
-        timeline.set_steps(steps);
+        timeline.retain_steps();
         timeline
     }
 
@@ -657,7 +656,7 @@ impl Timeline {
         self.cursor = event.id;
         if event
             .attempt
-            .is_some_and(|attempt| !self.current_attempt(attempt))
+            .is_some_and(|attempt| !self.operation.current_attempt(attempt))
         {
             return;
         }
@@ -710,29 +709,18 @@ impl Timeline {
     /// dropped, and once it ended, its forecast.
     pub fn set_operation(&mut self, operation: Operation) {
         self.operation = operation;
-        let steps = std::mem::take(&mut self.steps);
-        self.set_steps(steps);
+        self.retain_steps();
     }
 
-    /// Keeps the `steps` the timeline shows: those of the current attempt,
+    /// Keeps the steps the timeline shows: those of the current attempt,
     /// and forecast ones only while the operation may still run them.
-    fn set_steps(&mut self, mut steps: Vec<Step>) {
-        steps.retain(|step| {
+    fn retain_steps(&mut self) {
+        let operation = &self.operation;
+        self.steps.retain(|step| {
             step.attempt
-                .is_none_or(|attempt| self.current_attempt(attempt))
-                && !(step.state == StepState::Forecast && self.operation.state.terminal())
+                .is_none_or(|attempt| operation.current_attempt(attempt))
+                && !(step.state == StepState::Forecast && operation.state.terminal())
         });
-        self.steps = steps;
-    }
-
-    /// Whether `attempt` is the operation's current run. A timeline shows
-    /// only that: running an operation again, e.g. to start a stopped
-    /// environment, starts over, and while it is requested again its latest
-    /// attempt is the run before.
-    fn current_attempt(&self, attempt: u64) -> bool {
-        attempt > self.operation.attempt
-            || (attempt == self.operation.attempt
-                && self.operation.state != OperationState::Requested)
     }
 
     /// Whether the operation ended and none of its steps still runs, so the
