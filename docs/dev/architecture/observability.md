@@ -66,6 +66,9 @@ secret's Docker versions is a journaled `remove_secrets` action, whether it foll
 an API deletion (environment-owned, without an operation), environment deletion,
 or the history pass collecting versions that aren't current and that no
 deployment pins or target names (environment-owned, attributed to the daemon).
+That pass skips a version a service still mounts, which Swarm refuses to
+remove, and logs it at debug level: the action succeeds, and a later pass
+removes the version once nothing mounts it.
 A missing, unreadable or non-matching master key produces a daemon-scoped
 `secret_storage_unavailable` diagnostic whose causal fact names the key condition.
 Deployments decrypt values before their service request, so this failure is never

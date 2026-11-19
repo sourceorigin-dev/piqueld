@@ -365,6 +365,15 @@ pub trait DockerApi: Send + Sync + 'static {
         names: &[String],
         ownership: &BTreeMap<String, String>,
     ) -> Result<(), DockerError>;
+    /// Removes secrets like [`Self::remove_secrets`], for garbage
+    /// collection: skips each one a service still mounts, which Swarm
+    /// refuses to remove, instead of failing. Returns the names removed or
+    /// already missing.
+    async fn remove_unused_secrets(
+        &self,
+        names: &[String],
+        ownership: &BTreeMap<String, String>,
+    ) -> Result<Vec<String>, DockerError>;
     /// Creates a command in one running task of an owned service.
     /// Returns `None` when the service has no running task.
     async fn create_exec(

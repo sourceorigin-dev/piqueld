@@ -496,6 +496,25 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
         .execute(&store.pool)
         .await
         .unwrap();
+    // A running target still naming the first generated version keeps it.
+    let resolved = |names: serde_json::Value| {
+        sqlx::query("UPDATE environments SET resolved_json=?1 WHERE id=?2")
+            .bind(
+                names
+                    .is_object()
+                    .then(|| serde_json::json!({"secret_names": names}).to_string()),
+            )
+            .bind(production.as_str())
+            .execute(&store.pool)
+    };
+    resolved(serde_json::json!({"session": first["session"]}))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.unused_secret_versions().await.unwrap(),
+        BTreeMap::from([(production.clone(), vec![first["stripe-prod"].clone()])])
+    );
+    resolved(serde_json::Value::Null).await.unwrap();
     let unused = store.unused_secret_versions().await.unwrap();
     let mut expected = vec![first["session"].clone(), first["stripe-prod"].clone()];
     expected.sort();

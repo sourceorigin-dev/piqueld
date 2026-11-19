@@ -83,17 +83,45 @@ impl BollardDocker {
         ownership: &BTreeMap<String, String>,
     ) -> Result<(), DockerError> {
         for name in names {
-            if let Some(secret) = self.owned_secret(name, ownership).await? {
-                let id = secret
-                    .id
-                    .as_deref()
-                    .ok_or(DockerError::Validation("secret ID missing"))?;
-                self.client()?
-                    .delete_secret(id)
-                    .await
-                    .found()
-                    .or_request("delete secret")?;
+            self.remove_owned_secret(name, ownership).await?;
+        }
+        Ok(())
+    }
+    /// Deletes each named secret like [`Self::remove_owned_secrets`], but
+    /// skips one a service still mounts (`SecretInUse`) instead of failing.
+    /// Returns the names removed or already missing.
+    pub(super) async fn remove_unused_owned_secrets(
+        &self,
+        names: &[String],
+        ownership: &BTreeMap<String, String>,
+    ) -> Result<Vec<String>, DockerError> {
+        let mut removed = Vec::with_capacity(names.len());
+        for name in names {
+            match self.remove_owned_secret(name, ownership).await {
+                Ok(()) => removed.push(name.clone()),
+                Err(DockerError::SecretInUse(_)) => {}
+                Err(error) => return Err(error),
             }
+        }
+        Ok(removed)
+    }
+    /// Deletes the secret `name` by ID after verifying ownership; a missing
+    /// one counts as deleted.
+    async fn remove_owned_secret(
+        &self,
+        name: &str,
+        ownership: &BTreeMap<String, String>,
+    ) -> Result<(), DockerError> {
+        if let Some(secret) = self.owned_secret(name, ownership).await? {
+            let id = secret
+                .id
+                .as_deref()
+                .ok_or(DockerError::Validation("secret ID missing"))?;
+            self.client()?
+                .delete_secret(id)
+                .await
+                .found()
+                .map_err(DockerError::delete_secret)?;
         }
         Ok(())
     }

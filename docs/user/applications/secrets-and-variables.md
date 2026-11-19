@@ -409,7 +409,7 @@ above. When the application has several environments, also add
 Earlier versions stay as long as a deployment in the
 [deployment history](../operations/history.md#how-long-history-is-kept) uses
 them, so you can still restore it. Once no remaining deployment uses a version,
-piqueld deletes it.
+piqueld deletes it, as soon as no running service still mounts it.
 
 ## Delete a secret
 

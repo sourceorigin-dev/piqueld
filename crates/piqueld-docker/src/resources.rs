@@ -515,6 +515,18 @@ impl DockerApi for BollardDocker {
             )
             .await
     }
+    async fn remove_unused_secrets(
+        &self,
+        names: &[String],
+        ownership: &std::collections::BTreeMap<String, String>,
+    ) -> Result<Vec<String>, DockerError> {
+        DockerTimeout::Request
+            .run(
+                "remove unused secrets",
+                Box::pin(self.remove_unused_owned_secrets(names, ownership)),
+            )
+            .await
+    }
     /// Accepts an existing single-node manager as `Ready`. An inactive node is
     /// initialized (loopback-only) when `auto_initialize` is set, then
     /// re-verified; any other node state is `NotManager`.
