@@ -117,7 +117,7 @@ impl<D: DockerApi> Controller<D> {
         &self,
         journal: &JournalAction,
         result: &Result<T, OperationError>,
-    ) -> Result<(), StoreError> {
+    ) -> Result<(), piqueld_store::StoreError> {
         let diagnostic = result.as_ref().err().map(OperationError::diagnostic);
         self.store.finish_action(journal, diagnostic).await
     }

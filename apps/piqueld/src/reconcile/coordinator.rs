@@ -779,7 +779,7 @@ impl<D: DockerApi> Controller<D> {
 
     /// Removes the Docker secrets of the secret versions nothing can mount
     /// any more (see `Store::unused_secret_versions`), one journaled
-    /// `remove_secrets` daemon action per environment, then the records of
+    /// `remove_secrets` action per environment, then the records of
     /// those Docker removed. A secret a service still mounts, which Swarm
     /// refuses to remove, is skipped and kept, with its record, until a
     /// later pass finds it unmounted; any other failure fails that
@@ -823,7 +823,5 @@ impl<D: DockerApi> Controller<D> {
 
 /// Whether the plan has work beyond retaining volumes.
 pub(super) fn plan_requires_execution(plan: &Plan) -> bool {
-    plan.actions
-        .iter()
-        .any(|action| action.kind.runs())
+    plan.actions.iter().any(|action| action.kind.runs())
 }
