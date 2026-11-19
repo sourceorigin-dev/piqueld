@@ -927,7 +927,8 @@ impl Store {
         self.commit_access_change(tx).await
     }
 
-    /// Deletes every credential of an account, signing it out everywhere.
+    /// Deletes every stored credential of an account, signing it out
+    /// everywhere, with what they issued as `cascade` says.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -935,14 +936,28 @@ impl Store {
         &self,
         actor: Actor<'_>,
         user_id: &str,
+        cascade: Cascade,
     ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, actor, user_id).await?;
-        sqlx::query!("DELETE FROM auth_credentials WHERE user_id=?1", user_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(StoreError::database)?;
+        let credentials = Self::account_credentials_on(&mut tx, user_id).await?;
+        let roots = credentials.iter().map(|id| Issued::Credential(id));
+        Self::revoke_on(&mut tx, &roots.collect::<Vec<_>>(), cascade).await?;
         self.commit_access_change(tx).await
+    }
+
+    /// The IDs of every credential `user_id` has stored, live or not.
+    async fn account_credentials_on(
+        db: &mut SqliteConnection,
+        user_id: &str,
+    ) -> Result<Vec<String>, StoreError> {
+        sqlx::query_scalar!(
+            r#"SELECT id AS "id!" FROM auth_credentials WHERE user_id=?1"#,
+            user_id
+        )
+        .fetch_all(db)
+        .await
+        .map_err(StoreError::database)
     }
 
     /// The part of the account directory `view` covers, read in one
@@ -1080,13 +1095,31 @@ impl Store {
     }
 
     /// Deletes an account with its passkeys, credentials, grants, and
-    /// invitations. Refuses to leave no administrator able to sign in.
+    /// invitations, and what its credentials and passkeys issued as
+    /// `cascade` says. Refuses to leave no administrator able to sign in.
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn delete_user(&self, actor: Actor<'_>, id: &str) -> Result<(), StoreError> {
+    pub async fn delete_user(
+        &self,
+        actor: Actor<'_>,
+        id: &str,
+        cascade: Cascade,
+    ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, actor, id).await?;
+        let credentials = Self::account_credentials_on(&mut tx, id).await?;
+        let passkeys = sqlx::query_scalar!(
+            r#"SELECT id AS "id!" FROM auth_passkeys WHERE user_id=?1"#,
+            id
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(StoreError::database)?;
+        let credentials = credentials.iter().map(|id| Issued::Credential(id));
+        let passkeys = passkeys.iter().map(|id| Issued::Passkey(id));
+        let roots = credentials.chain(passkeys).collect::<Vec<_>>();
+        Self::revoke_on(&mut tx, &roots, cascade).await?;
         sqlx::query!("DELETE FROM auth_users WHERE id=?1", id)
             .execute(&mut *tx)
             .await
@@ -1111,19 +1144,22 @@ impl Store {
         Ok(())
     }
 
-    /// Deletes one passkey, refusing to leave no administrator able to sign in.
+    /// Deletes one passkey, with the sessions it signed in and what they
+    /// issued as `cascade` says, refusing to leave no administrator able to
+    /// sign in.
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn remove_passkey(&self, actor: Actor<'_>, id: &str) -> Result<(), StoreError> {
+    pub async fn remove_passkey(
+        &self,
+        actor: Actor<'_>,
+        id: &str,
+        cascade: Cascade,
+    ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::check_passkey_owner_on(&mut tx, actor, id).await?;
-        sqlx::query!("DELETE FROM auth_passkeys WHERE id=?1", id)
-            .execute(&mut *tx)
-            .await
-            .map_err(StoreError::database)?;
-        Self::require_an_admin(&mut tx).await?;
-        tx.commit().await.map_err(StoreError::database)
+        Self::revoke_on(&mut tx, &[Issued::Passkey(id)], cascade).await?;
+        self.commit_access_change(tx).await
     }
 
     /// Changes a passkey's label.

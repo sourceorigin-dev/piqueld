@@ -267,15 +267,24 @@ test('the CLI edits and deletes accounts and manages their passkeys, links and c
   } finally { await context.close(); }
 });
 
-test('account deletion can be cancelled and the last administrator is protected', async ({ page, account }) => {
+test('account deletion can be cancelled, cascades by default, and the last administrator is protected', async ({ page, account }) => {
   const link = (await auth<Managed>(page, 'manage', { action: 'create_invitation', grants: [{ permission: 'admin' }] })).invitation_url;
   const bob = await register(page, link, 'bob');
   const alice = await openAccount(page, 'alice');
-  page.once('dialog', dialog => dialog.dismiss());
+  const deleting = page.getByRole('dialog', { name: 'Delete account' });
   await alice.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await deleting.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(deleting).toBeHidden();
   expect((await auth<Directory>(page, 'directory')).users.map(entry => entry.user.id)).toContain(account.id);
-  page.once('dialog', dialog => dialog.accept());
+  // Bob's passkey came from alice's invitation, so deleting alice with what
+  // she issued would leave no administrator able to sign in.
   await alice.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await deleting.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('at least one account must keep admin on every application and a passkey');
+  expect((await auth<Directory>(page, 'directory')).users.map(entry => entry.user.id)).toContain(account.id);
+  await alice.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await deleting.getByRole('checkbox', { name: 'Also revoke what it issued' }).uncheck();
+  await deleting.getByRole('button', { name: 'Delete account', exact: true }).click();
   // Deleting returns to the directory, which no longer lists the account.
   await expect(page).toHaveURL(/\/dashboard\/accounts$/);
   await expect(accountRows(page).getByRole('link', { name: 'alice', exact: true })).toHaveCount(0);

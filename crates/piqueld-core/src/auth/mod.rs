@@ -302,11 +302,25 @@ pub enum Manage {
     DeleteUser {
         /// Target account.
         user_id: String,
+        /// Also revoke every credential, link and passkey issued through its
+        /// credentials and passkeys, in any account, even through credentials
+        /// that have since ended.
+        /// Absent means `true`.
+        #[serde(default = "Manage::cascade")]
+        #[schema(default = true)]
+        cascade: bool,
     },
-    /// Remove an authenticator without revoking existing sessions.
+    /// Remove an authenticator.
     RemovePasskey {
         /// Passkey identifier.
         id: String,
+        /// Also revoke the sessions it signed in and every credential, link and
+        /// passkey issued through them, in any account, even through
+        /// credentials that have since ended.
+        /// Absent means `true`.
+        #[serde(default = "Manage::cascade")]
+        #[schema(default = true)]
+        cascade: bool,
     },
     /// Rename an authenticator.
     RenamePasskey {
@@ -330,6 +344,13 @@ pub enum Manage {
     RevokeAll {
         /// Target account.
         user_id: String,
+        /// Also revoke every credential, link and passkey issued through
+        /// them, in any account, even through credentials that have since
+        /// ended.
+        /// Absent means `true`.
+        #[serde(default = "Manage::cascade")]
+        #[schema(default = true)]
+        cascade: bool,
     },
     /// Replace an account's grants.
     SetGrants {
@@ -396,13 +417,19 @@ impl Manage {
             Self::UpdateUser {
                 user_id, username, ..
             } => format!("update_user {user_id:?} {username:?}"),
-            Self::DeleteUser { user_id } => format!("delete_user {user_id:?}"),
-            Self::RemovePasskey { id } => format!("remove_passkey {id:?}"),
+            Self::DeleteUser { user_id, cascade } => {
+                format!("delete_user {user_id:?}{}", Self::alone(*cascade))
+            }
+            Self::RemovePasskey { id, cascade } => {
+                format!("remove_passkey {id:?}{}", Self::alone(*cascade))
+            }
             Self::RenamePasskey { id, name } => format!("rename_passkey {id:?} {name:?}"),
             Self::RevokeCredential { id, cascade } => {
                 format!("revoke_credential {id:?}{}", Self::alone(*cascade))
             }
-            Self::RevokeAll { user_id } => format!("revoke_all {user_id:?}"),
+            Self::RevokeAll { user_id, cascade } => {
+                format!("revoke_all {user_id:?}{}", Self::alone(*cascade))
+            }
             Self::SetGrants { user_id, grants } => format!("set_grants {user_id:?} ({grants})"),
             Self::CreateInvitation { grants } => format!("create_invitation ({grants})"),
             Self::CreateEnrollment { user_id } => format!("create_enrollment {user_id:?}"),

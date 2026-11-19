@@ -294,3 +294,77 @@ async fn revoking_reaches_accounts_the_actor_could_not_change() {
     assert!(!live(&store, "bob-session").await);
     assert_eq!(passkeys(&store).await, ["erin-key"]);
 }
+
+/// Revoking all of an account's credentials, removing a passkey, and
+/// deleting an account each revoke what was issued through them, unless
+/// asked not to. Revoking all starts from every stored credential, even
+/// expired ones.
+#[tokio::test]
+async fn bulk_revocations_cascade_from_every_root() {
+    let (_dir, store) = Store::temporary().await;
+    // An administrator nothing here touches, so no cascade locks out.
+    let erin = admin_with_passkey(&store, "erin").await;
+    let passkey = async |id: &str| passkeys(&store).await.iter().any(|key| key == id);
+
+    // Alice's expired login had invited bob.
+    store.seed_caller("alice", &Grants::admin()).await;
+    let alice = Caller {
+        credential_id: "alice",
+        user_id: "alice",
+    };
+    invite_and_redeem(&store, alice, "bob").await;
+    sqlx::query!("UPDATE auth_credentials SET expires_at=1 WHERE id='alice'")
+        .execute(&store.pool)
+        .await
+        .expect("alice's login expires");
+    let all = store.revoke_credentials(Actor::Daemon, "alice", Cascade::Yes);
+    all.await
+        .expect("the daemon revokes all of alice's credentials");
+    assert!(!passkey("bob-key").await && !live(&store, "bob-session").await);
+
+    // Removing a passkey reaches the sessions it signed in and their
+    // tokens, unless asked not to.
+    let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
+    let none = Grants::default();
+    for (user, cascade, kept) in [("carol", Cascade::No, true), ("grace", Cascade::Yes, false)] {
+        invite_and_redeem(&store, erin, user).await;
+        let (key, session) = (format!("{user}-key"), format!("{user}-signed-in"));
+        let signed_in = credential(&session, CredentialKind::Browser);
+        let sign_in = store
+            .sign_in_with_passkey(&key, user, stored, &signed_in)
+            .await;
+        let sign_in = sign_in.expect("the passkey signs in");
+        sign_in.expect("the passkey belongs to its user");
+        let token_id = format!("{user}-token");
+        let mut token = credential(&token_id, CredentialKind::Token);
+        token.grants = Some(&none);
+        let by_session = Caller {
+            credential_id: &session,
+            user_id: user,
+        };
+        let created = store.create_token(by_session, &token, None).await;
+        created.expect("the signed-in session creates a token");
+        let remove = store.remove_passkey(Actor::Daemon, &key, cascade);
+        remove.await.expect("the daemon removes the passkey");
+        assert_eq!(live(&store, &session).await, kept, "{cascade:?}");
+        assert_eq!(live(&store, &token_id).await, kept, "{cascade:?}");
+    }
+
+    // Deleting an account reaches what its credentials issued elsewhere,
+    // without deleting those accounts.
+    store.seed_caller("dave", &Grants::admin()).await;
+    let dave = Caller {
+        credential_id: "dave",
+        user_id: "dave",
+    };
+    invite_and_redeem(&store, dave, "frank").await;
+    let delete = store.delete_user(Actor::Daemon, "dave", Cascade::Yes);
+    delete.await.expect("the daemon deletes dave");
+    assert!(!passkey("frank-key").await && !live(&store, "frank-session").await);
+    let frank = sqlx::query_scalar!(r#"SELECT id AS "id!" FROM auth_users WHERE id='frank'"#)
+        .fetch_optional(&store.pool)
+        .await
+        .expect("accounts are readable");
+    assert!(frank.is_some(), "accounts are never deleted");
+    assert!(passkey("erin-key").await && live(&store, "erin").await);
+}

@@ -483,7 +483,8 @@ test('signing in as another account after the session expired drops the previous
   await page.getByRole('button', { name: 'Rename application', exact: true }).click();
   await page.getByLabel('Application name', { exact: true }).fill('alice-draft');
   const link = (await auth<Managed>(page, 'manage', { action: 'create_invitation', grants: [{ permission: 'admin' }] })).invitation_url;
-  await auth(page, 'manage', { action: 'revoke_all', user_id: account.id });
+  // Keep the invitation alice's session issued.
+  await auth(page, 'manage', { action: 'revoke_all', user_id: account.id, cascade: false });
   await page.clock.runFor(16_000);
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();

@@ -6,7 +6,7 @@ use super::ui::{
     FormModal, Icon, Modal, PageHeader, TabSet, Tone, badge, checkbox, empty, icon, loading, logo,
     notice, one_time_secret, row_actions, text_field, when,
 };
-use super::{ClientErrorExt, confirm, reload};
+use super::{ClientErrorExt, reload};
 use crate::application::named_tab;
 use crate::auth::{DeviceRequestLabels, Invite, SignInPage, TokenForm};
 use leptos::ev;
@@ -1104,9 +1104,12 @@ fn revoke_button(feedback: Feedback, command: impl Fn() -> Manage + 'static) -> 
     .into_any()
 }
 
+/// What a credential issued, for a [`CascadeDialog`]'s hint.
+const ISSUED: &str = "API tokens, piquelctl logins, links and passkeys created with it, and the sessions those passkeys signed in, in any account. It reaches them even when credentials in between have ended.";
+
 /// Confirms a revocation in a dialog with a checked "Also revoke what it
-/// issued" box, checked again each time it opens. Confirming sends
-/// `command(cascade)`.
+/// issued" box, checked again each time it opens, and `hint` saying what
+/// that covers. Confirming runs `on_confirm(cascade)`.
 #[component]
 fn CascadeDialog(
     opened: RwSignal<bool>,
@@ -1114,10 +1117,10 @@ fn CascadeDialog(
     /// What happens, e.g. "piquelctl stops working at once."
     #[prop(into)]
     message: Signal<String>,
+    #[prop(default = ISSUED)] hint: &'static str,
     /// The confirming button's label, e.g. "Revoke".
     confirm: &'static str,
-    feedback: Feedback,
-    command: Callback<bool, Manage>,
+    on_confirm: Callback<bool>,
 ) -> impl IntoView {
     let cascade = RwSignal::new(true);
     Effect::new(move |_| {
@@ -1130,9 +1133,7 @@ fn CascadeDialog(
             <p>{message}</p>
             <div class="stack-sm">
                 {checkbox("Also revoke what it issued", cascade)}
-                <p class="hint">
-                    "API tokens, piquelctl logins, links and passkeys created with it, and the sessions those passkeys signed in, in any account. It reaches them even when credentials in between have ended."
-                </p>
+                <p class="hint">{hint}</p>
             </div>
             <div class="form-actions">
                 <button type="button" class="btn btn-ghost" on:click={move |_| opened.set(false)}>
@@ -1143,7 +1144,7 @@ fn CascadeDialog(
                     class="btn btn-danger"
                     on:click={move |_| {
                         opened.set(false);
-                        feedback.manage(command.run(cascade.get_untracked()));
+                        on_confirm.run(cascade.get_untracked());
                     }}
                 >
                     {confirm}
@@ -1158,9 +1159,11 @@ fn CascadeDialog(
 fn revoke_credential(feedback: Feedback, id: String, name: &str) -> AnyView {
     let opened = RwSignal::new(false);
     let message = format!("{name} stops working at once.");
-    let command = Callback::new(move |cascade| Manage::RevokeCredential {
-        id: id.clone(),
-        cascade,
+    let revoke = Callback::new(move |cascade| {
+        feedback.manage(Manage::RevokeCredential {
+            id: id.clone(),
+            cascade,
+        });
     });
     view! {
         <button type="button" class="btn btn-ghost btn-sm" on:click={move |_| opened.set(true)}>
@@ -1171,8 +1174,7 @@ fn revoke_credential(feedback: Feedback, id: String, name: &str) -> AnyView {
             title="Revoke credential"
             message={message}
             confirm="Revoke"
-            feedback={feedback}
-            command={command}
+            on_confirm={revoke}
         />
     }
     .into_any()
@@ -1458,30 +1460,36 @@ pub(super) fn AccountPage() -> impl IntoView {
 #[component]
 fn DeleteAccount(user: User, feedback: Feedback) -> impl IntoView {
     let navigate = use_navigate();
-    let delete = move |_| {
-        let message = format!(
-            "Delete account '{}' and all its passkeys, sessions, and tokens? This cannot be undone.",
-            user.username
-        );
-        if !confirm(&message) {
-            return;
-        }
+    let opened = RwSignal::new(false);
+    let message = format!(
+        "Delete account '{}' and all its passkeys, sessions, and tokens? This cannot be undone.",
+        user.username
+    );
+    let delete = Callback::new(move |cascade| {
         let (user_id, navigate) = (user.id.clone(), navigate.clone());
         feedback.run(async move {
-            let shown = manage(Manage::DeleteUser { user_id }).await?;
+            let shown = manage(Manage::DeleteUser { user_id, cascade }).await?;
             navigate("/dashboard/accounts", NavigateOptions::default());
             Ok(shown)
         });
-    };
+    });
     view! {
         <button
             type="button"
             class="btn btn-danger"
             disabled={move || feedback.busy.get()}
-            on:click={delete}
+            on:click={move |_| opened.set(true)}
         >
             "Delete account"
         </button>
+        <CascadeDialog
+            opened={opened}
+            title="Delete account"
+            message={message}
+            hint="What its sessions, tokens and passkeys issued in other accounts: API tokens, piquelctl logins, links and passkeys, and the sessions those passkeys signed in. It reaches them even when credentials in between have ended."
+            confirm="Delete account"
+            on_confirm={delete}
+        />
     }
 }
 
@@ -1701,6 +1709,13 @@ fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
     let saved = StoredValue::new(passkey.name.clone());
     let label = RwSignal::new(passkey.name.clone());
     let editing = RwSignal::new(false);
+    let removing = RwSignal::new(false);
+    let remove = Callback::new(move |cascade| {
+        feedback.manage(Manage::RemovePasskey {
+            id: id.get_value(),
+            cascade,
+        });
+    });
     let rename = move |event: leptos::ev::SubmitEvent| {
         event.prevent_default();
         editing.set(false);
@@ -1721,12 +1736,7 @@ fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
                                 label.set(saved.get_value());
                                 editing.set(true);
                             },
-                            move || {
-                                feedback
-                                    .manage(Manage::RemovePasskey {
-                                        id: id.get_value(),
-                                    });
-                            },
+                            move || removing.set(true),
                         )}
                     }
                 }}
@@ -1745,6 +1755,14 @@ fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
                     </button>
                 </form>
             </Show>
+            <CascadeDialog
+                opened={removing}
+                title="Remove passkey"
+                message={Signal::derive(move || format!("{} can no longer sign in.", saved.get_value()))}
+                hint="The sessions it signed in, and the API tokens, piquelctl logins, links and passkeys those created, in any account. It reaches them even when credentials in between have ended."
+                confirm="Remove"
+                on_confirm={remove}
+            />
         </li>
     }
 }
@@ -1762,6 +1780,13 @@ fn Credentials(
     creating: Feedback,
 ) -> impl IntoView {
     let user = StoredValue::new(user);
+    let revoking_all = RwSignal::new(false);
+    let revoke_all = Callback::new(move |cascade| {
+        feedback.manage(Manage::RevokeAll {
+            user_id: user.get_value(),
+            cascade,
+        });
+    });
     let rows = credentials
         .into_iter()
         .map(|credential| {
@@ -1823,16 +1848,19 @@ fn Credentials(
                     <button
                         type="button"
                         class="btn btn-danger btn-sm"
-                        on:click={move |_| {
-                            feedback
-                                .manage(Manage::RevokeAll {
-                                    user_id: user.get_value(),
-                                });
-                        }}
+                        on:click={move |_| revoking_all.set(true)}
                     >
                         "Revoke all"
                     </button>
                 </span>
+                <CascadeDialog
+                    opened={revoking_all}
+                    title="Revoke all sessions and tokens"
+                    message="Every session, piquelctl login and API token of this account stops working at once, including the session you're using if it's yours."
+                    hint="API tokens, piquelctl logins, links and passkeys they created, and the sessions those passkeys signed in, in any account. It reaches them even when credentials in between have ended."
+                    confirm="Revoke all"
+                    on_confirm={revoke_all}
+                />
             </header>
             {if rows.is_empty() {
                 empty("No active sessions or tokens.")

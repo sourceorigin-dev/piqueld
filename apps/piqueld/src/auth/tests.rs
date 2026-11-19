@@ -264,7 +264,13 @@ async fn sessions_expire_revoke_and_survive_restart_without_storing_secrets() {
         .await;
     let admin = f.identity("dave", &Grants::admin()).await;
     f.auth
-        .manage(&admin, Manage::RevokeAll { user_id: other })
+        .manage(
+            &admin,
+            Manage::RevokeAll {
+                user_id: other,
+                cascade: true,
+            },
+        )
         .await
         .unwrap();
     assert!(matches!(
@@ -317,12 +323,18 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
     f.passkey(&alice).await;
     f.passkey(&bob).await;
     let (first, second) = tokio::join!(
-        f.auth
-            .manage(&alice, Manage::DeleteUser { user_id: bob.id() }),
         f.auth.manage(
             &alice,
             Manage::DeleteUser {
-                user_id: alice.id()
+                user_id: bob.id(),
+                cascade: true
+            }
+        ),
+        f.auth.manage(
+            &alice,
+            Manage::DeleteUser {
+                user_id: alice.id(),
+                cascade: true
             }
         )
     );
@@ -470,6 +482,7 @@ async fn changes_use_the_callers_current_grants() {
             &root,
             Manage::RevokeAll {
                 user_id: alice.id(),
+                cascade: true,
             },
         )
         .await
@@ -641,8 +654,14 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
             user_id: own(),
             grants: Grants::default(),
         },
-        Manage::RevokeAll { user_id: own() },
-        Manage::DeleteUser { user_id: own() },
+        Manage::RevokeAll {
+            user_id: own(),
+            cascade: true,
+        },
+        Manage::DeleteUser {
+            user_id: own(),
+            cascade: true,
+        },
     ] {
         assert_eq!(denied(f.auth.manage(&ci, command).await), Denied::Scoped);
     }
@@ -696,7 +715,13 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
     assert_eq!(
         denied(
             f.auth
-                .manage(&ops, Manage::RevokeAll { user_id: bob.id() })
+                .manage(
+                    &ops,
+                    Manage::RevokeAll {
+                        user_id: bob.id(),
+                        cascade: true
+                    }
+                )
                 .await
         ),
         Denied::Missing(Permission::Global(GlobalPermission::AccountsManage))
@@ -869,6 +894,7 @@ async fn deleting_an_issuer_invalidates_its_invitations_and_credentials() {
             &bob,
             Manage::DeleteUser {
                 user_id: alice.id(),
+                cascade: true,
             },
         )
         .await
@@ -884,9 +910,13 @@ async fn changes_keep_an_admin_with_a_passkey() {
     let bob = f.identity("bob", &Grants::admin()).await;
     let key = f.passkey(&alice).await;
     for command in [
-        Manage::RemovePasskey { id: key.clone() },
+        Manage::RemovePasskey {
+            id: key.clone(),
+            cascade: true,
+        },
         Manage::DeleteUser {
             user_id: alice.id(),
+            cascade: true,
         },
         set_grants(&alice, developer()),
     ] {
@@ -902,7 +932,13 @@ async fn changes_keep_an_admin_with_a_passkey() {
     }
     // An administrator may have no passkey, provided another one keeps theirs.
     f.auth
-        .manage(&alice, Manage::DeleteUser { user_id: bob.id() })
+        .manage(
+            &alice,
+            Manage::DeleteUser {
+                user_id: bob.id(),
+                cascade: true,
+            },
+        )
         .await
         .unwrap();
     assert_eq!(f.auth.directory(&alice).await.unwrap().users.len(), 1);
@@ -917,13 +953,24 @@ async fn concurrent_passkey_and_account_deletions_keep_one_admin() {
         let alice_key = f.passkey(&alice).await;
         let bob_key = f.passkey(&bob).await;
         let second = if delete_account {
-            Manage::DeleteUser { user_id: bob.id() }
+            Manage::DeleteUser {
+                user_id: bob.id(),
+                cascade: true,
+            }
         } else {
-            Manage::RemovePasskey { id: bob_key }
+            Manage::RemovePasskey {
+                id: bob_key,
+                cascade: true,
+            }
         };
         let (first, second) = tokio::join!(
-            f.auth
-                .manage(&alice, Manage::RemovePasskey { id: alice_key }),
+            f.auth.manage(
+                &alice,
+                Manage::RemovePasskey {
+                    id: alice_key,
+                    cascade: true
+                }
+            ),
             f.auth.manage(&alice, second),
         );
         let error = match (first, second) {

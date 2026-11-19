@@ -308,7 +308,7 @@ Options:
 
 Delete an account, with its passkeys, sessions and API tokens.
 
-Anyone may delete their own account; another account needs `accounts:manage` and every grant it has. An API token or limited login can't delete its own account. The daemon refuses when no account with `admin` and a passkey would remain.
+It also revokes everything they issued, in any account, as `token revoke` does. Anyone may delete their own account; another account needs `accounts:manage` and every grant it has. An API token or limited login can't delete its own account. The daemon refuses when no account with `admin` and a passkey would remain.
 
 ```text
 piquelctl account delete [OPTIONS] <ACCOUNT>
@@ -320,6 +320,7 @@ Arguments:
 
 Options:
 
+- `--no-cascade`: Leave what was issued through it valid; see `token revoke`.
 - `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl account passkey`
@@ -371,7 +372,7 @@ Arguments:
 
 Remove a passkey, so it can no longer sign in.
 
-Sessions it signed in stay valid until revoked with `token revoke`. Anyone may remove their own; another account's needs `accounts:manage` and every grant it has. An API token or limited login can't remove its own account's. The daemon refuses when no account with `admin` and a passkey would remain.
+It also revokes the sessions it signed in, and everything issued through them, as `token revoke` does. Anyone may remove their own; another account's needs `accounts:manage` and every grant it has. An API token or limited login can't remove its own account's. The daemon refuses when no account with `admin` and a passkey would remain.
 
 ```text
 piquelctl account passkey remove [OPTIONS] <ID>
@@ -383,6 +384,7 @@ Arguments:
 
 Options:
 
+- `--no-cascade`: Leave what was issued through it valid; see `token revoke`.
 - `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl account invitation`
@@ -523,7 +525,7 @@ Arguments:
 
 Options:
 
-- `--no-cascade`: Revoke only the credential, leaving what was issued through it valid.
+- `--no-cascade`: Revoke only the credential, or with `--all` only the account's credentials, leaving what was issued through them valid.
 - `--all`: Revoke every session and API token of an account instead.
 
   Without `--user`, revokes yours, including the login this command uses. An API token or limited login can't revoke its own account's.

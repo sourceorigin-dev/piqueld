@@ -94,14 +94,19 @@ pub(crate) enum AccountCommand {
     },
     /// Delete an account, with its passkeys, sessions and API tokens.
     ///
-    /// Anyone may delete their own account; another account needs
-    /// `accounts:manage` and every grant it has. An API token or limited
-    /// login can't delete its own account. The daemon refuses when no
-    /// account with `admin` and a passkey would remain.
+    /// It also revokes everything they issued, in any account, as
+    /// `token revoke` does. Anyone may delete their own account; another
+    /// account needs `accounts:manage` and every grant it has. An API token
+    /// or limited login can't delete its own account. The daemon refuses
+    /// when no account with `admin` and a passkey would remain.
     Delete {
         /// Account username or ID.
         #[arg(value_name = "ACCOUNT")]
         target: String,
+        /// Leave what was issued through it valid; see `token revoke`.
+        #[arg(long)]
+        no_cascade: bool,
+
         /// Skip the confirmation prompt.
         #[arg(long, short)]
         yes: bool,
@@ -147,16 +152,20 @@ pub(crate) enum PasskeyCommand {
     },
     /// Remove a passkey, so it can no longer sign in.
     ///
-    /// Sessions it signed in stay valid until revoked with `token revoke`.
-    /// Anyone may remove their own; another account's needs `accounts:manage`
-    /// and every grant it has. An API token or limited login can't remove its
-    /// own account's. The daemon refuses when no account with `admin` and a
-    /// passkey would remain.
+    /// It also revokes the sessions it signed in, and everything issued
+    /// through them, as `token revoke` does. Anyone may remove their own;
+    /// another account's needs `accounts:manage` and every grant it has. An
+    /// API token or limited login can't remove its own account's. The daemon
+    /// refuses when no account with `admin` and a passkey would remain.
     Remove {
         /// Passkey ID, from `account passkey list`.
         // Base64url credential IDs may start with `-`.
         #[arg(allow_hyphen_values = true)]
         id: String,
+        /// Leave what was issued through it valid; see `token revoke`.
+        #[arg(long)]
+        no_cascade: bool,
+
         /// Skip the confirmation prompt.
         #[arg(long, short)]
         yes: bool,
@@ -333,9 +342,9 @@ pub(crate) enum TokenCommand {
         /// Credential ID.
         #[arg(required_unless_present = "all")]
         id: Option<String>,
-        /// Revoke only the credential, leaving what was issued through it
-        /// valid.
-        #[arg(long, conflicts_with = "all")]
+        /// Revoke only the credential, or with `--all` only the account's
+        /// credentials, leaving what was issued through them valid.
+        #[arg(long)]
         no_cascade: bool,
         /// Revoke every session and API token of an account instead.
         ///
@@ -424,18 +433,20 @@ impl TokenCommand {
                 };
                 console.info(format_args!("revoked {id}{also}"))
             }
-            Self::Revoke { user, yes, .. } => {
+            Self::Revoke {
+                user,
+                yes,
+                no_cascade,
+                ..
+            } => {
                 let directory = client.auth_directory().await?;
                 let owner = owner(client, &directory, user.as_deref()).await?;
-                console
-                    .confirm(
-                        *yes,
-                        &format!("Revoke every session and token of {:?}?", owner.username),
-                    )
-                    .await?;
+                let question = format!("Revoke every session and token of {:?}", owner.username);
+                confirm_revocation(console, *yes, *no_cascade, &question).await?;
                 client
                     .auth_manage(&Manage::RevokeAll {
                         user_id: owner.id.clone(),
+                        cascade: !no_cascade,
                     })
                     .await?;
                 console.info(format_args!(
@@ -532,13 +543,19 @@ impl AccountCommand {
                 }
                 AccountsReport::emit_one(client, console, account).await
             }
-            Self::Delete { target, yes } => {
+            Self::Delete {
+                target,
+                yes,
+                no_cascade,
+            } => {
                 let target = find(&client.auth_directory().await?, target)?.user;
-                console
-                    .confirm(*yes, &format!("Delete account {:?}?", target.username))
-                    .await?;
+                let question = format!("Delete account {:?}", target.username);
+                confirm_revocation(console, *yes, *no_cascade, &question).await?;
                 client
-                    .auth_manage(&Manage::DeleteUser { user_id: target.id })
+                    .auth_manage(&Manage::DeleteUser {
+                        user_id: target.id,
+                        cascade: !no_cascade,
+                    })
                     .await?;
                 console.info(format_args!("deleted {}", target.username))
             }
@@ -572,12 +589,18 @@ impl PasskeyCommand {
                     .await?;
                 console.info(format_args!("renamed passkey {id} to {name}"))
             }
-            Self::Remove { id, yes } => {
-                console
-                    .confirm(*yes, &format!("Remove passkey {id}?"))
-                    .await?;
+            Self::Remove {
+                id,
+                yes,
+                no_cascade,
+            } => {
+                let question = format!("Remove passkey {id}");
+                confirm_revocation(console, *yes, *no_cascade, &question).await?;
                 client
-                    .auth_manage(&Manage::RemovePasskey { id: id.clone() })
+                    .auth_manage(&Manage::RemovePasskey {
+                        id: id.clone(),
+                        cascade: !no_cascade,
+                    })
                     .await?;
                 console.info(format_args!("removed passkey {id}"))
             }
@@ -625,6 +648,22 @@ async fn owner(client: &Client, directory: &Directory, user: Option<&str>) -> Re
                 "the host operator has no account; name one with --user",
             )
         })
+}
+
+/// Asks to confirm a revocation, `question` without its question mark,
+/// mentioning what it also revokes unless `--no-cascade` turned that off.
+async fn confirm_revocation(
+    console: &mut Console,
+    yes: bool,
+    no_cascade: bool,
+    question: &str,
+) -> Result<()> {
+    let also = if no_cascade {
+        ""
+    } else {
+        ", and everything issued through it"
+    };
+    console.confirm(yes, &format!("{question}{also}?")).await
 }
 
 /// Username of a visible account, or its ID when hidden.
