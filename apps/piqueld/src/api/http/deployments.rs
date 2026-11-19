@@ -1,6 +1,5 @@
 //! Explicit deployment acceptance and durable history.
-use super::applications::Mutator;
-use super::extract::IdempotencyKey;
+use super::extract::{IdempotencyKey, Mutator};
 use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{
     extract::State,

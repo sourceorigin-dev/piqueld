@@ -1,19 +1,13 @@
 //! Previews: disposable deployments of a branch. Creating, deploying,
 //! restoring, and deleting one need no application revision. A preview's status, logs,
 //! deployments, and secrets use the environment endpoints with its ID.
-use super::access::Audited;
-use super::applications::Mutator;
-use super::extract::{IDEMPOTENCY_KEY, IdempotencyKey, content_type, optional_header};
-use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok, openapi::ApiErrors,
-};
-use crate::api::{Mutation, MutationResponse, PreviewMutation, Restore};
-use crate::auth::Identity;
+use super::extract::{IdempotencyKey, Mutator, content_type};
+use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
+use crate::api::{Mutation, PreviewMutation, Restore};
 use axum::{
-    Extension,
     body::Body,
     extract::State,
-    http::{HeaderMap, StatusCode, header},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use piqueld_core::api::{
@@ -95,15 +89,12 @@ pub(super) struct GitBundle(std::marker::PhantomData<()>);
     responses((status=202,description="Snapshot received and its deployment accepted",body=Envelope<CreatedPreview>),
     ApiErrors<400, 404, 408, 409, 413, 415, 422, 500, 503>))]
 pub(super) async fn deploy_local(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
     ApiQuery(query): ApiQuery<LocalPreviewQuery>,
-    headers: HeaderMap,
     body: Body,
 ) -> Result<Response, ApiError> {
-    if content_type(&headers) != Some("application/octet-stream") {
+    if content_type(mutator.headers()) != Some("application/octet-stream") {
         return Err(ApiError::new(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "content_type_unsupported",
@@ -115,21 +106,14 @@ pub(super) async fn deploy_local(
         GitBranch::parse(query.branch)?,
         query.slot.map(PreviewSlot::parse).transpose()?,
     );
-    let length = headers
+    let length = mutator
+        .headers()
         .get(header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok()?.parse().ok());
-    let request_id = optional_header(&headers, IDEMPOTENCY_KEY)?;
-    let audited = audited.answering(StatusCode::ACCEPTED);
-    let deployed = state.deploy_snapshot(
-        audited.author(&identity),
-        preview,
-        (body.into_data_stream(), length),
-        request_id.as_deref(),
-    );
-    match Box::pin(deployed).await? {
-        MutationResponse::Preview(preview) => Ok(accepted(preview)),
-        _ => Err(piqueld_store::StoreError::Corrupt.into()),
-    }
+    mutator
+        .answering(StatusCode::ACCEPTED)
+        .deploy_snapshot(preview, (body, length))
+        .await
 }
 
 /// Lists an application's previews.
@@ -229,15 +213,13 @@ pub(super) async fn delete(
     responses((status=200,description="Previews whose deletion was accepted",body=Envelope<Vec<DeletedPreview>>),
     ApiErrors<400, 404, 409, 415, 500, 502, 503>))]
 pub(super) async fn prune(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
     ApiJson(request): ApiJson<PrunePreviewsRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     let application = ApplicationId::parse(id)?;
-    let audited = audited.answering(StatusCode::OK);
-    Ok(ok(state
-        .prune_previews(audited.author(&identity), &application, &request.previews)
-        .await?))
+    mutator
+        .answering(StatusCode::OK)
+        .prune_previews(&application, &request.previews)
+        .await
 }

@@ -1,17 +1,14 @@
 //! Applications: listing, reading, applying and planning whole manifests,
 //! renaming, deletion, and manifest download. Mutations of applications and
-//! their environments are submitted through a [`Mutator`].
-use super::access::Audited;
-use super::extract::{IDEMPOTENCY_KEY, IdempotencyKey, ManifestUpload, optional_header};
-use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, accepted, ok, openapi::ApiErrors,
-};
-use crate::api::{Mutation, MutationResponse, Restore};
+//! their environments are submitted through an `extract::Mutator`.
+use super::extract::{IdempotencyKey, ManifestUpload, Mutator};
+use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
+use crate::api::Mutation;
 use crate::auth::Identity;
 use axum::{
     Extension,
-    extract::{FromRequestParts, State, rejection::ExtensionRejection},
-    http::{HeaderMap, header, request::Parts},
+    extract::State,
+    http::header,
     response::{IntoResponse, Response},
 };
 use piqueld_core::api::{
@@ -19,7 +16,6 @@ use piqueld_core::api::{
     Page, PlanView, RenameApplicationRequest, RenamedApplication, SavedApplication,
 };
 use piqueld_core::{ApplicationId, EnvironmentId, EnvironmentName};
-use piqueld_store::Author;
 use serde::Deserialize;
 
 /// Cursor pagination, and a name filter, for the application list.
@@ -246,104 +242,6 @@ pub(super) struct GenerationQuery {
 impl QueryParams for GenerationQuery {
     const INVALID_CODE: &'static str = "generation_invalid";
     const INVALID_MESSAGE: &'static str = "invalid expected generation";
-}
-
-/// The request of a handler submitting a mutation: the caller, acting
-/// through its audited request, and the request's `Idempotency-Key`. It
-/// extracts what the handler's leading `State`, `Extension<Identity>`,
-/// `Audited` and `HeaderMap` would, failing as they would.
-pub(super) struct Mutator {
-    pub(super) state: ApiState,
-    identity: Identity,
-    audited: Audited,
-    headers: HeaderMap,
-}
-
-impl FromRequestParts<ApiState> for Mutator {
-    type Rejection = ExtensionRejection;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &ApiState,
-    ) -> Result<Self, ExtensionRejection> {
-        let Extension(identity) = Extension::from_request_parts(parts, state).await?;
-        let Ok(audited) = Audited::from_request_parts(parts, state).await;
-        Ok(Self {
-            state: state.clone(),
-            identity,
-            audited,
-            headers: parts.headers.clone(),
-        })
-    }
-}
-
-impl Mutator {
-    /// The caller acting through this request.
-    pub(super) fn author(&self) -> Author<'_> {
-        self.audited.author(&self.identity)
-    }
-
-    /// The request's `Idempotency-Key`, refused when repeated or not ASCII.
-    pub(super) fn idempotency_key(&self) -> Result<Option<String>, ApiError> {
-        optional_header(&self.headers, IDEMPOTENCY_KEY)
-    }
-
-    /// Submits `mutation` and renders the acceptance: 202 when a durable
-    /// operation was started (including a save that also deploys, a created
-    /// preview, or a deletion), 200 for a plain save, rename, environment
-    /// change, or an existing preview.
-    pub(super) async fn accept(
-        &self,
-        mutation: Mutation,
-        expected: Option<u64>,
-        force: bool,
-    ) -> Result<Response, ApiError> {
-        let request_id = self.idempotency_key()?;
-        let response = self
-            .state
-            .accept(
-                self.author(),
-                mutation,
-                expected,
-                force,
-                request_id.as_deref(),
-            )
-            .await?;
-        let started = response.started();
-        Ok(match response {
-            MutationResponse::Saved(saved) => reply(started, saved),
-            MutationResponse::Preview(preview) => reply(started, preview),
-            MutationResponse::Rename(renamed) => reply(started, renamed),
-            MutationResponse::Environment(environment) => reply(started, environment),
-            MutationResponse::Operation(operation) => reply(started, operation),
-            MutationResponse::Promotion(promotion) => reply(started, promotion),
-            MutationResponse::Deleted(deleted) => reply(started, deleted),
-            // Only sync submits the mutations answered with this.
-            MutationResponse::Synced(_) => return Err(piqueld_store::StoreError::Corrupt.into()),
-        })
-    }
-
-    /// Restores an earlier deployment of the environment or preview `id`, as
-    /// `restore` names it, answering 202 with the restore's operation.
-    pub(super) async fn restore(
-        &self,
-        id: String,
-        restore: impl FnOnce(EnvironmentId) -> Restore,
-    ) -> Result<Response, ApiError> {
-        let request_id = self.idempotency_key()?;
-        let restore = restore(EnvironmentId::parse(id)?);
-        Ok(accepted(
-            self.state
-                .restore(self.author(), restore, request_id.as_deref())
-                .await?,
-        ))
-    }
-}
-
-/// Answers `data` with 202 Accepted when its mutation `started` durable
-/// work, else 200 OK (see `MutationResponse::started`).
-fn reply<T: serde::Serialize>(started: bool, data: T) -> Response {
-    if started { accepted(data) } else { ok(data) }
 }
 
 /// Renames an application.

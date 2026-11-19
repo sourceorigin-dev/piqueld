@@ -1,7 +1,8 @@
 //! Individual typed editing endpoints. Persistence applies changes inside its writer transaction.
 use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, applications::Mutator,
-    extract::IdempotencyKey, openapi::ApiErrors,
+    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams,
+    extract::{IdempotencyKey, Mutator},
+    openapi::ApiErrors,
 };
 use crate::api::Mutation;
 use axum::response::Response;

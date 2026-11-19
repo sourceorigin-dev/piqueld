@@ -1,8 +1,8 @@
 //! Environment lifecycle, status, and repair. Deployment, history, logs, and
 //! secrets of an environment live with their own handlers.
-use super::applications::{ForceQuery, GenerationQuery, Mutator};
-use super::extract::IdempotencyKey;
-use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, accepted, ok, openapi::ApiErrors};
+use super::applications::{ForceQuery, GenerationQuery};
+use super::extract::{IdempotencyKey, Mutator};
+use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, ok, openapi::ApiErrors};
 use crate::api::{Mutation, PromotionMutation, Restore, SourceChoice};
 use crate::auth::Identity;
 use axum::{
@@ -357,20 +357,14 @@ pub(super) async fn promote(
     ApiPath(id): ApiPath<String>,
     ApiJson(request): ApiJson<PromoteRequest>,
 ) -> Result<Response, ApiError> {
-    let request_id = mutator.idempotency_key()?;
-    Ok(accepted(
-        mutator
-            .state
-            .promote(
-                mutator.author(),
-                &EnvironmentId::parse(id)?,
-                selection(&request)?,
-                request.expected_generation,
-                query.force,
-                request_id.as_deref(),
-            )
-            .await?,
-    ))
+    mutator
+        .promote(
+            id,
+            || selection(&request),
+            request.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// Plans a promotion, or deploying an earlier release, without changing
