@@ -1,5 +1,5 @@
 //! Application editor state, shared by every page of one application, and
-//! the routes mounting it. Polling never replaces local edits.
+//! the components its routes mount. Polling never replaces local edits.
 mod deployments;
 mod environments;
 mod forms;
@@ -28,6 +28,7 @@ use super::{
 use crate::application::ApplicationViewExt;
 pub(super) use crate::application::Page;
 
+// Imported here so child modules keep importing them as `super::{Draft, …}`.
 use forms::{Draft, RowDialog, Rows};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
