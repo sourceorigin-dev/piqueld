@@ -203,11 +203,7 @@ impl Ingress {
     /// own action, which records a failure. Records nothing if it doesn't
     /// exist, and refuses one this installation doesn't own.
     async fn remove_edge_network(&self) -> Result<()> {
-        let Some(network) = self
-            .docker
-            .inspect(&format!("/networks/{}", self.name))
-            .await?
-        else {
+        let Some(network) = self.network(&self.name).await? else {
             return Ok(());
         };
         self.check_owner(&network["Labels"])?;
@@ -280,13 +276,17 @@ impl Ingress {
     /// networks, also attached to the gateway, are not.
     pub(super) async fn edge_subnets(&self) -> Result<Vec<String>> {
         let network = self
-            .docker
-            .inspect(&format!("/networks/{}", self.name))
+            .network(&self.name)
             .await?
             .context("gateway edge network is not ready")?;
         let subnets: Vec<String> = Self::subnets(&network).map(str::to_owned).collect();
         ensure!(!subnets.is_empty(), "gateway edge network has no subnet");
         Ok(subnets)
+    }
+
+    /// Inspects the Docker network `name`, if it exists.
+    async fn network(&self, name: &str) -> Result<Option<Value>> {
+        self.docker.inspect(&format!("/networks/{name}")).await
     }
 
     /// The subnets of an inspected Docker `network`.
@@ -321,11 +321,7 @@ impl Ingress {
     /// Ensures the gateway's own non-internal bridge network (named like the
     /// container), which provides public egress for ACME and published ports.
     async fn ensure_edge_network(&self) -> Result<()> {
-        if let Some(network) = self
-            .docker
-            .inspect(&format!("/networks/{}", self.name))
-            .await?
-        {
+        if let Some(network) = self.network(&self.name).await? {
             self.check_owner(&network["Labels"])?;
             ensure!(
                 network["Driver"] == "bridge" && network["Internal"] == false,
@@ -415,8 +411,7 @@ impl Ingress {
         name: &str,
     ) -> Result<()> {
         let network = self
-            .docker
-            .inspect(&format!("/networks/{name}"))
+            .network(name)
             .await?
             .context("application ingress network is not ready")?;
         ensure!(
@@ -1110,7 +1105,7 @@ impl Ingress {
             .attached_networks(container)
             .filter(|name| !networks.contains(*name))
         {
-            let Some(network) = self.docker.inspect(&format!("/networks/{name}")).await? else {
+            let Some(network) = self.network(name).await? else {
                 continue;
             };
             let mut subnets = Self::subnets(&network).peekable();

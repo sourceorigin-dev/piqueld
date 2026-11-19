@@ -576,11 +576,7 @@ impl Ingress {
         for name in expired {
             let result = async {
                 let journal = self
-                    .journal_as(
-                        DiagnosticCode::CertificateRenewalFailed,
-                        Phase::IngressCertificateDelete,
-                        &name.to_string(),
-                    )
+                    .certificate_action(Phase::IngressCertificateDelete, &name.to_string())
                     .await?;
                 let result = async {
                     journal.request().await?;
@@ -612,13 +608,7 @@ impl Ingress {
         cancellation: &CancellationToken,
     ) -> Result<Stored> {
         let name = &due.name;
-        let journal = self
-            .journal_as(
-                DiagnosticCode::CertificateRenewalFailed,
-                phase,
-                &name.to_string(),
-            )
-            .await?;
+        let journal = self.certificate_action(phase, &name.to_string()).await?;
         let result = async {
             let stored = self.order_certificate(&journal, due, cancellation).await?;
             piqueld_config::directories::prepare_data_dir(
@@ -632,6 +622,13 @@ impl Ingress {
         }
         .await;
         journal.finish(result).await
+    }
+
+    /// Opens an action of the certificate loop on `resource`, whose failure
+    /// is a failed renewal.
+    async fn certificate_action(&self, phase: Phase, resource: &str) -> Result<Journaled<'_>> {
+        self.journal_as(DiagnosticCode::CertificateRenewalFailed, phase, resource)
+            .await
     }
 
     /// Runs the ACME order, deleting its TXT record afterwards whether the
@@ -702,11 +699,7 @@ impl Ingress {
             };
             let result = async {
                 let journal = self
-                    .journal_as(
-                        DiagnosticCode::CertificateRenewalFailed,
-                        Phase::IngressCertificateChallengeDelete,
-                        &challenge.name,
-                    )
+                    .certificate_action(Phase::IngressCertificateChallengeDelete, &challenge.name)
                     .await?;
                 let result = self.delete_challenge(&journal, &challenge, owner).await;
                 journal.finish(result).await
