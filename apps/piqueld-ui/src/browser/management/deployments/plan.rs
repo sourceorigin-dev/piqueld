@@ -1,12 +1,12 @@
 //! What deploying or promoting would change, as planned before confirming.
+use super::variable_values;
 use crate::browser::management::editor;
 use crate::browser::management::releases::ReleaseCard;
 use crate::browser::management::timeline::PlannedSteps;
-use crate::browser::ui::{Modal, Tone, badge, key_values, notice};
+use crate::browser::ui::{Modal, Tone, badge, notice};
 use crate::changes::{ChangeDisplay, Mark};
 use leptos::prelude::*;
 use piqueld_client::{ManifestChange, PlanView, RuntimeCoverage, SecretProblem};
-use std::fmt::Display;
 
 /// A promotion plan: the release and where it comes from, the volumes it
 /// adds, every secret the environment lacks for it, and what deploying it
@@ -246,16 +246,4 @@ fn PlanDetails(plan: PlanView) -> impl IntoView {
                 }
             })}
     }
-}
-
-/// Definition list of the values of `${{ vars.<name> }}` references.
-pub(super) fn variable_values<'a, V: Display + 'a>(
-    variables: impl IntoIterator<Item = (&'a String, &'a V)>,
-) -> AnyView {
-    key_values(variables.into_iter().map(|(reference, value)| {
-        (
-            view! { <code>{reference.clone()}</code> },
-            value.to_string(),
-        )
-    }))
 }

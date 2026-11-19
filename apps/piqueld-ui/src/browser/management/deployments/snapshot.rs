@@ -1,5 +1,5 @@
 //! The configuration a deployment captured, as its Snapshot tab shows it.
-use super::plan::variable_values;
+use super::variable_values;
 use crate::browser::ui::{Tone, notice};
 use crate::overview::build_arguments;
 use leptos::prelude::*;
