@@ -5,24 +5,35 @@ use super::{
 };
 use piqueld_core::resource::LINK_LABEL;
 
+/// Label Swarm puts on every task container, naming its service's ID.
+pub(super) const SWARM_SERVICE_ID_LABEL: &str = "com.docker.swarm.service.id";
+/// Label Swarm puts on every task container, naming its service.
+pub(super) const SWARM_SERVICE_NAME_LABEL: &str = "com.docker.swarm.service.name";
+/// Label Swarm puts on every task container, naming its task's ID.
+pub(super) const SWARM_TASK_ID_LABEL: &str = "com.docker.swarm.task.id";
+
+/// Docker list filters, such as `{"label": ["<key>=<value>"]}`.
+pub(super) type Filters = HashMap<String, Vec<String>>;
+
 impl BollardDocker {
+    /// The filter selecting resources that carry every one of `labels`, each
+    /// a `key` or `key=value`.
+    pub(super) fn label_filter(labels: Vec<String>) -> Filters {
+        HashMap::from([("label".to_owned(), labels)])
+    }
+
     /// Builds the Docker label filter selecting one application's resources.
     ///
     /// ```text
     /// app-notes → {"label": ["<APPLICATION_LABEL>=app-notes"]}
     /// ```
-    pub(super) fn application_label_filter(
-        application: &EnvironmentId,
-    ) -> HashMap<String, Vec<String>> {
-        HashMap::from([(
-            "label".to_owned(),
-            vec![format!("{APPLICATION_LABEL}={application}")],
-        )])
+    pub(super) fn application_label_filter(application: &EnvironmentId) -> Filters {
+        Self::label_filter(vec![format!("{APPLICATION_LABEL}={application}")])
     }
 
     /// Selects the link networks importers own for their links to `exporter`.
-    pub(super) fn link_label_filter(exporter: &EnvironmentId) -> HashMap<String, Vec<String>> {
-        HashMap::from([("label".to_owned(), vec![format!("{LINK_LABEL}={exporter}")])])
+    pub(super) fn link_label_filter(exporter: &EnvironmentId) -> Filters {
+        Self::label_filter(vec![format!("{LINK_LABEL}={exporter}")])
     }
 
     /// Whether `labels` mark a network another environment owns for its link
@@ -34,9 +45,7 @@ impl BollardDocker {
 
     /// Builds the complementary name filter used to detect canonical resources
     /// whose ownership labels are missing or belong to another application.
-    pub(super) fn application_name_filter(
-        application: &EnvironmentId,
-    ) -> HashMap<String, Vec<String>> {
+    pub(super) fn application_name_filter(application: &EnvironmentId) -> Filters {
         HashMap::from([(
             "name".to_owned(),
             vec![docker_resource_readable_prefix(application)],

@@ -168,12 +168,11 @@ impl BollardDocker {
             .client()?
             .list_services(Some(
                 ListServicesOptionsBuilder::default()
-                    .filters(&HashMap::from([(
-                        "label",
+                    .filters(&Self::label_filter(
                         Self::owner_labels(instance, application)
                             .map(|(label, value)| format!("{label}={value}"))
                             .to_vec(),
-                    )]))
+                    ))
                     .build(),
             ))
             .await

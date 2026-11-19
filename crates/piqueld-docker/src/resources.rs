@@ -5,7 +5,8 @@ use super::{
     ListServicesOptionsBuilder, ListTasksOptionsBuilder, ListVolumesOptionsBuilder,
     NetworkCreateRequest, OBSERVATION_INSPECT_CONCURRENCY, ObservedApplication, ObservedNetwork,
     ObservedService, ObservedVolume, ResourceKind, StreamExt, SwarmInitRequest, SwarmState,
-    TryStreamExt, VolumeCreateOptions, async_trait, resolve_image_digest, stream,
+    TryStreamExt, VolumeCreateOptions, async_trait, identity::Filters, resolve_image_digest,
+    stream,
 };
 
 /// Inspections attempted before an incomplete network response is an error.
@@ -23,9 +24,6 @@ struct NetworkSnapshot {
     /// Address range of the application's ingress network, when it exists.
     ingress_proxies: Option<String>,
 }
-
-/// Docker list filters, such as `{"label": ["<key>=<value>"]}`.
-type Filters = HashMap<String, Vec<String>>;
 
 impl BollardDocker {
     /// Lists resources with `list` under each of `listings`' filters and
