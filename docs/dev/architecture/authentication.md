@@ -105,7 +105,9 @@ After setup it answers 409 `setup_completed`.
 
 A restart before registration preserves the secret of a still-valid link and
 rewrites the link for the current `auth.public_url`. If the file is missing at
-startup, a new secret replaces the old one. The first registration creates
+startup, a new secret replaces the old one. A file that exists but can't be
+read stops startup instead, so the link it holds keeps working. The store
+accepts a new secret only once its link is written. The first registration creates
 the account with `admin` on every application, its passkey, its browser
 session, and the permanent closure of setup in one transaction; the file is
 removed on the next startup. Setup never reopens, even if the user table is

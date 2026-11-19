@@ -98,3 +98,6 @@ Next, [deploy your first application](first-app.md).
 - **You can't run `piquelctl` on the host.** The daemon also writes the setup
   link to the file `setup-link` in its data directory, `/var/lib/piqueld` by
   default. Only root and the daemon's user can read it.
+- **piqueld won't start, and its error says `read setup link`.** The daemon
+  can't read the existing `setup-link` file, so it stops rather than replace
+  the link. Check that the file is a regular file the daemon's user can read.
