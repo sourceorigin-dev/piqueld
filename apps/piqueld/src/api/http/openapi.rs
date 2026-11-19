@@ -82,8 +82,8 @@ struct ApiErrorResponse(ErrorBody);
 /// responses((status = 200, body = Envelope<View>), ApiErrors<400, 404, 500, 503>)
 /// ```
 ///
-/// Statuses are ascending 4xx and 5xx codes, checked at compile time; unused
-/// trailing parameters stay 0.
+/// Statuses are ascending 4xx and 5xx codes, checked when the crate is built
+/// (not by `cargo check` or Clippy); unused trailing parameters stay 0.
 pub(super) struct ApiErrors<
     const A: u16,
     const B: u16 = 0,
@@ -108,45 +108,30 @@ impl<
     const H: u16,
     const I: u16,
     const J: u16,
-> ApiErrors<A, B, C, D, E, F, G, H, I, J>
-{
-    /// The documented statuses, followed by zeros.
-    const STATUSES: [u16; 10] = {
-        let statuses = [A, B, C, D, E, F, G, H, I, J];
-        let mut index = 0;
-        while index < statuses.len() {
-            let status = statuses[index];
-            let previous = if index == 0 { 399 } else { statuses[index - 1] };
-            assert!(
-                if status == 0 {
-                    index > 0
-                } else {
-                    previous != 0 && previous < status && status < 600
-                },
-                "ApiErrors statuses must be ascending 4xx and 5xx codes"
-            );
-            index += 1;
-        }
-        statuses
-    };
-}
-
-impl<
-    const A: u16,
-    const B: u16,
-    const C: u16,
-    const D: u16,
-    const E: u16,
-    const F: u16,
-    const G: u16,
-    const H: u16,
-    const I: u16,
-    const J: u16,
 > utoipa::IntoResponses for ApiErrors<A, B, C, D, E, F, G, H, I, J>
 {
     fn responses() -> BTreeMap<String, RefOr<Response>> {
+        // The documented statuses, followed by zeros.
+        let statuses = const {
+            let statuses = [A, B, C, D, E, F, G, H, I, J];
+            let mut index = 0;
+            while index < statuses.len() {
+                let status = statuses[index];
+                let previous = if index == 0 { 399 } else { statuses[index - 1] };
+                assert!(
+                    if status == 0 {
+                        index > 0
+                    } else {
+                        previous != 0 && previous < status && status < 600
+                    },
+                    "ApiErrors statuses must be ascending 4xx and 5xx codes"
+                );
+                index += 1;
+            }
+            statuses
+        };
         let (_, response) = ApiErrorResponse::response();
-        Self::STATUSES
+        statuses
             .into_iter()
             .take_while(|status| *status != 0)
             .map(|status| (status.to_string(), response.clone()))
