@@ -1213,6 +1213,40 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
         "removing breaks the next record"
     );
 }
+/// A record appended inside a write transaction commits or rolls back with
+/// it: a rolled-back append leaves neither a row nor a gap in the IDs, and
+/// appends interleaved with background records and pruning keep the chain
+/// verifiable.
+#[tokio::test]
+async fn audit_appends_commit_and_roll_back_with_their_transaction() {
+    let (_temp, mut store) = Store::temporary().await;
+    store.audit_days = 1;
+    let now = now_ms();
+    let append = async |peer: &str, at: i64, commit: bool| {
+        let (_writer, mut tx) = store.begin_immediate().await.unwrap();
+        Store::append_audit_on(&mut tx, &refused(peer), at)
+            .await
+            .unwrap();
+        if commit {
+            tx.commit().await.unwrap();
+        }
+    };
+    append("a", 0, false).await;
+    store.record_audit_at(&refused("b"), 0).await.unwrap();
+    append("c", now, true).await;
+    append("d", now, false).await;
+    store.record_audit_at(&refused("e"), now).await.unwrap();
+    let rows = "SELECT id,peer FROM audit_events ORDER BY id";
+    let kept = sqlx::query_as::<_, (i64, String)>(rows)
+        .fetch_all(&store.pool)
+        .await
+        .unwrap();
+    assert_eq!(kept, [(1, "b".into()), (2, "c".into()), (3, "e".into())]);
+    store.prune_audit().await.unwrap();
+    let verified = store.verify_audit().await.unwrap();
+    assert_eq!((verified.checked, verified.broken_at), (2, None));
+    assert_eq!(verified.anchor.unwrap().id, 1);
+}
 /// Successful deployments notify only destinations receiving them, naming
 /// the application and environment as of then.
 #[tokio::test]

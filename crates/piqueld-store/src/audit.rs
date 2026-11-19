@@ -208,7 +208,23 @@ impl Store {
         created_at_ms: i64,
     ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        let head = Self::audit_head_on(&mut tx).await?;
+        Self::append_audit_on(&mut tx, event, created_at_ms).await?;
+        tx.commit().await.map_err(StoreError::database)
+    }
+
+    /// Appends `event` to the chain inside the caller's write transaction
+    /// (see [`Store::record_audit`]), so the record commits or rolls back
+    /// with the change it describes. It neither begins nor commits: the
+    /// caller holds the writer, which orders appends from every
+    /// transaction into one chain.
+    /// # Errors
+    /// Returns storage errors, which roll back the caller's change with it.
+    pub(crate) async fn append_audit_on(
+        db: &mut SqliteConnection,
+        event: &NewAuditEvent,
+        created_at_ms: i64,
+    ) -> Result<(), StoreError> {
+        let head = Self::audit_head_on(&mut *db).await?;
         // Only a tampered trail reaches the highest possible ID.
         let id = head.id.checked_add(1).ok_or(StoreError::Corrupt)?;
         let mut row = event.row(id, created_at_ms);
@@ -220,7 +236,7 @@ impl Store {
                 r#"SELECT application_id AS "application_id!" FROM environments WHERE id=?1"#,
                 environment
             )
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut *db)
             .await
             .map_err(StoreError::database)?;
         }
@@ -246,7 +262,7 @@ impl Store {
             row.tailnet,
             row.operator_uid,
         )
-        .execute(&mut *tx)
+        .execute(&mut *db)
         .await
         .map_err(StoreError::database)?;
         if event.outcome == AuditOutcome::Denied {
@@ -257,9 +273,9 @@ impl Store {
                 ..Attribution::default()
             };
             let (peer, username) = (row.peer.as_deref(), row.username.as_deref());
-            Self::check_denial_burst_on(&mut tx, peer, actor, username, row.created_at_ms).await?;
+            Self::check_denial_burst_on(db, peer, actor, username, row.created_at_ms).await?;
         }
-        tx.commit().await.map_err(StoreError::database)
+        Ok(())
     }
 
     /// The record a new one extends: the newest record, else the anchor,
