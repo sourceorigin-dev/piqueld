@@ -245,6 +245,9 @@ impl OperationError {
             DockerError::NetworkRemoving(_) => {
                 Self::DockerRequestFailed("delete a network Swarm is still removing")
             }
+            DockerError::SecretInUse(_) => {
+                Self::DockerRequestFailed("delete a secret a service still mounts")
+            }
             DockerError::BuilderUnavailable(_) => Self::BuilderUnavailable,
             DockerError::Request(operation) | DockerError::RequestSource { operation, .. } => {
                 Self::DockerRequestFailed(operation)

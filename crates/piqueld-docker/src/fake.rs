@@ -498,6 +498,31 @@ impl DockerApi for FakeDocker {
         Ok(())
     }
 
+    /// Skips the secrets an observed service mounts, as Swarm refuses to
+    /// remove those, and removes the rest like `remove_secrets`.
+    async fn remove_unused_secrets(
+        &self,
+        names: &[String],
+        ownership: &BTreeMap<String, String>,
+    ) -> Result<Vec<String>, DockerError> {
+        let mounted = self
+            .observed
+            .lock()
+            .await
+            .services
+            .iter()
+            .flat_map(|service| &service.secrets)
+            .map(|secret| secret.secret_name.clone())
+            .collect::<BTreeSet<_>>();
+        let unused = names
+            .iter()
+            .filter(|name| !mounted.contains(*name))
+            .cloned()
+            .collect::<Vec<_>>();
+        self.remove_secrets(&unused, ownership).await?;
+        Ok(unused)
+    }
+
     async fn application_logs(
         &self,
         _instance: &InstanceId,

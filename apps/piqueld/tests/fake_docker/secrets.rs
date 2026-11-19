@@ -273,3 +273,81 @@ async fn history_passes_remove_versions_no_deployment_pins_from_docker_then_the_
     drop(secrets);
     assert!(copy_recorded(&harness, &new).await);
 }
+
+/// The `remove_secrets` actions of `environment` that ended as `kind`.
+async fn removals(harness: &ControllerHarness, environment: &EnvironmentId, kind: &str) -> usize {
+    harness
+        .store
+        .events(Some(environment), None, 100)
+        .await
+        .unwrap()
+        .items
+        .iter()
+        .filter(|event| {
+            event.phase == Some(piqueld_core::Phase::RemoveSecrets) && event.kind == kind
+        })
+        .count()
+}
+
+/// End to end, with the daemon's own history pruning: a rotated secret's old
+/// version goes once the deployments pinning it are past both history
+/// limits, but not while a service still mounts it, which fails nothing.
+#[tokio::test]
+async fn pruned_deployments_release_old_versions_unless_a_service_still_mounts_them() {
+    let mut harness = ControllerHarness::new().await;
+    let mut config = piqueld_config::DaemonConfig::default();
+    // Only the latest deployment is kept by count, and as the newest success.
+    config.retention.deployments_per_environment = 1;
+    config.images.keep_deployments = 1;
+    harness.retain(&config).await;
+    let first = harness.apply(manifest(), Some(0)).await;
+    harness.finish(&first).await;
+    let environment = first.environment_id.clone();
+    harness.store_token(&environment, 0, b"version-one").await;
+    let pinning = harness.apply(with_token(manifest()), Some(1)).await;
+    harness.finish(&pinning).await;
+    let old = harness.target(&environment).await.secret_names["token"].clone();
+    harness.store_token(&environment, 1, b"version-two").await;
+    let next = harness
+        .applications()
+        .deploy(&environment, None)
+        .await
+        .unwrap();
+    harness.finish(&next).await;
+    let new = harness.target(&environment).await.secret_names["token"].clone();
+    // Every deployment but the latest finished before the 90-day window.
+    sqlx::query("UPDATE operations SET finished_at_ms=0 WHERE id!=?1")
+        .bind(&next.id)
+        .execute(&mut harness.database().await)
+        .await
+        .unwrap();
+
+    // A service left on the old version keeps it, and its record, without
+    // failing the removal.
+    harness.docker.observed.lock().await.services[0]
+        .secrets
+        .push(piqueld_core::resource::SecretFile {
+            secret_name: old.clone(),
+            target: "/run/secrets/old".into(),
+        });
+    run_until(&harness, async || {
+        removals(&harness, &environment, "action_succeeded").await > 0
+    })
+    .await;
+    // The deployment pinning it was pruned.
+    assert!(matches!(
+        harness.store.operation(&pinning.id).await,
+        Err(piqueld_store::StoreError::NotFound)
+    ));
+    assert!(copy_recorded(&harness, &old).await);
+    assert!(harness.docker.secrets.lock().await.contains_key(&old));
+    assert_eq!(removals(&harness, &environment, "action_failed").await, 0);
+
+    // Once nothing mounts it, the next pass removes it.
+    for service in &mut harness.docker.observed.lock().await.services {
+        service.secrets.retain(|secret| secret.secret_name != old);
+    }
+    run_until(&harness, async || !copy_recorded(&harness, &old).await).await;
+    let secrets = harness.docker.secrets.lock().await;
+    assert!(!secrets.contains_key(&old) && secrets.contains_key(&new));
+}

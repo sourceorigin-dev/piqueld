@@ -138,6 +138,18 @@ impl ControllerHarness {
         }
     }
 
+    /// Reopens the store with `config`'s history retention, as the daemon
+    /// opens it.
+    async fn retain(&mut self, config: &piqueld_config::DaemonConfig) {
+        self.store = Arc::new(
+            Store::open_unsynced(&self.database_path)
+                .await
+                .unwrap()
+                .with_observability(config),
+        );
+        self.controller = self.new_controller();
+    }
+
     /// A controller over this harness's Docker, store and sources.
     fn new_controller(&self) -> Controller<FakeDocker> {
         Controller::new(

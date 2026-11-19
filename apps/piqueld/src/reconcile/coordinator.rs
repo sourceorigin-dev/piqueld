@@ -783,12 +783,14 @@ impl<D: DockerApi> Controller<D> {
 
     /// Removes the Docker secrets of the secret versions nothing can mount
     /// any more (see `Store::unused_secret_versions`), one journaled
-    /// `remove_secrets` daemon action per environment, then their records
-    /// once Docker confirmed. A failed removal keeps the records, so the next
-    /// pass retries it: one refused removal, such as a secret a service still
-    /// mounts, fails its environment's whole batch until a later rollout
-    /// releases it. It runs in the discovery pass, so a slow engine delays
-    /// discovery by up to the removal's request timeout.
+    /// `remove_secrets` daemon action per environment, then the records of
+    /// those Docker removed. A secret a service still mounts, which Swarm
+    /// refuses to remove, is skipped and kept, with its record, until a
+    /// later pass finds it unmounted; any other failure fails that
+    /// environment's action and keeps all its records for the next pass. It
+    /// runs in the discovery pass, so a slow engine delays discovery by up to
+    /// the removal's request timeout for each environment with unused
+    /// versions.
     async fn collect_secret_versions(&self) -> Result<(), StoreError> {
         for (environment, names) in self.store.unused_secret_versions().await? {
             let journal = self
@@ -803,7 +805,10 @@ impl<D: DockerApi> Controller<D> {
             let ownership = self.ownership_labels(&environment);
             let removed = self
                 .request_once(&journal, async {
-                    Ok(self.docker.remove_secrets(&names, &ownership).await?)
+                    Ok(self
+                        .docker
+                        .remove_unused_secrets(&names, &ownership)
+                        .await?)
                 })
                 .await;
             self.store
@@ -812,9 +817,12 @@ impl<D: DockerApi> Controller<D> {
                     removed.as_ref().err().map(OperationError::diagnostic),
                 )
                 .await?;
-            if removed.is_ok() {
+            if let Ok(removed) = removed {
+                for name in names.iter().filter(|name| !removed.contains(name)) {
+                    tracing::debug!(%environment, secret = %name, "unused secret version still mounted; kept");
+                }
                 self.store
-                    .forget_secret_versions(&environment, &names)
+                    .forget_secret_versions(&environment, &removed)
                     .await?;
             }
         }

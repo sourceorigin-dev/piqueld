@@ -133,6 +133,13 @@ impl<D: DockerApi> DockerApi for LimitedDocker<D> {
     ) -> Result<(), DockerError> {
         self.inner.remove_secrets(names, ownership).await
     }
+    async fn remove_unused_secrets(
+        &self,
+        names: &[String],
+        ownership: &BTreeMap<String, String>,
+    ) -> Result<Vec<String>, DockerError> {
+        self.inner.remove_unused_secrets(names, ownership).await
+    }
     async fn ensure_swarm(&self, auto: bool) -> Result<SwarmState, DockerError> {
         self.inner.ensure_swarm(auto).await
     }

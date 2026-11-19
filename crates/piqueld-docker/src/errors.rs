@@ -47,6 +47,10 @@ pub enum DockerError {
     /// which Swarm releases within seconds.
     #[error("Docker network is still in use by a task")]
     NetworkInUse(#[source] bollard::errors::Error),
+    /// Swarm refused to delete a secret because a service still mounts it,
+    /// now or in the previous spec a rollback restores.
+    #[error("Docker secret is still in use by a service")]
+    SecretInUse(#[source] bollard::errors::Error),
     /// Swarm is still removing a deleted network in the background: it still
     /// inspects it, but fails deleting it again with a 500 "network … not
     /// found" until it is gone, which can take more than ten seconds.
@@ -101,6 +105,7 @@ impl DockerError {
             Self::BuilderUnavailable(_) => DiagnosticCode::BuilderUnavailable,
             Self::NetworkInUse(_)
             | Self::NetworkRemoving(_)
+            | Self::SecretInUse(_)
             | Self::Request(_)
             | Self::RequestSource { .. } => DiagnosticCode::DockerRequestFailed,
         }
@@ -158,6 +163,19 @@ impl DockerError {
                 Self::NetworkRemoving(source)
             }
             _ => Self::request("delete network", source),
+        }
+    }
+
+    /// Classifies a failed deletion of a secret: Swarm refuses to delete one a
+    /// service still mounts with a 400 "secret … is in use by the following
+    /// service: …".
+    pub(super) fn delete_secret(source: bollard::errors::Error) -> Self {
+        match &source {
+            bollard::errors::Error::DockerResponseServerError {
+                status_code: 400,
+                message,
+            } if message.contains("is in use by") => Self::SecretInUse(source),
+            _ => Self::request("delete secret", source),
         }
     }
 
@@ -250,5 +268,30 @@ mod tests {
                 "{other:?}"
             );
         }
+    }
+
+    /// Only Swarm's refusal to delete a secret a service mounts is `SecretInUse`.
+    #[test]
+    fn secret_deletion_refused_for_a_mounting_service_is_classified() {
+        let secret = |status_code, message: &str| {
+            DockerError::delete_secret(bollard::errors::Error::DockerResponseServerError {
+                status_code,
+                message: message.into(),
+            })
+        };
+        assert!(matches!(
+            secret(
+                400,
+                "rpc error: code = InvalidArgument desc = secret 's1' is in use by the following service: web"
+            ),
+            DockerError::SecretInUse(_)
+        ));
+        assert!(matches!(
+            secret(500, "secret 's1' is in use by the following service: web"),
+            DockerError::RequestSource {
+                operation: "delete secret",
+                ..
+            }
+        ));
     }
 }
