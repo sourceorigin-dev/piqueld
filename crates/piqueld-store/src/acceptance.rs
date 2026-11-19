@@ -43,6 +43,17 @@ pub(super) struct Accepted {
     pub(super) wake: bool,
     /// Environments whose hostname reservations may have changed.
     pub(super) environments: Vec<EnvironmentId>,
+    /// Whether it changed anything: a request that finds what it asks for
+    /// already done, such as an existing preview or a pending deletion,
+    /// commits no change and so records none (see `Store::accept`).
+    pub(super) changed: bool,
+}
+
+impl Accepted {
+    /// This outcome, which changed nothing unless `changed`.
+    pub(super) fn changing(self, changed: bool) -> Self {
+        Self { changed, ..self }
+    }
 }
 
 impl Store {
@@ -64,9 +75,9 @@ impl Store {
     ///    credential its matching grants there.
     /// 5. Attributes the operations and events it wrote to the caller.
     /// 6. Stores the replay receipt for 24 hours, and records the change in
-    ///    the audit trail when it comes from an API request (see
-    ///    [`crate::AuditRequest`]), then commits through hostname
-    ///    reservation checks of every affected environment.
+    ///    the audit trail when it comes from an API request and changed
+    ///    anything (see [`crate::AuditRequest`]), then commits through
+    ///    hostname reservation checks of every affected environment.
     ///
     /// The returned flag asks the controller to wake up; replays never wake it.
     ///
@@ -151,20 +162,20 @@ impl Store {
                 .execute(&mut *tx).await.map_err(StoreError::database)?;
         }
         let response = &accepted.response;
-        author
-            .record_on(
-                &mut tx,
-                response.status(),
-                &response.describe(),
-                response.target(),
-            )
-            .await?;
+        if accepted.changed {
+            let (status, detail) = (response.status(), response.describe());
+            author
+                .record_on(&mut tx, status, &detail, response.target())
+                .await?;
+        }
         Self::commit_environment_changes(
             tx,
             accepted.environments.iter().map(EnvironmentId::as_str),
         )
         .await?;
-        author.committed();
+        if accepted.changed {
+            author.committed();
+        }
         Ok((accepted.response, accepted.wake))
     }
 
@@ -435,6 +446,7 @@ impl Store {
                 let mut saved = Self::save_configuration_on(tx, &application, expected).await?;
                 Self::deploy_saved(tx, application.id(), &mut saved, deploy).await?;
                 Ok(Accepted {
+                    changed: true,
                     environments: Self::environment_ids_on(tx, application.id()).await?,
                     response: MutationResponse::Saved(saved),
                     wake: deploy,
@@ -449,6 +461,7 @@ impl Store {
                 let current = Self::checked_application_on(tx, &id, expected).await?;
                 let renamed = Self::rename_on(tx, current, name, now).await?;
                 Ok(Accepted {
+                    changed: true,
                     environments: Self::environment_ids_on(tx, &id).await?,
                     response: MutationResponse::Rename(renamed),
                     wake: false,
@@ -499,11 +512,12 @@ impl Store {
             Mutation::Sync(listed) => Self::sync_on(tx, listed, now).await,
             Mutation::Delete { id } => {
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
-                let operation = match Self::pending_deletion_on(tx, &current.environment).await? {
-                    Some(operation) => operation,
-                    None => Self::delete_environment_on(tx, &current).await?,
-                };
-                Ok(Self::operation_accepted(&operation))
+                let (operation, requested) =
+                    match Self::pending_deletion_on(tx, &current.environment).await? {
+                        Some(operation) => (operation, false),
+                        None => (Self::delete_environment_on(tx, &current).await?, true),
+                    };
+                Ok(Self::operation_accepted(&operation).changing(requested))
             }
             Mutation::Reconcile { id } => Self::start_on(tx, &id, expected, now).await,
             Mutation::Stop { id } => Self::stop_on(tx, &id, expected, now).await,
@@ -559,6 +573,7 @@ impl Store {
                 let operation =
                     Box::pin(self.accept_promotion_on(tx, &current, &promotion, instance)).await?;
                 Ok(Accepted {
+                    changed: true,
                     response: MutationResponse::Promotion(piqueld_core::api::AcceptedPromotion {
                         operation: AcceptedOperation::from(&operation),
                         release_id: promotion.release,
@@ -588,13 +603,13 @@ impl Store {
                 let (preview, created) = self
                     .find_preview_on(tx, &application, &branch, slot.as_ref(), now)
                     .await?;
-                let operation = match Self::latest_operation_on(tx, preview.id()).await? {
-                    Some(operation) if !created => operation,
-                    _ => Self::deploy_preview_on(tx, &preview).await?,
-                };
-                Ok(Self::preview_accepted(
-                    preview, &operation, created, created,
-                ))
+                let (operation, deployed) =
+                    match Self::latest_operation_on(tx, preview.id()).await? {
+                        Some(operation) if !created => (operation, false),
+                        _ => (Self::deploy_preview_on(tx, &preview).await?, true),
+                    };
+                let accepted = Self::preview_accepted(preview, &operation, created, created);
+                Ok(accepted.changing(created || deployed))
             }
             PreviewMutation::Local {
                 application,
@@ -668,6 +683,7 @@ impl Store {
     ) -> Accepted {
         let id = preview.id().clone();
         Accepted {
+            changed: true,
             wake: deployed,
             response: MutationResponse::Preview(Box::new(CreatedPreview {
                 preview: preview.environment,
@@ -683,19 +699,19 @@ impl Store {
         tx: &mut Transaction<'_, Sqlite>,
         preview: &super::StoredEnvironment,
     ) -> Result<Accepted, StoreError> {
-        let operation = Self::deletion_on(tx, &preview.environment).await?;
-        Ok(Self::operation_accepted(&operation))
+        let (operation, requested) = Self::deletion_on(tx, &preview.environment).await?;
+        Ok(Self::operation_accepted(&operation).changing(requested))
     }
 
     /// Requests `environment`'s deletion (see `request_delete_on`), or
-    /// returns the one already pending.
+    /// returns the one already pending, and whether it requested one.
     async fn deletion_on(
         tx: &mut Transaction<'_, Sqlite>,
         environment: &EnvironmentView,
-    ) -> Result<Operation, StoreError> {
+    ) -> Result<(Operation, bool), StoreError> {
         match Self::pending_deletion_on(tx, environment).await? {
-            Some(operation) => Ok(operation),
-            None => Self::request_delete_on(tx, &environment.id).await,
+            Some(operation) => Ok((operation, false)),
+            None => Ok((Self::request_delete_on(tx, &environment.id).await?, true)),
         }
     }
 
@@ -779,6 +795,7 @@ impl Store {
     /// Responds with an accepted environment operation.
     pub(super) fn operation_accepted(operation: &Operation) -> Accepted {
         Accepted {
+            changed: true,
             response: MutationResponse::Operation(AcceptedOperation::from(operation)),
             wake: true,
             environments: vec![operation.environment_id.clone()],
@@ -794,6 +811,7 @@ impl Store {
             .await?
             .ok_or(StoreError::NotFound)?;
         Ok(Accepted {
+            changed: true,
             response: MutationResponse::Environment(environment.environment),
             wake: false,
             environments: vec![id],
@@ -884,6 +902,7 @@ impl Store {
         };
         Self::deploy_saved(tx, &id, &mut saved, deploy).await?;
         Ok(Accepted {
+            changed: true,
             environments: Self::environment_ids_on(tx, &id).await?,
             response: MutationResponse::Saved(saved),
             wake: deploy,
@@ -1073,13 +1092,17 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
         }
+        // Without environments left, it is removed now.
+        let mut changed = !current.delete_intent || environments.is_empty();
         let mut operations = Vec::with_capacity(environments.len());
         for environment in &environments {
-            let operation = Self::deletion_on(tx, environment).await?;
+            let (operation, requested) = Self::deletion_on(tx, environment).await?;
+            changed |= requested;
             operations.push(AcceptedOperation::from(&operation));
         }
         Self::finish_application_delete_on(tx, &id).await?;
         Ok(Accepted {
+            changed,
             wake: !operations.is_empty(),
             response: MutationResponse::Deleted(DeletedApplication {
                 application_id: id,
@@ -1444,15 +1467,7 @@ mod tests {
     #[tokio::test]
     async fn requested_changes_commit_with_their_audit_record() {
         let (_directory, store) = Store::temporary().await;
-        let request = || crate::AuditRequest {
-            route: "POST /api/v1/applications".into(),
-            origin: crate::AuditOrigin {
-                user_id: Some("alice".into()),
-                ..crate::AuditOrigin::default()
-            },
-            status: None,
-            recorded: crate::Recorded::default(),
-        };
+        let request = || crate::testing::audit_request("POST /api/v1/applications");
         let accept = async |request: &crate::AuditRequest| {
             let author = Author {
                 actor: Actor::Daemon,
@@ -1476,17 +1491,12 @@ mod tests {
             counts
         };
         let before = counts().await;
-        let refuse = "CREATE TRIGGER refuse BEFORE INSERT ON audit_events \
-            BEGIN SELECT RAISE(ABORT,'refused'); END";
-        sqlx::query(refuse).execute(&store.pool).await.unwrap();
+        store.refuse_audit(true).await;
         let failed = request();
         assert!(accept(&failed).await.is_err());
         assert!(!failed.recorded.get());
         assert_eq!(counts().await, before);
-        sqlx::query("DROP TRIGGER refuse")
-            .execute(&store.pool)
-            .await
-            .unwrap();
+        store.refuse_audit(false).await;
         let committed = request();
         let Ok((MutationResponse::Saved(saved), _)) = accept(&committed).await else {
             panic!("saved response expected")

@@ -30,7 +30,39 @@ pub(super) fn prebuilt(id: &str) -> NormalizedApplication {
     .normalize(ApplicationId::parse(id).unwrap())
 }
 
+/// An API request by `alice` on `route`, whose changes record themselves.
+pub(super) fn audit_request(route: &str) -> crate::AuditRequest {
+    crate::AuditRequest {
+        route: route.into(),
+        origin: crate::AuditOrigin {
+            user_id: Some("alice".into()),
+            ..crate::AuditOrigin::default()
+        },
+        status: None,
+        recorded: crate::Recorded::default(),
+    }
+}
+
 impl Store {
+    /// Makes every audit append fail while `refused`, as a full disk would.
+    pub(super) async fn refuse_audit(&self, refused: bool) {
+        let change = if refused {
+            "CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events \
+            BEGIN SELECT RAISE(ABORT,'refused'); END"
+        } else {
+            "DROP TRIGGER refuse_audit"
+        };
+        sqlx::query(change).execute(&self.pool).await.unwrap();
+    }
+
+    /// The audit trail's actions, oldest first.
+    pub(super) async fn audit_actions(&self) -> Vec<String> {
+        sqlx::query_scalar("SELECT action FROM audit_events ORDER BY id")
+            .fetch_all(&self.pool)
+            .await
+            .unwrap()
+    }
+
     /// The ID of the `production` environment of the application `saved`.
     pub(crate) async fn saved_production(&self, saved: &SavedApplication) -> EnvironmentId {
         let application = ApplicationId::parse(&saved.application_id).unwrap();
