@@ -10,7 +10,6 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-js-sys.workspace = true
 piqueld-client.workspace = true
 serde_json.workspace = true
 shlex.workspace = true
@@ -21,6 +20,7 @@ vt100.workspace = true
 futures-channel.workspace = true
 futures-util.workspace = true
 gloo-timers = { workspace = true, features = ["futures"] }
+js-sys.workspace = true
 leptos = { workspace = true, features = ["csr"] }
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
