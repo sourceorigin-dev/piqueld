@@ -231,11 +231,9 @@ impl Store {
         Self::secret_event_on(&mut tx, scope, ("secret_saved", &message, name), by, now).await?;
         let secret = Self::stored_secret_on(&mut tx, application, name).await?;
         let target = (Some(application.as_str()), None);
-        let appended = author
-            .record_on(&mut tx, 200, Some(&change), target)
+        author
+            .commit_recorded(tx, 200, Some(&change), target)
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
         Ok(secret)
     }
 
@@ -275,11 +273,9 @@ impl Store {
         let secret = Self::stored_secret_on(&mut tx, application, name).await?;
         let change = format!("secret {name:?} access {description}");
         let target = (Some(application.as_str()), None);
-        let appended = author
-            .record_on(&mut tx, 200, Some(&change), target)
+        author
+            .commit_recorded(tx, 200, Some(&change), target)
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
         Ok(secret)
     }
 
