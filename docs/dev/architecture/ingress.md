@@ -589,7 +589,7 @@ within ten seconds.
 
 Core readiness (`ready`) describes the database, Docker and the Swarm.
 Ingress has its own fields under `ingress` in `GET /api/v1/system/readiness`
-(`IngressStatus` in `crates/piqueld-core/src/api.rs`):
+(`IngressStatus` in `crates/piqueld-core/src/api/ingress.rs`):
 
 - `healthy`: the gateway and its public listener, including the tunnel's
   connection in tunnel mode. An application network failure clears it.
