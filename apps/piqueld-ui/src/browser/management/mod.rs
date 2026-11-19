@@ -725,6 +725,10 @@ impl EditorContext {
 const NOTICE_SHOWN: std::time::Duration = std::time::Duration::from_secs(8);
 
 /// Returns the enclosing `EditorContext`.
+#[expect(
+    clippy::expect_used,
+    reason = "`ApplicationEditor` provides the context before rendering its children."
+)]
 fn editor() -> EditorContext {
     use_context().expect("ApplicationEditor provides EditorContext before rendering its children")
 }

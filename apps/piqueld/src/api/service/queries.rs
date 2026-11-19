@@ -277,6 +277,10 @@ impl ApplicationService {
     /// Returns precondition, rendering, secret access, storage, or runtime errors.
     /// # Panics
     /// Panics if the built-in preview application ID is invalid.
+    #[expect(
+        clippy::expect_used,
+        reason = "The placeholder IDs are valid constants."
+    )]
     pub async fn plan(
         &self,
         grants: &Grants,

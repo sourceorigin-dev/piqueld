@@ -242,6 +242,7 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     /// The repository being read.
+    #[expect(clippy::expect_used, reason = "Only `Drop` takes the repository.")]
     fn repository(&self) -> &Repository {
         self.repository
             .as_deref()

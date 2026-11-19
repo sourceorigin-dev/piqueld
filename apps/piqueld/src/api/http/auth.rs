@@ -392,6 +392,10 @@ fn signed_in(
 
 /// Adds a `Set-Cookie` header setting `auth`'s `cookie` to `value` for `age`
 /// seconds.
+#[expect(
+    clippy::expect_used,
+    reason = "Cookie names and attributes are ASCII and values are base64url tokens, so the header always parses."
+)]
 fn set_cookie(response: &mut Response, auth: &Auth, cookie: AuthCookie, value: &str, age: i64) {
     response.headers_mut().append(
         header::SET_COOKIE,

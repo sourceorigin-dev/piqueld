@@ -1,5 +1,11 @@
 //! Black-box command, transport, pagination, safety, and output tests.
 
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 mod support;
 
 use parking_lot::Mutex;

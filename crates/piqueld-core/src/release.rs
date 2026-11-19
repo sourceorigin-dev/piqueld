@@ -144,6 +144,10 @@ impl Release {
     ///
     /// Panics only if the release cannot be serialized, a bug in its types.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "Plain structs with string-keyed maps always serialize to JSON."
+    )]
     pub fn content_hash(&self) -> Sha256Digest {
         #[derive(Serialize)]
         struct Content<'a> {

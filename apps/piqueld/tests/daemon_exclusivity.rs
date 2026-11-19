@@ -1,6 +1,11 @@
 //! Startup must exclude competing processes before touching durable state,
 //! and needs nothing else, not even Docker, to serve.
 
+#![expect(
+    clippy::expect_used,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 #[path = "support/daemon.rs"]
 mod daemon;
 

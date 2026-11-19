@@ -188,6 +188,10 @@ impl RouteAccess {
     /// Panics when an operation was registered without `public!`,
     /// `authenticated!`, or `granted!`, or names an unknown permission, so
     /// an undeclared route can never be served.
+    #[expect(
+        clippy::panic,
+        reason = "A route without a declared requirement must never be served, so the router refuses to build."
+    )]
     pub(super) fn build(document: &OpenApi) -> Arc<Self> {
         let mut routes = HashMap::new();
         for (path, item) in &document.paths.paths {

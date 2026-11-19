@@ -1244,6 +1244,10 @@ impl Store {
     ///
     /// # Panics
     /// If the application has none, or it can't be read.
+    #[expect(
+        clippy::expect_used,
+        reason = "A test fixture fails the test by panicking."
+    )]
     pub async fn production(
         &self,
         application: &piqueld_core::ApplicationId,

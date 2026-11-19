@@ -180,6 +180,10 @@ impl ExecFrame for ExecInput {
 }
 
 impl ExecFrame for ExecOutput {
+    #[expect(
+        clippy::expect_used,
+        reason = "Error bodies hold strings and JSON values, which always serialize."
+    )]
     fn encode(&self) -> Vec<u8> {
         match self {
             Self::Stdout(data) => frame(1, data),

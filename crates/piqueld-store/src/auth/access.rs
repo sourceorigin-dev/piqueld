@@ -222,6 +222,10 @@ impl Visibility {
 /// Binds a scope as a JSON array of application IDs for
 /// `(?1 IS NULL OR application_id IN (SELECT value FROM json_each(?1)))`;
 /// `None` covers every application.
+#[expect(
+    clippy::expect_used,
+    reason = "A list of strings always serializes to JSON."
+)]
 pub fn scope_json(scope: &Scope) -> Option<String> {
     scope.applications().map(|ids| {
         serde_json::to_string(&ids.iter().map(ApplicationId::as_str).collect::<Vec<_>>())

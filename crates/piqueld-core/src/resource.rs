@@ -654,6 +654,10 @@ impl DesiredService {
     /// directly and panics if missing. Services start attached to the private
     /// network only; ingress is projected later by
     /// `ResolvedApplication::with_ingress_routes`.
+    #[expect(
+        clippy::expect_used,
+        reason = "Validated applications captured every repository file they reference."
+    )]
     fn compile(
         service: &Service,
         resolutions: &ResolutionSet,
@@ -809,6 +813,10 @@ impl DesiredJob {
     /// labels. Validation guarantees that every job references a declared
     /// service and overrides none of its settings; like
     /// [`DesiredService::compile`], it panics on an unpinned secret.
+    #[expect(
+        clippy::expect_used,
+        reason = "Validated jobs reference declared services."
+    )]
     fn compile(
         job: &Job,
         services: &[DesiredService],

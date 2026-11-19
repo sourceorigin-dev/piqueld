@@ -1,5 +1,10 @@
 //! Durable desired state and operation history.
 
+#![expect(
+    clippy::expect_used,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 #[path = "support/prebuilt.rs"]
 mod prebuilt;
 #[path = "support/sqlite.rs"]

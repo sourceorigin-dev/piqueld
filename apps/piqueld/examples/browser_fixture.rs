@@ -9,6 +9,9 @@
 //! nothing listens there. With `PIQUELD_PLAYWRIGHT_HOST_OPERATOR=1`, token-less
 //! callers of the Unix socket act as the host operator, as the daemon's own
 //! user does; otherwise they are anonymous, as another user would be.
+
+#![expect(clippy::expect_used, reason = "A test fixture fails by panicking.")]
+
 use anyhow::Context as _;
 use async_trait::async_trait;
 use futures_util::StreamExt as _;

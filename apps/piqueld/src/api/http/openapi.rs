@@ -124,6 +124,10 @@ pub fn openapi_document() -> Value {
 /// endpoints clear it, see `access::Access::declare`), strips
 /// `nullable` from optional parameters, and documents the TCP 403 and body
 /// timeout 408 responses.
+#[expect(
+    clippy::expect_used,
+    reason = "Utoipa documents have string keys and JSON-compatible fields."
+)]
 fn openapi_30_document(document: &utoipa::openapi::OpenApi) -> Value {
     let mut document = serde_json::to_value(document)
         .expect("Utoipa OpenAPI fields and string-keyed maps are JSON-compatible");

@@ -100,6 +100,10 @@ impl PreviewSlug {
     /// Never: application names start with a letter, and the hash ends the
     /// slug with a digit or letter.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "A sanitized application prefix and a hex hash suffix always form a valid name."
+    )]
     pub fn derive(
         application: &ApplicationName,
         branch: &GitBranch,
@@ -351,6 +355,10 @@ impl EnvironmentName {
     ///
     /// Never: the constant is a valid logical name.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "The default environment name is a valid constant."
+    )]
     pub fn default_name() -> Self {
         Self::parse(DEFAULT_ENVIRONMENT).expect("the default environment name is valid")
     }

@@ -1,5 +1,11 @@
 //! Privileged end-to-end qualification for the Docker adapter.
 
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 // Each test binary compiles the support modules on its own; this one builds
 // from Git but never fails a build, clones, or bundles, as fake_docker does.
 #[path = "support/docker_contract.rs"]

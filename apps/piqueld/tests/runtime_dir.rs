@@ -1,5 +1,10 @@
 //! Runtime directory validation, socket recovery, and independent-daemon exclusion.
 
+#![expect(
+    clippy::expect_used,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 #[path = "support/daemon.rs"]
 mod daemon;
 #[path = "support/fixture_dir.rs"]

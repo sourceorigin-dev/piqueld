@@ -58,6 +58,10 @@ impl BuildQueue {
     ///
     /// # Panics
     /// Panics if the queue drops a waiting build, which it never does.
+    #[expect(
+        clippy::expect_used,
+        reason = "The queue wakes every build it keeps before dropping its sender."
+    )]
     pub(crate) async fn turn(&self, priority: BuildPriority) -> Turn<'_> {
         let receiver = {
             let mut waiting = self.state.lock();
