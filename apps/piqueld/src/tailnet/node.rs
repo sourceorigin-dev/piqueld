@@ -85,15 +85,13 @@ impl Node {
 
         let status = cli.status().await?;
         ensure!(
-            status.backend_state == "Running",
+            status.running(),
             "the tailscaled at {} is {}; log it in first",
             cli.socket.display(),
             status.backend_state
         );
         let dns_name = status
-            .node
-            .map(|node| node.dns_name.trim_end_matches('.').to_owned())
-            .filter(|name| !name.is_empty())
+            .dns_name()
             .context("logged-in tailnet node reported no DNS name")?;
         // Issue the certificate now, so the first visitor does not wait for it.
         let expires_at_ms = cli.certificate_expiry_ms(&dns_name).await?;
@@ -247,7 +245,7 @@ impl Node {
     /// Identifies peers connecting through this node.
     #[must_use]
     pub fn whois(&self) -> std::sync::Arc<super::Whois> {
-        std::sync::Arc::new(super::Whois::new(self.monitor.cli.clone()))
+        std::sync::Arc::new(super::Whois::at(self.monitor.cli.socket.clone()))
     }
 
     /// The node's `MagicDNS` name, without the trailing dot.

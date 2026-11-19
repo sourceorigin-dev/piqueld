@@ -131,18 +131,14 @@ impl Response {
 }
 
 impl Whois {
-    pub(super) fn new(cli: Cli) -> Self {
-        Self {
-            cli,
-            peers: parking_lot::Mutex::default(),
-        }
-    }
-
     /// Looks peers up through the `tailscaled` listening on `socket`, such as
     /// the apps node's.
     #[must_use]
     pub fn at(socket: std::path::PathBuf) -> Self {
-        Self::new(Cli { socket })
+        Self {
+            cli: Cli { socket },
+            peers: parking_lot::Mutex::default(),
+        }
     }
 
     /// The answer slot of `address`. The cache starts over once it holds

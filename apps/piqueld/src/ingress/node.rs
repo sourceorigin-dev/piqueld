@@ -27,13 +27,12 @@
 //! container whose spec hash differs is replaced.
 
 use super::{Ingress, TAILSCALE_IMAGE, gateway::TMPFS, wire::UnixApi};
-use crate::tailnet::ProxyListener;
+use crate::tailnet::{ProxyListener, Status};
 use anyhow::{Context, Result};
 use piqueld_config::directories::PrivateFile;
 use piqueld_config::{Credential, PrivateIngressConfig};
 use piqueld_core::Phase;
 use piqueld_core::api::PrivateIngressStatus;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
@@ -61,27 +60,6 @@ pub(super) struct Node {
     api: UnixApi,
     /// Login URL last relayed to daemon logs.
     login_url: parking_lot::Mutex<Option<String>>,
-}
-
-/// The fields piqueld reads from the `LocalAPI` at `/localapi/v0/status`.
-#[derive(Deserialize)]
-struct LocalStatus {
-    #[serde(rename = "BackendState")]
-    backend_state: String,
-    /// Interactive login URL while the node needs login.
-    #[serde(rename = "AuthURL", default)]
-    auth_url: String,
-    #[serde(rename = "Self")]
-    node: Option<LocalNode>,
-}
-
-#[derive(Deserialize)]
-struct LocalNode {
-    #[serde(rename = "DNSName")]
-    dns_name: String,
-    /// `null` until the node has logged in.
-    #[serde(rename = "TailscaleIPs")]
-    addresses: Option<Vec<IpAddr>>,
 }
 
 impl Node {
@@ -209,7 +187,7 @@ impl Ingress {
     /// The node's login state and tailnet addresses from its `LocalAPI`. Relays
     /// a new login URL to daemon logs once.
     pub(super) async fn node_status(&self, node: &Node) -> Result<PrivateIngressStatus> {
-        let status: LocalStatus = serde_json::from_value(
+        let status: Status = serde_json::from_value(
             node.api
                 .get("/localapi/v0/status")
                 .await
@@ -223,7 +201,7 @@ impl Ingress {
                 "the apps tailnet node needs login; open the URL, or set [ingress.private] auth_key_file");
         }
         *relayed = login_url;
-        let running = status.backend_state == "Running";
+        let running = status.running();
         Ok(PrivateIngressStatus {
             enabled: true,
             healthy: running,
@@ -234,18 +212,12 @@ impl Ingress {
             } else {
                 format!("The apps node is {}", status.backend_state)
             },
-            state: status.backend_state,
-            dns_name: status
-                .node
-                .as_ref()
-                .map(|node| node.dns_name.trim_end_matches('.').to_owned())
-                .filter(|name| !name.is_empty()),
+            dns_name: status.dns_name(),
             addresses: status
-                .node
-                .into_iter()
-                .flat_map(|node| node.addresses.unwrap_or_default())
+                .addresses()
                 .map(|address| address.to_string())
                 .collect(),
+            state: status.backend_state,
         })
     }
 }
