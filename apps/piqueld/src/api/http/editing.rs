@@ -1,12 +1,11 @@
 //! Individual typed editing endpoints. Persistence applies changes inside its writer transaction.
-use super::access::Audited;
 use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, applications::accept_mutation,
-    extract::IdempotencyKey, openapi::ApiErrors,
+    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams,
+    extract::{IdempotencyKey, Mutator},
+    openapi::ApiErrors,
 };
 use crate::api::Mutation;
-use crate::auth::Identity;
-use axum::{Extension, extract::State, http::HeaderMap, response::Response};
+use axum::response::Response;
 use piqueld_core::{
     ApplicationId,
     api::{Envelope, SavedApplication},
@@ -20,7 +19,6 @@ use piqueld_core::{
     },
     manifest::{Mount, Service, ServiceFile, Volume},
 };
-use piqueld_store::Author;
 use utoipa_axum::router::OpenApiRouter;
 
 impl QueryParams for EditOptions {
@@ -33,12 +31,10 @@ impl QueryParams for EditOptions {
 /// answering 200 when saved or 202 when `deploy=true` also accepted a
 /// deployment.
 async fn submit(
-    state: &ApiState,
-    author: Author<'_>,
+    mutator: &Mutator,
     id: String,
     edit: ApplicationEdit,
     options: EditOptions,
-    headers: &HeaderMap,
 ) -> Result<Response, ApiError> {
     let mutation = Mutation::Edit {
         id: ApplicationId::parse(id)?,
@@ -46,7 +42,7 @@ async fn submit(
         deploy: options.deploy,
     };
     let (expected, force) = (options.expected_generation, options.force);
-    accept_mutation(state, author, mutation, expected, force, headers).await
+    mutator.accept(mutation, expected, force).await
 }
 
 // One declaration supplies the handler, its route metadata, and its typed
@@ -67,9 +63,9 @@ macro_rules! edit_endpoint {
             responses((status = 200, description = "Configuration saved", body = Envelope<SavedApplication>),
                 (status = 202, description = "Deployment accepted", body = Envelope<SavedApplication>),
                 ApiErrors<400, 404, 409, 422, 500, 503>))]
-        async fn $name(State(state): State<ApiState>, Extension(identity): Extension<Identity>, audited: Audited, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, headers: HeaderMap) -> Result<Response, ApiError> {
+        async fn $name(mutator: Mutator, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>) -> Result<Response, ApiError> {
             let edit = ($edit)(($($part.clone()),+));
-            submit(&state, audited.author(&identity), edit_endpoint!(@id $($part),+), edit, options, &headers).await
+            submit(&mutator, edit_endpoint!(@id $($part),+), edit, options).await
         }
     };
     ($(#[$doc:meta])* $name:ident, $method:ident, $path:literal, ($($part:ident : $part_ty:ty = $label:literal),+), $body:ty, $edit:expr) => {
@@ -80,9 +76,9 @@ macro_rules! edit_endpoint {
             responses((status = 200, description = "Configuration saved", body = Envelope<SavedApplication>),
                 (status = 202, description = "Configuration saved and deployment accepted", body = Envelope<SavedApplication>),
                 ApiErrors<400, 404, 409, 413, 415, 422, 500, 503>))]
-        async fn $name(State(state): State<ApiState>, Extension(identity): Extension<Identity>, audited: Audited, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, headers: HeaderMap, ApiJson(body): ApiJson<$body>) -> Result<Response, ApiError> {
+        async fn $name(mutator: Mutator, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, ApiJson(body): ApiJson<$body>) -> Result<Response, ApiError> {
             let edit = ($edit)(($($part.clone()),+), body);
-            submit(&state, audited.author(&identity), edit_endpoint!(@id $($part),+), edit, options, &headers).await
+            submit(&mutator, edit_endpoint!(@id $($part),+), edit, options).await
         }
     };
     (@id $first:ident $(,$rest:ident)*) => { $first };
@@ -201,11 +197,8 @@ impl QueryParams for CreateQuery {
         (status = 202, description = "Deployment accepted", body = Envelope<SavedApplication>),
         ApiErrors<400, 409, 413, 415, 422, 500, 503>))]
 async fn create_application(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiQuery(query): ApiQuery<CreateQuery>,
-    headers: HeaderMap,
     ApiJson(name): ApiJson<StringValue>,
 ) -> Result<Response, ApiError> {
     let manifest = piqueld_core::manifest::ApplicationManifest {
@@ -215,15 +208,9 @@ async fn create_application(
         spec: piqueld_core::manifest::ApplicationSpec::default(),
     }
     .validate_template()?;
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::save(manifest, None, query.deploy),
-        Some(0),
-        false,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(Mutation::save(manifest, None, query.deploy), Some(0), false)
+        .await
 }
 
 /// Registers every typed editing endpoint, which requires `apps:write` on its

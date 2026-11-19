@@ -1,15 +1,25 @@
 //! Request decoding that keeps malformed input inside the API's structured
 //! error contract: path parameters, query strings, bodies, and single-valued
 //! headers each fail with a stable 4xx `ApiError` rather than Axum's plain
-//! text rejections.
-use super::{ApiError, JSON, TOML};
+//! text rejections. A [`Mutator`] extracts the caller of a handler that
+//! submits a change, and submits it.
+use super::{ApiError, ApiState, JSON, TOML, accepted, access::Audited, ok};
+use crate::api::{Mutation, MutationResponse, Restore};
+use crate::auth::Identity;
 use axum::{
-    body::Bytes,
-    extract::{FromRequest, FromRequestParts, Path, Query, Request, rejection::BytesRejection},
+    Extension,
+    body::{Body, Bytes},
+    extract::{
+        FromRequest, FromRequestParts, Path, Query, Request,
+        rejection::{BytesRejection, ExtensionRejection},
+    },
     http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
+    response::Response,
 };
-use piqueld_core::api::ApplyApplicationRequest;
+use piqueld_core::api::{ApplyApplicationRequest, PromotionSelection};
 use piqueld_core::manifest::ValidatedTemplate;
+use piqueld_core::{ApplicationId, EnvironmentId, GitBranch, PreviewSlot};
+use piqueld_store::Author;
 use serde::de::DeserializeOwned;
 use utoipa::openapi::path::{Parameter, ParameterBuilder, ParameterIn};
 use utoipa::openapi::{ObjectBuilder, Required, Type};
@@ -32,6 +42,175 @@ impl utoipa::IntoParams for IdempotencyKey {
                 .build(),
         ]
     }
+}
+
+/// The request of a handler submitting a mutation: the caller, acting
+/// through its audited request, and the request's `Idempotency-Key`. It
+/// extracts what the handler's leading `State`, `Extension<Identity>`,
+/// `Audited` and `HeaderMap` would, failing as they would.
+pub(super) struct Mutator {
+    state: ApiState,
+    identity: Identity,
+    audited: Audited,
+    headers: HeaderMap,
+}
+
+impl FromRequestParts<ApiState> for Mutator {
+    type Rejection = ExtensionRejection;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &ApiState,
+    ) -> Result<Self, ExtensionRejection> {
+        let Extension(identity) = Extension::from_request_parts(parts, state).await?;
+        let Ok(audited) = Audited::from_request_parts(parts, state).await;
+        Ok(Self {
+            state: state.clone(),
+            identity,
+            audited,
+            headers: parts.headers.clone(),
+        })
+    }
+}
+
+impl Mutator {
+    /// This request, whose route answers every change it makes with
+    /// `status` (see `Audited::answering`).
+    pub(super) fn answering(self, status: StatusCode) -> Self {
+        Self {
+            audited: self.audited.answering(status),
+            ..self
+        }
+    }
+
+    /// The caller acting through this request.
+    fn author(&self) -> Author<'_> {
+        self.audited.author(&self.identity)
+    }
+
+    /// The request's headers.
+    pub(super) fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+
+    /// The request's `Idempotency-Key`, refused when repeated or not ASCII.
+    fn idempotency_key(&self) -> Result<Option<String>, ApiError> {
+        optional_header(&self.headers, IDEMPOTENCY_KEY)
+    }
+
+    /// Submits `mutation` and renders the acceptance: 202 when a durable
+    /// operation was started (including a save that also deploys, a created
+    /// preview, or a deletion), 200 for a plain save, rename, environment
+    /// change, or an existing preview.
+    pub(super) async fn accept(
+        &self,
+        mutation: Mutation,
+        expected: Option<u64>,
+        force: bool,
+    ) -> Result<Response, ApiError> {
+        let request_id = self.idempotency_key()?;
+        let response = self
+            .state
+            .accept(
+                self.author(),
+                mutation,
+                expected,
+                force,
+                request_id.as_deref(),
+            )
+            .await?;
+        let started = response.started();
+        Ok(match response {
+            MutationResponse::Saved(saved) => reply(started, saved),
+            MutationResponse::Preview(preview) => reply(started, preview),
+            MutationResponse::Rename(renamed) => reply(started, renamed),
+            MutationResponse::Environment(environment) => reply(started, environment),
+            MutationResponse::Operation(operation) => reply(started, operation),
+            MutationResponse::Promotion(promotion) => reply(started, promotion),
+            MutationResponse::Deleted(deleted) => reply(started, deleted),
+            // Only sync submits the mutations answered with this.
+            MutationResponse::Synced(_) => return Err(piqueld_store::StoreError::Corrupt.into()),
+        })
+    }
+
+    /// Restores an earlier deployment of the environment or preview `id`, as
+    /// `restore` names it, answering 202 with the restore's operation.
+    pub(super) async fn restore(
+        &self,
+        id: String,
+        restore: impl FnOnce(EnvironmentId) -> Restore,
+    ) -> Result<Response, ApiError> {
+        let request_id = self.idempotency_key()?;
+        let restore = restore(EnvironmentId::parse(id)?);
+        Ok(accepted(
+            self.state
+                .restore(self.author(), restore, request_id.as_deref())
+                .await?,
+        ))
+    }
+
+    /// Promotes the release `selection` picks into the environment `id`,
+    /// answering 202 with the pinned promotion.
+    pub(super) async fn promote(
+        &self,
+        id: String,
+        selection: impl FnOnce() -> Result<PromotionSelection, ApiError>,
+        expected_generation: Option<u64>,
+        force: bool,
+    ) -> Result<Response, ApiError> {
+        let request_id = self.idempotency_key()?;
+        Ok(accepted(
+            self.state
+                .promote(
+                    self.author(),
+                    &EnvironmentId::parse(id)?,
+                    selection()?,
+                    expected_generation,
+                    force,
+                    request_id.as_deref(),
+                )
+                .await?,
+        ))
+    }
+
+    /// Deploys the snapshot `bundle`, with its announced length, to
+    /// `preview`, answering 202 with the preview.
+    pub(super) async fn deploy_snapshot(
+        &self,
+        preview: (ApplicationId, GitBranch, Option<PreviewSlot>),
+        (bundle, length): (Body, Option<u64>),
+    ) -> Result<Response, ApiError> {
+        let request_id = self.idempotency_key()?;
+        let deployed = self.state.deploy_snapshot(
+            self.author(),
+            preview,
+            (bundle.into_data_stream(), length),
+            request_id.as_deref(),
+        );
+        match Box::pin(deployed).await? {
+            MutationResponse::Preview(preview) => Ok(accepted(preview)),
+            _ => Err(piqueld_store::StoreError::Corrupt.into()),
+        }
+    }
+
+    /// Deletes those of `application`'s `previews` whose branch is gone,
+    /// answering 200 with the previews whose deletion was accepted.
+    pub(super) async fn prune_previews(
+        &self,
+        application: &ApplicationId,
+        previews: &[EnvironmentId],
+    ) -> Result<Response, ApiError> {
+        Ok(ok(self
+            .state
+            .prune_previews(self.author(), application, previews)
+            .await?))
+    }
+}
+
+/// Answers `data` with 202 Accepted when its mutation `started` durable
+/// work, else 200 OK (see `MutationResponse::started`).
+fn reply<T: serde::Serialize>(started: bool, data: T) -> Response {
+    if started { accepted(data) } else { ok(data) }
 }
 
 /// Path extractor rejecting undecodable parameters with 400 `path_invalid`.

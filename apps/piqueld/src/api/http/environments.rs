@@ -1,15 +1,14 @@
 //! Environment lifecycle, status, and repair. Deployment, history, logs, and
 //! secrets of an environment live with their own handlers.
-use super::access::Audited;
-use super::applications::{ForceQuery, GenerationQuery, accept_mutation};
-use super::extract::{IDEMPOTENCY_KEY, IdempotencyKey, optional_header};
-use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, accepted, ok, openapi::ApiErrors};
+use super::applications::{ForceQuery, GenerationQuery};
+use super::extract::{IdempotencyKey, Mutator};
+use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, ok, openapi::ApiErrors};
 use crate::api::{Mutation, PromotionMutation, Restore, SourceChoice};
 use crate::auth::Identity;
 use axum::{
     Extension,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use piqueld_core::access::AppPermission;
@@ -42,12 +41,9 @@ use piqueld_core::{
     responses((status=200,description="Environment created",body=Envelope<EnvironmentView>),
     ApiErrors<400, 404, 409, 415, 422, 500, 503>))]
 pub(super) async fn create(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<CreateEnvironmentRequest>,
 ) -> Result<Response, ApiError> {
     let source = match (request.branch, request.commit, request.promote_from) {
@@ -71,19 +67,17 @@ pub(super) async fn create(
             ));
         }
     };
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::CreateEnvironment {
-            application: ApplicationId::parse(id)?,
-            name: EnvironmentName::parse(request.name)?,
-            source,
-        },
-        request.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::CreateEnvironment {
+                application: ApplicationId::parse(id)?,
+                name: EnvironmentName::parse(request.name)?,
+                source,
+            },
+            request.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 #[utoipa::path(
@@ -162,26 +156,21 @@ pub(super) async fn status(
     responses((status=200,description="Environment renamed without redeployment",body=Envelope<EnvironmentView>),
     ApiErrors<400, 404, 409, 415, 500, 503>))]
 pub(super) async fn rename(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<EnvironmentRequest>,
 ) -> Result<Response, ApiError> {
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::RenameEnvironment {
-            id: EnvironmentId::parse(id)?,
-            name: EnvironmentName::parse(request.name)?,
-        },
-        request.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::RenameEnvironment {
+                id: EnvironmentId::parse(id)?,
+                name: EnvironmentName::parse(request.name)?,
+            },
+            request.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// Changes the branch an environment follows.
@@ -200,26 +189,21 @@ pub(super) async fn rename(
     responses((status=200,description="Environment follows the branch from its next deployment",body=Envelope<EnvironmentView>),
     ApiErrors<400, 404, 409, 415, 422, 500, 503>))]
 pub(super) async fn branch(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<EnvironmentBranchRequest>,
 ) -> Result<Response, ApiError> {
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::SetBranch {
-            id: EnvironmentId::parse(id)?,
-            branch: tracked_branch(request.branch, request.commit)?,
-        },
-        request.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::SetBranch {
+                id: EnvironmentId::parse(id)?,
+                branch: tracked_branch(request.branch, request.commit)?,
+            },
+            request.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// Opts an environment into or out of its application's sync.
@@ -236,26 +220,15 @@ pub(super) async fn branch(
     responses((status=200,description="Environment sync changed",body=Envelope<EnvironmentView>),
     ApiErrors<400, 404, 409, 415, 500, 503>))]
 pub(super) async fn sync(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<EnvironmentSyncRequest>,
 ) -> Result<Response, ApiError> {
     let mutation = Mutation::SetSync {
         id: EnvironmentId::parse(id)?,
         enabled: request.enabled,
     };
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        mutation,
-        None,
-        false,
-        &headers,
-    )
-    .await
+    mutator.accept(mutation, None, false).await
 }
 
 /// Grants or revokes an environment's telemetry.
@@ -273,26 +246,15 @@ pub(super) async fn sync(
     responses((status=200,description="Environment telemetry changed",body=Envelope<EnvironmentView>),
     ApiErrors<400, 403, 404, 409, 415, 500, 503>))]
 pub(super) async fn telemetry(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<EnvironmentTelemetryRequest>,
 ) -> Result<Response, ApiError> {
     let mutation = Mutation::SetTelemetry {
         id: EnvironmentId::parse(id)?,
         granted: request.granted,
     };
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        mutation,
-        None,
-        false,
-        &headers,
-    )
-    .await
+    mutator.accept(mutation, None, false).await
 }
 
 /// Changes where an environment's releases come from.
@@ -311,26 +273,21 @@ pub(super) async fn telemetry(
     responses((status=200,description="Environment deploys from its new source from its next deployment or promotion",body=Envelope<EnvironmentView>),
     ApiErrors<400, 404, 409, 415, 422, 500, 503>))]
 pub(super) async fn source(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<EnvironmentSourceRequest>,
 ) -> Result<Response, ApiError> {
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::Promotion(PromotionMutation::SetSource {
-            id: EnvironmentId::parse(id)?,
-            promote_from: request.promote_from.map(EnvironmentId::parse).transpose()?,
-        }),
-        request.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::Promotion(PromotionMutation::SetSource {
+                id: EnvironmentId::parse(id)?,
+                promote_from: request.promote_from.map(EnvironmentId::parse).transpose()?,
+            }),
+            request.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// A request's `branch` and pinned `commit`, refused like other malformed
@@ -395,27 +352,19 @@ fn selection(request: &PromoteRequest) -> Result<PromotionSelection, ApiError> {
     responses((status=202,description="Promotion accepted with its release pinned",body=Envelope<AcceptedPromotion>),
     ApiErrors<400, 404, 409, 415, 422, 500, 502, 503>))]
 pub(super) async fn promote(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiQuery(query): ApiQuery<ForceQuery>,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<PromoteRequest>,
 ) -> Result<Response, ApiError> {
-    let request_id = optional_header(&headers, IDEMPOTENCY_KEY)?;
-    Ok(accepted(
-        state
-            .promote(
-                audited.author(&identity),
-                &EnvironmentId::parse(id)?,
-                selection(&request)?,
-                request.expected_generation,
-                query.force,
-                request_id.as_deref(),
-            )
-            .await?,
-    ))
+    mutator
+        .promote(
+            id,
+            || selection(&request),
+            request.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// Plans a promotion, or deploying an earlier release, without changing
@@ -452,24 +401,19 @@ pub(super) async fn plan_promotion(
         ApiErrors<400, 404, 409, 500, 503>)
 )]
 pub(super) async fn delete(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiQuery(query): ApiQuery<GenerationQuery>,
 ) -> Result<Response, ApiError> {
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::Delete {
-            id: EnvironmentId::parse(id)?,
-        },
-        query.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::Delete {
+                id: EnvironmentId::parse(id)?,
+            },
+            query.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// Reconciles an environment, starting it if it is stopped.
@@ -484,24 +428,19 @@ pub(super) async fn delete(
     responses((status=202,description="Reconciliation accepted",body=Envelope<AcceptedOperation>),
     ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn reconcile(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiQuery(query): ApiQuery<GenerationQuery>,
 ) -> Result<Response, ApiError> {
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::Reconcile {
-            id: EnvironmentId::parse(id)?,
-        },
-        query.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::Reconcile {
+                id: EnvironmentId::parse(id)?,
+            },
+            query.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// Stops an environment.
@@ -519,24 +458,19 @@ pub(super) async fn reconcile(
     responses((status=202,description="Stop accepted",body=Envelope<AcceptedOperation>),
     ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn stop(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiQuery(query): ApiQuery<GenerationQuery>,
 ) -> Result<Response, ApiError> {
-    accept_mutation(
-        &state,
-        audited.author(&identity),
-        Mutation::Stop {
-            id: EnvironmentId::parse(id)?,
-        },
-        query.expected_generation,
-        query.force,
-        &headers,
-    )
-    .await
+    mutator
+        .accept(
+            Mutation::Stop {
+                id: EnvironmentId::parse(id)?,
+            },
+            query.expected_generation,
+            query.force,
+        )
+        .await
 }
 
 /// Starts a stopped environment.
@@ -551,14 +485,11 @@ pub(super) async fn stop(
     responses((status=202,description="Start accepted",body=Envelope<AcceptedOperation>),
     ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn start(
-    state: State<ApiState>,
-    identity: Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     id: ApiPath<String>,
-    headers: HeaderMap,
     query: ApiQuery<GenerationQuery>,
 ) -> Result<Response, ApiError> {
-    reconcile(state, identity, audited, id, headers, query).await
+    reconcile(mutator, id, query).await
 }
 
 /// Restores an earlier deployment of an environment exactly.
@@ -579,24 +510,14 @@ pub(super) async fn start(
     responses((status=202,description="Restore accepted",body=Envelope<AcceptedOperation>),
     ApiErrors<400, 404, 409, 415, 500, 502, 503>))]
 pub(super) async fn restore(
-    State(state): State<ApiState>,
-    Extension(identity): Extension<Identity>,
-    audited: Audited,
+    mutator: Mutator,
     ApiPath(id): ApiPath<String>,
-    headers: HeaderMap,
     ApiJson(request): ApiJson<RestoreRequest>,
 ) -> Result<Response, ApiError> {
-    let request_id = optional_header(&headers, IDEMPOTENCY_KEY)?;
-    Ok(accepted(
-        state
-            .restore(
-                audited.author(&identity),
-                Restore::Environment {
-                    id: EnvironmentId::parse(id)?,
-                    deployment: request.deployment,
-                },
-                request_id.as_deref(),
-            )
-            .await?,
-    ))
+    mutator
+        .restore(id, |id| Restore::Environment {
+            id,
+            deployment: request.deployment,
+        })
+        .await
 }
