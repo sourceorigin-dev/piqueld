@@ -655,6 +655,7 @@ impl DockerApi for FakeDocker {
                 id: format!("exec-{}", service.name),
                 task: format!("{}.{}", request.service, slot + 1),
                 tty: request.tty.is_some(),
+                node: None,
             }))
     }
 
@@ -663,7 +664,11 @@ impl DockerApi for FakeDocker {
         Ok(0)
     }
 
-    async fn resolve_image(&self, reference: &str) -> Result<String, DockerError> {
+    async fn resolve_image(
+        &self,
+        reference: &str,
+        _node: Option<&piqueld_core::nodes::NodeName>,
+    ) -> Result<String, DockerError> {
         let _probe = self.images.enter().await;
         if reference.contains("/slow:")
             && let Some(gate) = &self.resolution_gate
@@ -698,7 +703,10 @@ impl DockerApi for FakeDocker {
         Ok(digest)
     }
 
-    async fn images(&self) -> Result<Vec<LocalImage>, DockerError> {
+    async fn images(
+        &self,
+        _node: Option<&piqueld_core::nodes::NodeName>,
+    ) -> Result<Vec<LocalImage>, DockerError> {
         Ok(self.local_images.lock().await.clone())
     }
 

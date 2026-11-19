@@ -122,7 +122,7 @@ async fn missing_images_are_pulled_again_by_digest_or_reported_unavailable() {
     let digest = pulled.repository_digest().unwrap().to_string();
 
     in_use
-        .ensure(&*harness.docker, [(&web, &pulled)])
+        .ensure(&*harness.docker, [(&web, &pulled)], None)
         .await
         .unwrap();
     assert_eq!(harness.docker.registry.lock().await.pulls[&digest], 1);
@@ -136,7 +136,7 @@ async fn missing_images_are_pulled_again_by_digest_or_reported_unavailable() {
         image_id: image('c', &[]).id.into(),
     };
     let error = in_use
-        .ensure(&*harness.docker, [(&web, &pulled), (&api, &built)])
+        .ensure(&*harness.docker, [(&web, &pulled), (&api, &built)], None)
         .await
         .unwrap_err();
     assert_eq!(error.code(), "image_unavailable");

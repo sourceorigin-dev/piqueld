@@ -99,6 +99,9 @@ pub enum OperationError {
     /// The build machine could not be reached to build an image.
     #[error("the build machine is unreachable")]
     BuilderUnavailable,
+    /// The worker node a preview runs on could not be reached.
+    #[error("worker node {0} is unavailable")]
+    NodeUnavailable(piqueld_core::nodes::NodeName),
     /// A Docker request failed while performing the described operation.
     #[error("Docker request failed while {0}")]
     DockerRequestFailed(&'static str),
@@ -174,6 +177,7 @@ impl OperationError {
             Self::ImageUnavailable { .. } => DiagnosticCode::ImageUnavailable,
             Self::GitBuildFailed(_) => DiagnosticCode::GitBuildFailed,
             Self::BuilderUnavailable => DiagnosticCode::BuilderUnavailable,
+            Self::NodeUnavailable(_) => DiagnosticCode::NodeUnavailable,
             Self::Cancelled => DiagnosticCode::Cancelled,
             Self::Superseded => DiagnosticCode::Superseded,
             Self::OwnershipConflict => DiagnosticCode::OwnershipConflict,
@@ -249,6 +253,10 @@ impl OperationError {
                 Self::DockerRequestFailed("delete a secret a service still mounts")
             }
             DockerError::BuilderUnavailable(_) => Self::BuilderUnavailable,
+            DockerError::NodeUnavailable { node, reason } => {
+                tracing::warn!(%node, reason, "a worker node is unavailable");
+                Self::NodeUnavailable(node.clone())
+            }
             DockerError::Request(operation) | DockerError::RequestSource { operation, .. } => {
                 Self::DockerRequestFailed(operation)
             }

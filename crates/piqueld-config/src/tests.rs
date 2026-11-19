@@ -412,3 +412,27 @@ fn worker_nodes_need_a_reachable_swarm_address() {
         );
     }
 }
+
+/// Previews run on a named worker, which pulls built images from the build
+/// machine's registry.
+#[test]
+fn previews_run_on_a_named_worker_with_a_build_machine() {
+    let base = "[docker]\nswarm_address = '100.64.0.1'\n\
+        [nodes.nixosbtw]\ndocker = 'tcp://100.64.0.2:2375'\n";
+    let build = "[build]\nbuilder = 'tcp://100.64.0.2:1234'\nrepository = 'registry.example.ts.net:5000/piqueld'\n";
+    let config =
+        DaemonConfig::from_toml(&format!("{base}{build}[previews]\nnode = 'nixosbtw'")).unwrap();
+    assert_eq!(config.previews.node.unwrap().as_str(), "nixosbtw");
+    for document in [
+        format!("{base}{build}[previews]\nnode = 'other'"),
+        format!("{base}[previews]\nnode = 'nixosbtw'"),
+    ] {
+        assert!(
+            matches!(
+                DaemonConfig::from_toml(&document),
+                Err(ConfigError::Invalid(_))
+            ),
+            "accepted {document}"
+        );
+    }
+}

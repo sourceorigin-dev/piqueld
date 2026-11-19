@@ -442,7 +442,12 @@ impl SwarmScenario {
         // A scratch image without a shell, wget, C library, or dynamic
         // loader, which serves 200 on /health.
         let reference = "traefik/whoami:v1.11.0";
-        let image = self.engine.docker.resolve_image(reference).await.unwrap();
+        let image = self
+            .engine
+            .docker
+            .resolve_image(reference, None)
+            .await
+            .unwrap();
         http_service.source = ResolvedSource::parse_image(reference, image.clone()).unwrap();
         http_service.image = piqueld_core::ImmutableImage::parse(image).unwrap();
         http_service.command = Vec::new();
@@ -1139,7 +1144,7 @@ async fn git_build_runs_as_a_local_swarm_image() {
     let id = piqueld_core::Sha256Digest::parse(target.services[0].image.as_str()).unwrap();
     let built = || async {
         docker
-            .images()
+            .images(None)
             .await
             .unwrap()
             .into_iter()
@@ -1370,13 +1375,13 @@ async fn links_reach_only_the_imported_service_until_removed() {
     let engine = IsolatedDocker::from_env().await;
     let suffix = &uuid::Uuid::now_v7().simple().to_string()[..12];
     let exporter_name = format!("auth-{suffix}");
-    let whoami = engine
-        .docker
-        .resolve_image("traefik/whoami:v1.10")
-        .await
-        .unwrap();
-    let alpine = engine.docker.resolve_image("alpine:3.20").await.unwrap();
-    let images = BTreeMap::from([("traefik/whoami:v1.10", whoami), ("alpine:3.20", alpine)]);
+    let mut images = BTreeMap::new();
+    for image in ["traefik/whoami:v1.10", "alpine:3.20"] {
+        images.insert(
+            image,
+            engine.docker.resolve_image(image, None).await.unwrap(),
+        );
+    }
     let compile = |name: &str, services: serde_json::Value| compile_images(name, services, &images);
     let exporter = compile(
         &exporter_name,

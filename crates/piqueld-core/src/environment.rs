@@ -36,6 +36,16 @@ pub enum EnvironmentKind {
 }
 
 impl EnvironmentKind {
+    /// The worker node the environment runs on: a preview's, or `None` on
+    /// the host, where every environment runs.
+    #[must_use]
+    pub fn node(&self) -> Option<&crate::nodes::NodeName> {
+        match self {
+            Self::Environment => None,
+            Self::Preview(preview) => preview.node.as_ref(),
+        }
+    }
+
     /// Whether a successful preparation records a release. Environments do;
     /// previews never do, so they can never be a release's source.
     #[must_use]
@@ -72,6 +82,10 @@ pub struct Preview {
     pub slot: Option<PreviewSlot>,
     /// DNS-safe identifier, `env.slug`, persisted when the preview is created.
     pub slug: PreviewSlug,
+    /// The worker node it runs on, `previews.node` when it was created; on
+    /// the host when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<crate::nodes::NodeName>,
 }
 
 impl PreviewSlug {

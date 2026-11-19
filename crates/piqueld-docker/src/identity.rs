@@ -89,7 +89,8 @@ impl BollardDocker {
     /// Checks the immutable overlay-network settings supported by piqueld.
     ///
     /// Docker may add its VXLAN identifier to `options` after creation; that
-    /// backend-assigned value is the only tolerated option.
+    /// backend-assigned value is tolerated, and so is the MTU piqueld sets on
+    /// a worker's networks.
     pub(super) fn network_configuration_matches(network: &bollard::models::Network) -> bool {
         network.driver.as_deref() == Some("overlay")
             && !network.internal.unwrap_or(false)
@@ -107,7 +108,10 @@ impl BollardDocker {
             && network.options.as_ref().is_none_or(|options| {
                 options
                     .keys()
-                    .all(|key| key == "com.docker.network.driver.overlay.vxlanid_list")
+                    .all(|key| {
+                        key == "com.docker.network.driver.overlay.vxlanid_list"
+                            || key == super::nodes::MTU_OPTION
+                    })
             })
     }
 

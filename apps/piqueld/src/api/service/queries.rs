@@ -494,7 +494,11 @@ impl ApplicationService {
             )
             .map_err(BoundaryError::Compilation)?
             .with_ingress(self.ingress_enabled());
-            let desired = self.store.with_links(desired, &observed).await?;
+            let desired = self
+                .store
+                .with_links(desired, &observed)
+                .await?
+                .on_node(self.store.node(environment).await?.as_ref());
             Some(self.telemetry.project(desired, granted))
         } else {
             None

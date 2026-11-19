@@ -60,6 +60,16 @@ pub enum DockerError {
     /// The build machine could not be reached to build an image.
     #[error(transparent)]
     BuilderUnavailable(#[from] crate::builder::BuilderUnavailable),
+    /// The worker node a resource lives on can't be used: the
+    /// configuration doesn't name it, it hasn't joined the Swarm, or its
+    /// Docker Engine doesn't answer.
+    #[error("worker node {node} is unavailable: {reason}")]
+    NodeUnavailable {
+        /// The worker's name.
+        node: piqueld_core::nodes::NodeName,
+        /// Why it can't be used.
+        reason: String,
+    },
     /// A Docker request failed while performing the described operation.
     #[error("Docker request failed while {0}")]
     Request(&'static str),
@@ -104,6 +114,7 @@ impl DockerError {
                 DiagnosticCode::ImageResolutionFailed
             }
             Self::BuilderUnavailable(_) => DiagnosticCode::BuilderUnavailable,
+            Self::NodeUnavailable { .. } => DiagnosticCode::NodeUnavailable,
             Self::NetworkInUse(_)
             | Self::NetworkRemoving(_)
             | Self::SecretInUse(_)

@@ -155,6 +155,41 @@ Address it with its slug, or with its branch and `--slot`, such as
 `piquelctl preview deploy blog feat/login --slot agent-2`. `preview deploy
 --local` takes `--slot` too.
 
+## Run previews on another machine
+
+Previews can run on a [worker node](../operations/worker-nodes.md), such as a
+larger machine on your tailnet, instead of on the host next to production.
+
+1. [Add the worker node](../operations/worker-nodes.md), and a
+   [build machine](../reference/configuration.md#build-machine): the worker
+   pulls the images previews build from its registry. The build machine can
+   be the worker itself.
+
+2. On the host, name the worker in `[previews]` in
+   `/etc/piqueld/config.toml`, then restart piqueld:
+
+   ```toml
+   [previews]
+   node = "nixosbtw"
+   ```
+
+   With the [NixOS module](../reference/nixos.md), set
+   `services.piqueld.settings.previews.node`.
+
+Previews created from then on run on the worker: their services, jobs,
+volumes and images. The host keeps routing their URLs. A preview keeps the
+node it was created on, so the previews that existed before stay on the host
+until you delete them, and changing `node` never moves a preview or its
+volumes.
+
+The preview's page shows where it runs under **Runs on**. With
+`piquelctl`, `preview show` says `Runs on: worker node nixosbtw`, and
+`preview list` has a `NODE` column.
+
+While the worker is off, the previews on it stop answering. Creating,
+deploying or deleting one fails with `node_unavailable`, and their logs and
+commands can't reach them. What runs on the host carries on.
+
 ## Find a preview's address and logs
 
 In the dashboard, select the preview on the **Previews** tab: its
@@ -189,9 +224,9 @@ state. With `piquelctl`:
 
 ```console
 $ piquelctl preview list blog
-BRANCH      SLOT     SLUG                            STATE  BRANCH STATE  SYNC       SYNCED        LAST OPERATION                                        ID
-feat/login  -        blog-feat-login-09b526          ready  local         following  3c1922b70fbd  succeeded operation-01a16d97ef6f7d428a26bb376408270c  preview-01a16d974c7f7300b014f01379224355
-feat/login  agent-2  blog-feat-login-agent-2-a89589  ready  exists        following  3c1922b70fbd  succeeded operation-01a16d98b0ac7d409995feeac2fbd5ee  preview-01a16d98b0aa74f38af94b59963c8fb6
+BRANCH      SLOT     SLUG                            NODE  STATE  BRANCH STATE  SYNC       SYNCED        LAST OPERATION                                        ID
+feat/login  -        blog-feat-login-09b526          host  ready  local         following  3c1922b70fbd  succeeded operation-01a16d97ef6f7d428a26bb376408270c  preview-01a16d974c7f7300b014f01379224355
+feat/login  agent-2  blog-feat-login-agent-2-a89589  host  ready  exists        following  3c1922b70fbd  succeeded operation-01a16d98b0ac7d409995feeac2fbd5ee  preview-01a16d98b0aa74f38af94b59963c8fb6
 ```
 
 For a preview of a branch, the branch state compares the branch in the
@@ -239,7 +274,8 @@ Deleting the application deletes its previews, with their volumes.
 
 ## Limits
 
-Previews share the host with production, so the daemon's
+Unless they [run on another machine](#run-previews-on-another-machine),
+previews share the host with production, so the daemon's
 [`[previews]` settings](../reference/configuration-settings.md#previews-table)
 limit them:
 
@@ -291,3 +327,11 @@ limit`, and the dashboard marks the preview **Bounded**.
 - **The deployment fails with `hostname_conflict`.** The preview renders the
   same hostname as an environment or another preview. Build preview
   hostnames from `${{ env.slug }}`.
+- **Creating, deploying or deleting a preview fails with
+  `node_unavailable`.** The preview runs on a
+  [worker node](#run-previews-on-another-machine) that is off, hasn't joined
+  the Swarm, or whose Docker Engine this host can't reach. Start the worker,
+  or check `piquelctl status`, which shows each worker, then try again.
+- **A preview on a worker can't pull an image from a private registry.** The
+  worker pulls its preview images itself: log its Docker Engine in to the
+  registry too.

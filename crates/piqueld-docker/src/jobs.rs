@@ -118,8 +118,9 @@ impl BollardDocker {
                 "start a job while a service it stops is still running",
             ));
         }
-        let node_id = self.local_node_id().await?;
-        let mut spec = Self::job_spec(self.runtime_service_spec(&job.container, &node_id).await?);
+        let placements = self.placements().await?;
+        let node_id = placements.node_id(&job.container.labels)?;
+        let mut spec = Self::job_spec(self.runtime_service_spec(&job.container, node_id).await?);
         let deadline = SystemTime::now() + Duration::from_secs(u64::from(job.timeout_seconds));
         let deadline = deadline
             .duration_since(UNIX_EPOCH)
@@ -187,6 +188,8 @@ impl BollardDocker {
                     && Self::container_mounts(task).any(writes)
             })
             || self
+                .engine_of(&service.labels)
+                .await?
                 .labelled_containers(labels)
                 .await?
                 .iter()
@@ -319,6 +322,8 @@ impl BollardDocker {
             return Ok(true);
         }
         let ownership = Self::ownership_filter(&job.container.labels)?;
+        // Containers run on the job's node.
+        let engine = self.engine_of(&job.container.labels).await?;
         // Tasks before containers: see `live_tasks`.
         if job.stop_service {
             let mut labels = ownership.clone();
@@ -327,7 +332,7 @@ impl BollardDocker {
                 .stopped_service()
                 .ok_or(DockerError::Validation("job ownership"))?;
             if !self.live_tasks(&labels).await?.is_empty()
-                || !self
+                || !engine
                     .labelled_containers(vec![format!("{SWARM_SERVICE_LABEL}={service}")])
                     .await?
                     .is_empty()
@@ -346,7 +351,7 @@ impl BollardDocker {
                 .build();
             if tasks.iter().any(|task| {
                 Self::container_mounts(task).any(|(mounted, _)| mounted == volume.as_str())
-            }) || !self
+            }) || !engine
                 .client()?
                 .list_containers(Some(options))
                 .await
@@ -385,6 +390,8 @@ impl BollardDocker {
             .iter()
             .any(|task| selected(task.labels.as_ref()))
             || self
+                .engine_of(ownership)
+                .await?
                 .labelled_containers(labels.clone())
                 .await?
                 .iter()
@@ -472,7 +479,8 @@ impl BollardDocker {
         let Some(container) = container else {
             return Ok(JobOutput::default());
         };
-        let mut logs = self.client()?.logs(
+        let engine = self.engine_of(&job.container.labels).await?;
+        let mut logs = engine.client()?.logs(
             &container,
             Some(
                 LogsOptionsBuilder::default()

@@ -103,6 +103,9 @@ impl<D> Controller<D> {
                 observed,
             )
             .await?;
+        // Last, so every network the target owns by now carries the node.
+        let node = self.store.node(&target.id).await?;
+        let linked = linked.on_node(node.as_ref());
         let Some(sockets) = &self.sockets else {
             return Ok(linked);
         };

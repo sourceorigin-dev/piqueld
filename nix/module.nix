@@ -433,6 +433,12 @@ in
             default = 1;
             description = "Most replicas a preview service runs; manifests asking for more are capped with a warning.";
           };
+          previews.node = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            example = "nixosbtw";
+            description = "The worker node, one of nodes, that previews created from now on run on: their services, jobs, volumes and images. Null runs them on this host. A preview keeps the node it was created on. Needs build.builder and build.repository, whose registry the worker pulls built images from.";
+          };
           snapshots.max_upload_bytes = lib.mkOption {
             type = lib.types.ints.positive;
             default = 268435456;

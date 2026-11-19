@@ -89,7 +89,7 @@ impl Environment {
             format!("sha256:{}", "a".repeat(64)),
         );
         Self {
-            image: docker.resolve_image(IMAGE).await.unwrap(),
+            image: docker.resolve_image(IMAGE, None).await.unwrap(),
             app,
             labels,
         }
@@ -425,7 +425,7 @@ impl<D: DockerApi> Contract<D> {
     pub async fn missing_images_are_rejected(&self) {
         let error = self
             .docker
-            .resolve_image(MISSING_IMAGE)
+            .resolve_image(MISSING_IMAGE, None)
             .await
             .expect_err("a missing tag doesn't resolve");
         assert_eq!(
@@ -439,17 +439,27 @@ impl<D: DockerApi> Contract<D> {
     /// pulls a stored digest again.
     pub async fn pinned_references_resolve_to_their_digest(&self) {
         let image = &self.environment.image;
-        assert_eq!(self.docker.resolve_image(image).await.unwrap(), *image);
+        assert_eq!(
+            self.docker.resolve_image(image, None).await.unwrap(),
+            *image
+        );
         let aliased = self.aliased();
-        assert_eq!(self.docker.resolve_image(&aliased).await.unwrap(), aliased);
+        assert_eq!(
+            self.docker.resolve_image(&aliased, None).await.unwrap(),
+            aliased
+        );
     }
 
     /// An image pulled from two repositories is listed once, with both
     /// repositories' digests, from either image store.
     pub async fn an_image_in_two_repositories_lists_both_digests(&self) {
-        let aliased = self.docker.resolve_image(&self.aliased()).await.unwrap();
+        let aliased = self
+            .docker
+            .resolve_image(&self.aliased(), None)
+            .await
+            .unwrap();
         let resolved = [self.environment.image.as_str(), aliased.as_str()];
-        let images = self.docker.images().await.unwrap();
+        let images = self.docker.images(None).await.unwrap();
         let listed = images
             .iter()
             .map(|image| {

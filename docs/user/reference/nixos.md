@@ -127,7 +127,7 @@ Tailscale CLI on the service's `PATH`), `ingress.tunnel.enabled`, `ingress.tunne
 (also a systemd credential, required while the tunnel is enabled),
 `ingress.webhook_hostname`, `ingress.traffic`, `dns.providers`, all three `reconciliation`
 intervals/timeouts, the `retention` periods, both `build_history` limits,
-the five [`previews`](configuration.md#previews) limits,
+the five [`previews`](configuration.md#previews) limits and `previews.node`,
 [`snapshots.max_upload_bytes`](configuration.md#local-snapshots),
 [`checkouts.max_bytes`](configuration.md#git-checkouts), both `images` settings,
 `telemetry.endpoint`, `telemetry.headers_file` (a systemd credential),

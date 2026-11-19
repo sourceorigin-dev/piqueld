@@ -99,12 +99,17 @@ impl<D: DockerApi> Controller<D> {
             .rollback_target(operation)
             .await?
             .ok_or(RollbackError::NothingToRestore)?;
+        let environment = self.store.get(&operation.environment_id).await?;
         let in_use = self.images_in_use().await;
         // Bounded like a restore's: a hung pull would hold cleanup off, and
-        // the failed operation running.
+        // the failed operation running. A preview's images are on its node.
         tokio::time::timeout(
             self.prepare_timeout,
-            in_use.ensure(&*self.docker, target.sources()),
+            in_use.ensure(
+                &*self.docker,
+                target.sources(),
+                environment.environment.kind.node(),
+            ),
         )
         .await
         .map_err(|source| {

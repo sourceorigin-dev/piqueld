@@ -144,7 +144,11 @@ impl<D: DockerApi> DockerApi for LimitedDocker<D> {
         self.inner.ensure_swarm(auto).await
     }
     /// Waiting for an image permit counts against the resolution budget.
-    async fn resolve_image(&self, reference: &str) -> Result<String, DockerError> {
+    async fn resolve_image(
+        &self,
+        reference: &str,
+        node: Option<&piqueld_core::nodes::NodeName>,
+    ) -> Result<String, DockerError> {
         DockerTimeout::ImageResolution
             .run("resolve image", async {
                 let _permit = self
@@ -152,7 +156,7 @@ impl<D: DockerApi> DockerApi for LimitedDocker<D> {
                     .acquire()
                     .await
                     .expect("semaphore is never closed");
-                self.inner.resolve_image(reference).await
+                self.inner.resolve_image(reference, node).await
             })
             .await
     }
@@ -174,9 +178,12 @@ impl<D: DockerApi> DockerApi for LimitedDocker<D> {
             .await
     }
     /// Listing images counts as an observation.
-    async fn images(&self) -> Result<Vec<super::LocalImage>, DockerError> {
+    async fn images(
+        &self,
+        node: Option<&piqueld_core::nodes::NodeName>,
+    ) -> Result<Vec<super::LocalImage>, DockerError> {
         let _permit = self.observing().await;
-        self.inner.images().await
+        self.inner.images(node).await
     }
     async fn remove_image(
         &self,

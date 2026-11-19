@@ -307,6 +307,52 @@ fn telemetry_mounts_follow_the_grant_onto_the_receiver_only() {
     );
 }
 
+/// A target placed on a worker labels its own resources with the worker, and
+/// leaves the networks of other environments, such as an exporter's link
+/// network, alone.
+#[test]
+fn a_target_on_a_worker_labels_only_what_it_owns() {
+    use piqueld_core::nodes::NodeName;
+    let node = NodeName::parse("nixosbtw").unwrap();
+    let mut target =
+        compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
+    target
+        .networks
+        .push(piqueld_core::resource::DesiredNetwork {
+            name: DockerNetworkName::for_application(
+                &EnvironmentId::parse("env-other-01").unwrap(),
+            ),
+            labels: BTreeMap::from([(
+                piqueld_core::resource::APPLICATION_LABEL.into(),
+                "env-other-01".into(),
+            )]),
+        });
+    let placed = target.clone().on_node(Some(&node));
+    let on_worker =
+        |labels: &BTreeMap<String, String>| NodeName::labelled(labels).as_ref() == Some(&node);
+    assert!(
+        placed
+            .services
+            .iter()
+            .all(|service| on_worker(&service.labels))
+    );
+    assert!(
+        placed
+            .volumes
+            .iter()
+            .all(|volume| on_worker(&volume.labels))
+    );
+    assert_eq!(
+        placed
+            .networks
+            .iter()
+            .filter(|network| on_worker(&network.labels))
+            .count(),
+        placed.networks.len() - 1
+    );
+    assert_eq!(target.clone().on_node(None), target);
+}
+
 #[test]
 fn converged_services_need_no_work_and_delete_retains_volumes() {
     let app = application();

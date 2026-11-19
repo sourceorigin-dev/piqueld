@@ -42,10 +42,10 @@ async fn image_resolution_repairs_a_single_tag_flip_through_a_retry() {
     docker.arm_tag_flips(1).await;
     // Pulling a pinned reference leaves the flip armed.
     let pinned = format!("ghcr.io/example/notes@sha256:{}", "c".repeat(64));
-    assert_eq!(docker.resolve_image(&pinned).await.unwrap(), pinned);
+    assert_eq!(docker.resolve_image(&pinned, None).await.unwrap(), pinned);
 
     let resolved = docker
-        .resolve_image("ghcr.io/example/notes:1.4.0")
+        .resolve_image("ghcr.io/example/notes:1.4.0", None)
         .await
         .expect("a single tag flip converges through the bounded retry");
 
@@ -84,7 +84,7 @@ async fn image_resolution_fails_sanitized_when_the_tag_never_settles() {
     docker.arm_tag_flips(usize::MAX).await;
 
     let error = docker
-        .resolve_image("ghcr.io/example/notes:1.4.0")
+        .resolve_image("ghcr.io/example/notes:1.4.0", None)
         .await
         .expect_err("an always-flipping tag never converges");
 

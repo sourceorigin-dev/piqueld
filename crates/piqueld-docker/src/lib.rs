@@ -228,6 +228,9 @@ pub struct ImageBuild<'a> {
     pub target: Option<&'a str>,
     /// The queue it waits in for the one build that runs at a time.
     pub priority: BuildPriority,
+    /// The worker that runs the image, which pulls it from the build
+    /// machine's registry; this host when `None`.
+    pub node: Option<&'a piqueld_core::nodes::NodeName>,
 }
 
 impl ImageBuild<'_> {
@@ -366,8 +369,13 @@ pub trait DockerApi: Send + Sync + 'static {
 
     /// Ensures that Docker is an active, compatible Swarm manager.
     async fn ensure_swarm(&self, auto_initialize: bool) -> Result<SwarmState, DockerError>;
-    /// Pulls an image reference and returns its immutable repository digest.
-    async fn resolve_image(&self, reference: &str) -> Result<String, DockerError>;
+    /// Pulls an image reference into the engine of `node`, a worker or this
+    /// host, and returns its immutable repository digest.
+    async fn resolve_image(
+        &self,
+        reference: &str,
+        node: Option<&piqueld_core::nodes::NodeName>,
+    ) -> Result<String, DockerError>;
     /// Builds local Docker inputs into an immutable image, streaming output
     /// into `log` when given.
     async fn build_image(
@@ -480,8 +488,12 @@ pub trait DockerApi: Send + Sync + 'static {
         name: &str,
         ownership: &BTreeMap<String, String>,
     ) -> Result<(), DockerError>;
-    /// Lists every local image, and whether a container uses it.
-    async fn images(&self) -> Result<Vec<LocalImage>, DockerError>;
+    /// Lists every image in the engine of `node`, a worker or this host, and
+    /// whether a container uses it.
+    async fn images(
+        &self,
+        node: Option<&piqueld_core::nodes::NodeName>,
+    ) -> Result<Vec<LocalImage>, DockerError>;
     /// Removes one image `instance` built, by ID, after rechecking its labels:
     /// without force, so an image a container uses or that is tagged several
     /// times fails, and without removing untagged parents. A missing image
@@ -617,6 +629,7 @@ mod tests {
             args: &args,
             target: Some("runtime"),
             priority: BuildPriority::Environment,
+            node: None,
         };
         assert_eq!(
             build.options().collect::<Vec<_>>(),
@@ -645,6 +658,7 @@ mod tests {
             args: &BTreeMap::new(),
             target: None,
             priority: BuildPriority::Environment,
+            node: None,
         };
         let hex = "c".repeat(64);
         let id = piqueld_core::Sha256Digest::parse(format!("sha256:{hex}")).unwrap();

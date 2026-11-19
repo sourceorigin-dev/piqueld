@@ -639,7 +639,11 @@ impl Checkout {
     pub(crate) async fn build(
         &self,
         build: &piqueld_core::manifest::ValidatedBuild,
-        (owner, priority): (&piqueld_core::InstanceId, piqueld_docker::BuildPriority),
+        (owner, priority, node): (
+            &piqueld_core::InstanceId,
+            piqueld_docker::BuildPriority,
+            Option<&piqueld_core::nodes::NodeName>,
+        ),
         docker: &impl piqueld_docker::DockerApi,
         log: Option<&dyn piqueld_docker::command::OutputLog>,
     ) -> anyhow::Result<piqueld_core::BuiltImage> {
@@ -656,6 +660,7 @@ impl Checkout {
             args,
             target: target.as_deref(),
             priority,
+            node,
         };
         docker
             .build_image(&build, log)

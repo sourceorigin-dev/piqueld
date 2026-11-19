@@ -93,13 +93,14 @@ pub trait RuntimeBoundary: Send + Sync + 'static {
     /// Lists the images present in the local engine.
     async fn local_images(&self) -> Result<piqueld_core::LocalImages, BoundaryError>;
     /// Keeps image cleanup from removing anything until the returned guard
-    /// drops, and makes sure every image of `sources` is present, pulling
-    /// registry images again by digest (see `ImagesInUse::ensure`). Promoting
-    /// a release or restoring a deployment holds the guard until it saved the
-    /// target that runs them.
+    /// drops, and makes sure every image of `sources` is present on `node`,
+    /// a worker or this host, pulling registry images again by digest (see
+    /// `ImagesInUse::ensure`). Promoting a release or restoring a deployment
+    /// holds the guard until it saved the target that runs them.
     async fn reuse_images(
         &self,
         sources: &BTreeMap<ServiceName, ResolvedSource>,
+        node: Option<&piqueld_core::nodes::NodeName>,
     ) -> Result<ImagesInUse, BoundaryError>;
     /// Checks Docker availability without preparing images or changing runtime resources.
     async fn check_available(&self) -> Result<(), BoundaryError>;

@@ -256,14 +256,14 @@ impl BollardDocker {
     /// 1. Inspect candidate services and list all of their tasks at once.
     /// 2. Read container health for running, health-checked tasks.
     /// 3. Keep `relevant` services and convert each with its own tasks, checking
-    ///    placement against the local `node_id`.
+    ///    placement against the node their labels place them on.
     /// 4. Replace network IDs in each service with names from `networks`, and
     ///    check routed services' injected ingress range against the network.
     async fn snapshot_services(
         &self,
         application: &EnvironmentId,
         networks: &NetworkSnapshot,
-        node_id: &str,
+        placements: &super::nodes::Placements<'_>,
     ) -> Result<Vec<piqueld_core::ObservedService>, DockerError> {
         let (raw_services, service_names) = self.inspect_application_services(application).await?;
         let all_tasks = if service_names.is_empty() {
@@ -280,9 +280,8 @@ impl BollardDocker {
                 .await
                 .or_request("list tasks")?
         };
-        let health_by_container = self
-            .observe_running_health(&raw_services, &all_tasks)
-            .await?;
+        let health_by_container =
+            Self::observe_running_health(&raw_services, &all_tasks, placements).await?;
         let mut services = raw_services
             .into_iter()
             .filter_map(|service| {
@@ -312,6 +311,8 @@ impl BollardDocker {
                         Self::observe_task(task, updated, healthy)
                     })
                     .collect::<Vec<_>>();
+                // A service on a worker that hasn't joined matches no node.
+                let node_id = placements.node_id(&labels).unwrap_or_default();
                 Some(Self::observe_service(
                     &spec,
                     node_id,
@@ -475,7 +476,10 @@ impl DockerApi for BollardDocker {
     }
 
     async fn run_exec(&self, exec: &super::Exec, io: super::ExecIo) -> Result<i64, DockerError> {
-        self.run_task_exec(exec, io).await
+        self.engine_for(exec.node.as_ref())
+            .await?
+            .run_task_exec(exec, io)
+            .await
     }
 
     async fn ping(&self) -> Result<(), DockerError> {
@@ -587,7 +591,7 @@ impl DockerApi for BollardDocker {
             }
             let directory = tempfile::tempdir().context("create Docker build directory")?;
             let metadata = directory.path().join("metadata.json");
-            let builder = self.reachable_builder(log).await?;
+            let builder = self.reachable_builder(log, build.node).await?;
             let mut command = if let Some(remote) = builder {
                 let mut command = remote.docker();
                 command
@@ -633,10 +637,11 @@ impl DockerApi for BollardDocker {
                     .context("tag built image")?;
                 return Ok(digest.into());
             };
-            // The build machine pushed it: the engine has to pull it.
+            // The build machine pushed it: the engine that runs it, this
+            // host's or a worker's, has to pull it.
             let image = remote.repository.image(&digest);
             let pulled = self
-                .resolve_image(image.as_str())
+                .resolve_image(image.as_str(), build.node)
                 .await
                 .map_err(anyhow::Error::from)
                 .context("pull the image the build machine pushed");
@@ -664,9 +669,14 @@ impl DockerApi for BollardDocker {
         })
     }
 
-    async fn images(&self) -> Result<Vec<super::LocalImage>, DockerError> {
+    async fn images(
+        &self,
+        node: Option<&piqueld_core::nodes::NodeName>,
+    ) -> Result<Vec<super::LocalImage>, DockerError> {
         DockerTimeout::Request
-            .run("list images", self.list_local_images())
+            .run("list images", async {
+                self.engine_for(node).await?.list_local_images().await
+            })
             .await
     }
 
@@ -698,17 +708,20 @@ impl DockerApi for BollardDocker {
             .await
     }
 
-    async fn resolve_image(&self, reference: &str) -> Result<String, DockerError> {
+    async fn resolve_image(
+        &self,
+        reference: &str,
+        node: Option<&piqueld_core::nodes::NodeName>,
+    ) -> Result<String, DockerError> {
         // Pulling through the Engine records RepoDigests, and resolution
         // verifies the tag was not re-pointed while the pull ran. Stream
         // details are intentionally discarded because image-pull progress is
         // not part of the durable API contract. A cold pull of a large image
         // exceeds the per-request budget, so resolution carries its own.
         DockerTimeout::ImageResolution
-            .run(
-                "resolve image",
-                resolve_image_digest(self.client()?, reference),
-            )
+            .run("resolve image", async {
+                resolve_image_digest(self.engine_for(node).await?.client()?, reference).await
+            })
             .await
     }
 
@@ -719,11 +732,21 @@ impl DockerApi for BollardDocker {
         // One deadline covers every phase, including complete resource inspections.
         DockerTimeout::Request
             .run("observe application", async {
-                let node_id = self.local_node_id().await?;
+                let placements = self.placements().await?;
                 let networks = self.snapshot_networks(application).await?;
-                let volumes = self.snapshot_volumes(application).await?;
+                // An environment on a worker labels its networks, created
+                // first, with it; its volumes live on that worker.
+                let node = networks
+                    .observed
+                    .iter()
+                    .find_map(|network| piqueld_core::nodes::NodeName::labelled(&network.labels));
+                let volumes = self
+                    .engine_for(node.as_ref())
+                    .await?
+                    .snapshot_volumes(application)
+                    .await?;
                 let services = self
-                    .snapshot_services(application, &networks, &node_id)
+                    .snapshot_services(application, &networks, &placements)
                     .await?;
                 Ok(ObservedApplication {
                     networks: networks.observed,
@@ -783,7 +806,17 @@ impl DockerApi for BollardDocker {
                         ingress: Some(false),
                         ipam: Some(Ipam::default()),
                         enable_ipv6: Some(false),
-                        options: Some(HashMap::new()),
+                        options: Some(
+                            piqueld_core::nodes::NodeName::labelled(&desired.labels)
+                                .map(|_| {
+                                    (
+                                        super::nodes::MTU_OPTION.to_owned(),
+                                        super::nodes::OVERLAY_MTU.to_string(),
+                                    )
+                                })
+                                .into_iter()
+                                .collect(),
+                        ),
                         labels: Some(desired.labels.clone().into_iter().collect()),
                         ..Default::default()
                     })
@@ -802,7 +835,9 @@ impl DockerApi for BollardDocker {
                 if !desired.has_valid_identity() {
                     return Err(DockerError::OwnershipConflict);
                 }
-                let existing = self
+                // A worker's volumes live on its own engine.
+                let engine = self.engine_of(&desired.labels).await?;
+                let existing = engine
                     .client()?
                     .list_volumes(Some(
                         ListVolumesOptionsBuilder::default()
@@ -825,7 +860,8 @@ impl DockerApi for BollardDocker {
                         runtime_configuration_matches,
                     );
                 }
-                self.client()?
+                engine
+                    .client()?
                     .create_volume(VolumeCreateOptions {
                         name: Some(desired.name.to_string()),
                         driver: Some("local".into()),
@@ -859,6 +895,8 @@ impl DockerApi for BollardDocker {
                         return Err(DockerError::OwnershipConflict);
                     }
                     self.check_volumes_free(desired).await?;
+                    let placements = self.placements().await?;
+                    let node_id = placements.node_id(&desired.labels)?;
                     let matches = self
                         .client()?
                         .list_services(Some(
@@ -869,8 +907,7 @@ impl DockerApi for BollardDocker {
                         ))
                         .await
                         .or_request("find service by name")?;
-                    let node_id = self.local_node_id().await?;
-                    let spec = self.runtime_service_spec(desired, &node_id).await?;
+                    let spec = self.runtime_service_spec(desired, node_id).await?;
                     match matches.into_iter().find(|s| {
                         s.spec.as_ref().and_then(|s| s.name.as_deref())
                             == Some(desired.name.as_str())
@@ -902,7 +939,7 @@ impl DockerApi for BollardDocker {
                             )?;
                             let mut observed = Self::observe_service(
                                 existing_spec,
-                                &node_id,
+                                node_id,
                                 Vec::new(),
                                 existing
                                     .update_status
@@ -1114,7 +1151,8 @@ impl DockerApi for BollardDocker {
     ) -> Result<(), DockerError> {
         DockerTimeout::Request
             .run("remove volume", async {
-                let Some(existing) = self
+                let engine = self.engine_of(ownership).await?;
+                let Some(existing) = engine
                     .client()?
                     .inspect_volume(name)
                     .await
@@ -1124,7 +1162,8 @@ impl DockerApi for BollardDocker {
                     return Ok(());
                 };
                 Self::check_ownership(existing.labels, ownership, ResourceKind::Volume, name)?;
-                self.client()?
+                engine
+                    .client()?
                     .remove_volume(name, None::<bollard::query_parameters::RemoveVolumeOptions>)
                     .await
                     .found()
@@ -1143,9 +1182,9 @@ impl BollardDocker {
     /// without a verdict and observation cost stays proportional to the
     /// health-checked workload.
     async fn observe_running_health(
-        &self,
         services: &[bollard::models::Service],
         tasks: &[bollard::models::Task],
+        placements: &super::nodes::Placements<'_>,
     ) -> Result<HashMap<String, Option<bool>>, DockerError> {
         let healthchecked = services
             .iter()
@@ -1171,11 +1210,16 @@ impl BollardDocker {
                     .is_some_and(|id| healthchecked.contains(id));
                 running && desired && healthchecked
             })
-            .filter_map(|task| Self::task_container(task).map(str::to_owned))
+            // A container is read on its own node's engine; one on a worker
+            // Swarm doesn't hear from has no verdict.
+            .filter_map(|task| {
+                let (engine, _) = placements.engine(task.node_id.as_deref()?)?;
+                Some((Self::task_container(task)?.to_owned(), engine.clone()))
+            })
             .collect::<Vec<_>>();
         stream::iter(containers)
-            .map(|container_id| async {
-                let verdict = self.container_health(&container_id).await?;
+            .map(|(container_id, engine)| async move {
+                let verdict = engine.container_health(&container_id).await?;
                 Ok::<_, DockerError>((container_id, verdict))
             })
             .buffer_unordered(OBSERVATION_INSPECT_CONCURRENCY)

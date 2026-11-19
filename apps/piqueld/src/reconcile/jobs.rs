@@ -71,7 +71,7 @@ impl<D: DockerApi> Controller<D> {
                 None,
             )
             .await?;
-        let ownership = self.ownership_labels(&operation.environment_id);
+        let ownership = self.placed_ownership(&operation.environment_id).await?;
         // A run left by an earlier operation must not overlap this deployment,
         // even one without jobs. This operation's own runs are kept only while
         // a job is pending, because one of them may be resumed.
@@ -470,7 +470,7 @@ impl<D: DockerApi> Controller<D> {
         &self,
         application: &piqueld_core::EnvironmentId,
     ) -> Result<(), OperationError> {
-        let ownership = self.ownership_labels(application);
+        let ownership = self.placed_ownership(application).await?;
         let pending = self.store.pending_job_cleanup(application).await?;
         for operation in &pending {
             self.stop_job_run(operation, &ownership).await?;

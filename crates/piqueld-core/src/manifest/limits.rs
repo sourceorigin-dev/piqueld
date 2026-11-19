@@ -7,7 +7,8 @@ use crate::{DiagnosticSeverity, PlanDiagnostic, codes};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// How many previews may exist, and what each preview service may use.
+/// How many previews may exist, what each preview service may use, and
+/// where new previews run.
 ///
 /// Counts are checked when a preview is created, so lowering one below the
 /// current count keeps every existing preview running and only refuses new
@@ -36,6 +37,13 @@ pub struct PreviewLimits {
     // The bounds are `REPLICAS`, which `validate` enforces.
     #[schema(minimum = 1, maximum = 100)]
     pub max_replicas: u16,
+    /// The worker node, one `[nodes]` names, that previews created from now
+    /// on run on: their services, jobs, volumes and images. Without it, they
+    /// run on this host. A preview keeps the node it was created on. Needs a
+    /// build machine (`[build]`), whose registry the worker pulls built
+    /// images from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node: Option<crate::nodes::NodeName>,
 }
 
 impl Default for PreviewLimits {
@@ -46,6 +54,7 @@ impl Default for PreviewLimits {
             default_cpu_millis: 500,
             default_memory_bytes: 512 * 1024 * 1024,
             max_replicas: 1,
+            node: None,
         }
     }
 }
@@ -185,6 +194,7 @@ cpu_millis = 2000
             slug: PreviewSlug::derive(&name, &branch, None),
             branch,
             slot: None,
+            node: None,
         }))
     }
 

@@ -77,7 +77,8 @@ impl ApplicationService {
         }
         let _in_use = self
             .runtime
-            .reuse_images(candidate.release.sources())
+            // Promotions target environments, which run on this host.
+            .reuse_images(candidate.release.sources(), None)
             .await?;
         // Generated off the writer lock, stored only if accepted.
         let generated = self

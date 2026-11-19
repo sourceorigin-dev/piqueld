@@ -119,6 +119,14 @@ fn telemetry(telemetry: &TelemetryReport) -> Option<String> {
     }
 }
 
+/// Where a preview runs: a worker node, or the host.
+fn runs_on(preview: &EnvironmentView) -> String {
+    preview.kind.node().map_or_else(
+        || "this host".to_owned(),
+        |node| format!("worker node {node}"),
+    )
+}
+
 /// A branch state in words, with the commits involved.
 fn branch_state(state: &BranchState) -> String {
     match state {
@@ -146,6 +154,7 @@ report!(Vec<PreviewView> as [PreviewView], self, out, {
             "BRANCH",
             "SLOT",
             "SLUG",
+            "NODE",
             "STATE",
             "BRANCH STATE",
             "SYNC",
@@ -165,6 +174,10 @@ report!(Vec<PreviewView> as [PreviewView], self, out, {
                     .map_or("-", |slot| slot.as_str())
                     .into(),
                 preview.name.to_string(),
+                preview
+                    .kind
+                    .node()
+                    .map_or_else(|| "host".to_owned(), ToString::to_string),
                 view.status.state.to_string(),
                 view.branch.to_string(),
                 view.sync.to_string(),
@@ -194,6 +207,7 @@ report!(PreviewView, self, out, {
     out.blank()?;
     out.label("Intent", self.status.state)?;
     out.label("Runtime", runtime_health(&self.status))?;
+    out.label("Runs on", runs_on(preview))?;
     out.label("Branch", branch_state(&self.branch))?;
     if let DeploymentOrigin::Local(snapshot) = &self.origin {
         out.label("Deploys", snapshot_origin(snapshot))?;
@@ -243,6 +257,9 @@ report!(CreatedPreviewReport<'_>, self, out, {
             (false, false) => "already exists; not redeployed",
         }
     ))?;
+    if preview.kind.node().is_some() {
+        out.label("Runs on", runs_on(preview))?;
+    }
     if let (true, Some(commit)) = (self.deployed.local, &self.deployed.commit) {
         let snapshot = LocalSnapshot {
             commit: commit.clone(),

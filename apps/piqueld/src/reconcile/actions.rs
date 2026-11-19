@@ -245,6 +245,19 @@ impl<D: DockerApi> Controller<D> {
         piqueld_core::resource::Ownership::scope(self.store.instance_id(), id)
     }
 
+    /// [`Self::ownership_labels`], with the worker node environment `id` runs
+    /// on, whose engine holds its volumes and job containers.
+    pub(super) async fn placed_ownership(
+        &self,
+        id: &piqueld_core::EnvironmentId,
+    ) -> Result<std::collections::BTreeMap<String, String>, piqueld_store::StoreError> {
+        let mut labels = self.ownership_labels(id);
+        if let Some(node) = self.store.node(id).await? {
+            labels.insert(piqueld_core::nodes::NODE_LABEL.into(), node.to_string());
+        }
+        Ok(labels)
+    }
+
     /// Runs a journaled Docker request with exponential backoff.
     ///
     /// Each attempt re-checks that the operation is still current, both before and

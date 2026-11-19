@@ -39,6 +39,8 @@ string_enum! {
     GitBuildFailed => "git_build_failed",
     /// The build machine could not be reached to build an image.
     BuilderUnavailable => "builder_unavailable",
+    /// The worker node a preview runs on could not be reached.
+    NodeUnavailable => "node_unavailable",
     /// Docker paused a failed service update.
     ServiceUpdateFailed => "service_update_failed",
     /// A one-shot job exited unsuccessfully before rollout.
@@ -105,6 +107,11 @@ const TELEMETRY_EXPORT: &str = "Check that the collector at telemetry.endpoint i
 const SWARM: &str = "Make Docker Engine the active manager of its Swarm, and every other node a worker the daemon's [nodes] names, whose Docker Engine answers, or remove that node with docker node rm; the daemon's log names it. Reconciliation retries once it is.";
 /// Guidance for a build machine the host could not reach.
 const BUILDER_UNAVAILABLE: &str = "Start the build machine and check that this host can reach its BuildKit daemon, then retry the deployment.";
+/// Guidance for a worker node the host could not reach.
+const NODE_UNAVAILABLE: &str = "Start the worker node the preview runs on, and check that this host can reach its Docker Engine, then deploy the preview again. What runs on the host carries on.";
+/// Guidance for a failed checkout or build.
+const GIT_BUILD_FAILED: &str =
+    "Open the build output, fix the source or build configuration, then deploy again.";
 /// Guidance for transient failures that reconciliation retries on its own.
 const AUTOMATIC_RETRY: &str =
     "Reconciliation will retry. Inspect the affected resource if the failure persists.";
@@ -155,12 +162,9 @@ impl DiagnosticCode {
             ),
             Self::ImageUnavailable => (Application, false, IMAGE_UNAVAILABLE),
             Self::EnvironmentPromoted => (Application, false, ENVIRONMENT_PROMOTED),
-            Self::GitBuildFailed => (
-                Application,
-                false,
-                "Open the build output, fix the source or build configuration, then deploy again.",
-            ),
+            Self::GitBuildFailed => (Application, false, GIT_BUILD_FAILED),
             Self::BuilderUnavailable => (Application, false, BUILDER_UNAVAILABLE),
+            Self::NodeUnavailable => (Application, false, NODE_UNAVAILABLE),
             Self::JobFailed | Self::JobTimeout => (
                 Application,
                 false,

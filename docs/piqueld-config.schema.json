@@ -330,6 +330,10 @@
       ],
       "type": "string"
     },
+    "NodeName": {
+      "description": "The name the daemon's configuration gives a worker node, such as\n`nixosbtw`, under `[nodes.<name>]`.",
+      "type": "string"
+    },
     "Ovh": {
       "description": "An OVH account.",
       "properties": {
@@ -369,7 +373,7 @@
     },
     "PreviewLimits": {
       "additionalProperties": false,
-      "description": "How many previews may exist, and what each preview service may use.\n\nCounts are checked when a preview is created, so lowering one below the\ncurrent count keeps every existing preview running and only refuses new\nones. Resource bounds apply when a preview's manifest is rendered, so a\npreview picks up changed bounds on its next deployment. Environments are\nnever bounded.",
+      "description": "How many previews may exist, what each preview service may use, and\nwhere new previews run.\n\nCounts are checked when a preview is created, so lowering one below the\ncurrent count keeps every existing preview running and only refuses new\nones. Resource bounds apply when a preview's manifest is rendered, so a\npreview picks up changed bounds on its next deployment. Environments are\nnever bounded.",
       "properties": {
         "default_cpu_millis": {
           "default": 500,
@@ -408,6 +412,18 @@
           "format": "int32",
           "minimum": 0,
           "type": "integer"
+        },
+        "node": {
+          "default": null,
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/NodeName",
+              "description": "The worker node, one `[nodes]` names, that previews created from now\non run on: their services, jobs, volumes and images. Without it, they\nrun on this host. A preview keeps the node it was created on. Needs a\nbuild machine (`[build]`), whose registry the worker pulls built\nimages from."
+            }
+          ]
         }
       },
       "type": "object"
