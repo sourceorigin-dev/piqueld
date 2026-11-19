@@ -960,7 +960,7 @@ async fn secret_key_check_reports_the_key_without_changing_it() {
 
 /// Each stage of a requested secret deletion commits with its own audit
 /// record, while resuming a reservation and a stale completion change
-/// nothing and record nothing. Key recovery records what it discarded.
+/// nothing, record nothing, and leave their request's background record. Key recovery records what it discarded.
 #[tokio::test]
 async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
     let temp = tempfile::tempdir().unwrap();
@@ -975,41 +975,60 @@ async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
         .put_secret(Daemon, &env, "token", 0, b"value".to_vec())
         .await
         .unwrap();
+    store
+        .put_stored_secret(Daemon, app.id(), "stripe", 0, b"value".to_vec(), None)
+        .await
+        .unwrap();
+    store
+        .put_stored_secret(Daemon, app.id(), "kept", 0, b"value".to_vec(), None)
+        .await
+        .unwrap();
     let route = "DELETE /api/v1/environments/{id}/secrets/{name}";
+    // Runtime cleanup failed after the first reservation, so a retry resumes
+    // it, and a late retry then completes a deletion already done. Each
+    // stage runs under its own request, which only a recorded change marks.
+    macro_rules! stages {
+        ($begin:ident, $finish:ident, $owner:expr, $name:literal) => {{
+            let requests = [(); 4].map(|()| crate::testing::audit_request(route));
+            let by = |stage: usize| crate::Author {
+                actor: Daemon,
+                request: Some(&requests[stage]),
+            };
+            let deletion = store.$begin(by(0), $owner, $name, 1).await.unwrap();
+            store.$begin(by(1), $owner, $name, 1).await.unwrap();
+            for stage in [2, 3] {
+                store
+                    .$finish(by(stage), $owner, $name, &deletion.id)
+                    .await
+                    .unwrap();
+            }
+            let recorded = requests.each_ref().map(|request| request.recorded.get());
+            assert_eq!(recorded, [true, false, true, false]);
+            deletion.id
+        }};
+    }
+    let token = stages!(begin_secret_deletion, finish_secret_deletion, &env, "token");
+    let stripe = stages!(
+        begin_stored_secret_deletion,
+        finish_stored_secret_deletion,
+        app.id(),
+        "stripe"
+    );
+    std::fs::write(temp.path().join("secrets.key"), [42; 32]).unwrap();
     let request = crate::testing::audit_request(route);
     let author = crate::Author {
         actor: Daemon,
         request: Some(&request),
     };
-    // Runtime cleanup failed after the first reservation; the retry resumes it.
-    let deletion = store
-        .begin_secret_deletion(author, &env, "token", 1)
-        .await
-        .unwrap();
-    let retry = store
-        .begin_secret_deletion(author, &env, "token", 1)
-        .await
-        .unwrap();
-    store
-        .finish_secret_deletion(author, &env, "token", &retry.id)
-        .await
-        .unwrap();
-    store
-        .finish_secret_deletion(author, &env, "token", &deletion.id)
-        .await
-        .unwrap();
-    store
-        .put_stored_secret(Daemon, app.id(), "stripe", 0, b"value".to_vec(), None)
-        .await
-        .unwrap();
-    std::fs::write(temp.path().join("secrets.key"), [42; 32]).unwrap();
     store.recover_secret_key(author).await.unwrap();
-    let id = &deletion.id;
+    assert!(request.recorded.get());
     assert_eq!(
         store.audit_actions().await,
         [
-            format!("{route} secret \"token\" deletion {id} reserved"),
-            format!("{route} secret \"token\" deletion {id} completed"),
+            format!("{route} secret \"token\" deletion {token} reserved"),
+            format!("{route} secret \"token\" deletion {token} completed"),
+            format!("{route} secret \"stripe\" deletion {stripe} reserved"),
+            format!("{route} secret \"stripe\" deletion {stripe} completed"),
             format!(
                 "{route} secret key recovery discarded 1 values across 0 environments \
                 and 1 applications, and 0 notification destinations"

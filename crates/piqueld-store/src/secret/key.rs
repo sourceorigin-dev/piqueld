@@ -352,11 +352,11 @@ impl Store {
             "secret key recovery discarded {discarded} values across {} environments and {} applications, and {destinations} notification destinations",
             usage.environments, stored.applications
         );
-        author
-            .record_on(&mut tx, 200, &change, (None, None))
+        let appended = author
+            .record_on(&mut tx, 200, Some(&change), (None, None))
             .await?;
         tx.commit().await.map_err(StoreError::database)?;
-        author.committed();
+        appended.committed();
         SecretCipher::retire(&self.secret_key_path, now).map_err(StoreError::SecretSource)?;
         Ok(SecretKeyRecovery {
             affected_environments: usage.environments,

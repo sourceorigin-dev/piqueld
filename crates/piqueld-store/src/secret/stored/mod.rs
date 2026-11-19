@@ -497,14 +497,12 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        if reserving {
-            let change = Self::deletion_change(name, &deletion_id, "reserved");
-            author
-                .record_on(&mut tx, 200, &change, (Some(id), None))
-                .await?;
-        }
+        let change = reserving.then(|| Self::deletion_change(name, &deletion_id, "reserved"));
+        let appended = author
+            .record_on(&mut tx, 200, change.as_deref(), (Some(id), None))
+            .await?;
         tx.commit().await.map_err(StoreError::database)?;
-        author.committed();
+        appended.committed();
         Ok(SecretDeletion {
             id: deletion_id,
             versions,
@@ -532,18 +530,19 @@ impl Store {
             .execute(&mut *tx).await.map_err(StoreError::database)?;
         let deleted = sqlx::query!("DELETE FROM application_secrets WHERE application_id=?1 AND name=?2 AND deletion_id=?3",id,name,deletion_id)
             .execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
+        let mut change = None;
         if deleted > 0 {
             let scope = SecretScope::Application(application);
             let event = ("secret_deleted", Self::SECRET_DELETED, name);
             let by = author.actor.attribution();
             Self::secret_event_on(&mut tx, scope, event, by, now_ms()).await?;
-            let change = Self::deletion_change(name, deletion_id, "completed");
-            author
-                .record_on(&mut tx, 200, &change, (Some(id), None))
-                .await?;
+            change = Some(Self::deletion_change(name, deletion_id, "completed"));
         }
+        let appended = author
+            .record_on(&mut tx, 200, change.as_deref(), (Some(id), None))
+            .await?;
         tx.commit().await.map_err(StoreError::database)?;
-        author.committed();
+        appended.committed();
         Ok(())
     }
 }
