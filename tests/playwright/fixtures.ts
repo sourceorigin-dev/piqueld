@@ -1,4 +1,4 @@
-import { test as base, expect, type Browser, type CDPSession, type Locator, type Page, type Route } from '@playwright/test';
+import { test as base, expect, type Browser, type CDPSession, type Locator, type Page, type Route, type TestInfo } from '@playwright/test';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -49,9 +49,17 @@ export class Process {
   }
 }
 
+/** How long before the test's timeout `Cli.run` kills a command, so the
+ * test fails with the command and its output rather than a bare timeout. */
+const commandMargin = 5_000;
+
+/** `piquelctl` against a test's daemon. */
 export class Cli {
   readonly env: NodeJS.ProcessEnv;
-  constructor(readonly daemon: Daemon, env: NodeJS.ProcessEnv = {}) {
+  /** When the fixture was set up, just after the daemon started: near enough
+   * the start of the test's timeout. */
+  private readonly started = Date.now();
+  constructor(readonly daemon: Daemon, private readonly testInfo: TestInfo, env: NodeJS.ProcessEnv = {}) {
     this.env = { ...process.env, ...env, PIQUELD_CREDENTIALS_FILE: join(daemon.directory, 'credentials.json') };
     delete this.env.PIQUELD_TOKEN;
   }
@@ -62,13 +70,21 @@ export class Cli {
     return new Process(join(bin, 'piquelctl'), ['--socket', this.daemon.socket, ...args], env, cwd);
   }
   /** Runs `piquelctl` with `args` to completion, in directory `cwd` and
-   * with `input` as its whole standard input when given. */
+   * with `input` as its whole standard input when given. A command still
+   * running `commandMargin` before the test's timeout, which `test.slow()`
+   * scales, is killed and throws with its output so far. */
   async run(args: string[], token?: string, cwd?: string, input?: string) {
     const child = this.start(args, token, cwd);
     if (input !== undefined) child.child.stdin.end(input);
-    const timer = setTimeout(() => child.child.kill('SIGKILL'), 15_000);
+    let killed = false;
+    // A timeout of 0 means the test has none.
+    const timer = this.testInfo.timeout && setTimeout(() => {
+      killed = true;
+      child.child.kill('SIGKILL');
+    }, this.started + this.testInfo.timeout - commandMargin - Date.now());
     try {
       const code = await child.exited;
+      if (killed) throw new Error(`piquelctl ${args.join(' ')} was still running near the test's timeout\nstdout:\n${child.stdout}\nstderr:\n${child.stderr}`);
       return { code, stdout: child.stdout, stderr: child.stderr };
     } finally { clearTimeout(timer); }
   }
@@ -365,7 +381,7 @@ export const test = base.extend<Options & { daemon: Daemon; passkeys: Passkeys; 
     void passkeys;
     await use(await register(page, daemon.setup, 'alice'));
   },
-  cli: async ({ daemon, processEnv }, use) => { await use(new Cli(daemon, processEnv)); },
+  cli: async ({ daemon, processEnv }, use, testInfo) => { await use(new Cli(daemon, testInfo, processEnv)); },
   browserErrors: [async ({ page }, use) => {
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
