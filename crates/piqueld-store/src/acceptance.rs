@@ -483,13 +483,13 @@ impl Store {
             }
             Mutation::RenameEnvironment { id, name } => {
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
-                Self::rename_environment_on(tx, &current, &name, now).await?;
-                Self::environment_accepted(tx, id).await
+                let changed = Self::rename_environment_on(tx, &current, &name, now).await?;
+                Ok(Self::environment_accepted(tx, id).await?.changing(changed))
             }
             Mutation::SetBranch { id, branch } => {
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
-                Self::set_branch_on(tx, &current, branch, now).await?;
-                Self::environment_accepted(tx, id).await
+                let changed = Self::set_branch_on(tx, &current, branch, now).await?;
+                Ok(Self::environment_accepted(tx, id).await?.changing(changed))
             }
             // Boxed: it would otherwise grow every acceptance future.
             Mutation::Deploy {
@@ -563,8 +563,8 @@ impl Store {
         match mutation {
             PromotionMutation::SetSource { id, promote_from } => {
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
-                Self::set_promotion_on(tx, &current, promote_from, now).await?;
-                Self::environment_accepted(tx, id).await
+                let changed = Self::set_promotion_on(tx, &current, promote_from, now).await?;
+                Ok(Self::environment_accepted(tx, id).await?.changing(changed))
             }
             PromotionMutation::Promote { id, promotion, .. } => {
                 let promotion = promotion.ok_or(StoreError::InvalidInput)?;
@@ -1520,5 +1520,30 @@ mod tests {
             saved.application_id,
         );
         assert_eq!(rows, [allowed]);
+    }
+
+    /// An environment change that finds its value already set, such as its
+    /// current name or source, changes nothing, so it records nothing and
+    /// succeeds even when audit records can't be written.
+    #[tokio::test]
+    async fn unchanged_environment_requests_record_nothing() {
+        let (_directory, store) = Store::temporary().await;
+        let (_, qa) = configured_environments(&store).await;
+        let source = Mutation::Promotion(PromotionMutation::SetSource {
+            id: qa.clone(),
+            promote_from: None,
+        });
+        store.refuse_audit(true).await;
+        for unchanged in [rename(&qa, "qa"), source] {
+            let request = crate::testing::audit_request("PUT /api/v1/environments/{id}");
+            let author = Author {
+                actor: Actor::Daemon,
+                request: Some(&request),
+            };
+            let accepted = store.accept(author, unchanged, None, false, None).await;
+            assert!(accepted.is_ok() && !request.recorded.get());
+        }
+        store.refuse_audit(false).await;
+        assert_eq!(store.audit_actions().await, Vec::<String>::new());
     }
 }

@@ -314,22 +314,23 @@ impl Store {
     /// Returns a storage error or `IllegalTransition` if superseded.
     pub async fn retry_operation(&self, operation: &Operation) -> Result<Operation, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        let result = Self::retry_operation_on(&mut tx, operation).await?;
+        let (result, _) = Self::retry_operation_on(&mut tx, operation).await?;
         tx.commit().await.map_err(StoreError::database)?;
         Ok(result)
     }
 
     /// Resets the latest terminal operation (or a running deletion with a recorded
     /// error) back to `requested` inside `tx`, updating environment status and
-    /// recording `reconciliation_requested`. Idempotent: if the operation is
-    /// already requested or running it is returned unchanged.
+    /// recording `reconciliation_requested`, and returns it with whether it
+    /// was reset. Idempotent: if the operation is already requested or
+    /// running it is returned unchanged.
     ///
     /// # Errors
     /// Returns a storage error.
     pub async fn retry_operation_on(
         tx: &mut Transaction<'_, Sqlite>,
         operation: &Operation,
-    ) -> Result<Operation, StoreError> {
+    ) -> Result<(Operation, bool), StoreError> {
         let now = now_ms();
         let changed = sqlx::query!("UPDATE operations SET state='requested',error_code=NULL,error_message=NULL,started_at_ms=NULL,finished_at_ms=NULL,updated_at_ms=?1 WHERE id=?2 AND (state IN ('succeeded','failed','cancelled') OR (state='running' AND error_code IS NOT NULL)) AND id=(SELECT latest.id FROM operations latest WHERE latest.environment_id=operations.environment_id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1)",now,operation.id)
             .execute(&mut **tx).await.map_err(StoreError::database)?.rows_affected();
@@ -341,7 +342,7 @@ impl Store {
                 current.state,
                 OperationState::Requested | OperationState::Running
             ) {
-                return Ok(current);
+                return Ok((current, false));
             }
             return Err(StoreError::IllegalTransition);
         }
@@ -353,7 +354,7 @@ impl Store {
         Self::write_status(tx, operation.environment_id.as_str(), state, now).await?;
         Self::operation_event(tx, &operation.id, "reconciliation_requested", None, now).await?;
         let operation = Self::operation_on(tx, &operation.id).await?;
-        Ok(operation)
+        Ok((operation, true))
     }
 
     /// Records a `resource_mutated` event after an action changed runtime state.

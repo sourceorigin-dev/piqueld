@@ -40,11 +40,10 @@ impl Store {
             .fetch_one(&mut **tx)
             .await
             .map_err(StoreError::database)?;
-        let retried = promoted != 0;
-        let operation = if retried {
+        let (operation, retried) = if promoted != 0 {
             Self::retry_operation_on(tx, &operation).await?
         } else {
-            operation
+            (operation, false)
         };
         Ok(Self::operation_accepted(&operation).changing(stopped || retried))
     }
@@ -65,11 +64,10 @@ impl Store {
             .ok_or(StoreError::NotFound)?;
         let started = !environment.delete_intent()
             && Self::mark_stopped_on(tx, id.as_str(), false, now).await?;
-        let retried = operation.state.terminal() || operation.error_code.is_some();
-        let operation = if retried {
+        let (operation, retried) = if operation.state.terminal() || operation.error_code.is_some() {
             Self::retry_operation_on(tx, &operation).await?
         } else {
-            operation
+            (operation, false)
         };
         Ok(Self::operation_accepted(&operation).changing(started || retried))
     }

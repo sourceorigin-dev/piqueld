@@ -118,19 +118,19 @@ impl Store {
     /// switching the configuration the environment deploys, and while the
     /// application's saved manifest declares either (see `check_undeclared`).
     /// It stays resolved unless its configuration renders the name, e.g.
-    /// `${{ env.name }}`.
+    /// `${{ env.name }}`. Returns whether the name changed.
     pub(super) async fn rename_environment_on(
         tx: &mut Transaction<'_, Sqlite>,
         environment: &StoredEnvironment,
         name: &EnvironmentName,
         now: i64,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         if environment.delete_intent() {
             return Err(StoreError::Busy);
         }
         let old = &environment.environment.name;
         if old == name {
-            return Ok(());
+            return Ok(false);
         }
         // A branch environment's configuration is its last fetched manifest;
         // before the first fetch there is none to switch.
@@ -173,19 +173,21 @@ impl Store {
             environment.application.generation,
             stale,
         )
-        .await
+        .await?;
+        Ok(true)
     }
 
     /// Points an environment of a repository-backed application at `branch`
     /// (see `set_source_on`), unless the saved manifest declares its source.
     /// A promoted environment has no branch to change (`Promoted`): making it
-    /// track one again goes through `set_promotion_on`.
+    /// track one again goes through `set_promotion_on`. Returns whether its
+    /// source changed.
     pub(super) async fn set_branch_on(
         tx: &mut Transaction<'_, Sqlite>,
         environment: &StoredEnvironment,
         branch: TrackedBranch,
         now: i64,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::check_source_undeclared(
             &environment.application.application,
             &environment.environment.name,
@@ -200,12 +202,13 @@ impl Store {
     /// `check_promotion_source_on`), or, without one, returns it to tracking
     /// the application's saved manifest or the branch `spec.manifest` names
     /// (see `set_source_on`), unless the saved manifest declares its source.
+    /// Returns whether its source changed.
     pub(super) async fn set_promotion_on(
         tx: &mut Transaction<'_, Sqlite>,
         environment: &StoredEnvironment,
         promote_from: Option<EnvironmentId>,
         now: i64,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::check_source_undeclared(
             &environment.application.application,
             &environment.environment.name,
@@ -232,17 +235,18 @@ impl Store {
     }
 
     /// Changes where an environment deploys from (see `write_source_on`),
-    /// advancing the application revision when it changed.
+    /// advancing the application revision when it changed, and returns
+    /// whether it did.
     async fn set_source_on(
         tx: &mut Transaction<'_, Sqlite>,
         environment: &StoredEnvironment,
         source: EnvironmentSource,
         now: i64,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         if Self::write_source_on(tx, environment, source, false, now).await?
             == SourceWrite::Unchanged
         {
-            return Ok(());
+            return Ok(false);
         }
         Self::bump_generation_on(
             tx,
@@ -250,7 +254,8 @@ impl Store {
             environment.application.generation,
             Some(environment.id()),
         )
-        .await
+        .await?;
+        Ok(true)
     }
 
     /// Changes where an environment deploys from, recording
