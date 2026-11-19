@@ -1,11 +1,7 @@
 //! Editing the exports an application offers and the imports it links to.
 
-use super::EditFlags;
-use crate::{
-    commands::resolve_application,
-    error::{CliError, ErrorKind, Result},
-    output::Console,
-};
+use super::{Declarations, EditFlags};
+use crate::{commands::resolve_application, error::Result, output::Console};
 use clap::{Args, Subcommand};
 use piqueld_client::{Client, Export, Import, Template, edit::ApplicationEdit};
 
@@ -89,42 +85,28 @@ impl ExportCommand {
     /// Lists saved exports, or edits them client-side and saves the whole
     /// list, like jobs: setting an exported service replaces its grants in place.
     pub(crate) async fn run(&self, client: &Client, console: &mut Console) -> Result<()> {
-        let target = match self {
+        let (target, export) = match self {
             Self::List { app } => {
                 let application = resolve_application(client, app).await?;
                 return console.emit(&application.application.to_manifest().spec.exports);
             }
-            Self::Set(args) => &args.target,
-            Self::Remove(target) => target,
+            Self::Set(args) => (
+                &args.target,
+                Some(Export {
+                    service: args.target.service.clone(),
+                    applications: args.applications.clone(),
+                    previews: args.previews,
+                }),
+            ),
+            Self::Remove(target) => (target, None),
         };
         let current = resolve_application(client, &target.app).await?;
         let mut exports = current.application.to_manifest().spec.exports;
-        let existing = exports
-            .iter()
-            .position(|export| export.service == target.service);
-        match (self, existing) {
-            (Self::Set(args), existing) => {
-                let export = Export {
-                    service: target.service.clone(),
-                    applications: args.applications.clone(),
-                    previews: args.previews,
-                };
-                match existing {
-                    Some(index) => exports[index] = export,
-                    None => exports.push(export),
-                }
-            }
-            (Self::Remove(_), Some(index)) => {
-                exports.remove(index);
-            }
-            (_, None) => {
-                return Err(CliError::new(
-                    ErrorKind::Input,
-                    format!("service {:?} is not exported", target.service),
-                ));
-            }
-            (Self::List { .. }, Some(_)) => unreachable!("listing returned above"),
-        }
+        exports.set_or_remove(
+            |export| export.service == target.service,
+            export,
+            || format!("service {:?} is not exported", target.service),
+        )?;
         let edit = ApplicationEdit::Exports(exports);
         target
             .flags
@@ -136,42 +118,28 @@ impl ImportCommand {
     /// Lists saved imports, or edits them client-side and saves the whole
     /// list: adding an imported service again replaces its environment.
     pub(crate) async fn run(&self, client: &Client, console: &mut Console) -> Result<()> {
-        let target = match self {
+        let (target, import) = match self {
             Self::List { app } => {
                 let application = resolve_application(client, app).await?;
                 return console.emit(&application.application.to_manifest().spec.imports);
             }
-            Self::Add(args) => &args.target,
-            Self::Remove(target) => target,
+            Self::Add(args) => (
+                &args.target,
+                Some(Import {
+                    application: args.target.application.clone(),
+                    service: args.target.service.clone(),
+                    environment: args.environment.clone(),
+                }),
+            ),
+            Self::Remove(target) => (target, None),
         };
         let current = resolve_application(client, &target.app).await?;
         let mut imports = current.application.to_manifest().spec.imports;
-        let existing = imports.iter().position(|import| {
-            import.application == target.application && import.service == target.service
-        });
-        match (self, existing) {
-            (Self::Add(args), existing) => {
-                let import = Import {
-                    application: target.application.clone(),
-                    service: target.service.clone(),
-                    environment: args.environment.clone(),
-                };
-                match existing {
-                    Some(index) => imports[index] = import,
-                    None => imports.push(import),
-                }
-            }
-            (Self::Remove(_), Some(index)) => {
-                imports.remove(index);
-            }
-            (_, None) => {
-                return Err(CliError::new(
-                    ErrorKind::Input,
-                    format!("{}.{} is not imported", target.service, target.application),
-                ));
-            }
-            (Self::List { .. }, Some(_)) => unreachable!("listing returned above"),
-        }
+        imports.set_or_remove(
+            |import| import.application == target.application && import.service == target.service,
+            import,
+            || format!("{}.{} is not imported", target.service, target.application),
+        )?;
         let edit = ApplicationEdit::Imports(imports);
         target
             .flags
