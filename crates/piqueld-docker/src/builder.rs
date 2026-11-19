@@ -1,16 +1,17 @@
 //! A build machine's `BuildKit` daemon, reached through Docker Buildx.
 //!
 //! Buildx's `remote` driver sends a build's context to the daemon, which
-//! builds the image and pushes it to a registry by digest, without a tag.
-//! The engine then pulls it from there like any registry image:
+//! builds the image and pushes it to the build registry under a tag naming
+//! this installation (see [`crate::BuildRegistry::new_tag`]). The engine then
+//! pulls it from there by digest, like any registry image:
 //!
 //! ```text
 //! docker buildx build --builder=piqueld --platform=linux/arm64
-//!     --output=type=image,name=build.example.ts.net:5000/piqueld,push=true,push-by-digest=true …
-//! build.example.ts.net:5000/piqueld@sha256:<64 hex>
+//!     --output=type=image,name=registry.example.ts.net:5000/piqueld:<instance ID>.<UUIDv7>,push=true …
+//! registry.example.ts.net:5000/piqueld@sha256:<64 hex>
 //! ```
 use anyhow::Context;
-use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild, WhenUnavailable};
+use piqueld_core::build_machine::{BuilderEndpoint, RemoteBuild, WhenUnavailable};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
@@ -36,8 +37,9 @@ pub struct RemoteBuilder {
     config: PathBuf,
     /// Where its `BuildKit` daemon listens.
     endpoint: BuilderEndpoint,
-    /// Where the build machine pushes images.
-    pub(super) repository: BuildRepository,
+    /// Where the build machine pushes images, and a client of that
+    /// registry.
+    pub(super) registry: crate::BuildRegistry,
     /// What a build does while the build machine can't be reached.
     pub(super) unavailable: WhenUnavailable,
     /// The latest check of its `BuildKit` daemon; see [`Self::probe`].
@@ -61,7 +63,8 @@ impl RemoteBuilder {
         let builder = Self {
             config: data_dir.join("buildx"),
             endpoint: remote.builder.clone(),
-            repository: remote.repository.clone(),
+            registry: crate::BuildRegistry::new(remote.repository.clone())
+                .context("create the build registry's HTTP client")?,
             unavailable: remote.unavailable,
             last_check: parking_lot::Mutex::default(),
         };
@@ -97,8 +100,8 @@ impl RemoteBuilder {
 
     /// Connects to the build machine's `BuildKit` daemon, waiting up to
     /// [`Self::PROBE_TIMEOUT`], and keeps the check as the latest for
-    /// [`Self::status`]. Its registry is the engine's to reach, not the
-    /// daemon's.
+    /// [`Self::status`]. It checks only `BuildKit`: the build registry is
+    /// reached by the engine, and by image cleanup.
     async fn connect(
         &self,
     ) -> (
@@ -135,7 +138,7 @@ impl RemoteBuilder {
     pub fn status(&self) -> piqueld_core::api::BuilderStatus {
         piqueld_core::api::BuilderStatus {
             endpoint: self.endpoint.to_string(),
-            repository: self.repository.to_string(),
+            repository: self.registry.repository.to_string(),
             last_check: self.last_check.lock().clone(),
         }
     }
@@ -166,43 +169,53 @@ impl RemoteBuilder {
     }
 
     /// The `docker buildx build` options that run a build on the build
-    /// machine for `platform`, the engine's, and push the image by digest.
-    pub(super) fn options(&self, platform: &str) -> [String; 3] {
+    /// machine for `platform`, the engine's, and push the image under `tag`.
+    pub(super) fn options(&self, platform: &str, tag: &str) -> [String; 3] {
         [
             format!("--builder={}", Self::NAME),
             format!("--platform={platform}"),
             format!(
-                "--output=type=image,name={},push=true,push-by-digest=true",
-                self.repository
+                "--output=type=image,name={}:{tag},push=true",
+                self.registry.repository
             ),
         ]
+    }
+
+    /// The repository the build machine pushes to, and its registry.
+    #[must_use]
+    pub fn registry(&self) -> &crate::BuildRegistry {
+        &self.registry
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use piqueld_core::build_machine::BuildRepository;
 
     /// A builder whose `BuildKit` daemon listens at `daemon`.
     fn builder(daemon: std::net::SocketAddr) -> RemoteBuilder {
         RemoteBuilder {
             config: PathBuf::from("/var/lib/piqueld/buildx"),
             endpoint: BuilderEndpoint::try_from(format!("tcp://{daemon}")).unwrap(),
-            repository: BuildRepository::try_from("build.example.ts.net:5000/piqueld".to_owned())
-                .unwrap(),
+            registry: crate::BuildRegistry::new(
+                BuildRepository::try_from("registry.example.ts.net:5000/piqueld".to_owned())
+                    .unwrap(),
+            )
+            .unwrap(),
             unavailable: WhenUnavailable::Fail,
             last_check: parking_lot::Mutex::default(),
         }
     }
 
     #[test]
-    fn builds_run_on_the_builder_for_the_engines_platform_and_push_by_digest() {
+    fn builds_run_on_the_builder_for_the_engines_platform_and_push_under_their_tag() {
         assert_eq!(
-            builder("127.0.0.1:1234".parse().unwrap()).options("linux/arm64"),
+            builder("127.0.0.1:1234".parse().unwrap()).options("linux/arm64", "instance-1.0a"),
             [
                 "--builder=piqueld",
                 "--platform=linux/arm64",
-                "--output=type=image,name=build.example.ts.net:5000/piqueld,push=true,push-by-digest=true",
+                "--output=type=image,name=registry.example.ts.net:5000/piqueld:instance-1.0a,push=true",
             ]
         );
     }

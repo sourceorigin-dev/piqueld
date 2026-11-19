@@ -112,8 +112,9 @@ pub use previews::{
     PrunePreviewsRequest,
 };
 pub use system::{
-    CertificateStatus, DnsProviderStatus, DnsStatus, ImageStatus, SnapshotLimits, SystemStatus,
-    TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver, TelemetryStatus,
+    CertificateStatus, DnsProviderStatus, DnsStatus, ImageStatus, RegistryImageStatus,
+    SnapshotLimits, SystemStatus, TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver,
+    TelemetryStatus,
 };
 
 pub use piqueld_core::api::{

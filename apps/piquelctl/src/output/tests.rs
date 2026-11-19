@@ -494,6 +494,7 @@ fn status_and_dns_refresh_list_images_dns_providers_certificate_failures_and_pre
             images: 4,
             reclaimed_bytes: 2048,
             cleaned_at_ms: Some(7),
+            registry: None,
         },
         ..SystemStatus::default()
     };
@@ -683,6 +684,34 @@ fn urls_print_one_line_each_with_name_state_and_what_they_wait_for() {
         "URL: https://notes.example.com (web) ready\n\
          URL: https://admin.notes.example.com pending: HTTPS (Ingress is disabled in daemon configuration), service web\n"
     );
+}
+
+#[test]
+fn status_shows_what_registry_cleanup_deleted_and_what_it_couldnt() {
+    let status = |images, failure: Option<&str>| piqueld_client::RegistryImageStatus {
+        repository: "registry.example.ts.net:5000/piqueld".into(),
+        images,
+        deleted_images: 3,
+        failure: failure.map(str::to_owned),
+    };
+    let deleted = "Registry images: 12 in registry.example.ts.net:5000/piqueld; cleanup deleted 3 since the daemon started";
+    for (registry, expected) in [
+        (status(Some(12), None), format!("{deleted}\n")),
+        (
+            status(Some(12), Some("connection refused")),
+            format!("{deleted}; the last cleanup couldn't delete them all: connection refused"),
+        ),
+        // Before any cleanup listed the registry, there is no count.
+        (
+            status(None, Some("connection refused")),
+            "Registry images: registry.example.ts.net:5000/piqueld not listed yet; cleanup deleted 3".to_owned(),
+        ),
+    ] {
+        let stdout = Capture::default();
+        stdout.human_console().emit(&registry).unwrap();
+        let text = stdout.text();
+        assert!(text.contains(&expected), "{text}");
+    }
 }
 
 #[test]

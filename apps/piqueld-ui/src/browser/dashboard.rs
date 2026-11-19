@@ -19,7 +19,7 @@ use piqueld_client::{
     observability::Bytes,
     system::{
         CertificateStatus, DependencyStatus, DnsProviderStatus, ImageStatus, PublicIngressStatus,
-        ReadinessStatus, TelemetryStatus,
+        ReadinessStatus, RegistryImageStatus, TelemetryStatus,
     },
 };
 
@@ -356,6 +356,9 @@ pub(super) fn ReadinessPanel() -> impl IntoView {
                     {move || {
                         signals.system.get().map(|system| preview_row(system.previews.as_ref()))
                     }} {move || signals.system.get().map(|system| images_row(&system.images))}
+                    {move || {
+                        signals.system.get().and_then(|system| system.images.registry.map(registry_row))
+                    }}
                     {move || signals.system.get().map(|system| telemetry_rows(&system.telemetry))}
                 </ul>
             </div>
@@ -657,6 +660,30 @@ fn images_row(images: &ImageStatus) -> AnyView {
             Tone::Pending,
             "Not cleaned up",
             "Cleanup hasn't run since the daemon started.",
+            None,
+        ),
+    }
+}
+
+/// Row for the images this host's builds pushed to the build registry: how
+/// many it still holds, what cleanup deleted since the daemon
+/// started, and why the last cleanup didn't delete them all, if it didn't.
+fn registry_row(registry: RegistryImageStatus) -> AnyView {
+    let held = registry.images.map_or_else(
+        || format!("{} not listed yet", registry.repository),
+        |images| format!("{images} in {}", registry.repository),
+    );
+    let summary = format!(
+        "{held}. Cleanup deleted {} since the daemon started.",
+        registry.deleted_images
+    );
+    match registry.failure {
+        None => status_row("Registry images", Tone::Ok, "Cleaned up", summary, None),
+        Some(reason) => status_row(
+            "Registry images",
+            Tone::Warn,
+            "Not cleaned up",
+            format!("{summary} The last cleanup couldn't delete them all: {reason}"),
             None,
         ),
     }

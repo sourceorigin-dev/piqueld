@@ -353,6 +353,11 @@ in
             default = 3;
             description = "Successful deployments per environment whose built images are kept for restores, besides what environments and previews run or are deploying.";
           };
+          images.registry_keep_deployments = lib.mkOption {
+            type = lib.types.ints.u32;
+            default = 10;
+            description = "Successful deployments per environment whose images the build registry keeps, never fewer than images.keep_deployments; cleanup deletes the other images this host's builds pushed there, and skips the registry while it is unreachable. Unused without a build machine.";
+          };
           images.cleanup_interval_seconds = lib.mkOption {
             type = lib.types.ints.between 1 86400;
             default = 3600;

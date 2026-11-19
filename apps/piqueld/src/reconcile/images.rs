@@ -3,10 +3,13 @@
 use super::{Controller, DockerApi, OperationError};
 use piqueld_core::Phase;
 use piqueld_core::{
-    InstanceId, ServiceImage, ServiceName, api::ImageStatus, resource::ResolvedSource,
+    InstanceId, RepositoryDigest, ServiceImage, ServiceName, Sha256Digest,
+    api::{ImageStatus, RegistryImageStatus},
+    build_machine::BuildRepository,
+    resource::ResolvedSource,
 };
-use piqueld_docker::LocalImage;
-use std::{sync::Arc, time::Duration};
+use piqueld_docker::{DockerError, LocalImage};
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
 use tokio::sync::{Notify, OwnedRwLockReadGuard, RwLock, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -22,6 +25,9 @@ pub(super) struct ImageRetention {
     in_use: Arc<RwLock<()>>,
     /// Successful deployments per environment whose images are kept.
     keep_deployments: u32,
+    /// Successful deployments per environment whose images the build
+    /// registry keeps, never fewer than `keep_deployments`.
+    registry_keep_deployments: u32,
     /// Time between periodic cleanups.
     interval: Duration,
     /// Wakes cleanup when an operation finishes.
@@ -40,6 +46,9 @@ impl ImageRetention {
         Self {
             in_use: Arc::default(),
             keep_deployments: config.keep_deployments,
+            registry_keep_deployments: config
+                .registry_keep_deployments
+                .max(config.keep_deployments),
             interval: Duration::from_secs(config.cleanup_interval_seconds),
             requested: Notify::new(),
             status: watch::Sender::default(),
@@ -106,6 +115,36 @@ impl ImagesInUse {
     }
 }
 
+/// What one cleanup did in the build registry.
+struct RegistryPass {
+    /// The build registry's repository, `build.repository`.
+    repository: BuildRepository,
+    /// Pushed images still in the registry; unknown when it couldn't be
+    /// listed.
+    kept: Option<u32>,
+    /// Pushed images it deleted.
+    deleted: u32,
+    /// Why it stopped before deleting every unused image, if it did.
+    failure: Option<String>,
+}
+
+impl RegistryPass {
+    /// The registry's status after this pass, adding its deletions to those
+    /// since the daemon started, as of `earlier`, whose count of images
+    /// stands while the registry can't be listed.
+    fn status(self, earlier: Option<&RegistryImageStatus>) -> RegistryImageStatus {
+        let earlier = earlier.filter(|earlier| earlier.repository == self.repository.to_string());
+        RegistryImageStatus {
+            repository: self.repository.to_string(),
+            images: self
+                .kept
+                .or_else(|| earlier.and_then(|earlier| earlier.images)),
+            deleted_images: earlier.map_or(0, |earlier| earlier.deleted_images) + self.deleted,
+            failure: self.failure,
+        }
+    }
+}
+
 impl<D: DockerApi> Controller<D> {
     /// Keeps cleanup from removing images until the returned guard drops.
     pub async fn images_in_use(&self) -> ImagesInUse {
@@ -126,23 +165,36 @@ impl<D: DockerApi> Controller<D> {
 
     /// Removes each image this installation built that no retention root
     /// keeps, by ID or repository digest, and no container uses, one by one,
-    /// by ID, then health probe configs no service mounts. Returns `false`
-    /// without doing anything while an operation runs or a promotion may be
-    /// recording images; the next request or period cleans up instead.
+    /// by ID, then health probe configs no service mounts, then cleans up
+    /// the build registry (see [`Self::clean_registry`]). Returns
+    /// `false` without changing anything while an operation runs or a
+    /// promotion may be recording images; the next request or period cleans
+    /// up instead.
     ///
     /// # Errors
     /// Returns storage errors, or Docker errors listing images or pruning
     /// probe configs. A failed removal is journaled and the image kept.
     pub async fn clean_images(&self) -> Result<bool, OperationError> {
+        let instance = self.store.instance_id();
+        // Listing the build registry takes a request per page and per new
+        // tag, so it happens before cleanup holds operations off. An image
+        // pushed meanwhile isn't listed, and one listed whose deployment
+        // finished meanwhile is kept by the retention roots read below.
+        let pushed = match self.docker.build_repository() {
+            Some(_) => Some(self.docker.pushed_images(instance).await),
+            None => None,
+        };
         let Ok(_exclusive) = self.images.in_use.try_write() else {
             return Ok(false);
         };
-        let instance = self.store.instance_id();
         let retained = self
             .store
             .retained_images(self.images.keep_deployments)
             .await?;
         let (mut kept, mut reclaimed) = (0_u32, 0_u64);
+        // The registry digests of the images the engine still has, which
+        // build reuse may deploy again.
+        let mut on_host = BTreeSet::new();
         for image in self.docker.images().await? {
             if !image.built_by(instance) {
                 continue;
@@ -152,19 +204,114 @@ impl<D: DockerApi> Controller<D> {
                 || !self.remove_image(instance, &image).await?
             {
                 kept += 1;
+                on_host.extend(image.repo_digests);
             } else {
                 reclaimed += image.size;
             }
         }
         // Old probe configs are about as long-lived as old images.
         self.docker.prune_health_probes(instance).await?;
+        let registry = match (self.docker.build_repository(), pushed) {
+            (Some(repository), Some(pushed)) => {
+                Some(self.clean_registry(repository, pushed, &on_host).await?)
+            }
+            _ => None,
+        };
         let now = piqueld_store::now_ms();
         self.images.status.send_modify(|status| {
             status.images = kept;
             status.reclaimed_bytes += reclaimed;
             status.cleaned_at_ms = Some(now);
+            status.registry = registry.map(|pass| pass.status(status.registry.as_ref()));
         });
         Ok(true)
+    }
+
+    /// Deletes from the build registry each image this host's builds pushed
+    /// to `repository`, found by its tag (`pushed`, listed beforehand), that
+    /// no retention root keeps, counting `registry_keep_deployments`
+    /// successful deployments, and that the engine no longer has
+    /// (`on_host`), one by one, by digest. Images are told apart by digest
+    /// alone, so a new name for the same registry in `build.repository`
+    /// keeps the images deployments refer to under the old one. Skips the
+    /// registry, without journaling anything, when it couldn't be listed, and
+    /// stops at the first deletion that fails for a reason of the whole
+    /// registry's, such as deletes being disabled, or at the third in a row
+    /// that fails for one image's: every other deletion would fail too, and
+    /// cleanup holds operations off meanwhile. Fewer failures of one image's
+    /// keep that image and go on.
+    ///
+    /// # Errors
+    /// Returns storage errors. A failed deletion is journaled and the image
+    /// kept.
+    async fn clean_registry(
+        &self,
+        repository: &BuildRepository,
+        pushed: Result<BTreeSet<RepositoryDigest>, DockerError>,
+        on_host: &BTreeSet<RepositoryDigest>,
+    ) -> Result<RegistryPass, OperationError> {
+        // Failures of one image's own in a row; this many count as the
+        // registry's, such as its storage failing, which answers each image's
+        // deletion with a 500.
+        const IMAGE_FAILURES: u32 = 3;
+        let mut pass = RegistryPass {
+            repository: repository.clone(),
+            kept: None,
+            deleted: 0,
+            failure: None,
+        };
+        let pushed = match pushed {
+            Ok(pushed) => pushed,
+            Err(error) => {
+                // The chain says why: a refused connection, a name that
+                // doesn't resolve or a bad certificate.
+                let reason = format!("{:#}", anyhow::Error::new(error));
+                tracing::info!(error = %reason, "skipping registry cleanup while the registry is unavailable");
+                pass.failure = Some(reason);
+                return Ok(pass);
+            }
+        };
+        let retained = self
+            .store
+            .retained_images(self.images.registry_keep_deployments)
+            .await?;
+        let keep: BTreeSet<Sha256Digest> = retained
+            .iter()
+            .filter_map(|image| RepositoryDigest::parse(image.as_str()).ok())
+            .chain(on_host.iter().cloned())
+            .map(|image| image.digest())
+            .collect();
+        let (kept, unused): (Vec<_>, Vec<_>) = pushed
+            .into_iter()
+            .partition(|image| keep.contains(&image.digest()));
+        let count = |images: usize| u32::try_from(images).unwrap_or(u32::MAX);
+        let mut kept = count(kept.len());
+        let mut image_failures = 0;
+        for (index, image) in unused.iter().enumerate() {
+            let Err(error) = self.delete_pushed_image(image).await? else {
+                pass.deleted += 1;
+                image_failures = 0;
+                continue;
+            };
+            let one_image = matches!(
+                &error,
+                OperationError::Docker(DockerError::Registry(registry))
+                    if !registry.is_registry_wide()
+            );
+            image_failures = if one_image {
+                image_failures + 1
+            } else {
+                IMAGE_FAILURES
+            };
+            pass.failure = Some(format!("{:#}", anyhow::Error::new(error)));
+            if image_failures == IMAGE_FAILURES {
+                kept += count(unused.len() - index);
+                break;
+            }
+            kept += 1;
+        }
+        pass.kept = Some(kept);
+        Ok(pass)
     }
 
     /// Cleans up every interval and after operations finish, until
@@ -194,19 +341,44 @@ impl<D: DockerApi> Controller<D> {
         instance: &InstanceId,
         image: &LocalImage,
     ) -> Result<bool, piqueld_store::StoreError> {
-        let journal = self
-            .store
-            .begin_daemon_action(None, Phase::RemoveImage, Some(image.id.as_str()))
-            .await?;
         let removed = self
-            .request_once(&journal, async {
+            .journal_image_action(Phase::RemoveImage, image.id.as_str(), async {
                 Ok(self.docker.remove_image(instance, &image.id).await?)
             })
-            .await;
+            .await?;
+        Ok(removed.is_ok())
+    }
+
+    /// Journals deleting one pushed image from the build registry
+    /// as a daemon action, and returns why it wasn't deleted, if it wasn't.
+    /// A failed deletion is journaled, and the image kept.
+    async fn delete_pushed_image(
+        &self,
+        image: &RepositoryDigest,
+    ) -> Result<Result<(), OperationError>, piqueld_store::StoreError> {
+        self.journal_image_action(Phase::DeleteRegistryImage, image.as_str(), async {
+            Ok(self.docker.delete_pushed_image(image).await?)
+        })
+        .await
+    }
+
+    /// Journals `request`, which removes the image `resource` names, as a
+    /// daemon action in `phase`, and returns its result.
+    async fn journal_image_action(
+        &self,
+        phase: Phase,
+        resource: &str,
+        request: impl Future<Output = Result<(), OperationError>>,
+    ) -> Result<Result<(), OperationError>, piqueld_store::StoreError> {
+        let journal = self
+            .store
+            .begin_daemon_action(None, phase, Some(resource))
+            .await?;
+        let removed = self.request_once(&journal, request).await;
         // Unlike `close_action`, only failing to open or close the journal
         // action fails cleanup; a removal that fails, or whose intent can't
         // be recorded, keeps the image.
         self.record_outcome(&journal, &removed).await?;
-        Ok(removed.is_ok())
+        Ok(removed)
     }
 }

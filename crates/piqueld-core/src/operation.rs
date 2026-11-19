@@ -209,6 +209,8 @@ string_enum! {
         EnsureSwarm => "ensure_swarm",
         /// Remove an unused image.
         RemoveImage => "remove_image",
+        /// Delete from the build registry an image a build pushed.
+        DeleteRegistryImage => "delete_registry_image",
         /// Create the managed ingress gateway's network.
         IngressCreateNetwork => "ingress_create_network",
         /// Remove the network of the disabled managed ingress gateway.

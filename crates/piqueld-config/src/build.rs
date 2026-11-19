@@ -43,7 +43,8 @@ struct RawBuildConfig {
     /// registry on another machine. Anyone who can reach the registry can
     /// pull every image, build arguments included, or push to it, so only
     /// this host and the build machine should be able to. Every image goes
-    /// to this one repository, by digest, so they share their layers.
+    /// to this one repository, so they share their layers, under a tag
+    /// naming this installation, by which image cleanup finds it.
     #[schema(value_type = Option<String>)]
     repository: Option<BuildRepository>,
     /// What a deployment that has to build does while the build machine

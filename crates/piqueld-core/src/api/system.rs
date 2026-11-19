@@ -120,6 +120,31 @@ pub struct ImageStatus {
     /// ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cleaned_at_ms: Option<i64>,
+    /// The images this host's builds pushed to the build registry,
+    /// as of the last cleanup; absent without a build machine, and before
+    /// cleanup first ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry: Option<RegistryImageStatus>,
+}
+
+/// The images this host's builds pushed to the build registry,
+/// which cleanup deletes once no deployment it keeps there uses them.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct RegistryImageStatus {
+    /// The repository they are in, as `build.repository` names it.
+    pub repository: String,
+    /// Pushed images still in the registry as of the last cleanup that
+    /// listed it; absent before one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<u32>,
+    /// Images cleanup deleted from the registry since the daemon started.
+    /// The registry's garbage collection frees their layers.
+    pub deleted_images: u32,
+    /// Why the last cleanup didn't delete every image no deployment keeps:
+    /// the registry didn't answer, or refused a deletion. Absent when it
+    /// deleted them all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<String>,
 }
 
 /// Effective host settings loaded by the daemon; no mutation endpoint exists.

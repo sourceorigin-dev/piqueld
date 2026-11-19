@@ -125,8 +125,9 @@ machine. On that machine:
 
 The registry listens on loopback, and the module exposes it on port 5000 of the
 machine's tailnet name, over HTTPS. It keeps its images in
-`/var/lib/docker-registry`. It allows deletes, so images can be deleted from
-it. Every Sunday at 04:00, or when the machine is next on if it was off then,
+`/var/lib/docker-registry`. It allows deletes, which [image
+cleanup](../reference/configuration.md#cleaning-up-the-registry) needs to
+delete the images no deployment keeps. Every Sunday at 04:00, or when the machine is next on if it was off then,
 it stops for a few minutes to free the layers of the deleted images; set
 `garbageCollectDates` to change when.
 
@@ -161,8 +162,8 @@ it stops for a few minutes to free the layers of the deleted images; set
    The registry starts again even if collection fails, and the command fails
    when either does.
 
-   Never add `--delete-untagged`: piqueld pushes its images without tags, so
-   it would delete all of them. A push during collection could lose layers,
+   piqueld tags every image it pushes, so `--delete-untagged` leaves them, but
+   it deletes any untagged image. A push during collection could lose layers,
    so the registry stays stopped meanwhile.
 
 ### Use another registry
@@ -174,10 +175,13 @@ Any registry works as the build registry if:
   give;
 - it serves HTTPS with a certificate from a public authority, such as the
   tailnet's;
-- it allows deletes, if images are to be deleted from it.
+- it allows deletes, which [image
+  cleanup](../reference/configuration.md#cleaning-up-the-registry) needs,
+  and deleting an image by digest removes its tags; without deletes, the
+  registry keeps every image.
 
-piqueld pushes every image by digest, without a tag, to the one repository
-`build.repository` names.
+piqueld pushes every image to the one repository `build.repository` names,
+under a tag naming this installation, by which cleanup finds it.
 
 ## Limit who reaches them
 

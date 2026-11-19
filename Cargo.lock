@@ -2792,6 +2792,7 @@ dependencies = [
  "piqueld-build",
  "piqueld-core",
  "piqueld-probe",
+ "reqwest",
  "rustix",
  "serde",
  "serde_json",
@@ -2802,6 +2803,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]

@@ -39,6 +39,8 @@ string_enum! {
     GitBuildFailed => "git_build_failed",
     /// The build machine could not be reached to build an image.
     BuilderUnavailable => "builder_unavailable",
+    /// Image cleanup could not delete an image from the build registry.
+    RegistryDeleteFailed => "registry_delete_failed",
     /// Docker paused a failed service update.
     ServiceUpdateFailed => "service_update_failed",
     /// A one-shot job exited unsuccessfully before rollout.
@@ -105,6 +107,11 @@ const TELEMETRY_EXPORT: &str = "Check that the collector at telemetry.endpoint i
 const SWARM: &str = "Make Docker Engine the active manager of a single-node Swarm. Reconciliation retries once it is.";
 /// Guidance for a build machine the host could not reach.
 const BUILDER_UNAVAILABLE: &str = "Start the build machine and check that this host can reach its BuildKit daemon, then retry the deployment.";
+/// Guidance for an unreachable Docker Engine.
+const DOCKER_UNAVAILABLE: &str =
+    "Check Docker Engine availability. Reconciliation retries after connectivity recovers.";
+/// Guidance for a pushed image the build registry didn't delete.
+const REGISTRY_DELETE: &str = "Check that this host reaches the registry in build.repository and that the registry allows deletes. Image cleanup tries again at its next run.";
 /// Guidance for transient failures that reconciliation retries on its own.
 const AUTOMATIC_RETRY: &str =
     "Reconciliation will retry. Inspect the affected resource if the failure persists.";
@@ -118,11 +125,7 @@ impl DiagnosticCode {
     const fn policy(self) -> (EventScope, bool, &'static str) {
         use EventScope::{Application, Daemon};
         match self {
-            Self::DockerUnavailable => (
-                Daemon,
-                true,
-                "Check Docker Engine availability. Reconciliation retries after connectivity recovers.",
-            ),
+            Self::DockerUnavailable => (Daemon, true, DOCKER_UNAVAILABLE),
             Self::IngressUnavailable => (
                 Daemon,
                 true,
@@ -161,6 +164,7 @@ impl DiagnosticCode {
                 "Open the build output, fix the source or build configuration, then deploy again.",
             ),
             Self::BuilderUnavailable => (Application, false, BUILDER_UNAVAILABLE),
+            Self::RegistryDeleteFailed => (Daemon, true, REGISTRY_DELETE),
             Self::JobFailed | Self::JobTimeout => (
                 Application,
                 false,

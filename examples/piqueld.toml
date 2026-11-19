@@ -139,6 +139,8 @@ log_retention_days = 30
 # Successful deployments per environment whose built images are kept for
 # restores, besides what environments and previews run or are deploying.
 keep_deployments = 3
+# With a build machine, how many keep their images in the build registry.
+registry_keep_deployments = 10
 cleanup_interval_seconds = 3600
 
 # Bounds on previews: how many may exist, and the limits of preview services

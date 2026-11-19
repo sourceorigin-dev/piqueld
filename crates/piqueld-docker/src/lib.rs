@@ -90,6 +90,8 @@ mod build_queue;
 pub use build_queue::BuildPriority;
 mod builder;
 pub use builder::{BuilderUnavailable, RemoteBuilder};
+mod registry;
+pub use registry::{BuildRegistry, RegistryError};
 mod configs;
 mod containers;
 pub use containers::{
@@ -470,6 +472,22 @@ pub trait DockerApi: Send + Sync + 'static {
         &self,
         instance: &InstanceId,
         id: &piqueld_core::Sha256Digest,
+    ) -> Result<(), DockerError>;
+    /// The repository the build machine pushes images to, if images build
+    /// on one.
+    fn build_repository(&self) -> Option<&piqueld_core::build_machine::BuildRepository>;
+    /// The images `owner`'s builds pushed to the build registry that are
+    /// still there, found by the tags the build machine pushed them under.
+    /// Listing them is how image cleanup checks the registry answers.
+    async fn pushed_images(
+        &self,
+        owner: &InstanceId,
+    ) -> Result<std::collections::BTreeSet<piqueld_core::RepositoryDigest>, DockerError>;
+    /// Deletes `image`, which the build machine pushed, from the build registry by
+    /// digest. An image the registry doesn't have counts as deleted.
+    async fn delete_pushed_image(
+        &self,
+        image: &piqueld_core::RepositoryDigest,
     ) -> Result<(), DockerError>;
     /// Removes `instance`'s `piqueld-probe` configs of other versions that no
     /// service mounts, such as those older daemons published.
