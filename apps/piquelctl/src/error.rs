@@ -228,6 +228,20 @@ impl CliError {
         )
     }
 
+    /// An environment, by name or ID, that `application` doesn't have.
+    pub(crate) fn environment_not_found(
+        environment: &str,
+        application: &piqueld_client::ApplicationView,
+    ) -> Self {
+        Self::new(
+            ErrorKind::Input,
+            format!(
+                "environment {environment:?} of application {:?} was not found",
+                application.application.metadata().name
+            ),
+        )
+    }
+
     /// Arguments the command line parser rejected.
     pub(crate) fn usage(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::Input, message).code(CliCode::Usage)

@@ -26,8 +26,8 @@ are never part of them.
 
   Events come newest first, 50 at a time unless you pass `--limit`, up to
   100. Pass the printed cursor with `--cursor` to read the next page. To
-  read a deleted application's or environment's history, pass its ID
-  instead of its name: `--app ID`, or `--env ID` on its own.
+  read a deleted environment's events, pass its ID with `--env` on its own.
+  Deleting an application deletes its history.
 
 Each line has the event's number, its time in UTC, its kind, and
 then, where they apply, its operation, attempt, phase, resource, error code,
@@ -178,6 +178,7 @@ Deleting an application deletes its history.
   the `events:read` permission on, and daemon events need `system:read`; see
   [permissions](../accounts/permissions.md). It may also be older than the
   retention period.
-- **`piquelctl event` finds no history of a deleted application.** A name
-  can only find an application that still exists: pass the deleted one's ID
-  with `--app`.
+- **`piquelctl event` finds no history of a deleted application.** Deleting
+  an application deletes its history, and `--app` only finds one that still
+  exists. A deleted environment's events remain: pass its ID with `--env` on
+  its own.

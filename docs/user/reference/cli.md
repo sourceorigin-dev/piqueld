@@ -1028,9 +1028,11 @@ file afterward; the CLI does not edit files automatically.
 `event` reads one page, newest first. `--app APP` optionally filters by
 application name or ID: application-wide events such as edits and renames, and the
 events of all its environments, including deleted ones. `--env ENV` filters by
-environment: by name or ID with `--app`, or by ID alone. An ID also finds the
-history of a deleted application or environment, which a name can't. Deleting an application removes its history. Use `--cursor CURSOR` for subsequent
-pages and `--limit N` (1–100, default 50). JSON includes the next cursor.
+environment: by name or ID with `--app`, or alone only by ID, which also finds
+a deleted environment's events. An unknown application or environment is not
+found. Deleting an application removes its history. Use `--cursor CURSOR` for
+subsequent pages and `--limit N` (1–100, default 50). JSON includes the next
+cursor.
 
 `analytics` summarizes [deployment analytics](../operations/history.md#watch-the-daemon-itself),
 as the dashboard's Analytics page does: deployments by the outcome of their

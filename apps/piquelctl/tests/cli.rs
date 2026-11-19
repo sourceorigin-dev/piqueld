@@ -2038,18 +2038,6 @@ fn builds_list_resolves_names_and_sends_its_filters() {
             &["build", "list", "--app", "notes", "--env", "production"],
             "application_id=app-notes-01&cursor=v1%3A7&environment_id=app-notes-01&limit=50",
         ),
-        // Deleted applications and environments are found by their IDs.
-        (
-            &[
-                "build",
-                "list",
-                "--app",
-                "app-gone-01",
-                "--env",
-                "env-gone-01",
-            ],
-            "application_id=app-gone-01&cursor=v1%3A7&environment_id=env-gone-01&limit=50",
-        ),
     ] {
         let server = start_server(false, usize::MAX, |request| match request.path.as_str() {
             // Names are looked up with one filtered request.
@@ -2060,17 +2048,14 @@ fn builds_list_resolves_names_and_sends_its_filters() {
                 vec![app_summary("app-welcome-01", "welcome-to-docker")],
                 None,
             )),
-            "/api/v1/applications?name=app-gone-01" => Reply::json(page(Vec::new(), None)),
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
             "/api/v1/applications/app-welcome-01" => {
                 Reply::json(app_view("app-welcome-01", "welcome-to-docker"))
             }
-            "/api/v1/applications/welcome-to-docker" | "/api/v1/applications/app-gone-01" => {
-                Reply::status(
-                    "404 Not Found",
-                    &json!({"code": "not_found", "message": "not found"}),
-                )
-            }
+            "/api/v1/applications/welcome-to-docker" => Reply::status(
+                "404 Not Found",
+                &json!({"code": "not_found", "message": "not found"}),
+            ),
             path if path.starts_with("/api/v1/builds") => Reply::json(page(Vec::new(), None)),
             path => panic!("unexpected path {path}"),
         });
@@ -2083,14 +2068,31 @@ fn builds_list_resolves_names_and_sends_its_filters() {
             "{arguments:?}"
         );
     }
-    // A name that finds nothing, and isn't shaped like an ID, is an error.
-    let server = start_server(false, usize::MAX, |request| match request.path.as_str() {
-        "/api/v1/applications?name=blog" => Reply::json(page(Vec::new(), None)),
-        path => panic!("unexpected path {path}"),
-    });
-    let output = run(&server, &["build", "list", "--app", "blog"]);
-    server.stop();
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    // An application neither its ID nor its name finds is not found, even
+    // shaped like an ID: a deleted application's history is deleted with it.
+    for missing in ["blog", "app-gone-01"] {
+        let server = start_server(false, usize::MAX, move |request| {
+            match request.path.as_str() {
+                "/api/v1/applications/app-gone-01" => Reply::status(
+                    "404 Not Found",
+                    &json!({"code": "not_found", "message": "not found"}),
+                ),
+                path if path == format!("/api/v1/applications?name={missing}") => {
+                    Reply::json(page(Vec::new(), None))
+                }
+                path => panic!("unexpected path {path}"),
+            }
+        });
+        let output = run(&server, &["build", "list", "--app", missing]);
+        let requests = server.stop();
+        assert_eq!(output.status.code(), Some(2), "{missing}: {output:?}");
+        assert!(
+            !requests
+                .iter()
+                .any(|request| request.path.starts_with("/api/v1/builds")),
+            "{missing}"
+        );
+    }
 }
 
 #[test]

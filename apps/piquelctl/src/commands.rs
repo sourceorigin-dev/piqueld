@@ -580,47 +580,35 @@ pub(crate) async fn fold_applications<T>(
 /// history of; `///` on fields is user-facing help.
 #[derive(Debug, clap::Args)]
 pub(crate) struct HistoryScope {
-    /// Only this application and its environments, by name or ID. An ID
-    /// also finds a deleted application's history.
+    /// Only this application and its environments, by name or ID.
     #[arg(long, alias = "application", value_name = "APP")]
     app: Option<String>,
-    /// Only this environment: with `--app`, by name or ID; alone, by ID,
-    /// which also finds a deleted environment's history.
+    /// Only this environment: with `--app`, by name or ID. Alone, it takes
+    /// only an ID, which also lists a deleted environment's events.
     #[arg(long, alias = "environment", value_name = "ENV")]
     env: Option<String>,
 }
 
 impl HistoryScope {
-    /// The application and environment IDs to filter by. Names and IDs are
-    /// looked up; a value neither finds is used as an ID when it is shaped
-    /// like one, since a deleted application's or environment's history is
-    /// only reachable by its ID. `--env` alone is always an ID.
+    /// The application and environment IDs to filter by. `--app`, and
+    /// `--env` with it, must find a live application and one of its
+    /// environments. `--env` alone is used as an ID, unchecked, since a
+    /// deleted environment's events outlive it.
     async fn ids(&self, client: &Client) -> Result<(Option<String>, Option<String>)> {
         let Some(name_or_id) = &self.app else {
             return Ok((None, self.env.clone()));
         };
-        let Some(application) = find_application(client, name_or_id).await? else {
-            if looks_like_application_id(name_or_id) {
-                return Ok((Some(name_or_id.clone()), self.env.clone()));
-            }
-            return Err(CliError::application_not_found(name_or_id));
-        };
-        let environment = match &self.env {
-            None => None,
-            Some(environment) => Some(match application.environment(environment) {
-                Some(found) => found.id.to_string(),
-                None if looks_like_application_id(environment) => environment.clone(),
-                None => {
-                    return Err(CliError::new(
-                        ErrorKind::Input,
-                        format!(
-                            "environment {environment:?} of application {:?} was not found",
-                            application.application.metadata().name
-                        ),
-                    ));
-                }
-            }),
-        };
+        let application = resolve_application(client, name_or_id).await?;
+        let environment = self
+            .env
+            .as_deref()
+            .map(|environment| {
+                application
+                    .environment(environment)
+                    .map(|found| found.id.to_string())
+                    .ok_or_else(|| CliError::environment_not_found(environment, &application))
+            })
+            .transpose()?;
         Ok((Some(application.application.id().to_string()), environment))
     }
 }
@@ -648,27 +636,19 @@ pub(crate) async fn resolve_application(
     client: &Client,
     name_or_id: &str,
 ) -> Result<ApplicationView> {
-    find_application(client, name_or_id)
-        .await?
-        .ok_or_else(|| CliError::application_not_found(name_or_id))
-}
-
-/// Loads an application like [`resolve_application`], or `None` when
-/// neither its ID nor its name finds one.
-async fn find_application(client: &Client, name_or_id: &str) -> Result<Option<ApplicationView>> {
     if looks_like_application_id(name_or_id) {
         match client.application(name_or_id).await {
-            Ok(application) => return Ok(Some(application)),
+            Ok(application) => return Ok(application),
             // The value may still be an application name, so fall through to
             // the name lookup.
             Err(error) if error.is_not_found() => {}
             Err(error) => return Err(error.into()),
         }
     }
-    match find_by_name(client, name_or_id).await? {
-        Some(summary) => Ok(Some(client.application(summary.id.as_str()).await?)),
-        None => Ok(None),
-    }
+    let summary = find_by_name(client, name_or_id)
+        .await?
+        .ok_or_else(|| CliError::application_not_found(name_or_id))?;
+    Ok(client.application(summary.id.as_str()).await?)
 }
 
 /// One wait for the daemon, reporting through `progress`: a spinner task,

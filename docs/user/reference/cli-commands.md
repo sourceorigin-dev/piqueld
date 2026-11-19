@@ -3999,8 +3999,8 @@ piquelctl build list [OPTIONS]
 
 Options:
 
-- `--app <APP>`: Only this application and its environments, by name or ID. An ID also finds a deleted application's history.
-- `--env <ENV>`: Only this environment: with `--app`, by name or ID; alone, by ID, which also finds a deleted environment's history.
+- `--app <APP>`: Only this application and its environments, by name or ID.
+- `--env <ENV>`: Only this environment: with `--app`, by name or ID. Alone, it takes only an ID, which also lists a deleted environment's events.
 - `--cursor <CURSOR>`: Read the page after this cursor, which the previous page printed.
 - `--limit <LIMIT>`: Show at most this many items, from 1 to 100. Default: `50`.
 
@@ -4067,8 +4067,8 @@ piquelctl event [OPTIONS]
 
 Options:
 
-- `--app <APP>`: Only this application and its environments, by name or ID. An ID also finds a deleted application's history.
-- `--env <ENV>`: Only this environment: with `--app`, by name or ID; alone, by ID, which also finds a deleted environment's history.
+- `--app <APP>`: Only this application and its environments, by name or ID.
+- `--env <ENV>`: Only this environment: with `--app`, by name or ID. Alone, it takes only an ID, which also lists a deleted environment's events.
 - `--kind <KIND>`: Only show events of this kind, such as `operation_failed`.
 
   The dashboard's Events page lists the kinds recorded so far.

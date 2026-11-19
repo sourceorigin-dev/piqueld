@@ -567,15 +567,7 @@ fn promotion_source(application: &ApplicationView, source: &str) -> Result<Strin
     application
         .environment(source)
         .map(|environment| environment.id.to_string())
-        .ok_or_else(|| {
-            CliError::new(
-                ErrorKind::Input,
-                format!(
-                    "environment {source:?} of application {:?} was not found",
-                    application.application.metadata().name
-                ),
-            )
-        })
+        .ok_or_else(|| CliError::environment_not_found(source, application))
 }
 
 // `env source` arguments.
@@ -860,12 +852,10 @@ pub(crate) async fn select(
     let application = resolve_application(client, application).await?;
     let name = application.application.metadata().name.clone();
     let selected = match environment {
-        Some(environment) => application.environment(environment).cloned().ok_or_else(|| {
-            CliError::new(
-                ErrorKind::Input,
-                format!("environment {environment:?} of application {name:?} was not found"),
-            )
-        })?,
+        Some(environment) => application
+            .environment(environment)
+            .cloned()
+            .ok_or_else(|| CliError::environment_not_found(environment, &application))?,
         None => application
             .sole_environment()
             .cloned()
