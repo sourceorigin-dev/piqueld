@@ -102,14 +102,22 @@ async fn complete(ceremony: Ceremony, registration: bool) -> Result<CeremonyFini
 }
 
 /// Registers a new passkey: start, browser ceremony, finish. Adding one to
-/// the signed-in account may first ask to confirm with an existing passkey.
+/// the signed-in account may first ask to confirm with an existing passkey
+/// (see [`confirmed`]): at its start, before any passkey is created, or at
+/// its finish, if the confirmation lapsed while the authenticator was busy.
+/// That finish consumed its challenge, so it is never sent again: once
+/// confirmed, the whole ceremony runs again.
 async fn register(input: RegistrationStart) -> Result<(), ActionError> {
     let client = Client::browser();
-    let challenge = confirmed(|| client.auth_register_start(&input)).await?;
-    client
-        .auth_register_finish(&complete(challenge, true).await?)
-        .await?;
-    Ok(())
+    let (client, input) = (&client, &input);
+    confirmed(|| async move {
+        let challenge = client.auth_register_start(input).await?;
+        client
+            .auth_register_finish(&complete(challenge, true).await?)
+            .await?;
+        Ok::<_, ActionError>(())
+    })
+    .await
 }
 
 /// Signs in with a passkey, returning the new session and its grants.

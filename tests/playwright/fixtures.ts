@@ -108,6 +108,15 @@ export class Passkeys {
   async reset() {
     await this.cdp.send('WebAuthn.clearCredentials', { authenticatorId: this.id });
   }
+  /** The passkeys the authenticator holds, to `restore` after a `reset`. */
+  async credentials() {
+    return (await this.cdp.send('WebAuthn.getCredentials', { authenticatorId: this.id })).credentials;
+  }
+  async restore(credentials: Awaited<ReturnType<Passkeys['credentials']>>) {
+    for (const credential of credentials) {
+      await this.cdp.send('WebAuthn.addCredential', { authenticatorId: this.id, credential });
+    }
+  }
   async close() { await this.cdp.detach(); }
 }
 

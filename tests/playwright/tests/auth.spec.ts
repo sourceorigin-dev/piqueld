@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises';
 import {
   test, expect, api, auth, adminToken, apply, card, register, proof, resolveEnvironment, webManifest, applicationTab, environmentTab, title, head,
-  accountRows, openAccount, done, signUp, Passkeys, type Account, type Session, type Directory, type Managed, type Ceremony,
+  accountRows, openAccount, done, signUp, confirmPasskey, Passkeys, type Account, type Session, type Directory, type Managed, type Ceremony,
 } from '../fixtures.js';
 
 test('setup gates anonymous access, closes permanently, and supports username-less login', async ({ page, daemon, passkeys }) => {
@@ -143,6 +143,47 @@ test('adding a passkey asks to confirm with an existing one, then continues once
   await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
   await expect(page.getByText('Passkey added.', { exact: true })).toBeVisible();
   await expect(confirming).toHaveCount(0);
+});
+
+test('a passkey registration whose confirmation lapsed confirms again and starts over', async ({ page, account, passkeys }) => {
+  void account;
+  await confirmPasskey(page);
+  // The authenticator holds alice's passkey only while she confirms with it:
+  // registering refuses an authenticator that holds one already.
+  const alices = await passkeys.credentials();
+  await passkeys.reset();
+  let starts = 0;
+  await page.route('**/api/v1/auth/register/start', async route => {
+    if (++starts === 2) await passkeys.reset();
+    await route.continue();
+  });
+  // The first finish is refused as if the 2 minutes ran out meanwhile.
+  const finishes: string[] = [];
+  await page.route('**/api/v1/auth/register/finish', async route => {
+    finishes.push(route.request().postDataJSON().id);
+    if (finishes.length > 1) return route.continue();
+    await route.fulfill({ status: 403, json: {
+      code: 'reauthentication_required', message: 'Confirm with your passkey', details: { step_up: true },
+    } });
+  });
+  const alice = await openAccount(page, 'alice', 'Access');
+  await alice.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  const adding = page.getByRole('dialog', { name: 'Add passkey' });
+  await adding.getByLabel('Passkey name', { exact: true }).fill('Phone');
+  await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  const confirming = page.getByRole('dialog', { name: 'Confirm with your passkey' });
+  await expect(confirming).toBeVisible();
+  // Without the passkey the refused ceremony created, which is alice's too.
+  await passkeys.reset();
+  await passkeys.restore(alices);
+  await confirming.getByRole('button', { name: 'Confirm with passkey', exact: true }).click();
+  await expect(page.getByText('Passkey added.', { exact: true })).toBeVisible();
+  // A new ceremony, never the consumed one again.
+  expect(starts).toBe(2);
+  expect(finishes).toHaveLength(2);
+  expect(finishes[1]).not.toBe(finishes[0]);
+  const keys = alice.getByRole('list', { name: 'Passkeys' }).getByRole('listitem');
+  await expect(keys).toHaveCount(2);
 });
 
 test('copy buttons are hidden without a clipboard API, as on plain HTTP origins', async ({ page, account }) => {
