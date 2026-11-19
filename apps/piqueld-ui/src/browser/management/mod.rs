@@ -317,6 +317,17 @@ impl EditorContext {
         }
     }
 
+    /// Options choosing one of `environment_services`, which follow the
+    /// shown environment's manifest.
+    fn environment_service_options(self) -> impl IntoView {
+        move || {
+            self.environment_services()
+                .into_iter()
+                .map(|name| view! { <option value={name.clone()}>{name.clone()}</option> })
+                .collect_view()
+        }
+    }
+
     /// Whether the application reads its manifest from a Git repository.
     fn repository_backed(self) -> bool {
         self.saved

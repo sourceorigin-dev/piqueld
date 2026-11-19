@@ -53,13 +53,7 @@ pub(super) fn EnvironmentTraffic() -> impl IntoView {
                     <span>"Service"</span>
                     <select on:change={move |e| service.set(event_target_value(&e))}>
                         <option value="">"All services"</option>
-                        {move || {
-                            context
-                                .environment_services()
-                                .into_iter()
-                                .map(|name| view! { <option value={name.clone()}>{name.clone()}</option> })
-                                .collect_view()
-                        }}
+                        {context.environment_service_options()}
                     </select>
                 </label>
                 <div class="toolbar-end">
