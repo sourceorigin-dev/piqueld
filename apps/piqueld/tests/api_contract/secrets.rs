@@ -128,7 +128,7 @@ async fn stored_secret_uploads_check_their_headers_first() {
 }
 
 /// Over HTTP, an access change made from an access read that is no longer
-/// current fails with 409 `secret_access_conflict`, keeping the current one.
+/// current fails with 409 `secret_access_conflict`.
 #[tokio::test]
 async fn access_changes_from_an_outdated_read_conflict() {
     let temp = tempfile::tempdir().unwrap();

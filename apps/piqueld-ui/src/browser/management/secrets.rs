@@ -235,9 +235,10 @@ impl AccessForm {
 }
 
 /// The application's secret store: manually set values (never read back),
-/// their versions and access lists. Writes are guarded by generation and
-/// clear the value field as soon as they are submitted; after a failure,
-/// actions stay disabled until the list is refreshed. On an environment's
+/// their versions and access lists. Value writes are guarded by generation
+/// and clear the value field as soon as they are submitted; access-only
+/// writes are guarded by the access the form read. After a failure, actions
+/// stay disabled until the list is refreshed. On an environment's
 /// page, given the secrets its manifest `mounts`, it lists only the secrets
 /// that environment may mount or mounts, and new ones default to it alone;
 /// `changed` runs after every write. Writing needs `secrets:write`.

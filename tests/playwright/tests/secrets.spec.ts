@@ -52,7 +52,8 @@ test('replacing a stored value keeps an access list changed elsewhere, and acces
   await store.getByLabel('production', { exact: true }).check();
   const restricted = page.waitForRequest(request => sent(request, 'PUT', `${path}/access`));
   await store.getByRole('button', { name: 'Save access only', exact: true }).click();
-  await restricted;
+  // Guarded by the access the list showed, so a change made meanwhile conflicts.
+  expect((await restricted).postDataJSON().expected).toEqual({ environments: 'all', previews: false });
   await expect(store.getByText('Access saved. It applies to later deployments.', { exact: true })).toBeVisible();
   await expect(row).not.toContainText('every environment');
   await expect(row.getByRole('cell').nth(1)).toHaveText('2');
