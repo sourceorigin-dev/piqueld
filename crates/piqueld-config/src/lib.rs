@@ -20,8 +20,11 @@ pub use tunnel::{TunnelConfig, TunnelConfigError, TunnelCredentials};
 use piqueld_core::TomlDiagnostic;
 use piqueld_core::manifest::PreviewLimits;
 use piqueld_core::names::{DNS_LABEL, is_label};
+use piqueld_core::nodes::{NodeName, TcpEndpoint};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
+use std::net::IpAddr;
 use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -79,6 +82,11 @@ pub struct DaemonConfig {
     /// A build machine that builds images instead of this host.
     #[serde(default)]
     pub build: BuildConfig,
+    /// Worker nodes: other machines joined to this host's Swarm, each named
+    /// by its `<name>`, such as `nixosbtw`. They need
+    /// `docker.swarm_address`.
+    #[serde(default)]
+    pub nodes: BTreeMap<NodeName, WorkerConfig>,
     /// The managed HTTP gateway that serves applications' routes.
     #[serde(default)]
     pub ingress: IngressConfig,
@@ -160,7 +168,20 @@ impl DaemonConfig {
     /// Returns [`ConfigError`] when the file cannot be read or the configuration
     /// is malformed or invalid.
     pub fn check(path: impl AsRef<Path>) -> Result<(), ConfigError> {
-        Resolution::Structural.during(|| Self::load(path)).map(drop)
+        Self::load_without_credentials(path).map(drop)
+    }
+
+    /// Loads a configuration file as [`Self::load`] would, locating its
+    /// credential files without reading them, for one-shot commands that
+    /// need none, such as `piqueld swarm recreate`. They run outside the
+    /// daemon's systemd unit, where `$CREDENTIALS_DIRECTORY` is unset.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the file cannot be read or the configuration
+    /// is malformed or invalid.
+    pub fn load_without_credentials(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        Resolution::Structural.during(|| Self::load(path))
     }
 
     /// Parses and validates a TOML configuration document. An unset
@@ -232,6 +253,7 @@ impl DaemonConfig {
             ));
         }
         absolute_file("docker.socket", &self.docker.socket)?;
+        self.docker.validate(&self.nodes)?;
         for host in &self.server.allowed_hosts {
             if host.len() > 253 || !host.split('.').all(|label| is_label(label, DNS_LABEL)) {
                 return Err(ConfigError::Invalid(
@@ -871,7 +893,7 @@ impl Default for ServerConfig {
 
 /// The Docker Engine piqueld deploys to. The daemon
 /// serves its API while Docker is down, and starts deploying once Docker
-/// answers as a single-node Swarm manager.
+/// answers as the only manager of its Swarm.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct DockerConfig {
@@ -879,8 +901,16 @@ pub struct DockerConfig {
     #[schema(value_type = String)]
     pub socket: PathBuf,
     /// Initialize a Docker Engine that is not part of a Swarm as a
-    /// single-node Swarm.
+    /// Swarm manager, on `swarm_address`.
     pub auto_initialize_swarm: bool,
+    /// The IP address this host's Swarm listens on and advertises to its
+    /// worker nodes, such as the host's tailnet address. Required by
+    /// `[nodes]`. Without it, piqueld initializes the Swarm on 127.0.0.1,
+    /// which no other machine can join. Swarm can't move an existing
+    /// manager to another address: `piqueld swarm recreate` re-creates the
+    /// Swarm on this one.
+    #[schema(value_type = Option<String>)]
+    pub swarm_address: Option<IpAddr>,
 }
 
 impl Default for DockerConfig {
@@ -888,6 +918,38 @@ impl Default for DockerConfig {
         Self {
             socket: PathBuf::from("/var/run/docker.sock"),
             auto_initialize_swarm: true,
+            swarm_address: None,
+        }
+    }
+}
+
+/// A worker node: another machine joined to this host's Swarm, whose
+/// Docker Engine the daemon reaches for what lives on that machine.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerConfig {
+    /// The worker's Docker Engine, as `tcp://host:port`. The connection is
+    /// neither authenticated nor encrypted, and controls the worker's
+    /// engine, so only this host should be able to reach that port, over a
+    /// network that encrypts its traffic, such as a tailnet whose access
+    /// rules allow nothing else.
+    #[schema(value_type = String)]
+    pub docker: TcpEndpoint,
+}
+
+impl DockerConfig {
+    /// Requires a `swarm_address` workers can reach once there are `nodes`.
+    fn validate(&self, nodes: &BTreeMap<NodeName, WorkerConfig>) -> Result<(), ConfigError> {
+        match self.swarm_address {
+            Some(address) if address.is_loopback() || address.is_unspecified() => {
+                Err(ConfigError::Invalid(
+                    "docker.swarm_address must be an address other machines reach, not a loopback or unspecified one".into(),
+                ))
+            }
+            None if !nodes.is_empty() => Err(ConfigError::Invalid(
+                "nodes require docker.swarm_address, the address worker nodes reach this host's Swarm at".into(),
+            )),
+            _ => Ok(()),
         }
     }
 }

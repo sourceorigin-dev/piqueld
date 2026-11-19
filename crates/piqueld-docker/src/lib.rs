@@ -11,14 +11,13 @@ use bollard::{
         HealthConfig, Ipam, Limit, Mount, MountTypeEnum, NetworkAttachmentConfig,
         NetworkCreateRequest, ServiceSpec, ServiceSpecMode, ServiceSpecModeReplicated,
         ServiceSpecUpdateConfig, ServiceSpecUpdateConfigFailureActionEnum,
-        ServiceSpecUpdateConfigOrderEnum, SwarmInitRequest, TaskSpec, TaskSpecContainerSpec,
-        TaskSpecResources, TaskSpecRestartPolicy, TaskSpecRestartPolicyConditionEnum,
-        VolumeCreateOptions,
+        ServiceSpecUpdateConfigOrderEnum, TaskSpec, TaskSpecContainerSpec, TaskSpecResources,
+        TaskSpecRestartPolicy, TaskSpecRestartPolicyConditionEnum, VolumeCreateOptions,
     },
     query_parameters::{
         CreateImageOptionsBuilder, InspectContainerOptionsBuilder, InspectNetworkOptions,
-        InspectServiceOptions, ListNetworksOptionsBuilder, ListNodesOptions,
-        ListServicesOptionsBuilder, ListTasksOptionsBuilder, ListVolumesOptionsBuilder,
+        InspectServiceOptions, ListNetworksOptionsBuilder, ListServicesOptionsBuilder,
+        ListTasksOptionsBuilder, ListVolumesOptionsBuilder,
     },
 };
 use futures_util::{StreamExt, TryStreamExt, stream};
@@ -78,10 +77,32 @@ pub struct BollardDocker {
     /// Typed Bollard client used for most Engine requests, created by
     /// `client` once the socket exists.
     docker: Arc<std::sync::OnceLock<Docker>>,
-    /// Engine socket path, reused for raw service requests and `docker buildx build`.
-    socket: Arc<Path>,
+    /// Where the engine listens, reused for raw service requests and
+    /// `docker buildx build`.
+    address: EngineAddress,
     /// The build machine images build on; the engine builds them without one.
     builder: Option<Arc<RemoteBuilder>>,
+    /// The Swarm's worker nodes, and the address it listens on for them.
+    nodes: Arc<Nodes>,
+}
+
+/// Where a Docker Engine listens: this host's, on its Unix socket, or a
+/// worker node's, over TCP. Displays as Docker's `--host` takes it.
+#[derive(Clone, Debug)]
+enum EngineAddress {
+    /// The engine's Unix socket.
+    Socket(Arc<Path>),
+    /// A worker node's engine, at `tcp://host:port`.
+    Tcp(piqueld_core::nodes::TcpEndpoint),
+}
+
+impl std::fmt::Display for EngineAddress {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Socket(path) => write!(formatter, "unix://{}", path.display()),
+            Self::Tcp(endpoint) => endpoint.fmt(formatter),
+        }
+    }
 }
 
 mod timeout;
@@ -101,6 +122,8 @@ mod exec;
 mod files;
 pub use exec::{Exec, ExecIo};
 mod limited;
+mod nodes;
+pub use nodes::Nodes;
 mod logs;
 pub use limited::LimitedDocker;
 pub mod command;

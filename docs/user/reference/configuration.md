@@ -31,7 +31,7 @@ terminal or the systemd journal, JSON elsewhere.
 The daemon serves its API and dashboard even while Docker is down, not yet
 started (its socket missing), or not a Swarm manager. Reconciliation, image
 cleanup and ingress start once Docker answers
-as a single-node Swarm manager, retried with backoff up to 10 seconds apart and
+as the only manager of a Swarm whose other nodes are [worker nodes](#worker-nodes), retried with backoff up to 10 seconds apart and
 journaled as an `ensure_swarm` action. Until then requested deployments wait.
 Readiness probes Docker and Swarm directly, so once they recover it can report
 ready up to 10 seconds before deployments resume.
@@ -319,6 +319,41 @@ checks it now, or `piquelctl status`, which shows its latest check. The
 dashboard shows it at the top of the **Builds** page, with **Check now**. Each
 build shows where it ran: `piquelctl build list` ends its line with `on the
 build machine` or `on the host`, and the dashboard lists it as **Built on**.
+
+## Worker nodes
+
+`[nodes]` names worker nodes: other machines joined to this host's Swarm.
+The host stays its only manager.
+
+```toml
+[docker]
+swarm_address = "100.64.0.1"
+
+[nodes.nixosbtw]
+docker = "tcp://100.64.0.2:2375"
+```
+
+- `docker.swarm_address` is the IP address the Swarm listens on and
+  advertises to workers, such as the host's tailnet address. piqueld
+  initializes the Swarm there, or on 127.0.0.1 without it, where no other
+  machine can join it. Swarm can't move a manager to another address:
+  `piqueld swarm recreate` re-creates the Swarm on it, as
+  [adding a worker node](../operations/worker-nodes.md#put-the-swarm-on-the-tailnet)
+  describes. `[nodes]` requires it.
+- Each `[nodes.<name>]` table names a worker, with `docker`, its Docker
+  Engine as `tcp://host:port`. The connection is neither authenticated nor
+  encrypted, and controls the worker's engine, so only this host should be
+  able to reach that port, over a network that encrypts its traffic.
+
+Before each change, piqueld checks the Swarm: this engine must be its only
+manager, and every other node a worker `[nodes]` names. It names each worker
+that joined by asking the engines in `[nodes]` for their Swarm node ID, and
+labels that node `io.piqueld.node=<name>`. Any other node fails the change
+with `swarm_topology_unsupported`, and the daemon's log names it.
+
+`piquelctl status` shows the Swarm's address and each worker: `ready`,
+`down` while Swarm doesn't hear from it, or `not joined`, and whether its
+Docker Engine answers.
 
 ## TCP listen modes and Tailscale
 

@@ -1,6 +1,7 @@
 //! Where images build: this host's Docker Engine, or a build machine.
 use super::schema_from_raw;
-use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild, WhenUnavailable};
+use piqueld_core::build_machine::{BuildRepository, RemoteBuild, WhenUnavailable};
+use piqueld_core::nodes::TcpEndpoint;
 use serde::Deserialize;
 
 /// The `[build]` table. Images build on this host's Docker Engine unless it
@@ -36,7 +37,7 @@ struct RawBuildConfig {
     /// should be able to reach that port, over a network that encrypts its
     /// traffic, such as a tailnet whose access rules allow nothing else.
     #[schema(value_type = Option<String>)]
-    builder: Option<BuilderEndpoint>,
+    builder: Option<TcpEndpoint>,
     /// The image repository the build machine pushes to and this host pulls
     /// from, as `registry-host[:port]/path`, without a tag. Both reach it
     /// under this name, without credentials, and Docker requires HTTPS of a

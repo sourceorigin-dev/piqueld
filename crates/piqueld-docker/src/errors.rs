@@ -18,8 +18,9 @@ pub enum DockerError {
     /// The engine is reachable but is not an active Swarm manager.
     #[error("Docker Engine is not an active Swarm manager")]
     NotManager,
-    /// The Swarm does not satisfy piqueld's single-node topology contract.
-    #[error("Docker Swarm is not a compatible single-node cluster")]
+    /// The Swarm has a node piqueld doesn't accept: another manager, or a
+    /// worker the configuration doesn't name.
+    #[error("Docker Swarm has a node piqueld doesn't accept")]
     IncompatibleSwarm,
     /// A resource exists but is not owned by the requested application.
     #[error("Docker resource ownership conflict")]

@@ -1,6 +1,7 @@
 # piqueld
 
-piqueld is a control plane for one Docker Engine running a single-node Swarm.
+piqueld is a control plane for one Docker Engine and its Swarm, which can
+join [worker nodes](user/operations/worker-nodes.md).
 You describe an application in a manifest; piqueld pulls or builds its images,
 deploys it, routes HTTPS traffic to it, and keeps it running. You manage it
 through its dashboard, the `piquelctl` CLI, or its HTTP API.

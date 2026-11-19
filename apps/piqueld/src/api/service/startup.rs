@@ -8,7 +8,7 @@ use piqueld_core::Phase;
 use piqueld_core::manifest::Hostname;
 use piqueld_docker::{BollardDocker, DockerApi};
 use piqueld_store::{Store, StoreError};
-use std::{sync::Arc, time::Duration};
+use std::{net::IpAddr, sync::Arc, time::Duration};
 use tokio::{sync::Notify, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -86,7 +86,7 @@ impl ApplicationService {
         .with_telemetry(telemetry.sockets().cloned());
         let service = Self::new(store, reconciler.runtime(Arc::clone(&wake)), sources)?
             .with_image_status(reconciler.image_status())
-            .with_builder(docker.builder().cloned())
+            .with_docker(&docker)
             .with_configuration(config)
             .with_ingress(Arc::clone(&ingress))
             .with_webhook_hostname(config.ingress.webhook_hostname.clone())
@@ -159,7 +159,7 @@ impl ApplicationService {
         Ok((service, auth, controller))
     }
 
-    /// Waits until Docker Engine answers as a single-node Swarm manager,
+    /// Waits until Docker Engine answers as its Swarm's only manager,
     /// initializing one when `auto_initialize`, however long that takes.
     /// Attempts are journaled under one daemon-scoped `ensure_swarm` action,
     /// with failures recorded as retries backing off up to
@@ -189,8 +189,9 @@ impl ApplicationService {
                     self.store.finish_action(&action, None).await?;
                     info!(
                         auto_initialize_swarm = auto_initialize,
-                        "connected to Docker Engine as a single-node Swarm manager"
+                        "connected to Docker Engine as its Swarm's manager"
                     );
+                    self.warn_swarm_address().await;
                     return Ok(true);
                 }
                 Err(error) => OperationError::from(error).diagnostic(),
@@ -216,13 +217,32 @@ impl ApplicationService {
         Ok(false)
     }
 
+    /// Warns when the Swarm advertises another address than
+    /// `docker.swarm_address`, where no worker can stay joined, until
+    /// `piqueld swarm recreate` re-creates it.
+    async fn warn_swarm_address(&self) {
+        let Some(docker) = &self.swarm else {
+            return;
+        };
+        if let Some(status) = docker.swarm_status().await
+            && status.needs_recreate()
+        {
+            tracing::warn!(
+                advertised = status.address,
+                configured = status.configured_address,
+                "the Swarm advertises another address than docker.swarm_address, so workers can't stay joined; stop piqueld and run `piqueld swarm recreate`"
+            );
+        }
+    }
+
     /// Configures the Docker Engine client, which builds on the build machine
-    /// when one is configured. Neither need be reachable yet:
-    /// `establish_swarm` waits for Docker and its socket, and registering the
-    /// build machine only records its address.
+    /// when one is configured, with the Swarm's address and worker nodes.
+    /// None need be reachable yet: `establish_swarm` waits for Docker and its
+    /// socket, and registering the build machine only records its address.
     async fn connect_docker(config: &DaemonConfig) -> anyhow::Result<BollardDocker> {
         let docker = BollardDocker::connect(&config.docker.socket)
-            .context("failed to configure the Docker Engine client")?;
+            .context("failed to configure the Docker Engine client")?
+            .with_nodes(Self::nodes(config));
         let Some(remote) = &config.build.remote else {
             return Ok(docker);
         };
@@ -230,6 +250,46 @@ impl ApplicationService {
             .await
             .context("failed to register the build machine with Docker Buildx")?;
         Ok(docker.with_builder(builder))
+    }
+
+    /// The Swarm's address and worker nodes, as the configuration names
+    /// them.
+    fn nodes(config: &DaemonConfig) -> piqueld_docker::Nodes {
+        piqueld_docker::Nodes::new(
+            config.docker.swarm_address,
+            config
+                .nodes
+                .iter()
+                .map(|(name, worker)| (name.clone(), worker.docker.clone())),
+        )
+    }
+
+    /// Re-creates the Swarm on `docker.swarm_address`, for
+    /// `piqueld swarm recreate`, while the daemon is stopped: it holds the
+    /// data directory's lock meanwhile, so the daemon can't start. Returns
+    /// the address, or `None` when the Swarm already advertises it.
+    ///
+    /// # Errors
+    /// Without `docker.swarm_address`, while the daemon runs, or when Docker
+    /// refuses.
+    pub async fn recreate_swarm(config: &DaemonConfig) -> anyhow::Result<Option<IpAddr>> {
+        let address = config
+            .docker
+            .swarm_address
+            .context("set docker.swarm_address, the address to re-create the Swarm on")?;
+        let _lock = piqueld_config::directories::DirectoryLock::acquire(&config.server.data_dir)
+            .context("stop piqueld first: it holds the data directory")?;
+        let docker = BollardDocker::connect(&config.docker.socket)
+            .context("failed to configure the Docker Engine client")?
+            .with_nodes(Self::nodes(config));
+        if docker.swarm_address().await.ok().flatten() == Some(address) {
+            return Ok(None);
+        }
+        docker
+            .recreate_swarm()
+            .await
+            .context("failed to re-create the Swarm")
+            .map(Some)
     }
 
     /// Opens the control-plane state with the daemon's settings, starts

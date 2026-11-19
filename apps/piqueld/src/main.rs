@@ -33,7 +33,7 @@ const TELEMETRY_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 #[command(
     name = "piqueld",
     version,
-    about = "Run the piqueld single-node Docker control plane"
+    about = "Run the piqueld Docker Swarm control plane"
 )]
 struct Args {
     /// Runs the daemon when omitted.
@@ -69,6 +69,29 @@ enum Command {
         #[arg(long, value_name = "PATH")]
         config: PathBuf,
     },
+    /// Manage the Docker Swarm piqueld deploys to.
+    #[command(subcommand)]
+    Swarm(SwarmCommand),
+}
+
+/// One-shot commands on the Docker Swarm.
+#[derive(Debug, clap::Subcommand)]
+enum SwarmCommand {
+    /// Re-create the Swarm on `docker.swarm_address`, so worker nodes can
+    /// join it.
+    ///
+    /// Swarm can't move its manager to another address, such as from
+    /// 127.0.0.1, where piqueld used to create it, to the host's tailnet
+    /// address. This leaves the Swarm, deleting every service, network,
+    /// secret and config in it, and creates a new one on
+    /// `docker.swarm_address`. Volumes and images stay. Once piqueld starts
+    /// again, it deploys every environment and preview again, so every
+    /// application restarts. Run it while piqueld is stopped.
+    Recreate {
+        /// Re-create the Swarm without asking first.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 impl Args {
@@ -97,6 +120,28 @@ async fn main() -> Result<()> {
             DaemonConfig::check(config)
                 .with_context(|| format!("failed to check configuration {}", config.display()))?;
             println!("configuration {} is valid", config.display());
+            Ok(())
+        }
+        Some(Command::Swarm(SwarmCommand::Recreate { yes })) => {
+            let path = args
+                .config
+                .as_deref()
+                .unwrap_or(DEFAULT_CONFIG_PATH.as_ref());
+            let config = DaemonConfig::load_without_credentials(path)
+                .with_context(|| format!("failed to load configuration {}", path.display()))?;
+            if !yes {
+                anyhow::bail!(
+                    "this deletes every service, network, secret and config in the Swarm, and piqueld deploys them again once it starts, restarting every application; run it again with --yes to continue"
+                );
+            }
+            match ApplicationService::recreate_swarm(&config).await? {
+                Some(address) => println!(
+                    "re-created the Swarm on {address}; start piqueld to deploy every environment again"
+                ),
+                None => {
+                    println!("the Swarm already advertises docker.swarm_address; nothing to do");
+                }
+            }
             Ok(())
         }
         None => {

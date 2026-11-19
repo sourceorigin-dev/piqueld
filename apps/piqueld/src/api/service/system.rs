@@ -10,8 +10,8 @@ use std::time::Duration;
 impl ApplicationService {
     /// Returns daemon identity and version information, with the tailnet node,
     /// DNS providers and DNS-01 certificates, previews against their limits
-    /// and telemetry receivers, naming only `readable` applications, and the
-    /// built images.
+    /// and telemetry receivers, naming only `readable` applications, the
+    /// built images, and the Swarm's worker nodes.
     pub async fn system_status(&self, readable: &Scope) -> SystemStatus {
         // Status reports storage outages instead of failing, so preview
         // counts that cannot be read are absent rather than zero.
@@ -46,6 +46,10 @@ impl ApplicationService {
             }),
             telemetry: self.telemetry_status(readable).await,
             builder: self.builder.as_ref().map(|builder| builder.status()),
+            swarm: match &self.swarm {
+                Some(docker) => docker.swarm_status().await,
+                None => None,
+            },
         }
     }
 
@@ -110,7 +114,7 @@ impl ApplicationService {
             docker: DependencyStatus::new(docker, "Docker Engine is unavailable or timed out"),
             swarm: DependencyStatus::new(
                 swarm,
-                "A compatible single-node Swarm manager is required",
+                "Docker Engine must be the only manager of its Swarm, whose other nodes are the workers [nodes] names",
             ),
         }
     }

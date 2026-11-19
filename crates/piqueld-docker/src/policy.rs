@@ -53,7 +53,7 @@ impl ServiceRuntimePolicy {
             )
     }
 
-    /// Rejects security-sensitive drift outside the supported single-node policy.
+    /// Rejects security-sensitive drift outside the supported policy.
     /// Placement must be exactly the constraint pinning tasks to `node_id`.
     fn no_security_settings(
         task: &TaskSpec,

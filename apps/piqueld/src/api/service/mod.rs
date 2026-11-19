@@ -99,6 +99,9 @@ pub struct ApplicationService {
     images: Option<tokio::sync::watch::Receiver<piqueld_core::api::ImageStatus>>,
     /// The build machine images build on, if the host has one.
     builder: Option<Arc<piqueld_docker::RemoteBuilder>>,
+    /// The Docker Engine whose Swarm and worker nodes status reports, when
+    /// the configuration names a Swarm address or workers.
+    swarm: Option<piqueld_docker::BollardDocker>,
     /// Effective host settings; `None` unless attached at startup.
     configuration: Option<Arc<Configuration>>,
     store: Arc<Store>,
@@ -196,6 +199,7 @@ impl ApplicationService {
             tailnet: None,
             images: None,
             builder: None,
+            swarm: None,
             telemetry: crate::telemetry::Telemetry::default(),
             audit_backlog: Arc::new(tokio::sync::Semaphore::new(AUDIT_BACKLOG)),
             anonymous_backlog: Arc::new(tokio::sync::Semaphore::new(AUDIT_BACKLOG / 2)),
@@ -312,10 +316,12 @@ impl ApplicationService {
         self
     }
 
-    /// Reports `builder`, the build machine images build on, if any.
+    /// Reports what `docker`, the daemon's engine, is configured with: the
+    /// build machine images build on, if any, and the Swarm's worker nodes.
     #[must_use]
-    pub fn with_builder(mut self, builder: Option<Arc<piqueld_docker::RemoteBuilder>>) -> Self {
-        self.builder = builder;
+    pub fn with_docker(mut self, docker: &piqueld_docker::BollardDocker) -> Self {
+        self.builder = docker.builder().cloned();
+        self.swarm = Some(docker.clone());
         self
     }
 

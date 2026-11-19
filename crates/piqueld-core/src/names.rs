@@ -112,6 +112,7 @@ macro_rules! logical_name {
         );
     };
 }
+pub(crate) use logical_name;
 
 // Declares a fieldless enum whose variants each have one stable string form,
 // taken from a single `Variant => "form"` table, with `ALL`, `as_str`,

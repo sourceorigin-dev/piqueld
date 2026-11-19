@@ -847,6 +847,74 @@ pub struct SystemStatus {
     /// caller has `system:read`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub builder: Option<BuilderStatus>,
+    /// This host's Swarm and its worker nodes, when the configuration names
+    /// a Swarm address or worker nodes and the caller has `system:read`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swarm: Option<SwarmStatus>,
+}
+
+/// This host's Swarm, as its worker nodes see it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct SwarmStatus {
+    /// The address the Swarm's manager, this host, advertises to workers;
+    /// absent when Docker couldn't be read.
+    pub address: Option<String>,
+    /// `docker.swarm_address`. When it differs from `address`, workers can't
+    /// stay joined until `piqueld swarm recreate` re-creates the Swarm on
+    /// it.
+    pub configured_address: Option<String>,
+    /// The worker nodes `[nodes]` names, in name order.
+    pub workers: Vec<NodeStatus>,
+}
+
+impl SwarmStatus {
+    /// Whether the Swarm must be re-created on `configured_address` before
+    /// workers can join it.
+    #[must_use]
+    pub fn needs_recreate(&self) -> bool {
+        self.configured_address.is_some()
+            && self.address.is_some()
+            && self.address != self.configured_address
+    }
+}
+
+/// A worker node the configuration names: what Swarm reports about it, and
+/// whether its Docker Engine answers.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct NodeStatus {
+    /// Its name under `[nodes]`.
+    pub name: String,
+    /// Its Docker Engine, as `tcp://host:port`.
+    pub docker: String,
+    /// Its Swarm node ID, once it joined and piqueld matched it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    /// What Swarm reports about it.
+    pub state: NodeState,
+    /// Whether its Docker Engine answered just now; absent while Swarm
+    /// reports the node down, when piqueld doesn't try.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_reachable: Option<bool>,
+    /// Why its Docker Engine didn't answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+string_enum! {
+    #[serde]
+    /// What Swarm reports about a worker node.
+    pub enum NodeState {
+        /// It is in the Swarm and answering.
+        Ready => "ready",
+        /// It is in the Swarm, but Swarm doesn't hear from it, such as while
+        /// the machine is off.
+        Down => "down",
+        /// No node of the Swarm is this worker yet: it hasn't joined, or
+        /// piqueld couldn't reach its Docker Engine to match it.
+        NotJoined => "not_joined",
+        /// The Swarm couldn't be read.
+        Unknown => "unknown",
+    }
 }
 
 /// A build machine: where it is, and whether its `BuildKit` daemon answered.
@@ -1480,7 +1548,8 @@ pub struct ReadinessStatus {
     pub database: DependencyStatus,
     /// Docker answers its ping endpoint.
     pub docker: DependencyStatus,
-    /// Docker is a compatible single-node Swarm manager.
+    /// Docker is the only manager of its Swarm, whose other nodes are the
+    /// configured workers.
     pub swarm: DependencyStatus,
     /// Managed ingress is independent of core deployment dependencies.
     #[serde(default)]

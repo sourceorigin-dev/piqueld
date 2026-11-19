@@ -4,8 +4,8 @@ use super::{
     HashMap, InspectNetworkOptions, InspectServiceOptions, Ipam, ListNetworksOptionsBuilder,
     ListServicesOptionsBuilder, ListTasksOptionsBuilder, ListVolumesOptionsBuilder,
     NetworkCreateRequest, OBSERVATION_INSPECT_CONCURRENCY, ObservedApplication, ObservedNetwork,
-    ObservedService, ObservedVolume, ResourceKind, StreamExt, SwarmInitRequest, SwarmState,
-    TryStreamExt, VolumeCreateOptions, async_trait, resolve_image_digest, stream,
+    ObservedService, ObservedVolume, ResourceKind, StreamExt, SwarmState, TryStreamExt,
+    VolumeCreateOptions, async_trait, resolve_image_digest, stream,
 };
 
 /// Inspections attempted before an incomplete network response is an error.
@@ -527,15 +527,17 @@ impl DockerApi for BollardDocker {
             )
             .await
     }
-    /// Accepts an existing single-node manager as `Ready`. An inactive node is
-    /// initialized (loopback-only) when `auto_initialize` is set, then
-    /// re-verified; any other node state is `NotManager`.
+    /// Accepts an existing manager whose Swarm has only the configured
+    /// workers as `Ready` (see `validate_topology`). An inactive node is
+    /// initialized, on `docker.swarm_address` or loopback, when
+    /// `auto_initialize` is set, then re-verified; any other node state is
+    /// `NotManager`.
     async fn ensure_swarm(&self, auto_initialize: bool) -> Result<SwarmState, DockerError> {
         DockerTimeout::Request
             .run("ensure Docker Swarm", async {
                 let swarm = self.swarm_info("inspect Docker Swarm state").await?;
                 if swarm.control_available == Some(true) {
-                    self.validate_single_node_manager().await?;
+                    self.validate_topology().await?;
                     return Ok(SwarmState::Ready);
                 }
                 if swarm.local_node_state != Some(bollard::models::LocalNodeState::INACTIVE)
@@ -543,21 +545,12 @@ impl DockerApi for BollardDocker {
                 {
                     return Err(DockerError::NotManager);
                 }
-                self.client()?
-                    .init_swarm(SwarmInitRequest {
-                        // piqueld is intentionally single-host. Do not expose the
-                        // manager control port while bootstrapping the local Swarm.
-                        listen_addr: Some("127.0.0.1:2377".into()),
-                        advertise_addr: Some("127.0.0.1".into()),
-                        ..Default::default()
-                    })
-                    .await
-                    .or_request("initialize Docker Swarm")?;
+                self.init_swarm().await?;
                 let checked = self.swarm_info("verify initialized Docker Swarm").await?;
                 if checked.control_available != Some(true) {
                     return Err(DockerError::NotManager);
                 }
-                self.validate_single_node_manager().await?;
+                self.validate_topology().await?;
                 Ok(SwarmState::Initialized)
             })
             .await
@@ -603,10 +596,11 @@ impl DockerApi for BollardDocker {
                 command
             } else {
                 let mut command = tokio::process::Command::new("docker");
-                command
-                    .arg("--host")
-                    .arg(format!("unix://{}", self.socket.display()))
-                    .args(["buildx", "build", "--builder=default"]);
+                command.arg("--host").arg(self.address.to_string()).args([
+                    "buildx",
+                    "build",
+                    "--builder=default",
+                ]);
                 command
             };
             command

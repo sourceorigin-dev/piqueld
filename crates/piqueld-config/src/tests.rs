@@ -380,3 +380,35 @@ fn public_urls_are_https_origins_or_localhost() {
         assert!(AuthConfig::validate_origin(origin).is_err());
     }
 }
+
+/// Workers need an address other machines reach the Swarm at.
+#[test]
+fn worker_nodes_need_a_reachable_swarm_address() {
+    let workers = "[nodes.nixosbtw]\ndocker = 'tcp://nixosbtw.example.ts.net:2375'";
+    let config = DaemonConfig::from_toml(&format!(
+        "[docker]\nswarm_address = '100.64.0.1'\n{workers}"
+    ))
+    .unwrap();
+    assert_eq!(
+        config.nodes[&NodeName::parse("nixosbtw").unwrap()]
+            .docker
+            .address(),
+        "nixosbtw.example.ts.net:2375"
+    );
+    for document in [
+        workers.to_owned(),
+        format!("[docker]\nswarm_address = '127.0.0.1'\n{workers}"),
+        "[docker]\nswarm_address = '0.0.0.0'".to_owned(),
+        "[docker]\nswarm_address = '100.64.0.1'\n[nodes.Upper]\ndocker = 'tcp://a:1'".to_owned(),
+        "[docker]\nswarm_address = '100.64.0.1'\n[nodes.a]\ndocker = 'unix:///run/docker.sock'"
+            .to_owned(),
+    ] {
+        assert!(
+            matches!(
+                DaemonConfig::from_toml(&document),
+                Err(ConfigError::Parse(_) | ConfigError::Invalid(_))
+            ),
+            "accepted {document}"
+        );
+    }
+}

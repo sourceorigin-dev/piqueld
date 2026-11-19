@@ -42,6 +42,7 @@
 - [Exporting telemetry](user/operations/telemetry.md)
 - [Deploying an observability stack](user/operations/observability-stack.md)
 - [Backups and upgrades](user/operations/backups.md)
+- [Adding a worker node](user/operations/worker-nodes.md)
 
 # Reference
 

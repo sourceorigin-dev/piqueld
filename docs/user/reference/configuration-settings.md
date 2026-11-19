@@ -70,6 +70,12 @@ Type: table. Optional.
 
 The managed HTTP gateway that serves applications' routes.
 
+### `nodes.<name>`
+
+Type: table. Optional.
+
+Worker nodes: other machines joined to this host's Swarm, each named by its `<name>`, such as `nixosbtw`. They need `docker.swarm_address`.
+
 ### `previews`
 
 Type: table. Optional.
@@ -235,19 +241,25 @@ Create, update and delete routes' A, AAAA and CNAME records in this provider's z
 
 ## `[docker]` table
 
-The Docker Engine piqueld deploys to. The daemon serves its API while Docker is down, and starts deploying once Docker answers as a single-node Swarm manager.
+The Docker Engine piqueld deploys to. The daemon serves its API while Docker is down, and starts deploying once Docker answers as the only manager of its Swarm.
 
 ### `docker.auto_initialize_swarm`
 
 Type: boolean. Default: `true`.
 
-Initialize a Docker Engine that is not part of a Swarm as a single-node Swarm.
+Initialize a Docker Engine that is not part of a Swarm as a Swarm manager, on `swarm_address`.
 
 ### `docker.socket`
 
 Type: string. Default: `"/var/run/docker.sock"`.
 
 The absolute path of the Docker Engine's Unix socket.
+
+### `docker.swarm_address`
+
+Type: string. Optional.
+
+The IP address this host's Swarm listens on and advertises to its worker nodes, such as the host's tailnet address. Required by `[nodes]`. Without it, piqueld initializes the Swarm on 127.0.0.1, which no other machine can join. Swarm can't move an existing manager to another address: `piqueld swarm recreate` re-creates the Swarm on this one.
 
 ## `[images]` table
 
@@ -370,6 +382,16 @@ The tunnel's credentials file, which `cloudflared tunnel create` writes. piqueld
 Type: boolean. Default: `false`.
 
 Serve public routes through the tunnel. Requires `credentials_file`.
+
+## `[nodes.<name>]` table
+
+A worker node: another machine joined to this host's Swarm, whose Docker Engine the daemon reaches for what lives on that machine.
+
+### `nodes.<name>.docker`
+
+Type: string. Required.
+
+The worker's Docker Engine, as `tcp://host:port`. The connection is neither authenticated nor encrypted, and controls the worker's engine, so only this host should be able to reach that port, over a network that encrypts its traffic, such as a tailnet whose access rules allow nothing else.
 
 ## `[previews]` table
 

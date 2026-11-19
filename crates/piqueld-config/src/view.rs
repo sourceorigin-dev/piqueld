@@ -41,6 +41,7 @@ impl DaemonConfig {
             ("Server".into(), self.server_view()),
             ("Docker".into(), self.docker_view()),
             ("Builds".into(), self.build_view()),
+            ("Worker nodes".into(), self.nodes_view()),
             ("Ingress".into(), self.ingress_view()),
             ("Reconciliation".into(), self.reconciliation_view()),
             ("Retention".into(), self.retention_view()),
@@ -90,7 +91,19 @@ impl DaemonConfig {
                 "Initialize Swarm",
                 self.docker.auto_initialize_swarm.to_string(),
             ),
+            ("Swarm address", or_none(self.docker.swarm_address.as_ref())),
         ])
+    }
+
+    /// Builds the `Worker nodes` group: each worker's Docker Engine, by name.
+    fn nodes_view(&self) -> Group {
+        if self.nodes.is_empty() {
+            return group([("Workers", "none".into())]);
+        }
+        self.nodes
+            .iter()
+            .map(|(name, worker)| (name.to_string(), worker.docker.to_string()))
+            .collect()
     }
 
     /// Builds the `Builds` group: the build machine, or this host.
