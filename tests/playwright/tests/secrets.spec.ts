@@ -7,8 +7,8 @@ const sent = (request: Request, method: string, path: string) =>
 
 /** Stores `api-token` in a new application, readable by `environments`
  * (its production environment's ID when omitted), and opens the
- * application's Secrets tab: the secret's API `path`, the `store` card and
- * the secret's `row` in it. */
+ * application's Secrets tab: the production environment's ID `env`, the
+ * secret's API `path`, the `store` card and the secret's `row` in it. */
 async function storedSecret(page: Page, environments?: string) {
   const { app, env } = await apply(page, webManifest('vault'));
   const path = `applications/${app}/secrets/api-token`;
