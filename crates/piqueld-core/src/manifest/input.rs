@@ -174,36 +174,31 @@ impl ApplicationSpec {
     /// Sets `environment`'s visibility ceiling. Blocks declare environments,
     /// so one is kept once it exists, and only a restriction adds one.
     pub fn set_environment_visibility(&mut self, environment: &str, visibility: Visibility) {
-        match self.environments.get_mut(environment) {
-            Some(config) => config.visibility = visibility,
-            None if visibility.is_public() => {}
-            None => {
-                self.environments.insert(
-                    environment.to_owned(),
-                    EnvironmentConfig {
-                        visibility,
-                        ..EnvironmentConfig::default()
-                    },
-                );
-            }
-        }
+        let default = visibility.is_public();
+        self.set_environment(environment, default, |config| {
+            config.visibility = visibility;
+        });
     }
 
     /// Sets `environment`'s rollback, or returns it to the default with
     /// `None`. Like visibility, only a setting adds a block.
     pub fn set_environment_rollback(&mut self, environment: &str, rollback: Option<Rollback>) {
+        let default = rollback.is_none();
+        self.set_environment(environment, default, |config| config.rollback = rollback);
+    }
+
+    /// Applies `set` to `environment`'s block, adding one unless `set`
+    /// restores a `default`, which an absent block already has.
+    fn set_environment(
+        &mut self,
+        environment: &str,
+        default: bool,
+        set: impl FnOnce(&mut EnvironmentConfig),
+    ) {
         match self.environments.get_mut(environment) {
-            Some(config) => config.rollback = rollback,
-            None if rollback.is_none() => {}
-            None => {
-                self.environments.insert(
-                    environment.to_owned(),
-                    EnvironmentConfig {
-                        rollback,
-                        ..EnvironmentConfig::default()
-                    },
-                );
-            }
+            Some(config) => set(config),
+            None if default => {}
+            None => set(self.environments.entry(environment.to_owned()).or_default()),
         }
     }
 

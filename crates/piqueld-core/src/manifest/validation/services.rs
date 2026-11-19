@@ -6,8 +6,8 @@ use super::super::{
     ValidatedRollout,
 };
 use super::{
-    MAX_CPU_MILLIS, REPLICAS, ValidationError, VariableMap, safe_key_echo, valid_image_reference,
-    valid_repository_path, validate_name, validate_process_arguments,
+    MAX_CPU_MILLIS, REPLICAS, ValidationError, VariableMap, lacks_executable, safe_key_echo,
+    valid_image_reference, valid_repository_path, validate_name, validate_process_arguments,
 };
 use crate::codes;
 use std::collections::BTreeSet;
@@ -375,18 +375,17 @@ impl Job {
         }
     }
 
-    /// An exclusive job needs a writable volume of its service, and none of its
-    /// startup dependencies may mount one: they keep running while it holds them.
+    /// An exclusive job needs a writable volume of its `service`, and none of
+    /// its startup dependencies among `services` may mount one: they keep
+    /// running while it holds them.
     pub(super) fn validate_exclusive_access(
         &self,
+        service: &Service,
         services: &[Service],
         dependencies: &BTreeSet<&str>,
         base: &str,
         errors: &mut Vec<ValidationError>,
     ) {
-        let Some(service) = services.iter().find(|service| service.name == self.service) else {
-            return;
-        };
         let volumes = service
             .mounts
             .iter()
@@ -465,13 +464,10 @@ impl HealthCheck {
                 }
             }
             HealthCheck::Command { command, .. } => {
-                if command.first().is_none_or(|value| {
-                    value
-                        .as_literal()
-                        .is_some_and(|value| value.trim().is_empty())
-                }) || command
-                    .iter()
-                    .any(|value| value.as_literal().is_some_and(|value| value.contains('\0')))
+                if lacks_executable(command)
+                    || command
+                        .iter()
+                        .any(|value| value.as_literal().is_some_and(|value| value.contains('\0')))
                 {
                     errors.push(ValidationError::new(
                         codes::HEALTHCHECK_COMMAND_INVALID,
