@@ -800,15 +800,17 @@ impl EditorContext {
     }
 }
 
-/// What the card of one of the environment page's environment's settings
-/// says.
+/// The text of a card editing one `[spec.environments.<name>]` setting of
+/// the environment page's environment. `view` renders it.
 struct SettingCard {
     title: &'static str,
     /// What the setting does.
     about: &'static str,
-    /// What a promoted environment's release records in its place.
-    recorded: &'static str,
-    save: &'static str,
+    /// The word naming the setting in the note shown for a promoted
+    /// environment: "uses the `{promoted_noun}` recorded in the release".
+    promoted_noun: &'static str,
+    /// The submit button's label.
+    button: &'static str,
 }
 
 impl SettingCard {
@@ -832,7 +834,7 @@ impl SettingCard {
         };
         let promoted = format!(
             " A promoted environment uses the {} recorded in the release it receives, so a saved change applies once its source records a new release and it is promoted.",
-            self.recorded
+            self.promoted_noun
         );
         view! {
             <section class="card">
@@ -855,7 +857,7 @@ impl SettingCard {
                             class="btn"
                             disabled={move || disabled() || !draft.changed()}
                         >
-                            {self.save}
+                            {self.button}
                         </button>
                     </div>
                 </form>
@@ -875,8 +877,8 @@ fn EnvironmentVisibility() -> impl IntoView {
     SettingCard {
         title: "Visibility",
         about: "The strictest visibility this environment's routes get. Private keeps every route on the tailnet, whatever the route itself says; public leaves each route's own visibility. Save, then deploy to apply it.",
-        recorded: "visibility",
-        save: "Save visibility",
+        promoted_noun: "visibility",
+        button: "Save visibility",
     }
     .view(
         draft,
@@ -919,8 +921,8 @@ fn EnvironmentRollback() -> impl IntoView {
     SettingCard {
         title: "Rollback",
         about: "A rollout fails when Docker pauses a service update because a new container failed within its monitor window. Automatic rollback then restores the last successful deployment at once; manual leaves the environment degraded until you deploy or restore. Volumes and migrations are never reverted.",
-        recorded: "setting",
-        save: "Save rollback",
+        promoted_noun: "setting",
+        button: "Save rollback",
     }
     .view(
         draft,
