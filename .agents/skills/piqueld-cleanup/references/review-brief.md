@@ -4,9 +4,9 @@ Review one PR from a piqueld cleanup pass. It claims to be a pure refactor: no
 behavior, output, schema, format or test coverage changes. Bug fixes go in
 their own PRs, so any behavior change here is a finding.
 
-Review read-only. Don't push, comment or edit. Use `gh pr view <N>`, `gh pr
-diff <N>`, and `git fetch origin main pull/<N>/head` to check out the head SHA
-your task gives. Export the `CARGO_BUILD_JOBS` your task gives.
+Review read-only. Don't push, comment or edit. Use `gh pr view <N>`,
+`gh pr diff <N>`, and `git fetch origin <base> pull/<N>/head` to check out the
+head SHA your task gives. Export the `CARGO_BUILD_JOBS` your task gives.
 
 Check every claim in your focus list yourself, against the base branch your
 task gives (`origin/main` unless the PR is stacked). Then look for, most

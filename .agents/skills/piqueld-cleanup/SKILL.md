@@ -18,10 +18,12 @@ code. You split the work, brief them, route reviews and report.
 
 Work from a checkout of `origin/main` that contains this skill, since the
 delegates read their briefs from it. Keep a ledger in your scratchpad: each
-agent, branch, PR, review state and finding, and the files each task or open
-PR holds. Start no task on files another one holds: it waits until that PR
-merges. After compaction, a usage limit or a T3 restart, check the ledger and
-restart only what didn't finish.
+agent, branch, PR, review state and finding, and the files each task holds.
+Files are free once the task holding them has reported and its PRs touching them
+have merged. Start no task on files that aren't free. A forced edit outside an
+area (a renamed item's callers, a docs reference) is the exception: the owner of
+those files rebases over it. After compaction, a usage limit or a T3 restart,
+check the ledger and restart only what didn't finish.
 
 ## Audit
 
@@ -71,9 +73,8 @@ PRs, on branches named `refactor/cleanup-<YYYY-MM-DD>-<area>-<topic>`.
 
 Builds run in parallel on a machine with no swap. Pick one
 `CARGO_BUILD_JOBS` value for every agent that compiles, and pass it to each.
-4 worked for 8 implementers and their reviewers on 16 cores and 58 GB.
-Count the fix and boundary delegates and every reviewer too, and run at most 8
-reviews at a time.
+4 worked for 8 implementers and their reviewers on 16 cores and 58 GB. Run
+at most 8 reviews at a time.
 
 Create one Linear issue for the pass, as `AGENTS.md` describes. Each PR says
 `Part of PQD-<n>`. Tell the owner the split in one message and start without
@@ -137,33 +138,33 @@ It edits nothing. It reports themes, each with the files involved and the
 change it proposes. Add the cross-area issues the area agents report to that
 list. Themes that need a design decision go to the owner first.
 
-Once a theme's files are free (its owners have reported and their PRs have
-merged), start one Opus implementation delegate per theme. Merge themes that
-share files, or run them one after another. Each follows the agent brief, with
-the theme's files as its area, runs `just boundary` too, and opens focused PRs
-on `refactor/cleanup-<YYYY-MM-DD>-boundary-<topic>`. Review them like the
-others.
+Once a theme's files are free, start one Opus implementation delegate per
+theme. Merge themes that share files, or run them one after another. Each
+follows the agent brief, with the theme's files as its area, runs
+`just boundary` too, and opens focused PRs on
+`refactor/cleanup-<YYYY-MM-DD>-boundary-<topic>`. Review them like the others.
 
 ### Bugs
 
 Every bug an agent or reviewer reports gets an issue and a fix PR:
 
 1. Check it against current `main`, with a Sol delegate when there are many.
-   Merge duplicate reports, skip bugs that already have a Linear issue
-   (`list_issues`), and ask the owner about anything that might be intended.
-2. Open a Linear issue as `AGENTS.md` describes, with type Bug (Security for
-   a vulnerability). Include the `file:line`, what goes wrong and how to
-   reproduce it.
-3. Once its files are free (their owner has reported, and their PRs have
-   merged), start an Opus implementation delegate in a worktree, on
-   `fix/<topic>` from a freshly fetched `origin/main`, with the issue and
+   Merge duplicate reports, and ask the owner about anything that might be
+   intended. A vulnerability stops here: tell the owner only, and open no
+   issue or PR (`SECURITY.md`).
+2. Open a Linear issue as `AGENTS.md` describes, with type Bug, or reuse the
+   one that exists (`list_issues`). Include the `file:line`, what goes wrong
+   and how to reproduce it.
+3. Once its files are free, start an Opus implementation delegate in a worktree,
+   on `fix/<topic>` from a freshly fetched `origin/main`, with the issue and
    `CARGO_BUILD_JOBS`. It writes a test that fails without the fix, makes the
    smallest fix, runs the agent brief's checks, and opens a draft PR with
    `file-pr` that says `Fixes PQD-<n>`.
 4. Review and ship it as in Review, but without the review brief, which
-   treats any behavior change as a finding. The reviewer's task says to check
-   that the test fails without the fix, the fix is correct and minimal, and
-   nothing else changed.
+   treats any behavior change as a finding. The reviewer's task says to review
+   read-only at the head SHA, check that the test fails without the fix, the
+   fix is correct and minimal, and nothing else changed, and report findings
+   with severity and `file:line`.
 
 Run at most 3 fixes at a time.
 
@@ -186,10 +187,9 @@ an issue or PR.
 
 ### After the merge
 
-Rerun the stats and compare them with the audit. Start the boundary themes
-and fixes whose files are now free, and report again when their PRs are
-reviewed and green. Then offer these follow-ups, and start each one only when
-the owner asks:
+Rerun the stats and compare them with the audit. Report again when the boundary
+and fix PRs are reviewed and green. Then offer these follow-ups, and start each
+one only when the owner asks:
 
 1. A doc-comment PR for what the docs lane reported. It changes generated
    output on purpose.

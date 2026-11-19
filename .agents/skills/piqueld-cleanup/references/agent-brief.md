@@ -17,10 +17,12 @@ is `foo/mod.rs` only when it has children.
   labels, log fields, timeouts and query plans. `git diff origin/main` shows
   no change to a migration or a generated file. Don't use blanket search and
   replace.
-- **Report bugs instead of fixing them.** The orchestrator opens an issue and
-  a fix PR for each. If a cleanup can't be done without changing behavior, report it too.
-- **Stay in your area.** Edit another area only when a rename forces it, and
-  report what crosses areas: another lane cleans up between them.
+- **Report bugs instead of fixing them.** The orchestrator opens an issue and a
+  fix PR for each. If a cleanup can't be done without changing behavior, report
+  it too.
+- **Stay in your area.** Edit another area only when a rename forces it:
+  keep it minimal and list those files in the PR description. Report what
+  crosses areas: another lane cleans up between them.
 - **Keep the docs references right.** If you rename something a page in
   `docs/` names, update that page (`piqueld-docs` skill) and run `just docs`.
   Don't reword `///` comments that feed generated output.
@@ -63,8 +65,10 @@ and never change a test just to make it pass.
 - Make small, logical commits with conventional messages and no
   `Co-Authored-By` line.
 - Rebase on `origin/main` (a stacked PR on its base branch), and clean up any
-  new code the rebase brings in. When a stacked PR's base merges, retarget it
-  to `main` and rebase.
+  new code the rebase brings in. PRs merge by squash, so when a stacked PR's
+  base merges, move only its own commits with
+  `git rebase --onto origin/main <old base tip>`, and check it targets
+  `main`.
 - Open each PR as a **draft** with `file-pr`, despite its default, titled
   `refactor(<scope>): <what got simpler>`. Its description says:
   - `Part of PQD-<n>`
