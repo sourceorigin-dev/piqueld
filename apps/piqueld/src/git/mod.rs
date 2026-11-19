@@ -567,10 +567,11 @@ impl Checkouts {
         let watch = async {
             loop {
                 tokio::time::sleep(Self::WATCH).await;
-                match Self::disk_usage(directory).await {
-                    Ok(bytes) if bytes > limit => return TreeTooLarge { limit },
-                    Ok(_) => {}
-                    Err(error) => tracing::warn!(?error, "measuring a Git download failed"),
+                if Self::measured(directory)
+                    .await
+                    .is_some_and(|bytes| bytes > limit)
+                {
+                    return TreeTooLarge { limit };
                 }
             }
         };
@@ -578,15 +579,21 @@ impl Checkouts {
             result = transfer => result?,
             too_large = watch => return Err(too_large.into()),
         };
-        // A transfer may finish between checks.
-        match Self::disk_usage(directory).await {
-            Ok(bytes) if bytes <= limit => Ok(transferred),
-            Ok(_) => Err(TreeTooLarge { limit }.into()),
-            Err(error) => {
-                tracing::warn!(?error, "measuring a Git download failed");
-                Err(TreeTooLarge { limit }.into())
-            }
+        // A transfer may finish between checks; one that can't be measured
+        // fails too.
+        match Self::measured(directory).await {
+            Some(bytes) if bytes <= limit => Ok(transferred),
+            _ => Err(TreeTooLarge { limit }.into()),
         }
+    }
+
+    /// The [disk usage](Self::disk_usage) of a download in `directory`, or
+    /// none, logged, when it can't be measured.
+    async fn measured(directory: &Path) -> Option<u64> {
+        Self::disk_usage(directory)
+            .await
+            .inspect_err(|error| tracing::warn!(?error, "measuring a Git download failed"))
+            .ok()
     }
 
     /// The disk allocated to `directory` and everything under it, which
