@@ -22,15 +22,18 @@ use futures_util::StreamExt;
 use http::StatusCode;
 use piqueld_client::{
     ApplicationSummary, ApplicationView, ApplyOptions, Client, ClientError,
-    ListApplicationsOptions, Operation, OperationState, Page, observability::DiagnosticCode,
-    operations::TimelineStream, timeline::Timeline,
+    ListApplicationsOptions, Operation, OperationState, Page,
+    observability::{DiagnosticCode, EventFilter},
+    operations::TimelineStream,
+    timeline::Timeline,
 };
 use serde_json::json;
 use std::{cell::Cell, collections::BTreeSet, path::Path, time::Duration};
 use tokio::time;
 
-/// Dispatches every connected command. `login` and `profiles` never reach here:
-/// `main` handles them before the timeout supervisor starts.
+/// Dispatches every connected command. `login`, `profiles` and
+/// `completions` never reach here: `main` handles them before the timeout
+/// supervisor starts.
 pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Result<()> {
     match &cli.command {
         Command::Login { .. } => unreachable!("login has its own interactive deadline"),
@@ -46,6 +49,7 @@ pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Re
         Command::RecoverAdmin => crate::auth::recover_admin(cli, client, console).await,
         Command::SignInLink => crate::auth::sign_in_link(cli, client, console).await,
         Command::Profiles => unreachable!("profiles are listed before connecting"),
+        Command::Completions { .. } => unreachable!("completions are printed before connecting"),
         Command::Secrets { action } => action.run(client, console).await,
         Command::Notification { command } => command.run(client, console).await,
         Command::Status => status(cli, client, console).await,
@@ -61,42 +65,45 @@ pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Re
         Command::App { command } => app(cli, client, console, command).await,
         Command::Env { command } => command.run(cli, client, console).await,
         Command::Preview { command } => command.run(client, console).await,
-        Command::Builds(args) => match &args.command {
-            BuildCommand::List {
-                application,
-                environment,
-                cursor,
-            } => console.emit(
-                &client
-                    .builds(
-                        application.as_deref(),
-                        environment.as_deref(),
-                        cursor.as_deref(),
-                    )
-                    .await?,
-            ),
+        Command::Build(args) => match &args.command {
+            BuildCommand::List { scope, page } => {
+                let (application, environment) = scope.ids(client).await?;
+                console.emit(
+                    &client
+                        .builds(
+                            application.as_deref(),
+                            environment.as_deref(),
+                            page.cursor.as_deref(),
+                            Some(page.limit),
+                        )
+                        .await?,
+                )
+            }
             BuildCommand::Logs { id, before } => build_logs(client, console, *id, *before).await,
         },
         Command::Operation(args) => args.run(client, console).await,
         Command::Analytics(args) => args.run(client, console).await,
-        Command::Events {
-            application,
-            environment,
+        Command::Event {
+            scope,
             kind,
             errors_only,
             page,
-        } => console.emit(
-            &client
-                .events(
-                    application.as_deref(),
-                    environment.as_deref(),
-                    kind.as_deref(),
-                    *errors_only,
-                    page.cursor.as_deref(),
-                    page.limit,
-                )
-                .await?,
-        ),
+        } => {
+            let (application_id, environment_id) = scope.ids(client).await?;
+            let filter = EventFilter {
+                application_id,
+                environment_id,
+                kind: kind.clone(),
+                errors_only: *errors_only,
+                descending: true,
+                ..EventFilter::default()
+            };
+            console.emit(
+                &client
+                    .filtered_events(&filter, page.cursor.as_deref(), page.limit)
+                    .await?,
+            )
+        }
     }
 }
 
@@ -578,6 +585,46 @@ pub(crate) async fn fold_applications<T>(
     }
 }
 
+/// The application and environment `build list` and `event` read the
+/// history of; `///` on fields is user-facing help.
+#[derive(Debug, clap::Args)]
+pub(crate) struct HistoryScope {
+    /// Only this application and its environments, by name or ID.
+    #[arg(long, alias = "application", value_name = "APP")]
+    app: Option<String>,
+    /// Only this environment or preview: with `--app`, an environment by
+    /// name or ID, or a preview by ID. Alone, it takes only an ID; `event`
+    /// also finds a deleted environment's events by it.
+    #[arg(long, alias = "environment", value_name = "ENV")]
+    env: Option<String>,
+}
+
+impl HistoryScope {
+    /// The application and environment IDs to filter by. `--app`, and
+    /// `--env` with it, must find a live application and one of its
+    /// environments or previews, whose history is recorded under their own
+    /// IDs. `--env` alone is used as an ID, unchecked, since a deleted
+    /// environment's events outlive it.
+    async fn ids(&self, client: &Client) -> Result<(Option<String>, Option<String>)> {
+        let Some(name_or_id) = &self.app else {
+            return Ok((None, self.env.clone()));
+        };
+        let application = resolve_application(client, name_or_id).await?;
+        let environment = self
+            .env
+            .as_deref()
+            .map(|environment| {
+                application
+                    .environment(environment)
+                    .or_else(|| application.deployable(environment))
+                    .map(|found| found.id.to_string())
+                    .ok_or_else(|| CliError::environment_not_found(environment, &application))
+            })
+            .transpose()?;
+        Ok((Some(application.application.id().to_string()), environment))
+    }
+}
+
 /// Finds the application with exactly this name, which only one live
 /// application can have. The name is checked here too: a daemon that
 /// predates the filter ignores it and lists its first page, so a missing
@@ -610,12 +657,9 @@ pub(crate) async fn resolve_application(
             Err(error) => return Err(error.into()),
         }
     }
-    let summary = find_by_name(client, name_or_id).await?.ok_or_else(|| {
-        CliError::new(
-            ErrorKind::Input,
-            format!("application {name_or_id:?} was not found"),
-        )
-    })?;
+    let summary = find_by_name(client, name_or_id)
+        .await?
+        .ok_or_else(|| CliError::application_not_found(name_or_id))?;
     Ok(client.application(summary.id.as_str()).await?)
 }
 

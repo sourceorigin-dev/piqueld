@@ -21,6 +21,18 @@ Rust with [rustup](https://rustup.rs), then install `piquelctl` from
 cargo install --locked piquelctl
 ```
 
+### Shell completions
+
+The Nix package installs completions for bash, fish and zsh. Elsewhere, save
+the script `piquelctl completions` prints for your shell where it loads
+completions, for example for bash:
+
+```console
+piquelctl completions bash > ~/.local/share/bash-completion/completions/piquelctl
+```
+
+It also prints `elvish` and `powershell` scripts.
+
 ## macOS support
 
 On Apple Silicon, Nix users can run `nix build .#cli` or
@@ -181,7 +193,7 @@ follows pushes (`following`, `off`, `off (pinned)`, `off (not opted in)`,
 configure in GitHub, once the daemon sets `ingress.webhook_hostname`, and
 whether a secret exists; `app repository webhook rotate APP` confirms, then
 generates a new secret, replacing the previous one, and prints it: it is never
-shown again. `events` names sync deployments' actor, `sync:poll` or
+shown again. `event` names sync deployments' actor, `sync:poll` or
 `sync:webhook`.
 
 The manifest is shared; values that differ between environments come from
@@ -536,8 +548,8 @@ written to stderr, so stdout remains valid JSON.
 | `notification delete` | `{ "deleted": string }` |
 | `notification deliveries` | `{ "items": [NotificationDelivery], "next_cursor": string or null }` |
 | `notification retry` | None |
-| `builds list` | `{ "items": [BuildRecord], "next_cursor": string or null }` |
-| `builds logs` | `BuildLogPage` |
+| `build list` | `{ "items": [BuildRecord], "next_cursor": string or null }` |
+| `build logs` | `BuildLogPage` |
 | `app create` / `app rename` / field edits | `SavedApplication`; `--deploy` uses the same output as `app apply --deploy` |
 | `app manifest` | Saved TOML as a JSON string |
 | `app releases` | `{ "items": [ReleaseView], "next_cursor": string or null }` |
@@ -563,7 +575,7 @@ written to stderr, so stdout remains valid JSON.
 | `operation` | `Operation` |
 | `app`/`env` `reconcile` / `start` / `deploy` | `{ "accepted": AcceptedOperation, "operation": Operation }` and the fields of `Deployment`, with `outcome` and `urls` |
 | `app`/`env` `reconcile --no-wait` / `stop --no-wait` / `start --no-wait` / `deploy --no-wait` | `AcceptedOperation` (`operation_id`, `environment_id`, `generation`) and the fields of `Deployment` |
-| `events` | `{ "items": [Event], "next_cursor": string or null }` |
+| `event` | `{ "items": [Event], "next_cursor": string or null }` |
 | `analytics` | `DeploymentAnalytics` |
 
 `Deployment` is the CLI's summary of one deployment of an environment or
@@ -1029,11 +1041,14 @@ networks, and volumes. It saves without deployment unless `--deploy` is given. A
 advances generation and records an event. Update `metadata.name` in your manifest
 file afterward; the CLI does not edit files automatically.
 
-`events` reads one page, oldest first. `--application ID` optionally filters by
-stable application ID: application-wide events such as edits and renames, and the
-events of all its environments, including deleted ones. `--environment ID` filters
-by stable environment ID. Deleting an application removes its history. Use `--cursor CURSOR` for subsequent
-pages and `--limit N` (1–100, default 50). JSON includes the next cursor.
+`event` reads one page, newest first. `--app APP` optionally filters by
+application name or ID: application-wide events such as edits and renames, and the
+events of all its environments, including deleted ones. `--env ENV` filters by
+environment: by name or ID with `--app`, or alone only by ID, which also finds
+a deleted environment's events. An unknown application or environment is not
+found. Deleting an application removes its history. Use `--cursor CURSOR` for
+subsequent pages and `--limit N` (1–100, default 50). JSON includes the next
+cursor.
 
 `analytics` summarizes [deployment analytics](../operations/history.md#watch-the-daemon-itself),
 as the dashboard's Analytics page does: deployments by the outcome of their
@@ -1226,9 +1241,9 @@ An empty list prints `No profiles configured.` in human mode, or
 `--quiet` suppresses human results, information, and progress, but preserves JSON,
 secrets shown only once, warnings, errors, and authorized prompts.
 
-`piquelctl builds list [--application ID] [--environment ID] [--cursor CURSOR]` lists one
-page of build attempts and job runs, optionally of one application's environments or
-of one environment. `piquelctl builds logs ID [--before BYTE_OFFSET]` reads the newest bounded
+`piquelctl build list [--app APP] [--env ENV] [--cursor CURSOR] [--limit N]` lists one
+page of build attempts and job runs, newest first, optionally of one application's
+environments or of one environment, named like `event`'s. `piquelctl build logs ID [--before BYTE_OFFSET]` reads the newest bounded
 output page, or an older page before the supplied cursor. It prints the cursor
 for loading older output when available. Both support `--json`.
 

@@ -13,19 +13,21 @@ are never part of them.
 
 - In the dashboard, the **Events** page lists every event you can read, and
   each environment's **Events** tab lists that environment's.
-- With `piquelctl`, give an application's ID, which `piquelctl app show`
-  prints:
+- With `piquelctl`, name the application, and optionally one of its
+  environments with `--env`:
 
   ```console
-  $ piquelctl events --application app-01a16b1282cf755287920502b5793cd1 --limit 3
-  11  2026-10-23 23:22:17Z  environment_created  -  attempt -     created environment production  by host operator (uid 1000)
-  12  2026-10-23 23:22:17Z  refresh_requested  operation-01a16b1282d27232a446f3dbc4a19808  attempt 0       by host operator (uid 1000)
+  $ piquelctl event --app hello --limit 3
   13  2026-10-23 23:22:17Z  operation_started  operation-01a16b1282d27232a446f3dbc4a19808  attempt 1       by host operator (uid 1000)
-  Next cursor: v1:13
+  12  2026-10-23 23:22:17Z  refresh_requested  operation-01a16b1282d27232a446f3dbc4a19808  attempt 0       by host operator (uid 1000)
+  11  2026-10-23 23:22:17Z  environment_created  -  attempt -     created environment production  by host operator (uid 1000)
+  Next cursor: v1:11
   ```
 
-  Events come oldest first, 50 at a time unless you pass `--limit`, up to
-  100. Pass the printed cursor with `--cursor` to read the next page.
+  Events come newest first, 50 at a time unless you pass `--limit`, up to
+  100. Pass the printed cursor with `--cursor` to read the next page. To
+  read a deleted environment's events, pass its ID with `--env` on its own.
+  Deleting an application deletes its history.
 
 Each line has the event's number, its time in UTC, its kind, and
 then, where they apply, its operation, attempt, phase, resource, error code,
@@ -80,8 +82,8 @@ message, with a hint for what to do next.
   These are recent lines read from Docker; for a lasting record,
   [export them](telemetry.md).
 - A build's output: in the dashboard, see the **Builds** page and each
-  application's **Builds** tab. With `piquelctl`, `piquelctl builds list`
-  lists recent builds, and `piquelctl builds logs <id>` prints one's output.
+  application's **Builds** tab. With `piquelctl`, `piquelctl build list`
+  lists recent builds, and `piquelctl build logs <id>` prints one's output.
 
 ## Watch the daemon itself
 
@@ -176,5 +178,7 @@ Deleting an application deletes its history.
   the `events:read` permission on, and daemon events need `system:read`; see
   [permissions](../accounts/permissions.md). It may also be older than the
   retention period.
-- **`piquelctl events` rejects the application.** It takes the application's
-  ID, not its name.
+- **`piquelctl event` finds no history of a deleted application.** Deleting
+  an application deletes its history, and `--app` only finds one that still
+  exists. A deleted environment's events remain: pass its ID with `--env` on
+  its own.
