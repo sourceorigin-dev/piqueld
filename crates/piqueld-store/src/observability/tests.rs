@@ -1012,6 +1012,7 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
         name: "piquelctl",
         expires_at: None,
         grants: None,
+        authenticated_at: None,
     };
     store
         .insert_credential(&user.id, &credential)

@@ -396,6 +396,28 @@ pub enum Denied {
     /// out access, or change their own account.
     #[error("credentials with limited access cannot create credentials or change their account")]
     Scoped,
+    /// Sensitive actions, like creating credentials, need a passkey sign-in
+    /// or step-up within the last [`Reauthenticate::WINDOW_SECS`] seconds.
+    #[error(transparent)]
+    Reauthenticate(Reauthenticate),
+}
+
+/// Why a sensitive action needs the caller to confirm with a passkey first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum Reauthenticate {
+    /// A browser session or CLI login whose last passkey sign-in or step-up
+    /// is too old, or that never had one, like a session opened by
+    /// registering a passkey. Confirming with a passkey makes it fresh.
+    #[error("this action needs a passkey sign-in within the last 2 minutes")]
+    Stale,
+    /// API tokens can never confirm with a passkey.
+    #[error("API tokens cannot confirm with a passkey")]
+    Token,
+}
+
+impl Reauthenticate {
+    /// Seconds a passkey sign-in or step-up keeps a credential fresh.
+    pub const WINDOW_SECS: i64 = 120;
 }
 
 /// The application a change applies to.

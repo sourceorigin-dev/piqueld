@@ -163,6 +163,18 @@ credential is renewed: expiry is fixed when it is issued. Logging out revokes
 the credential of the current request; the host operator on the Unix socket
 has none.
 
+A credential also stores `authenticated_at`, when a passkey last proved its
+holder present (`Proof` in `piqueld-store`). Only a passkey sign-in sets it,
+to the time the assertion arrived. Neither use nor creation counts: a
+session opened by redeeming a setup, invitation, enrollment or recovery link
+has none until its passkey signs in, and API tokens never have one.
+`Proof::require_fresh` accepts a proof at most two minutes old
+(`Reauthenticate::WINDOW_SECS`) and refuses a missing or future one with 403
+`reauthentication_required`. Its `step_up` detail is false for API tokens,
+which no passkey can confirm. `Authority::require_fresh` checks it inside a
+write's transaction; `Actor::require_fresh` exempts the host operator, and
+`Identity::require_fresh` refuses early.
+
 Browser sessions use HTTP-only, `SameSite=Strict` cookies. For HTTPS origins
 they are also `Secure` and use the `__Host-` prefix, so applications on sibling
 subdomains cannot set or shadow them. Browsers share cookies between the ports

@@ -62,7 +62,10 @@ impl Authenticator for FakeAuth {
                     display_name: String::new(),
                 },
                 id: "contract-admin".into(),
-                kind: piqueld_store::CredentialKind::Token,
+                proof: piqueld_store::Proof {
+                    kind: piqueld_store::CredentialKind::Token,
+                    authenticated_at: None,
+                },
             },
             grants: piqueld_core::access::Grants::admin(),
             scoped: false,

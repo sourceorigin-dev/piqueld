@@ -133,6 +133,7 @@ impl Store {
             name,
             expires_at: None,
             grants: None,
+            authenticated_at: None,
         };
         self.insert_credential(name, &credential).await.unwrap();
         Actor::Account(Caller {

@@ -306,7 +306,8 @@ impl Auth {
     }
     /// Generates a credential secret, returning it with the record to store.
     /// `grants` limits a scoped credential; `None` acts with the account's
-    /// full access.
+    /// full access. No passkey proved its holder present yet, so it is not
+    /// fresh enough for sensitive actions.
     ///
     /// Secrets carry the [`CREDENTIAL_PREFIX`] so leaked ones are easy to find
     /// with secret scanners:
@@ -328,6 +329,7 @@ impl Auth {
             name,
             expires_at,
             grants,
+            authenticated_at: None,
         };
         Ok((secret, credential))
     }

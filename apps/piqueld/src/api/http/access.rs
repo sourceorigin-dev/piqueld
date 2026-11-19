@@ -29,7 +29,7 @@ use piqueld_core::auth::Principal;
 use piqueld_core::tailnet::TailnetPeer;
 use piqueld_core::{
     ApplicationId, EnvironmentId,
-    access::{AppPermission, Denied, GlobalPermission, Grants, Permission, Target},
+    access::{AppPermission, Denied, GlobalPermission, Grants, Permission, Reauthenticate, Target},
 };
 use piqueld_store::EnvironmentOwner;
 use serde_json::json;
@@ -589,6 +589,21 @@ impl From<Denied> for ApiError {
                 "credential_scoped",
                 "Credentials with limited access, like API tokens, cannot create credentials or change their account",
             ),
+            // Clients confirm with a passkey and retry only when `step_up` is
+            // set: no passkey can make an API token fresh.
+            Denied::Reauthenticate(reason) => Self::new(
+                StatusCode::FORBIDDEN,
+                "reauthentication_required",
+                match reason {
+                    Reauthenticate::Stale => {
+                        "This action needs a passkey sign-in within the last 2 minutes; confirm with your passkey, then retry"
+                    }
+                    Reauthenticate::Token => {
+                        "API tokens cannot do this; use a signed-in account, which confirms with its passkey, or the host operator"
+                    }
+                },
+            )
+            .details(json!({"step_up": reason == Reauthenticate::Stale})),
         };
         error.denied = Some(denied);
         error

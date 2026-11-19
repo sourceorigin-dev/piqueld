@@ -11,7 +11,7 @@ pub use security::SecurityEvent;
 
 use super::{Actor, Attribution, Store, StoreError, now_secs};
 use access::{Authority, Caller, Holder};
-use piqueld_core::access::{GlobalPermission, Grants, Permission};
+use piqueld_core::access::{Denied, GlobalPermission, Grants, Permission, Reauthenticate};
 use piqueld_core::auth::{
     Account, CredentialView, Directory, HostOperator, InvitationView, OperatorSessionView,
     PasskeyView, User,
@@ -85,12 +85,43 @@ impl CredentialKind {
     }
 
     /// Parses a stored kind, reporting unknown values as corruption.
-    fn parse(value: &str) -> Result<Self, StoreError> {
+    pub(super) fn parse(value: &str) -> Result<Self, StoreError> {
         match value {
             "browser" => Ok(Self::Browser),
             "cli" => Ok(Self::Cli),
             "token" => Ok(Self::Token),
             _ => Err(StoreError::Corrupt),
+        }
+    }
+}
+
+/// How recently a credential's holder proved itself with a passkey, which
+/// sensitive actions, like creating credentials, require (see
+/// [`Proof::require_fresh`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Proof {
+    /// Credential class; API tokens are never fresh.
+    pub kind: CredentialKind,
+    /// When a passkey sign-in or step-up last proved the holder present, in
+    /// Unix seconds; `None` when none has.
+    pub authenticated_at: Option<i64>,
+}
+
+impl Proof {
+    /// Requires a passkey sign-in or step-up within the last
+    /// [`Reauthenticate::WINDOW_SECS`] before `now`. A missing or future time
+    /// fails closed, and API tokens always fail, as no passkey confirms them.
+    ///
+    /// # Errors
+    /// Returns [`Denied::Reauthenticate`] with the reason.
+    pub fn require_fresh(self, now: i64) -> Result<(), Denied> {
+        let fresh = self
+            .authenticated_at
+            .is_some_and(|at| (0..=Reauthenticate::WINDOW_SECS).contains(&(now - at)));
+        match self.kind {
+            CredentialKind::Token => Err(Denied::Reauthenticate(Reauthenticate::Token)),
+            _ if fresh => Ok(()),
+            _ => Err(Denied::Reauthenticate(Reauthenticate::Stale)),
         }
     }
 }
@@ -110,6 +141,9 @@ pub struct NewCredential<'a> {
     /// Grants a scoped credential is limited to; `None` acts with the
     /// account's full access.
     pub grants: Option<&'a Grants>,
+    /// When a passkey proved the holder present, in Unix seconds: set only
+    /// for a session a passkey sign-in opens; `None` otherwise.
+    pub authenticated_at: Option<i64>,
 }
 
 impl NewCredential<'_> {
@@ -120,7 +154,7 @@ impl NewCredential<'_> {
         let kind = self.kind.as_str();
         let scoped = self.grants.is_some();
         sqlx::query!(
-            "INSERT INTO auth_credentials(id,user_id,secret_hash,kind,name,created_at,last_used_at,expires_at,scoped) VALUES(?1,?2,?3,?4,?5,?6,?6,?7,?8)",
+            "INSERT INTO auth_credentials(id,user_id,secret_hash,kind,name,created_at,last_used_at,expires_at,scoped,authenticated_at) VALUES(?1,?2,?3,?4,?5,?6,?6,?7,?8,?9)",
             self.id,
             user_id,
             self.secret_hash,
@@ -128,7 +162,8 @@ impl NewCredential<'_> {
             self.name,
             now,
             self.expires_at,
-            scoped
+            scoped,
+            self.authenticated_at
         )
         .execute(&mut *db)
         .await
@@ -215,8 +250,8 @@ impl<'a> DirectoryView<'a> {
 
 /// The account behind a live credential.
 pub struct CredentialOwner {
-    /// Credential class.
-    pub kind: CredentialKind,
+    /// Credential class and its last passkey proof.
+    pub proof: Proof,
     /// Matched credential, used to record its use or revoke it.
     pub credential_id: String,
     /// Account that owns the credential.
@@ -700,7 +735,7 @@ impl Store {
         let idle = now - SESSION_IDLE_SECS;
         let mut tx = self.snapshot().await?;
         let row = sqlx::query!(
-            r#"SELECT c.id AS "credential_id!",c.kind,c.last_used_at,c.scoped AS "scoped: bool",c.tailnet,u.id AS "id!",u.username,u.display_name FROM auth_credentials c JOIN auth_users u ON u.id=c.user_id WHERE c.secret_hash=?1 AND (c.expires_at IS NULL OR c.expires_at>?2) AND (c.kind!='browser' OR c.last_used_at>?3)"#,
+            r#"SELECT c.id AS "credential_id!",c.kind,c.authenticated_at,c.last_used_at,c.scoped AS "scoped: bool",c.tailnet,u.id AS "id!",u.username,u.display_name FROM auth_credentials c JOIN auth_users u ON u.id=c.user_id WHERE c.secret_hash=?1 AND (c.expires_at IS NULL OR c.expires_at>?2) AND (c.kind!='browser' OR c.last_used_at>?3)"#,
             hash,
             now,
             idle
@@ -711,11 +746,21 @@ impl Store {
         let Some(row) = row else {
             return Ok(None);
         };
-        let authority =
-            Authority::read(&mut tx, row.id.clone(), &row.credential_id, row.scoped).await?;
+        let proof = Proof {
+            kind: CredentialKind::parse(&row.kind)?,
+            authenticated_at: row.authenticated_at,
+        };
+        let authority = Authority::read(
+            &mut tx,
+            row.id.clone(),
+            &row.credential_id,
+            row.scoped,
+            proof,
+        )
+        .await?;
         tx.commit().await.map_err(StoreError::database)?;
         Ok(Some(CredentialOwner {
-            kind: CredentialKind::parse(&row.kind)?,
+            proof,
             credential_id: row.credential_id,
             user: User {
                 id: row.id,
@@ -1323,6 +1368,7 @@ mod tests {
             name: "Browser",
             expires_at: Some(now_secs() + SESSION_IDLE_SECS),
             grants: None,
+            authenticated_at: None,
         };
         store
             .insert_credential(&user.id, &credential)
@@ -1391,6 +1437,110 @@ mod tests {
         assert!(!refresh.await.unwrap().unwrap());
     }
 
+    /// A credential is fresh for two minutes after a passkey proved its
+    /// holder present, inclusive; a missing or future time is stale, and an
+    /// API token never is fresh.
+    #[test]
+    fn freshness_needs_a_recent_passkey_proof() {
+        let now = 1_000_000;
+        let stale = Err(Denied::Reauthenticate(Reauthenticate::Stale));
+        for (authenticated_at, expected) in [
+            (Some(now), Ok(())),
+            (Some(now - Reauthenticate::WINDOW_SECS), Ok(())),
+            (Some(now - Reauthenticate::WINDOW_SECS - 1), stale),
+            (Some(now + 1), stale),
+            (None, stale),
+        ] {
+            for kind in [CredentialKind::Browser, CredentialKind::Cli] {
+                let proof = Proof {
+                    kind,
+                    authenticated_at,
+                };
+                assert_eq!(proof.require_fresh(now), expected, "{proof:?}");
+            }
+        }
+        let token = Proof {
+            kind: CredentialKind::Token,
+            authenticated_at: Some(now),
+        };
+        assert_eq!(
+            token.require_fresh(now),
+            Err(Denied::Reauthenticate(Reauthenticate::Token))
+        );
+    }
+
+    /// The store reads a credential's stored proof time both when
+    /// authenticating and inside writes, ordinary use never extends it, and
+    /// the host operator is exempt from freshness.
+    #[tokio::test]
+    async fn writes_check_the_stored_proof_and_exempt_the_host_operator() {
+        let (_dir, store) = browser_session().await;
+        let proved = now_secs();
+        for (id, kind, authenticated_at) in [
+            ("fresh", CredentialKind::Browser, Some(proved)),
+            ("token", CredentialKind::Token, Some(proved)),
+        ] {
+            let credential = NewCredential {
+                id: id.into(),
+                secret_hash: id.into(),
+                kind,
+                name: "Test",
+                expires_at: None,
+                grants: None,
+                authenticated_at,
+            };
+            store.insert_credential("alice", &credential).await.unwrap();
+        }
+        let owner = store.credential_owner("fresh").await.unwrap().unwrap();
+        assert_eq!(owner.proof.authenticated_at, Some(proved));
+        store.age_auth_credentials(3600).await;
+        assert!(store.touch_credential("fresh").await.unwrap());
+        let owner = store.credential_owner("fresh").await.unwrap().unwrap();
+        assert_eq!(owner.proof.authenticated_at, Some(proved));
+
+        let account = |credential_id| {
+            Actor::Account(Caller {
+                credential_id,
+                user_id: "alice",
+            })
+        };
+        let mut db = store.connection().await.unwrap();
+        account("fresh").require_fresh(&mut db).await.unwrap();
+        for (id, reason) in [
+            // Signed in by `browser_session` without a passkey proof.
+            ("credential", Reauthenticate::Stale),
+            ("token", Reauthenticate::Token),
+        ] {
+            assert!(matches!(
+                account(id).require_fresh(&mut db).await,
+                Err(StoreError::Denied(Denied::Reauthenticate(refused))) if refused == reason
+            ));
+        }
+        let operator = HostOperator { uid: 0 };
+        let socket = Actor::Operator {
+            operator,
+            session: None,
+        };
+        socket.require_fresh(&mut db).await.unwrap();
+        drop(db);
+        let expires_at = now_secs() + 3600;
+        store
+            .create_operator_link("operator", "link", expires_at, operator)
+            .await
+            .unwrap();
+        let (session, _) = store
+            .redeem_operator_link("link", "session", expires_at)
+            .await
+            .unwrap()
+            .unwrap();
+        let browser = Actor::Operator {
+            operator,
+            session: Some(&session),
+        };
+        let mut db = store.connection().await.unwrap();
+        browser.require_fresh(&mut db).await.unwrap();
+    }
+
     /// Pruning deletes expired credentials, idle browser sessions, and
     /// expired invitations, and keeps what can still be used.
     #[tokio::test]
@@ -1415,6 +1565,7 @@ mod tests {
                 name: "Test",
                 expires_at,
                 grants: None,
+                authenticated_at: None,
             };
             store
                 .insert_credential(&user.id, &credential)

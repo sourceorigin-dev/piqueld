@@ -1,6 +1,8 @@
 use super::*;
 use crate::api::http::Authenticator as _;
-use piqueld_core::access::{Denied, GlobalPermission, Grants, Permission, Preset, Scope};
+use piqueld_core::access::{
+    Denied, GlobalPermission, Grants, Permission, Preset, Reauthenticate, Scope,
+};
 use piqueld_core::auth::{HostOperator, Manage, OperatorLink, RegistrationStart, User};
 use piqueld_store::{Invitation, Lockout, NewPasskey, PasskeyOwner, StoreError};
 
@@ -93,7 +95,7 @@ impl Fixture {
     /// Redeems the invitation or enrollment link `secret` for `user` in a
     /// new browser session, returning whether it added a passkey.
     async fn redeem(&self, user: &User, secret: &str) -> bool {
-        let (_, session) = Auth::browser_session().unwrap();
+        let (_, session) = Auth::browser_session(None).unwrap();
         let owner = PasskeyOwner::Redeem {
             user,
             invitation_hash: &Auth::hash(secret),
@@ -795,6 +797,43 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
     assert!(nothing.grants.is_empty());
 }
 
+/// Requests carry their credential's passkey proof, so sensitive actions can
+/// refuse stale callers before doing anything; tokens are told they can never
+/// qualify, and the host operator is exempt.
+#[tokio::test]
+async fn identities_refuse_sensitive_actions_without_a_recent_passkey() {
+    let f = Fixture::new().await;
+    let stale = f.identity("alice", &Grants::admin()).await;
+    let (secret, mut session) = Auth::browser_session(Some(now_secs())).unwrap();
+    session.secret_hash = Auth::hash(&secret);
+    let store = &f.auth.0.store;
+    store
+        .insert_credential(&stale.account().id, &session)
+        .await
+        .unwrap();
+    f.auth
+        .authenticate(&secret)
+        .await
+        .unwrap()
+        .require_fresh()
+        .unwrap();
+    let (_, token) = f
+        .account("ci", CredentialKind::Token, None, &Grants::admin())
+        .await;
+    let token = f.auth.authenticate(&token).await.unwrap();
+    for (identity, reason) in [
+        (&stale, Reauthenticate::Stale),
+        (&token, Reauthenticate::Token),
+    ] {
+        assert!(matches!(
+            identity.require_fresh(),
+            Err(AuthError::Denied(Denied::Reauthenticate(refused))) if refused == reason
+        ));
+    }
+    let operator = HostOperator { uid: 0 };
+    Identity::operator(operator, None).require_fresh().unwrap();
+}
+
 /// `auth.max_token_days` bounds new tokens, and secrets issued before the
 /// `pqd_` prefix still authenticate, including ones that happen to start
 /// with it.
@@ -828,6 +867,7 @@ async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
             name: "legacy",
             expires_at: None,
             grants: Some(&Grants::admin()),
+            authenticated_at: None,
         };
         f.auth
             .0
