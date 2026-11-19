@@ -963,26 +963,28 @@ async fn secret_key_check_reports_the_key_without_changing_it() {
 /// nothing, record nothing, and leave their request's background record. Key recovery records what it discarded.
 #[tokio::test]
 async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
+    let temp = tempfile::tempdir().expect("a temporary directory is created");
+    let store = Store::open_unsynced(temp.path().join("db"))
+        .await
+        .expect("the store opens");
     let app = application();
     store
         .save_application(&ApplicationTemplate::from(&app), None, None)
         .await
-        .unwrap();
+        .expect("the application is saved");
     let env = store.production(app.id()).await;
     store
         .put_secret(Daemon, &env, "token", 0, b"value".to_vec())
         .await
-        .unwrap();
+        .expect("the generated secret is stored");
     store
         .put_stored_secret(Daemon, app.id(), "stripe", 0, b"value".to_vec(), None)
         .await
-        .unwrap();
+        .expect("the stored secret to delete is stored");
     store
         .put_stored_secret(Daemon, app.id(), "kept", 0, b"value".to_vec(), None)
         .await
-        .unwrap();
+        .expect("the stored secret to discard is stored");
     let route = "DELETE /api/v1/environments/{id}/secrets/{name}";
     // Runtime cleanup failed after the first reservation, so a retry resumes
     // it, and a late retry then completes a deletion already done. Each
@@ -994,13 +996,19 @@ async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
                 actor: Daemon,
                 request: Some(&requests[stage]),
             };
-            let deletion = store.$begin(by(0), $owner, $name, 1).await.unwrap();
-            store.$begin(by(1), $owner, $name, 1).await.unwrap();
+            let deletion = store
+                .$begin(by(0), $owner, $name, 1)
+                .await
+                .expect("the deletion is reserved");
+            store
+                .$begin(by(1), $owner, $name, 1)
+                .await
+                .expect("the reservation resumes");
             for stage in [2, 3] {
                 store
                     .$finish(by(stage), $owner, $name, &deletion.id)
                     .await
-                    .unwrap();
+                    .expect("completing the deletion succeeds, or does nothing");
             }
             let recorded = requests.each_ref().map(|request| request.recorded.get());
             assert_eq!(recorded, [true, false, true, false]);
@@ -1014,13 +1022,16 @@ async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
         app.id(),
         "stripe"
     );
-    std::fs::write(temp.path().join("secrets.key"), [42; 32]).unwrap();
+    std::fs::write(temp.path().join("secrets.key"), [42; 32]).expect("the lost key is written");
     let request = crate::testing::audit_request(route);
     let author = crate::Author {
         actor: Daemon,
         request: Some(&request),
     };
-    store.recover_secret_key(author).await.unwrap();
+    store
+        .recover_secret_key(author)
+        .await
+        .expect("the lost key is recovered");
     assert!(request.recorded.get());
     assert_eq!(
         store.audit_actions().await,
