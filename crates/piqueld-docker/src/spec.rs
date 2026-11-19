@@ -27,6 +27,10 @@ impl BollardDocker {
     /// cannot be published, or when the ingress network is missing or still has no
     /// subnet after bounded inspection retries, since Swarm assigns subnets
     /// after creating the network.
+    #[expect(
+        clippy::expect_used,
+        reason = "`service_spec` always builds a task template."
+    )]
     pub(super) async fn runtime_service_spec(
         &self,
         desired: &DesiredService,

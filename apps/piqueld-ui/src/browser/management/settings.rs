@@ -558,6 +558,10 @@ pub(super) fn ServiceGroup(name: String, section: Section) -> impl IntoView {
     // Every section's draft keeps the other sections as shown, so it
     // compares and follows only its own fields. A service removed meanwhile
     // keeps the form it was shown with.
+    #[expect(
+        clippy::expect_used,
+        reason = "`ServiceEditor` checks the service exists before mounting its sections."
+    )]
     let shown = context
         .manifest()
         .spec

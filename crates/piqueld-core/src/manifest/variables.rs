@@ -588,6 +588,10 @@ impl<T: Expected> TypedSlot for Typed<T> {
         Ok(())
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "Typed literals are integers or plain strings, which always serialize."
+    )]
     fn literal(&self) -> Option<String> {
         Typed::literal(self).map(|value| {
             serde_json::to_string(value).expect(

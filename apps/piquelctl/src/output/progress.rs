@@ -78,6 +78,10 @@ impl ProgressOutput {
 
     /// Starts a task: a ticking spinner on terminals, a `label: started` line in plain
     /// mode, or nothing when hidden.
+    #[expect(
+        clippy::expect_used,
+        reason = "The template is a literal using only supported placeholders."
+    )]
     pub(super) fn start(&self, label: &str) -> ProgressTask {
         let bar = match &self.inner.backend {
             Backend::Terminal(multi) => {

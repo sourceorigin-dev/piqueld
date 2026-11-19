@@ -265,6 +265,10 @@ struct AuthState {
 
 impl AuthState {
     /// The state `Gate` provides.
+    #[expect(
+        clippy::expect_used,
+        reason = "`Gate` provides the auth state before rendering its children."
+    )]
     fn get() -> Self {
         use_context().expect("Gate provides AuthState before rendering its children")
     }

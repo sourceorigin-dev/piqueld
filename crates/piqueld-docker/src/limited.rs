@@ -40,6 +40,10 @@ impl<D> LimitedDocker<D> {
     }
 
     /// Waits for an observation permit, held until the returned guard drops.
+    #[expect(
+        clippy::expect_used,
+        reason = "The observation semaphore is never closed."
+    )]
     async fn observing(&self) -> SemaphorePermit<'_> {
         self.observations
             .acquire()
@@ -144,6 +148,7 @@ impl<D: DockerApi> DockerApi for LimitedDocker<D> {
         self.inner.ensure_swarm(auto).await
     }
     /// Waiting for an image permit counts against the resolution budget.
+    #[expect(clippy::expect_used, reason = "The image semaphore is never closed.")]
     async fn resolve_image(&self, reference: &str) -> Result<String, DockerError> {
         DockerTimeout::ImageResolution
             .run("resolve image", async {

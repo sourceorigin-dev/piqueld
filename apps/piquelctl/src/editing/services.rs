@@ -299,6 +299,10 @@ pub(crate) struct HealthTimingArgs {
 impl AddServiceArgs {
     /// The new service: its image or Git source, one replica, and no
     /// optional settings.
+    #[expect(
+        clippy::expect_used,
+        reason = "Clap requires an image or a Git repository."
+    )]
     fn service(&self) -> Result<Service> {
         Ok(Service {
             name: self.target.service.clone(),

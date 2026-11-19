@@ -49,6 +49,10 @@ pub(crate) struct SetGeneratedSecretArgs {
 }
 impl SetGeneratedSecretArgs {
     /// The generator the flags select; clap requires exactly one of them.
+    #[expect(
+        clippy::expect_used,
+        reason = "Clap requires `--bytes` or `--rsa-bits`."
+    )]
     fn generator(&self) -> SecretGenerator {
         match (self.bytes, self.rsa_bits) {
             (_, Some(bits)) => SecretGenerator::Rsa { bits },

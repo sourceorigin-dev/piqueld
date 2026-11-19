@@ -540,6 +540,10 @@ impl Mutation {
 
     /// Normalizes under the `pending-application` placeholder ID; the store
     /// replaces it with the real (existing or newly minted) ID on acceptance.
+    #[expect(
+        clippy::expect_used,
+        reason = "The placeholder ID is a valid constant."
+    )]
     fn pending_application(manifest: ValidatedTemplate) -> ApplicationTemplate {
         manifest
             .normalize(ApplicationId::parse("pending-application").expect("valid placeholder ID"))

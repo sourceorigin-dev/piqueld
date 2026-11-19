@@ -144,6 +144,10 @@ async fn write(target: &mut (impl AsyncWrite + Unpin), data: &[u8]) -> Result<()
 /// stops accepting input or there is nothing left to forward.
 /// # Errors
 /// Returns a failure to read standard input.
+#[expect(
+    clippy::expect_used,
+    reason = "`select!` polls each branch only while its source is `Some`."
+)]
 async fn forward(
     mut input: ExecWriter,
     mut stdin: Option<mpsc::Receiver<std::io::Result<Vec<u8>>>>,

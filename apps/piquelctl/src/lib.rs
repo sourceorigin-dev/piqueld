@@ -42,6 +42,10 @@ use tokio::time::Instant;
 ///
 /// If the Tokio runtime cannot start.
 #[tokio::main]
+#[expect(
+    clippy::expect_used,
+    reason = "The same `Cli` definition validated these matches."
+)]
 pub async fn run() -> ExitCode {
     let matches = match Cli::command().try_get_matches() {
         Ok(matches) => matches,

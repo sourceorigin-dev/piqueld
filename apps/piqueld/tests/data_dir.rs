@@ -1,5 +1,11 @@
 //! Privacy enforcement for the daemon's single data directory.
 
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 #[path = "support/fixture_dir.rs"]
 mod fixture_dir;
 

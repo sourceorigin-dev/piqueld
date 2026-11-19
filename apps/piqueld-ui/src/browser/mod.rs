@@ -459,6 +459,10 @@ fn DashboardLayout() -> impl IntoView {
 /// Returns the context provided by `DashboardLayout`.
 ///
 /// Panics when called outside a dashboard route.
+#[expect(
+    clippy::expect_used,
+    reason = "Dashboard routes always render inside `DashboardLayout`, which provides the context."
+)]
 fn dashboard_context() -> DashboardContext {
     use_context().expect("dashboard routes are descendants of DashboardLayout")
 }

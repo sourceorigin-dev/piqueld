@@ -410,6 +410,10 @@ fn failure(event: &Event) -> Status {
 }
 
 /// The first 16 bytes of the SHA-256 of `parts`.
+#[expect(
+    clippy::expect_used,
+    reason = "SHA-256 digests are 32 bytes, so the slice has exactly 16."
+)]
 fn trace_id(parts: &[&str]) -> TraceId {
     TraceId::from_bytes(
         digest(parts)[..16]
@@ -420,6 +424,10 @@ fn trace_id(parts: &[&str]) -> TraceId {
 
 /// Bytes 16..24 of the SHA-256 of `parts`, so a trace's root span never
 /// shares its trace ID's bytes.
+#[expect(
+    clippy::expect_used,
+    reason = "SHA-256 digests are 32 bytes, so the slice has exactly 8."
+)]
 fn span_id(parts: &[&str]) -> SpanId {
     SpanId::from_bytes(
         digest(parts)[16..24]

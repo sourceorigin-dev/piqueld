@@ -56,6 +56,10 @@ pub(crate) struct TimelineProgress {
 impl TimelineProgress {
     /// Starts showing the operation `label` names; until its first timeline,
     /// a terminal shows a spinner and the label.
+    #[expect(
+        clippy::expect_used,
+        reason = "The template is a literal using only its own key."
+    )]
     pub(super) fn new(progress: &ProgressOutput, label: &str) -> Self {
         let output = Arc::clone(&progress.inner);
         let view = Arc::new(Mutex::new(View {

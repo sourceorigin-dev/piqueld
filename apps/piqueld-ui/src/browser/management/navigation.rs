@@ -82,6 +82,10 @@ pub(super) fn guard_navigation(dirty: RwSignal<BTreeSet<String>>) {
         }
     });
     on_cleanup(move || listener.remove());
+    #[expect(
+        clippy::expect_used,
+        reason = "The history guard is installed before the router renders."
+    )]
     let guard = use_context::<HistoryGuard>().expect("history guard installed before router");
     let location = use_location();
     Effect::new(move |_| {

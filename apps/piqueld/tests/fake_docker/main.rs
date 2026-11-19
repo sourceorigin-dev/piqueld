@@ -1,5 +1,11 @@
 //! Reconciliation coverage using the real Docker seam and an in-memory backend.
 
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 #[path = "../support/application.rs"]
 mod application_fixture;
 #[path = "../support/docker_contract.rs"]

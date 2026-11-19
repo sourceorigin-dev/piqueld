@@ -98,6 +98,10 @@ impl BuildRepository {
     /// # Panics
     /// Never: a validated repository and a digest form a repository digest.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "A validated repository and a digest always form a repository digest."
+    )]
     pub fn image(&self, digest: &Sha256Digest) -> RepositoryDigest {
         RepositoryDigest::parse(format!("{}@{digest}", self.0))
             .expect("a validated repository and a digest form a repository digest")

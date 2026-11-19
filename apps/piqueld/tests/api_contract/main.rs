@@ -1,5 +1,11 @@
 //! Focused API/client coverage for the polling application lifecycle.
 
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 #[path = "../support/poll.rs"]
 mod poll;
 #[path = "../support/repository.rs"]

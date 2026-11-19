@@ -285,6 +285,10 @@ impl NormalizedApplication {
 ///
 /// Panics only if the specification cannot be serialized, which indicates a
 /// bug in the manifest types.
+#[expect(
+    clippy::expect_used,
+    reason = "Validated specs with string-keyed maps always serialize to JSON."
+)]
 fn hash_spec(spec: &impl Serialize, files: &RepositoryFiles) -> String {
     #[derive(Serialize)]
     struct HashEnvelope<'a, S> {

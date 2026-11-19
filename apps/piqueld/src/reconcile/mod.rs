@@ -138,6 +138,10 @@ impl<D> Controller<D> {
     /// Panics when the policy has no attempts or its initial delay exceeds its
     /// maximum delay.
     #[must_use]
+    #[expect(
+        clippy::panic,
+        reason = "An invalid retry policy is a programming error, as the docs say."
+    )]
     pub fn with_retry_policy(mut self, retry: RetryPolicy) -> Self {
         if let Err(error) = retry.validate() {
             panic!("invalid retry policy: {error}");

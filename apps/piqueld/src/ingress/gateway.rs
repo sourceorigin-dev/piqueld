@@ -533,6 +533,10 @@ impl Ingress {
     }
 
     /// Stores the SHA-256 of a container spec in its `CONFIGURATION_LABEL`.
+    #[expect(
+        clippy::expect_used,
+        reason = "A `serde_json::Value` always serializes."
+    )]
     pub(super) fn label_hash(spec: &mut Value) {
         let hash = format!(
             "{:x}",

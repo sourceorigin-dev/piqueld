@@ -60,6 +60,10 @@ impl SyncMode {
 }
 
 /// Parses `public` or `private`, listing both in help and completions.
+#[expect(
+    clippy::expect_used,
+    reason = "The parser accepts only `public` and `private`, both valid visibilities."
+)]
 pub(crate) fn visibility() -> impl TypedValueParser<Value = Visibility> {
     clap::builder::PossibleValuesParser::new(["public", "private"]).map(|value| {
         value.parse().expect(

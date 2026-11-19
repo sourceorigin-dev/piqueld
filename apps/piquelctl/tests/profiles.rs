@@ -1,4 +1,10 @@
 //! Profiles exercise precedence through the real command without changing process globals.
+
+#![expect(
+    clippy::expect_used,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
+
 mod support;
 
 use std::process::{Command, Output};
