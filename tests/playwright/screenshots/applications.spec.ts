@@ -26,6 +26,9 @@ const output = (page: Page, id: number, edit = (text: string) => text) => rewrit
 // docs/user/applications: building images from Git, deploying on push,
 // environments, and previews, each continuing from the one before.
 test('shipping applications', async ({ page, daemon, cli, passkeys, gitHost }) => {
+  // It builds an image and deploys two applications and three previews,
+  // which takes over a minute on a busy machine.
+  test.slow();
   void passkeys;
   await accountForm(page, daemon.setup);
   await submitRegistration(page);
