@@ -638,10 +638,7 @@ async fn creating_over_a_repository_backed_name_collides() {
         path: "app.toml".into(),
         sync: piqueld_core::sync::RepositorySync::Off,
     }));
-    let options = piqueld_client::edit::EditOptions {
-        expected_generation: Some(1),
-        ..Default::default()
-    };
+    let options = at_generation(1);
     api.client
         .edit_application(&saved.application_id, &repository, &options)
         .await

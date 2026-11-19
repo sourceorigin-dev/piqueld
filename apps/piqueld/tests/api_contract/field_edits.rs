@@ -4,10 +4,7 @@ use super::*;
 
 #[tokio::test]
 async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
-    use piqueld_core::{
-        edit::{ApplicationEdit, EditOptions},
-        manifest::Visibility,
-    };
+    use piqueld_core::{edit::ApplicationEdit, manifest::Visibility};
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
@@ -22,10 +19,7 @@ async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
                         environment: "production".into(),
                         visibility,
                     },
-                    &EditOptions {
-                        expected_generation: Some(generation),
-                        ..EditOptions::default()
-                    },
+                    &at_generation(generation),
                 )
                 .await
                 .unwrap()
@@ -62,7 +56,7 @@ async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
 async fn route_field_edits_follow_service_renames_and_removals() {
     use piqueld_client::{
         Route,
-        edit::{ApplicationEdit, EditOptions, ServiceEdit},
+        edit::{ApplicationEdit, ServiceEdit},
     };
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
@@ -74,15 +68,11 @@ async fn route_field_edits_follow_service_renames_and_removals() {
         "web".into(),
         3000,
     );
-    let options = |generation| EditOptions {
-        expected_generation: Some(generation),
-        ..EditOptions::default()
-    };
     api.client
         .edit_application(
             id,
             &ApplicationEdit::Routes(vec![route.clone()]),
-            &options(1),
+            &at_generation(1),
         )
         .await
         .unwrap();
@@ -91,11 +81,8 @@ async fn route_field_edits_follow_service_renames_and_removals() {
     api.client
         .edit_application(
             id,
-            &ApplicationEdit::Service {
-                name: "web".into(),
-                edit: ServiceEdit::Name("frontend".into()),
-            },
-            &options(2),
+            &edit_web(ServiceEdit::Name("frontend".into())),
+            &at_generation(2),
         )
         .await
         .unwrap();
@@ -110,7 +97,7 @@ async fn route_field_edits_follow_service_renames_and_removals() {
         .edit_application(
             id,
             &ApplicationEdit::RemoveService("frontend".into()),
-            &options(3),
+            &at_generation(3),
         )
         .await
         .unwrap();
@@ -129,10 +116,7 @@ async fn route_field_edits_follow_service_renames_and_removals() {
 
 #[tokio::test]
 async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
-    use piqueld_client::{
-        Job, JobRun, JobVolumeAccess,
-        edit::{ApplicationEdit, EditOptions},
-    };
+    use piqueld_client::{Job, JobRun, JobVolumeAccess, edit::ApplicationEdit};
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
@@ -148,13 +132,9 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
         volume_access: JobVolumeAccess::ReadOnly,
         stop_service: false,
     };
-    let options = |generation| EditOptions {
-        expected_generation: Some(generation),
-        ..EditOptions::default()
-    };
     let jobs = vec![job("seed", "web"), job("migrate", "web")];
     api.client
-        .edit_application(id, &ApplicationEdit::Jobs(jobs.clone()), &options(1))
+        .edit_application(id, &ApplicationEdit::Jobs(jobs.clone()), &at_generation(1))
         .await
         .unwrap();
     let jobs_of = async || {
@@ -173,7 +153,7 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
         .edit_application(
             id,
             &ApplicationEdit::Jobs(vec![job("migrate", "missing")]),
-            &options(2),
+            &at_generation(2),
         )
         .await
         .unwrap_err();
@@ -204,21 +184,15 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
 
 #[tokio::test]
 async fn field_edits_save_without_docker_and_deploy_only_the_captured_revision() {
-    use piqueld_client::edit::{ApplicationEdit, EditOptions, ServiceEdit};
+    use piqueld_client::edit::{EditOptions, ServiceEdit};
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
     api.runtime.set_unavailable(true);
     let saved = api.save().await;
     let id = &saved.application_id;
     let production = production_through(&api.client, id).await;
-    let edit = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::Replicas(3.into()),
-    };
-    let options = EditOptions {
-        expected_generation: Some(saved.generation),
-        ..EditOptions::default()
-    };
+    let edit = edit_web(ServiceEdit::Replicas(3.into()));
+    let options = at_generation(saved.generation);
     let receipt = api
         .client
         .edit_application(id, &edit, &options)
@@ -254,24 +228,18 @@ async fn field_edits_save_without_docker_and_deploy_only_the_captured_revision()
         deploy: true,
         force: false,
     };
-    let next = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::EnvironmentEntry(("MESSAGE".into(), Some("hello = world".into()))),
-    };
+    let next = edit_web(ServiceEdit::EnvironmentEntry((
+        "MESSAGE".into(),
+        Some("hello = world".into()),
+    )));
     let deployed = api
         .client
         .edit_application(id, &next, &deploy)
         .await
         .unwrap();
     let operation = deployed.operation_id.unwrap();
-    let pending = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::Replicas(5.into()),
-    };
-    let options = EditOptions {
-        expected_generation: Some(3),
-        ..EditOptions::default()
-    };
+    let pending = edit_web(ServiceEdit::Replicas(5.into()));
+    let options = at_generation(3);
     api.client
         .edit_application(id, &pending, &options)
         .await
@@ -306,14 +274,8 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let id = &saved.application_id;
-    let options = EditOptions {
-        expected_generation: Some(1),
-        ..EditOptions::default()
-    };
-    let invalid = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::Replicas(0.into()),
-    };
+    let options = at_generation(1);
+    let invalid = edit_web(ServiceEdit::Replicas(0.into()));
     let error = api
         .client
         .edit_application(id, &invalid, &options)
@@ -343,10 +305,7 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
     };
     // Repository-backed configuration is edited like any other. Nothing was
     // read from the repository yet, so nothing counts as edited.
-    let edit = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::Replicas(2.into()),
-    };
+    let edit = edit_web(ServiceEdit::Replicas(2.into()));
     api.client
         .edit_application(id, &edit, &options)
         .await
@@ -377,22 +336,16 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
 
 #[tokio::test]
 async fn concurrent_field_edits_reject_stale_revisions_without_losing_updates() {
-    use piqueld_client::edit::{ApplicationEdit, EditOptions, ServiceEdit};
+    use piqueld_client::edit::ServiceEdit;
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let replicas = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::Replicas(4.into()),
-    };
-    let env = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::EnvironmentEntry(("X".into(), Some("y".into()))),
-    };
-    let options = EditOptions {
-        expected_generation: Some(1),
-        ..EditOptions::default()
-    };
+    let replicas = edit_web(ServiceEdit::Replicas(4.into()));
+    let env = edit_web(ServiceEdit::EnvironmentEntry((
+        "X".into(),
+        Some("y".into()),
+    )));
+    let options = at_generation(1);
     let (a, b) = tokio::join!(
         api.client
             .edit_application(&saved.application_id, &replicas, &options),
@@ -406,10 +359,7 @@ async fn concurrent_field_edits_reject_stale_revisions_without_losing_updates() 
         (&env, b.unwrap_err())
     };
     assert_eq!(api_error(error).code, "generation_conflict");
-    let options = EditOptions {
-        expected_generation: Some(2),
-        ..EditOptions::default()
-    };
+    let options = at_generation(2);
     api.client
         .edit_application(&saved.application_id, retry, &options)
         .await
@@ -618,7 +568,7 @@ async fn field_edit_health_process_and_resource_endpoints_clear_optional_values(
 async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
     use piqueld_client::{
         Mount, Volume,
-        edit::{ApplicationEdit, EditOptions, ServiceEdit},
+        edit::{ApplicationEdit, ServiceEdit},
     };
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
@@ -652,10 +602,7 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
         .edit_application(
             id,
             &ApplicationEdit::RemoveVolume("data".into()),
-            &EditOptions {
-                expected_generation: Some(before.generation),
-                ..EditOptions::default()
-            },
+            &at_generation(before.generation),
         )
         .await
         .unwrap_err();
@@ -708,18 +655,12 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
 
 #[tokio::test]
 async fn field_edit_receipts_survive_restart_and_reject_key_reuse() {
-    use piqueld_client::edit::{ApplicationEdit, EditOptions, ServiceEdit};
+    use piqueld_client::edit::ServiceEdit;
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let edit = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::Replicas(3.into()),
-    };
-    let options = EditOptions {
-        expected_generation: Some(1),
-        ..EditOptions::default()
-    };
+    let edit = edit_web(ServiceEdit::Replicas(3.into()));
+    let options = at_generation(1);
     let receipt = api
         .client
         .clone()
@@ -735,10 +676,7 @@ async fn field_edit_receipts_survive_restart_and_reject_key_reuse() {
         .await
         .unwrap();
     assert_eq!(replay.generation, receipt.generation);
-    let changed = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::Replicas(5.into()),
-    };
+    let changed = edit_web(ServiceEdit::Replicas(5.into()));
     let error = keyed
         .edit_application(&saved.application_id, &changed, &options)
         .await
@@ -786,22 +724,19 @@ async fn field_edit_requires_an_explicit_value_and_revision() {
 
 #[tokio::test]
 async fn typed_edits_record_safe_field_history() {
-    use piqueld_client::edit::{ApplicationEdit, EditOptions, ServiceEdit};
+    use piqueld_client::edit::ServiceEdit;
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let edit = ApplicationEdit::Service {
-        name: "web".into(),
-        edit: ServiceEdit::EnvironmentEntry(("SECRET".into(), Some("private-value".into()))),
-    };
+    let edit = edit_web(ServiceEdit::EnvironmentEntry((
+        "SECRET".into(),
+        Some("private-value".into()),
+    )));
     api.client
         .edit_application(
             &saved.application_id,
             &edit,
-            &EditOptions {
-                expected_generation: Some(saved.generation),
-                ..EditOptions::default()
-            },
+            &at_generation(saved.generation),
         )
         .await
         .unwrap();

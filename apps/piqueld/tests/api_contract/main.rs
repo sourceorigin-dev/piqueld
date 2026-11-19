@@ -479,6 +479,23 @@ async fn execute(database: &Path, sql: &str) {
         .unwrap();
 }
 
+/// Edit options that expect revision `generation` and save without
+/// deploying.
+fn at_generation(generation: u64) -> piqueld_client::edit::EditOptions {
+    piqueld_client::edit::EditOptions {
+        expected_generation: Some(generation),
+        ..piqueld_client::edit::EditOptions::default()
+    }
+}
+
+/// `edit` of the contract manifest's `web` service.
+fn edit_web(edit: piqueld_client::edit::ServiceEdit) -> piqueld_client::edit::ApplicationEdit {
+    piqueld_client::edit::ApplicationEdit::Service {
+        name: "web".into(),
+        edit,
+    }
+}
+
 /// The status and code of an API error response.
 #[derive(Debug, PartialEq)]
 struct ApiError {
@@ -890,14 +907,7 @@ impl AcceptanceApi {
     ) -> piqueld_core::manifest::ApplicationManifest {
         let generation = self.client.application(id).await.unwrap().generation;
         self.client
-            .edit_application(
-                id,
-                &edit,
-                &piqueld_client::edit::EditOptions {
-                    expected_generation: Some(generation),
-                    ..piqueld_client::edit::EditOptions::default()
-                },
-            )
+            .edit_application(id, &edit, &at_generation(generation))
             .await
             .unwrap();
         self.manifest(id).await
@@ -909,17 +919,11 @@ impl AcceptanceApi {
         id: &str,
         edit: piqueld_client::edit::ServiceEdit,
     ) -> piqueld_core::manifest::Service {
-        self.edit_field(
-            id,
-            piqueld_client::edit::ApplicationEdit::Service {
-                name: "web".into(),
-                edit,
-            },
-        )
-        .await
-        .spec
-        .services
-        .remove(0)
+        self.edit_field(id, edit_web(edit))
+            .await
+            .spec
+            .services
+            .remove(0)
     }
 
     /// Application `id`'s saved manifest.
