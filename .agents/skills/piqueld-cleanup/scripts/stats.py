@@ -26,9 +26,11 @@ def git(*a):
     return subprocess.run(["git", *a], capture_output=True, text=True, check=True).stdout
 
 
+if git("rev-parse", "--is-shallow-repository").strip() == "true":
+    print("warning: shallow clone, so the growth history starts at its boundary", file=sys.stderr)
 files = git("ls-files", "-z").split("\0")[:-1]
 attrs = git("check-attr", "-z", "linguist-generated", "--", *files).split("\0")
-marked = {attrs[i] for i in range(0, len(attrs) - 2, 3) if attrs[i + 2] == "true"}
+marked = {attrs[i] for i in range(0, len(attrs) - 2, 3) if attrs[i + 2] in ("set", "true")}
 LOCKFILE = re.compile(r"(^|/)(Cargo\.lock|flake\.lock|pnpm-lock\.yaml)$")
 LOCKFILES = {p for p in marked if LOCKFILE.search(p)}
 GENERATED = marked - LOCKFILES
@@ -137,8 +139,8 @@ def test_files(rs, sources):
 
 others = [p for p in files if not p.endswith(".rs") and os.path.isfile(p)]
 cloc = {}
-report = subprocess.run(["cloc", "--by-file", "--csv", "--quiet", "--list-file=-"], input="\n".join(others),
-                        capture_output=True, text=True, check=True).stdout
+report = subprocess.run(["cloc", "--by-file", "--csv", "--quiet", "--skip-uniqueness", "--list-file=-"],
+                        input="\n".join(others), capture_output=True, text=True, check=True).stdout
 for row in csv.reader(io.StringIO(report)):
     if len(row) >= 5 and row[0] not in ("language", "SUM"):
         cloc[row[1].removeprefix("./")] = (row[0], int(row[2]), int(row[3]), int(row[4]))
