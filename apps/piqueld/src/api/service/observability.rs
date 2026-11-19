@@ -212,17 +212,17 @@ impl ApplicationService {
             return;
         }
         let marker = NewAuditEvent::lost(gap);
-        match tokio::time::timeout_at(until, self.store.record_audit(&marker)).await {
-            Ok(Ok(())) => {}
-            failed => {
-                self.audit_lost.fetch_add(gap, Ordering::Relaxed);
-                tracing::error!(
-                    ?failed,
-                    gap,
-                    "the marker of lost audit records could not be written"
-                );
-            }
-        }
+        let error = match tokio::time::timeout_at(until, self.store.record_audit(&marker)).await {
+            Ok(Ok(())) => return,
+            Ok(Err(error)) => error.to_string(),
+            Err(elapsed) => elapsed.to_string(),
+        };
+        self.audit_lost.fetch_add(gap, Ordering::Relaxed);
+        tracing::error!(
+            error = %error,
+            gap,
+            "the marker of lost audit records could not be written"
+        );
     }
     /// Counts one refused API request for the `piqueld.access.denials` metric.
     pub(crate) fn count_denial(&self) {

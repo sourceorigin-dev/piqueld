@@ -1572,7 +1572,8 @@ mod tests {
         let saved = store
             .save_template(template("notes", "[spec]"), false)
             .await;
-        let id = ApplicationId::parse(&saved.application_id).unwrap();
+        let id = ApplicationId::parse(&saved.application_id)
+            .expect("the saved application has a valid ID");
         let state = async || {
             let id = id.as_str();
             let row = "SELECT generation,updated_at_ms,(SELECT COUNT(*) FROM events \
@@ -1581,7 +1582,7 @@ mod tests {
                 .bind(id)
                 .fetch_one(&store.pool)
                 .await
-                .unwrap()
+                .expect("the application is read")
         };
         let before = state().await;
         let request = crate::testing::audit_request("POST /api/v1/applications/{id}/rename");

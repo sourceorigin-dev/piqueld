@@ -582,7 +582,7 @@ impl ApplicationService {
             // Best effort like the ingress refresh: the change is committed,
             // and the periodic receiver refresh retries.
             if let Err(error) = self.receive_telemetry().await {
-                tracing::warn!(?error, "updating telemetry receivers failed");
+                tracing::warn!(error = %error, "updating telemetry receivers failed");
             }
             self.runtime.trigger_full_scan();
         }
