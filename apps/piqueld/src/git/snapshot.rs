@@ -112,8 +112,6 @@ pub(crate) struct Received<'a> {
 }
 
 impl Snapshots {
-    /// Most bytes a bundle header may take.
-    const HEADER_LIMIT: u64 = 64 * 1024;
     /// Uploads received or waiting to be accepted at once, bounding the
     /// disk a burst of them takes.
     const RECEIVING: usize = 2;
@@ -191,7 +189,7 @@ impl Snapshots {
         let bundle = staging.path().join("snapshot.bundle");
         Self::store(body, &bundle, limit).await?;
         let header = BundleHeader::read(&bundle).await?;
-        let repository = Staged(staging.path().join("repository.git"));
+        let repository = Staged::in_staging(staging.path());
         repository.init().await?;
         if !header.prerequisites.is_empty() {
             let fetch = repository.fetch(url, &header.prerequisites);
@@ -251,7 +249,7 @@ impl Snapshots {
             .await
             .map_err(SnapshotError::internal)?;
         if installed {
-            tokio::fs::rename(received.staging.path().join("repository.git"), &path)
+            tokio::fs::rename(Staged::in_staging(received.staging.path()).0, &path)
                 .await
                 .map_err(SnapshotError::internal)?;
         }
@@ -321,12 +319,19 @@ impl Staged {
     /// Longest fetching the prerequisites may take; its process group is
     /// then killed.
     const FETCH_TIMEOUT: Duration = Duration::from_secs(300);
+    /// Most bytes of Git's output kept.
+    const OUTPUT_LIMIT: usize = 4096;
+
+    /// The repository of an upload staged in `staging`.
+    fn in_staging(staging: &Path) -> Self {
+        Self(staging.join("repository.git"))
+    }
 
     /// Runs Git in the repository.
     async fn git(&self, operation: &'static str, arguments: &[&str]) -> anyhow::Result<Vec<u8>> {
         let mut command = Checkout::command_in(&self.0);
         command.args(arguments);
-        LoggedCommand::output(&mut command, operation, 4096).await
+        LoggedCommand::output(&mut command, operation, Self::OUTPUT_LIMIT).await
     }
 
     /// Creates the bare repository.
@@ -341,7 +346,7 @@ impl Staged {
             SNAPSHOT_BRANCH,
         ])
         .arg(&self.0);
-        LoggedCommand::output(&mut init, "create snapshot repository", 4096)
+        LoggedCommand::output(&mut init, "create snapshot repository", Self::OUTPUT_LIMIT)
             .await
             .map(drop)
             .map_err(SnapshotError::Internal)
@@ -412,12 +417,8 @@ impl Staged {
         self.git("unbundle snapshot", &unbundle)
             .await
             .map_err(invalid("its objects are invalid"))?;
-        let resolve = [
-            "rev-parse",
-            "--verify",
-            "--end-of-options",
-            "snapshot^{commit}",
-        ];
+        let revision = format!("{SNAPSHOT_BRANCH}^{{commit}}");
+        let resolve = ["rev-parse", "--verify", "--end-of-options", &revision];
         let commit = self
             .git("resolve snapshot commit", &resolve)
             .await
@@ -503,6 +504,8 @@ struct BundleHeader {
 }
 
 impl BundleHeader {
+    /// Most bytes a bundle header may take.
+    const HEADER_LIMIT: u64 = 64 * 1024;
     /// Most prerequisites a bundle may need. A thin bundle needs its base,
     /// and one more commit for each merge of a branch forked before it.
     const PREREQUISITES: usize = 64;
@@ -520,7 +523,7 @@ impl BundleHeader {
             .await
             .map_err(SnapshotError::internal)?;
         let mut lines =
-            tokio::io::AsyncReadExt::take(tokio::io::BufReader::new(file), Snapshots::HEADER_LIMIT)
+            tokio::io::AsyncReadExt::take(tokio::io::BufReader::new(file), Self::HEADER_LIMIT)
                 .lines();
         let mut header = Vec::new();
         loop {
