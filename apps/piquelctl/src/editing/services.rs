@@ -177,10 +177,15 @@ enum NewSource {
     Image(Template),
     Git(BuildRepository),
 }
-crate::cli::choice_args!(NewSource, NewSourceFlags, |flags| flags
-    .image
-    .map(NewSource::Image)
-    .or(flags.git.map(NewSource::Git)));
+impl NewSourceFlags {
+    /// The image or repository the flags select.
+    fn choice(self) -> Option<NewSource> {
+        self.image
+            .map(NewSource::Image)
+            .or(self.git.map(NewSource::Git))
+    }
+}
+crate::cli::choice_args!(NewSource, NewSourceFlags, NewSourceFlags::choice);
 #[derive(Debug, Subcommand)]
 pub(crate) enum EnvironmentCommand {
     /// Set an environment variable, keeping the service's others.

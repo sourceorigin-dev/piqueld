@@ -42,29 +42,30 @@ macro_rules! one_of {
 pub(crate) use one_of;
 
 /// Implements clap's `Args` for `$choice`, a type holding one of several
-/// arguments: it declares the arguments of `$flags`, which clap requires
-/// exactly one of, and `$choose` turns the parsed `$flags` into the choice.
-/// Flatten it like any `Args`.
+/// arguments: it declares the arguments of `$flags`, which must make clap
+/// require exactly one of them, and `$choose`, a method of `$flags`, turns the
+/// parsed flags into the choice. Flatten it like any `Args`.
 ///
 /// ```text
-/// choice_args!(NewSource, NewSourceFlags, |flags| flags.image.map(NewSource::Image).or(…))
+/// choice_args!(NewSource, NewSourceFlags, NewSourceFlags::choice)
 /// ```
 //
 // Clap derives `Args` only for structs, which hold each choice as an
 // `Option`. `$choose` returns `None` only when no choice was given, which
 // clap already rejects while parsing.
 macro_rules! choice_args {
-    ($choice:ty, $flags:ty, |$parsed:ident| $choose:expr) => {
+    ($choice:ty, $flags:ty, $choose:path) => {
         impl clap::FromArgMatches for $choice {
             fn from_arg_matches(
                 matches: &clap::ArgMatches,
             ) -> std::result::Result<Self, clap::Error> {
-                let $parsed = <$flags as clap::FromArgMatches>::from_arg_matches(matches)?;
-                $choose.ok_or_else(|| {
+                let flags = <$flags as clap::FromArgMatches>::from_arg_matches(matches)?;
+                $choose(flags).ok_or_else(|| {
                     clap::Error::new(clap::error::ErrorKind::MissingRequiredArgument)
                 })
             }
 
+            // Replaces the whole choice; nothing in piquelctl calls `update_from`.
             fn update_from_arg_matches(
                 &mut self,
                 matches: &clap::ArgMatches,

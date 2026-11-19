@@ -53,17 +53,23 @@ struct GeneratorFlags {
     #[arg(long)]
     rsa_bits: Option<u16>,
 }
+impl GeneratorFlags {
+    /// The generator the flags select.
+    fn choice(self) -> Option<Generator> {
+        let random = self.bytes.map(|bytes| SecretGenerator::Random {
+            bytes,
+            encoding: self.encoding.unwrap_or_default(),
+        });
+        self.rsa_bits
+            .map(|bits| SecretGenerator::Rsa { bits })
+            .or(random)
+            .map(Generator)
+    }
+}
 /// The generator `generated-secret set` declares.
 #[derive(Debug)]
 struct Generator(SecretGenerator);
-crate::cli::choice_args!(Generator, GeneratorFlags, |flags| flags
-    .rsa_bits
-    .map(|bits| SecretGenerator::Rsa { bits })
-    .or(flags.bytes.map(|bytes| SecretGenerator::Random {
-        bytes,
-        encoding: flags.encoding.unwrap_or_default(),
-    }))
-    .map(Generator));
+crate::cli::choice_args!(Generator, GeneratorFlags, GeneratorFlags::choice);
 #[derive(Debug, Subcommand)]
 pub(crate) enum GeneratedSecretCommand {
     /// List the secrets the application declares for piqueld to generate, as
