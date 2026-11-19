@@ -1528,3 +1528,78 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
         (Some(Phase::Planning), Some("data"))
     );
 }
+/// Requested notification and webhook changes commit with their audit
+/// record, which names what changed but never a destination's URL or a
+/// webhook secret: a failed append keeps the previous destinations,
+/// delivery and webhook secret.
+#[tokio::test]
+async fn requested_notification_and_webhook_changes_commit_with_their_audit_record() {
+    let (_temp, store) = Store::temporary().await;
+    notify(&store).await;
+    let op = application(&store).await;
+    let application = application_of(&store, &op).await;
+    fail(&store, &op).await;
+    let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
+    let failed = Some("Receiver rejected alert");
+    store
+        .complete_delivery(&failure.id, DeliveryState::Failed, failed, 3600)
+        .await
+        .unwrap();
+    let request = crate::testing::audit_request("POST /api/v1/notifications");
+    let author = Author {
+        actor: Actor::Daemon,
+        request: Some(&request),
+    };
+    let ops = DestinationName::parse("ops").unwrap();
+    let put = async |url: &str| {
+        let url = Some(url.into());
+        let request = DestinationRequest {
+            url,
+            settings: settings(),
+        };
+        store
+            .put_notification_destination(author, &ops, request)
+            .await
+    };
+    let first = "https://example.com/private-token";
+    store.refuse_audit(true).await;
+    assert!(put(first).await.is_err());
+    assert!(store.retry_delivery(author, &failure.id).await.is_err());
+    let rotated = store.generate_webhook_secret(author, &application);
+    assert!(rotated.await.is_err());
+    store.refuse_audit(false).await;
+    assert_eq!(store.notification_destinations().await.unwrap().len(), 1);
+    assert!(store.claim_delivery().await.unwrap().is_none());
+    assert_eq!(
+        store.webhook_secret_created(&application).await.unwrap(),
+        None
+    );
+    put(first).await.unwrap();
+    put("https://example.com/other-token").await.unwrap();
+    store.retry_delivery(author, &failure.id).await.unwrap();
+    let (secret, _) = store
+        .generate_webhook_secret(author, &application)
+        .await
+        .unwrap();
+    store
+        .delete_notification_destination(author, &ops)
+        .await
+        .unwrap();
+    let route = "POST /api/v1/notifications";
+    let actions = store.audit_actions().await;
+    assert_eq!(
+        actions,
+        [
+            format!("{route} destination \"ops\" created"),
+            format!("{route} destination \"ops\" changed as a new receiver"),
+            format!("{route} delivery {} retry queued", failure.id),
+            format!("{route} webhook secret generated"),
+            format!("{route} destination \"ops\" deleted"),
+        ]
+    );
+    assert!(
+        !actions
+            .iter()
+            .any(|action| action.contains(secret.as_str()))
+    );
+}

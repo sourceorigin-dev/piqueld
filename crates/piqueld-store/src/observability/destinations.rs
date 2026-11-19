@@ -1,7 +1,7 @@
 //! Notification destinations: where notifications go, what each receives,
 //! and its URL, encrypted with the secret master key.
 use crate::secrets::{Envelope, SecretCipher, SecretOwner};
-use crate::{Actor, SecurityEvent, Store, StoreError, new_id, now_ms};
+use crate::{Author, SecurityEvent, Store, StoreError, new_id, now_ms};
 use piqueld_core::{
     ApplicationId,
     access::{GlobalPermission, Permission},
@@ -199,8 +199,10 @@ impl Store {
             .collect()
     }
 
-    /// Creates or replaces the destination `name`, which `actor` needs
-    /// `notifications:manage` for, checked in the same transaction.
+    /// Creates or replaces the destination `name`, which the author's actor
+    /// needs `notifications:manage` for, checked in the same transaction,
+    /// which also records the request's change: the destination's name and
+    /// how it changed, never its URL.
     ///
     /// A new URL or kind makes the destination a new receiver: its pending
     /// deliveries are cancelled, and its earlier deliveries detached, so no
@@ -214,12 +216,14 @@ impl Store {
     /// Returns refusal, [`DestinationError`], secret storage or database errors.
     pub async fn put_notification_destination(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         name: &DestinationName,
         request: DestinationRequest,
     ) -> Result<NotificationDestination, StoreError> {
         let url = request.url.map(WebhookUrl::parse).transpose()?;
         let settings = request.settings;
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         actor.require_on(&mut tx, MANAGE, None).await?;
         if let ApplicationSelection::Only(applications) = &settings.applications {
@@ -249,7 +253,18 @@ impl Store {
         .await?;
         // Recorded after the event above, so a new receiver never gets it.
         Self::save_rules(&mut tx, &saved, &settings).await?;
+        let mut change = format!("destination {:?} {}", name.as_str(), saved.change);
+        if saved.replaced && saved.change != "created" {
+            change.push_str(" as a new receiver");
+        }
+        if saved.resumed {
+            change.push_str(" and enabled");
+        }
+        author
+            .record_on(&mut tx, 200, &change, (None, None))
+            .await?;
         tx.commit().await.map_err(StoreError::database)?;
+        author.committed();
         Ok(NotificationDestination {
             name: name.clone(),
             settings,
@@ -472,17 +487,20 @@ impl Store {
     }
 
     /// Deletes the destination `name`, cancelling its pending deliveries;
-    /// delivery history keeps its name. `actor` needs `notifications:manage`,
-    /// checked in the same transaction. Records a
+    /// delivery history keeps its name. The author's actor needs
+    /// `notifications:manage`, checked in the same transaction, which also
+    /// records the request's deletion. Records a
     /// `notification_destination_changed` security event.
     ///
     /// # Errors
     /// Returns refusal, absence or database errors.
     pub async fn delete_notification_destination(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         name: &DestinationName,
     ) -> Result<(), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         actor.require_on(&mut tx, MANAGE, None).await?;
         let name_str = name.as_str();
@@ -507,7 +525,13 @@ impl Store {
             actor.attribution(),
         )
         .await?;
-        tx.commit().await.map_err(StoreError::database)
+        let change = format!("destination {:?} deleted", name.as_str());
+        author
+            .record_on(&mut tx, 200, &change, (None, None))
+            .await?;
+        tx.commit().await.map_err(StoreError::database)?;
+        author.committed();
+        Ok(())
     }
 
     /// The destination `name`, to send a test notification to, without a

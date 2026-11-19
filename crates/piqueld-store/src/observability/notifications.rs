@@ -114,17 +114,20 @@ impl Store {
     /// recoveries whose incident has reopened, and failures whose incident has
     /// since closed. Security events and daemon starts open no incident, so
     /// their deliveries stay retryable. Resets the delivery to `pending` with a
-    /// fresh retry window. `actor` needs `system:operate`, checked in the same
-    /// transaction.
+    /// fresh retry window. The author's actor needs `system:operate`, checked
+    /// in the same transaction, which also records the request's retry
+    /// (that it was queued, not whether it is delivered).
     ///
     /// # Errors
     /// Returns absence, a [`RetryError`] naming why it cannot be retried, or
     /// storage errors.
     pub async fn retry_delivery(
         &self,
-        actor: crate::Actor<'_>,
+        author: impl Into<crate::Author<'_>>,
         id: &str,
     ) -> Result<(), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let operate = piqueld_core::access::Permission::Global(
             piqueld_core::access::GlobalPermission::SystemOperate,
@@ -213,7 +216,13 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        tx.commit().await.map_err(StoreError::database)
+        let change = format!("delivery {id} retry queued");
+        author
+            .record_on(&mut tx, 200, &change, (None, None))
+            .await?;
+        tx.commit().await.map_err(StoreError::database)?;
+        author.committed();
+        Ok(())
     }
     /// Restarts the sustained-failure window of conditions not yet notified,
     /// at startup: process downtime does not count as continuous observation.

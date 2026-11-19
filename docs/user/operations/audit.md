@@ -35,10 +35,11 @@ and applications they name.
 
 Routine reads, such as the dashboard refreshing a page, aren't recorded.
 
-A change to an application, environment, preview or secret is saved together
-with its record, so a change piqueld made always has one. Its record also names what
-the change started, such as the application's new revision and the operation
-deploying it:
+A change to an application, environment, preview, secret, notification
+destination or webhook secret, or a retried notification, is saved together
+with its record, so a change piqueld made always has one. Its record also
+names what the change started, such as the application's new revision and
+the operation deploying it:
 
 ```text
 POST /api/v1/environments/{id}/deploy generation 4 operation 0190…
@@ -56,6 +57,9 @@ deletion, and one once its copies are removed and it is deleted. If removing
 them fails, the reservation's record stays, followed by the failed request.
 Recovering the secret key records how many values, webhook secrets and
 notification destinations it discarded.
+
+A notification destination's record names it and how it changed, never its
+URL, and a webhook secret's record never holds the secret.
 
 Other records are written in the background. If too many wait at once, or one
 can't be written, it's lost: the next record written then follows a **Failed**

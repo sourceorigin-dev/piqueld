@@ -5,6 +5,7 @@
 //! reaches, with nothing but `POST /hooks/github/{id}`. It shares no
 //! middleware with the API: deliveries carry no credentials, only GitHub's
 //! signature, and every other path is a 404.
+use super::access::Audited;
 use super::{ApiError, ApiPath, ApiState, ok, openapi::ApiErrors};
 use crate::api::{Delivery, WEBHOOK_BODY_LIMIT, WEBHOOK_PATH, WebhookError};
 use crate::auth::Identity;
@@ -116,10 +117,11 @@ pub(super) async fn get(
 pub(super) async fn generate_secret(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     let application = ApplicationId::parse(id)?;
     Ok(ok(state
-        .generate_webhook_secret(identity.actor(), &application)
+        .generate_webhook_secret(audited.author(&identity), &application)
         .await?))
 }

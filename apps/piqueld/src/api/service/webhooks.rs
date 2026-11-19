@@ -2,7 +2,7 @@
 //! signature, made with the application's secret, and then only hints that
 //! the repository moved: sync lists the branches itself and never reads the
 //! payload, so a delivery cannot choose what deploys.
-use super::{Actor, ApplicationError, ApplicationService};
+use super::{ApplicationError, ApplicationService, Author};
 use piqueld_core::ApplicationId;
 use piqueld_core::sync::{WebhookSecret, WebhookView};
 
@@ -141,12 +141,12 @@ impl ApplicationService {
     /// Returns refusal, absence, `Busy` during deletion, or storage errors.
     pub async fn generate_webhook_secret(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
     ) -> Result<WebhookSecret, ApplicationError> {
         let (secret, created_at_ms) = self
             .store
-            .generate_webhook_secret(actor, application)
+            .generate_webhook_secret(author, application)
             .await?;
         Ok(WebhookSecret {
             url: self.webhook_url(application),
@@ -228,7 +228,7 @@ mod tests {
         let production = fixture.production().await;
         let secret = fixture
             .service
-            .generate_webhook_secret(Actor::Daemon, &fixture.application)
+            .generate_webhook_secret(piqueld_store::Actor::Daemon, &fixture.application)
             .await
             .unwrap()
             .secret;
