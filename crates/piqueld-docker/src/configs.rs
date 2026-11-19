@@ -237,7 +237,8 @@ impl BollardDocker {
     ) -> Result<(), DockerError> {
         // Listed before services, so a config published after this listing
         // is never removed for lack of a service mounting it yet.
-        let filters = serde_json::json!({ "label": labels }).to_string();
+        let filters = serde_json::to_string(&Self::label_filter(labels.to_vec()))
+            .map_err(|source| DockerError::request(kind.list(), source))?;
         let path = format!(
             "/configs?filters={}",
             url::form_urlencoded::byte_serialize(filters.as_bytes()).collect::<String>()
