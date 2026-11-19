@@ -98,16 +98,12 @@ impl Export {
     pub(super) fn into_validated(self, index: usize) -> Result<ValidatedExport, ValidationErrors> {
         let path = format!("spec.exports[{index}]");
         Ok(ValidatedExport {
-            service: ServiceName::parse(self.service).map_err(|source| {
-                ValidationErrors::invalid_name(format!("{path}.service"), source)
-            })?,
+            service: ValidationErrors::parse_name(&self.service, format!("{path}.service"))?,
             applications: self
                 .applications
                 .into_iter()
                 .map(|application| {
-                    ApplicationName::parse(application).map_err(|source| {
-                        ValidationErrors::invalid_name(format!("{path}.applications"), source)
-                    })
+                    ValidationErrors::parse_name(&application, format!("{path}.applications"))
                 })
                 .collect::<Result<_, _>>()?,
             previews: self.previews,
@@ -132,21 +128,17 @@ impl Import {
     pub(super) fn into_validated(self, index: usize) -> Result<ValidatedImport, ValidationErrors> {
         let path = format!("spec.imports[{index}]");
         Ok(ValidatedImport {
-            application: ApplicationName::parse(self.application).map_err(|source| {
-                ValidationErrors::invalid_name(format!("{path}.application"), source)
-            })?,
-            service: ServiceName::parse(self.service).map_err(|source| {
-                ValidationErrors::invalid_name(format!("{path}.service"), source)
-            })?,
+            application: ValidationErrors::parse_name(
+                &self.application,
+                format!("{path}.application"),
+            )?,
+            service: ValidationErrors::parse_name(&self.service, format!("{path}.service"))?,
             environment: self
                 .environment
                 .map(|environment| {
                     let path = format!("{path}.environment");
-                    let literal = environment
-                        .as_literal()
-                        .ok_or_else(|| ValidationError::unresolved(&path))?;
-                    EnvironmentName::parse(literal)
-                        .map_err(|source| ValidationErrors::invalid_name(&path, source))
+                    let literal = environment.into_text(|| path.clone())?;
+                    ValidationErrors::parse_name(&literal, path)
                 })
                 .transpose()?,
         })

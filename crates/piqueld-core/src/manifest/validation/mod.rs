@@ -440,7 +440,7 @@ impl ApplicationManifest {
             }
         }
         Ok(ValidatedTemplate::new(
-            super::domain::ValidatedMetadata::from_input(self.metadata)?,
+            super::domain::ValidatedMetadata::from_input(&self.metadata)?,
             self.spec,
         ))
     }
@@ -624,7 +624,8 @@ impl ApplicationSpec {
         for (index, job) in jobs.iter().enumerate() {
             let base = format!("spec.jobs[{index}]");
             validate_name(&job.name, &format!("{base}.name"), errors);
-            if !services.iter().any(|service| service.name == job.service) {
+            let service = services.iter().find(|service| service.name == job.service);
+            if service.is_none() {
                 errors.push(ValidationError::new(
                     codes::JOB_SERVICE_MISSING,
                     format!("{base}.service"),
@@ -645,11 +646,7 @@ impl ApplicationSpec {
                     ),
                 ));
             }
-            if job.command.first().is_none_or(|value| {
-                value
-                    .as_literal()
-                    .is_some_and(|value| value.trim().is_empty())
-            }) {
+            if lacks_executable(&job.command) {
                 errors.push(ValidationError::new(
                     codes::PROCESS_COMMAND_INVALID,
                     format!("{base}.command"),
@@ -662,11 +659,11 @@ impl ApplicationSpec {
                 codes::PROCESS_COMMAND_EXCESSIVE,
                 errors,
             );
-            if let Some(service) = services.iter().find(|service| service.name == job.service) {
+            if let Some(service) = service {
                 job.validate_additions(service, &base, errors);
-            }
-            if job.volume_access == JobVolumeAccess::Exclusive {
-                job.validate_exclusive_access(services, &dependencies, &base, errors);
+                if job.volume_access == JobVolumeAccess::Exclusive {
+                    job.validate_exclusive_access(service, services, &dependencies, &base, errors);
+                }
             }
             if !(1..=Job::MAX_TIMEOUT_SECONDS).contains(&job.timeout_seconds) {
                 errors.push(ValidationError::new(
@@ -893,6 +890,17 @@ fn valid_env_name(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+/// Whether `command` has no executable: it is empty, or its first element is
+/// blank text. A first element that references variables is checked once
+/// rendered.
+fn lacks_executable(command: &[Template]) -> bool {
+    command.first().is_none_or(|value| {
+        value
+            .as_literal()
+            .is_some_and(|value| value.trim().is_empty())
+    })
 }
 
 /// Bounds a command or argument list by element count and size, and rejects NUL

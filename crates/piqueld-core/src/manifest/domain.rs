@@ -432,6 +432,17 @@ impl ValidationErrors {
     pub(super) fn invalid_name(path: impl Into<String>, source: impl std::fmt::Display) -> Self {
         ValidationError::new(codes::NAME_INVALID, path, source.to_string()).into()
     }
+
+    /// Parses `value` into the typed name `N`, wrapping a failure as a single
+    /// `NAME_INVALID` error at `path`.
+    pub(super) fn parse_name<N>(value: &str, path: impl Into<String>) -> Result<N, Self>
+    where
+        N: std::str::FromStr<Err: std::fmt::Display>,
+    {
+        value
+            .parse()
+            .map_err(|source| Self::invalid_name(path, source))
+    }
 }
 
 impl ValidationError {
@@ -447,7 +458,10 @@ impl ValidationError {
 
 impl Template {
     /// The literal text, or an unresolved-reference error at `path`.
-    fn into_text(self, path: impl FnOnce() -> String) -> Result<String, ValidationErrors> {
+    pub(super) fn into_text(
+        self,
+        path: impl FnOnce() -> String,
+    ) -> Result<String, ValidationErrors> {
         self.as_literal()
             .ok_or_else(|| ValidationError::unresolved(path()).into())
     }
@@ -520,13 +534,7 @@ impl ValidatedSource {
                 build: ValidatedBuild::Docker {
                     dockerfile: dockerfile.into_text(|| format!("{base}.build.dockerfile"))?,
                     context: context.into_text(|| format!("{base}.build.context"))?,
-                    args: args
-                        .into_iter()
-                        .map(|(key, value)| {
-                            let text = value.into_text(|| format!("{base}.build.args.{key}"))?;
-                            Ok((key, text))
-                        })
-                        .collect::<Result<_, ValidationErrors>>()?,
+                    args: Template::into_text_map(args, &format!("{base}.build.args"))?,
                     target: target
                         .map(|target| target.into_text(|| format!("{base}.build.target")))
                         .transpose()?,
@@ -669,10 +677,9 @@ impl ValidatedRollout {
 
 impl ValidatedMetadata {
     /// Parses the application name into its typed form.
-    pub(super) fn from_input(value: input::Metadata) -> Result<Self, ValidationErrors> {
+    pub(super) fn from_input(value: &input::Metadata) -> Result<Self, ValidationErrors> {
         Ok(Self {
-            name: ApplicationName::parse(value.name)
-                .map_err(|source| ValidationErrors::invalid_name("metadata.name", source))?,
+            name: ValidationErrors::parse_name(&value.name, "metadata.name")?,
         })
     }
 }
@@ -722,12 +729,10 @@ impl ValidatedSpec {
                 .enumerate()
                 .map(|(index, volume)| {
                     Ok(ValidatedVolume {
-                        name: VolumeName::parse(volume.name).map_err(|source| {
-                            ValidationErrors::invalid_name(
-                                format!("spec.volumes[{index}].name"),
-                                source,
-                            )
-                        })?,
+                        name: ValidationErrors::parse_name(
+                            &volume.name,
+                            format!("spec.volumes[{index}].name"),
+                        )?,
                     })
                 })
                 .collect::<Result<_, ValidationErrors>>()?,
@@ -807,11 +812,8 @@ impl ValidatedJob {
     fn from_input(value: input::Job, index: usize) -> Result<Self, ValidationErrors> {
         let path = format!("spec.jobs[{index}]");
         Ok(Self {
-            name: JobName::parse(value.name)
-                .map_err(|source| ValidationErrors::invalid_name(format!("{path}.name"), source))?,
-            service: ServiceName::parse(value.service).map_err(|source| {
-                ValidationErrors::invalid_name(format!("{path}.service"), source)
-            })?,
+            name: ValidationErrors::parse_name(&value.name, format!("{path}.name"))?,
+            service: ValidationErrors::parse_name(&value.service, format!("{path}.service"))?,
             command: Template::into_texts(value.command, &format!("{path}.command"))?,
             environment: Template::into_text_map(
                 value.environment,
@@ -846,8 +848,7 @@ impl ValidatedService {
     fn from_input(value: input::Service, index: usize) -> Result<Self, ValidationErrors> {
         let base = format!("spec.services[{index}]");
         Ok(Self {
-            name: ServiceName::parse(value.name)
-                .map_err(|source| ValidationErrors::invalid_name(format!("{base}.name"), source))?,
+            name: ValidationErrors::parse_name(&value.name, format!("{base}.name"))?,
             source: ValidatedSource::from_input(value.source, &format!("{base}.source"))?,
             replicas: value.replicas.into_value(|| format!("{base}.replicas"))?,
             environment: Template::into_text_map(
@@ -864,12 +865,10 @@ impl ValidatedService {
                 .enumerate()
                 .map(|(mount_index, mount)| {
                     Ok(ValidatedMount {
-                        volume: VolumeName::parse(mount.volume).map_err(|source| {
-                            ValidationErrors::invalid_name(
-                                format!("{base}.mounts[{mount_index}].volume"),
-                                source,
-                            )
-                        })?,
+                        volume: ValidationErrors::parse_name(
+                            &mount.volume,
+                            format!("{base}.mounts[{mount_index}].volume"),
+                        )?,
                         target: mount.target,
                         read_only: mount.read_only,
                     })
@@ -892,12 +891,10 @@ impl ValidatedService {
                 .into_iter()
                 .enumerate()
                 .map(|(dependency_index, name)| {
-                    ServiceName::parse(name).map_err(|source| {
-                        ValidationErrors::invalid_name(
-                            format!("{base}.depends_on[{dependency_index}]"),
-                            source,
-                        )
-                    })
+                    ValidationErrors::parse_name(
+                        &name,
+                        format!("{base}.depends_on[{dependency_index}]"),
+                    )
                 })
                 .collect::<Result<_, ValidationErrors>>()?,
             rollout: ValidatedRollout::from_input(value.rollout, &format!("{base}.rollout"))?,
