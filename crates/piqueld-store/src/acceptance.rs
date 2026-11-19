@@ -162,20 +162,21 @@ impl Store {
                 .execute(&mut *tx).await.map_err(StoreError::database)?;
         }
         let response = &accepted.response;
-        if accepted.changed {
-            let (status, detail) = (response.status(), response.describe());
-            author
-                .record_on(&mut tx, status, &detail, response.target())
-                .await?;
-        }
+        let change = accepted.changed.then(|| response.describe());
+        let appended = author
+            .record_on(
+                &mut tx,
+                response.status(),
+                change.as_deref(),
+                response.target(),
+            )
+            .await?;
         Self::commit_environment_changes(
             tx,
             accepted.environments.iter().map(EnvironmentId::as_str),
         )
         .await?;
-        if accepted.changed {
-            author.committed();
-        }
+        appended.committed();
         Ok((accepted.response, accepted.wake))
     }
 

@@ -143,34 +143,45 @@ impl<'a> From<Actor<'a>> for Author<'a> {
     }
 }
 
-impl Author<'_> {
-    /// Appends to `db` the record of a change its request commits there:
-    /// `allowed`, with `status` unless its route answers another, and
-    /// `detail`, about `application` and `environment`. Does nothing without a request. Call
-    /// [`Self::committed`] once the transaction commits.
+impl<'a> Author<'a> {
+    /// Appends to `db` the record of the `change` its request commits there,
+    /// if it changed anything: `allowed`, with `status` unless its route
+    /// answers another, about `application` and `environment`. Does nothing
+    /// without a request or a change. Call [`Appended::committed`] on the
+    /// result once the transaction commits.
     /// # Errors
     /// Returns storage errors, which roll the change back too.
     pub(crate) async fn record_on(
         self,
         db: &mut SqliteConnection,
         status: u16,
-        detail: &str,
+        change: Option<&str>,
         (application, environment): (Option<&str>, Option<&str>),
-    ) -> Result<(), StoreError> {
-        let Some(request) = self.request else {
-            return Ok(());
+    ) -> Result<Appended<'a>, StoreError> {
+        let (Some(request), Some(change)) = (self.request, change) else {
+            return Ok(Appended(None));
         };
         let status = request.status.unwrap_or(status);
-        let mut event = request.event(AuditOutcome::Allowed, status, Some(detail));
+        let mut event = request.event(AuditOutcome::Allowed, status, Some(change));
         event.application_id = application.map(str::to_owned);
         event.environment_id = environment.map(str::to_owned);
-        Store::append_audit_on(db, &event, now_ms()).await
+        Store::append_audit_on(db, &event, now_ms()).await?;
+        Ok(Appended(Some(&request.recorded)))
     }
+}
 
-    /// Notes that the change [`Self::record_on`] recorded committed.
+/// What [`Author::record_on`] appended: the request whose change it
+/// recorded, if any, to note once the transaction commits. Only an appended
+/// record can mark its request recorded, so a request that changed nothing
+/// keeps its background record.
+#[must_use = "note the record once its transaction commits"]
+pub(crate) struct Appended<'a>(Option<&'a Recorded>);
+
+impl Appended<'_> {
+    /// Notes that the recorded change committed (see [`Recorded`]).
     pub(crate) fn committed(self) {
-        if let Some(request) = self.request {
-            request.recorded.set();
+        if let Some(recorded) = self.0 {
+            recorded.set();
         }
     }
 }
