@@ -176,7 +176,17 @@ has none until its passkey signs in, and API tokens never have one.
 `reauthentication_required`. Its `step_up` detail is false for API tokens,
 which no passkey can confirm. `Authority::require_fresh` checks it inside a
 write's transaction; `Actor::require_fresh` exempts the host operator, and
-`Identity::require_fresh` refuses early. No endpoint calls these checks yet.
+`Identity::require_fresh` refuses early. Adding a passkey to one's own
+account checks it at registration start, before any passkey is created, and
+again when storing it; secret key recovery checks it with `system:operate`.
+
+A browser session confirms through `POST /auth/reauthenticate/start` and
+`/finish`: a passkey ceremony bound to the ceremony cookie and to the session
+that started it, offering only its account's passkeys.
+`Store::confirm_with_passkey` verifies the assertion under the writer lock, as
+sign-in does, and sets `authenticated_at` on that session alone. It issues no
+session and changes neither expiry nor grants. CLI logins and the host
+operator can't use it, and API tokens are refused.
 
 Browser sessions use HTTP-only, `SameSite=Strict` cookies. For HTTPS origins
 they are also `Secure` and use the `__Host-` prefix, so applications on sibling
@@ -332,10 +342,19 @@ dropping the previous one's data, drafts and one-time secrets. Failed
 mutations are never replayed. Signing out treats a 401 as success, so it works
 when the server has already invalidated the session.
 
+A 403 `reauthentication_required` with `step_up` set is different: the daemon
+refuses it before changing anything. `confirmed` in `browser/auth.rs` wraps
+account management, device approval and own-passkey registration. It asks
+`StepUp`, which `Gate` provides, to show **Confirm with your passkey**: a
+native modal dialog above the form, which keeps its input. Once the session is
+confirmed it retries the refused request once. Actions refused together share
+the one prompt, and **Cancel** fails them all. Registration retries only its
+start, so a consumed ceremony response is never sent again.
+
 ## Rate limits
 
-Public registration, login, and device-start requests, and redemptions of host
-operator sign-in links, are limited to 30 starts per TCP peer per minute,
+Public registration, login, and device-start requests, passkey confirmation
+starts, and redemptions of host operator sign-in links, are limited to 30 starts per TCP peer per minute,
 across all listeners. An unknown, used or expired sign-in link is turned away
 by a read, without waiting for the store's writer. Requests refused for their Host,
 Fetch Metadata, or Origin do not count. IPv6 peers are grouped by /64

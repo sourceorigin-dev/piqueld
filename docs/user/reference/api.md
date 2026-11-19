@@ -635,6 +635,13 @@ Fetch Metadata headers before authentication; DNS names need `server.allowed_hos
 [configuration](configuration.md)). Rejected requests return
 `403 browser_access_denied`, even without credentials. Authentication checks API mutation origins against
 `auth.public_url`, returning `403 origin_mismatch` for rejected origins.
+Sensitive actions, like adding a passkey or recovering the secret key, need a
+passkey sign-in within the last 2 minutes and otherwise return
+`403 reauthentication_required`. When its `details.step_up` is `true`, a
+browser session confirms with a passkey through
+`POST /api/v1/auth/reauthenticate/start` and `/finish`, then retries; it is
+`false` for API tokens, which never can. The host operator is never asked
+(see [confirm with your passkey](../accounts/accounts.md#confirm-with-your-passkey)).
 Undecodable URL path parameters return `400 path_invalid`, and malformed IDs
 `400 application_id_invalid` or `environment_id_invalid`, with the usual JSON
 error and request ID. The dashboard
@@ -1021,7 +1028,8 @@ Quota enforcement never evicts pinned versions. To retire a secret, save and dep
 configuration without its references, then delete it. An existing database above
 the quota remains readable and deployable; new writes require freeing space.
 
-`POST /api/v1/system/secrets/recover-key` recovers from a lost master key by
+`POST /api/v1/system/secrets/recover-key` needs `system:operate` and a
+passkey sign-in within the last 2 minutes. It recovers from a lost master key by
 discarding stored and generated values for **all applications and
 environments**. A key is lost, and recovered, only when something is
 encrypted (the database's key verifier, a stored or generated value, a

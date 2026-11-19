@@ -226,7 +226,8 @@ impl NewPasskey<'_> {
 /// Who a newly registered passkey belongs to.
 pub enum PasskeyOwner<'a> {
     /// A signed-in caller adds another passkey to its own account, named by
-    /// ID; refused unless the caller's credential still belongs to it.
+    /// ID; refused unless the caller's credential still belongs to it, is
+    /// unscoped, and recently signed in with a passkey.
     Existing(Caller<'a>, &'a str),
     /// Registration redeems the setup secret or an invitation, and signs the
     /// account in with `session`. Account invitations create `user` with the
@@ -603,6 +604,7 @@ impl Store {
             PasskeyOwner::Existing(caller, user_id) => {
                 let authority = caller.load(&mut tx).await?;
                 authority.require_unscoped()?;
+                authority.require_fresh()?;
                 if authority.user_id != *user_id {
                     return Ok(false);
                 }
@@ -748,12 +750,72 @@ impl Store {
         session: &NewCredential<'_>,
     ) -> Result<Option<User>, E> {
         let (_writer, mut tx) = self.begin_immediate().await?;
+        let Some(user) = Self::verify_passkey_on(&mut tx, passkey_id, user_id, verify).await?
+        else {
+            return Ok(None);
+        };
+        let issuer = Issued::Passkey(passkey_id);
+        session.insert(&mut tx, user_id, Some(issuer)).await?;
+        tx.commit().await.map_err(StoreError::database)?;
+        Ok(Some(user))
+    }
+
+    /// Verifies a passkey assertion for the caller's own account and marks
+    /// the caller's credential as proved at `authenticated_at`, while holding
+    /// the writer lock, as [`Self::sign_in_with_passkey`] does. Nothing else
+    /// changes: not the credential's expiry or grants, nor other sessions.
+    /// Returns `false` when the passkey is not the account's. API tokens are
+    /// refused, as no passkey confirms them.
+    ///
+    /// # Errors
+    /// Returns a revoked credential, a refusal, or storage errors.
+    pub async fn confirm_with_passkey<E: From<StoreError>>(
+        &self,
+        caller: Caller<'_>,
+        passkey_id: &str,
+        verify: impl FnOnce(&str) -> Result<String, E>,
+        authenticated_at: i64,
+    ) -> Result<bool, E> {
+        let (_writer, mut tx) = self.begin_immediate().await?;
+        let authority = caller.load(&mut tx).await?;
+        if authority.proof.kind == CredentialKind::Token {
+            return Err(StoreError::Denied(Denied::Reauthenticate(Reauthenticate::Token)).into());
+        }
+        let user_id = authority.user_id.as_str();
+        if Self::verify_passkey_on(&mut tx, passkey_id, user_id, verify)
+            .await?
+            .is_none()
+        {
+            return Ok(false);
+        }
+        sqlx::query!(
+            "UPDATE auth_credentials SET authenticated_at=?1 WHERE id=?2",
+            authenticated_at,
+            caller.credential_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::database)?;
+        tx.commit().await.map_err(StoreError::database)?;
+        Ok(true)
+    }
+
+    /// Verifies an assertion by `user_id`'s passkey `passkey_id` and stores
+    /// the passkey's updated state, e.g. its signature counter. `verify`
+    /// receives the stored credential and returns its updated form. Returns
+    /// the account, or `None` when the passkey does not belong to it.
+    async fn verify_passkey_on<E: From<StoreError>>(
+        db: &mut SqliteConnection,
+        passkey_id: &str,
+        user_id: &str,
+        verify: impl FnOnce(&str) -> Result<String, E>,
+    ) -> Result<Option<User>, E> {
         let Some(row) = sqlx::query!(
             r#"SELECT p.credential,u.id AS "id!",u.username,u.display_name FROM auth_passkeys p JOIN auth_users u ON u.id=p.user_id WHERE p.id=?1 AND u.id=?2"#,
             passkey_id,
             user_id
         )
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut *db)
         .await
         .map_err(StoreError::database)?
         else {
@@ -765,12 +827,9 @@ impl Store {
             credential,
             passkey_id
         )
-        .execute(&mut *tx)
+        .execute(&mut *db)
         .await
         .map_err(StoreError::database)?;
-        let issuer = Issued::Passkey(passkey_id);
-        session.insert(&mut tx, user_id, Some(issuer)).await?;
-        tx.commit().await.map_err(StoreError::database)?;
         Ok(Some(User {
             id: row.id,
             username: row.username,

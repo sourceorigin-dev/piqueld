@@ -37,6 +37,7 @@ impl Fixture {
         }
     }
     /// Seeds an account holding `grants`, returning its ID and a credential.
+    /// Browser sessions and CLI logins have just signed in with a passkey.
     async fn account(
         &self,
         name: &str,
@@ -50,7 +51,8 @@ impl Fixture {
             display_name: String::new(),
         };
         self.auth.0.store.seed_auth_user(&user, grants).await;
-        let (token, credential) = Auth::new_credential(kind, "Test", expires, None).unwrap();
+        let (token, mut credential) = Auth::new_credential(kind, "Test", expires, None).unwrap();
+        credential.authenticated_at = (kind != CredentialKind::Token).then(now_secs);
         self.auth
             .0
             .store
@@ -109,6 +111,42 @@ impl Fixture {
     fn allow_poll(&self, device_code: &str) {
         let key = Auth::hash(device_code);
         self.auth.0.devices.lock().get_mut(&key).unwrap().next_poll = 0;
+    }
+
+    /// Opens a browser session for `identity`'s account that no passkey
+    /// signed in, like one opened by redeeming a link, returning its secret
+    /// and identity.
+    async fn stale_session(&self, identity: &Identity) -> (String, Identity) {
+        let (secret, session) = Auth::browser_session(None).unwrap();
+        self.auth
+            .0
+            .store
+            .insert_credential(&identity.account().id, &session)
+            .await
+            .unwrap();
+        let identity = self.auth.authenticate(&secret).await.unwrap();
+        (secret, identity)
+    }
+
+    /// Confirms `identity`'s credential with `passkey`, as a verified
+    /// assertion would.
+    async fn confirm(
+        &self,
+        identity: &Identity,
+        passkey: &str,
+    ) -> std::result::Result<bool, StoreError> {
+        let caller = identity.caller().unwrap();
+        let verify = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
+        let store = &self.auth.0.store;
+        store
+            .confirm_with_passkey(caller, passkey, verify, now_secs())
+            .await
+    }
+
+    /// Whether the credential with `secret` may take sensitive actions now.
+    async fn fresh(&self, secret: &str) -> bool {
+        let identity = self.auth.authenticate(secret).await.unwrap();
+        identity.require_fresh().is_ok()
     }
 
     /// Reads an account's current profile and grants.
@@ -761,20 +799,9 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
 #[tokio::test]
 async fn identities_refuse_sensitive_actions_without_a_recent_passkey() {
     let f = Fixture::new().await;
-    let stale = f.identity("alice", &Grants::admin()).await;
-    let (secret, mut session) = Auth::browser_session(Some(now_secs())).unwrap();
-    session.secret_hash = Auth::hash(&secret);
-    let store = &f.auth.0.store;
-    store
-        .insert_credential(&stale.account().id, &session)
-        .await
-        .unwrap();
-    f.auth
-        .authenticate(&secret)
-        .await
-        .unwrap()
-        .require_fresh()
-        .unwrap();
+    let fresh = f.identity("alice", &Grants::admin()).await;
+    fresh.require_fresh().unwrap();
+    let (_, stale) = f.stale_session(&fresh).await;
     let (_, token) = f
         .signed_in("ci", CredentialKind::Token, None, &Grants::admin())
         .await;
@@ -789,6 +816,107 @@ async fn identities_refuse_sensitive_actions_without_a_recent_passkey() {
     }
     let operator = HostOperator { uid: 0 };
     Identity::operator(operator, None).require_fresh().unwrap();
+}
+
+/// Adding a passkey to one's own account needs a recent passkey sign-in,
+/// refused before any passkey is created and again when it is stored.
+#[tokio::test]
+async fn adding_a_passkey_needs_a_recent_sign_in() {
+    let f = Fixture::new().await;
+    let alice = f.identity("alice", &Grants::admin()).await;
+    let (_, stale) = f.stale_session(&alice).await;
+    let start = RegistrationStart {
+        invitation: None,
+        user_id: Some(alice.account().id.clone()),
+        username: String::new(),
+        display_name: String::new(),
+        passkey_name: "Key".into(),
+    };
+    let refused = Denied::Reauthenticate(Reauthenticate::Stale);
+    assert!(matches!(
+        f.auth.registration_start(start, "browser", Some(&stale)).await,
+        Err(AuthError::Denied(denied)) if denied == refused
+    ));
+    let passkey = NewPasskey {
+        id: "key",
+        name: "Key",
+        credential: "{}",
+    };
+    let owner = PasskeyOwner::Existing(stale.caller().unwrap(), &alice.account().id);
+    assert!(matches!(
+        f.auth.0.store.add_passkey(owner, passkey).await,
+        Err(StoreError::Denied(denied)) if denied == refused
+    ));
+}
+
+/// Only browser sessions confirm with a passkey: tokens are refused for
+/// good, and CLI logins and the host operator are pointed elsewhere.
+#[tokio::test]
+async fn only_browser_sessions_start_a_passkey_confirmation() {
+    let f = Fixture::new().await;
+    let (_, token) = f
+        .account("ci", CredentialKind::Token, None, &Grants::admin())
+        .await;
+    let token = f.auth.authenticate(&token).await.unwrap();
+    assert!(matches!(
+        f.auth.reauthenticate_start(&token, "browser").await,
+        Err(AuthError::Denied(Denied::Reauthenticate(
+            Reauthenticate::Token
+        )))
+    ));
+    let cli = f.identity("alice", &Grants::admin()).await;
+    let (_, browser) = f.stale_session(&cli).await;
+    let operator = Identity::operator(HostOperator { uid: 0 }, None);
+    // Alice has no passkey yet, so her browser session cannot confirm either.
+    for identity in [&cli, &operator, &browser] {
+        assert!(matches!(
+            f.auth.reauthenticate_start(identity, "browser").await,
+            Err(AuthError::Invalid(_))
+        ));
+    }
+}
+
+/// Confirming with a passkey verifies it under the writer lock and marks
+/// only the confirming credential fresh, never another account's passkey,
+/// a token, or a revoked credential.
+#[tokio::test]
+async fn confirming_with_a_passkey_refreshes_only_the_confirming_session() {
+    let f = Fixture::new().await;
+    let alice = f.identity("alice", &Grants::admin()).await;
+    let key = f.passkey(&alice).await;
+    let bob = f.identity("bob", &Grants::admin()).await;
+    let bobs = f.passkey(&bob).await;
+    let (secret, session) = f.stale_session(&alice).await;
+    let (sibling_secret, sibling) = f.stale_session(&alice).await;
+    let failed = |_: &str| Err::<String, _>(StoreError::Corrupt);
+    let caller = session.caller().unwrap();
+    let store = &f.auth.0.store;
+    assert!(matches!(
+        store
+            .confirm_with_passkey(caller, &key, failed, now_secs())
+            .await,
+        Err(StoreError::Corrupt)
+    ));
+    assert!(!f.fresh(&secret).await);
+    assert!(!f.confirm(&session, &bobs).await.unwrap());
+    assert!(f.confirm(&session, &key).await.unwrap());
+    assert!(f.fresh(&secret).await);
+    assert!(!f.fresh(&sibling_secret).await);
+    let (_, token) = f
+        .account("ci", CredentialKind::Token, None, &Grants::admin())
+        .await;
+    let token = f.auth.authenticate(&token).await.unwrap();
+    assert!(matches!(
+        f.confirm(&token, &key).await,
+        Err(StoreError::Denied(Denied::Reauthenticate(
+            Reauthenticate::Token
+        )))
+    ));
+    f.auth.logout(&sibling).await.unwrap();
+    assert!(matches!(
+        f.confirm(&sibling, &key).await,
+        Err(StoreError::CredentialRevoked)
+    ));
 }
 
 /// `auth.max_token_days` bounds new tokens, and secrets issued before the

@@ -531,7 +531,11 @@ versions. File mounts use Docker's read-only 0444 permissions inside the contain
 
 Restore `secrets.key` from backup whenever possible. If it cannot be recovered,
 `piquelctl secrets recover-key --yes` discards **all stored values for every
-application on the daemon**. It refuses while the current key still works.
+application on the daemon**. It refuses while the current key still works. It
+needs `system:operate` and a
+[passkey sign-in within the last 2 minutes](../accounts/accounts.md#confirm-with-your-passkey),
+which API tokens never have; run it as the host operator, with `sudo` on the
+host, to skip both.
 Names, generations, file references and deployment history remain; discarded
 versions are marked unavailable. [Notification destinations](../operations/notifications.md),
 whose URLs are encrypted with the same key, are deleted; create them again. Docker secrets and running services are left in

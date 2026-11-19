@@ -139,6 +139,17 @@ impl<
     }
 }
 
+// The refusal of a sensitive action without a recent passkey sign-in.
+#[expect(
+    dead_code,
+    reason = "Utoipa reads the field's type as the body schema; no value is ever built"
+)]
+#[derive(ToResponse)]
+#[response(
+    description = "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and retry; API tokens never can"
+)]
+pub(super) struct ReauthenticationResponse(ErrorBody);
+
 // Serves the precomputed `OpenAPI` 3.0 document installed by `finish_router`.
 #[utoipa::path(
     get,
@@ -294,8 +305,9 @@ fn convert_to_openapi_30(value: &mut Value) {
 }
 
 /// Adds the 403 returned by the TCP browser trust middleware
-/// (`browser::BrowserPolicy`) to every documented operation, and the 408 of
-/// a request body that stopped arriving to those that take one.
+/// (`browser::BrowserPolicy`) to every documented operation, after any 403
+/// it documents itself, like [`ReauthenticationResponse`], and the 408 of a
+/// request body that stopped arriving to those that take one.
 fn complete_http_contract(document: &mut Value) {
     let error = |description: &str| {
         serde_json::json!({
@@ -309,10 +321,17 @@ fn complete_http_contract(document: &mut Value) {
             .get_mut("responses")
             .and_then(Value::as_object_mut)
         {
-            responses.insert(
-                "403".into(),
-                error("TCP authority or browser origin is not trusted"),
-            );
+            let untrusted = "TCP authority or browser origin is not trusted";
+            let own = responses
+                .get("403")
+                .and_then(|response| response.get("description"))
+                .and_then(Value::as_str)
+                .filter(|own| *own != "Structured, sanitized error");
+            let description = match own {
+                Some(own) => format!("{own}. Also returned when the {untrusted}"),
+                None => untrusted.into(),
+            };
+            responses.insert("403".into(), error(&description));
             if has_body {
                 responses
                     .entry("408")

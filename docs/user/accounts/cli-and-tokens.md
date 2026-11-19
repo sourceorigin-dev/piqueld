@@ -174,6 +174,11 @@ They can't give anyone access, and they can't change their own account. They
 can revoke themselves. So a leaked token never outlives or exceeds its own
 limits.
 
+Tokens also can't take actions that need a
+[recent passkey sign-in](accounts.md#confirm-with-your-passkey), such as
+recovering the secret key, whatever their access. They answer
+`reauthentication_required`.
+
 Without `accounts:manage`, a token only sees itself.
 `piquelctl account list` shows its account with the token's own access, and
 `piquelctl token list` shows the token alone. Your passkeys and your other

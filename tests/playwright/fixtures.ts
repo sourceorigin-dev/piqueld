@@ -161,6 +161,14 @@ export async function proof(page: Page, ceremony: Ceremony, registration = false
   return { id: ceremony.id, credential };
 }
 
+/** Confirms the signed-in browser session with its passkey, as the
+ * dashboard's prompt does, so sensitive actions in the next 2 minutes go
+ * through without asking. */
+export async function confirmPasskey(page: Page) {
+  const ceremony = await auth<Ceremony>(page, 'reauthenticate/start', {});
+  await auth(page, 'reauthenticate/finish', await proof(page, ceremony));
+}
+
 /** Calls the API from the signed-in page, returning the response's `data`.
  * A string body is sent as raw bytes; a failed response throws. */
 export async function call(page: Page, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {

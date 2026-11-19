@@ -2,10 +2,10 @@
 //! exact origin/RP binding, and server-side single-use ceremony state.
 use super::{
     Auth, AuthError, BROWSER_SESSION_LIFETIME, CEREMONY_LIFETIME, CredentialKind, Identity,
-    MAX_PENDING, Result, now_secs,
+    MAX_PENDING, Result, now_secs, sessions,
 };
 use base64::Engine;
-use piqueld_core::access::Denied;
+use piqueld_core::access::{Denied, Reauthenticate};
 use piqueld_core::auth::{Ceremony, CeremonyFinish, RegistrationStart, User};
 use piqueld_store::{Invitation, NewPasskey, PasskeyOwner};
 use webauthn_rs_core::proto::{
@@ -33,6 +33,12 @@ enum Kind {
         name: String,
     },
     Login(AuthenticationState),
+    /// Confirms the browser session `credential_id` with one of its
+    /// account's passkeys, making it fresh for sensitive actions.
+    Reauthenticate {
+        state: AuthenticationState,
+        credential_id: String,
+    },
 }
 
 /// Why a link cannot be redeemed.
@@ -83,8 +89,8 @@ impl Auth {
     ///
     /// Existing passkeys of the user are excluded so an authenticator cannot be
     /// registered twice. Resident keys and user verification are required.
-    /// Scoped credentials cannot add passkeys, and a new account's username
-    /// must be free, so neither fails only after the passkey was created.
+    /// Scoped or stale callers cannot add passkeys, and a new account's username
+    /// must be free, so none fails only after the passkey was created.
     pub(crate) async fn registration_start(
         &self,
         input: RegistrationStart,
@@ -100,6 +106,7 @@ impl Auth {
             let own = caller.user().filter(|user| user.id == id).ok_or(AuthError::Invalid(
                 "passkeys can only be added to your own account; create an enrollment link for others",
             ))?;
+            caller.require_fresh()?;
             (own.clone(), None)
         } else {
             let secret = input.invitation.ok_or(AuthError::Invalid(
@@ -269,15 +276,7 @@ impl Auth {
         let (token, session) = Self::browser_session(Some(now_secs()))?;
         // The store verifies the assertion and updates its signature counter
         // under the writer lock, then opens the session in the same transaction.
-        let verify = |stored: &str| -> Result<String> {
-            let mut credential: Credential = serde_json::from_str(stored)?;
-            state.set_allowed_credentials(vec![credential.clone()]);
-            let result = self.0.webauthn.authenticate_credential(&response, &state)?;
-            credential.counter = result.counter();
-            credential.backup_state = result.backup_state();
-            credential.backup_eligible = result.backup_eligible();
-            Ok(serde_json::to_string(&credential)?)
-        };
+        let verify = self.assertion(&mut state, &response);
         let user = self
             .0
             .store
@@ -286,5 +285,107 @@ impl Auth {
             .ok_or(AuthError::Unauthorized)?;
         tracing::info!(user_id = %user.id, username = %user.username, "signed in with passkey");
         Ok((user, token))
+    }
+    /// Verifies `response` against a stored passkey, passed to the closure
+    /// serialized, returning the passkey's updated state to store: its
+    /// signature counter and backup flags.
+    fn assertion<'a>(
+        &'a self,
+        state: &'a mut AuthenticationState,
+        response: &'a PublicKeyCredential,
+    ) -> impl FnOnce(&str) -> Result<String> + 'a {
+        move |stored| {
+            let mut credential: Credential = serde_json::from_str(stored)?;
+            state.set_allowed_credentials(vec![credential.clone()]);
+            let result = self.0.webauthn.authenticate_credential(response, state)?;
+            credential.counter = result.counter();
+            credential.backup_state = result.backup_state();
+            credential.backup_eligible = result.backup_eligible();
+            Ok(serde_json::to_string(&credential)?)
+        }
+    }
+    /// Starts confirming the caller's browser session with one of its
+    /// account's passkeys, for a sensitive action that needs a recent
+    /// passkey sign-in. Only browser sessions confirm this way: API tokens
+    /// never can, and the host operator needs no confirmation.
+    pub(crate) async fn reauthenticate_start(
+        &self,
+        caller: &Identity,
+        binding: &str,
+    ) -> Result<Ceremony> {
+        let sessions::Credential::Account { user, id, proof } = &caller.credential else {
+            return Err(AuthError::Invalid(
+                "the host operator needs no passkey confirmation",
+            ));
+        };
+        match proof.kind {
+            CredentialKind::Browser => {}
+            CredentialKind::Token => {
+                return Err(Denied::Reauthenticate(Reauthenticate::Token).into());
+            }
+            CredentialKind::Cli => {
+                return Err(AuthError::Invalid(
+                    "CLI logins confirm with a passkey through piquelctl, not this endpoint",
+                ));
+            }
+        }
+        let passkeys = self
+            .0
+            .store
+            .passkey_credentials(&user.id)
+            .await?
+            .iter()
+            .map(|value| serde_json::from_str::<Credential>(value))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        if passkeys.is_empty() {
+            return Err(AuthError::Invalid(
+                "this account has no passkey to confirm with",
+            ));
+        }
+        let builder = self
+            .0
+            .webauthn
+            .new_challenge_authenticate_builder(passkeys, Some(UserVerificationPolicy::Required))?;
+        let (options, state) = self.0.webauthn.generate_challenge_authenticate(builder)?;
+        let kind = Kind::Reauthenticate {
+            state,
+            credential_id: id.clone(),
+        };
+        self.remember(binding, kind, serde_json::to_value(options)?)
+            .await
+    }
+    /// Verifies the assertion started by [`Self::reauthenticate_start`] and
+    /// marks the same browser session fresh. It issues no new session.
+    pub(crate) async fn reauthenticate_finish(
+        &self,
+        input: CeremonyFinish,
+        binding: &str,
+        caller: &Identity,
+    ) -> Result<()> {
+        let Kind::Reauthenticate {
+            mut state,
+            credential_id,
+        } = self.consume(&input.id, binding).await?
+        else {
+            return Err(AuthError::stale_ceremony());
+        };
+        let caller = caller.caller()?;
+        if caller.credential_id != credential_id {
+            return Err(AuthError::Unauthorized);
+        }
+        let response: PublicKeyCredential = serde_json::from_value(input.credential)
+            .map_err(|_| AuthError::Invalid("invalid passkey response"))?;
+        let passkey_id = super::URL_SAFE_NO_PAD.encode(response.get_credential_id());
+        let verify = self.assertion(&mut state, &response);
+        if !self
+            .0
+            .store
+            .confirm_with_passkey(caller, &passkey_id, verify, now_secs())
+            .await?
+        {
+            return Err(AuthError::Unauthorized);
+        }
+        tracing::info!(user_id = %caller.user_id, "confirmed session with passkey");
+        Ok(())
     }
 }

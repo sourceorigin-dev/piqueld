@@ -119,6 +119,32 @@ test('an application shows only the controls the account may use on it', async (
   await expect(page.getByRole('button', { name: 'Rename environment', exact: true })).toBeDisabled();
 });
 
+test('adding a passkey asks to confirm with an existing one, then continues once', async ({ page, account, passkeys }) => {
+  void account;
+  const alice = await openAccount(page, 'alice', 'Access');
+  await alice.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  const adding = page.getByRole('dialog', { name: 'Add passkey' });
+  await adding.getByLabel('Passkey name', { exact: true }).fill('Phone');
+  // The account signed up through its setup link, which is no passkey sign-in.
+  const confirming = page.getByRole('dialog', { name: 'Confirm with your passkey' });
+  await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  await confirming.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(adding.getByText(/^Cancelled/)).toBeVisible();
+  await expect(adding.getByLabel('Passkey name', { exact: true })).toHaveValue('Phone');
+  // Confirming retries the refused request: this authenticator already holds
+  // alice's passkey, so only the registration it starts then fails.
+  await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  await confirming.getByRole('button', { name: 'Confirm with passkey', exact: true }).click();
+  await expect(confirming).toHaveCount(0);
+  await expect(adding.getByText(/^Cancelled/)).toHaveCount(0);
+  await expect(adding.locator('.notice')).toBeVisible();
+  // The session is fresh now, so another authenticator adds without asking.
+  await passkeys.reset();
+  await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  await expect(page.getByText('Passkey added.', { exact: true })).toBeVisible();
+  await expect(confirming).toHaveCount(0);
+});
+
 test('copy buttons are hidden without a clipboard API, as on plain HTTP origins', async ({ page, account }) => {
   void account;
   await page.addInitScript(() => Object.defineProperty(Navigator.prototype, 'clipboard', { get: () => undefined }));

@@ -101,10 +101,11 @@ async fn complete(ceremony: Ceremony, registration: bool) -> Result<CeremonyFini
     })
 }
 
-/// Registers a new passkey: start, browser ceremony, finish.
+/// Registers a new passkey: start, browser ceremony, finish. Adding one to
+/// the signed-in account may first ask to confirm with an existing passkey.
 async fn register(input: RegistrationStart) -> Result<(), ActionError> {
     let client = Client::browser();
-    let challenge = client.auth_register_start(&input).await?;
+    let challenge = confirmed(|| client.auth_register_start(&input)).await?;
     client
         .auth_register_finish(&complete(challenge, true).await?)
         .await?;
@@ -119,6 +120,78 @@ async fn sign_in() -> Result<Session, ActionError> {
         .auth_login_finish(&complete(ceremony, false).await?)
         .await?;
     Ok(client.auth_me().await?)
+}
+
+/// Confirms the current browser session with one of its account's
+/// passkeys, making it fresh for sensitive actions.
+async fn reauthenticate() -> Result<(), ActionError> {
+    let client = Client::browser();
+    let ceremony = client.auth_reauthenticate_start().await?;
+    client
+        .auth_reauthenticate_finish(&complete(ceremony, false).await?)
+        .await?;
+    Ok(())
+}
+
+/// Sends `request`, and when the daemon asks for a recent passkey sign-in
+/// first, asks the user to confirm with a passkey (see [`StepUp`]) and sends
+/// it once more. The refusal comes before the daemon changes anything, so
+/// the retry is safe; other failures, like a lost connection or an expired
+/// session, are never retried.
+///
+/// It runs in a task spawned by [`Feedback::run`], which keeps the reactive
+/// owner, so it can reach the prompt `Gate` provides.
+async fn confirmed<T, E, F>(request: impl Fn() -> F) -> Result<T, ActionError>
+where
+    E: Into<ActionError>,
+    F: Future<Output = Result<T, E>>,
+{
+    let step_up = use_context::<StepUp>();
+    match (request().await.map_err(Into::into), step_up) {
+        (Err(ActionError::Client(error)), Some(step_up)) if error.step_up() => {
+            step_up.confirm().await?;
+            request().await.map_err(Into::into)
+        }
+        (result, _) => result,
+    }
+}
+
+/// The open request to confirm the session with a passkey, shared through
+/// context from `Gate`. Actions refused at the same time all wait on the one
+/// prompt it shows.
+#[derive(Clone, Copy)]
+struct StepUp {
+    /// Whether the prompt is showing.
+    open: RwSignal<bool>,
+    /// Actions waiting for the outcome: whether the session was confirmed.
+    waiting: StoredValue<Vec<futures_channel::oneshot::Sender<bool>>>,
+}
+
+impl StepUp {
+    /// Shows the prompt and waits for the user to confirm or cancel it.
+    async fn confirm(self) -> Result<(), ActionError> {
+        let (sender, outcome) = futures_channel::oneshot::channel();
+        self.waiting.update_value(|waiting| waiting.push(sender));
+        self.open.set(true);
+        match outcome.await {
+            Ok(true) => Ok(()),
+            _ => Err(ActionError::Message(
+                "Cancelled: this action needs you to confirm with your passkey.".into(),
+            )),
+        }
+    }
+
+    /// Closes the prompt, telling every waiting action whether it may retry.
+    fn finish(self, confirmed: bool) {
+        self.open.set(false);
+        for sender in self
+            .waiting
+            .try_update_value(std::mem::take)
+            .unwrap_or_default()
+        {
+            let _ = sender.send(confirmed);
+        }
+    }
 }
 
 /// Performs a full page navigation to `path`.
@@ -170,7 +243,9 @@ impl Feedback {
     }
 
     /// Runs `task` unless another action is in progress, showing its success
-    /// message or error. `try_*` setters tolerate the owning view being unmounted.
+    /// message or error. `try_*` setters tolerate the owning view being
+    /// unmounted. The task runs under the view's reactive owner, without being
+    /// cancelled with it, so it can read context like [`StepUp`].
     fn run(self, task: impl Future<Output = Result<Shown, ActionError>> + 'static) {
         if self.busy.get_untracked() {
             return;
@@ -179,7 +254,7 @@ impl Feedback {
         self.error.set(String::new());
         self.message.set(String::new());
         self.secret.set(None);
-        spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             match task.await {
                 Ok((message, secret)) => {
                     self.message.try_set(message);
@@ -232,7 +307,8 @@ impl Feedback {
 /// Sends an account management command, returning what to show: any
 /// one-time token or invitation link it returns.
 async fn manage(command: Manage) -> Result<Shown, ActionError> {
-    let result = Client::browser().auth_manage(&command).await?;
+    let client = Client::browser();
+    let result = confirmed(|| client.auth_manage(&command)).await?;
     Ok(if let Some(token) = result.token {
         (
             "Token created. Copy it now; it will not be shown again.".into(),
@@ -376,6 +452,11 @@ pub(super) fn Gate() -> impl IntoView {
         invitation: StoredValue::new(Invite::take()),
     };
     provide_context(state);
+    let step_up = StepUp {
+        open: RwSignal::new(false),
+        waiting: StoredValue::new(Vec::new()),
+    };
+    provide_context(step_up);
     let listener = window_event_listener(
         ev::Custom::<web_sys::Event>::new(Client::AUTHENTICATION_REQUIRED_EVENT),
         move |_| {
@@ -421,9 +502,65 @@ pub(super) fn Gate() -> impl IntoView {
                 view! { <super::App /> }
             }}
         </div>
-        <Show when={move || state.expired.get()}>
-            <SessionExpired state={state} />
+        // One overlay at a time, mounted only while showing: signing in again
+        // comes before confirming the session it opens.
+        <Show when={move || state.expired.get() || step_up.open.get()}>
+            {move || {
+                if state.expired.get() {
+                    view! { <SessionExpired state={state} /> }.into_any()
+                } else {
+                    view! { <ConfirmPasskey step_up={step_up} /> }.into_any()
+                }
+            }}
         </Show>
+    }
+}
+
+/// Dialog asking to confirm the session with a passkey before a sensitive
+/// action, which then retries by itself. As a native modal dialog opened
+/// last, it shows above the form that asked, which keeps what was entered.
+#[component]
+fn ConfirmPasskey(step_up: StepUp) -> impl IntoView {
+    let feedback = Feedback::new();
+    let cancel = Callback::new(move |()| step_up.finish(false));
+    view! {
+        <Modal
+            title="Confirm with your passkey"
+            opened={step_up.open}
+            busy={feedback.busy}
+            on_close={cancel}
+        >
+            <p class="hint">
+                "This action needs a passkey sign-in within the last 2 minutes. Confirm, and it continues where it left off."
+            </p>
+            {feedback.view()}
+            <div class="form-actions">
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    disabled={move || feedback.busy.get()}
+                    on:click={move |_| {
+                        feedback
+                            .run(async move {
+                                reauthenticate().await?;
+                                step_up.finish(true);
+                                Ok(Shown::default())
+                            });
+                    }}
+                >
+                    {icon(Icon::Key)}
+                    "Confirm with passkey"
+                </button>
+                <button
+                    type="button"
+                    class="btn"
+                    disabled={move || feedback.busy.get()}
+                    on:click={move |_| cancel.run(())}
+                >
+                    "Cancel"
+                </button>
+            </div>
+        </Modal>
     }
 }
 
@@ -765,9 +902,8 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
             return;
         };
         feedback.run(async move {
-            Client::browser()
-                .auth_device_approve(&pending.user_code)
-                .await?;
+            let client = Client::browser();
+            confirmed(|| client.auth_device_approve(&pending.user_code)).await?;
             request.set(None);
             code.set(String::new());
             Ok((

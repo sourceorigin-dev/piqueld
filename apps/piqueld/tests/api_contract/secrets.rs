@@ -432,6 +432,23 @@ async fn secret_key_recovery_api_discards_values_only_for_an_unusable_key() {
     let runtime = Arc::new(FakeRuntime::new(&store));
     let server = Server::tcp(router(api_state(&temp, store, runtime).await, FakeAuth)).await;
     let client = server.client();
+    // Recovery needs a passkey sign-in within the last two minutes: a token
+    // is told it never can, a CLI login to confirm first.
+    let database = database(&temp);
+    for (kind, step_up) in [("token", false), ("cli", true)] {
+        let sql = format!("UPDATE auth_credentials SET kind='{kind}'");
+        execute(&database, &sql).await;
+        let ClientError::Api { status, error } = client.recover_secret_key().await.unwrap_err()
+        else {
+            panic!("API error expected");
+        };
+        assert_eq!(status.as_u16(), 403);
+        assert_eq!(error.code, "reauthentication_required");
+        assert_eq!(error.details["step_up"], step_up);
+    }
+    let signed_in =
+        "UPDATE auth_credentials SET authenticated_at=CAST(strftime('%s','now') AS INTEGER)";
+    execute(&database, signed_in).await;
     assert_eq!(
         api_error(client.recover_secret_key().await.unwrap_err()).status,
         409
