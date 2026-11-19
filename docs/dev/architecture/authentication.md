@@ -204,6 +204,31 @@ routes, plus TCP `/health`, the dashboard's static assets, and the separate
 webhook socket. The daemon serves no metrics; it pushes them instead, see
 [telemetry export](../../user/operations/telemetry.md).
 
+## Issuance lineage
+
+The store records what issued each credential, invitation and passkey in
+`auth_lineage` (`crates/piqueld-store/src/auth/lineage.rs`), in the
+transaction that stores it:
+
+| Created | Issued by |
+| --- | --- |
+| API token | the credential that created it |
+| CLI login | the credential that approved it |
+| Invitation or enrollment link | the credential that created it |
+| Passkey added while signed in | the credential that added it |
+| Passkey registered through a link | the invitation or enrollment link |
+| Passkey from the setup secret or an admin recovery link | nothing: a root |
+| Browser session | the passkey it signed in with, or registered |
+
+Host operator links and sessions are not in the tree. Nothing recorded before
+lineage existed has an issuer.
+
+A node outlives its row while anything live descends from it. A session that
+logged out, expired or was pruned, and a redeemed invitation, still connect
+what they issued to their own issuer. `prune_auth` forgets the nodes nothing
+live descends from. Authentication never reads the tree, so a credential stays
+valid when its issuer ends.
+
 ## CLI device login
 
 `device_start` creates a pending request for 10 minutes, keyed by the hash of
