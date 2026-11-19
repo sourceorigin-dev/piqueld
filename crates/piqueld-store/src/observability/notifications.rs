@@ -217,11 +217,11 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         let change = format!("delivery {id} retry queued");
-        author
-            .record_on(&mut tx, 200, &change, (None, None))
+        let appended = author
+            .record_on(&mut tx, 200, Some(&change), (None, None))
             .await?;
         tx.commit().await.map_err(StoreError::database)?;
-        author.committed();
+        appended.committed();
         Ok(())
     }
     /// Restarts the sustained-failure window of conditions not yet notified,

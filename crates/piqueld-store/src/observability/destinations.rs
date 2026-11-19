@@ -260,11 +260,11 @@ impl Store {
         if saved.resumed {
             change.push_str(" and enabled");
         }
-        author
-            .record_on(&mut tx, 200, &change, (None, None))
+        let appended = author
+            .record_on(&mut tx, 200, Some(&change), (None, None))
             .await?;
         tx.commit().await.map_err(StoreError::database)?;
-        author.committed();
+        appended.committed();
         Ok(NotificationDestination {
             name: name.clone(),
             settings,
@@ -526,11 +526,11 @@ impl Store {
         )
         .await?;
         let change = format!("destination {:?} deleted", name.as_str());
-        author
-            .record_on(&mut tx, 200, &change, (None, None))
+        let appended = author
+            .record_on(&mut tx, 200, Some(&change), (None, None))
             .await?;
         tx.commit().await.map_err(StoreError::database)?;
-        author.committed();
+        appended.committed();
         Ok(())
     }
 
