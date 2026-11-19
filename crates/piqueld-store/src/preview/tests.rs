@@ -569,3 +569,47 @@ async fn restored_local_snapshots_are_still_local() {
         Some(piqueld_core::api::DeploymentOrigin::Local(_))
     ));
 }
+
+/// Only a request that changes something records itself: asking again for
+/// an existing preview, or for a deletion already pending, commits nothing,
+/// records nothing, and so succeeds even when audit records can't be
+/// written.
+#[tokio::test]
+async fn repeated_preview_requests_change_and_record_nothing() {
+    let (_temp, store) = Store::temporary().await;
+    let application = save(&store, false).await;
+    let route = "POST /api/v1/applications/{id}/previews";
+    let accept = async |mutation: PreviewMutation| {
+        let request = crate::testing::audit_request(route);
+        let author = Author {
+            actor: Daemon,
+            request: Some(&request),
+        };
+        let mutation = Mutation::Preview(mutation);
+        let accepted = store.accept(author, mutation, None, false, None).await;
+        (
+            accepted.map(|(response, _)| response),
+            request.recorded.get(),
+        )
+    };
+    let create = || PreviewMutation::Create {
+        application: application.clone(),
+        branch: GitBranch::parse("feat/login").unwrap(),
+        slot: None,
+    };
+    let (Ok(MutationResponse::Preview(created)), true) = accept(create()).await else {
+        panic!("a new preview records itself");
+    };
+    let id = created.preview.id;
+    let delete = || PreviewMutation::Delete { id: id.clone() };
+    let repeat = async |mutation| {
+        store.refuse_audit(true).await;
+        let (accepted, recorded) = accept(mutation).await;
+        store.refuse_audit(false).await;
+        assert!(accepted.is_ok() && !recorded);
+    };
+    repeat(create()).await;
+    assert!(accept(delete()).await.1);
+    repeat(delete()).await;
+    assert_eq!(store.audit_actions().await.len(), 2);
+}

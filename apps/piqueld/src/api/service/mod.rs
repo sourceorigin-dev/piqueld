@@ -77,8 +77,8 @@ pub enum ApplicationError {
 }
 
 pub use piqueld_store::{
-    Actor, ListedHead, Mutation, MutationResponse, PreviewMutation, PromotionMutation, Restore,
-    SourceChoice, SyncOutcome,
+    Actor, Author, ListedHead, Mutation, MutationResponse, PreviewMutation, PromotionMutation,
+    Restore, SourceChoice, SyncOutcome,
 };
 
 /// Cheaply clonable entry point for all daemon operations.
@@ -520,7 +520,8 @@ impl ApplicationService {
         Ok(())
     }
 
-    /// Accepts a mutation from `actor` and records its receipt in the same
+    /// Accepts a mutation from `author` and records its receipt, and its
+    /// audit record when it comes from an API request, in the same
     /// transaction.
     /// `expected_generation` is the last inspected intent revision: zero requires
     /// absence. Mutations other than reconcile require a revision; saves
@@ -532,7 +533,7 @@ impl ApplicationService {
     /// Returns validation, conflict, or persistence errors.
     pub async fn accept(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         mutation: Mutation,
         expected_generation: Option<u64>,
         force: bool,
@@ -548,7 +549,7 @@ impl ApplicationService {
         let (response, wake) =
             Box::pin(
                 self.store
-                    .accept(actor, mutation, expected_generation, force, request_id),
+                    .accept(author, mutation, expected_generation, force, request_id),
             )
             .await?;
         if stops && let Some(ingress) = &self.ingress {

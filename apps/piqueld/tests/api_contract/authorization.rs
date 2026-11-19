@@ -122,7 +122,7 @@ async fn audit_trail_records_callers_and_outcomes() {
         assert_eq!(f.router.status(&f.deployer, method, &uri).await, status);
     }
     let body = f.audit(&f.deployer, "/api/v1/audit", 5).await;
-    // Records are written in the background, so their order is not asserted.
+    // Most records are written in the background, so their order is not asserted.
     // Requests about an environment also name its application.
     let trail: std::collections::BTreeSet<_> = body["data"]["items"]
         .as_array()
@@ -134,9 +134,11 @@ async fn audit_trail_records_callers_and_outcomes() {
             if !event["environment_id"].is_null() {
                 assert_eq!(event["application_id"], f.blog.as_str());
             }
+            // Changes add what they started after the route.
+            let action = event["action"].as_str().unwrap().split(' ').take(2);
             (
                 event["outcome"].as_str().unwrap().to_owned(),
-                event["action"].as_str().unwrap().to_owned(),
+                action.collect::<Vec<_>>().join(" "),
                 event["permission"].as_str().map(str::to_owned),
             )
         })
@@ -199,6 +201,49 @@ async fn audit_trail_records_callers_and_outcomes() {
     let deployer = "/api/v1/audit?user_id=deployer&outcome=denied";
     let body = f.audit(&f.auditor, deployer, 6).await;
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 6);
+}
+
+/// A change a request commits records itself in its own transaction, with
+/// what it started, so the background trail adds no second record of its
+/// success. Replaying it commits nothing, so the replay is recorded in the
+/// background like any other request.
+#[tokio::test]
+async fn committed_changes_record_themselves_once() {
+    let f = GrantFixture::new().await;
+    let staging = f.environment(&f.blog, "staging").await;
+    let deploy = || {
+        Request::post(format!("{staging}/deploy?force=true"))
+            .header("authorization", format!("Bearer {}", f.deployer))
+            .header("idempotency-key", "deploy-once")
+            .body(Body::empty())
+            .unwrap()
+    };
+    for _ in 0..2 {
+        assert_eq!(f.router.send(deploy()).await.status, 202);
+        f.state.drain_audit(Duration::from_secs(5)).await;
+    }
+    let body = f.audit(&f.deployer, "/api/v1/audit", 2).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    let route = "POST /api/v1/environments/{id}/deploy";
+    let [replayed, committed] = items.as_slice() else {
+        panic!("one record per request expected: {body}");
+    };
+    assert_eq!(replayed["action"], route);
+    let action = committed["action"].as_str().unwrap();
+    assert!(
+        action.starts_with(&format!("{route} generation ")) && action.contains(" operation "),
+        "{action}"
+    );
+    let environment = staging.strip_prefix("/api/v1/environments/").unwrap();
+    for event in items {
+        assert_eq!(event["outcome"], "allowed");
+        assert_eq!(event["status"], 202);
+        assert_eq!(event["credential_kind"], "token");
+        assert_eq!(event["application_id"], f.blog.as_str());
+        assert_eq!(event["environment_id"], environment);
+        assert!(event["request_id"].is_string());
+    }
+    assert_ne!(replayed["request_id"], committed["request_id"]);
 }
 
 /// Callers read their own trail, so it reveals nothing they could not see:

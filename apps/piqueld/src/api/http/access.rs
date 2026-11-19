@@ -18,9 +18,10 @@ use super::{ApiError, ApiState, ui};
 use crate::auth::{AuthError, Identity};
 use axum::{
     extract::{
-        ConnectInfo, MatchedPath, RawPathParams, Request, State, rejection::RawPathParamsRejection,
+        ConnectInfo, FromRequestParts, MatchedPath, RawPathParams, Request, State,
+        rejection::RawPathParamsRejection,
     },
-    http::{Method, StatusCode},
+    http::{Method, StatusCode, request::Parts},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -31,7 +32,7 @@ use piqueld_core::{
     ApplicationId, EnvironmentId,
     access::{AppPermission, Denied, GlobalPermission, Grants, Permission, Reauthenticate, Target},
 };
-use piqueld_store::EnvironmentOwner;
+use piqueld_store::{AuditOrigin, AuditRequest, Author, EnvironmentOwner, Recorded};
 use serde_json::json;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tower_http::request_id::RequestId;
@@ -306,8 +307,10 @@ pub(super) async fn audit(
         request_id: extensions
             .get::<RequestId>()
             .and_then(|id| id.header_value().to_str().ok().map(str::to_owned)),
+        recorded: Recorded::default(),
     };
-    // Handlers that refuse after responding, like exec, record it themselves.
+    // Handlers that refuse after responding, like exec, record it themselves,
+    // and changes record their own success (see `Audited`).
     request.extensions_mut().insert(audit.clone());
     let response = next.run(request).await;
     let extensions = response.extensions();
@@ -349,6 +352,47 @@ impl AuditDetail {
     const LIMIT: usize = 1024;
 }
 
+/// The API request a handler's changes are made through, so each change
+/// records itself in its own transaction (see `piqueld_store::AuditRequest`),
+/// and the request needs no background record of its success. `None` outside
+/// the audit middleware, where changes record nothing.
+pub(super) struct Audited(Option<AuditRequest>);
+
+impl Audited {
+    /// This request, whose route answers every change it makes with
+    /// `status` (see `AuditRequest::status`).
+    pub(super) fn answering(mut self, status: StatusCode) -> Self {
+        if let Some(request) = &mut self.0 {
+            request.status = Some(status.as_u16());
+        }
+        self
+    }
+
+    /// `identity` acting through this request.
+    pub(super) fn author<'a>(&'a self, identity: &'a Identity) -> Author<'a> {
+        Author {
+            actor: identity.actor(),
+            request: self.0.as_ref(),
+        }
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for Audited {
+    type Rejection = std::convert::Infallible;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let extensions = &parts.extensions;
+        let tailnet = extensions.get::<TailnetPeer>().map(TailnetPeer::describe);
+        let request = extensions
+            .get::<Audit>()
+            .map(|audit| audit.request(extensions.get::<Identity>(), None, tailnet));
+        std::future::ready(Ok(Self(request)))
+    }
+}
+
 /// What the audit trail needs from a response.
 struct Answer {
     /// Tailnet identity of the peer, described.
@@ -375,6 +419,8 @@ pub(super) struct Audit {
     owner: Option<(PathOwner, String)>,
     peer: Option<std::net::IpAddr>,
     request_id: Option<String>,
+    /// Set once a change the request made recorded its own success.
+    recorded: Recorded,
 }
 
 impl Audit {
@@ -402,6 +448,45 @@ impl Audit {
         self.request_id.as_deref()
     }
 
+    /// The request as its audit records name it, made by `identity`, or by
+    /// whoever it `signed_in` instead.
+    fn request(
+        &self,
+        identity: Option<&Identity>,
+        signed_in: Option<Principal>,
+        tailnet: Option<String>,
+    ) -> AuditRequest {
+        // A sign-in names who it signed in; any credential the request also
+        // carried belongs to whoever was signed in before.
+        let credential = identity.filter(|_| signed_in.is_none());
+        let who = signed_in.or_else(|| identity.map(Identity::principal));
+        let (user, operator) = match who {
+            Some(Principal::User(user)) => (Some(user), None),
+            Some(Principal::Operator(operator)) => (None, Some(operator)),
+            None => (None, None),
+        };
+        AuditRequest {
+            route: format!("{} {}", self.method, self.route),
+            status: None,
+            origin: AuditOrigin {
+                user_id: user.as_ref().map(|user| user.id.clone()),
+                username: user.map(|user| user.username),
+                credential_id: credential
+                    .and_then(Identity::credential_id)
+                    .map(str::to_owned),
+                credential_kind: credential
+                    .and_then(Identity::kind)
+                    .map(piqueld_store::CredentialKind::as_str),
+                scoped: credential.map(|identity| identity.scoped),
+                peer: self.peer.map(|peer| peer.to_string()),
+                tailnet,
+                request_id: self.request_id.clone(),
+                operator,
+            },
+            recorded: self.recorded.clone(),
+        }
+    }
+
     /// Records a refusal decided after the response was sent, e.g. a
     /// command refused after its WebSocket upgrade was allowed.
     pub(super) fn refused_later(
@@ -426,7 +511,8 @@ impl Audit {
     /// in, ran a command, or read sensitive data (logs, the daemon
     /// configuration, manifest downloads, the account directory), and counts
     /// refusals. Recording happens in the background (see
-    /// `ApplicationService::record_audit`); the response never waits.
+    /// `ApplicationService::record_audit`); the response never waits. A
+    /// success whose changes recorded themselves is not recorded again.
     fn record(self, state: &super::ApiState, answer: Answer) {
         let Answer {
             tailnet,
@@ -457,50 +543,23 @@ impl Audit {
             AuditOutcome::Denied
         } else if status.is_client_error() || status.is_server_error() {
             AuditOutcome::Failed
+        } else if self.recorded.get() {
+            return;
         } else {
             AuditOutcome::Allowed
         };
-        // A sign-in names who it signed in; any credential the request also
-        // carried belongs to whoever was signed in before.
-        let credential = identity.as_ref().filter(|_| signed_in.is_none());
-        let who = signed_in.or_else(|| identity.as_ref().map(Identity::principal));
-        let (user, operator) = match who {
-            Some(Principal::User(user)) => (Some(user), None),
-            Some(Principal::Operator(operator)) => (None, Some(operator)),
-            None => (None, None),
-        };
-        let permission = match denied {
+        let detail = detail.map(|AuditDetail(detail)| -> String {
+            detail.chars().take(AuditDetail::LIMIT).collect()
+        });
+        let request = self.request(identity.as_ref(), signed_in, tailnet);
+        let mut event = request.event(outcome, status.as_u16(), detail.as_deref());
+        event.application_id = self.owner_id(PathOwner::Application);
+        event.environment_id = self.owner_id(PathOwner::Environment);
+        event.permission = match denied {
             Some(Denied::Missing(permission)) => Some(permission.as_str()),
             _ => None,
         };
-        let application_id = self.owner_id(PathOwner::Application);
-        let environment_id = self.owner_id(PathOwner::Environment);
-        let mut action = format!("{} {}", self.method, self.route);
-        if let Some(AuditDetail(detail)) = detail {
-            action.push(' ');
-            action.extend(detail.chars().take(AuditDetail::LIMIT));
-        }
-        state.record_audit(piqueld_store::NewAuditEvent {
-            action,
-            outcome,
-            status: status.as_u16(),
-            user_id: user.as_ref().map(|user| user.id.clone()),
-            username: user.map(|user| user.username),
-            credential_id: credential
-                .and_then(Identity::credential_id)
-                .map(str::to_owned),
-            credential_kind: credential
-                .and_then(Identity::kind)
-                .map(piqueld_store::CredentialKind::as_str),
-            scoped: credential.map(|identity| identity.scoped),
-            peer: self.peer.map(|peer| peer.to_string()),
-            tailnet,
-            request_id: self.request_id,
-            application_id,
-            environment_id,
-            permission,
-            operator,
-        });
+        state.record_audit(event);
     }
 }
 

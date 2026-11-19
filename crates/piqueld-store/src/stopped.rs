@@ -34,18 +34,18 @@ impl Store {
         now: i64,
     ) -> Result<Accepted, StoreError> {
         let operation = Self::latest_deployment_on(tx, id, expected).await?;
-        Self::mark_stopped_on(tx, id.as_str(), true, now).await?;
+        let stopped = Self::mark_stopped_on(tx, id.as_str(), true, now).await?;
         let row = operation.id.as_str();
         let promoted = sqlx::query_scalar!("SELECT promoted FROM operations WHERE id=?1", row)
             .fetch_one(&mut **tx)
             .await
             .map_err(StoreError::database)?;
-        let operation = if promoted != 0 {
+        let (operation, retried) = if promoted != 0 {
             Self::retry_operation_on(tx, &operation).await?
         } else {
-            operation
+            (operation, false)
         };
-        Ok(Self::operation_accepted(&operation))
+        Ok(Self::operation_accepted(&operation).changing(stopped || retried))
     }
 
     /// Starts environment `id` and reconciles it: its latest operation runs
@@ -62,15 +62,14 @@ impl Store {
         let operation = Self::latest_operation_on(tx, id)
             .await?
             .ok_or(StoreError::NotFound)?;
-        if !environment.delete_intent() {
-            Self::mark_stopped_on(tx, id.as_str(), false, now).await?;
-        }
-        let operation = if operation.state.terminal() || operation.error_code.is_some() {
+        let started = !environment.delete_intent()
+            && Self::mark_stopped_on(tx, id.as_str(), false, now).await?;
+        let (operation, retried) = if operation.state.terminal() || operation.error_code.is_some() {
             Self::retry_operation_on(tx, &operation).await?
         } else {
-            operation
+            (operation, false)
         };
-        Ok(Self::operation_accepted(&operation))
+        Ok(Self::operation_accepted(&operation).changing(started || retried))
     }
 
     /// The latest operation of environment `id`, which deploys it: `Busy`
@@ -92,13 +91,14 @@ impl Store {
     }
 
     /// Marks environment `id` stopped or started, recording
-    /// `environment_stopped` or `environment_started` when that changes it.
+    /// `environment_stopped` or `environment_started` when that changes it,
+    /// and returns whether it did.
     pub(super) async fn mark_stopped_on(
         tx: &mut Transaction<'_, Sqlite>,
         id: &str,
         stopped: bool,
         now: i64,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         let value = i64::from(stopped);
         let changed = sqlx::query!(
             "UPDATE environments SET stopped=?1,updated_at_ms=?2 WHERE id=?3 AND stopped!=?1",
@@ -111,7 +111,7 @@ impl Store {
         .map_err(StoreError::database)?
         .rows_affected();
         if changed == 0 {
-            return Ok(());
+            return Ok(false);
         }
         let name = sqlx::query_scalar!("SELECT name FROM environments WHERE id=?1", id)
             .fetch_one(&mut **tx)
@@ -130,6 +130,7 @@ impl Store {
                 format!("environment {name} is started"),
             )
         };
-        Self::environment_event_on(tx, id, kind, &message, now).await
+        Self::environment_event_on(tx, id, kind, &message, now).await?;
+        Ok(true)
     }
 }

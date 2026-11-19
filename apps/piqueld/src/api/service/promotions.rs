@@ -37,13 +37,14 @@ impl ApplicationService {
     /// Returns those failures, precondition, conflict, runtime, or storage errors.
     pub async fn promote(
         &self,
-        actor: super::Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         id: &EnvironmentId,
         selection: PromotionSelection,
         expected_generation: Option<u64>,
         force: bool,
         request_id: Option<&str>,
     ) -> Result<AcceptedPromotion, ApplicationError> {
+        let author = author.into();
         // A repeated request returns what it got, whatever changed since.
         let request = |promotion| {
             Mutation::Promotion(PromotionMutation::Promote {
@@ -55,7 +56,7 @@ impl ApplicationService {
         Self::check_submission(&request(None), expected_generation, force, request_id)?;
         let replayed = self
             .store
-            .replay(actor, &request(None), force, request_id)
+            .replay(author.actor, &request(None), force, request_id)
             .await?;
         if let Some(response) = replayed {
             return Self::promotion_response(response);
@@ -89,7 +90,7 @@ impl ApplicationService {
         };
         // Boxed: acceptance would otherwise make every promotion future large.
         let response = Box::pin(self.accept(
-            actor,
+            author,
             request(Some(promotion)),
             expected_generation,
             force,

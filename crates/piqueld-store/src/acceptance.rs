@@ -1,6 +1,8 @@
 //! Atomic acceptance: compare current intent, write the change and its replay receipt together.
 use super::auth::access::{EnvironmentOwner, Holder};
-use super::{Actor, Operation, OperationKind, Store, StoreError, StoredApplication, now_ms};
+use super::{
+    Actor, Author, Operation, OperationKind, Store, StoreError, StoredApplication, now_ms,
+};
 use crate::{Mutation, MutationResponse, PreviewMutation, PromotionMutation};
 use piqueld_core::access::{AppPermission, Grants, Target};
 use piqueld_core::api::{
@@ -41,6 +43,17 @@ pub(super) struct Accepted {
     pub(super) wake: bool,
     /// Environments whose hostname reservations may have changed.
     pub(super) environments: Vec<EnvironmentId>,
+    /// Whether it changed anything: a request that finds what it asks for
+    /// already done, such as an existing preview or a pending deletion,
+    /// commits no change and so records none (see `Store::accept`).
+    pub(super) changed: bool,
+}
+
+impl Accepted {
+    /// This outcome, which changed nothing unless `changed`.
+    pub(super) fn changing(self, changed: bool) -> Self {
+        Self { changed, ..self }
+    }
 }
 
 impl Store {
@@ -61,8 +74,10 @@ impl Store {
     ///    gives an account that created an application through an unscoped
     ///    credential its matching grants there.
     /// 5. Attributes the operations and events it wrote to the caller.
-    /// 6. Stores the replay receipt for 24 hours and commits through hostname
-    ///    reservation checks of every affected environment.
+    /// 6. Stores the replay receipt for 24 hours, and records the change in
+    ///    the audit trail when it comes from an API request and changed
+    ///    anything (see [`crate::AuditRequest`]), then commits through
+    ///    hostname reservation checks of every affected environment.
     ///
     /// The returned flag asks the controller to wake up; replays never wake it.
     ///
@@ -70,12 +85,14 @@ impl Store {
     /// Returns a storage error.
     pub async fn accept(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         mut mutation: Mutation,
         mut expected_generation: Option<u64>,
         force: bool,
         request_id: Option<&str>,
     ) -> Result<(MutationResponse, bool), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let now = now_ms();
         let first_event =
@@ -144,11 +161,22 @@ impl Store {
             sqlx::query!("INSERT INTO request_receipts(request_id,fingerprint,response_json,expires_at_ms,user_id) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(request_id) DO UPDATE SET fingerprint=excluded.fingerprint,response_json=excluded.response_json,expires_at_ms=excluded.expires_at_ms,user_id=excluded.user_id",request_id,fingerprint,response_json,expires,owner)
                 .execute(&mut *tx).await.map_err(StoreError::database)?;
         }
+        let response = &accepted.response;
+        let change = accepted.changed.then(|| response.describe());
+        let appended = author
+            .record_on(
+                &mut tx,
+                response.status(),
+                change.as_deref(),
+                response.target(),
+            )
+            .await?;
         Self::commit_environment_changes(
             tx,
             accepted.environments.iter().map(EnvironmentId::as_str),
         )
         .await?;
+        appended.committed();
         Ok((accepted.response, accepted.wake))
     }
 
@@ -419,6 +447,7 @@ impl Store {
                 let mut saved = Self::save_configuration_on(tx, &application, expected).await?;
                 Self::deploy_saved(tx, application.id(), &mut saved, deploy).await?;
                 Ok(Accepted {
+                    changed: true,
                     environments: Self::environment_ids_on(tx, application.id()).await?,
                     response: MutationResponse::Saved(saved),
                     wake: deploy,
@@ -433,6 +462,7 @@ impl Store {
                 let current = Self::checked_application_on(tx, &id, expected).await?;
                 let renamed = Self::rename_on(tx, current, name, now).await?;
                 Ok(Accepted {
+                    changed: true,
                     environments: Self::environment_ids_on(tx, &id).await?,
                     response: MutationResponse::Rename(renamed),
                     wake: false,
@@ -453,13 +483,13 @@ impl Store {
             }
             Mutation::RenameEnvironment { id, name } => {
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
-                Self::rename_environment_on(tx, &current, &name, now).await?;
-                Self::environment_accepted(tx, id).await
+                let changed = Self::rename_environment_on(tx, &current, &name, now).await?;
+                Ok(Self::environment_accepted(tx, id).await?.changing(changed))
             }
             Mutation::SetBranch { id, branch } => {
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
-                Self::set_branch_on(tx, &current, branch, now).await?;
-                Self::environment_accepted(tx, id).await
+                let changed = Self::set_branch_on(tx, &current, branch, now).await?;
+                Ok(Self::environment_accepted(tx, id).await?.changing(changed))
             }
             // Boxed: it would otherwise grow every acceptance future.
             Mutation::Deploy {
@@ -483,11 +513,12 @@ impl Store {
             Mutation::Sync(listed) => Self::sync_on(tx, listed, now).await,
             Mutation::Delete { id } => {
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
-                let operation = match Self::pending_deletion_on(tx, &current.environment).await? {
-                    Some(operation) => operation,
-                    None => Self::delete_environment_on(tx, &current).await?,
-                };
-                Ok(Self::operation_accepted(&operation))
+                let (operation, requested) =
+                    match Self::pending_deletion_on(tx, &current.environment).await? {
+                        Some(operation) => (operation, false),
+                        None => (Self::delete_environment_on(tx, &current).await?, true),
+                    };
+                Ok(Self::operation_accepted(&operation).changing(requested))
             }
             Mutation::Reconcile { id } => Self::start_on(tx, &id, expected, now).await,
             Mutation::Stop { id } => Self::stop_on(tx, &id, expected, now).await,
@@ -532,8 +563,8 @@ impl Store {
         match mutation {
             PromotionMutation::SetSource { id, promote_from } => {
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
-                Self::set_promotion_on(tx, &current, promote_from, now).await?;
-                Self::environment_accepted(tx, id).await
+                let changed = Self::set_promotion_on(tx, &current, promote_from, now).await?;
+                Ok(Self::environment_accepted(tx, id).await?.changing(changed))
             }
             PromotionMutation::Promote { id, promotion, .. } => {
                 let promotion = promotion.ok_or(StoreError::InvalidInput)?;
@@ -543,6 +574,7 @@ impl Store {
                 let operation =
                     Box::pin(self.accept_promotion_on(tx, &current, &promotion, instance)).await?;
                 Ok(Accepted {
+                    changed: true,
                     response: MutationResponse::Promotion(piqueld_core::api::AcceptedPromotion {
                         operation: AcceptedOperation::from(&operation),
                         release_id: promotion.release,
@@ -572,13 +604,13 @@ impl Store {
                 let (preview, created) = self
                     .find_preview_on(tx, &application, &branch, slot.as_ref(), now)
                     .await?;
-                let operation = match Self::latest_operation_on(tx, preview.id()).await? {
-                    Some(operation) if !created => operation,
-                    _ => Self::deploy_preview_on(tx, &preview).await?,
-                };
-                Ok(Self::preview_accepted(
-                    preview, &operation, created, created,
-                ))
+                let (operation, deployed) =
+                    match Self::latest_operation_on(tx, preview.id()).await? {
+                        Some(operation) if !created => (operation, false),
+                        _ => (Self::deploy_preview_on(tx, &preview).await?, true),
+                    };
+                let accepted = Self::preview_accepted(preview, &operation, created, created);
+                Ok(accepted.changing(created || deployed))
             }
             PreviewMutation::Local {
                 application,
@@ -652,6 +684,7 @@ impl Store {
     ) -> Accepted {
         let id = preview.id().clone();
         Accepted {
+            changed: true,
             wake: deployed,
             response: MutationResponse::Preview(Box::new(CreatedPreview {
                 preview: preview.environment,
@@ -667,19 +700,19 @@ impl Store {
         tx: &mut Transaction<'_, Sqlite>,
         preview: &super::StoredEnvironment,
     ) -> Result<Accepted, StoreError> {
-        let operation = Self::deletion_on(tx, &preview.environment).await?;
-        Ok(Self::operation_accepted(&operation))
+        let (operation, requested) = Self::deletion_on(tx, &preview.environment).await?;
+        Ok(Self::operation_accepted(&operation).changing(requested))
     }
 
     /// Requests `environment`'s deletion (see `request_delete_on`), or
-    /// returns the one already pending.
+    /// returns the one already pending, and whether it requested one.
     async fn deletion_on(
         tx: &mut Transaction<'_, Sqlite>,
         environment: &EnvironmentView,
-    ) -> Result<Operation, StoreError> {
+    ) -> Result<(Operation, bool), StoreError> {
         match Self::pending_deletion_on(tx, environment).await? {
-            Some(operation) => Ok(operation),
-            None => Self::request_delete_on(tx, &environment.id).await,
+            Some(operation) => Ok((operation, false)),
+            None => Ok((Self::request_delete_on(tx, &environment.id).await?, true)),
         }
     }
 
@@ -763,6 +796,7 @@ impl Store {
     /// Responds with an accepted environment operation.
     pub(super) fn operation_accepted(operation: &Operation) -> Accepted {
         Accepted {
+            changed: true,
             response: MutationResponse::Operation(AcceptedOperation::from(operation)),
             wake: true,
             environments: vec![operation.environment_id.clone()],
@@ -778,6 +812,7 @@ impl Store {
             .await?
             .ok_or(StoreError::NotFound)?;
         Ok(Accepted {
+            changed: true,
             response: MutationResponse::Environment(environment.environment),
             wake: false,
             environments: vec![id],
@@ -868,6 +903,7 @@ impl Store {
         };
         Self::deploy_saved(tx, &id, &mut saved, deploy).await?;
         Ok(Accepted {
+            changed: true,
             environments: Self::environment_ids_on(tx, &id).await?,
             response: MutationResponse::Saved(saved),
             wake: deploy,
@@ -1057,13 +1093,17 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
         }
+        // Without environments left, it is removed now.
+        let mut changed = !current.delete_intent || environments.is_empty();
         let mut operations = Vec::with_capacity(environments.len());
         for environment in &environments {
-            let operation = Self::deletion_on(tx, environment).await?;
+            let (operation, requested) = Self::deletion_on(tx, environment).await?;
+            changed |= requested;
             operations.push(AcceptedOperation::from(&operation));
         }
         Self::finish_application_delete_on(tx, &id).await?;
         Ok(Accepted {
+            changed,
             wake: !operations.is_empty(),
             response: MutationResponse::Deleted(DeletedApplication {
                 application_id: id,
@@ -1420,5 +1460,90 @@ mod tests {
             Store::mutation_fingerprint(&deploy, false).unwrap(),
             format!("{original:x}")
         );
+    }
+
+    /// A change an API request makes commits with its audit record: a
+    /// failed append rolls back the change and its receipt, and a replay
+    /// records nothing new.
+    #[tokio::test]
+    async fn requested_changes_commit_with_their_audit_record() {
+        let (_directory, store) = Store::temporary().await;
+        let request = || crate::testing::audit_request("POST /api/v1/applications");
+        let accept = async |request: &crate::AuditRequest| {
+            let author = Author {
+                actor: Actor::Daemon,
+                request: Some(request),
+            };
+            let save = Mutation::save(template("shop", "[spec]"), None, false);
+            store
+                .accept(author, save, Some(0), false, Some("create-shop"))
+                .await
+        };
+        let counts = async || {
+            let mut counts = Vec::new();
+            for table in ["applications", "request_receipts", "events", "audit_events"] {
+                let count = format!("SELECT COUNT(*) FROM {table}");
+                let count: i64 = sqlx::query_scalar(&count)
+                    .fetch_one(&store.pool)
+                    .await
+                    .unwrap();
+                counts.push(count);
+            }
+            counts
+        };
+        let before = counts().await;
+        store.refuse_audit(true).await;
+        let failed = request();
+        assert!(accept(&failed).await.is_err());
+        assert!(!failed.recorded.get());
+        store.refuse_audit(false).await;
+        assert_eq!(counts().await, before);
+        let committed = request();
+        let Ok((MutationResponse::Saved(saved), _)) = accept(&committed).await else {
+            panic!("saved response expected")
+        };
+        assert!(committed.recorded.get());
+        let replayed = request();
+        accept(&replayed).await.unwrap();
+        assert!(!replayed.recorded.get());
+        let rows = "SELECT action,outcome,status,user_id,application_id FROM audit_events";
+        let rows = sqlx::query_as::<_, (String, String, i64, String, String)>(rows)
+            .fetch_all(&store.pool)
+            .await
+            .unwrap();
+        let action = format!("POST /api/v1/applications generation {}", saved.generation);
+        let allowed = (
+            action,
+            "allowed".into(),
+            200,
+            "alice".into(),
+            saved.application_id,
+        );
+        assert_eq!(rows, [allowed]);
+    }
+
+    /// An environment change that finds its value already set, such as its
+    /// current name or source, changes nothing, so it records nothing and
+    /// succeeds even when audit records can't be written.
+    #[tokio::test]
+    async fn unchanged_environment_requests_record_nothing() {
+        let (_directory, store) = Store::temporary().await;
+        let (_, qa) = configured_environments(&store).await;
+        let source = Mutation::Promotion(PromotionMutation::SetSource {
+            id: qa.clone(),
+            promote_from: None,
+        });
+        store.refuse_audit(true).await;
+        for unchanged in [rename(&qa, "qa"), source] {
+            let request = crate::testing::audit_request("PUT /api/v1/environments/{id}");
+            let author = Author {
+                actor: Actor::Daemon,
+                request: Some(&request),
+            };
+            let accepted = store.accept(author, unchanged, None, false, None).await;
+            assert!(accepted.is_ok() && !request.recorded.get());
+        }
+        store.refuse_audit(false).await;
+        assert_eq!(store.audit_actions().await, Vec::<String>::new());
     }
 }

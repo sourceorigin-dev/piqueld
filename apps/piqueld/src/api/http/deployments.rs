@@ -104,13 +104,14 @@ impl DeployQuery {
 pub(super) async fn deploy(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
+    audited: super::access::Audited,
     ApiPath(id): ApiPath<String>,
     headers: HeaderMap,
     ApiQuery(mut query): ApiQuery<DeployQuery>,
 ) -> Result<Response, ApiError> {
     super::applications::accept_mutation(
         &state,
-        &identity,
+        audited.author(&identity),
         crate::api::Mutation::Deploy {
             id: EnvironmentId::parse(id)?,
             revision: query.revision()?,

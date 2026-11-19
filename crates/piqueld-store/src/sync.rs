@@ -109,7 +109,9 @@ impl Store {
         now: i64,
     ) -> Result<Accepted, StoreError> {
         let outcome = Self::sync_outcome_on(tx, &listed, now).await?;
+        // Sync acts for no request, so nothing reads whether it changed.
         Ok(Accepted {
+            changed: true,
             wake: matches!(outcome, SyncOutcome::Deployed(_)),
             response: MutationResponse::Synced(outcome),
             environments: vec![listed.id],
@@ -291,12 +293,13 @@ impl Store {
             &environment.application.application,
             &environment.environment.name,
         )?;
-        Self::write_sync_on(tx, &environment.environment, enabled, now).await?;
-        Self::environment_accepted(tx, id).await
+        let changed = Self::write_sync_on(tx, &environment.environment, enabled, now).await?;
+        Ok(Self::environment_accepted(tx, id).await?.changing(changed))
     }
 
     /// Opts `environment` in or out of its application's sync, recording
-    /// `environment_sync_changed` when that changes it. Neither changes what
+    /// `environment_sync_changed` when that changes it, and returns whether
+    /// it did. Neither changes what
     /// it deploys, so the application revision stays. Opting back in deploys
     /// the branch head at the next sync if it moved since the last deployment.
     pub(super) async fn write_sync_on(
@@ -304,9 +307,9 @@ impl Store {
         environment: &EnvironmentView,
         enabled: bool,
         now: i64,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         if environment.sync == enabled {
-            return Ok(());
+            return Ok(false);
         }
         let (row, value) = (environment.id.as_str(), i64::from(enabled));
         sqlx::query!(
@@ -324,7 +327,8 @@ impl Store {
         } else {
             format!("pushes no longer deploy environment {name}")
         };
-        Self::environment_event_on(tx, row, "environment_sync_changed", &message, now).await
+        Self::environment_event_on(tx, row, "environment_sync_changed", &message, now).await?;
+        Ok(true)
     }
 
     /// Records that sync listed `application`'s branches now, and why it

@@ -87,7 +87,8 @@ impl Store {
         if environment.delete_intent() {
             return Err(StoreError::Busy);
         }
-        if environment.environment.telemetry != granted {
+        let changed = environment.environment.telemetry != granted;
+        if changed {
             let (row, value) = (id.as_str(), i64::from(granted));
             sqlx::query!(
                 "UPDATE environments SET telemetry=?1,updated_at_ms=?2 WHERE id=?3",
@@ -107,7 +108,7 @@ impl Store {
             Self::environment_event_on(tx, row, "environment_telemetry_changed", &message, now)
                 .await?;
         }
-        Self::environment_accepted(tx, id).await
+        Ok(Self::environment_accepted(tx, id).await?.changing(changed))
     }
 
     /// Warns deployment `operation_id` with `telemetry_not_granted`, once,

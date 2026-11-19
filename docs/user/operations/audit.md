@@ -34,10 +34,20 @@ changed, such as the grants it set. Records outlive the accounts, credentials
 and applications they name.
 
 Routine reads, such as the dashboard refreshing a page, aren't recorded.
-Records are written in the background. If too many wait at once, or one can't
-be written, it's lost: the next record written then follows a **Failed** one,
-with status 503 and no caller, that says how many are missing, so the trail
-shows the gap.
+
+A change to an application, environment or preview is saved together with its
+record, so a change piqueld made always has one. Its record also names what
+the change started, such as the application's new revision and the operation
+deploying it:
+
+```text
+POST /api/v1/environments/{id}/deploy generation 4 operation 0190…
+```
+
+Other records are written in the background. If too many wait at once, or one
+can't be written, it's lost: the next record written then follows a **Failed**
+one, with status 503 and no caller, that says how many are missing, so the
+trail shows the gap.
 
 ## Read it
 

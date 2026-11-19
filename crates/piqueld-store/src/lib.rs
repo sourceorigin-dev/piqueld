@@ -22,7 +22,7 @@ pub use mutation::{
     SourceChoice, SyncOutcome,
 };
 mod observability;
-pub use audit::NewAuditEvent;
+pub use audit::{AuditOrigin, AuditRequest, Author, NewAuditEvent, Recorded};
 pub use auth::access::{Actor, Attribution, Caller, EnvironmentOwner, Visibility};
 pub use auth::{CredentialKind, Lockout, Proof};
 pub use auth::{
