@@ -2,7 +2,8 @@
 use super::{
     ApiError, ApiQuery, ApiState, QueryParams,
     auth::TailnetSource,
-    lease::{Ended, Lease},
+    lease::Lease,
+    live::{self, Follow, Pace},
     ok,
     openapi::ApiErrors,
 };
@@ -11,10 +12,7 @@ use axum::{
     Extension,
     extract::State,
     http::{HeaderMap, StatusCode},
-    response::{
-        IntoResponse, Sse,
-        sse::{Event as ServerEvent, KeepAlive},
-    },
+    response::{IntoResponse, sse::Event as ServerEvent},
 };
 use piqueld_core::{
     Event,
@@ -23,7 +21,7 @@ use piqueld_core::{
 };
 use piqueld_store::Visibility;
 use serde::Deserialize;
-use std::{collections::VecDeque, convert::Infallible};
+use std::collections::VecDeque;
 
 /// Event filters shared by the paged listing and the live stream.
 #[derive(Default, Deserialize, utoipa::IntoParams)]
@@ -117,10 +115,6 @@ pub(super) async fn kinds(
     let kinds = state.event_kinds(&visible).await?;
     Ok(ok(EventKinds { kinds }))
 }
-/// Least time between two reads of one live stream: a burst of writes, such
-/// as a deployment's, wakes a stream at most this often.
-pub(super) const PACE: std::time::Duration = std::time::Duration::from_millis(100);
-
 // The first batch is read before responding so request errors are still plain
 // JSON; afterwards the stream reads the store again after each write to it.
 /// Streams structured events as server-sent events.
@@ -177,11 +171,10 @@ pub(super) async fn stream(
     let (initial, checkpoint) = state
         .stream_events(&filter, &visible, after, batch_size)
         .await?;
-    let follow = Follow {
+    let follow = FollowEvents {
         _admitted: admitted,
         lease: Lease::new(state.clone(), identity, source),
-        written,
-        read_at: tokio::time::Instant::now(),
+        pace: Pace::new(written),
         state,
         filter,
         visible,
@@ -192,23 +185,16 @@ pub(super) async fn stream(
         checkpoint,
         done: false,
     };
-    let stream = futures_util::stream::unfold(follow, |mut follow| async move {
-        let item = follow.next().await?;
-        Some((Ok::<_, Infallible>(item), follow))
-    });
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok(live::serve(follow))
 }
 
 /// A live event stream's position and access.
-struct Follow {
+struct FollowEvents {
     /// The stream's share of the event stream budget, while it is open.
     _admitted: tokio::sync::OwnedSemaphorePermit,
     state: ApiState,
     lease: Lease,
-    /// Changes after each write to the store.
-    written: tokio::sync::watch::Receiver<()>,
-    /// When the store was last read.
-    read_at: tokio::time::Instant,
+    pace: Pace,
     filter: EventFilter,
     /// What the caller may read, updated whenever its access is rechecked.
     visible: Visibility,
@@ -226,10 +212,9 @@ struct Follow {
     done: bool,
 }
 
-impl Follow {
-    /// The next message, or `None` once the stream ended. Access is rechecked
-    /// before every message once due, so nothing read earlier is sent after
-    /// the caller lost access to it.
+impl Follow for FollowEvents {
+    /// Access is rechecked before every message once due, so nothing read
+    /// earlier is sent after the caller lost access to it.
     async fn next(&mut self) -> Option<ServerEvent> {
         if self.done {
             return None;
@@ -253,31 +238,16 @@ impl Follow {
                         self.behind = true;
                     }
                     Ok(_) => {}
-                    Err(Ended::Shutdown) => return None,
-                    Err(Ended::Refused(error)) => {
+                    Err(ended) => {
                         self.done = true;
-                        return Some(
-                            ServerEvent::default()
-                                .event("access_ended")
-                                .json_data(error.body())
-                                .unwrap_or_else(|_| ServerEvent::default().event("access_ended")),
-                        );
+                        return ended.message();
                     }
                 }
             }
             if let Some(event) = self.pending.pop_front() {
                 self.after = event.id;
-                return Some(
-                    ServerEvent::default()
-                        .id(format!("v1:{}", self.after))
-                        .event("event")
-                        .json_data(event)
-                        .unwrap_or_else(|_| {
-                            ServerEvent::default()
-                                .event("stream_error")
-                                .data("serialization failed")
-                        }),
-                );
+                let message = ServerEvent::default().id(format!("v1:{}", self.after));
+                return Some(live::json(message, "event", event));
             }
             if self.checkpoint > self.after {
                 // An ID-only message moves Last-Event-ID past events the filter
@@ -287,11 +257,7 @@ impl Follow {
             }
             // Woken for a recheck, the read is cheap; the loop rechecks
             // before sending anything it reads.
-            if !self.behind {
-                self.lease.wait(self.written.changed()).await;
-            }
-            tokio::time::sleep_until(self.read_at + PACE).await;
-            self.read_at = tokio::time::Instant::now();
+            self.pace.wait(&self.lease, self.behind).await;
             match self
                 .state
                 .stream_events(&self.filter, &self.visible, self.after, self.batch_size)

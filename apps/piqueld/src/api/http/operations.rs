@@ -3,8 +3,8 @@
 use super::{
     ApiError, ApiPath, ApiState,
     auth::TailnetSource,
-    events::PACE,
-    lease::{Ended, Lease},
+    lease::Lease,
+    live::{self, Follow, Pace},
     ok,
     openapi::ApiErrors,
 };
@@ -12,16 +12,12 @@ use crate::{api::Expensive, auth::Identity};
 use axum::{
     Extension,
     extract::State,
-    response::{
-        IntoResponse, Sse,
-        sse::{Event as ServerEvent, KeepAlive},
-    },
+    response::{IntoResponse, sse::Event as ServerEvent},
 };
 use piqueld_core::Operation;
 use piqueld_core::access::{AppPermission, Grants};
 use piqueld_core::api::Envelope;
 use piqueld_core::timeline::Timeline;
-use std::convert::Infallible;
 
 /// Requires `grants` to read operation `id`'s environment, returning the
 /// operation.
@@ -115,17 +111,12 @@ pub(super) async fn stream_timeline(
         _admitted: admitted,
         lease: Lease::new(state.clone(), identity, source),
         state,
-        written,
-        read_at: tokio::time::Instant::now(),
+        pace: Pace::new(written),
         timeline,
         sent: false,
         done: false,
     };
-    let stream = futures_util::stream::unfold(follow, |mut follow| async move {
-        let item = follow.next().await?;
-        Some((Ok::<_, Infallible>(item), follow))
-    });
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok(live::serve(follow))
 }
 
 /// A live timeline stream: the timeline as last sent, and the caller's access.
@@ -134,10 +125,7 @@ struct FollowTimeline {
     _admitted: tokio::sync::OwnedSemaphorePermit,
     state: ApiState,
     lease: Lease,
-    /// Changes after each write to the store.
-    written: tokio::sync::watch::Receiver<()>,
-    /// When the store was last read.
-    read_at: tokio::time::Instant,
+    pace: Pace,
     timeline: Timeline,
     /// Whether the timeline was sent since it last changed.
     sent: bool,
@@ -145,9 +133,8 @@ struct FollowTimeline {
     done: bool,
 }
 
-impl FollowTimeline {
-    /// The next message, or `None` once the stream ended. Access is rechecked
-    /// before every message once due.
+impl Follow for FollowTimeline {
+    /// Access is rechecked before every message once due.
     async fn next(&mut self) -> Option<ServerEvent> {
         if self.done {
             return None;
@@ -162,36 +149,17 @@ impl FollowTimeline {
                         authorize(&state, &grants, &id).await.map(|_| ())
                     })
                     .await;
-                match checked {
-                    Ok(()) => {}
-                    Err(Ended::Shutdown) => return None,
-                    Err(Ended::Refused(error)) => {
-                        self.done = true;
-                        return Some(
-                            ServerEvent::default()
-                                .event("access_ended")
-                                .json_data(error.body())
-                                .unwrap_or_else(|_| ServerEvent::default().event("access_ended")),
-                        );
-                    }
+                if let Err(ended) = checked {
+                    self.done = true;
+                    return ended.message();
                 }
             }
             if !self.sent {
                 self.sent = true;
-                return Some(
-                    ServerEvent::default()
-                        .event("timeline")
-                        .json_data(&self.timeline)
-                        .unwrap_or_else(|_| {
-                            ServerEvent::default()
-                                .event("stream_error")
-                                .data("serialization failed")
-                        }),
-                );
+                let message = ServerEvent::default();
+                return Some(live::json(message, "timeline", &self.timeline));
             }
-            self.lease.wait(self.written.changed()).await;
-            tokio::time::sleep_until(self.read_at + PACE).await;
-            self.read_at = tokio::time::Instant::now();
+            self.pace.wait(&self.lease, false).await;
             let Ok(changed) = self.state.advance_timeline(&mut self.timeline).await else {
                 self.done = true;
                 return Some(
