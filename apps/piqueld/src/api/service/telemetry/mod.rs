@@ -1,7 +1,7 @@
 //! Feeds telemetry export from the journal, the store and the runtime.
 mod containers;
 
-use super::ApplicationService;
+use super::{ApplicationService, ticker::Ticker};
 use crate::telemetry::{EventContext, Journal, ServiceSample};
 use piqueld_core::EnvironmentId;
 use piqueld_core::access::Scope;
@@ -50,6 +50,14 @@ struct Tail {
 }
 
 impl ApplicationService {
+    /// Forgets where container export stopped reading, so it starts again
+    /// from the present, logging a failure.
+    async fn forget_container_cursors(&self) {
+        if let Err(error) = self.store.clear_container_cursors().await {
+            tracing::error!(?error, "container log cursors could not be cleared");
+        }
+    }
+
     /// Exports journal events after `start` every second, samples daemon and
     /// service gauges every 30 seconds, refreshes receivers every
     /// [`RECEIVERS_INTERVAL`], and exports the containers' output and usage
@@ -63,10 +71,8 @@ impl ApplicationService {
         start: JournalPosition,
         cancellation: CancellationToken,
     ) {
-        if !self.telemetry.containers()
-            && let Err(error) = self.store.clear_container_cursors().await
-        {
-            tracing::error!(?error, "container log cursors could not be cleared");
+        if !self.telemetry.containers() {
+            self.forget_container_cursors().await;
         }
         let Some(journal) = self.telemetry.journal(start.running) else {
             return;
@@ -76,10 +82,10 @@ impl ApplicationService {
             cursor: start.event,
             names: Names::default(),
         };
-        let mut journal_tick = interval(Duration::from_secs(1));
-        let mut daemon_tick = interval(Duration::from_secs(30));
-        let mut services_tick = interval(Duration::from_secs(30));
-        let mut receivers_tick = interval(RECEIVERS_INTERVAL);
+        let mut journal_tick = Ticker::new(Duration::from_secs(1));
+        let mut daemon_tick = Ticker::new(Duration::from_secs(30));
+        let mut services_tick = Ticker::new(Duration::from_secs(30));
+        let mut receivers_tick = Ticker::new(RECEIVERS_INTERVAL);
         // A failure left open while an endpoint was configured closes.
         let mut exported = HashSet::from([None]);
         tokio::join!(
@@ -317,23 +323,15 @@ impl Names {
     }
 }
 
-/// A ticker that skips ticks missed while work ran.
-fn interval(period: Duration) -> tokio::time::Interval {
-    let mut tick = tokio::time::interval(period);
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    tick
-}
-
 /// Runs `work` at the next `tick`, logging its failure, which is retried the
 /// next tick. Returns `false` once cancelled, abandoning `work`.
 async fn step(
-    tick: &mut tokio::time::Interval,
+    tick: &mut Ticker,
     cancellation: &CancellationToken,
     work: impl Future<Output = Result<(), StoreError>>,
 ) -> bool {
-    tokio::select! {
-        () = cancellation.cancelled() => return false,
-        _ = tick.tick() => {}
+    if !tick.tick(cancellation).await {
+        return false;
     }
     tokio::select! {
         () = cancellation.cancelled() => false,
