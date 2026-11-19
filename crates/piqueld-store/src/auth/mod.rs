@@ -1434,31 +1434,21 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{credential, user};
     use std::time::Duration;
 
     /// Opens a store whose admin `alice` holds the browser session
     /// `credential`, with secret hash `hash`.
     async fn browser_session() -> (tempfile::TempDir, Store) {
         let (dir, store) = Store::temporary().await;
-        let user = User {
-            id: "alice".into(),
-            username: "alice".into(),
-            display_name: String::new(),
-        };
-        store.seed_auth_user(&user, &Grants::admin()).await;
+        store.seed_auth_user(&user("alice"), &Grants::admin()).await;
         let credential = NewCredential {
-            id: "credential".into(),
             secret_hash: "hash".into(),
-            kind: CredentialKind::Browser,
             name: "Browser",
             expires_at: Some(now_secs() + SESSION_IDLE_SECS),
-            grants: None,
-            authenticated_at: None,
+            ..credential("credential", CredentialKind::Browser)
         };
-        store
-            .insert_credential(&user.id, &credential)
-            .await
-            .unwrap();
+        store.insert_credential("alice", &credential).await.unwrap();
         (dir, store)
     }
 
@@ -1566,13 +1556,8 @@ mod tests {
             ("token", CredentialKind::Token, Some(proved)),
         ] {
             let credential = NewCredential {
-                id: id.into(),
-                secret_hash: id.into(),
-                kind,
-                name: "Test",
-                expires_at: None,
-                grants: None,
                 authenticated_at,
+                ..credential(id, kind)
             };
             store.insert_credential("alice", &credential).await.unwrap();
         }
@@ -1631,12 +1616,7 @@ mod tests {
     #[tokio::test]
     async fn pruning_deletes_unusable_auth_state() {
         let (_dir, store) = Store::temporary().await;
-        let user = User {
-            id: "alice".into(),
-            username: "alice".into(),
-            display_name: String::new(),
-        };
-        store.seed_auth_user(&user, &Grants::admin()).await;
+        store.seed_auth_user(&user("alice"), &Grants::admin()).await;
         let now = now_secs();
         for (id, kind, expires_at) in [
             ("expired", CredentialKind::Token, Some(now)),
@@ -1644,18 +1624,10 @@ mod tests {
             ("live", CredentialKind::Token, None),
         ] {
             let credential = NewCredential {
-                id: id.into(),
-                secret_hash: id.into(),
-                kind,
-                name: "Test",
                 expires_at,
-                grants: None,
-                authenticated_at: None,
+                ..credential(id, kind)
             };
-            store
-                .insert_credential(&user.id, &credential)
-                .await
-                .unwrap();
+            store.insert_credential("alice", &credential).await.unwrap();
         }
         store.age_auth_credentials(SESSION_IDLE_SECS).await;
         for (id, expires_at) in [("old", now), ("open", now + 3600)] {
