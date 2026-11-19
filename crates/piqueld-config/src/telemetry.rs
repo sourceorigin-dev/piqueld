@@ -90,11 +90,10 @@ impl TelemetryConfig {
         let Some(headers) = &self.headers else {
             return Ok(());
         };
-        if self.endpoint.is_none() {
-            return Err(ConfigError::Invalid(
-                "telemetry.headers_file requires telemetry.endpoint".into(),
-            ));
-        }
+        ConfigError::require(
+            self.endpoint.is_some(),
+            "telemetry.headers_file requires telemetry.endpoint",
+        )?;
         if let Some(value) = headers.value() {
             Headers::parse(value).map_err(|error| ConfigError::Invalid(error.to_string()))?;
         }

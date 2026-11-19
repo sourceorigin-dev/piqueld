@@ -191,6 +191,8 @@ impl DaemonConfig {
     /// hostname syntax, timeout and build-log bounds, and preview bounds a
     /// manifest could set itself.
     fn validate(&self) -> Result<(), ConfigError> {
+        /// The range of every setting counted in seconds.
+        const SECONDS: std::ops::RangeInclusive<u64> = 1..=86_400;
         self.telemetry.validate()?;
         self.previews
             .validate()
@@ -200,75 +202,72 @@ impl DaemonConfig {
             ("server.runtime_dir", &self.server.runtime_dir),
         ] {
             absolute_path(name, path)?;
-            if path.file_name().is_none() {
-                return Err(ConfigError::Invalid(format!(
-                    "{name} must name a directory"
-                )));
-            }
+            ConfigError::require(
+                path.file_name().is_some(),
+                format!("{name} must name a directory"),
+            )?;
         }
-        if self.server.data_dir == self.server.runtime_dir {
-            return Err(ConfigError::Invalid(
-                "server.data_dir and server.runtime_dir must be different directories".into(),
-            ));
-        }
+        ConfigError::require(
+            self.server.data_dir != self.server.runtime_dir,
+            "server.data_dir and server.runtime_dir must be different directories",
+        )?;
         if let Some(public_url) = &self.auth.public_url {
             AuthConfig::validate_origin(public_url)
                 .map_err(|error| ConfigError::Invalid(error.to_string()))?;
         }
-        if self.auth.max_token_days == Some(0) {
-            return Err(ConfigError::Invalid(
-                "auth.max_token_days must be at least 1; omit it to allow tokens without expiry"
-                    .into(),
-            ));
-        }
+        ConfigError::require(
+            self.auth.max_token_days != Some(0),
+            "auth.max_token_days must be at least 1; omit it to allow tokens without expiry",
+        )?;
         self.tailscale.validate()?;
         self.ingress.validate()?;
-        if self.tailscale.enabled
-            && self.ingress.private.enabled
-            && self.tailscale.hostname == self.ingress.private.hostname
-        {
-            return Err(ConfigError::Invalid(
-                "ingress.private.hostname must differ from tailscale.hostname".into(),
-            ));
-        }
+        ConfigError::require(
+            !self.tailscale.enabled
+                || !self.ingress.private.enabled
+                || self.tailscale.hostname != self.ingress.private.hostname,
+            "ingress.private.hostname must differ from tailscale.hostname",
+        )?;
         absolute_file("docker.socket", &self.docker.socket)?;
-        for host in &self.server.allowed_hosts {
-            if host.len() > 253 || !host.split('.').all(|label| is_label(label, DNS_LABEL)) {
-                return Err(ConfigError::Invalid(
-                    "server.allowed_hosts must contain DNS hostnames without schemes, ports, or wildcards".into(),
-                ));
-            }
-        }
-        if self.server.port == 0 {
-            return Err(ConfigError::Invalid(
-                "server.port must be greater than zero".into(),
-            ));
-        }
-        if !(1..=86_400).contains(&self.reconciliation.scan_interval_seconds) {
-            return Err(ConfigError::Invalid(
-                "reconciliation interval must be 1..=86400 seconds".into(),
-            ));
-        }
-        if !(1..=86_400).contains(&self.reconciliation.prepare_timeout_seconds)
-            || !(1..=86_400).contains(&self.reconciliation.convergence_timeout_seconds)
-        {
-            return Err(ConfigError::Invalid(
-                "reconciliation timeouts must be 1..=86400 seconds".into(),
-            ));
-        }
-        if !(1..=86_400).contains(&self.images.cleanup_interval_seconds) {
-            return Err(ConfigError::Invalid(
-                "images.cleanup_interval_seconds must be 1..=86400 seconds".into(),
-            ));
-        }
-        if !(1..=64 * 1024 * 1024).contains(&self.build_history.log_max_bytes)
-            || !(1..=3650).contains(&self.build_history.log_retention_days)
-        {
-            return Err(ConfigError::Invalid(
-                "build logs require 1..=67108864 bytes and 1..=3650 retention days".into(),
-            ));
-        }
-        Ok(())
+        ConfigError::require(
+            self.server.allowed_hosts.iter().all(|host| {
+                host.len() <= 253 && host.split('.').all(|label| is_label(label, DNS_LABEL))
+            }),
+            "server.allowed_hosts must contain DNS hostnames without schemes, ports, or wildcards",
+        )?;
+        ConfigError::require(
+            self.server.port != 0,
+            "server.port must be greater than zero",
+        )?;
+        let reconciliation = &self.reconciliation;
+        ConfigError::require(
+            SECONDS.contains(&reconciliation.scan_interval_seconds),
+            "reconciliation interval must be 1..=86400 seconds",
+        )?;
+        ConfigError::require(
+            SECONDS.contains(&reconciliation.prepare_timeout_seconds)
+                && SECONDS.contains(&reconciliation.convergence_timeout_seconds),
+            "reconciliation timeouts must be 1..=86400 seconds",
+        )?;
+        ConfigError::require(
+            SECONDS.contains(&self.images.cleanup_interval_seconds),
+            "images.cleanup_interval_seconds must be 1..=86400 seconds",
+        )?;
+        ConfigError::require(
+            (1..=64 * 1024 * 1024).contains(&self.build_history.log_max_bytes)
+                && (1..=3650).contains(&self.build_history.log_retention_days),
+            "build logs require 1..=67108864 bytes and 1..=3650 retention days",
+        )
+    }
+
+    /// Effective website origin. The dashboard hostname fills an unset value
+    /// at load, and otherwise a tailnet node does when it joins, before
+    /// authentication starts.
+    #[must_use]
+    pub fn public_url(&self) -> &str {
+        self.auth
+            .public_url
+            .as_deref()
+            .unwrap_or("http://localhost:7845")
     }
 }
 
@@ -332,19 +331,6 @@ impl AuthConfig {
 #[error("{0}")]
 pub struct InvalidOrigin(pub &'static str);
 
-impl DaemonConfig {
-    /// Effective website origin. The dashboard hostname fills an unset value
-    /// at load, and otherwise a tailnet node does when it joins, before
-    /// authentication starts.
-    #[must_use]
-    pub fn public_url(&self) -> &str {
-        self.auth
-            .public_url
-            .as_deref()
-            .unwrap_or("http://localhost:7845")
-    }
-}
-
 /// The daemon's own tailnet node, which serves the website (dashboard and
 /// API) over HTTPS with a tailnet certificate. The tailnet needs `MagicDNS`
 /// and HTTPS certificates enabled.
@@ -394,13 +380,11 @@ impl TailscaleConfig {
         dns_label("tailscale.hostname", &self.hostname)?;
         if let Some(socket) = &self.socket {
             absolute_file("tailscale.socket", socket)?;
-            if self.auth_key_file.is_some() {
-                return Err(ConfigError::Invalid(
-                    "tailscale.auth_key_file is only used by piqueld's own tailscaled; \
-                     log the shared tailscaled in instead"
-                        .into(),
-                ));
-            }
+            ConfigError::require(
+                self.auth_key_file.is_none(),
+                "tailscale.auth_key_file is only used by piqueld's own tailscaled; \
+                 log the shared tailscaled in instead",
+            )?;
         }
         Ok(())
     }
@@ -408,12 +392,10 @@ impl TailscaleConfig {
 
 /// Requires a tailnet node name: a single DNS label.
 fn dns_label(name: &str, value: &str) -> Result<(), ConfigError> {
-    if !is_label(value, DNS_LABEL) {
-        return Err(ConfigError::Invalid(format!(
-            "{name} must be a single DNS label"
-        )));
-    }
-    Ok(())
+    ConfigError::require(
+        is_label(value, DNS_LABEL),
+        format!("{name} must be a single DNS label"),
+    )
 }
 
 /// The managed Caddy gateway that serves applications' routes.
@@ -493,17 +475,14 @@ impl IngressConfig {
         self.acme.validate()?;
         dns_label("ingress.private.hostname", &self.private.hostname)?;
         if let Some(dashboard) = &self.private.dashboard_hostname {
-            if !self.enabled || !self.private.enabled {
-                return Err(ConfigError::Invalid(
-                    "ingress.private.dashboard_hostname requires ingress.enabled and ingress.private.enabled".into(),
-                ));
-            }
-            if self.webhook_hostname.as_ref() == Some(dashboard) {
-                return Err(ConfigError::Invalid(
-                    "ingress.private.dashboard_hostname must differ from ingress.webhook_hostname"
-                        .into(),
-                ));
-            }
+            ConfigError::require(
+                self.enabled && self.private.enabled,
+                "ingress.private.dashboard_hostname requires ingress.enabled and ingress.private.enabled",
+            )?;
+            ConfigError::require(
+                self.webhook_hostname.as_ref() != Some(dashboard),
+                "ingress.private.dashboard_hostname must differ from ingress.webhook_hostname",
+            )?;
         }
         Ok(())
     }
@@ -621,22 +600,19 @@ impl Default for AcmeConfig {
 impl AcmeConfig {
     /// Requires an HTTPS directory URL and an email address without whitespace.
     fn validate(&self) -> Result<(), ConfigError> {
-        if url::Url::parse(&self.directory).map_or(true, |url| url.scheme() != "https") {
-            return Err(ConfigError::Invalid(
-                "ingress.acme.directory must be an HTTPS URL".into(),
-            ));
-        }
-        if self.email.as_ref().is_some_and(|email| {
-            email
-                .split_once('@')
-                .is_none_or(|(user, domain)| user.is_empty() || domain.is_empty())
-                || email.contains(char::is_whitespace)
-        }) {
-            return Err(ConfigError::Invalid(
-                "ingress.acme.email must be an email address".into(),
-            ));
-        }
-        Ok(())
+        ConfigError::require(
+            url::Url::parse(&self.directory).is_ok_and(|url| url.scheme() == "https"),
+            "ingress.acme.directory must be an HTTPS URL",
+        )?;
+        ConfigError::require(
+            self.email.as_ref().is_none_or(|email| {
+                email
+                    .split_once('@')
+                    .is_some_and(|(user, domain)| !user.is_empty() && !domain.is_empty())
+                    && !email.contains(char::is_whitespace)
+            }),
+            "ingress.acme.email must be an email address",
+        )
     }
 }
 
@@ -750,23 +726,19 @@ impl Default for ImagesConfig {
 
 /// Rejects relative paths, naming the offending setting in the error.
 fn absolute_path(name: &str, path: &Path) -> Result<(), ConfigError> {
-    if path.is_absolute() {
-        Ok(())
-    } else {
-        Err(ConfigError::Invalid(format!(
-            "{name} must be an absolute path"
-        )))
-    }
+    ConfigError::require(
+        path.is_absolute(),
+        format!("{name} must be an absolute path"),
+    )
 }
 
 /// Requires an absolute path that ends in a file name (not `/` or `..`).
 fn absolute_file(name: &str, path: &Path) -> Result<(), ConfigError> {
     absolute_path(name, path)?;
-    if path.file_name().is_some() {
-        Ok(())
-    } else {
-        Err(ConfigError::Invalid(format!("{name} must name a file")))
-    }
+    ConfigError::require(
+        path.file_name().is_some(),
+        format!("{name} must name a file"),
+    )
 }
 
 /// Where the daemon keeps its state and serves its API. The Unix socket
@@ -992,6 +964,18 @@ pub enum ConfigError {
     /// A parsed setting violated a semantic invariant.
     #[error("configuration is invalid: {0}")]
     Invalid(String),
+}
+
+impl ConfigError {
+    /// A configuration check: fails with [`Self::Invalid`] and `message`
+    /// unless `valid`.
+    fn require(valid: bool, message: impl Into<String>) -> Result<(), Self> {
+        if valid {
+            Ok(())
+        } else {
+            Err(Self::Invalid(message.into()))
+        }
+    }
 }
 
 #[cfg(test)]
