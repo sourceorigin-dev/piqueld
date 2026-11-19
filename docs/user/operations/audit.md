@@ -66,7 +66,8 @@ Other records are written in the background. If too many wait at once, or one
 can't be written, it's lost: the next record written then follows a **Failed**
 one, with status 503 and no caller, that says how many are missing, so the
 trail shows the gap. When piqueld stops, it writes that **Failed** record
-then, rather than waiting for the next one.
+then, if there's time before it exits, rather than waiting for the next one.
+If there isn't, the daemon's log says how many records are missing.
 
 ## Read it
 

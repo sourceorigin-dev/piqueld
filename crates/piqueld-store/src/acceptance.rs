@@ -875,14 +875,15 @@ impl Store {
             ApplicationEdit::AddService(service) => Some(service.name.as_str()),
             _ => None,
         };
-        let mut saved = if let ApplicationEdit::Name(name) = edit {
-            let renamed = Self::rename_on(tx, current, name, now).await?;
-            piqueld_core::api::SavedApplication {
+        let (mut saved, changed) = if let ApplicationEdit::Name(name) = edit {
+            let (renamed, changed) = Self::rename_on(tx, current, name, now).await?;
+            let saved = piqueld_core::api::SavedApplication {
                 application_id: renamed.application_id,
                 generation: renamed.generation,
                 operation_id: None,
                 operation_ids: Vec::new(),
-            }
+            };
+            (saved, changed)
         } else {
             let saved =
                 Self::save_configuration_on(tx, &application, Some(current.generation)).await?;
@@ -893,11 +894,11 @@ impl Store {
             })
             .map_err(StoreError::corrupt)?;
             sqlx::query!("INSERT INTO events(application_id,generation,kind,message,detail_json,resource,created_at_ms) VALUES(?1,?2,'application_edited','Saved application configuration',?3,?4,?5)",app_id,generation,detail,resource,now).execute(&mut **tx).await.map_err(StoreError::database)?;
-            saved
+            (saved, true)
         };
         Self::deploy_saved(tx, &id, &mut saved, deploy).await?;
         Ok(Accepted {
-            changed: true,
+            changed: changed || deploy,
             environments: Self::environment_ids_on(tx, &id).await?,
             response: MutationResponse::Saved(saved),
             wake: deploy,
@@ -992,8 +993,7 @@ impl Store {
         now: i64,
     ) -> Result<Accepted, StoreError> {
         let current = Self::checked_application_on(tx, &id, expected).await?;
-        let changed = current.application.metadata().name.as_str() != name;
-        let renamed = Self::rename_on(tx, current, name, now).await?;
+        let (renamed, changed) = Self::rename_on(tx, current, name, now).await?;
         Ok(Accepted {
             changed,
             environments: Self::environment_ids_on(tx, &id).await?,
@@ -1009,13 +1009,14 @@ impl Store {
     /// e.g. `${{ app.name }}`), updates the display name of every environment's
     /// resolved and latest targets, and records an `application_renamed` event
     /// once, in the application's history. Its current name changes nothing.
+    /// Returns the application's name and revision, and whether it renamed.
     /// Never wakes the controller.
     async fn rename_on(
         tx: &mut Transaction<'_, Sqlite>,
         current: StoredApplication,
         name: String,
         now: i64,
-    ) -> Result<RenamedApplication, StoreError> {
+    ) -> Result<(RenamedApplication, bool), StoreError> {
         if current.application.spec().manifest.is_some() {
             return Err(StoreError::RepositoryManaged);
         }
@@ -1027,11 +1028,12 @@ impl Store {
         }
         let old_name = current.application.metadata().name.clone();
         if old_name.as_str() == name {
-            return Ok(RenamedApplication {
+            let unchanged = RenamedApplication {
                 application_id: id,
                 name,
                 generation: current.generation,
-            });
+            };
+            return Ok((unchanged, false));
         }
         let generation = current
             .generation
@@ -1064,11 +1066,12 @@ impl Store {
             .execute(&mut **tx).await.map_err(StoreError::database)?;
         let message = format!("renamed {old_name} to {name}");
         sqlx::query!("INSERT INTO events(application_id,generation,kind,message,created_at_ms) VALUES(?1,?2,'application_renamed',?3,?4)",id,revision,message,now).execute(&mut **tx).await.map_err(StoreError::database)?;
-        Ok(RenamedApplication {
+        let renamed = RenamedApplication {
             application_id: id,
             name,
             generation,
-        })
+        };
+        Ok((renamed, true))
     }
 
     /// Requests deletion of an application, every environment and every
@@ -1563,9 +1566,10 @@ mod tests {
         assert_eq!(store.audit_actions().await, Vec::<String>::new());
     }
 
-    /// Renaming an application to its own name changes nothing: no record,
-    /// even when audit records can't be written, no `application_renamed`
-    /// event, and the same revision and update time.
+    /// Renaming an application to its own name, directly or by editing its
+    /// name, changes nothing: no record, even when audit records can't be
+    /// written, no `application_renamed` event, and the same revision and
+    /// update time.
     #[tokio::test]
     async fn renaming_an_application_to_its_name_records_nothing() {
         let (_directory, store) = Store::temporary().await;
@@ -1585,19 +1589,27 @@ mod tests {
                 .expect("the application is read")
         };
         let before = state().await;
-        let request = crate::testing::audit_request("POST /api/v1/applications/{id}/rename");
-        let author = Author {
-            actor: Actor::Daemon,
-            request: Some(&request),
-        };
         let rename = Mutation::Rename {
             id: id.clone(),
             name: "notes".into(),
         };
+        // The dashboard and CLI rename through the name edit.
+        let edit = Mutation::Edit {
+            id: id.clone(),
+            edit: Box::new(piqueld_core::edit::ApplicationEdit::Name("notes".into())),
+            deploy: false,
+        };
         store.refuse_audit(true).await;
-        let accepted = store.accept(author, rename, None, false, None).await;
+        for unchanged in [rename, edit] {
+            let request = crate::testing::audit_request("PUT /api/v1/applications/{id}/name");
+            let author = Author {
+                actor: Actor::Daemon,
+                request: Some(&request),
+            };
+            let accepted = store.accept(author, unchanged, None, false, None).await;
+            assert!(accepted.is_ok() && !request.recorded.get());
+        }
         store.refuse_audit(false).await;
-        assert!(accepted.is_ok() && !request.recorded.get());
         assert_eq!(state().await, before);
         assert_eq!(store.audit_actions().await, Vec::<String>::new());
     }

@@ -195,10 +195,11 @@ impl ApplicationService {
         true
     }
     /// Waits up to `deadline` for background audit records to be written, so a
-    /// shutdown keeps the requests it just served, then writes the
-    /// [`NewAuditEvent::lost`] marker of records lost since the last one
-    /// written, which no later record will carry. Called once the API
-    /// listeners have stopped; records still pending afterwards are logged.
+    /// shutdown keeps the requests it just served, then, if `deadline` has
+    /// time left, writes the [`NewAuditEvent::lost`] marker of records lost
+    /// since the last one written, which no later record will carry. Called
+    /// once the API listeners have stopped; records still pending afterwards,
+    /// and a marker that could not be written, are logged.
     pub async fn drain_audit(&self, deadline: std::time::Duration) {
         let until = tokio::time::Instant::now() + deadline;
         let all = u32::try_from(super::AUDIT_BACKLOG).unwrap_or(u32::MAX);
