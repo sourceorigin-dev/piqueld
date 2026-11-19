@@ -210,7 +210,7 @@ webhook socket. The daemon serves no metrics; it pushes them instead, see
 ## Issuance lineage
 
 The store records what issued each credential, invitation and passkey in
-`auth_lineage` (`crates/piqueld-store/src/auth/lineage.rs`), in the
+`auth_lineage` (`crates/piqueld-store/src/auth/lineage/mod.rs`), in the
 transaction that stores it:
 
 | Created | Issued by |

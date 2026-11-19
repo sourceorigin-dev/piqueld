@@ -1067,23 +1067,30 @@ async fn logout_never_cascades_and_revocation_does_by_default() {
             days: None,
             tailnet: None,
         };
-        let managed = f.auth.manage(identity, create).await.unwrap();
-        managed.token.unwrap()
+        let managed = f.auth.manage(identity, create).await;
+        let managed = managed.expect("an administrator creates a token");
+        managed.token.expect("a created token is returned once")
     };
     let revoke = async |identity: &Identity, cascade| {
-        let id = identity.credential_id().unwrap().to_owned();
+        let id = identity
+            .credential_id()
+            .expect("accounts sign in with a credential");
+        let id = id.to_owned();
         let revoke = Manage::RevokeCredential { id, cascade };
-        f.auth.manage(&root, revoke).await.unwrap();
+        let revoked = f.auth.manage(&root, revoke).await;
+        revoked.expect("root may revoke any credential");
     };
     let alice = f.identity("alice", &Grants::admin()).await;
     let after_logout = token(&alice).await;
-    f.auth.logout(&alice).await.unwrap();
-    f.auth.authenticate(&after_logout).await.unwrap();
+    f.auth.logout(&alice).await.expect("alice logs out");
+    let survived = f.auth.authenticate(&after_logout).await;
+    survived.expect("the token outlives the logout of its issuer");
 
     let bob = f.identity("bob", &Grants::admin()).await;
     let kept = token(&bob).await;
     revoke(&bob, false).await;
-    f.auth.authenticate(&kept).await.unwrap();
+    let kept = f.auth.authenticate(&kept).await;
+    kept.expect("a revocation without cascade keeps the token");
     let carol = f.identity("carol", &Grants::admin()).await;
     let revoked = token(&carol).await;
     revoke(&carol, true).await;
