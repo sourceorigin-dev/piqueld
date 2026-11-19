@@ -132,8 +132,8 @@ the five [`previews`](configuration.md#previews) limits,
 [`checkouts.max_bytes`](configuration.md#git-checkouts), both `images` settings,
 `telemetry.endpoint`, `telemetry.headers_file` (a systemd credential),
 and `telemetry.containers`, with the daemon's defaults. Reconciliation
-values must be 1–86400 seconds; retention values are nonnegative days, with zero
-disabling pruning. Unknown settings are rejected.
+values must be 1–86400 seconds; retention values are nonnegative days, or a
+count for `retention.deployments_per_environment`, with zero disabling pruning. Unknown settings are rejected.
 
 [Notification destinations](../operations/notifications.md) are managed with
 `piquelctl notification` or the dashboard, not the module; the former

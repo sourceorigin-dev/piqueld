@@ -60,9 +60,10 @@ hostname, are declared in `spec.routes`; see [Routes](#routes) and
 [managed ingress](../networking/routes.md).
 
 Rollouts start each replacement task before stopping the old one, except for
-services that mount any volume without `read_only = true`. Those stop the old
-task first so single-writer stores such as PostgreSQL or SQLite never share
-their data directory, and are briefly unavailable during each rollout. A
+services that mount any volume without `read_only = true`, or that receive the
+daemon's [telemetry](#telemetry-receivers). Those stop the old task first so
+single-writer stores such as PostgreSQL or SQLite never share their data
+directory, and are briefly unavailable during each rollout. A
 service can choose its own order; see [Rollout](#rollout).
 
 Services of one application share a private network on which each answers to
@@ -250,8 +251,8 @@ which plans otherwise redact. Mount passwords and keys as secret files
 
 References are allowed in values: service `environment` values, `command` and
 `arguments`, health check settings, `replicas`, resource limits, rollout `order`
-and `monitor_seconds`, route `hostname` and redirect `to`, job `command`, import `environment`, service
-secret mount `name`, and the build inputs `image`, `dockerfile`, `context`, build argument values and
+and `monitor_seconds`, route `hostname` and redirect `to`, job `command` and `environment` values,
+import `environment`, secret mount `name`, and the build inputs `image`, `dockerfile`, `context`, build argument values and
 `target`. They are rejected elsewhere, including names, table keys, `type`
 fields, mount and secret targets, `spec.secrets` declarations, Git repository
 settings and `spec.manifest`. [Files](#files) are never rendered: `${{` in a
@@ -466,9 +467,9 @@ manifest.
 
 ```text
 Environments:
-  + staging: created, deploys from branch main, follows pushes
-  ~ production: deploys from releases promoted from staging instead of branch main
-  ! qa: no longer declared; kept until deleted with `piquelctl env delete`
+  + staging   created, deploys from branch main, follows pushes
+  ~ production   deploys from releases promoted from staging instead of branch main
+  ! qa   no longer declared; kept until deleted with `piquelctl env delete`
 ```
 
 and `app show` and the application's Environments tab list how the
@@ -1096,7 +1097,7 @@ down; so does [`piquelctl`](cli.md) while it waits for a deployment.
 
 Both fields are optional, and an empty or missing block keeps the defaults:
 the order is derived from the mounts (`stop-first` when any volume is mounted
-writable, `start-first` otherwise) and the monitor window is 30 seconds. The
+writable or the service receives telemetry, `start-first` otherwise) and the monitor window is 30 seconds. The
 order must be one of the two values above, and `monitor_seconds` must be
 between 1 and 3,600 (`rollout_monitor_invalid`). Docker only reports an update
 as complete once the last replacement's monitor window has passed, so keep it
