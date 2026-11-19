@@ -732,15 +732,7 @@ fn repeated_pagination_cursor_is_rejected() {
 fn exec_cat(target: &[&str], runs_in: &str, stdin: Stdio, input: &[u8]) -> (TestServer, Output) {
     let exec = format!("/api/v1/environments/{runs_in}/exec");
     let server = start_server(false, 2, move |request| match request.path.as_str() {
-        "/api/v1/applications/app-notes-01" => {
-            let mut view = app_view("app-notes-01", "notes");
-            view["previews"] = json!([environment(
-                "app-notes-01",
-                "env-preview-01",
-                "notes-feat-login-0a1b2c"
-            )]);
-            Reply::json(view)
-        }
+        "/api/v1/applications/app-notes-01" => Reply::json(notes_with_a_preview()),
         path if path == exec => {
             assert_eq!(request.method, "GET");
             assert_eq!(request.headers["upgrade"], "websocket");
@@ -2038,6 +2030,11 @@ fn builds_list_resolves_names_and_sends_its_filters() {
             &["build", "list", "--app", "notes", "--env", "production"],
             "application_id=app-notes-01&cursor=v1%3A7&environment_id=app-notes-01&limit=50",
         ),
+        // A preview is found by its ID, which its history is recorded under.
+        (
+            &["build", "list", "--app", "notes", "--env", "env-preview-01"],
+            "application_id=app-notes-01&cursor=v1%3A7&environment_id=env-preview-01&limit=50",
+        ),
     ] {
         let server = start_server(false, usize::MAX, |request| match request.path.as_str() {
             // Names are looked up with one filtered request.
@@ -2048,7 +2045,7 @@ fn builds_list_resolves_names_and_sends_its_filters() {
                 vec![app_summary("app-welcome-01", "welcome-to-docker")],
                 None,
             )),
-            "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
+            "/api/v1/applications/app-notes-01" => Reply::json(notes_with_a_preview()),
             "/api/v1/applications/app-welcome-01" => {
                 Reply::json(app_view("app-welcome-01", "welcome-to-docker"))
             }
@@ -2070,29 +2067,48 @@ fn builds_list_resolves_names_and_sends_its_filters() {
     }
     // An application neither its ID nor its name finds is not found, even
     // shaped like an ID: a deleted application's history is deleted with it.
-    for missing in ["blog", "app-gone-01"] {
-        let server = start_server(false, usize::MAX, move |request| {
-            match request.path.as_str() {
-                "/api/v1/applications/app-gone-01" => Reply::status(
-                    "404 Not Found",
-                    &json!({"code": "not_found", "message": "not found"}),
-                ),
-                path if path == format!("/api/v1/applications?name={missing}") => {
-                    Reply::json(page(Vec::new(), None))
-                }
-                path => panic!("unexpected path {path}"),
+    // So is an environment the application doesn't have.
+    for arguments in [
+        &["--app", "blog"][..],
+        &["--app", "app-gone-01"],
+        &["--app", "notes", "--env", "missing"],
+    ] {
+        let server = start_server(false, usize::MAX, |request| match request.path.as_str() {
+            "/api/v1/applications?name=notes" => {
+                Reply::json(page(vec![app_summary("app-notes-01", "notes")], None))
             }
+            "/api/v1/applications/app-notes-01" => Reply::json(notes_with_a_preview()),
+            "/api/v1/applications?name=blog" | "/api/v1/applications?name=app-gone-01" => {
+                Reply::json(page(Vec::new(), None))
+            }
+            "/api/v1/applications/app-gone-01" => Reply::status(
+                "404 Not Found",
+                &json!({"code": "not_found", "message": "not found"}),
+            ),
+            path => panic!("unexpected path {path}"),
         });
-        let output = run(&server, &["build", "list", "--app", missing]);
+        let output = run(&server, &[&["build", "list"][..], arguments].concat());
         let requests = server.stop();
-        assert_eq!(output.status.code(), Some(2), "{missing}: {output:?}");
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}: {output:?}");
         assert!(
             !requests
                 .iter()
                 .any(|request| request.path.starts_with("/api/v1/builds")),
-            "{missing}"
+            "{arguments:?}"
         );
     }
+}
+
+/// `notes`, with its `production` environment and one preview,
+/// `env-preview-01`.
+fn notes_with_a_preview() -> Value {
+    let mut view = app_view("app-notes-01", "notes");
+    view["previews"] = json!([environment(
+        "app-notes-01",
+        "env-preview-01",
+        "notes-feat-login-0a1b2c"
+    )]);
+    view
 }
 
 #[test]

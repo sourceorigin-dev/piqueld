@@ -583,8 +583,9 @@ pub(crate) struct HistoryScope {
     /// Only this application and its environments, by name or ID.
     #[arg(long, alias = "application", value_name = "APP")]
     app: Option<String>,
-    /// Only this environment: with `--app`, by name or ID. Alone, it takes
-    /// only an ID, which also lists a deleted environment's events.
+    /// Only this environment or preview: with `--app`, an environment by
+    /// name or ID, or a preview by ID. Alone, it takes only an ID; `event`
+    /// also finds a deleted environment's events by it.
     #[arg(long, alias = "environment", value_name = "ENV")]
     env: Option<String>,
 }
@@ -592,8 +593,9 @@ pub(crate) struct HistoryScope {
 impl HistoryScope {
     /// The application and environment IDs to filter by. `--app`, and
     /// `--env` with it, must find a live application and one of its
-    /// environments. `--env` alone is used as an ID, unchecked, since a
-    /// deleted environment's events outlive it.
+    /// environments or previews, whose history is recorded under their own
+    /// IDs. `--env` alone is used as an ID, unchecked, since a deleted
+    /// environment's events outlive it.
     async fn ids(&self, client: &Client) -> Result<(Option<String>, Option<String>)> {
         let Some(name_or_id) = &self.app else {
             return Ok((None, self.env.clone()));
@@ -605,6 +607,7 @@ impl HistoryScope {
             .map(|environment| {
                 application
                     .environment(environment)
+                    .or_else(|| application.deployable(environment))
                     .map(|found| found.id.to_string())
                     .ok_or_else(|| CliError::environment_not_found(environment, &application))
             })

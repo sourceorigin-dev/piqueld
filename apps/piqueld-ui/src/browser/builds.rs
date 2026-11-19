@@ -33,8 +33,8 @@ pub(super) fn BuildsPage() -> impl IntoView {
     }
 }
 
-/// One page of the builds of `scope`, an application and environment ID
-/// that each narrow it when given, newest first, after `cursor`.
+/// One page of builds, newest first, after `cursor`: of the application
+/// and the environment whose IDs are given, if any.
 async fn builds_page(
     (application, environment): (Option<String>, Option<String>),
     cursor: Option<String>,
