@@ -638,11 +638,11 @@ tunnel/          config.json, credentials.json
 
 `just docker-test` runs Caddy in the isolated Docker-in-Docker harness, with
 private test certificates and randomly allocated loopback host ports
-(`ingress/tests.rs`, `ingress/tests/`). It covers routing, redirects,
-unknown-host rejection, network separation, gateway replacement failure and
-recovery, unrelated deployments during a stalled gateway update, withdrawals
-with a broken application network, a backend cutover held behind a failing
-health check, forwarded client addresses arriving from the injected
+(`ingress/tests/routing.rs`, `tests/replacement.rs`). It covers routing,
+redirects, unknown-host rejection, network separation, gateway replacement
+failure and recovery, unrelated deployments during a stalled gateway update,
+withdrawals with a broken application network, a backend cutover held behind a
+failing health check, forwarded client addresses arriving from the injected
 ingress range, and traffic counting: its gateway logs to the daemon
 throughout, and browser, bot and probe requests to a new route add up to the
 expected page views, visitors, pages and referring sites.

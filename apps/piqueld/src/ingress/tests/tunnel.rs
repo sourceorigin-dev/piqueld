@@ -1,7 +1,7 @@
 //! Tunnel mode: `cloudflared`'s configuration and container, and the gateway's
 //! tunnel listener. The harness test emulates `cloudflared` with a container
 //! on the edge network, since a real tunnel needs Cloudflare.
-use super::{Engine, Scenario, dns01::CURL_IMAGE, private_config, routes};
+use super::{Engine, Scenario, dns01::CURL_IMAGE, listener_table, private_config, routes};
 use crate::ingress::Ingress;
 use piqueld_config::{Credential, TunnelConfig, TunnelCredentials};
 use piqueld_core::{EnvironmentId, api::PublicIngressStatus, manifest::Visibility};
@@ -12,7 +12,7 @@ use std::sync::Arc;
 const ID: &str = "6ff42ae2-765d-4adf-8112-31c55c1551ef";
 
 /// `[ingress.tunnel]` with credentials holding `secret`.
-fn tunnel(secret: &str) -> TunnelConfig {
+pub(super) fn tunnel(secret: &str) -> TunnelConfig {
     TunnelConfig {
         credentials: Some(TunnelCredentials {
             id: ID.parse().unwrap(),
@@ -107,18 +107,8 @@ async fn cloudflared_forwards_everything_to_the_tunnel_listener_without_privileg
 async fn the_tunnel_listener_serves_only_public_routes_to_edge_peers() {
     let (_engine, ingress) = tunnel_ingress().await;
     let ingress = ingress.with_private(&private_config());
-    let table: piqueld_store::ingress::RoutingTable = [
-        (
-            EnvironmentId::parse("env-public").unwrap(),
-            routes(Visibility::Public, "www.example.com"),
-        ),
-        (
-            EnvironmentId::parse("env-private").unwrap(),
-            routes(Visibility::Private, "admin.example.com"),
-        ),
-    ]
-    .into();
-    let edge = ["172.20.0.0/16".to_owned()];
+    let table = listener_table();
+    let edge = super::edge();
     let configuration = ingress.build_configuration(
         &table,
         &ingress.exact_hostnames(&table).await.unwrap(),
@@ -303,45 +293,27 @@ async fn disabled_ingress_stops_containers_even_if_the_credentials_remain() {
 #[tokio::test]
 #[ignore = "requires the isolated Docker harness with loopback test ports"]
 async fn ingress_caddy_tunnel() {
-    use futures_util::FutureExt;
-    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-    let scenario = Box::pin(Scenario::new()).await;
-    let result =
-        Box::pin(std::panic::AssertUnwindSafe(scenario.tunnel_mode()).catch_unwind()).await;
-    scenario.gateway.stop_gateway().await.unwrap();
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
+    Scenario::run(Scenario::tunnel_mode, async |_| {}).await;
 }
 
 impl Scenario {
     /// Switches the scenario's gateway to tunnel mode and back.
     async fn tunnel_mode(&self) {
-        let echo = super::deploy(
-            &self.store,
-            &self.controller,
-            super::application(
+        let echo = self
+            .deploy(super::application(
                 "echo",
                 "echo.example.test",
                 "{http.request.header.X-Forwarded-For} {http.request.header.X-Forwarded-Proto} {http.request.header.X-Forwarded-Host}",
-            ),
-        )
-        .await;
+            ))
+            .await;
         let mut admin = super::application("admin", "admin.example.test", "admin").to_manifest();
         admin.spec.routes[0].visibility = Visibility::Private;
         let admin = admin
             .validate()
             .unwrap()
             .normalize(piqueld_core::ApplicationId::parse("admin-input").unwrap());
-        super::deploy(&self.store, &self.controller, admin).await;
-        let ingress = Ingress::new(
-            true,
-            &self.socket,
-            self.directory.path(),
-            Arc::clone(&self.store),
-        )
-        .unwrap()
-        .with_tunnel(&tunnel("c2VjcmV0"));
+        self.deploy(admin).await;
+        let ingress = self.ingress(true).with_tunnel(&tunnel("c2VjcmV0"));
         ingress.synchronize().await.unwrap();
         self.tunnel_publishes_no_ports(&ingress).await;
         self.only_cloudflared_reaches_the_tunnel_listener(&ingress, &echo)

@@ -50,19 +50,8 @@ impl Scenario {
             .external(Method::POST, "/load", Some(&configuration))
             .await
             .unwrap();
-        let root = tokio::fs::read(
-            self.directory
-                .path()
-                .join("ingress/data/caddy/pki/authorities/local/root.crt"),
-        )
-        .await
-        .unwrap();
         let builder = || {
-            reqwest::Client::builder()
-                .no_proxy()
-                .timeout(Duration::from_secs(15))
-                .add_root_certificate(reqwest::Certificate::from_pem(&root).unwrap())
-                .resolve("one.example.test", "127.0.0.1:443".parse().unwrap())
+            Scenario::trusting(&self.root, &["one.example.test"]).timeout(Duration::from_secs(15))
         };
         let http1 = builder().http1_only().build().unwrap();
         let http2 = builder().http2_prior_knowledge().build().unwrap();
