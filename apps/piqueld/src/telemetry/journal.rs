@@ -317,20 +317,23 @@ impl Journal {
             .into_iter()
             .filter_map(|(key, value)| Some((key, AnyValue::from(value?)))),
         );
-        let span = match (&event.operation_id, &event.action_id) {
+        let context = match (&event.operation_id, &event.action_id) {
             (Some(operation), Some(action)) => Some((
                 Key::Operation(operation).trace(),
                 Key::Action(action).span(),
             )),
             (Some(operation), None) => {
-                let span = Key::within(operation, event.attempt);
-                Some((span.trace(), span.span()))
+                let key = Key::within(operation, event.attempt);
+                Some((key.trace(), key.span()))
             }
-            (None, Some(action)) => Some((Key::Action(action).trace(), Key::Action(action).span())),
+            (None, Some(action)) => {
+                let key = Key::Action(action);
+                Some((key.trace(), key.span()))
+            }
             (None, None) => None,
         };
-        if let Some((trace, span)) = span {
-            record.set_trace_context(trace, span, Some(TraceFlags::SAMPLED));
+        if let Some((trace, span_id)) = context {
+            record.set_trace_context(trace, span_id, Some(TraceFlags::SAMPLED));
         }
         self.logger.emit(record);
     }
@@ -426,8 +429,10 @@ impl<'a> Key<'a> {
         attempt.map_or(Self::Operation(id), |attempt| Self::Attempt(id, attempt))
     }
 
-    /// The trace this span belongs to: its operation's, or a lone action's
-    /// own. The first 16 bytes of its digest.
+    /// The trace an operation or attempt belongs to: the operation's. For an
+    /// action, this is the trace of a lone action; callers pair an action
+    /// inside an operation with the operation's trace instead. The first 16
+    /// bytes of the operation's or action's digest.
     #[expect(
         clippy::expect_used,
         reason = "SHA-256 digests are 32 bytes, so the slice has exactly 16."
@@ -572,6 +577,28 @@ mod tests {
             detail: None,
             created_at_ms: at,
         }
+    }
+
+    /// Trace and span IDs are stable across releases, so a trace begun before
+    /// an upgrade continues after it. The expected bytes come from SHA-256 of
+    /// `piqueld\0<kind>\0<id>[\0<attempt>]`, computed outside this code.
+    #[test]
+    fn ids_never_change() {
+        let operation = Key::Operation("op");
+        assert_eq!(
+            operation.trace().to_string(),
+            "efcdf304f6796e366556d140bf5d285c"
+        );
+        assert_eq!(operation.span().to_string(), "6420dca0311a55cf");
+        let attempt = Key::Attempt("op", u64::MAX);
+        assert_eq!(attempt.trace(), operation.trace());
+        assert_eq!(attempt.span().to_string(), "2fb34740a828f795");
+        let action = Key::Action("act");
+        assert_eq!(
+            action.trace().to_string(),
+            "89664d9b2c61d1c67de5a73453d1d1a2"
+        );
+        assert_eq!(action.span().to_string(), "fde1439c7892dd97");
     }
 
     /// An operation spans attempts across a restart, each with its actions,
