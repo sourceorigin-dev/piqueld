@@ -87,16 +87,21 @@ impl Page {
     /// lacks open its first.
     #[must_use]
     pub fn initial_tab(&self, query: impl Fn(&str) -> Option<String>) -> &'static str {
-        let tabs = self.tabs();
         let requested = if query("release").is_some() {
             Some("releases".to_owned())
         } else {
             query("tab")
         };
-        tabs.iter()
-            .find(|tab| requested.as_deref() == Some(slug(tab).as_str()))
-            .unwrap_or(&tabs[0])
+        named_tab(self.tabs(), requested.as_deref())
     }
+}
+
+/// The tab of `tabs` whose `slug` is `requested`, else the first.
+#[must_use]
+pub fn named_tab(tabs: &'static [&'static str], requested: Option<&str>) -> &'static str {
+    tabs.iter()
+        .find(|tab| requested == Some(slug(tab).as_str()))
+        .unwrap_or(&tabs[0])
 }
 
 /// `text` as an address or element ID fragment: lowercase, with runs of
