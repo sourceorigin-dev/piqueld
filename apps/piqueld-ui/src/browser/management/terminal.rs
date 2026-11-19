@@ -414,13 +414,6 @@ pub(super) fn ExecTerminal() -> impl IntoView {
     };
     let console = Console::new();
     let active = move || console.status.get().active();
-    let services = move || {
-        context
-            .environment_services()
-            .into_iter()
-            .map(|name| view! { <option value={name.clone()}>{name.clone()}</option> })
-            .collect_view()
-    };
     view! {
         <section class="card">
             <header>
@@ -448,7 +441,7 @@ pub(super) fn ExecTerminal() -> impl IntoView {
                         on:change={move |e| form.service.set(event_target_value(&e))}
                     >
                         <option value="" disabled>"Choose a service"</option>
-                        {services}
+                        {context.environment_service_options()}
                     </select>
                 </label>
                 <label class="field exec-command">
