@@ -246,7 +246,7 @@ impl ControllerHarness {
     }
 
     /// Saves and deploys the fixture with `web` built from `fixture`'s Git
-    /// source.
+    /// source, as image `b`s.
     async fn deploy_git_build(&self, fixture: &git_fixture::GitBuildFixture) -> Operation {
         let mut input = manifest();
         input.spec.services[0].source = fixture.source.clone();
