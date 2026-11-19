@@ -19,7 +19,8 @@ is `foo/mod.rs` only when it has children.
   replace.
 - **Report bugs instead of fixing them.** The orchestrator opens an issue and a
   fix PR for each. If a cleanup can't be done without changing behavior, report
-  it too.
+  it too. Report a vulnerability only in your final message, never in a PR,
+  commit or code comment.
 - **Stay in your area.** Edit another area only when a rename forces it:
   keep it minimal and list those files in the PR description. Report what
   crosses areas: another lane cleans up between them.
@@ -74,6 +75,7 @@ and never change a test just to make it pass.
   - `Part of PQD-<n>`
   - what was hard to read and how you fixed it
   - every test you merged or removed
+  - files edited outside your area, and why
   - what you compared to prove the rest unchanged
 - Don't mark a PR ready.
 

@@ -21,9 +21,9 @@ delegates read their briefs from it. Keep a ledger in your scratchpad: each
 agent, branch, PR, review state and finding, and the files each task holds.
 Files are free once the task holding them has reported and its PRs touching them
 have merged. Start no task on files that aren't free. A forced edit outside an
-area (a renamed item's callers, a docs reference) is the exception: the owner of
-those files rebases over it. After compaction, a usage limit or a T3 restart,
-check the ledger and restart only what didn't finish.
+area (a renamed item's callers, a docs reference) is the exception: the agent
+holding those files rebases over it. After compaction, a usage limit or a T3
+restart, check the ledger and restart only what didn't finish.
 
 ## Audit
 
@@ -117,7 +117,8 @@ with `babysit-pr`, and update its `[!NOTE]` line to name who reviewed it. The
 owner merges, through the merge queue.
 
 When something lands on `main`, have each agent rebase and apply its cleanup
-to the new code. Review any logic the rebase merged. Suggest merging core
+to the new code, and start the boundary themes and fixes whose files are now
+free. Review any logic the rebase merged. Suggest merging core
 first, because everything depends on it.
 
 ### Boundary lane
@@ -146,7 +147,8 @@ follows the agent brief, with the theme's files as its area, runs
 
 ### Bugs
 
-Every bug an agent or reviewer reports gets an issue and a fix PR:
+Every bug an agent or reviewer reports, except a vulnerability, gets an issue
+and a fix PR:
 
 1. Check it against current `main`, with a Sol delegate when there are many.
    Merge duplicate reports, and ask the owner about anything that might be
@@ -154,17 +156,18 @@ Every bug an agent or reviewer reports gets an issue and a fix PR:
    issue or PR (`SECURITY.md`).
 2. Open a Linear issue as `AGENTS.md` describes, with type Bug, or reuse the
    one that exists (`list_issues`). Include the `file:line`, what goes wrong
-   and how to reproduce it.
+   and how to reproduce it. If the existing issue is assigned or has a linked
+   PR, note it in the ledger and start no fix.
 3. Once its files are free, start an Opus implementation delegate in a worktree,
    on `fix/<topic>` from a freshly fetched `origin/main`, with the issue and
    `CARGO_BUILD_JOBS`. It writes a test that fails without the fix, makes the
    smallest fix, runs the agent brief's checks, and opens a draft PR with
    `file-pr` that says `Fixes PQD-<n>`.
-4. Review and ship it as in Review, but without the review brief, which
-   treats any behavior change as a finding. The reviewer's task says to review
-   read-only at the head SHA, check that the test fails without the fix, the
-   fix is correct and minimal, and nothing else changed, and report findings
-   with severity and `file:line`.
+4. Review and ship it as in Review, but without the review brief, which treats
+   any behavior change as a finding. The reviewer's task says to work at the
+   head SHA without pushing or commenting, revert the fix locally to check the
+   test then fails, and check the fix is correct and minimal and nothing else
+   changed. It reports findings with severity and `file:line`.
 
 Run at most 3 fixes at a time.
 
