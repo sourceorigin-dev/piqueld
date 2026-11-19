@@ -378,8 +378,7 @@ Safari, or Edge release with WebAssembly, ES modules, Fetch, and standard CSS
 media-query support. Internet Explorer, JavaScript-disabled browsing, and
 older browsers without those primitives are outside the support target.
 
-Streaming logs, running commands in containers (`piquelctl app exec`), and
-state transfer remain outside the current dashboard scope.
+Streaming logs and state transfer remain outside the current dashboard scope.
 Deployment history polls every two seconds while its tab and the page are visible.
 It ends at the oldest deployment the daemon
 [still keeps](operations/history.md#how-long-history-is-kept).
