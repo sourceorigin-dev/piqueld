@@ -797,9 +797,6 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
     assert!(nothing.grants.is_empty());
 }
 
-/// `auth.max_token_days` bounds new tokens, and secrets issued before the
-/// `pqd_` prefix still authenticate, including ones that happen to start
-/// with it.
 /// Requests carry their credential's passkey proof, so sensitive actions can
 /// refuse stale callers before doing anything; tokens are told they can never
 /// qualify, and the host operator is exempt.
@@ -837,6 +834,9 @@ async fn identities_refuse_sensitive_actions_without_a_recent_passkey() {
     Identity::operator(operator, None).require_fresh().unwrap();
 }
 
+/// `auth.max_token_days` bounds new tokens, and secrets issued before the
+/// `pqd_` prefix still authenticate, including ones that happen to start
+/// with it.
 #[tokio::test]
 async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
     let f = Fixture::new().await;
