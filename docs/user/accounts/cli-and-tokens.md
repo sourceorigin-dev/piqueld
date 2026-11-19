@@ -30,7 +30,8 @@ alice (01a16b4b-ef93-7971-b6f6-e8359d3c4d52)
 Open the link, sign in with your passkey, and approve the login. If you
 signed in more than 2 minutes ago, the dashboard asks you to
 [confirm with your passkey](accounts.md#confirm-with-your-passkey) first. The
-new login counts as signed in when you approved it. The link
+new login counts as signed in when your passkey last confirmed you in that
+browser. The link
 already carries the code, so you never have to type or copy the code:
 [creating your account](../getting-started/first-account.md#sign-piquelctl-in)
 walks through it. `piquelctl` then prints the account it signed in as. This

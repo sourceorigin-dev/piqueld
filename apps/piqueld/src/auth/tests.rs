@@ -1057,11 +1057,26 @@ async fn minting_and_privileged_grants_need_a_recent_sign_in() {
 async fn device_logins_inherit_their_approvals_passkey_proof() {
     let f = Fixture::new().await;
     let alice = f.identity("alice", &Grants::admin()).await;
+    // The approver's passkey proved them a minute ago: still recent, and
+    // never the time the CLI polls.
+    let proved = now_secs() - 60;
+    let session = Auth::new_credential(CredentialKind::Browser, "Browser", None, None);
+    let (secret, mut session) = session.unwrap();
+    session.authenticated_at = Some(proved);
+    let store = &f.auth.0.store;
+    store
+        .insert_credential(&alice.account().id, &session)
+        .await
+        .unwrap();
+    let approver = f.auth.authenticate(&secret).await.unwrap();
     let start = f.auth.device_start(None, None).unwrap();
-    f.auth.device_approve(&start.user_code, &alice).unwrap();
+    f.auth.device_approve(&start.user_code, &approver).unwrap();
     let issued = f.auth.device_poll(&start.device_code).await.unwrap();
     let login = f.auth.authenticate(&issued.token.unwrap()).await.unwrap();
-    login.require_fresh().unwrap();
+    let Credential::Account { proof, .. } = &login.credential else {
+        panic!("a CLI login belongs to an account");
+    };
+    assert_eq!(proof.authenticated_at, Some(proved));
 
     let start = f.auth.device_start(None, None).unwrap();
     f.auth.device_approve(&start.user_code, &alice).unwrap();
