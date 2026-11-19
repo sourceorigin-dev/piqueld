@@ -5,7 +5,7 @@
 //! reaches, with nothing but `POST /hooks/github/{id}`. It shares no
 //! middleware with the API: deliveries carry no credentials, only GitHub's
 //! signature, and every other path is a 404.
-use super::{ApiError, ApiPath, ApiState, ok, openapi::ApiErrorResponse};
+use super::{ApiError, ApiPath, ApiState, ok, openapi::ApiErrors};
 use crate::api::{Delivery, WEBHOOK_BODY_LIMIT, WEBHOOK_PATH, WebhookError};
 use crate::auth::Identity;
 use axum::{
@@ -96,8 +96,7 @@ async fn receive(
 #[utoipa::path(get,path="/api/v1/applications/{id}/webhook",operation_id="getWebhook",
     params(("id"=String,Path)),
     responses((status=200,description="Success",body=Envelope<WebhookView>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=500,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 500, 503>))]
 pub(super) async fn get(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,
@@ -113,9 +112,7 @@ pub(super) async fn get(
 #[utoipa::path(post,path="/api/v1/applications/{id}/webhook/secret",operation_id="generateWebhookSecret",
     params(("id"=String,Path)),
     responses((status=200,description="Secret generated",body=Envelope<WebhookSecret>),
-    (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),
-    (status=409,response=inline(ApiErrorResponse)),(status=500,response=inline(ApiErrorResponse)),
-    (status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<400, 404, 409, 500, 503>))]
 pub(super) async fn generate_secret(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,

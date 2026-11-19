@@ -1,9 +1,7 @@
 //! Write-only values and metadata-only secret lifecycle endpoints: generated
 //! secrets per environment, and each application's store of manually set secrets.
 use super::extract::{body_timeout, single_header};
-use super::{
-    ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrorResponse,
-};
+use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{
     body::Bytes,
     extract::{FromRequest, Request, State},
@@ -36,7 +34,7 @@ impl utoipa::PartialSchema for SecretValue {
 /// Lists an environment's generated secrets.
 ///
 /// Returns metadata only; secret values are write-only and never returned.
-#[utoipa::path(get,path="/api/v1/environments/{id}/secrets",operation_id="environmentSecrets",params(("id"=String,Path)),responses((status=200,description="Secret metadata",body=Envelope<Vec<SecretMetadata>>),(status=404,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/environments/{id}/secrets",operation_id="environmentSecrets",params(("id"=String,Path)),responses((status=200,description="Secret metadata",body=Envelope<Vec<SecretMetadata>>),ApiErrors<404, 503>))]
 pub(super) async fn list(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,
@@ -67,7 +65,7 @@ fn expected(headers: &HeaderMap) -> Result<i64, ApiError> {
 ///
 /// Fails with 409 while the configuration or a deployment still references it.
 /// If cleanup is interrupted, retrying the deletion finishes it.
-#[utoipa::path(delete,path="/api/v1/environments/{id}/secrets/{name}",operation_id="deleteEnvironmentSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header)),responses((status=200,description="Secret deleted",body=Envelope<bool>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=409,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(delete,path="/api/v1/environments/{id}/secrets/{name}",operation_id="deleteEnvironmentSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header)),responses((status=200,description="Secret deleted",body=Envelope<bool>),ApiErrors<400, 404, 409, 503>))]
 pub(super) async fn delete(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
@@ -92,7 +90,7 @@ pub(super) async fn delete(
 /// with 409. Rotates the value, or replaces one discarded by key recovery.
 /// Running services keep their version until the next deployment. The
 /// response carries metadata only.
-#[utoipa::path(post,path="/api/v1/environments/{id}/secrets/{name}/regenerate",operation_id="regenerateEnvironmentSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header)),responses((status=200,description="Updated metadata; no secret value",body=Envelope<SecretMetadata>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=409,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(post,path="/api/v1/environments/{id}/secrets/{name}/regenerate",operation_id="regenerateEnvironmentSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header)),responses((status=200,description="Updated metadata; no secret value",body=Envelope<SecretMetadata>),ApiErrors<400, 404, 409, 503>))]
 pub(super) async fn regenerate(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
@@ -113,7 +111,7 @@ pub(super) async fn regenerate(
 /// Lists an application's stored secrets and who may mount them.
 ///
 /// Returns metadata only; secret values are write-only and never returned.
-#[utoipa::path(get,path="/api/v1/applications/{id}/secrets",operation_id="applicationSecrets",params(("id"=String,Path)),responses((status=200,description="Stored secret metadata and access",body=Envelope<Vec<StoredSecret>>),(status=404,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(get,path="/api/v1/applications/{id}/secrets",operation_id="applicationSecrets",params(("id"=String,Path)),responses((status=200,description="Stored secret metadata and access",body=Envelope<Vec<StoredSecret>>),ApiErrors<404, 503>))]
 pub(super) async fn list_stored(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,
@@ -204,7 +202,7 @@ impl AccessQuery {
 /// saved manifest or an environment's last fetched one declares as generated
 /// secrets fail with 422 `manifest_validation_failed` and `secret_name_conflict`
 /// in `details.errors`. The response carries metadata only.
-#[utoipa::path(put,path="/api/v1/applications/{id}/secrets/{name}",operation_id="putApplicationSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header),AccessQuery),request_body(content=inline(SecretValue),content_type="application/octet-stream"),responses((status=200,description="Updated metadata; no secret value",body=Envelope<StoredSecret>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=409,response=inline(ApiErrorResponse)),(status=413,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),(status=422,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(put,path="/api/v1/applications/{id}/secrets/{name}",operation_id="putApplicationSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header),AccessQuery),request_body(content=inline(SecretValue),content_type="application/octet-stream"),responses((status=200,description="Updated metadata; no secret value",body=Envelope<StoredSecret>),ApiErrors<400, 404, 409, 413, 415, 422, 503>))]
 pub(super) async fn put_stored(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
@@ -266,7 +264,7 @@ pub(super) async fn put_stored(
 /// Fails with 409 `secret_deleting` while the secret is being deleted, and
 /// with 409 `secret_access_conflict` when `expected` is given and no longer
 /// the secret's access.
-#[utoipa::path(put,path="/api/v1/applications/{id}/secrets/{name}/access",operation_id="setSecretAccess",params(("id"=String,Path),("name"=String,Path)),request_body=SecretAccessChange,responses((status=200,description="Updated metadata; no secret value",body=Envelope<StoredSecret>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=409,response=inline(ApiErrorResponse)),(status=415,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(put,path="/api/v1/applications/{id}/secrets/{name}/access",operation_id="setSecretAccess",params(("id"=String,Path),("name"=String,Path)),request_body=SecretAccessChange,responses((status=200,description="Updated metadata; no secret value",body=Envelope<StoredSecret>),ApiErrors<400, 404, 409, 415, 503>))]
 pub(super) async fn set_access(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
@@ -289,7 +287,7 @@ pub(super) async fn set_access(
 ///
 /// Fails with 409 while any environment's configuration or deployment still
 /// references it. If cleanup is interrupted, retrying the deletion finishes it.
-#[utoipa::path(delete,path="/api/v1/applications/{id}/secrets/{name}",operation_id="deleteApplicationSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header)),responses((status=200,description="Secret deleted",body=Envelope<bool>),(status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=409,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+#[utoipa::path(delete,path="/api/v1/applications/{id}/secrets/{name}",operation_id="deleteApplicationSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header)),responses((status=200,description="Secret deleted",body=Envelope<bool>),ApiErrors<400, 404, 409, 503>))]
 pub(super) async fn delete_stored(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
@@ -327,7 +325,7 @@ pub(super) async fn delete_stored(
 /// The next value write generates a new key.
 #[utoipa::path(post,path="/api/v1/system/secrets/recover-key",operation_id="recoverSecretKey",
     responses((status=200,description="Values discarded; the next value write generates a new key",body=Envelope<piqueld_core::api::SecretKeyRecovery>),
-    (status=409,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+    ApiErrors<409, 503>))]
 pub(super) async fn recover_key(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,

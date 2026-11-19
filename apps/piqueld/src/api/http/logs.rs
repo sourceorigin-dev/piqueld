@@ -1,5 +1,5 @@
 //! Recent container output of an environment's services.
-use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrorResponse};
+use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{extract::State, response::IntoResponse};
 use piqueld_core::{
     EnvironmentId,
@@ -45,7 +45,7 @@ impl QueryParams for LogQuery {
 /// names outside 1–63 characters fail with 400 `logs_query_invalid`.
 #[utoipa::path(get,path="/api/v1/environments/{id}/logs",operation_id="environmentLogs",params(("id"=String,Path),LogQuery),
  responses((status=200,description="Recent Docker output",body=Envelope<ApplicationLogs>),
- (status=400,response=inline(ApiErrorResponse)),(status=404,response=inline(ApiErrorResponse)),(status=502,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+ ApiErrors<400, 404, 502, 503>))]
 pub(super) async fn get(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,

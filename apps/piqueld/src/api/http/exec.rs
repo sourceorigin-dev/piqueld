@@ -5,7 +5,7 @@ use super::{
     auth::{FreshTailnet, TailnetSource},
     extract::decode_json,
     lease::{Ended, Lease},
-    openapi::ApiErrorResponse,
+    openapi::ApiErrors,
 };
 use crate::{
     api::{ExecSession, Expensive},
@@ -61,7 +61,7 @@ impl<S: Send + Sync> FromRequestParts<S> for ExecUpgrade {
 #[utoipa::path(get,path="/api/v1/environments/{id}/exec",operation_id="execEnvironmentCommand",params(("id"=String,Path)),
  description="Opens a WebSocket whose first message is a JSON ExecRequest; see piqueld_core::exec.",
  responses((status=101,description="Switched to a WebSocket streaming the command"),
- (status=400,response=inline(ApiErrorResponse)),(status=426,response=inline(ApiErrorResponse)),(status=503,response=inline(ApiErrorResponse))))]
+ ApiErrors<400, 426, 503>))]
 pub(super) async fn exec(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<String>,

@@ -5,6 +5,8 @@ use http::header;
 use piqueld_core::api::{Envelope, ErrorBody, SecretMetadata};
 use piqueld_core::{edit::RoutesValue, manifest::Route};
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
+use utoipa::openapi::{RefOr, Response};
 use utoipa::{OpenApi, ToResponse};
 
 // Base document: API metadata plus explicitly registered component schemas.
@@ -71,7 +73,71 @@ pub(super) fn base_document() -> utoipa::openapi::OpenApi {
 )]
 #[derive(ToResponse)]
 #[response(description = "Structured, sanitized error")]
-pub(super) struct ApiErrorResponse(ErrorBody);
+struct ApiErrorResponse(ErrorBody);
+
+/// The structured error responses an operation documents, one per status,
+/// listed in its `#[utoipa::path]` beside its success responses:
+///
+/// ```text
+/// responses((status = 200, body = Envelope<View>), ApiErrors<400, 404, 500, 503>)
+/// ```
+///
+/// Statuses are ascending 4xx and 5xx codes, checked when the crate is built
+/// (not by `cargo check` or Clippy); unused trailing parameters stay 0.
+pub(super) struct ApiErrors<
+    const A: u16,
+    const B: u16 = 0,
+    const C: u16 = 0,
+    const D: u16 = 0,
+    const E: u16 = 0,
+    const F: u16 = 0,
+    const G: u16 = 0,
+    const H: u16 = 0,
+    const I: u16 = 0,
+    const J: u16 = 0,
+>;
+
+impl<
+    const A: u16,
+    const B: u16,
+    const C: u16,
+    const D: u16,
+    const E: u16,
+    const F: u16,
+    const G: u16,
+    const H: u16,
+    const I: u16,
+    const J: u16,
+> utoipa::IntoResponses for ApiErrors<A, B, C, D, E, F, G, H, I, J>
+{
+    fn responses() -> BTreeMap<String, RefOr<Response>> {
+        // The documented statuses, followed by zeros.
+        let statuses = const {
+            let statuses = [A, B, C, D, E, F, G, H, I, J];
+            let mut index = 0;
+            while index < statuses.len() {
+                let status = statuses[index];
+                let previous = if index == 0 { 399 } else { statuses[index - 1] };
+                assert!(
+                    if status == 0 {
+                        index > 0
+                    } else {
+                        previous != 0 && previous < status && status < 600
+                    },
+                    "ApiErrors statuses must be ascending 4xx and 5xx codes"
+                );
+                index += 1;
+            }
+            statuses
+        };
+        let (_, response) = ApiErrorResponse::response();
+        statuses
+            .into_iter()
+            .take_while(|status| *status != 0)
+            .map(|status| (status.to_string(), response.clone()))
+            .collect()
+    }
+}
 
 // Serves the precomputed `OpenAPI` 3.0 document installed by `finish_router`.
 #[utoipa::path(

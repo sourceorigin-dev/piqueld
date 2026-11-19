@@ -6,7 +6,7 @@ use super::{
     events::PACE,
     lease::{Ended, Lease},
     ok,
-    openapi::ApiErrorResponse,
+    openapi::ApiErrors,
 };
 use crate::{api::Expensive, auth::Identity};
 use axum::{
@@ -44,9 +44,7 @@ async fn authorize(state: &ApiState, grants: &Grants, id: &str) -> Result<Operat
     params(("id" = String, Path, min_length = 8, max_length = 128)),
     responses(
         (status = 200, description = "Success", body = Envelope<Operation>),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 500, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse)),
+        ApiErrors<404, 500, 503>,
     )
 )]
 pub(super) async fn get(
@@ -70,9 +68,7 @@ pub(super) async fn get(
     params(("id" = String, Path, min_length = 8, max_length = 128)),
     responses(
         (status = 200, description = "Success", body = Envelope<Timeline>),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 410, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse)),
+        ApiErrors<404, 410, 503>,
     )
 )]
 pub(super) async fn timeline(
@@ -101,9 +97,7 @@ pub(super) async fn timeline(
     params(("id" = String, Path, min_length = 8, max_length = 128)),
     responses(
         (status = 200, description = "SSE of `timeline` messages, each a whole `Timeline`", body = String, content_type = "text/event-stream"),
-        (status = 404, response = inline(ApiErrorResponse)),
-        (status = 410, response = inline(ApiErrorResponse)),
-        (status = 503, response = inline(ApiErrorResponse)),
+        ApiErrors<404, 410, 503>,
     )
 )]
 pub(super) async fn stream_timeline(

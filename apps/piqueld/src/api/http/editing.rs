@@ -2,7 +2,7 @@
 use super::access::Audited;
 use super::{
     ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, applications::accept_mutation,
-    openapi::ApiErrorResponse,
+    extract::IdempotencyKey, openapi::ApiErrors,
 };
 use crate::api::Mutation;
 use crate::auth::Identity;
@@ -63,12 +63,10 @@ macro_rules! edit_endpoint {
     ($(#[$doc:meta])* $name:ident, $method:ident, $path:literal, ($($part:ident : $part_ty:ty = $label:literal),+), remove, $edit:expr) => {
         $(#[$doc])*
         #[utoipa::path($method, path = $path, operation_id = stringify!($name),
-            params($( ($label = String, Path), )+ EditOptions, ("Idempotency-Key" = Option<String>, Header)),
+            params($( ($label = String, Path), )+ EditOptions, IdempotencyKey),
             responses((status = 200, description = "Configuration saved", body = Envelope<SavedApplication>),
                 (status = 202, description = "Deployment accepted", body = Envelope<SavedApplication>),
-                (status = 400, response = inline(ApiErrorResponse)), (status = 404, response = inline(ApiErrorResponse)),
-                (status = 409, response = inline(ApiErrorResponse)), (status = 422, response = inline(ApiErrorResponse)),
-                (status = 500, response = inline(ApiErrorResponse)), (status = 503, response = inline(ApiErrorResponse))))]
+                ApiErrors<400, 404, 409, 422, 500, 503>))]
         async fn $name(State(state): State<ApiState>, Extension(identity): Extension<Identity>, audited: Audited, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, headers: HeaderMap) -> Result<Response, ApiError> {
             let edit = ($edit)(($($part.clone()),+));
             submit(&state, audited.author(&identity), edit_endpoint!(@id $($part),+), edit, options, &headers).await
@@ -77,14 +75,11 @@ macro_rules! edit_endpoint {
     ($(#[$doc:meta])* $name:ident, $method:ident, $path:literal, ($($part:ident : $part_ty:ty = $label:literal),+), $body:ty, $edit:expr) => {
         $(#[$doc])*
         #[utoipa::path($method, path = $path, operation_id = stringify!($name),
-            params($( ($label = String, Path), )+ EditOptions, ("Idempotency-Key" = Option<String>, Header)),
+            params($( ($label = String, Path), )+ EditOptions, IdempotencyKey),
             request_body = $body,
             responses((status = 200, description = "Configuration saved", body = Envelope<SavedApplication>),
                 (status = 202, description = "Configuration saved and deployment accepted", body = Envelope<SavedApplication>),
-                (status = 400, response = inline(ApiErrorResponse)), (status = 404, response = inline(ApiErrorResponse)),
-                (status = 409, response = inline(ApiErrorResponse)), (status = 413, response = inline(ApiErrorResponse)),
-                (status = 415, response = inline(ApiErrorResponse)), (status = 422, response = inline(ApiErrorResponse)),
-                (status = 500, response = inline(ApiErrorResponse)), (status = 503, response = inline(ApiErrorResponse))))]
+                ApiErrors<400, 404, 409, 413, 415, 422, 500, 503>))]
         async fn $name(State(state): State<ApiState>, Extension(identity): Extension<Identity>, audited: Audited, ApiPath(($($part,)+)): ApiPath<($($part_ty,)+)>, ApiQuery(options): ApiQuery<EditOptions>, headers: HeaderMap, ApiJson(body): ApiJson<$body>) -> Result<Response, ApiError> {
             let edit = ($edit)(($($part.clone()),+), body);
             submit(&state, audited.author(&identity), edit_endpoint!(@id $($part),+), edit, options, &headers).await
@@ -201,12 +196,10 @@ impl QueryParams for CreateQuery {
 /// The body holds only the name, which must not already be in use (409
 /// otherwise). Pass `deploy=true` to also deploy it (202 instead of 200).
 #[utoipa::path(post, path = "/api/v1/applications", operation_id = "create_application",
-    params(("deploy" = Option<bool>, Query), ("Idempotency-Key" = Option<String>, Header)), request_body = StringValue,
+    params(("deploy" = Option<bool>, Query), IdempotencyKey), request_body = StringValue,
     responses((status = 200, description = "Empty application saved", body = Envelope<SavedApplication>),
         (status = 202, description = "Deployment accepted", body = Envelope<SavedApplication>),
-        (status = 400, response = inline(ApiErrorResponse)), (status = 409, response = inline(ApiErrorResponse)),
-        (status = 413, response = inline(ApiErrorResponse)), (status = 415, response = inline(ApiErrorResponse)),
-        (status = 422, response = inline(ApiErrorResponse)), (status = 500, response = inline(ApiErrorResponse)), (status = 503, response = inline(ApiErrorResponse))))]
+        ApiErrors<400, 409, 413, 415, 422, 500, 503>))]
 async fn create_application(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
