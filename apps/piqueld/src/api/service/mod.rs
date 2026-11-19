@@ -579,7 +579,11 @@ impl ApplicationService {
         if receivers {
             // Stops export to a revoked or deleted receiver before
             // answering, then lets the controller mount or unmount sockets.
-            self.receive_telemetry().await?;
+            // Best effort like the ingress refresh: the change is committed,
+            // and the periodic receiver refresh retries.
+            if let Err(error) = self.receive_telemetry().await {
+                tracing::warn!(?error, "updating telemetry receivers failed");
+            }
             self.runtime.trigger_full_scan();
         }
         Ok(response)
