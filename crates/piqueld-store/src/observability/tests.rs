@@ -992,13 +992,11 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
     sqlx::query(rearm).execute(&store.pool).await.unwrap();
     store.record_audit(&refused("203.0.113.9")).await.unwrap();
     // Distinct user, credential and name, so the notice names the right one.
-    let user = piqueld_core::auth::User {
-        id: "alice".into(),
-        username: "alice".into(),
-        display_name: String::new(),
-    };
     store
-        .seed_auth_user(&user, &piqueld_core::access::Grants::admin())
+        .seed_auth_user(
+            &crate::testing::user("alice"),
+            &piqueld_core::access::Grants::admin(),
+        )
         .await;
     let credential = NewCredential {
         id: "laptop".into(),
@@ -1009,10 +1007,7 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
         grants: None,
         authenticated_at: None,
     };
-    store
-        .insert_credential(&user.id, &credential)
-        .await
-        .unwrap();
+    store.insert_credential("alice", &credential).await.unwrap();
     for address in ["192.0.2.1", "192.0.2.1", "198.51.100.7"] {
         let note = store.note_credential_address("laptop", "alice", address);
         note.await.unwrap();
