@@ -958,6 +958,43 @@ impl Store {
         Ok(Some(user))
     }
 
+    /// Marks the approving account's own CLI login `credential_id` as proved
+    /// at `authenticated_at`, the approval's passkey proof, if that proof is
+    /// still recent and the approver's credential still live. Its expiry and
+    /// grants stay as they are. Returns `false` when the login ended, so it
+    /// is never revived.
+    ///
+    /// # Errors
+    /// Returns a revoked approver, a refusal, or storage errors.
+    pub async fn confirm_login(
+        &self,
+        approver: Caller<'_>,
+        credential_id: &str,
+        authenticated_at: Option<i64>,
+    ) -> Result<bool, StoreError> {
+        let (_writer, mut tx) = self.begin_immediate().await?;
+        let authority = approver.load(&mut tx).await?;
+        let approval = Proof {
+            authenticated_at,
+            ..authority.proof
+        };
+        let now = now_secs();
+        approval.require_fresh(now).map_err(StoreError::Denied)?;
+        let confirmed = sqlx::query!(
+            "UPDATE auth_credentials SET authenticated_at=?1 WHERE id=?2 AND user_id=?3 AND kind='cli' AND (expires_at IS NULL OR expires_at>?4)",
+            authenticated_at,
+            credential_id,
+            authority.user_id,
+            now
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::database)?
+        .rows_affected();
+        tx.commit().await.map_err(StoreError::database)?;
+        Ok(confirmed == 1)
+    }
+
     /// Deletes one credential if `actor` may change its owner, with what it
     /// issued as `cascade` says, or one host operator session, which issues
     /// nothing, if `actor` could manage an administrator, as that session

@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import {
   test, expect, api, auth, adminToken, apply, card, register, proof, resolveEnvironment, webManifest, applicationTab, environmentTab, title, head,
   accountRows, openAccount, done, signUp, confirmPasskey, Passkeys, type Account, type Session, type Directory, type Managed, type Ceremony,
@@ -337,6 +337,37 @@ test('CLI device approval, private credentials, API tokens, revocation and expir
     await expect(page.getByRole('button', { name: 'Sign in with a passkey', exact: true })).toBeVisible();
     await expect(dialog).toHaveCount(0);
   } finally { await login.stop(); }
+});
+
+test('a CLI login confirms itself with a passkey on the device page, without signing in again', async ({ page, account, cli }) => {
+  const login = cli.start(['login']);
+  try {
+    await page.goto(await login.waitForOutput(/Open (\S+)/, 'stderr'));
+    await page.getByRole('button', { name: 'Approve CLI login', exact: true }).click();
+    await expect.poll(() => login.child.exitCode).toBe(0);
+  } finally { await login.stop(); }
+  const saved = JSON.parse(await readFile(cli.env.PIQUELD_CREDENTIALS_FILE!, 'utf8'));
+  const [endpoint] = Object.values(saved.endpoints) as { accounts: Record<string, { token: string }> }[];
+  const bearer = { Authorization: `Bearer ${endpoint.accounts[account.id].token}` };
+  // What piquelctl asks when a sensitive action is refused for want of a
+  // recent passkey sign-in.
+  const started = await page.request.post('/api/v1/auth/device/confirm', { headers: bearer, data: { action: 'create_token' } });
+  expect(started.status()).toBe(200);
+  const start = await started.json();
+  // A full load: the page reads its code from the fragment once.
+  await page.goto('/dashboard/');
+  await page.goto(start.verification_uri_complete);
+  const request = page.locator('.device-request');
+  await expect(request).toContainText('Login to confirm');
+  await expect(request).toContainText('create an API token');
+  await page.getByRole('button', { name: 'Confirm CLI login', exact: true }).click();
+  await expect(page.getByText('CLI login confirmed. piquelctl continues by itself.', { exact: true })).toBeVisible();
+  const polled = await page.request.post('/api/v1/auth/device/poll', { headers: bearer, data: { device_code: start.device_code } });
+  expect(await polled.json()).toMatchObject({ status: 'complete', token: null, user: { id: account.id } });
+  // It confirmed the saved login rather than issuing another.
+  const { credentials } = await auth<{ credentials: { kind: string }[] }>(page, 'directory');
+  const logins = credentials.filter(credential => credential.kind === 'cli');
+  expect(logins).toHaveLength(1);
 });
 
 test('the CLI edits and deletes accounts and manages their passkeys, links and credentials', async ({ page, account, browser, cli }) => {

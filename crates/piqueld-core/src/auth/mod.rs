@@ -485,6 +485,54 @@ pub struct DeviceStart {
     pub grants: Option<Grants>,
 }
 
+/// An action that needs a recent passkey sign-in, which a CLI login
+/// confirms through the dashboard before retrying it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SensitiveAction {
+    /// Creating an API token.
+    CreateToken,
+    /// Creating an invitation link.
+    CreateInvitation,
+    /// Creating an enrollment link.
+    CreateEnrollment,
+    /// Giving an account `admin`, `accounts:manage` or `system:operate`.
+    SetGrants,
+    /// Recovering a lost secret key, discarding stored values.
+    RecoverSecretKey,
+}
+
+impl SensitiveAction {
+    /// What the action does, as the approval page names it, e.g. `create an
+    /// API token`.
+    #[must_use]
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::CreateToken => "create an API token",
+            Self::CreateInvitation => "create an invitation link",
+            Self::CreateEnrollment => "create an enrollment link",
+            Self::SetGrants => "change an account's grants",
+            Self::RecoverSecretKey => "recover the secret key, discarding stored secret values",
+        }
+    }
+}
+
+/// Asks to confirm the calling CLI login with a passkey before `action`.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct DeviceConfirmRequest {
+    /// The action the CLI retries once the login is confirmed.
+    pub action: SensitiveAction,
+}
+
+/// What a device request confirms, instead of signing in a new CLI.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DeviceConfirmation {
+    /// The action the CLI is about to retry.
+    pub action: SensitiveAction,
+    /// ID of the existing CLI login to confirm.
+    pub login: String,
+}
+
 /// CLI polling request.
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct DevicePoll {
@@ -513,6 +561,10 @@ pub struct DeviceRequest {
     pub expires_in: u32,
     /// Grants the session is limited to; absent for the approver's full access.
     pub grants: Option<Grants>,
+    /// Set when the request confirms an existing CLI login of the approver's
+    /// account for an action, rather than signing in a new one.
+    #[serde(default)]
+    pub confirms: Option<DeviceConfirmation>,
 }
 
 /// Poll result; the token is returned exactly once after explicit approval.
@@ -520,7 +572,8 @@ pub struct DeviceRequest {
 pub struct DeviceToken {
     /// `authorization_pending`, `slow_down`, or `complete`.
     pub status: String,
-    /// Issued CLI credential.
+    /// Issued CLI credential; absent when the request confirmed an existing
+    /// login instead.
     pub token: Option<String>,
     /// Account associated with the credential.
     pub user: Option<User>,

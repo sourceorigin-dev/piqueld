@@ -219,6 +219,9 @@ over the form. Select **Confirm with passkey** and use your passkey; the
 action then continues by itself. **Cancel** stops the action and keeps what
 you entered, so you can try again.
 
+`piquelctl` asks you to confirm in a browser instead: see
+[confirm a sensitive action](cli-and-tokens.md#confirm-a-sensitive-action).
+
 A session opened by a setup, invitation, enrollment or recovery link counts as
 older, until you confirm once. Using piqueld doesn't renew the 2 minutes: only
 a passkey does.

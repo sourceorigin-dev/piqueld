@@ -641,8 +641,11 @@ the secret key, need a passkey sign-in within the last 2 minutes and
 otherwise return
 `403 reauthentication_required`. When its `details.step_up` is `true`, a
 browser session confirms with a passkey through
-`POST /api/v1/auth/reauthenticate/start` and `/finish`, then retries; it is
-`false` for API tokens, which never can. The host operator is never asked
+`POST /api/v1/auth/reauthenticate/start` and `/finish`, then retries. A CLI
+login asks `POST /api/v1/auth/device/confirm` for a device request naming
+the action, which its own account approves on the dashboard; polling it then
+completes without a token, and the login retries. `step_up` is `false` for
+API tokens, which never can. The host operator is never asked
 (see [confirm with your passkey](../accounts/accounts.md#confirm-with-your-passkey)).
 Undecodable URL path parameters return `400 path_invalid`, and malformed IDs
 `400 application_id_invalid` or `environment_id_invalid`, with the usual JSON

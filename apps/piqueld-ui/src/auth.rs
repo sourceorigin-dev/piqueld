@@ -352,6 +352,7 @@ mod tests {
             age,
             expires_in: 600,
             grants: None,
+            confirms: None,
         };
         for (age, label) in [
             (59, "less than a minute ago"),

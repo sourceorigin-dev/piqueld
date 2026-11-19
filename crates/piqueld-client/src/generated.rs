@@ -7426,9 +7426,10 @@ impl Client {
     }
     /*Approves a pending device sign-in
 
-    The device's next poll receives a token for the signed-in user. Needs a
-    passkey sign-in within the last 2 minutes; the issued login counts as
-    signed in when that was.
+    The device's next poll receives a token for the signed-in user, or, for a
+    request confirming an existing CLI login of the same account, marks that
+    login confirmed. Needs a passkey sign-in within the last 2 minutes; the
+    issued or confirmed login counts as signed in when that was.
 
     Sends a `POST` request to `/api/v1/auth/device/approve`
 
@@ -7473,10 +7474,65 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
+    /*Starts confirming the calling CLI login with a passkey
+
+    Sensitive actions need a passkey sign-in within the last 2 minutes and
+    otherwise fail with 403 `reauthentication_required`. A CLI login asks
+    here for a device request naming `action`, approved like a sign-in, on the
+    dashboard page `verification_uri_complete`, by its own account. Once
+    approved, polling answers `complete` without a token: the CLI keeps its
+    login, now confirmed, and retries the action. Only CLI logins confirm this
+    way; API tokens are refused with 403 `reauthentication_required`. Rate
+    limited per client address (429 with `Retry-After`).
+
+    Sends a `POST` request to `/api/v1/auth/device/confirm`
+
+    */
+    pub async fn auth_device_confirm<'a>(
+        &'a self,
+        body: &'a piqueld_core::auth::DeviceConfirmRequest,
+    ) -> Result<ResponseValue<piqueld_core::auth::DeviceStart>, Error<piqueld_core::api::ErrorBody>>
+    {
+        let url = format!("{}/api/v1/auth/device/confirm", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .json(&body)
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "auth_device_confirm",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            408u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
     /*Inspects a pending device sign-in
 
     Shows the requesting address and remaining lifetime so the user can confirm
-    the request before approving it.
+    the request before approving it. A request confirming an existing CLI
+    login names its action and login, and only that login's account sees it.
 
     Sends a `POST` request to `/api/v1/auth/device/inspect`
 

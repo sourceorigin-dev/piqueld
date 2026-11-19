@@ -285,6 +285,12 @@ impl Console {
         }
     }
 
+    /// Whether the command may wait on the operator, which
+    /// `--noninteractive` rules out.
+    pub(crate) const fn interactive(&self) -> bool {
+        !self.noninteractive
+    }
+
     /// Multi-line instructions for the operator, never quieted; values
     /// remain terminal-escaped. With `--json`, one `info` event.
     pub(crate) fn prompt_lines(&mut self, lines: &[String]) -> Result<()> {

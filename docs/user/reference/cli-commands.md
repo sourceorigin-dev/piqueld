@@ -184,7 +184,7 @@ piquelctl account list [OPTIONS]
 
 Replace an account's grants.
 
-Choose the new grants with `--preset`, `--permission`, or both. Needs `accounts:manage`, every grant the account has, and every grant you give it. An API token can't change grants.
+Choose the new grants with `--preset`, `--permission`, or both. Needs `accounts:manage`, every grant the account has, and every grant you give it. An API token can't change grants. Giving `admin`, `accounts:manage` or `system:operate` asks you to confirm in a browser first, if you last signed in with your passkey more than 2 minutes ago.
 
 ```text
 piquelctl account access [OPTIONS] <ACCOUNT>
@@ -231,7 +231,7 @@ Options:
 
 Print a link that creates a new account with the selected grants.
 
-Choose the grants with `--preset`, `--permission`, or both. The link works once within 24 hours. Needs `accounts:manage` and every grant it hands out. An API token can't create invitations.
+Choose the grants with `--preset`, `--permission`, or both. The link works once within 24 hours. Needs `accounts:manage` and every grant it hands out. An API token can't create invitations. If you last signed in with your passkey more than 2 minutes ago, it asks you to confirm in a browser first.
 
 ```text
 piquelctl account invite [OPTIONS]
@@ -273,7 +273,7 @@ Options:
 
 Print a link that adds a passkey to an existing account.
 
-The link works once within 24 hours, and signs in whoever uses it as that account. Anyone may create one for their own account; another account needs `accounts:manage` and every grant it has. An API token or limited login can't create enrollment links.
+The link works once within 24 hours, and signs in whoever uses it as that account. Anyone may create one for their own account; another account needs `accounts:manage` and every grant it has. An API token or limited login can't create enrollment links. If you last signed in with your passkey more than 2 minutes ago, it asks you to confirm in a browser first.
 
 ```text
 piquelctl account enroll [OPTIONS] <ACCOUNT>
@@ -444,7 +444,7 @@ Commands:
 
 Create an API token for your account, and print it.
 
-The token has only the grants you select, with `--preset`, `--permission`, or both, and you must hold them. Use it with `PIQUELD_TOKEN`. Keep it safe: it is printed once and never shown again. An API token can't create tokens.
+The token has only the grants you select, with `--preset`, `--permission`, or both, and you must hold them. Use it with `PIQUELD_TOKEN`. Keep it safe: it is printed once and never shown again. An API token can't create tokens. If you last signed in with your passkey more than 2 minutes ago, it asks you to confirm in a browser first.
 
 ```text
 piquelctl token create [OPTIONS] <NAME>
@@ -648,7 +648,7 @@ Commands:
 
 Recover from a lost secret key by discarding every value it encrypted.
 
-Use it only when the daemon's `secrets.key` is lost and you have no backup: the daemon refuses while the key still works. It discards the stored and generated secret values of ALL applications and environments and the repository webhook secrets, and deletes every notification destination, since their URLs are encrypted. Running services keep their Docker secrets. Afterwards, set the stored secrets again and deploy, which also generates new values for generated secrets, give each repository a new webhook secret with `app repository webhook rotate`, and add the notification destinations again with `notification set`. Needs `system:operate`.
+Use it only when the daemon's `secrets.key` is lost and you have no backup: the daemon refuses while the key still works. It discards the stored and generated secret values of ALL applications and environments and the repository webhook secrets, and deletes every notification destination, since their URLs are encrypted. Running services keep their Docker secrets. Afterwards, set the stored secrets again and deploy, which also generates new values for generated secrets, give each repository a new webhook secret with `app repository webhook rotate`, and add the notification destinations again with `notification set`. Needs `system:operate`. If you last signed in with your passkey more than 2 minutes ago, it asks you to confirm in a browser first.
 
 ```text
 piquelctl secrets recover-key [OPTIONS]

@@ -135,6 +135,20 @@ impl Client {
             .payload()
             .await
     }
+    /// Starts confirming the current CLI login with a passkey before
+    /// `action`, through a device request its account approves in a browser.
+    /// Polling it completes without a token.
+    /// # Errors
+    /// Returns authentication, transport, decoding, or API failures.
+    pub async fn auth_device_confirm(
+        &self,
+        action: SensitiveAction,
+    ) -> Result<DeviceStart, ClientError> {
+        self.generated
+            .auth_device_confirm(&DeviceConfirmRequest { action })
+            .payload()
+            .await
+    }
     /// Polls for the one-time result of a device login.
     /// # Errors
     /// Returns expiry, transport, decoding, or API failures.

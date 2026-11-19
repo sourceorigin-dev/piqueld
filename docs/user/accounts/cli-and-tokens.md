@@ -58,6 +58,32 @@ alice (01a16b4b-ef93-7971-b6f6-e8359d3c4d52)
 
 The login lasts 30 days. Then run `piquelctl login` again.
 
+### Confirm a sensitive action
+
+Creating tokens and links, giving `admin`, `accounts:manage` or
+`system:operate`, and recovering the secret key need a
+[passkey sign-in within the last 2 minutes](accounts.md#confirm-with-your-passkey).
+A login counts as signed in when you approved it. Later, `piquelctl` asks you
+to confirm the same login in a browser, then carries on:
+
+```console
+$ piquelctl token create ci --preset deploy
+Open https://piqueld.<tailnet>.ts.net/dashboard/auth#device=HT4M-QX7K
+Check the page shows code: HT4M-QX7K
+The daemon sees this confirmation coming from: 100.101.102.103
+Waiting for you to confirm this login with your passkey, to create an API token…
+```
+
+Open the link. The page shows **Login to confirm** and what `piquelctl` is
+**About to** do. Select **Confirm CLI login**, and use your passkey if the
+dashboard asks. `piquelctl` keeps its login and sends the request again,
+once. Nothing changed before you confirmed, so pressing Ctrl-C leaves
+everything as it was.
+
+With `--noninteractive`, `piquelctl` doesn't wait: the command fails with
+`reauthentication_required`. A token in `PIQUELD_TOKEN` can never confirm, so
+these commands fail with it whatever its access.
+
 ### Ask for less access
 
 A login can do less than your account, which suits a shared or less trusted
@@ -298,6 +324,10 @@ a new token.
   for access your account doesn't hold. Start it again with less access.
 - **"login expired; run piquelctl login again".** The code is valid for 10
   minutes. Run `piquelctl login` again.
+- **A command fails with `reauthentication_required`.** It needs a
+  [recent passkey sign-in](#confirm-a-sensitive-action). Run it again without
+  `--noninteractive` and confirm in a browser, or, with an API token, use a
+  signed-in login instead.
 - **Starting a limited login fails with `request_body_too_large`.** The access
   it asks for is over 16 KiB, which fits a preset on a few dozen
   applications. Ask for every application instead of listing them.

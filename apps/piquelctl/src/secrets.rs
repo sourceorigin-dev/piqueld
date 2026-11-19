@@ -13,6 +13,7 @@ use crate::{
 use clap::{Args, Subcommand};
 use piqueld_client::{
     ApplicationView, Client, EnvironmentAccess, MAX_SECRET_VALUE_BYTES, SecretAccess,
+    auth::SensitiveAction,
 };
 use std::path::PathBuf;
 
@@ -359,7 +360,8 @@ pub(crate) enum KeyAction {
     /// which also generates new values for generated secrets, give each
     /// repository a new webhook secret with `app repository webhook rotate`,
     /// and add the notification destinations again with `notification set`.
-    /// Needs `system:operate`.
+    /// Needs `system:operate`. If you last signed in with your passkey more than 2 minutes ago, it asks you
+    /// to confirm in a browser first.
     RecoverKey {
         /// Skip the confirmation prompt.
         #[arg(long, short)]
@@ -375,6 +377,9 @@ impl KeyAction {
         // Print scope even with --yes; the confirmation skips its prompt then.
         console.warning(message)?;
         console.confirm(*yes, message).await?;
-        console.emit(&client.recover_secret_key().await?)
+        let action = SensitiveAction::RecoverSecretKey;
+        let recovery =
+            crate::auth::confirmed(client, console, action, || client.recover_secret_key()).await?;
+        console.emit(&recovery)
     }
 }

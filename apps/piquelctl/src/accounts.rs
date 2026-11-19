@@ -6,7 +6,7 @@
 //! applications named with `--app` (every application when omitted). Grants
 //! are displayed with application names where the caller can read them.
 use crate::{
-    auth::Credentials,
+    auth::{Credentials, confirmed},
     cli::one_of,
     commands::fold_applications,
     error::{CliError, ErrorKind, Result},
@@ -19,7 +19,7 @@ use piqueld_client::{
     audit::{AuditEvent, AuditFilter, AuditLink, AuditOutcome, AuditVerification},
     auth::{
         Account, CredentialView, Directory, InvitationView, Manage, OperatorSessionView,
-        PasskeyView, Principal, Session, User,
+        PasskeyView, Principal, SensitiveAction, Session, User,
     },
     observability::Timestamp,
     tailnet::TailnetBinding,
@@ -40,7 +40,9 @@ pub(crate) enum AccountCommand {
     ///
     /// Choose the new grants with `--preset`, `--permission`, or both. Needs
     /// `accounts:manage`, every grant the account has, and every grant you give
-    /// it. An API token can't change grants.
+    /// it. An API token can't change grants. Giving `admin`, `accounts:manage`
+    /// or `system:operate` asks you to confirm in a browser first, if you last
+    /// signed in with your passkey more than 2 minutes ago.
     Access {
         /// Account username or ID.
         #[arg(value_name = "ACCOUNT")]
@@ -55,7 +57,8 @@ pub(crate) enum AccountCommand {
     ///
     /// Choose the grants with `--preset`, `--permission`, or both. The link
     /// works once within 24 hours. Needs `accounts:manage` and every grant it
-    /// hands out. An API token can't create invitations.
+    /// hands out. An API token can't create invitations. If you last signed in with your passkey more than 2 minutes ago, it asks you
+    /// to confirm in a browser first.
     Invite {
         #[command(flatten)]
         grants: GrantArgs,
@@ -65,7 +68,8 @@ pub(crate) enum AccountCommand {
     /// The link works once within 24 hours, and signs in whoever uses it as
     /// that account. Anyone may create one for their own account; another
     /// account needs `accounts:manage` and every grant it has. An API token or
-    /// limited login can't create enrollment links.
+    /// limited login can't create enrollment links. If you last signed in with your passkey more than 2 minutes ago, it asks you
+    /// to confirm in a browser first.
     Enroll {
         /// Account username or ID.
         #[arg(value_name = "ACCOUNT")]
@@ -295,7 +299,8 @@ pub(crate) enum TokenCommand {
     /// The token has only the grants you select, with `--preset`,
     /// `--permission`, or both, and you must hold them. Use it with
     /// `PIQUELD_TOKEN`. Keep it safe: it is printed once and never shown
-    /// again. An API token can't create tokens.
+    /// again. An API token can't create tokens. If you last signed in with your passkey more than 2 minutes ago, it asks you
+    /// to confirm in a browser first.
     Create {
         /// Token name, up to 200 bytes.
         name: String,
@@ -392,14 +397,15 @@ impl TokenCommand {
                     Err(error) => return Err(error.into()),
                 }
                 let grants = grants.grants(client).await?;
-                let managed = client
-                    .auth_manage(&Manage::CreateToken {
-                        grants,
-                        name: name.clone(),
-                        days: (!no_expiry).then_some(*days),
-                        tailnet: tailnet.clone(),
-                    })
-                    .await?;
+                let create = Manage::CreateToken {
+                    grants,
+                    name: name.clone(),
+                    days: (!no_expiry).then_some(*days),
+                    tailnet: tailnet.clone(),
+                };
+                let action = SensitiveAction::CreateToken;
+                let managed =
+                    confirmed(client, console, action, || client.auth_manage(&create)).await?;
                 let token = managed.token.ok_or_else(|| {
                     CliError::new(ErrorKind::General, "the daemon returned no token")
                         .invalid_response()
@@ -515,12 +521,12 @@ impl AccountCommand {
                         &format!("Replace every grant of {:?}?", target.user.username),
                     )
                     .await?;
-                client
-                    .auth_manage(&Manage::SetGrants {
-                        user_id: target.user.id.clone(),
-                        grants: grants.clone(),
-                    })
-                    .await?;
+                let change = Manage::SetGrants {
+                    user_id: target.user.id.clone(),
+                    grants: grants.clone(),
+                };
+                let action = SensitiveAction::SetGrants;
+                confirmed(client, console, action, || client.auth_manage(&change)).await?;
                 let account = Account {
                     user: target.user,
                     grants,
@@ -529,18 +535,20 @@ impl AccountCommand {
             }
             Self::Invite { grants } => {
                 let grants = grants.grants(client).await?;
-                let managed = client
-                    .auth_manage(&Manage::CreateInvitation { grants })
-                    .await?;
+                let invite = Manage::CreateInvitation { grants };
+                let action = SensitiveAction::CreateInvitation;
+                let managed =
+                    confirmed(client, console, action, || client.auth_manage(&invite)).await?;
                 console.emit(&LinkReport::new(managed.invitation_url)?)
             }
             Self::Enroll { target } => {
                 let target = find(&client.auth_directory().await?, target)?;
-                let managed = client
-                    .auth_manage(&Manage::CreateEnrollment {
-                        user_id: target.user.id,
-                    })
-                    .await?;
+                let enroll = Manage::CreateEnrollment {
+                    user_id: target.user.id,
+                };
+                let action = SensitiveAction::CreateEnrollment;
+                let managed =
+                    confirmed(client, console, action, || client.auth_manage(&enroll)).await?;
                 console.emit(&LinkReport::new(managed.invitation_url)?)
             }
             Self::Update {
