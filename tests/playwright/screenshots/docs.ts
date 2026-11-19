@@ -90,6 +90,35 @@ export const test = base.extend<{ gitHost: GitHost }>({
   processEnv: async ({ gitHost }, use) => { await use(gitHost.env); },
   page: async ({ page }, use) => {
     await page.clock.install();
+    // Counts the dashboard's requests whose response hasn't fully arrived,
+    // for `shoot` to wait for. Live streams use `EventSource`, so they don't
+    // count.
+    await page.addInitScript(() => {
+      let loading = 0;
+      const fetch = window.fetch;
+      window.fetch = async (...args) => {
+        loading++;
+        try {
+          const response = await fetch(...args);
+          // Once the page has the whole body too, which it reads by itself.
+          response.clone().arrayBuffer().finally(() => loading--).catch(() => {});
+          return response;
+        } catch (error) {
+          loading--;
+          throw error;
+        }
+      };
+      // Whether no request is loading once the page ran the tasks already
+      // queued, such as drawing a response that just arrived, or sending the
+      // request it leads to.
+      Object.assign(window, {
+        settled: () => new Promise<boolean>(resolve => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => resolve(loading === 0);
+          channel.port2.postMessage(null);
+        }),
+      });
+    });
     // The browser image has no system UI font: its fallback has no bold
     // face, which the dashboard doesn't synthesize. The stylesheet itself
     // sets one, so the dashboard's CSP still applies.
@@ -119,6 +148,11 @@ export const test = base.extend<{ gitHost: GitHost }>({
  * `--update-snapshots=none`, as in CI, a page that no longer matches fails
  * instead. */
 export async function shoot(page: Page, name: string, through?: Locator, from?: Locator) {
+  // A page draws parts of itself, such as the sidebar's daemon status or an
+  // environment's services, as their requests return, so a busy machine
+  // would otherwise shoot it half drawn.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { settled(): Promise<boolean> }).settled()),
+    { message: 'the page is still loading' }).toBe(true);
   const top = await from?.evaluate(element => element.getBoundingClientRect().top + scrollY - 12) ?? 0;
   const bottom = await through?.evaluate(element => element.getBoundingClientRect().bottom + scrollY + 12);
   await page.setViewportSize({ width: 1280, height: bottom ? Math.ceil(bottom - top) : 800 });
@@ -201,14 +235,22 @@ async function varying(page: Page): Promise<string[]> {
 }
 
 /** What the frozen page draws, for `shoot` to hash: the window's size and,
- * when scrolled, where, its styles, and its content, with form values and
- * without scripts. IDs and dates left in attributes, such as links, are
- * replaced like `freeze` replaces text: each ID by its order on the page,
- * keeping its format and length. */
+ * when scrolled, where, its styles, and its content, with form values,
+ * without scripts, and with each element's attributes sorted. IDs and dates
+ * left in attributes, such as links, are replaced like `freeze` replaces
+ * text: each ID by its order on the page, keeping its format and length. */
 async function fingerprint(page: Page): Promise<string> {
   const drawn = await page.evaluate(() => {
     const body = document.body.cloneNode(true) as HTMLElement;
     body.querySelectorAll('script').forEach(script => script.remove());
+    // Attributes in a fixed order: a redraw that removes one and sets it
+    // again moves it last, though the page draws the same.
+    for (const element of [body, ...Array.from(body.querySelectorAll('*'))]) {
+      for (const { name, value } of Array.from(element.attributes).sort((a, b) => a.name.localeCompare(b.name))) {
+        element.removeAttribute(name);
+        element.setAttribute(name, value);
+      }
+    }
     const styles = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules, rule => rule.cssText));
     const values = Array.from(document.querySelectorAll('input, select, textarea'), field => (field as HTMLInputElement).value);
     const size = scrollY ? `${innerWidth}x${innerHeight}+${scrollY}` : `${innerWidth}x${innerHeight}`;

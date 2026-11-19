@@ -1,4 +1,4 @@
-import { submitRegistration, applicationTab, expect } from '../fixtures.js';
+import { submitRegistration, applicationTab, environmentTab, expect } from '../fixtures.js';
 import { test, accountForm, createApplication, environment, newApplication, overview, saveChanges, shoot } from './docs.js';
 
 // docs/user/getting-started: the first account, then the first application,
@@ -29,6 +29,9 @@ test('getting started', async ({ page, daemon, passkeys }) => {
   await saveChanges(page);
   await page.locator('.breadcrumb').getByRole('link', { name: 'hello', exact: true }).click();
   await page.getByRole('button', { name: 'Deploy to production', exact: true }).click();
+  // Its deployments show once the daemon accepted it: leaving sooner could
+  // cancel the request.
+  await expect(environmentTab(page, 'Deployments')).toHaveAttribute('aria-selected', 'true');
 
   await overview(page);
   await shoot(page, 'getting-started/overview', page.getByRole('region', { name: 'Recent deployments' }));
