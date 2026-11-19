@@ -406,6 +406,11 @@ EOF
 above. When the application has several environments, also add
 `--env <name>` to `app exec`.
 
+Earlier versions stay as long as a deployment in the
+[deployment history](../operations/history.md#how-long-history-is-kept) uses
+them, so you can still restore it. Once no remaining deployment uses a version,
+piqueld deletes it.
+
 ## Delete a secret
 
 Deleting a secret discards its value and every earlier version, and can't be
