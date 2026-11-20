@@ -8,7 +8,7 @@ use piqueld_core::{
     api::{BuildLogChunk, BuildLogPage, BuildRecord, BuildState, LogStream, Page},
     manifest::ValidatedSource as Source,
 };
-use sqlx::{QueryBuilder, Sqlite};
+use sqlx::{QueryBuilder, Sqlite, Transaction};
 
 /// A succeeded build whose image another build may reuse; see
 /// [`Store::reusable_builds`].
@@ -51,6 +51,17 @@ pub enum LogAppend {
     /// truncated or expired, or the build finished. Output past the cap was
     /// dropped.
     Closed,
+}
+
+/// The end of a build's output, written as the build finishes (see
+/// [`Store::finish_build`]): output held back until then, and whether any of
+/// its output was dropped.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LogEnding {
+    /// Output to append, oldest first.
+    pub output: Vec<(LogStream, Vec<u8>)>,
+    /// Whether to mark the log truncated.
+    pub truncated: bool,
 }
 
 /// `builds` row read by the build listing.
@@ -161,14 +172,26 @@ impl Store {
         bytes: &[u8],
         stream: LogStream,
     ) -> Result<LogAppend, StoreError> {
+        let (_writer, mut tx) = self.begin_immediate().await?;
+        let appended = self.append_build_log_on(&mut tx, id, bytes, stream).await?;
+        tx.commit().await.map_err(StoreError::database)?;
+        Ok(appended)
+    }
+    /// [`Self::append_build_log`] in `tx`.
+    async fn append_build_log_on(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        id: i64,
+        bytes: &[u8],
+        stream: LogStream,
+    ) -> Result<LogAppend, StoreError> {
         let stream = stream.as_str();
         let timestamp = now_ms();
-        let (_writer, mut tx) = self.begin_immediate().await?;
         let row = sqlx::query!(
             "SELECT log_bytes,log_expired,log_truncated,state FROM builds WHERE id=?1",
             id
         )
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(StoreError::database)?
         .ok_or(StoreError::NotFound)?;
@@ -201,7 +224,7 @@ impl Store {
                 stream,
                 timestamp
             )
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(StoreError::database)?;
             offset += i64::try_from(chunk.len()).map_err(StoreError::invalid_input)?;
@@ -214,10 +237,9 @@ impl Store {
             truncated,
             id
         )
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        tx.commit().await.map_err(StoreError::database)?;
         Ok(if truncated {
             LogAppend::Closed
         } else {
@@ -252,42 +274,49 @@ impl Store {
         .map_err(StoreError::database)?;
         Ok(())
     }
-    /// Marks a build's output truncated when its producer dropped some of it.
-    ///
-    /// # Errors
-    /// Returns a storage error.
-    pub async fn build_log_truncated(&self, id: i64) -> Result<(), StoreError> {
-        self.write(sqlx::query!(
-            "UPDATE builds SET log_truncated=1 WHERE id=?1",
-            id
-        ))
-        .await
-        .map_err(StoreError::database)?;
-        Ok(())
-    }
     /// Marks a running build finished with `outcome`: its terminal state,
-    /// its image, and the build it reused that image from, if any.
-    /// Already finished builds are left unchanged; `Running` is invalid input.
+    /// its image, and the build it reused that image from, if any. In the
+    /// same transaction, appends `ending`'s output and marks the log
+    /// truncated if `ending` says so, so a build never finishes without the
+    /// end of its output. Already finished builds are left unchanged;
+    /// `Running` is invalid input.
     ///
     /// # Errors
-    /// Returns a storage error.
-    pub async fn finish_build(&self, id: i64, outcome: &BuildOutcome) -> Result<(), StoreError> {
+    /// Returns a storage error; then nothing is written.
+    pub async fn finish_build(
+        &self,
+        id: i64,
+        outcome: &BuildOutcome,
+        ending: &LogEnding,
+    ) -> Result<(), StoreError> {
         if outcome.state == BuildState::Running {
             return Err(StoreError::InvalidInput);
         }
+        let (_writer, mut tx) = self.begin_immediate().await?;
+        for (stream, bytes) in &ending.output {
+            if self
+                .append_build_log_on(&mut tx, id, bytes, *stream)
+                .await?
+                == LogAppend::Closed
+            {
+                break;
+            }
+        }
         let state = outcome.state.as_str();
         let now = now_ms();
-        self.write(sqlx::query!(
-            "UPDATE builds SET state=?1,finished_at_ms=?2,image_id=?3,reused_build_id=?4 WHERE id=?5 AND state='running'",
+        sqlx::query!(
+            "UPDATE builds SET state=?1,finished_at_ms=?2,image_id=?3,reused_build_id=?4,log_truncated=log_truncated OR ?5 WHERE id=?6 AND state='running'",
             state,
             now,
             outcome.image,
             outcome.reused_build,
+            ending.truncated,
             id
-        ))
+        )
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        Ok(())
+        tx.commit().await.map_err(StoreError::database)
     }
     /// The succeeded builds of `environment`'s application whose image a
     /// build of `source` at `commit` may reuse, newest first: those that

@@ -103,7 +103,10 @@ async fn record(
         .await
         .unwrap();
     store.build_commit(id, &hex(commit, 40)).await.unwrap();
-    store.finish_build(id, &outcome).await.unwrap();
+    store
+        .finish_build(id, &outcome, &LogEnding::default())
+        .await
+        .unwrap();
     id
 }
 
@@ -161,9 +164,10 @@ async fn build_metadata_obeys_the_writer_gate() {
     let writer = store.writers.lock().await;
     let blocked = std::time::Duration::from_millis(50);
     let failed = BuildOutcome::without_image(BuildState::Failed);
+    let ending = LogEnding::default();
     let (commit, finish, recover) = tokio::join!(
         tokio::time::timeout(blocked, store.build_commit(id, "commit")),
-        tokio::time::timeout(blocked, store.finish_build(id, &failed)),
+        tokio::time::timeout(blocked, store.finish_build(id, &failed, &ending)),
         tokio::time::timeout(blocked, store.recover_builds()),
     );
     assert!(commit.is_err(), "commit metadata bypassed the writer gate");
@@ -172,7 +176,11 @@ async fn build_metadata_obeys_the_writer_gate() {
     drop(writer);
     store.build_commit(id, "commit").await.unwrap();
     store
-        .finish_build(id, &BuildOutcome::without_image(BuildState::Failed))
+        .finish_build(
+            id,
+            &BuildOutcome::without_image(BuildState::Failed),
+            &LogEnding::default(),
+        )
         .await
         .unwrap();
     store.recover_builds().await.unwrap();
@@ -202,7 +210,7 @@ async fn output_survives_concurrent_metadata_writes_for_another_build() {
             store.build_commit(other, "commit").await?;
         }
         store
-            .finish_build(other, &succeeded("sha256:fixture"))
+            .finish_build(other, &succeeded("sha256:fixture"), &LogEnding::default())
             .await
     };
     tokio::try_join!(output, metadata).unwrap();
@@ -331,7 +339,7 @@ async fn output_is_bounded_paged_and_expired_without_losing_metadata() {
     );
     assert!(second.previous_offset.is_none());
     store
-        .finish_build(id, &succeeded("sha256:fixture"))
+        .finish_build(id, &succeeded("sha256:fixture"), &LogEnding::default())
         .await
         .unwrap();
     assert_eq!(

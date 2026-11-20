@@ -4,13 +4,13 @@ use piqueld_core::{
     api::{BuildState, LogStream},
     manifest::ValidatedSource as Source,
 };
-use piqueld_store::{BuildOutcome, LogAppend, Store, StoreError};
+use piqueld_store::{BuildOutcome, LogAppend, LogEnding, Store, StoreError};
 use std::{collections::VecDeque, sync::Arc};
 
 /// A bounded persistent output sink usable by any build executor.
 ///
 /// Output fills the first half of the build's byte cap as it arrives. Past
-/// that, only the newest output is kept, in memory, until [`BuildLog::close`]
+/// that, only the newest output is kept, in memory, until [`BuildLog::finish`]
 /// writes it after a note of how many bytes it omitted: a long log keeps its
 /// start and its failure, and stops taking the store's writer once its first
 /// half is full.
@@ -36,7 +36,7 @@ impl BuildLog {
     /// Returns a persistence error rather than silently losing output.
     pub async fn append(&self, bytes: &[u8], stream: LogStream) -> Result<(), StoreError> {
         let mut output = self.output.lock().await;
-        if output.closed {
+        if output.closed || output.dropped {
             return Ok(());
         }
         let head = output.head(bytes);
@@ -49,21 +49,17 @@ impl BuildLog {
         output.keep(&bytes[head.len()..], stream);
         Ok(())
     }
-    /// Writes the output kept past the first half of the cap, after a note
-    /// of how many bytes were omitted, which also marks the log truncated.
-    /// Later output is not accepted. Call it once the build's output is
-    /// complete.
-    async fn close(&self) -> Result<(), StoreError> {
+    /// Finishes the build with `outcome` and, in the same transaction, writes
+    /// the output kept past the first half of the cap, after a note of how
+    /// many bytes were omitted, and marks the log truncated if any output was
+    /// dropped. The kept output is let go only once that commits, so a failed
+    /// or cancelled finish can be retried. Later output is not accepted.
+    async fn finish(&self, outcome: &BuildOutcome) -> Result<(), StoreError> {
         let mut output = self.output.lock().await;
-        let (omitted, tail) = output.close();
-        for (stream, bytes) in tail {
-            if self.store.append_build_log(self.id, &bytes, stream).await? == LogAppend::Closed {
-                break;
-            }
-        }
-        if omitted {
-            self.store.build_log_truncated(self.id).await?;
-        }
+        self.store
+            .finish_build(self.id, outcome, &output.ending())
+            .await?;
+        output.finished();
         Ok(())
     }
     /// Records the resolved Git commit on the build.
@@ -74,11 +70,10 @@ impl BuildLog {
     pub(crate) async fn exit_code(&self, code: i64) -> Result<(), StoreError> {
         self.store.build_exit_code(self.id, code).await
     }
-    /// Records that output was dropped before reaching this log. Later
-    /// output is no longer accepted.
-    pub(crate) async fn truncated(&self) -> Result<(), StoreError> {
-        self.close().await?;
-        self.store.build_log_truncated(self.id).await
+    /// Records that output was dropped before reaching this log, which marks
+    /// it truncated as the build finishes. Later output is not accepted.
+    pub(crate) async fn truncated(&self) {
+        self.output.lock().await.dropped = true;
     }
 }
 
@@ -91,24 +86,36 @@ struct Kept {
     tail_bytes: usize,
     /// The most bytes the tail keeps.
     tail_max: usize,
+    /// The most bytes the omission note may take; it is left out when longer.
+    note_max: usize,
     /// Bytes dropped between the head and the tail.
     omitted: usize,
-    /// The log takes no more output.
+    /// Output was dropped before reaching the log, which accepts no more.
+    dropped: bool,
+    /// The log takes no more output: the store refused it, or the build
+    /// finished.
     closed: bool,
 }
 impl Kept {
-    /// Bytes of a build's cap set aside for the omission note.
+    /// Bytes of a build's cap set aside for the omission note, which fit any
+    /// count of omitted bytes.
     const NOTE_BYTES: usize = 64;
 
-    /// Splits a build's byte cap between the head and the tail.
+    /// Splits a build's byte cap: half for the head, then the omission note,
+    /// then the tail. A small cap keeps at least half of its second half for
+    /// the tail.
     fn new(cap: usize) -> Self {
         let head = cap / 2;
+        let rest = cap - head;
+        let note_max = Self::NOTE_BYTES.min(rest / 2);
         Self {
             head,
             tail: VecDeque::new(),
             tail_bytes: 0,
-            tail_max: cap.saturating_sub(head).saturating_sub(Self::NOTE_BYTES),
+            tail_max: rest - note_max,
+            note_max,
             omitted: 0,
+            dropped: false,
             closed: false,
         }
     }
@@ -152,20 +159,29 @@ impl Kept {
             self.omitted += cut;
         }
     }
-    /// Takes the tail, preceded by a note when output was omitted, and
-    /// whether it was. The log then takes no more output.
-    fn close(&mut self) -> (bool, Vec<(LogStream, Vec<u8>)>) {
-        let mut tail = Vec::from(std::mem::take(&mut self.tail));
-        let omitted = std::mem::take(&mut self.omitted);
+    /// What finishing the build writes: the tail, preceded by a note when
+    /// output was omitted and the note fits, and whether any output was
+    /// dropped. Nothing once the log is closed.
+    fn ending(&self) -> LogEnding {
+        if self.closed {
+            return LogEnding::default();
+        }
+        let note = (self.omitted > 0)
+            .then(|| format!("\npiqueld: … {} bytes omitted …\n", self.omitted))
+            .filter(|note| note.len() <= self.note_max)
+            .map(|note| (LogStream::Stderr, note.into_bytes()));
+        LogEnding {
+            output: note.into_iter().chain(self.tail.iter().cloned()).collect(),
+            truncated: self.omitted > 0 || self.dropped,
+        }
+    }
+    /// Lets go of the tail once the build finished: the log takes no more
+    /// output.
+    fn finished(&mut self) {
+        self.tail.clear();
         self.tail_bytes = 0;
-        if std::mem::replace(&mut self.closed, true) {
-            return (false, Vec::new());
-        }
-        if omitted > 0 {
-            let note = format!("\npiqueld: … {omitted} bytes omitted …\n");
-            tail.insert(0, (LogStream::Stderr, note.into_bytes()));
-        }
-        (omitted > 0, tail)
+        self.omitted = 0;
+        self.closed = true;
     }
 }
 
@@ -261,20 +277,19 @@ impl BuildAttempt {
         })
         .await
     }
-    /// Writes the rest of the output, then persists `outcome`, which `Drop`
-    /// retries if the write fails.
+    /// Persists `outcome` with the rest of the output, which `Drop` retries
+    /// if the write fails or is cancelled.
     async fn complete(mut self, outcome: BuildOutcome) -> Result<(), StoreError> {
         self.completion = Completion::Pending(outcome.clone());
-        self.log.close().await?;
-        self.log.store.finish_build(self.log.id, &outcome).await?;
+        self.log.finish(&outcome).await?;
         self.completion = Completion::Persisted;
         Ok(())
     }
 }
 impl Drop for BuildAttempt {
-    /// Spawns a best-effort write of the rest of the output and of any
-    /// unpersisted terminal state. If that also fails, startup recovery marks
-    /// the build interrupted.
+    /// Spawns a best-effort write of any unpersisted terminal state, with the
+    /// rest of the output. If that also fails, startup recovery marks the
+    /// build interrupted.
     fn drop(&mut self) {
         let Some(outcome) = std::mem::replace(&mut self.completion, Completion::Persisted).retry()
         else {
@@ -282,10 +297,7 @@ impl Drop for BuildAttempt {
         };
         let log = self.log.clone();
         tokio::spawn(async move {
-            if let Err(error) = log.close().await {
-                tracing::warn!(build_id = log.id, %error, "failed to record the end of build output");
-            }
-            if let Err(error) = log.store.finish_build(log.id, &outcome).await {
+            if let Err(error) = log.finish(&outcome).await {
                 tracing::error!(build_id=log.id,error=?error,"failed to record build completion; startup recovery will mark it interrupted");
             }
         });
