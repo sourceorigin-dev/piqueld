@@ -2,7 +2,7 @@
 //! each environment and preview last synced, each application's last branch
 //! listing, and webhook secrets.
 use super::acceptance::Accepted;
-use super::{Actor, Store, StoreError, StoredEnvironment, now_ms};
+use super::{Author, Store, StoreError, StoredEnvironment, now_ms};
 use crate::secrets::{Envelope, Generate, SecretCipher, SecretOwner};
 use crate::{ListedHead, MutationResponse, SyncOutcome};
 use piqueld_core::{
@@ -379,17 +379,21 @@ impl Store {
 
     /// Generates a new secret for `application`'s push webhooks, replacing
     /// any previous one, and records `webhook_secret_generated`. Returns the
-    /// secret, 32 random bytes as hex, and when it was generated. `actor`
-    /// needs `apps:write` on the application, checked in the transaction.
+    /// secret, 32 random bytes as hex, and when it was generated. The
+    /// author's actor needs `apps:write` on the application, checked in the
+    /// transaction, which also records the request's rotation, never the
+    /// secret.
     ///
     /// # Errors
     /// Returns refusal, absence, `Busy` during deletion, secret storage, or
     /// database errors.
     pub async fn generate_webhook_secret(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
     ) -> Result<(Zeroizing<String>, i64), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         actor
             .require_on(
@@ -447,7 +451,10 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        tx.commit().await.map_err(StoreError::database)?;
+        let change = "webhook secret generated";
+        author
+            .commit_recorded(tx, 200, Some(change), (Some(id), None))
+            .await?;
         Ok((secret, now))
     }
 
@@ -564,7 +571,7 @@ impl Store {
 mod tests {
     use super::*;
     use crate::testing::template;
-    use crate::{Mutation, MutationResponse};
+    use crate::{Actor, Mutation, MutationResponse};
     use piqueld_core::sync::{RepositorySync, SyncedHead};
 
     const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

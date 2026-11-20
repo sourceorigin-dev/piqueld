@@ -1,7 +1,7 @@
 //! Notification destinations: where notifications go, what each receives,
 //! and its URL, encrypted with the secret master key.
 use crate::secrets::{Envelope, SecretCipher, SecretOwner};
-use crate::{Actor, SecurityEvent, Store, StoreError, new_id, now_ms};
+use crate::{Author, SecurityEvent, Store, StoreError, new_id, now_ms};
 use piqueld_core::{
     ApplicationId,
     access::{GlobalPermission, Permission},
@@ -103,8 +103,64 @@ struct SavedDestination {
     /// Whether it was enabled again: nothing that happened while it was
     /// disabled is sent to it.
     resumed: bool,
-    /// How it changed, for its security event: `created`, `changed` or `disabled`.
-    change: &'static str,
+    /// How it changed, for its security event and audit record.
+    change: DestinationChange,
+}
+
+impl SavedDestination {
+    /// What saving it changed, as its audit record names it: the
+    /// destination, how it changed, and what it now receives, never its URL,
+    /// e.g. `destination "ops" <id> changed as a new receiver: categories
+    /// build_failures,deployment_failures; applications all; previews no`.
+    fn audit_change(&self, name: &DestinationName, settings: &DestinationSettings) -> String {
+        let mut change = format!(
+            "destination {:?} {} {}",
+            name.as_str(),
+            self.id,
+            self.change
+        );
+        if self.replaced && self.change != DestinationChange::Created {
+            change.push_str(" as a new receiver");
+        }
+        if self.resumed {
+            change.push_str(" and enabled");
+        }
+        let categories: Vec<_> = settings.categories.keys().map(|c| c.as_str()).collect();
+        let applications = match &settings.applications {
+            ApplicationSelection::All => "all".to_owned(),
+            ApplicationSelection::Only(ids) if ids.is_empty() => "none".to_owned(),
+            ApplicationSelection::Only(ids) => {
+                let ids: Vec<_> = ids.iter().map(ApplicationId::as_str).collect();
+                ids.join(",")
+            }
+        };
+        let previews = if settings.previews { "yes" } else { "no" };
+        let categories = categories.join(",");
+        format!(
+            "{change}: categories {categories}; applications {applications}; previews {previews}"
+        )
+    }
+}
+
+/// How saving a destination changed it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DestinationChange {
+    /// It is new.
+    Created,
+    /// It existed and isn't newly disabled.
+    Changed,
+    /// It existed and was disabled.
+    Disabled,
+}
+
+impl std::fmt::Display for DestinationChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Created => "created",
+            Self::Changed => "changed",
+            Self::Disabled => "disabled",
+        })
+    }
 }
 
 /// Which of a destination's pending deliveries to cancel.
@@ -199,8 +255,10 @@ impl Store {
             .collect()
     }
 
-    /// Creates or replaces the destination `name`, which `actor` needs
-    /// `notifications:manage` for, checked in the same transaction.
+    /// Creates or replaces the destination `name`, which the author's actor
+    /// needs `notifications:manage` for, checked in the same transaction,
+    /// which also records the request's change (see
+    /// `SavedDestination::audit_change`), never its URL.
     ///
     /// A new URL or kind makes the destination a new receiver: its pending
     /// deliveries are cancelled, and its earlier deliveries detached, so no
@@ -214,12 +272,14 @@ impl Store {
     /// Returns refusal, [`DestinationError`], secret storage or database errors.
     pub async fn put_notification_destination(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         name: &DestinationName,
         request: DestinationRequest,
     ) -> Result<NotificationDestination, StoreError> {
         let url = request.url.map(WebhookUrl::parse).transpose()?;
         let settings = request.settings;
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         actor.require_on(&mut tx, MANAGE, None).await?;
         if let ApplicationSelection::Only(applications) = &settings.applications {
@@ -249,7 +309,10 @@ impl Store {
         .await?;
         // Recorded after the event above, so a new receiver never gets it.
         Self::save_rules(&mut tx, &saved, &settings).await?;
-        tx.commit().await.map_err(StoreError::database)?;
+        let change = saved.audit_change(name, &settings);
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await?;
         Ok(NotificationDestination {
             name: name.clone(),
             settings,
@@ -312,7 +375,7 @@ impl Store {
                 updated_at_ms: now,
                 replaced: true,
                 resumed: false,
-                change: "created",
+                change: DestinationChange::Created,
             });
         };
         let stored = Envelope {
@@ -357,9 +420,9 @@ impl Store {
             replaced,
             resumed: row.enabled == 0 && enabled,
             change: if row.enabled != 0 && !enabled {
-                "disabled"
+                DestinationChange::Disabled
             } else {
-                "changed"
+                DestinationChange::Changed
             },
         })
     }
@@ -472,17 +535,20 @@ impl Store {
     }
 
     /// Deletes the destination `name`, cancelling its pending deliveries;
-    /// delivery history keeps its name. `actor` needs `notifications:manage`,
-    /// checked in the same transaction. Records a
+    /// delivery history keeps its name. The author's actor needs
+    /// `notifications:manage`, checked in the same transaction, which also
+    /// records the request's deletion. Records a
     /// `notification_destination_changed` security event.
     ///
     /// # Errors
     /// Returns refusal, absence or database errors.
     pub async fn delete_notification_destination(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         name: &DestinationName,
     ) -> Result<(), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         actor.require_on(&mut tx, MANAGE, None).await?;
         let name_str = name.as_str();
@@ -507,7 +573,11 @@ impl Store {
             actor.attribution(),
         )
         .await?;
-        tx.commit().await.map_err(StoreError::database)
+        let change = format!("destination {:?} {id} deleted", name.as_str());
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await?;
+        Ok(())
     }
 
     /// The destination `name`, to send a test notification to, without a
