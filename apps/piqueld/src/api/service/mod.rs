@@ -380,7 +380,7 @@ impl ApplicationService {
     /// Returns a validation, generation or access conflict, or storage error.
     pub async fn put_stored_secret<'a>(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
         name: &str,
         expected: impl Into<piqueld_store::SecretPrecondition<'a>>,
@@ -389,7 +389,7 @@ impl ApplicationService {
     ) -> Result<StoredSecret, ApplicationError> {
         Ok(self
             .store
-            .put_stored_secret(actor, application, name, expected, value, access)
+            .put_stored_secret(author, application, name, expected, value, access)
             .await?)
     }
 
@@ -401,7 +401,7 @@ impl ApplicationService {
     /// errors.
     pub async fn set_secret_access(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
         name: &str,
         access: &SecretAccess,
@@ -409,7 +409,7 @@ impl ApplicationService {
     ) -> Result<StoredSecret, ApplicationError> {
         Ok(self
             .store
-            .set_secret_access(actor, application, name, access, expected)
+            .set_secret_access(author, application, name, access, expected)
             .await?)
     }
 
@@ -420,14 +420,14 @@ impl ApplicationService {
     /// Returns absence, generation conflict, or storage errors.
     pub async fn regenerate_secret(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         environment: &EnvironmentId,
         name: &str,
         expected_generation: i64,
     ) -> Result<SecretMetadata, ApplicationError> {
         Ok(self
             .store
-            .regenerate_secret(actor, environment, name, expected_generation)
+            .regenerate_secret(author, environment, name, expected_generation)
             .await?)
     }
 

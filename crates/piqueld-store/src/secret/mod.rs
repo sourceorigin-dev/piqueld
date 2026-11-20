@@ -100,26 +100,32 @@ impl Store {
     /// `expected` is the current generation (zero to create). The value is
     /// encrypted into a new immutable version with its own Swarm secret name
     /// (`piqueld-secret-<uuid>`), subject to per-environment count and byte quotas.
-    /// Rejected while the environment or the secret is being deleted. `actor`
-    /// needs `secrets:write` on the environment's application, checked in the
-    /// transaction.
+    /// Rejected while the environment or the secret is being deleted. The
+    /// author's actor needs `secrets:write` on the environment's application,
+    /// checked in the transaction, which also records the request's change
+    /// (its name and generation; never the value).
     ///
     /// # Errors
     /// Returns invalid input, refusal, version conflict, key or database errors.
     pub async fn put_secret(
         &self,
-        actor: super::Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         application: &EnvironmentId,
         name: &str,
         expected: i64,
         value: Vec<u8>,
     ) -> Result<SecretMetadata, StoreError> {
         let value = Zeroizing::new(value);
+        let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
         let metadata = self
-            .put_secret_on(&mut tx, actor, application, name, expected, &value)
+            .put_secret_on(&mut tx, author.actor, application, name, expected, &value)
             .await?;
-        tx.commit().await.map_err(StoreError::database)?;
+        let change = format!("secret {name:?} generation {}", metadata.generation);
+        let target = (None, Some(application.as_str()));
+        author
+            .commit_recorded(tx, 200, Some(&change), target)
+            .await?;
         Ok(metadata)
     }
 
@@ -314,14 +320,15 @@ impl Store {
     /// declaration in the manifest the environment deploys, to rotate it or to replace a value
     /// discarded by key recovery. Running deployments keep their pinned
     /// versions; the next deployment uses the new one. `expected` is the
-    /// current generation. `actor` needs `secrets:write` (see `put_secret`).
+    /// current generation. The author's actor needs `secrets:write` (see
+    /// `put_secret`).
     ///
     /// # Errors
     /// Returns `NotFound` when the environment's manifest declares no such secret, and
     /// `put_secret` errors (refusal, version conflict, quotas, key or database errors).
     pub async fn regenerate_secret(
         &self,
-        actor: super::Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         id: &EnvironmentId,
         name: &str,
         expected: i64,
@@ -338,7 +345,7 @@ impl Store {
             })
             .ok_or(StoreError::NotFound)?;
         let value = Self::generate_value(secret).await?;
-        self.put_secret(actor, id, name, expected, value).await
+        self.put_secret(author, id, name, expected, value).await
     }
 
     /// Generates values for mounted declared secrets that have none (see

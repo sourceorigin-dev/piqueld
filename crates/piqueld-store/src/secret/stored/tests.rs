@@ -580,3 +580,72 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
         [2, 4]
     );
 }
+
+/// A requested secret change commits with its audit record, naming the
+/// secret, its generation and access but never its value: a failed append
+/// keeps the previous version and access, and stores no new version.
+#[tokio::test]
+async fn requested_secret_changes_commit_with_their_audit_record() {
+    let (_temp, store, _, staging) = fixture().await;
+    let application = template().id().clone();
+    let route = "PUT /api/v1/applications/{id}/secrets/{name}";
+    let request = crate::testing::audit_request(route);
+    let author = Author {
+        actor: Daemon,
+        request: Some(&request),
+    };
+    let staging_only = only([&staging]);
+    let put = async |expected, access| {
+        let value = b"hunter2".to_vec();
+        store
+            .put_stored_secret(author, &application, "stripe-dev", expected, value, access)
+            .await
+    };
+    put(0, None).await.expect("the first upload is stored");
+    store.refuse_audit(true).await;
+    assert!(put(1, Some(&staging_only)).await.is_err());
+    let access = store.set_secret_access(author, &application, "stripe-dev", &staging_only, None);
+    assert!(access.await.is_err());
+    store.refuse_audit(false).await;
+    let [kept] = store
+        .stored_secrets(&application)
+        .await
+        .expect("stored secrets are listed")
+        .try_into()
+        .expect("the store holds exactly one secret");
+    assert_eq!(kept.metadata.generation, 1);
+    assert_eq!(kept.access, SecretAccess::default());
+    put(1, Some(&staging_only))
+        .await
+        .expect("the upload with access is stored");
+    // Generated secrets, as regenerating stores them, too.
+    let value = b"hunter2".to_vec();
+    let generated = store.put_secret(author, &staging, "session", 0, value);
+    generated.await.expect("the generated value is stored");
+    // A regeneration whose record can't be written keeps the last version.
+    store.refuse_audit(true).await;
+    let regenerated = store.regenerate_secret(author, &staging, "session", 1);
+    assert!(regenerated.await.is_err());
+    store.refuse_audit(false).await;
+    let [session] = store
+        .secrets(&staging)
+        .await
+        .expect("generated secrets are listed")
+        .try_into()
+        .expect("the environment holds exactly one generated secret");
+    assert_eq!((session.name.as_str(), session.generation), ("session", 1));
+    let versions = "SELECT COUNT(*) FROM secret_versions WHERE name='session'";
+    let versions: i64 = sqlx::query_scalar(versions)
+        .fetch_one(&store.pool)
+        .await
+        .expect("secret versions are counted");
+    assert_eq!(versions, 1);
+    assert_eq!(
+        store.audit_actions().await,
+        [
+            format!("{route} secret \"stripe-dev\" generation 1"),
+            format!("{route} secret \"stripe-dev\" generation 2 access staging"),
+            format!("{route} secret \"session\" generation 1"),
+        ]
+    );
+}
