@@ -215,11 +215,12 @@ impl NestedCargo {
         if !target_dir.is_dir() {
             return Err(BuildError::MissingTargetDir(target_dir.to_owned()));
         }
-        let name = target_dir
+        let mut name = target_dir
             .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| BuildError::OutDirLayout(canonical.clone()))?;
-        Ok(target_dir.with_file_name(format!("{name}-{suffix}")))
+            .ok_or_else(|| BuildError::OutDirLayout(canonical.clone()))?
+            .to_owned();
+        name.push(format!("-{suffix}"));
+        Ok(target_dir.with_file_name(name))
     }
 }
 
@@ -238,7 +239,8 @@ mod tests {
             nested,
             root.path().canonicalize().unwrap().join("target-ui")
         );
-        let shallow = NestedCargo::sibling_target_dir(root.path(), "ui").unwrap_err();
+        // The root has fewer than four ancestors wherever the tests run.
+        let shallow = NestedCargo::sibling_target_dir(Path::new("/"), "ui").unwrap_err();
         assert!(
             matches!(shallow, BuildError::OutDirLayout(_)),
             "{shallow:?}"
