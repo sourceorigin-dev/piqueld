@@ -653,9 +653,6 @@ trait ClientErrorExt {
     fn transport(&self) -> bool;
     /// Whether the daemon refused the request for want of a valid session.
     fn unauthorized(&self) -> bool;
-    /// Whether the daemon refused a sensitive action until the session
-    /// confirms with a passkey, which it then may retry once.
-    fn step_up(&self) -> bool;
     /// The persisted diagnostic occurrence attached to an API failure.
     fn diagnostic_id(&self) -> Option<String>;
 }
@@ -715,13 +712,6 @@ impl ClientErrorExt for ClientError {
 
     fn unauthorized(&self) -> bool {
         matches!(self, Self::Api { status, .. } if status.as_u16() == 401)
-    }
-
-    fn step_up(&self) -> bool {
-        matches!(self, Self::Api { status, error }
-            if status.as_u16() == 403
-                && error.code == "reauthentication_required"
-                && error.details["step_up"] == true)
     }
 
     fn diagnostic_id(&self) -> Option<String> {
