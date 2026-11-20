@@ -911,14 +911,23 @@ mod tests {
     async fn checkout_pins_commits_and_confines_paths() {
         let repository = tempfile::tempdir().unwrap();
         let mut source = fixture(repository.path()).await;
-        let checkouts = checkouts(repository.path(), 1 << 30).await;
+        // Outside the fixture, so its next commit cannot take in a checkout.
+        let store = tempfile::tempdir().unwrap();
+        let checkouts = checkouts(store.path(), 1 << 30).await;
         let checkout = checkouts.checkout(&source, None).await.unwrap();
         let first = checkout.commit.clone();
         let second = commit(repository.path(), "FROM scratch\nLABEL version=2\n").await;
-        assert_eq!(
-            checkouts.checkout(&source, None).await.unwrap().commit,
-            second
-        );
+        {
+            let latest = checkouts.checkout(&source, None).await.unwrap();
+            assert_eq!(latest.commit, second);
+            // The tree is only what the fixture wrote.
+            let tree = Checkout::command_in(&latest.root())
+                .args(["ls-tree", "-r", "--name-only", "HEAD"])
+                .output()
+                .await
+                .unwrap();
+            assert_eq!(String::from_utf8(tree.stdout).unwrap(), "Dockerfile\n");
+        }
         source.commit = Some(first.clone());
         source.branch = "branch-no-longer-exists".into();
         assert_eq!(
