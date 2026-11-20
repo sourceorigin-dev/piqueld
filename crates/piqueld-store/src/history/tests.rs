@@ -160,6 +160,45 @@ async fn deployments_go_once_past_both_limits_unless_current_latest_or_restorabl
     store.preview_origins(&production).await.unwrap();
 }
 
+/// The current deployment is the newest published one by creation time, not
+/// by ID: IDs restart their ordering when the daemon does, so after a restart
+/// with the clock behind, an older deployment can have the higher ID.
+#[tokio::test]
+async fn pruning_keeps_the_current_deployment_when_an_older_one_has_a_higher_id() {
+    let (_temp, store, production) = store().await;
+    let recent = Outcome::Failed { old: false };
+    let ids = deploy(
+        &store,
+        &production,
+        &[
+            Outcome::Failed { old: true },
+            Outcome::Succeeded {
+                old: true,
+                promoted: true,
+            },
+            recent,
+            recent,
+            recent,
+        ],
+    )
+    .await;
+    // The first was published and its rollout then failed, so it's current;
+    // the second, published earlier, got the higher ID.
+    execute(
+        &store,
+        "UPDATE operations SET promoted=1 WHERE id=?1",
+        &ids[0],
+    )
+    .await;
+    for table in ["operations", "deployments"] {
+        let sql = format!("UPDATE {table} SET created_at_ms=created_at_ms-60000 WHERE id=?1");
+        execute(&store, &sql, &ids[1]).await;
+    }
+    store.prune_deployment_history().await.unwrap();
+    // The current one is past both limits, but stays.
+    assert_eq!(remaining(&store, &production).await, ids);
+}
+
 #[tokio::test]
 async fn pruning_removes_expired_builds_and_unused_releases_of_pruned_deployments() {
     let (_temp, store, production) = store().await;
