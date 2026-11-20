@@ -57,7 +57,7 @@ tells tenants apart with it.
 ## Check that it works
 
 In the dashboard, the application's **Routes** tab lists the route in
-**Deployed routes**. With `piquelctl`:
+**Where routes are served**. With `piquelctl`:
 
 ```console
 piquelctl app route list notes

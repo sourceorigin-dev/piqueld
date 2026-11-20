@@ -385,7 +385,7 @@ path.
 sudo piquelctl status
 ```
 
-It prints the daemon's version and how `piquelctl` reached it:
+It starts with the daemon's version and how `piquelctl` reached it:
 
 ```text
 daemon running (version 0.1.0, API v1, instance instance-01a16b10b8307c61b5ac3d27d4bf7937)

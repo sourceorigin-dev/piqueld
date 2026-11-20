@@ -29,13 +29,14 @@ by version.
 | Rust documentation, private items included, with warnings denied | `doc` | `rust (lint)` |
 | Native workspace tests, against the real embedded dashboard | `test` | `rust (test)` |
 | Documentation tests | `doc-test` | `rust (test)` |
-| Generated API specification, client, and manifest JSON Schema freshness | `openapi-check` | `rust (lint)` |
-| Core dependency boundaries | `boundary` | `rust (lint)` |
+| Generated API specification, client, JSON Schemas, and command and settings references freshness | `openapi-check` | `rust (lint)` |
+| Crate dependency boundaries | `boundary` | `rust (lint)` |
 | Published crates on the minimum supported Rust, `rust-version` | `cargo +<rust-version> check` | `msrv` |
 | Browser compilation | `ui-check`, `check-wasm` | `wasm-ui` |
 | Real browser transport tests | `test-wasm` | `wasm-ui` |
 | Isolated Engine integration tests | `docker-test` | `docker-integration` |
 | Browser end-to-end tests | `test-playwright` | `browser-playwright` |
+| Documentation screenshots match the dashboard | `docs-screenshots --update-snapshots=none` | `browser-playwright` |
 | CLI on macOS | `validate-cli` | `cli (macOS)` |
 | Documentation book build and link check | `docs` | `docs` |
 
@@ -46,7 +47,7 @@ per version of its sources, instead of compiling it each time; see
 sources, so the merge queue and pull requests find it.
 
 `just` runs the default validation set (`validate`), including a single check of
-the generated OpenAPI specification, client, and manifest JSON Schema. Both local
+the generated files. Both local
 validation and CI compare the committed artifacts without rewriting them. CI
 skips `check` and `build`: the stronger all-target Clippy and the test builds
 cover them. `fmt` and `generate` are editing commands whose results are

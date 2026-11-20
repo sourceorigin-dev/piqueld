@@ -317,8 +317,9 @@ again, keeps any it can no longer confirm gone, and deletes nothing while the
 repository cannot be read. Previews whose branch state is unknown are kept,
 with a warning. `preview create`, `deploy`, `delete` and `prune` wait for their
 operations unless `--no-wait`; `delete` and `prune` confirm unless `--yes`.
-Creating, deploying and logs need the `apps:deploy` and `logs:read` permissions
-as for environments; deleting and pruning need `apps:delete`.
+Creating and deploying need `previews:deploy`, and deleting and pruning
+`previews:delete`, which `apps:deploy` and `apps:delete` include. Logs need
+`logs:read` or `previews:deploy`.
 
 `preview deploy <app> --local` deploys the Git worktree of the current
 directory without pushing it: its committed, uncommitted and untracked files,
@@ -522,6 +523,9 @@ written to stderr, so stdout remains valid JSON.
 | `env url` / `preview url` | `[RouteUrl]` |
 | `env url --route` / `preview url --route` | `RouteUrl` |
 | `env wait` / `preview wait` | `Deployment` |
+| `env history` / `preview history` | `{ "items": [DeploymentView], "next_cursor": string or null }` |
+| `env restore` / `preview restore` | Same as `env deploy`, with `--no-wait` too |
+| `env traffic` | `TrafficReport` |
 | `env create` / `env rename` / `env branch` / `env sync` / `env telemetry` / `env source` / `env stop` | `EnvironmentView` |
 | `app repository webhook show` | `WebhookView` |
 | `app repository webhook rotate` | `WebhookSecret` |
@@ -622,7 +626,7 @@ no `request_id`:
 | `conflict` | 3 | An ambiguous name or a blocked plan |
 | `deployment_superseded` | 3 | `wait`'s deployment was superseded; `details.deployment_id` and `superseded_by` |
 | `operation_failed` | 5 | An awaited operation failed; `details.operation` |
-| `checks_failed` | 6 | `doctor` found a failed installation check |
+| `checks_failed` | 6 | `doctor` found a failed installation check, or `builder check` an unreachable build machine |
 | `interrupted` | 130 | Ctrl-C, SIGTERM, or SIGHUP when the terminal closes |
 | `failed` | 1 | Any other failure |
 
@@ -683,7 +687,7 @@ Branch on the exit code, then read the `error` event on stderr:
 | 3 | Conflict: `deployment_superseded`, `preview_limit_reached` (its `details` list the previews to delete), a revision precondition | Read the newer state; wait for `details.superseded_by`, or delete a preview |
 | 4 | Unavailable, timed out or rate limited (`connection_failed`, `timeout`, HTTP 408, 429 and 502–504) | Retry the read or `wait`; server-side work was not cancelled |
 | 5 | The deployment failed (`operation_failed`; `details.operation` names the phase and error) | Read `logs`, fix, deploy again |
-| 6 | `doctor` found a failed check (`checks_failed`) | Follow each failed check's `next_step` |
+| 6 | `doctor` found a failed check, or `builder check` an unreachable build machine (`checks_failed`) | Follow each failed check's `next_step`, or start the build machine |
 | 7 | The daemon rejected the credential (HTTP 401, such as `authentication_required`) or it lacks the access (HTTP 403, such as `permission_denied`) | Sign in again with `piquelctl login`, or use a credential with more access |
 
 ## Installation checks
@@ -1312,7 +1316,9 @@ missing, not allowed by the secret's access list, or discarded by key recovery,
 which would fail the next deploy until replaced.
 
 If the daemon's `secrets.key` is lost and no backup exists, recover by discarding
-stored and generated values across ALL applications and environments:
+every value it encrypted: the stored and generated values of ALL applications
+and environments, every repository's webhook secret, and every notification
+destination:
 
 ```sh
 piquelctl secrets recover-key --yes
@@ -1323,4 +1329,8 @@ current key still works, and reports affected environment, secret and version
 counts. Running Docker services are left alone. `app secret APP list` and
 `env secret list APP` mark discarded values as unavailable; set replacement
 stored values using the same names, then Deploy explicitly, which also generates
-new values for discarded generated secrets.
+new values for discarded generated secrets. Give each repository a new webhook
+secret with `app repository webhook rotate`, and enter it in GitHub straight
+away: piqueld shows it only once, and GitHub's deliveries fail until it has it
+(see [rotate the secret](../applications/deploy-on-push.md#rotate-the-secret)).
+Then add the notification destinations again with `notification set`.

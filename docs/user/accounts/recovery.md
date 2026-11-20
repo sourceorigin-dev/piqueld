@@ -63,7 +63,7 @@ Accounts with `accounts:manage` see these browsers under **Host operator
 sessions**, on the **Accounts** page, and in `piquelctl account list`:
 
 ```text
-host operator (uid 0) browser session 01a16b51-bcb2-7800-87b6-bb2605a22b2d (admin, expires 1792845081)
+host operator (uid 0) browser session 01a16b51-bcb2-7800-87b6-bb2605a22b2d (admin, expires 2026-10-24 12:31:21Z)
 ```
 
 To end one, select the sign-out button next to **Host operator** at the

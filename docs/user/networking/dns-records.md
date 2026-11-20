@@ -100,7 +100,7 @@ recognizes its own records, and the hostname reports `dns_conflict`.
 ## Check that it works
 
 In the dashboard, the application's **Routes** tab shows each route's DNS in
-the **DNS** and **DNS records** columns of **Deployed routes**. With
+the **DNS** and **DNS records** columns of **Where routes are served**. With
 `piquelctl`, the `DNS` and `RECORDS` columns show the same:
 
 ```console

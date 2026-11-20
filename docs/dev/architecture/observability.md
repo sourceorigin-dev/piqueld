@@ -138,8 +138,12 @@ connecting), and reads of logs, the daemon configuration, manifest downloads,
 and the account directory. Routine reads, such as dashboard polling of
 application and environment views (whose saved configuration `apps:read`
 already allows) and CLI logins still awaiting approval, appear only in daemon
-logs. Records are written in the background so requests never wait for them;
-at most 1,024 wait at once, of which anonymous requests (made by neither an
+logs. A change to an application, environment or preview appends its
+`allowed` record in the transaction that commits it (`Store::accept`), so a
+committed change always has one, and an audit write that fails rolls the change
+back. A request that changes nothing, such as a replay, keeps a background
+record. Other records are written in the background so requests never wait for
+them; at most 1,024 wait at once, of which anonymous requests (made by neither an
 account nor the host operator) may hold only half; records beyond that are
 dropped and logged. The next record written then follows a `failed` record with
 status 503 and no caller, `audit records missing before this one: N`, counting

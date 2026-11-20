@@ -153,7 +153,7 @@ may have seen it, [revoke it](#revoke-an-invitation).
 2. Under **Passkeys**, select **Create enrollment link**.
 3. At the top of the page, select **Copy** next to the new link, then
    **Done**.
-3. Send them the link.
+4. Send them the link.
 
 Or create it with `piquelctl`:
 

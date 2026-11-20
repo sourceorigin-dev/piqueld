@@ -94,7 +94,7 @@ so you can give it its own tags and access rules.
    ...
    ```
 
-   In the dashboard, **System status** shows the **Private listener** card
+   In the dashboard, **System status** shows the **Private listener** row
    as **Ready**, with the same name and addresses.
 
 6. For each private hostname, create an A record to the node's IPv4 address,
@@ -129,7 +129,7 @@ addresses.
 ## Check that it works
 
 In the dashboard, the application's **Routes** tab lists the route in
-**Deployed routes**. With `piquelctl`:
+**Where routes are served**. With `piquelctl`:
 
 ```console
 $ piquelctl app route list notes
@@ -223,8 +223,8 @@ change. Other responses already in progress, such as server-sent events or
 long downloads, continue until they end. To revoke their access at once, have
 your application end those connections itself.
 
-In the dashboard, change the route's **Visibility** on the **Routes** tab,
-select **Save changes**, then **Deploy to \<environment>**.
+In the dashboard, select **Edit** on the route on the **Routes** tab, change
+its **Visibility**, select **Save route**, then **Deploy to \<environment>**.
 
 With `piquelctl`, change it with
 [`app route visibility`](../reference/cli-commands.md#piquelctl-app-route-visibility),

@@ -11,8 +11,9 @@ to start with. Before working on a larger change, open an issue to discuss it.
 
 - Open pull requests as drafts, and mark them ready for review once the work is
   done. Drafts run only the quick CI jobs; marking a pull request ready runs the
-  slow ones (Docker, Playwright, macOS, Nix, packaging), which it must pass
-  before merging.
+  slow ones (Docker, Playwright, macOS), which it must pass before merging.
+  Release builds (Nix, packaging, install) run after merging; see
+  [release checks](docs/dev/validation.md#release-checks).
 - Titles follow conventional commits, such as
   `feat(server): add docker swarm reconciliation`.
 - Keep pull requests small and focused: one change each. Stack dependent

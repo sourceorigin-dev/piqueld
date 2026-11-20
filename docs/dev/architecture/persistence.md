@@ -26,15 +26,21 @@ resolutions remain attached to that operation during retries. A new deployment
 resolves image tags again. Empty applications are valid and deploy without
 services or networks.
 
-Deployment snapshots, execution records and attempt outcomes are retained until
-environment deletion. Deletion removes the environment's database records,
+Deployment history prunes a finished deployment, with its snapshot, execution
+records and attempt outcomes, once it is both older than
+`retention.deployment_days` and beyond its environment's newest
+`retention.deployments_per_environment` (`Store::prune_deployment_history`).
+Pruning always keeps the deployments still needed, such as the environment's
+current one; see
+[how long history is kept](../../user/operations/history.md#how-long-history-is-kept).
+Environment deletion removes the environment's database records,
 environment-owned history and request receipts after runtime verification;
 Docker volumes remain. The application is removed with its last environment
 when its deletion was requested. Daemon-scoped failures retain optional
 environment context after deletion. Application events use
 `retention.event_days`; shared daemon events use `retention.daemon_event_days`
-(both default to 90 days; zero disables pruning). Non-deployment operation
-retention remains configurable.
+(both default to 90 days; zero disables pruning). Other finished operations use
+`retention.finished_operation_days`.
 
 ## Migrations
 

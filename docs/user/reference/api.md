@@ -806,6 +806,9 @@ caller holds `events:read` on, and daemon history requires `system:read`. See th
 | `GET /api/v1/diagnostics/{id}` | Original event and details for an occurrence |
 | `GET /api/v1/system/resources` | Cached process, storage and queue measurements |
 | `GET /api/v1/analytics/deployments` | Deployment outcomes, retries, durations and failure codes |
+| `GET /api/v1/environments/{id}/traffic` | The environment's [traffic](../operations/traffic.md); `logs:read` |
+| `GET /api/v1/audit` | The [audit trail](../operations/audit.md): the caller's own requests, or every account's with `audit:read` |
+| `GET /api/v1/audit/verify` | Recompute the audit trail's chain and name the first broken record; `audit:read` |
 | `GET /api/v1/notifications/destinations` | [Notification destinations](../operations/notifications.md), without URLs; `system:read` or `notifications:manage` |
 | `PUT /api/v1/notifications/destinations/{name}` | Create or replace a destination |
 | `DELETE /api/v1/notifications/destinations/{name}` | Delete a destination |

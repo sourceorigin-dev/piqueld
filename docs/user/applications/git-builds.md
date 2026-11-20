@@ -170,7 +170,7 @@ image, such as a security fix, without a new commit.
 - **With `piquelctl`,** add `--rebuild` to `app deploy` or `env deploy`:
 
   ```console
-  piquelctl --timeout 10m app deploy welcome --rebuild
+  piquelctl app deploy welcome --rebuild
   ```
 
 - **The manifest** has no setting for it: rebuilding is a choice you make for
