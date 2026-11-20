@@ -1,7 +1,6 @@
 //! What the Traffic tab of an environment shows: which count its chart
-//! measures, how counts read, and where the chart's scale ends.
+//! measures and where the chart's scale ends.
 use piqueld_client::observability::TrafficCounts;
-use std::fmt;
 
 /// What the chart's columns measure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,44 +38,6 @@ impl Measure {
     }
 }
 
-/// A count as people read it: in full with thousands separators, `1,284`,
-/// or with `{:#}` compact from ten thousand on, `12.9K` or `4.2M`, as chart
-/// scales show it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Count(pub i64);
-
-impl fmt::Display for Count {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Both forms format the magnitude and put the sign in front.
-        let sign = if self.0 < 0 { "-" } else { "" };
-        let n = self.0.unsigned_abs();
-        if formatter.alternate() && n >= 10_000 {
-            // From 999,950 on, a thousand thousands round to a million.
-            let (unit, suffix) = if n >= 999_950 {
-                (1_000_000, "M")
-            } else {
-                (1_000, "K")
-            };
-            // Tenths of the unit, rounded half up; whole units drop the `.0`.
-            let tenths = (n * 10 + unit / 2) / unit;
-            return if tenths.is_multiple_of(10) {
-                write!(formatter, "{sign}{}{suffix}", tenths / 10)
-            } else {
-                write!(formatter, "{sign}{}.{}{suffix}", tenths / 10, tenths % 10)
-            };
-        }
-        let digits = n.to_string();
-        let mut grouped = String::new();
-        for (index, digit) in digits.chars().enumerate() {
-            if index > 0 && (digits.len() - index).is_multiple_of(3) {
-                grouped.push(',');
-            }
-            grouped.push(digit);
-        }
-        write!(formatter, "{sign}{grouped}")
-    }
-}
-
 /// The top of a chart's scale for a `highest` value: rounded up to a
 /// multiple of its leading power of ten, or of 2 under 10, so the middle
 /// gridline falls on a whole number too.
@@ -96,7 +57,7 @@ pub fn scale_top(highest: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Count, scale_top};
+    use super::scale_top;
 
     #[test]
     fn scales_round_up_to_their_leading_power_of_ten() {
@@ -109,25 +70,6 @@ mod tests {
             (1_300, 2_000),
         ] {
             assert_eq!(scale_top(highest), top, "{highest}");
-        }
-    }
-
-    #[test]
-    fn counts_group_thousands_and_compact_on_scales() {
-        for (n, full, compact) in [
-            (0, "0", "0"),
-            (1_284, "1,284", "1,284"),
-            (12_940, "12,940", "12.9K"),
-            (20_000, "20,000", "20K"),
-            (4_210_000, "4,210,000", "4.2M"),
-            (999_960, "999,960", "1M"),
-            (-1_000, "-1,000", "-1,000"),
-            (-12_940, "-12,940", "-12.9K"),
-            (-15_000, "-15,000", "-15K"),
-            (-4_210_000, "-4,210,000", "-4.2M"),
-        ] {
-            assert_eq!(Count(n).to_string(), full);
-            assert_eq!(format!("{:#}", Count(n)), compact);
         }
     }
 }

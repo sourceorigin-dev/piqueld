@@ -2,7 +2,7 @@
 //! authentication and account pages, independent of the browser.
 use piqueld_client::{
     ApplicationId,
-    access::{Grant, Grants, Permission, Scope},
+    access::{Grants, Permission, Scope},
     auth::{DeviceRequest, Manage, Session},
     tailnet::TailnetBinding,
 };
@@ -118,32 +118,6 @@ impl DeviceRequestLabels for DeviceRequest {
             1 => "1 minute ago".into(),
             minutes => format!("{minutes} minutes ago"),
         }
-    }
-}
-
-/// Human-readable grant lists.
-pub trait DescribeGrants {
-    /// One line per grant, e.g. `apps:deploy on blog, shop`, naming
-    /// applications with `name`.
-    fn describe(&self, name: impl Fn(&ApplicationId) -> String) -> Vec<String>;
-}
-
-impl DescribeGrants for Grants {
-    fn describe(&self, name: impl Fn(&ApplicationId) -> String) -> Vec<String> {
-        self.to_list()
-            .iter()
-            .map(|grant: &Grant| match &grant.applications {
-                None if grant.permission.scopable() => {
-                    format!("{} on every application", grant.permission)
-                }
-                None => grant.permission.to_string(),
-                Some(ids) => format!(
-                    "{} on {}",
-                    grant.permission,
-                    ids.iter().map(&name).collect::<Vec<_>>().join(", ")
-                ),
-            })
-            .collect()
     }
 }
 
@@ -362,27 +336,6 @@ mod tests {
         ] {
             assert_eq!(request(age).age_label(), label, "{age}");
         }
-    }
-
-    #[test]
-    fn grant_descriptions_name_scoped_applications_only() {
-        let grants = grants(&[
-            (READ, Scope::All),
-            (
-                DEPLOY,
-                Scope::Only([app("app-blog"), app("app-shop")].into()),
-            ),
-            (MANAGE, Scope::All),
-        ]);
-        let lines = grants.describe(|id| id.to_string().to_uppercase());
-        assert_eq!(
-            lines,
-            [
-                "apps:read on every application",
-                "apps:deploy on APP-BLOG, APP-SHOP",
-                "accounts:manage",
-            ]
-        );
     }
 
     #[test]

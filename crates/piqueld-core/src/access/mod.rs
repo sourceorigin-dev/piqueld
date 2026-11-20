@@ -798,6 +798,28 @@ impl Grants {
         result
     }
 
+    /// One line per grant of [`Self::to_list`], as `piquelctl` and the
+    /// dashboard show them, naming applications with `name`:
+    /// `apps:deploy on blog, shop`, `apps:read on every application` or
+    /// `accounts:manage`.
+    #[must_use]
+    pub fn describe(&self, name: impl Fn(&ApplicationId) -> String) -> Vec<String> {
+        self.to_list()
+            .iter()
+            .map(|grant| match &grant.applications {
+                None if grant.permission.scopable() => {
+                    format!("{} on every application", grant.permission)
+                }
+                None => grant.permission.to_string(),
+                Some(ids) => format!(
+                    "{} on {}",
+                    grant.permission,
+                    ids.iter().map(&name).collect::<Vec<_>>().join(", ")
+                ),
+            })
+            .collect()
+    }
+
     /// The canonical grant list: `admin`, then application permissions, then
     /// installation-wide permissions.
     #[must_use]

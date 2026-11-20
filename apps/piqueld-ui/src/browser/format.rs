@@ -1,6 +1,6 @@
 //! Human-readable time formatting for browser views.
-use crate::overview::Age;
 use leptos::wasm_bindgen::JsValue;
+use piqueld_client::observability::Age;
 
 /// The current time in Unix milliseconds.
 #[expect(

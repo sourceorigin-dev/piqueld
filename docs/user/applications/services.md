@@ -381,7 +381,7 @@ $ piquelctl env show notes
 production of notes (env-01a16d95420677219cf7b65149b4f7e8)
 
 Intent: ready
-Runtime: ready (observed 6 s ago)
+Runtime: ready (observed just now)
 ...
 ```
 

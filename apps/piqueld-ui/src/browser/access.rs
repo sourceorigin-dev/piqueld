@@ -4,7 +4,7 @@
 //! ones) shared by all application permissions; installation-wide permissions
 //! always apply everywhere. Presets only fill in the selection.
 use super::ui::{Tone, checkbox, member_checkbox, notice};
-use crate::auth::{DescribeGrants, GrantSelection};
+use crate::auth::GrantSelection;
 use leptos::prelude::*;
 use piqueld_client::{
     ApplicationId,
