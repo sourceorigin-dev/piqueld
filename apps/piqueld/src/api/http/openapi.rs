@@ -66,13 +66,16 @@ pub(super) fn base_document() -> utoipa::openapi::OpenApi {
     ApiDoc::openapi()
 }
 
+/// What the structured error response every operation documents says.
+const GENERIC_ERROR: &str = "Structured, sanitized error";
+
 // The structured error response every operation documents.
 #[expect(
     dead_code,
     reason = "Utoipa reads the field's type as the body schema; no value is ever built"
 )]
 #[derive(ToResponse)]
-#[response(description = "Structured, sanitized error")]
+#[response(description = GENERIC_ERROR)]
 struct ApiErrorResponse(ErrorBody);
 
 /// The structured error responses an operation documents, one per status,
@@ -326,7 +329,7 @@ fn complete_http_contract(document: &mut Value) {
                 .get("403")
                 .and_then(|response| response.get("description"))
                 .and_then(Value::as_str)
-                .filter(|own| *own != "Structured, sanitized error");
+                .filter(|own| *own != GENERIC_ERROR);
             let description = match own {
                 Some(own) => format!("{own}. Also returned when the {untrusted}"),
                 None => untrusted.into(),
