@@ -7,7 +7,7 @@ use super::ui::{
     one_time_secret, row_actions, text_field, when,
 };
 use super::{ClientErrorExt, confirm, reload};
-use crate::application::slug;
+use crate::application::named_tab;
 use crate::auth::{DeviceRequestLabels, Invite, SignInPage, TokenForm};
 use leptos::ev;
 use leptos::prelude::*;
@@ -16,7 +16,7 @@ use leptos_router::NavigateOptions;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use piqueld_client::{
-    Client,
+    Client, ClientError,
     access::{GlobalPermission, Grants, Permission, Preset, Scope},
     auth::{
         Account, Ceremony, CeremonyFinish, CredentialView, DeviceRequest, Directory, Manage,
@@ -58,53 +58,67 @@ extern "C" {
     fn passkey(options: &str, registration: bool) -> Result<js_sys::Promise, JsValue>;
 }
 
+/// Why a sign-in or account action failed; its notice shows the message.
+#[derive(Debug, thiserror::Error)]
+enum ActionError {
+    /// The daemon refused the request, or could not be reached.
+    #[error(transparent)]
+    Client(#[from] ClientError),
+    /// A passkey ceremony's options or credential did not convert to JSON.
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    /// The browser's passkey ceremony failed, or the action has its own
+    /// message for the person.
+    #[error("{0}")]
+    Message(String),
+}
+
+/// A value thrown by the browser's passkey ceremony, by its message.
+impl From<JsValue> for ActionError {
+    fn from(error: JsValue) -> Self {
+        Self::Message(
+            js_sys::Reflect::get(&error, &JsValue::from_str("message"))
+                .ok()
+                .and_then(|v| v.as_string())
+                .or_else(|| error.as_string())
+                .unwrap_or_else(|| "Passkey operation failed or was cancelled".into()),
+        )
+    }
+}
+
 /// Runs the browser half of a server-issued passkey ceremony and packages the
 /// credential for the matching `finish` endpoint.
-async fn complete(ceremony: Ceremony, registration: bool) -> Result<CeremonyFinish, String> {
-    let options = serde_json::to_string(&ceremony.options).map_err(|e| e.to_string())?;
-    let promise = passkey(&options, registration).map_err(|e| js_error(&e))?;
-    let response = wasm_bindgen_futures::JsFuture::from(promise)
-        .await
-        .map_err(|e| js_error(&e))?;
-    let response = response.as_string().ok_or("Invalid passkey response")?;
+async fn complete(ceremony: Ceremony, registration: bool) -> Result<CeremonyFinish, ActionError> {
+    let options = serde_json::to_string(&ceremony.options)?;
+    let promise = passkey(&options, registration)?;
+    let response = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    let response = response
+        .as_string()
+        .ok_or_else(|| ActionError::Message("Invalid passkey response".into()))?;
     Ok(CeremonyFinish {
         id: ceremony.id,
-        credential: serde_json::from_str(&response).map_err(|e| e.to_string())?,
+        credential: serde_json::from_str(&response)?,
     })
 }
 
-/// Extracts a readable message from a thrown JavaScript value.
-fn js_error(error: &JsValue) -> String {
-    js_sys::Reflect::get(error, &JsValue::from_str("message"))
-        .ok()
-        .and_then(|v| v.as_string())
-        .or_else(|| error.as_string())
-        .unwrap_or_else(|| "Passkey operation failed or was cancelled".into())
-}
-
 /// Registers a new passkey: start, browser ceremony, finish.
-async fn register(input: RegistrationStart) -> Result<(), String> {
+async fn register(input: RegistrationStart) -> Result<(), ActionError> {
     let client = Client::browser();
-    let challenge = client
-        .auth_register_start(&input)
-        .await
-        .map_err(|e| e.to_string())?;
+    let challenge = client.auth_register_start(&input).await?;
     client
         .auth_register_finish(&complete(challenge, true).await?)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     Ok(())
 }
 
 /// Signs in with a passkey, returning the new session and its grants.
-async fn sign_in() -> Result<Session, String> {
+async fn sign_in() -> Result<Session, ActionError> {
     let client = Client::browser();
-    let ceremony = client.auth_login_start().await.map_err(|e| e.to_string())?;
+    let ceremony = client.auth_login_start().await?;
     client
         .auth_login_finish(&complete(ceremony, false).await?)
-        .await
-        .map_err(|e| e.to_string())?;
-    client.auth_me().await.map_err(|e| e.to_string())
+        .await?;
+    Ok(client.auth_me().await?)
 }
 
 /// Performs a full page navigation to `path`.
@@ -157,7 +171,7 @@ impl Feedback {
 
     /// Runs `task` unless another action is in progress, showing its success
     /// message or error. `try_*` setters tolerate the owning view being unmounted.
-    fn run(self, task: impl Future<Output = Result<Shown, String>> + 'static) {
+    fn run(self, task: impl Future<Output = Result<Shown, ActionError>> + 'static) {
         if self.busy.get_untracked() {
             return;
         }
@@ -173,7 +187,7 @@ impl Feedback {
                     self.revision.try_update(|n| *n += 1);
                 }
                 Err(error) => {
-                    self.error.try_set(error);
+                    self.error.try_set(error.to_string());
                 }
             }
             self.busy.try_set(false);
@@ -217,11 +231,8 @@ impl Feedback {
 
 /// Sends an account management command, returning what to show: any
 /// one-time token or invitation link it returns.
-async fn manage(command: Manage) -> Result<Shown, String> {
-    let result = Client::browser()
-        .auth_manage(&command)
-        .await
-        .map_err(|e| e.to_string())?;
+async fn manage(command: Manage) -> Result<Shown, ActionError> {
+    let result = Client::browser().auth_manage(&command).await?;
     Ok(if let Some(token) = result.token {
         (
             "Token created. Copy it now; it will not be shown again.".into(),
@@ -430,10 +441,9 @@ fn SessionExpired(state: AuthState) -> impl IntoView {
     });
     let resume = move |_| {
         feedback.run(async move {
-            let session = Client::browser()
-                .auth_me()
-                .await
-                .map_err(|_| "Still signed out; sign in first, then continue.".to_owned())?;
+            let session = Client::browser().auth_me().await.map_err(|_| {
+                ActionError::Message("Still signed out; sign in first, then continue.".into())
+            })?;
             state.resume(session);
             Ok(Shown::default())
         });
@@ -580,10 +590,7 @@ fn operator_sign_in(feedback: Feedback, secret: String) -> AnyView {
                     let secret = secret.clone();
                     feedback
                         .run(async move {
-                            Client::browser()
-                                .auth_operator_sign_in(&secret)
-                                .await
-                                .map_err(|e| e.to_string())?;
+                            Client::browser().auth_operator_sign_in(&secret).await?;
                             navigate("/dashboard/");
                             Ok(Shown::default())
                         });
@@ -745,8 +752,7 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
         feedback.run(async move {
             let found = Client::browser()
                 .auth_device_inspect(&code.get_untracked())
-                .await
-                .map_err(|e| e.to_string())?;
+                .await?;
             request.set(Some(found));
             Ok(Shown::default())
         });
@@ -761,8 +767,7 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
         feedback.run(async move {
             Client::browser()
                 .auth_device_approve(&pending.user_code)
-                .await
-                .map_err(|e| e.to_string())?;
+                .await?;
             request.set(None);
             code.set(String::new());
             Ok((
@@ -868,7 +873,7 @@ pub(super) fn Logout(#[prop(optional)] compact: bool) -> impl IntoView {
             match Client::browser().auth_logout().await {
                 Ok(_) => {}
                 Err(error) if error.unauthorized() => {}
-                Err(error) => return Err(error.to_string()),
+                Err(error) => return Err(error.into()),
             }
             navigate("/dashboard/");
             Ok(Shown::default())
@@ -1229,6 +1234,18 @@ fn Invitations(directory: Directory, feedback: Feedback) -> impl IntoView {
     }
 }
 
+/// The breadcrumb of an account's page, from the directory to `account`.
+fn breadcrumb(account: impl IntoView + 'static) -> AnyView {
+    view! {
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+            <A href="/dashboard/accounts">"Accounts"</A>
+            {icon(Icon::ChevronRight)}
+            <span>{account}</span>
+        </nav>
+    }
+    .into_any()
+}
+
 /// Tabs of an account's page.
 const ACCOUNT_TABS: [&str; 2] = ["Profile", "Access"];
 
@@ -1250,24 +1267,14 @@ pub(super) fn AccountPage() -> impl IntoView {
     let requested = leptos_router::hooks::use_query_map().with_untracked(|query| query.get("tab"));
     let tabs = TabSet::new(
         "Account sections",
-        RwSignal::new(
-            ACCOUNT_TABS
-                .iter()
-                .copied()
-                .find(|tab| requested.as_deref() == Some(slug(tab).as_str()))
-                .unwrap_or(ACCOUNT_TABS[0]),
-        ),
+        RwSignal::new(named_tab(&ACCOUNT_TABS, requested.as_deref())),
     );
     remember_tab(tabs.selected);
     view! {
         {move || match directory.get() {
             None => {
                 view! {
-                    <nav class="breadcrumb" aria-label="Breadcrumb">
-                        <A href="/dashboard/accounts">"Accounts"</A>
-                        {icon(Icon::ChevronRight)}
-                        <span>"Account"</span>
-                    </nav>
+                    {breadcrumb("Account")}
                     {feedback.error_view()}
                     {move || {
                         feedback
@@ -1285,11 +1292,7 @@ pub(super) fn AccountPage() -> impl IntoView {
                     .find(|account| account.user.id == id.get())
                     .cloned() else {
                     return view! {
-                        <nav class="breadcrumb" aria-label="Breadcrumb">
-                            <A href="/dashboard/accounts">"Accounts"</A>
-                            {icon(Icon::ChevronRight)}
-                            <span>"Account"</span>
-                        </nav>
+                        {breadcrumb("Account")}
                         <div class="stack-sm">
                             {notice(
                                 Tone::Bad,
@@ -1319,11 +1322,7 @@ pub(super) fn AccountPage() -> impl IntoView {
                     .collect::<Vec<_>>();
                 let own = own_account(&user.id);
                 view! {
-                    <nav class="breadcrumb" aria-label="Breadcrumb">
-                        <A href="/dashboard/accounts">"Accounts"</A>
-                        {icon(Icon::ChevronRight)}
-                        <span>{user.username.clone()}</span>
-                    </nav>
+                    {breadcrumb(user.username.clone())}
                     <header class="detail-head">
                         <div class="detail-title">
                             <h1>{user.username.clone()}</h1>
