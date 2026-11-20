@@ -174,7 +174,7 @@ export async function shoot(page: Page, name: string, through?: Locator, from?: 
       await test.info().attach(`${name} fingerprint`, { body: drawn, contentType: 'text/plain' });
       throw new Error(`docs/images/${name}.png shows an older version of its page: run just docs-screenshots`);
     }
-    await writeFile(file, Png.withFingerprint(await page.screenshot({ animations: 'disabled' }), current));
+    await writeFile(file, Png.withFingerprint(await screenshot(page), current));
   }
   // A live stream's message, which no clock delays, redraws it anyway.
   expect(frozen, 'a refresh redrew the page while it was saved').toEqual(expect.arrayContaining(await varying(page)));
@@ -182,6 +182,22 @@ export async function shoot(page: Page, name: string, through?: Locator, from?: 
   // new timestamps as just now.
   await page.clock.setSystemTime(Date.now());
   await page.clock.resume();
+}
+
+/** The page as a PNG, its DOM left as it was. Playwright hides the text
+ * caret through each field's inline style, and restoring it leaves an empty
+ * `style` attribute on the fields that had none. A later shot of the same
+ * page would fingerprint it, so it would depend on whether this one was
+ * saved, which CI never does. */
+async function screenshot(page: Page): Promise<Buffer> {
+  const unstyled = await page.evaluateHandle(() =>
+    Array.from(document.querySelectorAll('input, textarea, [contenteditable]')).filter(field => !field.hasAttribute('style')));
+  try {
+    return await page.screenshot({ animations: 'disabled' });
+  } finally {
+    await unstyled.evaluate(fields => fields.forEach(field => { if (field.getAttribute('style') === '') field.removeAttribute('style'); }));
+    await unstyled.dispose();
+  }
 }
 
 /** Steadies the deployment pages the specs show, whose steps the fake engine
