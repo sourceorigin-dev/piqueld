@@ -30,8 +30,13 @@ The [field endpoints](../../user/reference/api.md#field-endpoints) come from
 one table, `piqueld_core::field_endpoints!` in `crates/piqueld-core/src/edit.rs`:
 each entry names an endpoint's operation, method, path, body and the
 `ApplicationEdit` it submits. The daemon's `api::http::editing` builds the
-handlers, their routes and their OpenAPI entries from it. To add a field, add
-its edit variant and one entry, then run `just generate`.
+handlers, their routes and their OpenAPI entries from it, and
+`piqueld-client`'s `editing` module the per-field methods and
+`Client::edit_application`, which the CLI and the dashboard send every edit
+through. An entry's edit is both the expression the daemon builds and the
+pattern the client matches, so the compiler checks that every edit has an
+endpoint. To add a field, add its edit variant and one entry, then run
+`just generate`.
 
 The daemon is split into crates that build in parallel, so a change
 recompiles only the crates it touches and those above them:
