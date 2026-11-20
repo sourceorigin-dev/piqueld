@@ -71,34 +71,28 @@ const COMMITTED: [(&str, &str); 42] = [
     ("POST", "/api/v1/auth/sign-in-link"),
 ];
 
-/// Resources of an application whose routes are typed edits, which all
-/// submit through acceptance (`edit_endpoint!`).
-const EDITED: [&str; 11] = [
-    "services",
-    "variables",
-    "volumes",
-    "routes",
-    "exports",
-    "imports",
-    "jobs",
-    "generated-secrets",
-    "repository",
-    "environments/{environment}/",
-    "name",
-];
-
-/// Whether the write route `method` `path` is classified above.
-fn classified(method: &str, path: &str) -> bool {
-    let edit = path
-        .strip_prefix("/api/v1/applications/{id}/")
-        .is_some_and(|resource| EDITED.iter().any(|edited| resource.starts_with(edited)));
-    edit || BACKGROUND.contains(&(method, path)) || COMMITTED.contains(&(method, path))
+/// Whether `operation` is a typed edit, which submits through acceptance
+/// (`edit_endpoint!`): only those take every one of its query options,
+/// `deploy`, `expected_generation` and `force`.
+fn typed_edit(operation: &serde_json::Value) -> bool {
+    let query: Vec<_> = operation["parameters"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|parameter| parameter["in"] == "query")
+        .filter_map(|parameter| parameter["name"].as_str())
+        .collect();
+    ["deploy", "expected_generation", "force"]
+        .iter()
+        .all(|option| query.contains(option))
 }
 
 /// Every write route of the API is classified: its successful changes
 /// record themselves in their own transaction, or it changes no persistent
 /// state and is recorded in the background. A new route fails here until
 /// it is classified, so none silently falls back to background records.
+/// Routes outside the API's `OpenAPI` router are not listed: today only the
+/// incoming push webhook receiver, which only hints the sync worker.
 #[test]
 fn every_write_route_records_its_changes_or_changes_nothing() {
     let document = piqueld::api::http::openapi_document();
@@ -108,12 +102,15 @@ fn every_write_route_records_its_changes_or_changes_nothing() {
     let mut unclassified = Vec::new();
     for (path, item) in paths {
         let item = item.as_object().expect("each path lists its operations");
-        for method in item
-            .keys()
-            .filter(|method| !["get", "parameters"].contains(&method.as_str()))
+        for (method, operation) in item
+            .iter()
+            .filter(|(method, _)| !["get", "parameters"].contains(&method.as_str()))
         {
             let method = method.to_uppercase();
-            if !classified(&method, path) {
+            let mut listed = BACKGROUND.iter().chain(&COMMITTED);
+            if !typed_edit(operation)
+                && !listed.any(|route| *route == (method.as_str(), path.as_str()))
+            {
                 unclassified.push(format!("{method} {path}"));
             }
         }
