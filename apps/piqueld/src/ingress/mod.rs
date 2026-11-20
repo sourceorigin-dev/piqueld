@@ -54,6 +54,12 @@ pub const TAILSCALE_IMAGE: &str = "tailscale/tailscale:v1.102.5@sha256:c507f3a2a
 /// Version of `cloudflared` released with piqueld; upgrades replace it.
 pub const CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared:2026.10.4@sha256:c6c7ae1d5dfdcb094ad344ed68ccffc26635c9c6be80965664c33baf064b0515";
 
+/// How often [`Ingress::run_availability`] repeats the latest availability to
+/// the store, however long gateway passes take.
+const AVAILABILITY_PERIOD: Duration = Duration::from_secs(15);
+/// The longest gap between `ingress_unavailable` observations that still
+/// counts as a continuous failure: a few [`AVAILABILITY_PERIOD`]s.
+const UNAVAILABLE_GAP_MS: i64 = 45_000;
 /// How long relaying Caddy's logs may stretch a gateway pass.
 const LOG_RELAY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -104,6 +110,9 @@ pub struct Ingress {
     /// Unix timestamp (seconds) of the daemon's start, where relaying a
     /// container's logs begins: earlier lines were relayed before a restart.
     logs_from: u64,
+    /// Whether ingress failed at the latest gateway pass, `None` before the
+    /// first; [`Self::run_availability`] repeats it until the next pass.
+    unavailable: parking_lot::Mutex<Option<bool>>,
     /// DNS providers and the DNS-01 certificates loaded into Caddy.
     certificates: Certificates,
     /// The apps tailnet node, while `[ingress.private]` is enabled.
@@ -188,6 +197,7 @@ impl Ingress {
                 routes: Vec::new(),
             }),
             logs_since: Mutex::default(),
+            unavailable: parking_lot::Mutex::new(None),
             logs_from: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_secs(),
@@ -434,8 +444,29 @@ impl Ingress {
             self.run_gateway(&cancellation),
             self.run_probes(&cancellation),
             self.run_certificates(&cancellation),
-            self.run_records(&cancellation)
+            self.run_records(&cancellation),
+            self.run_availability(&cancellation)
         );
+    }
+
+    /// Every 15 s, repeats the latest gateway pass's availability to the
+    /// store. A failing pass can wait out many 30-second Docker and Caddy
+    /// timeouts, so observing only when passes end would leave gaps that
+    /// restart `ingress_unavailable` instead of letting it notify.
+    async fn run_availability(&self, cancellation: &CancellationToken) {
+        let mut ticks = Ticker::new(AVAILABILITY_PERIOD);
+        while ticks.tick(cancellation).await {
+            self.repeat_availability(now_ms()).await;
+        }
+    }
+
+    /// Records the latest gateway pass's availability again at `now_ms`,
+    /// once a pass has ended.
+    async fn repeat_availability(&self, now_ms: i64) {
+        let latest = *self.unavailable.lock();
+        if let Some(failed) = latest {
+            self.record_availability(failed, now_ms).await;
+        }
     }
 
     /// Hostnames served with DNS-01 certificates instead of Caddy's automatic
@@ -638,9 +669,22 @@ impl Ingress {
     /// failures notify administrators, like other daemon dependencies.
     async fn observe_availability(&self, healthy: bool, private: &PrivateIngressStatus) {
         let failed = !(healthy && private.healthy);
+        *self.unavailable.lock() = Some(failed);
+        self.record_availability(failed, now_ms()).await;
+    }
+
+    /// Records whether ingress `failed` at `observed_ms` as the
+    /// `ingress_unavailable` condition.
+    async fn record_availability(&self, failed: bool, observed_ms: i64) {
         if let Err(error) = self
             .store
-            .observe_condition("ingress_unavailable", None, failed, now_ms(), 45_000)
+            .observe_condition(
+                "ingress_unavailable",
+                None,
+                failed,
+                observed_ms,
+                UNAVAILABLE_GAP_MS,
+            )
             .await
         {
             tracing::error!(error=?error, "ingress health observation could not be recorded");

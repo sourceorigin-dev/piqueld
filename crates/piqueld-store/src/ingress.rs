@@ -431,13 +431,24 @@ impl Store {
     /// whether any did; when none did, nothing is written.
     /// Called only after this exact table is accepted (or the gateway is stopped).
     ///
-    /// The table is compared outside the writer lock: acknowledgements are
-    /// serialized by their callers, and the gateway acknowledges every pass, so
-    /// one that raced another is corrected by the next.
+    /// Callers serialize acknowledgements, which lets the table be compared
+    /// before the writer lock is taken; see the comment there.
     ///
     /// # Errors
     /// Returns a storage error.
     pub async fn acknowledge_routes(&self, table: &RoutingTable) -> Result<bool, StoreError> {
+        // Invariant: nothing else writes `applied_json` between this read and
+        // the transaction below, since only this method writes it and its
+        // callers are serialized. In the daemon, managed ingress makes every
+        // acknowledgement, holding `Ingress::update` through it: in `apply`,
+        // and in `refresh`, which every gateway pass goes through, the first
+        // at startup included. That is why a steady pass may skip the writer
+        // lock.
+        // The controller acknowledges directly only without managed ingress
+        // (tests and embedders), where operations of different environments
+        // can race; each environment then keeps one acknowledged value, as
+        // if their writes had been ordered, and no DNS records or gateway
+        // loop read the table in between.
         let applied = self.applied_table().await?;
         let changed: Vec<_> = table
             .iter()

@@ -13,7 +13,7 @@ below.
 ## Components
 
 `Ingress` (`ingress/mod.rs`) serializes every gateway change behind one writer
-lock, and runs four loops until shutdown:
+lock, and runs five loops until shutdown:
 
 | Loop | Period | Does |
 | --- | --- | --- |
@@ -21,6 +21,7 @@ lock, and runs four loops until shutdown:
 | `run_probes` | 15 s | Probes each route the gateway acknowledged, up to four at once. |
 | `run_certificates` | 1 min | Issues and renews [DNS-01 certificates](#dns-01-certificates). |
 | `run_records` | 10 s | Reconciles [managed DNS records](#managed-dns-records), when a provider sets `manage_records`. |
+| `run_availability` | 15 s | Repeats the latest gateway pass's availability to the `ingress_unavailable` condition, however long passes take. |
 
 Deployments call `Ingress::apply` under the same lock; see
 [ingress coordination](docker-reconciliation.md#ingress-coordination) for how
@@ -618,8 +619,12 @@ version the container spec needs, except `/version`, which an older engine
 still answers. A failed request's
 diagnostic names the Docker operation and HTTP status like the reconciler's. Health changes of the gateway, the apps node or the tunnel
 feed the `ingress_unavailable` condition and diagnostic, which notifies under
-`daemon_failures` when sustained. Each pass acknowledges the routes it applied, but writes only the
-environments whose routes changed, so a steady pass writes nothing. The
+`daemon_failures` when sustained. Each pass observes it when it ends, and
+`run_availability` repeats the latest pass's result every 15 seconds: a
+failing pass can wait out many 30-second Docker and Caddy timeouts, and
+observations more than 45 seconds apart would restart the failure instead of
+letting it notify. Each pass acknowledges the routes it applied, but writes
+only the environments whose routes changed, so a steady pass writes nothing. The
 containers' logs are relayed to the daemon's every 10 seconds, starting from
 the daemon's start, at most 100 lines per container (a warning says when a
 burst had more), each cut to 4096 characters, and the relay may take at most
