@@ -458,15 +458,9 @@ impl Store {
                 // Boxed: the largest arm would otherwise size every acceptance.
                 Box::pin(Self::accept_edit(tx, current, *edit, deploy, now)).await
             }
+            // Boxed: it would otherwise grow every acceptance future.
             Mutation::Rename { id, name } => {
-                let current = Self::checked_application_on(tx, &id, expected).await?;
-                let renamed = Self::rename_on(tx, current, name, now).await?;
-                Ok(Accepted {
-                    changed: true,
-                    environments: Self::environment_ids_on(tx, &id).await?,
-                    response: MutationResponse::Rename(renamed),
-                    wake: false,
-                })
+                Box::pin(Self::accept_rename(tx, id, name, expected, now)).await
             }
             Mutation::DeleteApplication { id, environments } => {
                 let current = Self::checked_application_on(tx, &id, expected).await?;
@@ -881,14 +875,15 @@ impl Store {
             ApplicationEdit::AddService(service) => Some(service.name.as_str()),
             _ => None,
         };
-        let mut saved = if let ApplicationEdit::Name(name) = edit {
-            let renamed = Self::rename_on(tx, current, name, now).await?;
-            piqueld_core::api::SavedApplication {
+        let (mut saved, changed) = if let ApplicationEdit::Name(name) = edit {
+            let (renamed, changed) = Self::rename_on(tx, current, name, now).await?;
+            let saved = piqueld_core::api::SavedApplication {
                 application_id: renamed.application_id,
                 generation: renamed.generation,
                 operation_id: None,
                 operation_ids: Vec::new(),
-            }
+            };
+            (saved, changed)
         } else {
             let saved =
                 Self::save_configuration_on(tx, &application, Some(current.generation)).await?;
@@ -899,11 +894,11 @@ impl Store {
             })
             .map_err(StoreError::corrupt)?;
             sqlx::query!("INSERT INTO events(application_id,generation,kind,message,detail_json,resource,created_at_ms) VALUES(?1,?2,'application_edited','Saved application configuration',?3,?4,?5)",app_id,generation,detail,resource,now).execute(&mut **tx).await.map_err(StoreError::database)?;
-            saved
+            (saved, true)
         };
         Self::deploy_saved(tx, &id, &mut saved, deploy).await?;
         Ok(Accepted {
-            changed: true,
+            changed: changed || deploy,
             environments: Self::environment_ids_on(tx, &id).await?,
             response: MutationResponse::Saved(saved),
             wake: deploy,
@@ -988,19 +983,40 @@ impl Store {
         )
     }
 
+    /// Renames application `id` (see `rename_on`) after checking the
+    /// revision precondition; its current name changes nothing.
+    async fn accept_rename(
+        tx: &mut Transaction<'_, Sqlite>,
+        id: ApplicationId,
+        name: String,
+        expected: Option<u64>,
+        now: i64,
+    ) -> Result<Accepted, StoreError> {
+        let current = Self::checked_application_on(tx, &id, expected).await?;
+        let (renamed, changed) = Self::rename_on(tx, current, name, now).await?;
+        Ok(Accepted {
+            changed,
+            environments: Self::environment_ids_on(tx, &id).await?,
+            response: MutationResponse::Rename(renamed),
+            wake: false,
+        })
+    }
+
     /// Renames an idle application that is not repository-backed: its name
     /// must match the manifests it fetches. A real name
     /// change bumps the generation (and each environment's resolved generation
     /// when it was current and its configuration does not render the name,
     /// e.g. `${{ app.name }}`), updates the display name of every environment's
     /// resolved and latest targets, and records an `application_renamed` event
-    /// once, in the application's history. Never wakes the controller.
+    /// once, in the application's history. Its current name changes nothing.
+    /// Returns the application's name and revision, and whether it renamed.
+    /// Never wakes the controller.
     async fn rename_on(
         tx: &mut Transaction<'_, Sqlite>,
         current: StoredApplication,
         name: String,
         now: i64,
-    ) -> Result<RenamedApplication, StoreError> {
+    ) -> Result<(RenamedApplication, bool), StoreError> {
         if current.application.spec().manifest.is_some() {
             return Err(StoreError::RepositoryManaged);
         }
@@ -1011,14 +1027,18 @@ impl Store {
             return Err(StoreError::Busy);
         }
         let old_name = current.application.metadata().name.clone();
-        let generation = if old_name.as_str() == name {
-            current.generation
-        } else {
-            current
-                .generation
-                .checked_add(1)
-                .ok_or(StoreError::InvalidInput)?
-        };
+        if old_name.as_str() == name {
+            let unchanged = RenamedApplication {
+                application_id: id,
+                name,
+                generation: current.generation,
+            };
+            return Ok((unchanged, false));
+        }
+        let generation = current
+            .generation
+            .checked_add(1)
+            .ok_or(StoreError::InvalidInput)?;
         let previous = i64::try_from(current.generation).map_err(StoreError::invalid_input)?;
         let revision = i64::try_from(generation).map_err(StoreError::invalid_input)?;
         let application = current.application.clone().with_name(
@@ -1044,15 +1064,14 @@ impl Store {
         }
         sqlx::query!("UPDATE operations SET target_json=json_set(target_json,'$.name',?1) WHERE target_json IS NOT NULL AND id IN (SELECT (SELECT o.id FROM operations o WHERE o.environment_id=e.id ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) FROM environments e WHERE e.application_id=?2)",name,id)
             .execute(&mut **tx).await.map_err(StoreError::database)?;
-        if old_name.as_str() != name {
-            let message = format!("renamed {old_name} to {name}");
-            sqlx::query!("INSERT INTO events(application_id,generation,kind,message,created_at_ms) VALUES(?1,?2,'application_renamed',?3,?4)",id,revision,message,now).execute(&mut **tx).await.map_err(StoreError::database)?;
-        }
-        Ok(RenamedApplication {
+        let message = format!("renamed {old_name} to {name}");
+        sqlx::query!("INSERT INTO events(application_id,generation,kind,message,created_at_ms) VALUES(?1,?2,'application_renamed',?3,?4)",id,revision,message,now).execute(&mut **tx).await.map_err(StoreError::database)?;
+        let renamed = RenamedApplication {
             application_id: id,
             name,
             generation,
-        })
+        };
+        Ok((renamed, true))
     }
 
     /// Requests deletion of an application, every environment and every
@@ -1544,6 +1563,54 @@ mod tests {
             assert!(accepted.is_ok() && !request.recorded.get());
         }
         store.refuse_audit(false).await;
+        assert_eq!(store.audit_actions().await, Vec::<String>::new());
+    }
+
+    /// Renaming an application to its own name, directly or by editing its
+    /// name, changes nothing: no record, even when audit records can't be
+    /// written, no `application_renamed` event, and the same revision and
+    /// update time.
+    #[tokio::test]
+    async fn renaming_an_application_to_its_name_records_nothing() {
+        let (_directory, store) = Store::temporary().await;
+        let saved = store
+            .save_template(template("notes", "[spec]"), false)
+            .await;
+        let id = ApplicationId::parse(&saved.application_id)
+            .expect("the saved application has a valid ID");
+        let state = async || {
+            let id = id.as_str();
+            let row = "SELECT generation,updated_at_ms,(SELECT COUNT(*) FROM events \
+                WHERE kind='application_renamed') FROM applications WHERE id=?1";
+            sqlx::query_as::<_, (i64, i64, i64)>(row)
+                .bind(id)
+                .fetch_one(&store.pool)
+                .await
+                .expect("the application is read")
+        };
+        let before = state().await;
+        let rename = Mutation::Rename {
+            id: id.clone(),
+            name: "notes".into(),
+        };
+        // The dashboard and CLI rename through the name edit.
+        let edit = Mutation::Edit {
+            id: id.clone(),
+            edit: Box::new(piqueld_core::edit::ApplicationEdit::Name("notes".into())),
+            deploy: false,
+        };
+        store.refuse_audit(true).await;
+        for unchanged in [rename, edit] {
+            let request = crate::testing::audit_request("PUT /api/v1/applications/{id}/name");
+            let author = Author {
+                actor: Actor::Daemon,
+                request: Some(&request),
+            };
+            let accepted = store.accept(author, unchanged, None, false, None).await;
+            assert!(accepted.is_ok() && !request.recorded.get());
+        }
+        store.refuse_audit(false).await;
+        assert_eq!(state().await, before);
         assert_eq!(store.audit_actions().await, Vec::<String>::new());
     }
 }
