@@ -7,7 +7,7 @@ use super::{
 use base64::Engine;
 use piqueld_core::access::{Denied, Reauthenticate};
 use piqueld_core::auth::{Ceremony, CeremonyFinish, RegistrationStart, User};
-use piqueld_store::{Invitation, NewPasskey, PasskeyOwner};
+use piqueld_store::{AuditRequest, Author, Invitation, NewPasskey, PasskeyOwner};
 use webauthn_rs_core::proto::{
     AuthenticationState, Credential, PublicKeyCredential, RegistrationState, UserVerificationPolicy,
 };
@@ -266,6 +266,7 @@ impl Auth {
         &self,
         input: CeremonyFinish,
         binding: &str,
+        request: Option<&AuditRequest>,
     ) -> Result<(User, String)> {
         let Kind::Login(mut state) = self.consume(&input.id, binding).await? else {
             return Err(AuthError::stale_ceremony());
@@ -285,7 +286,7 @@ impl Auth {
         let user = self
             .0
             .store
-            .sign_in_with_passkey(&credential_id, user_id, verify, &session)
+            .sign_in_with_passkey(request, &credential_id, user_id, verify, &session)
             .await?
             .ok_or(AuthError::Unauthorized)?;
         tracing::info!(user_id = %user.id, username = %user.username, "signed in with passkey");
@@ -376,6 +377,7 @@ impl Auth {
         input: CeremonyFinish,
         binding: &str,
         caller: &Identity,
+        request: Option<&AuditRequest>,
     ) -> Result<()> {
         let Kind::Reauthenticate {
             mut state,
@@ -395,8 +397,12 @@ impl Auth {
         let passkey_id = super::URL_SAFE_NO_PAD.encode(response.get_credential_id());
         let verify = self.assertion(&mut state, &response);
         let store = &self.0.store;
+        let author = Author {
+            actor: caller,
+            request,
+        };
         match store
-            .confirm_with_passkey(caller, &passkey_id, verify, now_secs())
+            .confirm_with_passkey(author, &passkey_id, verify, now_secs())
             .await
         {
             Ok(true) => {}

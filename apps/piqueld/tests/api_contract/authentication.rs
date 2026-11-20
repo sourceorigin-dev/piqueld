@@ -113,13 +113,17 @@ async fn device_sign_ins_are_audited() {
         .call(&f.deployer, "POST", poll, json!({"device_code": approved}))
         .await;
     assert_eq!(body["status"], "complete", "{body}");
-    // Two starts, the approval, and the completing poll.
+    // Two starts, the approval, and the completing poll, which records the
+    // CLI login it issued and who approved it.
     let body = f.audit(&f.auditor, "/api/v1/audit", 4).await;
     let polls: Vec<_> = body["data"]["items"]
         .as_array()
-        .unwrap()
+        .expect("the trail lists records")
         .iter()
-        .filter(|event| event["action"] == format!("POST {poll}"))
+        .filter(|event| {
+            let action = event["action"].as_str().expect("records have an action");
+            action.starts_with(&format!("POST {poll} cli ")) && action.contains(" approved by ")
+        })
         .map(|event| (event["outcome"].clone(), event["user_id"].clone()))
         .collect();
     assert_eq!(polls, [(json!("allowed"), json!("deployer"))]);
@@ -329,8 +333,7 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
     let foreign = Request::post(issue).header(header::ORIGIN, "https://attacker.example");
     assert_eq!(as_peer(&unix, foreign, Some(operator), None).await.0, 403);
 
-    // Issuing the link and signing in with it are audited, in the background,
-    // as the operator.
+    // Issuing the link and signing in with it are audited as the operator.
     let operator = Some(HostOperator { uid: operator });
     eventually(
         Duration::from_secs(10),
@@ -342,12 +345,18 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
                 .unwrap();
             let audited = |action: &str, status: u16| {
                 page.items.iter().any(|event| {
-                    event.action == action && event.status == status && event.operator == operator
+                    event.action.starts_with(action)
+                        && event.status == status
+                        && event.operator == operator
                 })
             };
-            // Refusals before authentication, like a cross-site request, too.
+            // Signing in records the session it opened. Refusals before
+            // authentication, like a cross-site request, are audited too.
             (audited("POST /api/v1/auth/sign-in-link", 200)
-                && audited("POST /api/v1/auth/login/operator", 200)
+                && audited(
+                    "POST /api/v1/auth/login/operator host operator session ",
+                    200,
+                )
                 && audited("POST /api/v1/auth/sign-in-link", 403))
             .then_some(())
         },

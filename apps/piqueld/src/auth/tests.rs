@@ -759,7 +759,7 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
             Denied::Scoped
         );
     }
-    f.auth.logout(&ci).await.unwrap();
+    f.auth.logout(&ci, None).await.unwrap();
     assert!(f.auth.authenticate(&secret).await.is_err());
 }
 
@@ -977,7 +977,7 @@ async fn failed_passkey_confirmations_keep_the_session() {
         let ceremony = start().await.expect("the ceremony is stored");
         let refused = f
             .auth
-            .reauthenticate_finish(finish(ceremony), "browser", identity)
+            .reauthenticate_finish(finish(ceremony), "browser", identity, None)
             .await;
         assert!(matches!(refused, Err(AuthError::Invalid(_))), "{refused:?}");
     }
@@ -1031,7 +1031,10 @@ async fn confirming_with_a_passkey_refreshes_only_the_confirming_session() {
             Reauthenticate::Token
         )))
     ));
-    f.auth.logout(&sibling).await.expect("signing out succeeds");
+    f.auth
+        .logout(&sibling, None)
+        .await
+        .expect("signing out succeeds");
     assert!(matches!(
         f.confirm(&sibling, &key).await,
         Err(StoreError::CredentialRevoked)
@@ -1153,7 +1156,7 @@ async fn device_logins_inherit_their_approvals_passkey_proof() {
         .expect("the approver may approve the request");
     let issued = f
         .auth
-        .device_poll(&start.device_code)
+        .device_poll(&start.device_code, None)
         .await
         .expect("the poll answers");
     let login = f
@@ -1187,13 +1190,13 @@ async fn device_logins_inherit_their_approvals_passkey_proof() {
         approval.authenticated_at = old;
     }
     assert!(matches!(
-        f.auth.device_poll(&start.device_code).await,
+        f.auth.device_poll(&start.device_code, None).await,
         Err(AuthError::Store(StoreError::Denied(
             Denied::Reauthenticate(Reauthenticate::Stale)
         )))
     ));
     assert!(matches!(
-        f.auth.device_poll(&start.device_code).await,
+        f.auth.device_poll(&start.device_code, None).await,
         Err(AuthError::Unauthorized)
     ));
 }
@@ -1247,7 +1250,7 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     let cancelled = tokio::spawn({
         let auth = f.auth.clone();
         let device_code = start.device_code.clone();
-        async move { auth.device_poll(&device_code).await }
+        async move { auth.device_poll(&device_code, None).await }
     });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     cancelled.abort();
@@ -1268,7 +1271,7 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
         .next_poll = 0;
     let done = f
         .auth
-        .device_poll(&start.device_code)
+        .device_poll(&start.device_code, None)
         .await
         .expect("the poll answers");
     assert_eq!(done.status, "complete");
@@ -1292,9 +1295,12 @@ async fn device_confirmations_revive_nothing_and_only_serve_cli_logins() {
     f.auth
         .device_approve(&start.user_code, &alice)
         .expect("the approver may approve the request");
-    f.auth.logout(&revoked).await.expect("signing out succeeds");
+    f.auth
+        .logout(&revoked, None)
+        .await
+        .expect("signing out succeeds");
     assert!(matches!(
-        f.auth.device_poll(&start.device_code).await,
+        f.auth.device_poll(&start.device_code, None).await,
         Err(AuthError::Unauthorized)
     ));
     // Only CLI logins confirm this way.
@@ -1384,7 +1390,7 @@ async fn device_logins_can_request_limited_sessions() {
         .expect("the request is shown to its own account");
     assert_eq!(request.grants.as_ref(), Some(&read_only));
     f.auth.device_approve(&start.user_code, &alice).unwrap();
-    let result = f.auth.device_poll(&start.device_code).await.unwrap();
+    let result = f.auth.device_poll(&start.device_code, None).await.unwrap();
     let session = f
         .auth
         .authenticate(result.token.as_ref().unwrap())
@@ -1406,7 +1412,7 @@ async fn device_logins_can_request_limited_sessions() {
         .await
         .unwrap();
     assert!(matches!(
-        f.auth.device_poll(&start.device_code).await,
+        f.auth.device_poll(&start.device_code, None).await,
         Err(AuthError::Store(StoreError::Denied(Denied::Exceeds)))
     ));
 }
@@ -1572,7 +1578,7 @@ async fn logout_never_cascades_and_revocation_does_by_default() {
     };
     let alice = f.identity("alice", &Grants::admin()).await;
     let after_logout = token(&alice).await;
-    f.auth.logout(&alice).await.expect("alice logs out");
+    f.auth.logout(&alice, None).await.expect("alice logs out");
     let survived = f.auth.authenticate(&after_logout).await;
     survived.expect("the token outlives the logout of its issuer");
 
@@ -1608,14 +1614,14 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
         let cancelled = tokio::spawn({
             let auth = f.auth.clone();
             let code = start.device_code.clone();
-            async move { auth.device_poll(&code).await }
+            async move { auth.device_poll(&code, None).await }
         });
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         // Other logins proceed; the pending logins are not locked meanwhile,
         // and a concurrent poll waits.
         f.auth.device_start(None, None).unwrap();
         f.allow_poll(&start.device_code);
-        let concurrent = f.auth.device_poll(&start.device_code).await.unwrap();
+        let concurrent = f.auth.device_poll(&start.device_code, None).await.unwrap();
         assert_eq!(concurrent.status, "authorization_pending");
         cancelled.abort();
         assert!(cancelled.await.unwrap_err().is_cancelled());
@@ -1638,12 +1644,12 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
     let cli_logins = async || f.auth.directory(&alice).await.unwrap().credentials.len() - 1;
 
     let (code, _, token) = committed_then_cancelled(&f, &alice).await;
-    let issued = f.auth.device_poll(&code).await.unwrap();
+    let issued = f.auth.device_poll(&code, None).await.unwrap();
     assert_eq!(issued.status, "complete");
     assert_eq!(issued.token.as_ref(), Some(&token));
     f.auth.authenticate(&token).await.unwrap();
     assert!(matches!(
-        f.auth.device_poll(&code).await,
+        f.auth.device_poll(&code, None).await,
         Err(AuthError::Unauthorized)
     ));
     assert_eq!(cli_logins().await, 1);
@@ -1655,7 +1661,7 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
     };
     f.auth.manage(&alice, None, revoke).await.unwrap();
     assert!(matches!(
-        f.auth.device_poll(&code).await,
+        f.auth.device_poll(&code, None).await,
         Err(AuthError::Unauthorized)
     ));
     assert!(f.auth.authenticate(&token).await.is_err());
@@ -1675,26 +1681,34 @@ async fn device_approval_is_explicit_single_use_and_bound_to_a_live_session() {
         .await;
     let start = f.auth.device_start(None, None).unwrap();
     assert_eq!(
-        f.auth.device_poll(&start.device_code).await.unwrap().status,
+        f.auth
+            .device_poll(&start.device_code, None)
+            .await
+            .unwrap()
+            .status,
         "authorization_pending"
     );
     assert_eq!(
-        f.auth.device_poll(&start.device_code).await.unwrap().status,
+        f.auth
+            .device_poll(&start.device_code, None)
+            .await
+            .unwrap()
+            .status,
         "slow_down"
     );
     f.auth.device_approve(&start.user_code, &identity).unwrap();
     assert!(f.auth.device_approve(&start.user_code, &identity).is_err());
     f.allow_poll(&start.device_code);
-    let result = f.auth.device_poll(&start.device_code).await.unwrap();
+    let result = f.auth.device_poll(&start.device_code, None).await.unwrap();
     f.auth
         .authenticate(result.token.as_ref().unwrap())
         .await
         .unwrap();
-    assert!(f.auth.device_poll(&start.device_code).await.is_err());
+    assert!(f.auth.device_poll(&start.device_code, None).await.is_err());
     let start = f.auth.device_start(None, None).unwrap();
     f.auth.device_approve(&start.user_code, &identity).unwrap();
-    f.auth.logout(&identity).await.unwrap();
-    assert!(f.auth.device_poll(&start.device_code).await.is_err());
+    f.auth.logout(&identity, None).await.unwrap();
+    assert!(f.auth.device_poll(&start.device_code, None).await.is_err());
 }
 
 #[tokio::test]
@@ -1777,19 +1791,21 @@ async fn challenges_require_the_original_browser_and_expire() {
         credential: serde_json::json!({}),
     };
     assert!(matches!(
-        f.auth.login_finish(input.clone(), "browser-two").await,
+        f.auth
+            .login_finish(input.clone(), "browser-two", None)
+            .await,
         Err(AuthError::Invalid(_))
     ));
     assert!(f.auth.0.ceremonies.lock().await.contains_key(&ceremony.id));
     assert!(
         f.auth
-            .login_finish(input.clone(), "browser-one")
+            .login_finish(input.clone(), "browser-one", None)
             .await
             .is_err()
     );
     assert!(!f.auth.0.ceremonies.lock().await.contains_key(&ceremony.id));
     assert!(matches!(
-        f.auth.login_finish(input, "browser-one").await,
+        f.auth.login_finish(input, "browser-one", None).await,
         Err(AuthError::Invalid(_))
     ));
     let ceremony = f.auth.login_start("browser").await.unwrap();
@@ -1808,7 +1824,8 @@ async fn challenges_require_the_original_browser_and_expire() {
                     id: ceremony.id,
                     credential: serde_json::json!({})
                 },
-                "browser"
+                "browser",
+                None
             )
             .await,
         Err(AuthError::Invalid(_))
@@ -2139,7 +2156,11 @@ async fn device_inspection_reports_the_requester_until_approval() {
     assert!(request.age <= 1 && (599..=600).contains(&request.expires_in));
     // Inspection does not approve anything.
     assert_eq!(
-        f.auth.device_poll(&start.device_code).await.unwrap().status,
+        f.auth
+            .device_poll(&start.device_code, None)
+            .await
+            .unwrap()
+            .status,
         "authorization_pending"
     );
     assert!(f.auth.device_inspect("AAAA-AAAA", &identity).is_err());
@@ -2225,16 +2246,16 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     let secret = |link: &OperatorLink| link.url.split_once("#operator=").unwrap().1.to_owned();
     let expired = secret(&f.auth.sign_in_link(operator).await.unwrap());
     f.auth.0.store.expire_operator_sessions().await;
-    let unusable = f.auth.operator_sign_in(&expired).await;
+    let unusable = f.auth.operator_sign_in(&expired, None).await;
     assert!(matches!(unusable, Err(AuthError::Unauthorized)));
     let link = secret(&f.auth.sign_in_link(operator).await.unwrap());
-    let (signed_in, token) = f.auth.operator_sign_in(&link).await.unwrap();
+    let (signed_in, token) = f.auth.operator_sign_in(&link, None).await.unwrap();
     assert_eq!(signed_in, operator);
-    let again = f.auth.operator_sign_in(&link).await;
+    let again = f.auth.operator_sign_in(&link, None).await;
     assert!(matches!(again, Err(AuthError::Unauthorized)));
     // Unusable links are turned away without waiting for the writer.
     let writer = f.auth.0.store.hold_writer().await;
-    let guess = f.auth.operator_sign_in(&link);
+    let guess = f.auth.operator_sign_in(&link, None);
     let guess = tokio::time::timeout(std::time::Duration::from_secs(1), guess).await;
     assert!(matches!(guess, Ok(Err(AuthError::Unauthorized))));
     drop(writer);
@@ -2262,7 +2283,7 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
             .len(),
         1
     );
-    f.auth.logout(&identity).await.unwrap();
+    f.auth.logout(&identity, None).await.unwrap();
     assert!(f.auth.authenticate(&token).await.is_err());
 
     let filter = piqueld_core::observability::EventFilter::default();

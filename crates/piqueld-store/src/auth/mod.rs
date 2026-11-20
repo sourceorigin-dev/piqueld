@@ -10,7 +10,9 @@ mod lineage;
 mod security;
 pub use security::SecurityEvent;
 
-use super::{Actor, Attribution, Author, Store, StoreError, now_secs};
+use super::{
+    Actor, Attribution, AuditPrincipal, AuditRequest, Author, Store, StoreError, now_secs,
+};
 use access::{Authority, Caller, Holder};
 pub use lineage::Cascade;
 use lineage::{AccountRoots, Issued};
@@ -460,7 +462,8 @@ impl Store {
     }
 
     /// Redeems the live sign-in link `link_hash` as a host operator browser
-    /// session with secret hash `session_hash`, valid until `expires_at`.
+    /// session with secret hash `session_hash`, valid until `expires_at`,
+    /// recording the sign-in as made through `request`.
     /// Returns the session's ID and operator, or `None` when the link was
     /// already used, has expired, or never existed. Such links are turned
     /// away by a read, so guessing them never waits for the writer.
@@ -469,6 +472,7 @@ impl Store {
     /// Returns a storage error.
     pub async fn redeem_operator_link(
         &self,
+        request: Option<&AuditRequest>,
         link_hash: &str,
         session_hash: &str,
         expires_at: i64,
@@ -498,9 +502,16 @@ impl Store {
         .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::constraint)?;
-        tx.commit().await.map_err(StoreError::database)?;
-        row.map(|row| Ok((row.id, Self::host_operator(row.uid)?)))
-            .transpose()
+        let Some(row) = row else {
+            tx.commit().await.map_err(StoreError::database)?;
+            return Ok(None);
+        };
+        let operator = Self::host_operator(row.uid)?;
+        let change = format!("host operator session {:?} signed in", row.id);
+        let author = Author { actor: (), request };
+        let who = AuditPrincipal::Operator(operator);
+        author.commit_signed_in(tx, who, &change).await?;
+        Ok(Some((row.id, operator)))
     }
 
     /// The live host operator session with secret hash `hash`: its ID and
@@ -768,13 +779,15 @@ impl Store {
     /// Verifies a passkey assertion and opens a browser session while holding
     /// the writer lock, so a concurrent deletion or replay cannot resurrect
     /// access. `verify` receives the stored credential and returns its updated
-    /// form. The passkey issues the session. Returns `None` when the passkey
-    /// does not belong to `user_id`.
+    /// form. The passkey issues the session, which is recorded as made
+    /// through `request`, naming who signed in. Returns `None` when the
+    /// passkey does not belong to `user_id`.
     ///
     /// # Errors
     /// Returns a storage error.
     pub async fn sign_in_with_passkey<E: From<StoreError>>(
         &self,
+        request: Option<&AuditRequest>,
         passkey_id: &str,
         user_id: &str,
         verify: impl FnOnce(&str) -> Result<String, E>,
@@ -787,7 +800,13 @@ impl Store {
         };
         let issuer = Issued::Passkey(passkey_id);
         session.insert(&mut tx, user_id, Some(issuer)).await?;
-        tx.commit().await.map_err(StoreError::database)?;
+        let change = format!("{} with passkey {passkey_id:?}", session.describe(None));
+        let who = AuditPrincipal::Account {
+            id: &user.id,
+            username: &user.username,
+        };
+        let author = Author { actor: (), request };
+        author.commit_signed_in(tx, who, &change).await?;
         Ok(Some(user))
     }
 
@@ -802,11 +821,13 @@ impl Store {
     /// Returns a revoked credential, a refusal, or storage errors.
     pub async fn confirm_with_passkey<E: From<StoreError>>(
         &self,
-        caller: Caller<'_>,
+        author: impl Into<Author<'_, Caller<'_>>>,
         passkey_id: &str,
         verify: impl FnOnce(&str) -> Result<String, E>,
         authenticated_at: i64,
     ) -> Result<bool, E> {
+        let author = author.into();
+        let caller = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let authority = caller.load(&mut tx).await?;
         if authority.proof.kind == CredentialKind::Token {
@@ -827,7 +848,11 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        tx.commit().await.map_err(StoreError::database)?;
+        let credential = caller.credential_id;
+        let change = format!("credential {credential:?} confirmed with passkey {passkey_id:?}");
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await?;
         Ok(true)
     }
 
@@ -950,15 +975,18 @@ impl Store {
     /// the approver may still create credentials and holds every grant the new
     /// one is limited to, and the passkey proof the approval recorded, the
     /// credential's `authenticated_at`, is still recent. The approver issues
-    /// it. Returns `None` when the approving session has ended.
+    /// it, recorded as signing its account in through the author's request.
+    /// Returns `None` when the approving session has ended.
     ///
     /// # Errors
     /// Returns a storage error.
     pub async fn issue_for_credential_owner(
         &self,
-        approver: Caller<'_>,
+        author: impl Into<Author<'_, Caller<'_>>>,
         credential: &NewCredential<'_>,
     ) -> Result<Option<User>, StoreError> {
+        let author = author.into();
+        let approver = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let authority = match approver.load(&mut tx).await {
             Ok(authority) => authority,
@@ -985,7 +1013,13 @@ impl Store {
         .map_err(StoreError::database)?;
         let issuer = Issued::Credential(approver.credential_id);
         credential.insert(&mut tx, &user.id, Some(issuer)).await?;
-        tx.commit().await.map_err(StoreError::database)?;
+        let approving = approver.credential_id;
+        let change = format!("{} approved by {approving:?}", credential.describe(None));
+        let who = AuditPrincipal::Account {
+            id: &user.id,
+            username: &user.username,
+        };
+        author.commit_signed_in(tx, who, &change).await?;
         Ok(Some(user))
     }
 
@@ -1000,10 +1034,12 @@ impl Store {
     /// Returns a revoked approver, a refusal, or storage errors.
     pub async fn confirm_login(
         &self,
-        approver: Caller<'_>,
+        author: impl Into<Author<'_, Caller<'_>>>,
         credential_id: &str,
         authenticated_at: i64,
     ) -> Result<bool, StoreError> {
+        let author = author.into();
+        let approver = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let authority = approver.load(&mut tx).await?;
         let approval = Proof {
@@ -1023,8 +1059,19 @@ impl Store {
         .await
         .map_err(StoreError::database)?
         .rows_affected();
-        tx.commit().await.map_err(StoreError::database)?;
-        Ok(confirmed == 1)
+        if confirmed == 0 {
+            tx.commit().await.map_err(StoreError::database)?;
+            return Ok(false);
+        }
+        let username = Self::username_on(&mut tx, &authority.user_id).await?;
+        let approving = approver.credential_id;
+        let change = format!("cli {credential_id:?} confirmed, approved by {approving:?}");
+        let who = AuditPrincipal::Account {
+            id: &authority.user_id,
+            username: &username,
+        };
+        author.commit_signed_in(tx, who, &change).await?;
+        Ok(true)
     }
 
     /// Deletes one credential if `actor` may change its owner, with what it
