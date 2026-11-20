@@ -41,9 +41,9 @@ runtime directories. Its `testing` feature adds the in-memory and
 
 `piqueld-store` holds the control-plane state, the mutations its acceptance
 commits, and secret encryption. It reads its retention settings as
-`piqueld-core`'s `RetentionConfig`, `BuildHistoryConfig` and `ImagesConfig`,
-which the configuration file's tables are, so it builds alongside
-`piqueld-config`. Its build script checks the `sqlx::query!`
+`piqueld-core`'s `RetentionConfig`, `BuildHistoryConfig` and `ImagesConfig`.
+`piqueld-config` uses the same types for those tables of the configuration
+file, so the store doesn't depend on it. Its build script checks the `sqlx::query!`
 macros against its migrations. Its `testing` feature adds
 `Store::open_unsynced` and fixtures the daemon's tests share; the daemon's
 `fake-docker` feature enables it.
@@ -83,6 +83,7 @@ server, Docker, database, or browser framework (`axum`, `bollard`, `sqlx`,
 `leptos`), including through build and development dependencies. It also
 checks that the daemon's crates don't depend on those they build alongside:
 `piqueld-config` depends on no Docker, database, or browser framework, nor on
-the daemon or its store; `piqueld-store` on no server, Docker, or browser framework, nor on
-the daemon or its configuration, even in its tests; and `piqueld-docker` on no server, database, or browser framework,
-nor on the daemon, its configuration, or its store.
+the daemon or its store; `piqueld-store` on no server, Docker, or browser
+framework, nor on the daemon or its configuration, even in its tests; and
+`piqueld-docker` on no server, database, or browser framework, nor on the
+daemon, its configuration, or its store.
