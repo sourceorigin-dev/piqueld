@@ -11,8 +11,7 @@ description: >
 # Run the development instance
 
 Every worktree has its own instance: configuration (`piqueld.local.toml`),
-data, Unix socket, localhost port, and Docker-in-Docker engine, and serves on
-a port of the shared tailnet node once it is logged in. It never
+data, Unix socket, localhost port, and Docker-in-Docker engine. It never
 touches the host's Docker Engine, where a production piqueld runs, or another
 worktree's instance. `docs/dev/development.md` describes it in full.
 
@@ -42,11 +41,12 @@ not.
 
 ## Use it
 
-- **Browser:** open the printed URL in the preview. It is `public_url`, the
-  only origin where passkeys and sign-in work: either
-  `https://piqueld-dev.<tailnet>.ts.net:<port>` when the instance serves on the
-  shared tailnet node, which the user can also open from their own devices,
-  or `http://<instance>.localhost:<port>` (never `localhost` or `127.0.0.1`).
+- **Browser:** open the printed URL in the preview. It is `public_url`,
+  `http://<instance>.localhost:<port>` (never `localhost` or `127.0.0.1`), the
+  only origin where passkeys and sign-in work. When this machine is not the
+  user's, tell them to forward the port in the T3 Code desktop app (the
+  thread's Servers list, or **Forwarded ports** in the command palette), then
+  open the same URL; see "From another machine" in `docs/dev/development.md`.
 - **CLI:** `just ctl <args>` runs this worktree's `piquelctl` against the
   instance's socket.
 - **Signing in:** `just ctl` needs no login: it acts as the host operator,
@@ -60,10 +60,6 @@ not.
 - **State and logs:** `just dev status` prints the instance's files.
   `output.log` has the latest build and the daemon's fatal errors;
   `daemon.log` has its logs as JSON lines.
-- **Tailnet:** `just dev start` starts the shared node itself. Only if it
-  reports the node is not logged in, ask the user to run
-  `just dev tailnet up`, which needs their approval; report other startup
-  errors as they are.
 - **Docker:** prefix commands with
   `DOCKER_HOST=unix://<docker socket from status>`.
 - When creating a dev instance for a user, make sure to give them the link
