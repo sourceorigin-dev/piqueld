@@ -308,7 +308,10 @@ async fn account_changes_record_what_they_changed() {
             format!("{route} account \"bob\" username \"robert\" display name \"Robert\""),
             format!("{route} account \"bob\" grants (apps:read)"),
             format!("{route} token token \"token\" grants (apps:read) expires never tailnet none"),
-            format!("{route} invitation invitation grants (apps:read) expires 42"),
+            format!(
+                "{route} invitation invitation grants (apps:read) expires \
+                1970-01-01T00:00:42.000Z"
+            ),
             format!(
                 "{route} credential \"token\" of account \"alice\" revoked cascading: \
                 1 credentials, 0 invitations and 0 passkeys"

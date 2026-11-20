@@ -149,6 +149,22 @@ pub struct NewCredential<'a> {
     pub authenticated_at: Option<i64>,
 }
 
+/// When a credential or link expires, in Unix seconds, as audit records
+/// name it: an RFC 3339 UTC time, or `never`.
+struct Expiry(Option<i64>);
+
+impl fmt::Display for Expiry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(at) => {
+                let at = piqueld_core::observability::UtcTime(at.saturating_mul(1000));
+                f.write_str(&at.rfc3339())
+            }
+            None => f.write_str("never"),
+        }
+    }
+}
+
 impl NewCredential<'_> {
     /// The credential as the audit record of its creation names it, never
     /// its secret: its kind, ID, name, grants, expiry and the tailnet
@@ -159,9 +175,7 @@ impl NewCredential<'_> {
             || "of its account".to_owned(),
             |grants| format!("({grants})"),
         );
-        let expires = self
-            .expires_at
-            .map_or_else(|| "never".to_owned(), |at| at.to_string());
+        let expires = Expiry(self.expires_at);
         let tailnet = tailnet.unwrap_or("none");
         let (kind, id, name) = (self.kind.as_str(), &self.id, self.name);
         format!("{kind} {id} {name:?} grants {grants} expires {expires} tailnet {tailnet}")
@@ -1347,7 +1361,7 @@ impl Store {
         Holder::Invitation(&invitation.id)
             .replace(&mut tx, grants)
             .await?;
-        let (id, expires) = (&invitation.id, invitation.expires_at);
+        let (id, expires) = (&invitation.id, Expiry(Some(invitation.expires_at)));
         let change = format!("invitation {id} grants ({grants}) expires {expires}");
         author
             .commit_recorded(tx, 200, Some(&change), (None, None))
@@ -1383,7 +1397,7 @@ impl Store {
         }
         let (issuer, credential) = (caller.user_id, caller.credential_id);
         Self::insert_invitation_on(&mut tx, invitation, issuer, credential, Some(user_id)).await?;
-        let (id, expires) = (&invitation.id, invitation.expires_at);
+        let (id, expires) = (&invitation.id, Expiry(Some(invitation.expires_at)));
         let change = format!("enrollment {id} for account {user_id:?} expires {expires}");
         author
             .commit_recorded(tx, 200, Some(&change), (None, None))
