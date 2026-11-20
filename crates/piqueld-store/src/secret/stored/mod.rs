@@ -471,9 +471,8 @@ impl Store {
         }
         if row.deletion_id.is_none() {
             for environment in Self::deployables_on(&mut tx, id).await? {
-                let environment = Self::environment_on(&mut tx, environment.id.as_str())
-                    .await?
-                    .ok_or(StoreError::NotFound)?;
+                let environment =
+                    Self::existing_environment_on(&mut tx, environment.id.as_str()).await?;
                 let copies = versions
                     .get(environment.id())
                     .map_or(&[][..], Vec::as_slice);

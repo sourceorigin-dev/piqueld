@@ -802,9 +802,7 @@ impl Store {
         tx: &mut Transaction<'_, Sqlite>,
         id: EnvironmentId,
     ) -> Result<Accepted, StoreError> {
-        let environment = Self::environment_on(tx, id.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let environment = Self::existing_environment_on(tx, id.as_str()).await?;
         Ok(Accepted {
             changed: true,
             response: MutationResponse::Environment(environment.environment),
@@ -942,9 +940,7 @@ impl Store {
                 .collect()
         };
         for environment in targets {
-            let environment = Self::environment_on(tx, environment.as_str())
-                .await?
-                .ok_or(StoreError::NotFound)?;
+            let environment = Self::existing_environment_on(tx, environment.as_str()).await?;
             let operation = Self::deploy_revision_on(tx, &environment, None).await?;
             saved.operation_ids.push(operation.id);
         }

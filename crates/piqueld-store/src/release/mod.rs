@@ -68,9 +68,7 @@ impl Store {
         target: &ResolvedApplication,
         now: i64,
     ) -> Result<(), StoreError> {
-        let environment = Self::environment_on(tx, environment.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let environment = Self::existing_environment_on(tx, environment.as_str()).await?;
         if !environment.environment.kind.records_releases() {
             return Ok(());
         }

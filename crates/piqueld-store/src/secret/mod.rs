@@ -140,9 +140,7 @@ impl Store {
         value: &[u8],
     ) -> Result<SecretMetadata, StoreError> {
         Self::check_secret_write(name, value, expected)?;
-        let app = Self::environment_on(tx, application.as_str())
-            .await?
-            .ok_or(StoreError::NotFound)?;
+        let app = Self::existing_environment_on(tx, application.as_str()).await?;
         if app.delete_intent() {
             return Err(StoreError::Busy);
         }
@@ -417,9 +415,7 @@ impl Store {
         .map_err(StoreError::database)?
         .is_some();
         if !prepared {
-            let environment = Self::environment_on(tx, id)
-                .await?
-                .ok_or(StoreError::NotFound)?;
+            let environment = Self::existing_environment_on(tx, id).await?;
             Self::check_secret_access_on(tx, &environment.environment, app).await?;
             let application = environment.environment.application_id.as_str();
             let mut missing = Vec::new();

@@ -112,12 +112,11 @@ impl Store {
             Some(error),
         )
         .await?;
-        let environment = Box::pin(Self::environment_on(
+        let environment = Box::pin(Self::existing_environment_on(
             &mut tx,
             operation.environment_id.as_str(),
         ))
-        .await?
-        .ok_or(StoreError::NotFound)?;
+        .await?;
         let rollback = Box::pin(Self::accept_restore_on(
             &mut tx,
             &environment,
