@@ -113,12 +113,11 @@ impl Cloudflare {
             let empty = response.result.is_empty();
             items.extend(response.result);
             match response.result_info {
-                Some(info) if info.page < info.total_pages => {
-                    if info.page != page || empty {
-                        return Err(ApiError::Pagination(page));
-                    }
-                }
-                _ => return Ok(items),
+                None => return Ok(items),
+                Some(info) if info.page != page => return Err(ApiError::Pagination(page)),
+                Some(info) if info.page >= info.total_pages => return Ok(items),
+                Some(_) if empty => return Err(ApiError::Pagination(page)),
+                Some(_) => {}
             }
         }
         Err(ApiError::TooLarge("more than 100 pages"))
@@ -438,6 +437,22 @@ mod tests {
         assert!(matches!(
             std::error::Error::source(&error).and_then(|source| source.downcast_ref()),
             Some(ApiError::TooLarge(_))
+        ));
+    }
+
+    /// A first page answered as the last one would otherwise pass for the
+    /// whole list, and replace the discovered zones with part of them.
+    #[tokio::test]
+    async fn a_last_page_that_was_not_asked_for_fails() {
+        let recorded = Recorded::serve(vec![(Method::GET, "/zones?per_page=50&page=1", 200,
+            r#"{"success":true,"errors":[],"result":[{"id":"z2","name":"example.com"}],"result_info":{"page":2,"per_page":50,"total_pages":2}}"#)]).await;
+        let error = provider(recorded.url.clone())
+            .zones(&reqwest::Client::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            std::error::Error::source(&error).and_then(|source| source.downcast_ref()),
+            Some(ApiError::Pagination(1))
         ));
     }
 
