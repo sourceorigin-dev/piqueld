@@ -83,15 +83,17 @@ impl Store {
         let kind = event.kind();
         let now = now_ms();
         let operator = actor.operator_uid();
+        let system = actor.system.map(piqueld_core::sync::SystemActor::as_str);
         sqlx::query!(
-            "INSERT INTO events(scope,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid)
-            VALUES('daemon',?1,?2,?3,?4,?5,?6)",
+            "INSERT INTO events(scope,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid,actor_system)
+            VALUES('daemon',?1,?2,?3,?4,?5,?6,?7)",
             kind,
             message,
             now,
             actor.user_id,
             actor.credential_id,
             operator,
+            system,
         )
         .execute(db)
         .await

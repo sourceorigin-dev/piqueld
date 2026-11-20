@@ -1049,6 +1049,26 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
     );
 }
 
+/// A security event raised by a system actor is attributed to it, not to the
+/// daemon.
+#[tokio::test]
+async fn security_events_record_their_system_actor() {
+    let (_temp, store) = Store::temporary().await;
+    let system = piqueld_core::sync::SystemActor::SyncPoll;
+    let mut db = store.pool.acquire().await.unwrap();
+    let by = crate::Actor::System(system).attribution();
+    Store::security_event_on(&mut db, SecurityEvent::AdminGranted, "granted", by)
+        .await
+        .unwrap();
+    let id = sqlx::query_scalar("SELECT last_insert_rowid()")
+        .fetch_one(&mut *db)
+        .await
+        .unwrap();
+    let event = store.event(id).await.unwrap();
+    let actor = piqueld_core::event::EventActor::System { actor: system };
+    assert_eq!(event.actor, Some(actor));
+}
+
 /// Each daemon start notifies as `daemon_started`, naming the previous
 /// version only when it changed.
 #[tokio::test]
