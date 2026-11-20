@@ -39,10 +39,9 @@ async fn assert_secret_history(client: &Client, application_id: &str) {
 async fn stored_secret_access_queries_never_widen_environments_implicitly() {
     use piqueld_core::api::{EnvironmentAccess, SecretAccess};
     let temp = tempfile::tempdir().unwrap();
-    let api = router(state(&temp).await, FakeAuth);
-    let server = Server::tcp(api.clone()).await;
-    let client = server.client();
-    let app = client.apply_and_deploy(&new_application()).await.unwrap();
+    let api = AcceptanceApi::start(&temp).await;
+    let client = &api.client;
+    let app = api.deploy().await;
     let none = SecretAccess {
         environments: EnvironmentAccess::Only([].into()),
         previews: false,
@@ -58,7 +57,8 @@ async fn stored_secret_access_queries_never_widen_environments_implicitly() {
         )
         .await
         .unwrap();
-    let put = |query: &str| api.send(put_stored_token(&app.application_id, query, 1, "two"));
+    let router = api.router();
+    let put = |query: &str| router.send(put_stored_token(&app.application_id, query, 1, "two"));
     put("previews=true")
         .await
         .assert_error(StatusCode::BAD_REQUEST, "query_invalid");
@@ -106,17 +106,13 @@ fn put_stored_token(
 #[tokio::test]
 async fn stored_secret_uploads_check_their_headers_first() {
     let temp = tempfile::tempdir().unwrap();
-    let api = router(state(&temp).await, FakeAuth);
-    let server = Server::tcp(api.clone()).await;
-    let app = server
-        .client()
-        .apply_and_deploy(&new_application())
-        .await
-        .unwrap();
+    let api = AcceptanceApi::start(&temp).await;
+    let app = api.deploy().await;
+    let router = api.router();
     let mut repeated = put_stored_token(&app.application_id, "", 0, "value");
     let headers = repeated.headers_mut();
     headers.append("x-expected-generation", "1".parse().unwrap());
-    let response = api.send(repeated).await;
+    let response = router.send(repeated).await;
     response.assert_error(StatusCode::BAD_REQUEST, "secret_generation_required");
     // A body over the request limit would fail with 413 once read.
     let mut text = put_stored_token(&app.application_id, "", 0, "value");
@@ -124,7 +120,7 @@ async fn stored_secret_uploads_check_their_headers_first() {
         .insert("content-type", "text/plain".parse().unwrap());
     let oversized = vec![b'x'; piqueld_core::api::MAX_REQUEST_BODY_BYTES + 1];
     *text.body_mut() = Body::from(oversized);
-    let response = api.send(text).await;
+    let response = router.send(text).await;
     response.assert_error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "secret_content_type");
 }
 
@@ -134,9 +130,9 @@ async fn stored_secret_uploads_check_their_headers_first() {
 #[tokio::test]
 async fn access_changes_from_an_outdated_read_conflict() {
     let temp = tempfile::tempdir().unwrap();
-    let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
-    let client = server.client();
-    let app = client.apply_and_deploy(&new_application()).await.unwrap();
+    let api = AcceptanceApi::start(&temp).await;
+    let client = &api.client;
+    let app = api.deploy().await;
     client
         .put_stored_secret(&app.application_id, "token", 0, b"one".to_vec(), None, None)
         .await
@@ -153,10 +149,9 @@ async fn access_changes_from_an_outdated_read_conflict() {
             Some(&outdated),
         )
         .await;
-    let error = api_error(refused.unwrap_err());
     assert_eq!(
-        (error.status, error.code.as_str()),
-        (409, "secret_access_conflict")
+        api_error(refused.unwrap_err()),
+        ApiError::new(409, "secret_access_conflict")
     );
     let refused = client
         .put_stored_secret(
@@ -168,22 +163,21 @@ async fn access_changes_from_an_outdated_read_conflict() {
             Some(&outdated),
         )
         .await;
-    let error = api_error(refused.unwrap_err());
     assert_eq!(
-        (error.status, error.code.as_str()),
-        (409, "secret_access_conflict")
+        api_error(refused.unwrap_err()),
+        ApiError::new(409, "secret_access_conflict")
     );
 }
 
 #[tokio::test]
 async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
-    use piqueld_client::edit::{ApplicationEdit, EditOptions, ServiceEdit};
+    use piqueld_client::edit::ServiceEdit;
     let temp = tempfile::tempdir().unwrap();
-    let api = router(state(&temp).await, FakeAuth);
-    let server = Server::tcp(api.clone()).await;
-    let client = server.client();
-    let app = client.apply_and_deploy(&new_application()).await.unwrap();
+    let api = AcceptanceApi::start(&temp).await;
+    let client = &api.client;
+    let app = api.deploy().await;
     let response = api
+        .router()
         .send(put_stored_token(
             &app.application_id,
             "",
@@ -205,18 +199,11 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
             .len(),
         1
     );
-    let (client_ref, id) = (&client, &app.application_id);
+    let id = &app.application_id;
     let reference = |secrets, generation| async move {
-        let edit = ApplicationEdit::Service {
-            name: "web".into(),
-            edit: ServiceEdit::Secrets(secrets),
-        };
-        let options = EditOptions {
-            expected_generation: Some(generation),
-            ..EditOptions::default()
-        };
-        client_ref
-            .edit_application(id, &edit, &options)
+        let edit = edit_web(ServiceEdit::Secrets(secrets));
+        client
+            .edit_application(id, &edit, &at_generation(generation))
             .await
             .unwrap()
     };
@@ -262,15 +249,15 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
             .unwrap()
             .is_empty()
     );
-    assert_secret_history(&client, &app.application_id).await;
+    assert_secret_history(client, &app.application_id).await;
 }
 
 #[tokio::test]
 async fn missing_secret_key_is_a_persisted_daemon_diagnostic() {
     let temp = tempfile::tempdir().unwrap();
-    let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
-    let client = server.client();
-    let app = client.apply_and_deploy(&new_application()).await.unwrap();
+    let api = AcceptanceApi::start(&temp).await;
+    let client = &api.client;
+    let app = api.deploy().await;
     client
         .put_stored_secret(
             &app.application_id,
@@ -314,18 +301,28 @@ async fn missing_secret_key_is_a_persisted_daemon_diagnostic() {
     assert_eq!(event.request_id.as_deref(), Some(error.request_id.as_str()));
 }
 
+/// The contract daemon's store in `temp`, holding the contract manifest
+/// saved, without a target, as application `id`.
+async fn saved_store(temp: &TempDir, id: &str) -> (Arc<Store>, ApplicationTemplate) {
+    let store = Arc::new(Store::open_unsynced(database(temp)).await.unwrap());
+    let application = manifest()
+        .validate_template()
+        .unwrap()
+        .normalize(piqueld_core::ApplicationId::parse(id).unwrap());
+    store
+        .save_application(&application, None, None)
+        .await
+        .unwrap();
+    (store, application)
+}
+
 #[tokio::test]
 async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_failure() {
     use piqueld::api::{ApplicationError, Mutation};
     use piqueld_core::edit::{ApplicationEdit, ServiceEdit};
     use piqueld_store::StoreError;
     let temp = tempfile::tempdir().unwrap();
-    let store = Arc::new(Store::open_unsynced(temp.path().join("db")).await.unwrap());
-    let app = manifest()
-        .validate_template()
-        .unwrap()
-        .normalize(piqueld_core::ApplicationId::parse("app-cleanup").unwrap());
-    store.save_application(&app, None, None).await.unwrap();
+    let (store, app) = saved_store(&temp, "app-cleanup").await;
     let gate = Arc::new(Gate::default());
     let runtime = Arc::new(FakeRuntime {
         cleanup_gate: Some(gate.clone()),
@@ -419,21 +416,8 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
 #[tokio::test]
 async fn secret_key_recovery_api_discards_values_only_for_an_unusable_key() {
     let temp = tempfile::tempdir().unwrap();
-    let store = Arc::new(Store::open_unsynced(temp.path().join("db")).await.unwrap());
-    seed_account(
-        &temp.path().join("db"),
-        "contract-admin",
-        &[("admin", None)],
-    )
-    .await;
-    let application = manifest()
-        .validate_template()
-        .unwrap()
-        .normalize(piqueld_core::ApplicationId::parse("app-key-api").unwrap());
-    store
-        .save_application(&application, None, None)
-        .await
-        .unwrap();
+    let (store, application) = saved_store(&temp, "app-key-api").await;
+    seed_account(&database(&temp), "contract-admin", &[("admin", None)]).await;
     store
         .put_stored_secret(
             Daemon,
