@@ -57,6 +57,8 @@ struct Reply {
     content_type: &'static str,
     body: Vec<u8>,
     drop_connection: bool,
+    /// Signalled once an upgraded exec session has read its exec request.
+    exec_started: Option<mpsc::Sender<()>>,
 }
 
 impl Reply {
@@ -67,6 +69,7 @@ impl Reply {
             content_type: "application/json",
             body: serde_json::to_vec(body).expect("JSON response"),
             drop_connection: false,
+            exec_started: None,
         }
     }
 
@@ -96,6 +99,17 @@ impl Reply {
             content_type: "",
             body: Vec::new(),
             drop_connection: false,
+            exec_started: None,
+        }
+    }
+
+    /// Accepts an exec WebSocket like [`Reply::upgrade`], then signals
+    /// `started` once the exec request was read, so a test can act during
+    /// the session.
+    fn upgrade_signalling(started: mpsc::Sender<()>) -> Self {
+        Self {
+            exec_started: Some(started),
+            ..Self::upgrade()
         }
     }
 
@@ -111,6 +125,7 @@ impl Reply {
             content_type: "text/event-stream",
             body,
             drop_connection: false,
+            exec_started: None,
         }
     }
 
@@ -125,6 +140,7 @@ impl Reply {
             content_type: "application/json",
             body: Vec::new(),
             drop_connection: true,
+            exec_started: None,
         }
     }
 }
@@ -274,7 +290,7 @@ fn serve_stream(
             "HTTP/1.1 101 Switching Protocols\r\nconnection: upgrade\r\nupgrade: websocket\r\nsec-websocket-accept: {accept}\r\n\r\n"
         )
         .expect("upgrade response");
-        echo_exec(stream);
+        echo_exec(stream, reply.exec_started);
         return;
     }
     let header = format!(
@@ -298,10 +314,10 @@ fn serve_stream(
     }
 }
 
-/// Checks the exec request for `cat -`, echoes standard input until it
-/// closes, then reports stderr and exit code 3. A client that disconnects
-/// first gets nothing.
-fn echo_exec<S: Read + Write>(stream: S) {
+/// Checks the exec request for `cat -`, signals `started` if given, echoes
+/// standard input until it closes, then reports stderr and exit code 3. A
+/// client that disconnects first gets nothing.
+fn echo_exec<S: Read + Write>(stream: S, started: Option<mpsc::Sender<()>>) {
     use piqueld_client::exec::{ExecFrame, ExecInput, ExecOutput};
     use tokio_tungstenite::tungstenite::{Message, WebSocket, protocol::Role};
     let mut socket = WebSocket::from_raw_socket(stream, Role::Server, None);
@@ -312,6 +328,9 @@ fn echo_exec<S: Read + Write>(stream: S) {
         serde_json::from_str::<Value>(request.as_str()).expect("exec request"),
         json!({"service": "web", "command": ["cat", "-"], "stdin": true, "tty": null})
     );
+    if let Some(started) = started {
+        started.send(()).expect("test is waiting");
+    }
     let mut stdin = Vec::new();
     loop {
         match socket.read() {
