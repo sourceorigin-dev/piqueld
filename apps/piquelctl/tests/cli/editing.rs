@@ -82,9 +82,15 @@ fn assert_saves_field(arguments: &[&str], suffix: &str, expected: &Value) {
 /// exit as an input error after only reading it, as editing an entry the
 /// application lacks does.
 fn assert_edit_refused(arguments: &[&str]) {
-    let server = start_server(false, 1, |_| Reply::json(app_view("app-notes-01", "notes")));
+    let server = start_server(false, usize::MAX, |request| {
+        assert_eq!(
+            (request.method.as_str(), request.path.as_str()),
+            ("GET", "/api/v1/applications/app-notes-01")
+        );
+        Reply::json(app_view("app-notes-01", "notes"))
+    });
     assert_eq!(run(&server, arguments).status.code(), Some(2));
-    assert_eq!(server.finish().len(), 1);
+    assert_eq!(server.stop().len(), 1);
 }
 
 #[test]

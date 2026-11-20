@@ -143,11 +143,17 @@ struct TestServer {
 }
 
 impl TestServer {
+    /// Asks the server to stop accepting, then joins it and returns the
+    /// requests it served. For a server that may never reach its request
+    /// count, such as one serving `usize::MAX`, once the client exited.
     fn stop(self) -> Vec<Request> {
         self.stop.store(true, Ordering::Relaxed);
         self.finish()
     }
 
+    /// Joins the server without asking it to stop, so it first serves all
+    /// its expected requests or waits `ACCEPT_TIMEOUT` for the next one, and
+    /// returns the requests it served.
     fn finish(mut self) -> Vec<Request> {
         self.join
             .take()
@@ -170,10 +176,16 @@ impl TestServer {
 
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Bounds how long a connected client can stall a read, so a stalled request
+/// fails the test instead of blocking `finish()`.
+const READ_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Serves `expected_requests` connections, each with one request answered by
 /// `handler`, over a Unix socket or TCP. Gives up once no client connected
 /// for `ACCEPT_TIMEOUT`, so a request-count mismatch fails fast instead of
-/// hanging forever.
+/// hanging forever. The listener closes after the last expected request, so
+/// a test that asserts a request is never sent serves `usize::MAX` and
+/// [`TestServer::stop`]s once the client exited.
 fn start_server<F>(unix: bool, expected_requests: usize, handler: F) -> TestServer
 where
     F: FnMut(Request) -> Reply + Send + 'static,
@@ -206,7 +218,7 @@ where
         }
     };
     // BSD sockets inherit the listener's nonblocking mode, so each accepted
-    // stream is made blocking again.
+    // stream is made blocking again, with a read timeout.
     let (endpoint, accept): (_, Accept) = if unix {
         let path = directory.path().join("piqueld.sock");
         let listener = UnixListener::bind(&path).expect("Unix listener");
@@ -216,6 +228,9 @@ where
         let accept = move || {
             let (stream, _) = listener.accept()?;
             stream.set_nonblocking(false).expect("blocking request I/O");
+            stream
+                .set_read_timeout(Some(READ_TIMEOUT))
+                .expect("read timeout applies");
             Ok(Box::new(stream) as Box<dyn Stream>)
         };
         (Endpoint::Unix(path), Box::new(accept))
@@ -228,6 +243,9 @@ where
         let accept = move || {
             let (stream, _) = listener.accept()?;
             stream.set_nonblocking(false).expect("blocking request I/O");
+            stream
+                .set_read_timeout(Some(READ_TIMEOUT))
+                .expect("read timeout applies");
             Ok(Box::new(stream) as Box<dyn Stream>)
         };
         (
@@ -586,6 +604,7 @@ fn assert_saves(
     let expected = expected.clone();
     let server = start_server(false, 2, move |request| {
         if request.method == "GET" {
+            assert_eq!(request.path, "/api/v1/applications/app-notes-01");
             return Reply::json(view.clone());
         }
         assert_eq!(request.method, method);

@@ -5,9 +5,11 @@ use super::*;
 #[test]
 fn runtime_app_commands_never_pick_one_of_several_environments() {
     for action in ["deploy", "reconcile", "stop", "start", "logs"] {
-        let server = start_server(false, 1, move |request| match request.path.as_str() {
-            "/api/v1/applications/app-notes-01" => Reply::json(two_environment_view()),
-            path => panic!("unexpected path {path}"),
+        let server = start_server(false, usize::MAX, move |request| {
+            match request.path.as_str() {
+                "/api/v1/applications/app-notes-01" => Reply::json(two_environment_view()),
+                path => panic!("unexpected path {path}"),
+            }
         });
         let mut args = vec!["app", action, "app-notes-01"];
         if action != "logs" {
@@ -18,7 +20,7 @@ fn runtime_app_commands_never_pick_one_of_several_environments() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains("environment required"), "{stderr}");
         assert!(stderr.contains("production, staging"), "{stderr}");
-        assert_eq!(server.finish().len(), 1, "no mutation was sent");
+        assert_eq!(server.stop().len(), 1, "no mutation was sent");
     }
 }
 
@@ -99,14 +101,16 @@ fn env_commands_target_the_named_environment() {
 
 #[test]
 fn deleting_an_application_with_several_environments_names_every_one() {
-    let server = start_server(false, 1, move |request| match request.path.as_str() {
-        "/api/v1/applications/app-notes-01" => Reply::json(two_environment_view()),
-        path => panic!("unexpected path {path}"),
+    let server = start_server(false, usize::MAX, move |request| {
+        match request.path.as_str() {
+            "/api/v1/applications/app-notes-01" => Reply::json(two_environment_view()),
+            path => panic!("unexpected path {path}"),
+        }
     });
     let output = run(&server, &["app", "delete", "app-notes-01", "--yes"]);
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("--environments production,staging"));
-    assert_eq!(server.finish().len(), 1, "no deletion was sent");
+    assert_eq!(server.stop().len(), 1, "no deletion was sent");
 
     let server = start_server(false, 2, move |request| match request.path.as_str() {
         "/api/v1/applications/app-notes-01" => Reply::json(two_environment_view()),
@@ -596,6 +600,7 @@ fn wait_never_follows_a_newer_deployment_and_fails_or_times_out_with_its_code() 
 #[test]
 fn wait_needs_the_runtime_observed() {
     let mut unobserved = detail("operation-01", true, "ready");
+    unobserved["application"]["application"]["spec"]["services"] = json!([]);
     unobserved["observed"]["services"] = json!([]);
     unobserved["diagnostics"] = json!([{
         "code": "runtime_unavailable", "message": "Runtime observation is unavailable."
@@ -673,12 +678,14 @@ fn deploy_output_carries_the_deployment_fields_agents_need() {
 /// ends when the environment is started meanwhile.
 #[test]
 fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
-    // (attempt after the stop, run state, runtime health, exit code)
-    for (attempt, run_state, health, code) in [
-        (1, "stopped", "stopped", 0),
-        (2, "stopped", "ready", 5),
-        (1, "running", "ready", 0),
+    // (attempt after the stop, run state, runtime health at each status
+    // read, exit code)
+    for (attempt, run_state, healths, code) in [
+        (1, "stopped", &["ready", "stopped"][..], 0),
+        (2, "stopped", &["ready"][..], 5),
+        (1, "running", &["ready"][..], 0),
     ] {
+        let mut reads = healths.iter();
         let server = start_server(false, usize::MAX, move |request| {
             match request.path.split('?').next().unwrap() {
                 "/api/v1/applications/app-notes-01" => {
@@ -692,7 +699,7 @@ fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
                 }
                 "/api/v1/environments/app-notes-01/status" => {
                     let mut status = status("app-notes-01", "ready");
-                    status["runtime_health"] = json!(health);
+                    status["runtime_health"] = json!(reads.next().expect("one more status read"));
                     Reply::json(status)
                 }
                 "/api/v1/environments/app-notes-01" => {
@@ -715,6 +722,11 @@ fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        server.stop();
+        let status_reads = server
+            .stop()
+            .iter()
+            .filter(|request| request.path == "/api/v1/environments/app-notes-01/status")
+            .count();
+        assert_eq!(status_reads, healths.len());
     }
 }
