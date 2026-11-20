@@ -21,6 +21,8 @@ use utoipa::{OpenApi, ToResponse};
     ),
     components(schemas(
         ErrorBody,
+        // The values of `ErrorBody.code`, which stays an open string.
+        piqueld_core::api::ApiErrorCode,
         piqueld_core::auth::User,
         piqueld_core::auth::Session,
         piqueld_core::auth::Account,

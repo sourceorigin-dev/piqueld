@@ -660,12 +660,14 @@ mod tests {
         let compilation =
             crate::application::BoundaryError::Compilation(vec![piqueld_core::CompileError {
                 resource: "web".into(),
-                code: "source_unresolved".into(),
+                code: piqueld_core::ApiErrorCode::SourceUnresolved.into(),
                 message: "service source has not been resolved to an immutable image".into(),
             }])
             .diagnostic();
         assert!(compilation.causes[0].contains("web"));
-        assert!(compilation.causes[0].contains("source_unresolved"));
+        assert!(
+            compilation.causes[0].contains(piqueld_core::ApiErrorCode::SourceUnresolved.as_str())
+        );
     }
 
     #[test]

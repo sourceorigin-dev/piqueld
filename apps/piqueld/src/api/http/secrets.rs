@@ -9,6 +9,7 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     ApplicationId, EnvironmentId,
     api::{
@@ -49,7 +50,7 @@ fn expected(headers: &HeaderMap) -> Result<i64, ApiError> {
     let required = |message| {
         ApiError::new(
             StatusCode::BAD_REQUEST,
-            "secret_generation_required",
+            ApiErrorCode::SecretGenerationRequired,
             message,
         )
     };
@@ -144,7 +145,7 @@ pub(super) struct AccessQuery {
 }
 
 impl QueryParams for AccessQuery {
-    const INVALID_CODE: &'static str = "query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::QueryInvalid;
     const INVALID_MESSAGE: &'static str = "environments and expected_environments must be all or environment IDs; previews and expected_previews must be true or false";
 }
 
@@ -177,7 +178,7 @@ impl AccessQuery {
                 None => Ok(None),
                 Some(_) => Err(ApiError::new(
                     StatusCode::BAD_REQUEST,
-                    "query_invalid",
+                    ApiErrorCode::QueryInvalid,
                     alone,
                 )),
             };
@@ -225,7 +226,7 @@ pub(super) async fn put_stored(
     {
         return Err(ApiError::new(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "secret_content_type",
+            ApiErrorCode::SecretContentType,
             "Secret values use application/octet-stream",
         ));
     }
@@ -233,7 +234,7 @@ pub(super) async fn put_stored(
         body_timeout(&e).unwrap_or_else(|| {
             ApiError::new(
                 e.status(),
-                "secret_body_invalid",
+                ApiErrorCode::SecretBodyInvalid,
                 "Secret body could not be read within the request limit",
             )
         })
@@ -241,7 +242,7 @@ pub(super) async fn put_stored(
     if body.is_empty() || body.len() > MAX_SECRET_VALUE_BYTES {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
-            "secret_value_invalid",
+            ApiErrorCode::SecretValueInvalid,
             format!("Secret values must contain 1–{MAX_SECRET_VALUE_BYTES} bytes"),
         ));
     }

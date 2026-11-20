@@ -14,6 +14,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, sse::Event as ServerEvent},
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     Event,
     api::{Envelope, Page},
@@ -80,7 +81,7 @@ impl EventQuery {
 }
 
 impl QueryParams for EventQuery {
-    const INVALID_CODE: &'static str = "pagination_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::PaginationInvalid;
     const INVALID_MESSAGE: &'static str = "invalid event query";
 }
 /// Lists structured events.
@@ -144,7 +145,7 @@ pub(super) async fn stream(
     if query.descending.unwrap_or(false) {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            ApiErrorCode::InvalidRequest,
             "event streams require oldest-first ordering",
         ));
     }
@@ -155,7 +156,7 @@ pub(super) async fn stream(
         .map_err(|_| {
             ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "invalid_request",
+                ApiErrorCode::InvalidRequest,
                 "invalid Last-Event-ID",
             )
         })?
