@@ -2996,6 +2996,25 @@
       "DeviceStart": {
         "description": "Device login challenge for an interactive CLI.",
         "properties": {
+          "confirms": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceConfirmation"
+                  }
+                ],
+                "description": "For a request confirming an existing CLI login, the login and the\naction, as the approval page names them."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          },
           "device_code": {
             "description": "Secret used only by the initiating CLI to poll.",
             "type": "string"

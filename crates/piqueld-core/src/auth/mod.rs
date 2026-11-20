@@ -47,7 +47,7 @@ redacted_debug!(OperatorLink { expires_at } secret { url });
 redacted_debug!(OperatorSignIn {} secret { secret });
 redacted_debug!(RegistrationStart { user_id, username, display_name, passkey_name } secret { invitation });
 redacted_debug!(Managed {} secret { token, invitation_url });
-redacted_debug!(DeviceStart { user_code, verification_uri, verification_uri_complete, expires_in, interval, requester, grants } secret { device_code });
+redacted_debug!(DeviceStart { user_code, verification_uri, verification_uri_complete, expires_in, interval, requester, grants, confirms } secret { device_code });
 redacted_debug!(DevicePoll {} secret { device_code });
 redacted_debug!(DeviceToken { status, user } secret { token });
 
@@ -483,6 +483,10 @@ pub struct DeviceStart {
     /// than limited logins omit it, so clients can tell they ignored a limit.
     #[serde(default)]
     pub grants: Option<Grants>,
+    /// For a request confirming an existing CLI login, the login and the
+    /// action, as the approval page names them.
+    #[serde(default)]
+    pub confirms: Option<DeviceConfirmation>,
 }
 
 /// An action that needs a recent passkey sign-in, which a CLI login

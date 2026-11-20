@@ -223,7 +223,8 @@ fn refused_sensitive_actions_confirm_the_login_then_retry_once() {
                     "expires_in": 600,
                     // Longer than `--timeout`, which approval doesn't count.
                     "interval": 3,
-                    "requester": null
+                    "requester": null,
+                    "confirms": {"action": "recover_secret_key", "login": "login-01"}
                 }))
             }
             ("POST", "/api/v1/auth/device/poll") => Reply::bare(&json!({
@@ -246,6 +247,10 @@ fn refused_sensitive_actions_confirm_the_login_then_retry_once() {
     assert!(recovered.status.success(), "{stderr}");
     assert!(stderr.contains("Open http://localhost:7845/dashboard/auth#device=ABCD-EFGH"));
     assert!(stderr.contains("to recover the secret key"), "{stderr}");
+    assert!(
+        stderr.contains("The page names this login: login-01"),
+        "{stderr}"
+    );
     let paths: Vec<_> = server
         .finish()
         .into_iter()

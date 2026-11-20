@@ -57,8 +57,9 @@ pub(crate) enum AccountCommand {
     ///
     /// Choose the grants with `--preset`, `--permission`, or both. The link
     /// works once within 24 hours. Needs `accounts:manage` and every grant it
-    /// hands out. An API token can't create invitations. If you last signed in with your passkey more than 2 minutes ago, it asks you
-    /// to confirm in a browser first.
+    /// hands out. An API token can't create invitations. If you last signed in
+    /// with your passkey more than 2 minutes ago, it asks you to confirm in a
+    /// browser first.
     Invite {
         #[command(flatten)]
         grants: GrantArgs,
@@ -68,8 +69,9 @@ pub(crate) enum AccountCommand {
     /// The link works once within 24 hours, and signs in whoever uses it as
     /// that account. Anyone may create one for their own account; another
     /// account needs `accounts:manage` and every grant it has. An API token or
-    /// limited login can't create enrollment links. If you last signed in with your passkey more than 2 minutes ago, it asks you
-    /// to confirm in a browser first.
+    /// limited login can't create enrollment links. If you last signed in with
+    /// your passkey more than 2 minutes ago, it asks you to confirm in a
+    /// browser first.
     Enroll {
         /// Account username or ID.
         #[arg(value_name = "ACCOUNT")]
@@ -298,9 +300,10 @@ pub(crate) enum TokenCommand {
     ///
     /// The token has only the grants you select, with `--preset`,
     /// `--permission`, or both, and you must hold them. Use it with
-    /// `PIQUELD_TOKEN`. Keep it safe: it is printed once and never shown
-    /// again. An API token can't create tokens. If you last signed in with your passkey more than 2 minutes ago, it asks you
-    /// to confirm in a browser first.
+    /// `PIQUELD_TOKEN`. Keep it safe: it is printed once and never shown again.
+    /// An API token can't create tokens. If you last signed in with your
+    /// passkey more than 2 minutes ago, it asks you to confirm in a browser
+    /// first.
     Create {
         /// Token name, up to 200 bytes.
         name: String,

@@ -298,13 +298,16 @@ comparison cannot tell callers apart.
   sessions use `/auth/reauthenticate`. Inspection and approval treat the
   request as unknown to any other account, and the page shows the login and
   action instead of access. Approval records the approver's proof as for a
-  login. The poll then removes the request and calls `Store::confirm_login`,
-  which, if that proof is still recent, sets the CLI row's
-  `authenticated_at` to it, only while the row is live. It answers
-  `complete` without a token. `piquelctl`'s `auth::confirmed` wraps each
-  sensitive request: on that 403 with `step_up`, it waits for approval as
-  `login` does, outside `--timeout`, then retries once. `--noninteractive`
-  returns the refusal instead.
+  login. The poll marks the request as issuing, as for a login, and calls
+  `Store::confirm_login`, which, if that proof is still recent, sets the CLI
+  row's `authenticated_at` to it, only while the row is live. It answers
+  `complete` without a token and removes the request; so does a refusal or
+  a login that ended, while any other failure leaves it to the next poll.
+  The start response echoes the login and action in `confirms`, which
+  `piquelctl` prints so the approver can match them. `piquelctl`'s
+  `auth::confirmed` wraps each sensitive request: on that 403 with
+  `step_up`, it waits for approval as `login` does, outside `--timeout`,
+  then retries once. `--noninteractive` returns the refusal instead.
 - One poll at a time issues the session, without holding the pending logins
   while it writes; a concurrent poll gets `authorization_pending`. The first
   poll after approval prepares the session's secret and ID and stores them.

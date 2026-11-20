@@ -360,8 +360,8 @@ pub(crate) enum KeyAction {
     /// which also generates new values for generated secrets, give each
     /// repository a new webhook secret with `app repository webhook rotate`,
     /// and add the notification destinations again with `notification set`.
-    /// Needs `system:operate`. If you last signed in with your passkey more than 2 minutes ago, it asks you
-    /// to confirm in a browser first.
+    /// Needs `system:operate`. If you last signed in with your passkey more
+    /// than 2 minutes ago, it asks you to confirm in a browser first.
     RecoverKey {
         /// Skip the confirmation prompt.
         #[arg(long, short)]

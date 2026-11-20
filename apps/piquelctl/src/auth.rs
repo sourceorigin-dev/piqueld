@@ -481,12 +481,7 @@ where
     F: Future<Output = std::result::Result<T, ClientError>>,
 {
     match request().await {
-        Err(ClientError::Api { status, error })
-            if status.as_u16() == 403
-                && error.code == "reauthentication_required"
-                && error.details["step_up"] == true
-                && console.interactive() =>
-        {
+        Err(error) if error.step_up() && console.interactive() => {
             let start = client.auth_device_confirm(action).await?;
             Approval::Confirm(action)
                 .wait(client, console, &start)
@@ -506,19 +501,26 @@ enum Approval {
 
 impl Approval {
     /// The instructions printed while waiting, after the link and code.
-    fn instructions(self, requester: &str) -> [String; 2] {
+    fn instructions(self, start: &DeviceStart, requester: &str) -> Vec<String> {
         match self {
-            Self::Login => [
+            Self::Login => vec![
                 format!("The daemon sees this login coming from: {requester}"),
                 "Waiting for passkey login…".into(),
             ],
-            Self::Confirm(action) => [
-                format!("The daemon sees this confirmation coming from: {requester}"),
-                format!(
+            Self::Confirm(action) => {
+                let mut lines = vec![format!(
+                    "The daemon sees this confirmation coming from: {requester}"
+                )];
+                // The page names the same login, so the approver can match it.
+                if let Some(confirms) = &start.confirms {
+                    lines.push(format!("The page names this login: {}", confirms.login));
+                }
+                lines.push(format!(
                     "Waiting for you to confirm this login with your passkey, to {}…",
                     action.description()
-                ),
-            ],
+                ));
+                lines
+            }
         }
     }
 
@@ -566,7 +568,7 @@ impl Approval {
             format!("Open {link}"),
             format!("{code}: {}", start.user_code),
         ];
-        lines.extend(self.instructions(requester));
+        lines.extend(self.instructions(start, requester));
         console.prompt_lines(&lines)?;
         let finish = async {
             // Never let a daemon response turn polling into a tight loop.

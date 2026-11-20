@@ -72,15 +72,17 @@ $ piquelctl token create ci --preset deploy
 Open https://piqueld.<tailnet>.ts.net/dashboard/auth#device=HT4M-QX7K
 Check the page shows code: HT4M-QX7K
 The daemon sees this confirmation coming from: 100.101.102.103
+The page names this login: 01a16b52-5f0e-7c3d-9b21-6c2f4e8a7d10
 Waiting for you to confirm this login with your passkey, to create an API token…
 ```
 
-Open the link. The page shows **Login to confirm** and what `piquelctl` is
-**About to** do. Select **Confirm CLI login**, and use your passkey if the
-dashboard asks. The login then counts as signed in when your passkey last
-confirmed you in that browser. `piquelctl` keeps its login and sends the
-request again, once. Nothing changed before you confirmed, so pressing Ctrl-C leaves
-everything as it was.
+Open the link. The page shows **Login to confirm**, which matches the login
+`piquelctl` printed, and what `piquelctl` is **About to** do. Select
+**Confirm CLI login**, and use your passkey if the dashboard asks. The login
+then counts as signed in when your passkey last confirmed you in that
+browser. `piquelctl` keeps its login and sends the request again, once.
+Nothing changed before you confirmed, so pressing Ctrl-C leaves everything as
+it was.
 
 With `--noninteractive`, `piquelctl` doesn't wait: the command fails with
 `reauthentication_required`. A token in `PIQUELD_TOKEN` can never confirm, so
