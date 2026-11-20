@@ -485,8 +485,9 @@ pub(super) async fn setup_link(
 pub(super) async fn recover_admin(
     Extension(auth): Extension<Auth>,
     OperatorPeer(operator): OperatorPeer,
+    audited: Audited,
 ) -> Result<Json<OperatorLink>, ApiError> {
-    Ok(Json(auth.recover_admin(operator).await?))
+    Ok(Json(auth.recover_admin(operator, audited.request()).await?))
 }
 /// Issues a one-time host operator sign-in link.
 ///
@@ -499,8 +500,9 @@ pub(super) async fn recover_admin(
 pub(super) async fn sign_in_link(
     Extension(auth): Extension<Auth>,
     OperatorPeer(operator): OperatorPeer,
+    audited: Audited,
 ) -> Result<Json<OperatorLink>, ApiError> {
-    Ok(Json(auth.sign_in_link(operator).await?))
+    Ok(Json(auth.sign_in_link(operator, audited.request()).await?))
 }
 /// Redeems a host operator sign-in link.
 ///
@@ -568,15 +570,14 @@ pub(super) async fn register_start(
 pub(super) async fn register_finish(
     Extension(auth): Extension<Auth>,
     identity: Option<Extension<Identity>>,
+    audited: Audited,
     headers: HeaderMap,
     ApiJson(input): ApiJson<CeremonyFinish>,
 ) -> Result<Response, ApiError> {
+    let caller = identity.as_ref().map(|Extension(identity)| identity);
+    let binding = binding(&auth, &headers)?;
     let (user, token) = auth
-        .registration_finish(
-            input,
-            binding(&auth, &headers)?,
-            identity.as_ref().map(|Extension(identity)| identity),
-        )
+        .registration_finish(input, binding, caller, audited.request())
         .await?;
     Ok(session_response(&auth, user, token))
 }

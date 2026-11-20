@@ -46,7 +46,7 @@ async fn invite_and_redeem(store: &Store, issuer: Caller<'_>, user: &str) {
         name: &key,
         credential: "{}",
     };
-    let redeemed = store.add_passkey(redeem, passkey).await;
+    let redeemed = store.add_passkey(None, redeem, passkey).await;
     assert!(redeemed.expect("the invitation is redeemable"));
 }
 
@@ -95,7 +95,12 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         invitation_hash: "invitation",
         session: credential("redeemed", CredentialKind::Browser),
     };
-    assert!(store.add_passkey(redeem, passkey("bob-key")).await.unwrap());
+    assert!(
+        store
+            .add_passkey(None, redeem, passkey("bob-key"))
+            .await
+            .unwrap()
+    );
     // Proved by its passkey sign-in, as the daemon records it, so it may add
     // a passkey and create a token.
     let signed_in = proved(credential("signed-in", CredentialKind::Browser));
@@ -110,7 +115,12 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         user_id: "bob",
     };
     let own = PasskeyOwner::Existing(bob_caller("signed-in"), "bob");
-    assert!(store.add_passkey(own, passkey("second-key")).await.unwrap());
+    assert!(
+        store
+            .add_passkey(None, own, passkey("second-key"))
+            .await
+            .unwrap()
+    );
     let mut token = credential("token", CredentialKind::Token);
     let none = Grants::default();
     token.grants = Some(&none);

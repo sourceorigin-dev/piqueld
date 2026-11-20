@@ -161,7 +161,7 @@ async fn writes_check_the_stored_proof_and_exempt_the_host_operator() {
     drop(db);
     let expires_at = now_secs() + 3600;
     store
-        .create_operator_link("operator", "link", expires_at, operator)
+        .create_operator_link(None, "operator", "link", expires_at, operator)
         .await
         .unwrap();
     let (session, _) = store
@@ -405,7 +405,7 @@ async fn sign_ins_record_who_they_signed_in() {
     assert!(login.expect("the login is confirmed"));
     let operator = HostOperator { uid: 1000 };
     let expires_at = now_secs() + 3600;
-    let link = store.create_operator_link("operator", "link", expires_at, operator);
+    let link = store.create_operator_link(None, "operator", "link", expires_at, operator);
     link.await.expect("the link is issued");
     let redeemed = store.redeem_operator_link(Some(&request), "link", "session", expires_at);
     redeemed
@@ -444,6 +444,123 @@ async fn sign_ins_record_who_they_signed_in() {
                 None,
                 Some(1000),
             ),
+        ]
+    );
+}
+
+/// Registering a passkey records what it redeemed or added, under the
+/// account it signed in. A setup whose record can't be written leaves setup
+/// open.
+#[tokio::test]
+async fn registrations_record_what_they_did() {
+    let (_dir, store) = Store::temporary().await;
+    let route = "POST /api/v1/auth/register/finish";
+    let request = crate::testing::audit_request(route);
+    let passkey = |id| NewPasskey {
+        id,
+        name: id,
+        credential: "{}",
+    };
+    let redeem = |user, hash, session| PasskeyOwner::Redeem {
+        user,
+        invitation_hash: hash,
+        session: credential(session, CredentialKind::Browser),
+    };
+    store
+        .set_setup_secret("setup")
+        .await
+        .expect("setup is open");
+    let (alice, bob) = (user("alice"), user("bob"));
+    store.refuse_audit(true).await;
+    let setup = || {
+        store.add_passkey(
+            Some(&request),
+            redeem(&alice, "setup", "a"),
+            passkey("a-key"),
+        )
+    };
+    assert!(setup().await.is_err());
+    store.refuse_audit(false).await;
+    assert!(!store.auth_initialized().await.expect("setup state is read"));
+    assert!(setup().await.expect("alice sets up"));
+    let cli = proved(credential("alice-cli", CredentialKind::Cli));
+    store
+        .insert_credential("alice", &cli)
+        .await
+        .expect("alice signs in");
+    let caller = Caller {
+        credential_id: "alice-cli",
+        user_id: "alice",
+    };
+    let invitation = NewInvitation {
+        id: "invite".into(),
+        secret_hash: "invite".into(),
+        expires_at: now_secs() + 3600,
+    };
+    let none = Grants::default();
+    let invited = store.create_invitation(caller, &invitation, &none);
+    invited.await.expect("alice invites bob");
+    let redeemed = store.add_passkey(
+        Some(&request),
+        redeem(&bob, "invite", "b"),
+        passkey("b-key"),
+    );
+    assert!(redeemed.await.expect("bob redeems the invitation"));
+    let own = PasskeyOwner::Existing(caller, "alice");
+    let added = store.add_passkey(Some(&request), own, passkey("a-second"));
+    assert!(added.await.expect("alice adds a passkey"));
+    let rows = "SELECT action,username FROM audit_events ORDER BY id";
+    let rows = sqlx::query_as::<_, (String, Option<String>)>(rows)
+        .fetch_all(&store.pool)
+        .await
+        .expect("the trail is read");
+    let session =
+        |id| format!("browser {id} \"{id}\" grants of its account expires never tailnet none");
+    let (as_alice, as_bob) = (Some("alice".to_owned()), Some("bob".to_owned()));
+    assert_eq!(
+        rows,
+        [
+            (
+                format!(
+                    "{route} account \"alice\" \"alice\" created by first-account setup with \
+                    grants (admin) with passkey \"a-key\" \"a-key\"; {}",
+                    session("a")
+                ),
+                as_alice,
+            ),
+            (
+                format!(
+                    "{route} account \"bob\" \"bob\" created by invitation invite with grants \
+                    (none) with passkey \"b-key\" \"b-key\"; {}",
+                    session("b")
+                ),
+                as_bob,
+            ),
+            (
+                format!("{route} passkey \"a-second\" \"a-second\" added to account \"alice\""),
+                None,
+            ),
+        ]
+    );
+}
+
+/// Issuing a recovery or host operator sign-in link records the link and
+/// its expiry, never its secret.
+#[tokio::test]
+async fn issuing_links_records_them_without_their_secret() {
+    let (_dir, store) = Store::temporary().await;
+    let route = "POST /api/v1/auth/recovery";
+    let request = crate::testing::audit_request(route);
+    let (operator, expires) = (HostOperator { uid: 0 }, "1970-01-01T00:00:42.000Z");
+    let recovery = store.create_recovery(Some(&request), "recovery", 42, operator);
+    recovery.await.expect("the recovery link is issued");
+    let link = store.create_operator_link(Some(&request), "operator", "link", 42, operator);
+    link.await.expect("the sign-in link is issued");
+    assert_eq!(
+        store.audit_actions().await,
+        [
+            format!("{route} admin recovery link issued, expires {expires}"),
+            format!("{route} host operator sign-in link \"operator\" issued, expires {expires}"),
         ]
     );
 }

@@ -280,18 +280,46 @@ pub enum PasskeyOwner<'a> {
 /// What a redemption consumed.
 enum Redeemed {
     /// The setup secret or the admin recovery link, which no credential
-    /// issued.
-    Root,
-    /// An invitation or enrollment link, by ID.
-    Invitation(String),
+    /// issued, creating an administrator: `how`, e.g. "first-account setup".
+    Root(&'static str),
+    /// An account invitation, by ID, creating an account with `grants`.
+    Invitation {
+        /// The invitation's ID.
+        id: String,
+        /// The grants the created account received.
+        grants: Grants,
+    },
+    /// An enrollment link, by ID, adding a passkey to its account.
+    Enrollment(String),
 }
 
 impl Redeemed {
     /// The lineage node that issued what the redemption creates.
     fn issuer(&self) -> Option<Issued<'_>> {
         match self {
-            Self::Root => None,
-            Self::Invitation(id) => Some(Issued::Invitation(id)),
+            Self::Root(_) => None,
+            Self::Invitation { id, .. } | Self::Enrollment(id) => Some(Issued::Invitation(id)),
+        }
+    }
+
+    /// What redeeming it for `user` did, as its audit record names it,
+    /// never the secret it consumed.
+    fn describe(&self, user: &User) -> String {
+        let (id, username) = (&user.id, &user.username);
+        match self {
+            Self::Root(how) => {
+                let admin = Grants::admin();
+                format!("account {id:?} {username:?} created by {how} with grants ({admin})")
+            }
+            Self::Invitation {
+                id: invitation,
+                grants,
+            } => format!(
+                "account {id:?} {username:?} created by invitation {invitation} with grants ({grants})"
+            ),
+            Self::Enrollment(enrollment) => {
+                format!("account {id:?} {username:?} enrolled by {enrollment}")
+            }
         }
     }
 }
@@ -393,6 +421,7 @@ impl Store {
     /// Returns a storage error.
     pub async fn create_recovery(
         &self,
+        request: Option<&AuditRequest>,
         hash: &str,
         expires_at: i64,
         operator: HostOperator,
@@ -409,7 +438,24 @@ impl Store {
         .map_err(StoreError::database)?;
         let issued = super::SecurityEvent::RecoveryIssued;
         Self::operator_link_event_on(&mut tx, issued, "An admin recovery link", operator).await?;
-        tx.commit().await.map_err(StoreError::database)
+        let change = format!(
+            "admin recovery link issued, expires {}",
+            Expiry(Some(expires_at))
+        );
+        Self::operator_author(operator, request)
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await
+    }
+
+    /// The host operator over the Unix socket, acting through `request`.
+    const fn operator_author(operator: HostOperator, request: Option<&AuditRequest>) -> Author<'_> {
+        Author {
+            actor: Actor::Operator {
+                operator,
+                session: None,
+            },
+            request,
+        }
     }
 
     /// Records that `operator` was issued a link, e.g. `An admin recovery
@@ -439,6 +485,7 @@ impl Store {
     /// Returns a storage error.
     pub async fn create_operator_link(
         &self,
+        request: Option<&AuditRequest>,
         id: &str,
         hash: &str,
         expires_at: i64,
@@ -458,7 +505,11 @@ impl Store {
         let issued = super::SecurityEvent::OperatorSignInIssued;
         Self::operator_link_event_on(&mut tx, issued, "A host operator sign-in link", operator)
             .await?;
-        tx.commit().await.map_err(StoreError::database)
+        let expires = Expiry(Some(expires_at));
+        let change = format!("host operator sign-in link {id:?} issued, expires {expires}");
+        Self::operator_author(operator, request)
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await
     }
 
     /// Redeems the live sign-in link `link_hash` as a host operator browser
@@ -631,17 +682,20 @@ impl Store {
     ///
     /// The passkey is issued by the caller's credential or the redeemed
     /// invitation, and the redemption's session by the passkey, as if it
-    /// signed in with it.
+    /// signed in with it. Both record themselves as made through `request`:
+    /// a redemption under the account it signed in.
     ///
     /// # Errors
     /// Returns a storage error.
     pub async fn add_passkey(
         &self,
+        request: Option<&AuditRequest>,
         owner: PasskeyOwner<'_>,
         passkey: NewPasskey<'_>,
     ) -> Result<bool, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let now = now_secs();
+        let added = format!("passkey {:?} {:?}", passkey.id, passkey.name);
         match &owner {
             PasskeyOwner::Existing(caller, user_id) => {
                 let authority = caller.load(&mut tx).await?;
@@ -652,6 +706,15 @@ impl Store {
                 }
                 let issuer = Issued::Credential(caller.credential_id);
                 passkey.insert(&mut tx, user_id, Some(issuer), now).await?;
+                let change = format!("{added} added to account {user_id:?}");
+                let author = Author {
+                    actor: *caller,
+                    request,
+                };
+                let target = (None, None);
+                author
+                    .commit_recorded(tx, 200, Some(&change), target)
+                    .await?;
             }
             PasskeyOwner::Redeem {
                 user,
@@ -667,9 +730,16 @@ impl Store {
                     .await?;
                 let issuer = Issued::Passkey(passkey.id);
                 session.insert(&mut tx, &user.id, Some(issuer)).await?;
+                let (account, opened) = (redeemed.describe(user), session.describe(None));
+                let change = format!("{account} with {added}; {opened}");
+                let who = AuditPrincipal::Account {
+                    id: &user.id,
+                    username: &user.username,
+                };
+                let author = Author { actor: (), request };
+                author.commit_signed_in(tx, who, &change).await?;
             }
         }
-        tx.commit().await.map_err(StoreError::database)?;
         Ok(true)
     }
 
@@ -712,12 +782,13 @@ impl Store {
             Self::insert_user_on(db, user, now).await?;
             let daemon = Attribution::default();
             let how = if setup == 1 {
-                "by first-account setup"
+                "first-account setup"
             } else {
-                "by an admin recovery link"
+                "an admin recovery link"
             };
-            Self::replace_user_grants_on(db, &user.id, &Grants::admin(), daemon, how).await?;
-            return Ok(Some(Redeemed::Root));
+            let by = format!("by {how}");
+            Self::replace_user_grants_on(db, &user.id, &Grants::admin(), daemon, &by).await?;
+            return Ok(Some(Redeemed::Root(how)));
         }
         let Some(invitation) = sqlx::query!(
             r#"SELECT id AS "id!",issuer_id,user_id FROM auth_invitations WHERE secret_hash=?1 AND expires_at>?2"#,
@@ -731,12 +802,13 @@ impl Store {
             return Ok(None);
         };
         let authority = Holder::User(&invitation.issuer_id).grants(&mut *db).await?;
-        if let Some(target) = invitation.user_id {
+        let redeemed = if let Some(target) = invitation.user_id {
             let grants = Holder::User(&target).grants(&mut *db).await?;
             let own = invitation.issuer_id == target;
             if target != user.id || authority.may_change_account(own, &grants).is_err() {
                 return Ok(None);
             }
+            Redeemed::Enrollment(invitation.id)
         } else {
             let grants = Holder::Invitation(&invitation.id).grants(&mut *db).await?;
             if Self::may_invite(&authority, &grants).is_err() {
@@ -749,12 +821,18 @@ impl Store {
             };
             let how = "by invitation";
             Self::replace_user_grants_on(db, &user.id, &grants, issuer, how).await?;
+            Redeemed::Invitation {
+                id: invitation.id,
+                grants,
+            }
+        };
+        if let Some(Issued::Invitation(id)) = redeemed.issuer() {
+            sqlx::query!("DELETE FROM auth_invitations WHERE id=?1", id)
+                .execute(&mut *db)
+                .await
+                .map_err(StoreError::database)?;
         }
-        sqlx::query!("DELETE FROM auth_invitations WHERE id=?1", invitation.id)
-            .execute(&mut *db)
-            .await
-            .map_err(StoreError::database)?;
-        Ok(Some(Redeemed::Invitation(invitation.id)))
+        Ok(Some(redeemed))
     }
 
     /// Creates an account; a taken username maps to `AlreadyExists`.

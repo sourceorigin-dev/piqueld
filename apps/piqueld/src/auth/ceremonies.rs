@@ -179,6 +179,7 @@ impl Auth {
         input: CeremonyFinish,
         binding: &str,
         caller: Option<&Identity>,
+        request: Option<&AuditRequest>,
     ) -> Result<(User, Option<String>)> {
         let Kind::Register {
             state,
@@ -219,7 +220,7 @@ impl Auth {
             let caller = caller.ok_or(AuthError::Unauthorized)?.caller()?;
             (PasskeyOwner::Existing(caller, &user.id), None)
         };
-        if !self.0.store.add_passkey(owner, passkey).await? {
+        if !self.0.store.add_passkey(request, owner, passkey).await? {
             return Err(if redeemed {
                 AuthError::Invalid(STALE_LINK)
             } else {
