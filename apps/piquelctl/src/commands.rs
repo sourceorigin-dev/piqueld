@@ -18,7 +18,6 @@ use crate::{
         looks_like_application_id, manifest_name, read_manifest, retry_transport,
     },
 };
-use futures_util::StreamExt;
 use http::StatusCode;
 use piqueld_client::{
     ApplicationSummary, ApplicationView, ApplyOptions, Client, ClientError,
@@ -308,26 +307,18 @@ async fn check_builder(client: &Client, console: &mut Console) -> Result<()> {
     }
 }
 
-/// Lists every application with its environments' statuses. Applications are
-/// fetched with up to 8 in flight while preserving list order; a failed status
-/// fetch becomes a warning and an `unavailable` environment instead of failing the list.
+/// Lists every application with its environments' statuses, which the
+/// listing carries.
 async fn list(cli: &Cli, client: &Client, console: &mut Console) -> Result<()> {
     let applications = all_applications(client).await?;
-    let mut statuses =
-        futures_util::stream::iter(applications.into_iter().map(|application| async move {
-            let statuses = environments::statuses(client, &application.environments).await;
-            (application, statuses)
-        }))
-        .buffered(8);
-    let mut items = Vec::new();
-    while let Some((application, statuses)) = statuses.next().await {
-        let environments = environments::rows(
-            cli,
-            console,
-            &application.name,
-            &application.environments,
-            statuses,
-        )?;
+    let mut items = Vec::with_capacity(applications.len());
+    for application in applications {
+        let listed = application
+            .environments
+            .iter()
+            .map(|listed| (listed.environment.clone(), Ok(listed.status.clone())))
+            .collect();
+        let environments = environments::rows(cli, console, &application.name, listed)?;
         items.push(ApplicationRow {
             application,
             environments,
@@ -342,13 +333,11 @@ async fn list(cli: &Cli, client: &Client, console: &mut Console) -> Result<()> {
 /// Shows one application and its environments' statuses.
 async fn show(cli: &Cli, client: &Client, console: &mut Console, name_or_id: &str) -> Result<()> {
     let application = resolve_application(client, name_or_id).await?;
-    let statuses = environments::statuses(client, &application.environments).await;
     let environments = environments::rows(
         cli,
         console,
         application.application.metadata().name.as_str(),
-        &application.environments,
-        statuses,
+        environments::statuses(client, &application.environments).await,
     )?;
     console.emit(&ShowReport {
         application: &application,

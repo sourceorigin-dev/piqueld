@@ -75,14 +75,13 @@ impl EditorContext {
 pub(super) fn EnvironmentList() -> impl IntoView {
     let context = editor();
     let signals = context.signals();
-    // Latest deployment of an environment among the listed deployments.
+    // Latest deployment of an environment, as the listing carries it.
     let latest = move |environment: &str| {
         signals.applications.with(|rows| {
             rows.iter()
                 .flat_map(|row| &row.deployments)
-                .filter(|deployment| deployment.operation.environment_id.as_str() == environment)
-                .max_by_key(|deployment| deployment.operation.created_at_ms)
-                .map(|deployment| deployment.operation.clone())
+                .find(|operation| operation.environment_id.as_str() == environment)
+                .cloned()
         })
     };
     view! {

@@ -13,24 +13,35 @@ test('the overview sums up applications by their least healthy environment', asy
   const deployed = await call(page, 'POST', `environments/${shop.env}/deploy?expected_generation=${shop.generation}`);
   await call(page, 'POST', `environments/${notes.env}/deploy?expected_generation=${notes.generation}`);
   const staging = await call(page, 'POST', `applications/${shop.app}/environments`, { name: 'staging', expected_generation: shop.generation });
-  // The fixture never deploys: report each environment's state instead.
-  const state = (id: string, value: string, message: string | null = null) =>
-    rewrite(page, `/api/v1/environments/${id}/status`, data => { data.state = value; data.message = message; });
-  await state(shop.env, 'ready');
-  await state(staging.id as string, 'failed', 'image pull failed');
-  await state(notes.env, 'ready');
-  await state(blog.env, 'degraded');
-  // One application's unreadable deployments leave the others listed.
-  await page.route(url => url.pathname === `/api/v1/environments/${blog.env}/deployments`,
-    (route: Route) => route.fulfill(refusal('deployment history unavailable')));
+  // The fixture never deploys: the listing reports each environment's state instead.
+  const states: Record<string, [string, string | null]> = {
+    [shop.env]: ['ready', null],
+    [staging.id as string]: ['failed', 'image pull failed'],
+    [notes.env]: ['ready', null],
+    [blog.env]: ['degraded', null],
+  };
+  await rewrite(page, '/api/v1/applications', data => {
+    for (const application of data.items) {
+      for (const environment of application.environments) {
+        const [state, message] = states[environment.id];
+        environment.status = { ...environment.status, environment_id: environment.id, state, message };
+      }
+    }
+  });
+  // The listing carries every environment's status and latest deployment.
+  const perEnvironment: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/api/v1/environments/')) perEnvironment.push(path);
+  });
 
   await page.goto('/dashboard/');
   await expect(metric(page, 'Applications')).toHaveText('3');
   await expect(metric(page, 'Healthy')).toHaveText('1');
   await expect(metric(page, 'Needs attention')).toHaveText('2');
   const recent = page.locator('section', { has: page.getByRole('heading', { name: 'Recent deployments', exact: true }) });
-  await expect(recent.getByRole('alert')).toHaveText('blog: deployment history unavailable');
   await expect(recent.getByRole('row')).toHaveCount(3);
+  expect(perEnvironment).toEqual([]);
   await expect(recent.getByRole('link', { name: 'shop', exact: true }))
     .toHaveAttribute('href', `/dashboard/applications/${shop.app}/environments/${shop.env}/deployments/${deployed.operation_id}`);
 

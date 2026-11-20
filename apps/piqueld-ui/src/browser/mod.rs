@@ -20,7 +20,6 @@ use crate::overview::{ApplicationRow, EnvironmentRow};
 use crate::state::{
     ConnectionState, DataState, MAX_PAGES, PAGE_LIMIT, PaginationState, PollController,
 };
-use futures_util::StreamExt;
 use gloo_timers::future::TimeoutFuture;
 use leptos::ev;
 use leptos::prelude::*;
@@ -30,8 +29,7 @@ use leptos_router::hooks::use_params_map;
 use leptos_router::path;
 use piqueld_client::system::ReadinessStatus;
 use piqueld_client::{
-    ApplicationSummary, Client, ClientError, EnvironmentDetailView, ListApplicationsOptions,
-    SystemStatus,
+    Client, ClientError, EnvironmentDetailView, ListApplicationsOptions, SystemStatus,
 };
 use std::sync::{
     Arc,
@@ -564,10 +562,9 @@ async fn environment_detail(
 
 impl DashboardSnapshot {
     /// Loads system status, readiness and every application page (bounded by
-    /// `MAX_PAGES`), fetching each application's environment statuses and
-    /// deployments concurrently.
-    /// Only system status and listing failures abort; readiness and per-application
-    /// errors are recorded in the snapshot.
+    /// `MAX_PAGES`), which carry each environment's status and latest
+    /// deployment. Only system status and listing failures abort; a readiness
+    /// error is recorded in the snapshot.
     async fn fetch(client: &Client) -> Result<Self, LoadFailure> {
         let system = client.system_status().await?;
         let readiness = client.system_readiness().await.user_error();
@@ -583,16 +580,7 @@ impl DashboardSnapshot {
                 })
                 .await?;
             let next_cursor = page.next_cursor.clone();
-            // Status reads are independent, so a bounded pool keeps one slow
-            // application from serializing the whole refresh.
-            let rows = futures_util::stream::iter(
-                page.items
-                    .into_iter()
-                    .map(|application| ApplicationRow::fetch(client, application)),
-            )
-            .buffered(8)
-            .collect::<Vec<_>>()
-            .await;
+            let rows = page.items.into_iter().map(ApplicationRow::from);
             applications.extend(rows);
             pagination.record_page(next_cursor);
             cursor = pagination.next_cursor().map(str::to_owned);
@@ -606,39 +594,6 @@ impl DashboardSnapshot {
             applications,
             incomplete: pagination.incomplete(),
         })
-    }
-}
-
-impl ApplicationRow {
-    /// Reads each environment's status and deployments, recording failures
-    /// in the row.
-    async fn fetch(client: &Client, application: ApplicationSummary) -> Self {
-        let mut environments = Vec::with_capacity(application.environments.len());
-        let mut deployments = Vec::new();
-        let mut deployment_error = None;
-        for environment in &application.environments {
-            let id = environment.id.as_str();
-            let (status, status_error) = match client.environment_status(id).await {
-                Ok(status) => (Some(status), None),
-                Err(error) => (None, Some(error.user_message())),
-            };
-            // Enough for the overview's five recent deployments from one environment.
-            match client.deployments(id, None, Some(5)).await {
-                Ok(page) => deployments.extend(page.items),
-                Err(error) => deployment_error = Some(error.user_message()),
-            }
-            environments.push(EnvironmentRow {
-                environment: environment.clone(),
-                status,
-                status_error,
-            });
-        }
-        Self {
-            application,
-            environments,
-            deployments,
-            deployment_error,
-        }
     }
 }
 
