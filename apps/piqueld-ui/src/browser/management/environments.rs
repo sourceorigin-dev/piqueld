@@ -284,9 +284,7 @@ impl EditorContext {
         self.saved
             .with(|saved| BranchDraft::default_for(saved.application.spec()))
     }
-}
 
-impl EditorContext {
     /// IDs and names of the environments other than `exclude` that another
     /// can be promoted from: the application's live, non-preview ones.
     fn promotion_sources(self, exclude: &str) -> Vec<(String, String)> {
@@ -802,6 +800,72 @@ impl EditorContext {
     }
 }
 
+/// The text of a card editing one `[spec.environments.<name>]` setting of
+/// the environment page's environment. `view` renders it.
+struct SettingCard {
+    title: &'static str,
+    /// What the setting does.
+    about: &'static str,
+    /// The word naming the setting in the note shown for a promoted
+    /// environment: "uses the `{promoted_noun}` recorded in the release".
+    promoted_noun: &'static str,
+    /// The submit button's label.
+    button: &'static str,
+}
+
+impl SettingCard {
+    /// The card editing `draft` in `field`, which `edit` saves in
+    /// `[spec.environments.<name>]` of the shown environment. Read-only
+    /// without `apps:write`.
+    fn view<T: Clone + PartialEq + Send + Sync + 'static>(
+        self,
+        draft: Draft<T>,
+        edit: fn(String, T) -> ApplicationEdit,
+        field: impl IntoView + 'static,
+    ) -> impl IntoView {
+        let context = editor();
+        let disabled = move || context.blocked() || !context.can(AppPermission::Write);
+        let save = move |event: leptos::ev::SubmitEvent| {
+            event.prevent_default();
+            context.save(
+                edit(context.selected_name(), draft.value.get_untracked()),
+                move |_| draft.discard(),
+            );
+        };
+        let promoted = format!(
+            " A promoted environment uses the {} recorded in the release it receives, so a saved change applies once its source records a new release and it is promoted.",
+            self.promoted_noun
+        );
+        view! {
+            <section class="card">
+                <header>
+                    <div>
+                        <h3>{self.title}</h3>
+                        <p>
+                            {self.about}
+                            {move || context.selected_promoted().then(|| promoted.clone())}
+                        </p>
+                    </div>
+                </header>
+                <form class="stack-sm" on:submit={save}>
+                    <fieldset class="stack-sm" disabled={disabled}>
+                        {field}
+                    </fieldset>
+                    <div class="form-actions">
+                        <button
+                            type="submit"
+                            class="btn"
+                            disabled={move || disabled() || !draft.changed()}
+                        >
+                            {self.button}
+                        </button>
+                    </div>
+                </form>
+            </section>
+        }
+    }
+}
+
 /// The visibility ceiling of the environment page's environment, saved in
 /// `[spec.environments.<name>]`. Read-only without `apps:write`.
 #[component]
@@ -810,70 +874,35 @@ fn EnvironmentVisibility() -> impl IntoView {
     let draft = Draft::synced("environment-visibility", move |saved| {
         context.visibility(saved)
     });
-    let promoted = move || context.selected_promoted();
-    let save = move |event: leptos::ev::SubmitEvent| {
-        event.prevent_default();
-        context.save(
-            ApplicationEdit::EnvironmentVisibility {
-                environment: context.selected_name(),
-                visibility: draft.value.get_untracked(),
-            },
-            move |_| draft.discard(),
-        );
-    };
-    view! {
-        <section class="card">
-            <header>
-                <div>
-                    <h3>"Visibility"</h3>
-                    <p>
-                        "The strictest visibility this environment's routes get. Private keeps every route on the tailnet, whatever the route itself says; public leaves each route's own visibility. Save, then deploy to apply it."
-                        {move || {
-                            promoted()
-                                .then_some(
-                                    " A promoted environment uses the visibility recorded in the release it receives, so a saved change applies once its source records a new release and it is promoted.",
-                                )
-                        }}
-                    </p>
-                </div>
-            </header>
-            <form class="stack-sm" on:submit={save}>
-                <fieldset
-                    class="stack-sm"
-                    disabled={move || context.blocked() || !context.can(AppPermission::Write)}
-                >
-                    <label class="field">
-                        <span>"Route visibility"</span>
-                        <select
-                            prop:value={move || draft.value.get().to_string()}
-                            on:change={move |event| {
-                                if let Ok(visibility) = event_target_value(&event).parse() {
-                                    draft.value.set(visibility);
-                                }
-                            }}
-                        >
-                            <option value="public">
-                                "Public: routes keep their own visibility"
-                            </option>
-                            <option value="private">"Private: every route is tailnet-only"</option>
-                        </select>
-                    </label>
-                </fieldset>
-                <div class="form-actions">
-                    <button
-                        type="submit"
-                        class="btn"
-                        disabled={move || {
-                            context.blocked() || !context.can(AppPermission::Write)
-                                || !draft.changed()
-                        }}
-                    >
-                        "Save visibility"
-                    </button>
-                </div>
-            </form>
-        </section>
+    SettingCard {
+        title: "Visibility",
+        about: "The strictest visibility this environment's routes get. Private keeps every route on the tailnet, whatever the route itself says; public leaves each route's own visibility. Save, then deploy to apply it.",
+        promoted_noun: "visibility",
+        button: "Save visibility",
     }
+    .view(
+        draft,
+        |environment, visibility| ApplicationEdit::EnvironmentVisibility {
+            environment,
+            visibility,
+        },
+        view! {
+            <label class="field">
+                <span>"Route visibility"</span>
+                <select
+                    prop:value={move || draft.value.get().to_string()}
+                    on:change={move |event| {
+                        if let Ok(visibility) = event_target_value(&event).parse() {
+                            draft.value.set(visibility);
+                        }
+                    }}
+                >
+                    <option value="public">"Public: routes keep their own visibility"</option>
+                    <option value="private">"Private: every route is tailnet-only"</option>
+                </select>
+            </label>
+        },
+    )
 }
 
 /// What happens when the environment page's environment fails a rollout,
@@ -882,80 +911,43 @@ fn EnvironmentVisibility() -> impl IntoView {
 fn EnvironmentRollback() -> impl IntoView {
     let context = editor();
     let draft = Draft::synced("environment-rollback", move |saved| context.rollback(saved));
-    let promoted = move || context.selected_promoted();
-    let save = move |event: leptos::ev::SubmitEvent| {
-        event.prevent_default();
-        context.save(
-            ApplicationEdit::EnvironmentRollback {
-                environment: context.selected_name(),
-                rollback: draft.value.get_untracked(),
-            },
-            move |_| draft.discard(),
-        );
-    };
     let default = move || {
-        if promoted() {
+        if context.selected_promoted() {
             "Default: automatic, as for every promoted environment"
         } else {
             "Default: manual, as for every environment that isn't promoted"
         }
     };
-    view! {
-        <section class="card">
-            <header>
-                <div>
-                    <h3>"Rollback"</h3>
-                    <p>
-                        "A rollout fails when Docker pauses a service update because a new container failed within its monitor window. Automatic rollback then restores the last successful deployment at once; manual leaves the environment degraded until you deploy or restore. Volumes and migrations are never reverted."
-                        {move || {
-                            promoted()
-                                .then_some(
-                                    " A promoted environment uses the setting recorded in the release it receives, so a saved change applies once its source records a new release and it is promoted.",
-                                )
-                        }}
-                    </p>
-                </div>
-            </header>
-            <form class="stack-sm" on:submit={save}>
-                <fieldset
-                    class="stack-sm"
-                    disabled={move || context.blocked() || !context.can(AppPermission::Write)}
-                >
-                    <label class="field">
-                        <span>"When a rollout fails"</span>
-                        <select
-                            prop:value={move || {
-                                draft.value.get().map_or("default", Rollback::as_str)
-                            }}
-                            on:change={move |event| {
-                                draft.value.set(Rollback::parse(&event_target_value(&event)));
-                            }}
-                        >
-                            <option value="default">{default}</option>
-                            <option value="automatic">
-                                "Automatic: restore the last successful deployment"
-                            </option>
-                            <option value="manual">
-                                "Manual: stay degraded until someone acts"
-                            </option>
-                        </select>
-                    </label>
-                </fieldset>
-                <div class="form-actions">
-                    <button
-                        type="submit"
-                        class="btn"
-                        disabled={move || {
-                            context.blocked() || !context.can(AppPermission::Write)
-                                || !draft.changed()
-                        }}
-                    >
-                        "Save rollback"
-                    </button>
-                </div>
-            </form>
-        </section>
+    SettingCard {
+        title: "Rollback",
+        about: "A rollout fails when Docker pauses a service update because a new container failed within its monitor window. Automatic rollback then restores the last successful deployment at once; manual leaves the environment degraded until you deploy or restore. Volumes and migrations are never reverted.",
+        promoted_noun: "setting",
+        button: "Save rollback",
     }
+    .view(
+        draft,
+        |environment, rollback| ApplicationEdit::EnvironmentRollback {
+            environment,
+            rollback,
+        },
+        view! {
+            <label class="field">
+                <span>"When a rollout fails"</span>
+                <select
+                    prop:value={move || draft.value.get().map_or("default", Rollback::as_str)}
+                    on:change={move |event| {
+                        draft.value.set(Rollback::parse(&event_target_value(&event)));
+                    }}
+                >
+                    <option value="default">{default}</option>
+                    <option value="automatic">
+                        "Automatic: restore the last successful deployment"
+                    </option>
+                    <option value="manual">"Manual: stay degraded until someone acts"</option>
+                </select>
+            </label>
+        },
+    )
 }
 
 /// Source, visibility, rollback, rename and deletion of the environment page's
