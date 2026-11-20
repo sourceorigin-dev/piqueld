@@ -546,7 +546,7 @@
         },
         "data_dir": {
           "default": "/var/lib/piqueld",
-          "description": "The absolute path of the private directory holding the database,\n`secrets.key` and the rest of the daemon's state. Missing directories\nare created with mode `0700`.",
+          "description": "The absolute path of the private directory holding the database,\n`secrets.key` and the rest of the daemon's state. Missing directories\nare created with mode `0700`. It can't contain `:` or `,`, which\nDocker would read as separators when piqueld mounts it into the\ningress containers.",
           "type": "string"
         },
         "listen_mode": {

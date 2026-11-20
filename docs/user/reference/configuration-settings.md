@@ -489,7 +489,7 @@ DNS hostnames, such as `my-host.my-tailnet.ts.net`, that TCP requests may use be
 
 Type: string. Default: `"/var/lib/piqueld"`.
 
-The absolute path of the private directory holding the database, `secrets.key` and the rest of the daemon's state. Missing directories are created with mode `0700`.
+The absolute path of the private directory holding the database, `secrets.key` and the rest of the daemon's state. Missing directories are created with mode `0700`. It can't contain `:` or `,`, which Docker would read as separators when piqueld mounts it into the ingress containers.
 
 ### `server.listen_mode`
 

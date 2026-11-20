@@ -186,7 +186,8 @@ impl DaemonConfig {
     }
 
     /// Checks cross-field and range invariants that serde cannot express:
-    /// non-zero ports, distinct absolute state directories,
+    /// non-zero ports, distinct absolute state directories, a data directory
+    /// Docker can bind-mount,
     /// the public origin, the Docker socket path, `server.allowed_hosts` DNS
     /// hostname syntax, timeout and build-log bounds, and preview bounds a
     /// manifest could set itself.
@@ -207,6 +208,12 @@ impl DaemonConfig {
                 format!("{name} must name a directory"),
             )?;
         }
+        // Ingress bind-mounts directories below it as Docker's
+        // `source:target:mode` strings, which these would split.
+        ConfigError::require(
+            !self.server.data_dir.to_string_lossy().contains([':', ',']),
+            "server.data_dir must not contain ':' or ','",
+        )?;
         ConfigError::require(
             self.server.data_dir != self.server.runtime_dir,
             "server.data_dir and server.runtime_dir must be different directories",
@@ -749,7 +756,9 @@ fn absolute_file(name: &str, path: &Path) -> Result<(), ConfigError> {
 pub struct ServerConfig {
     /// The absolute path of the private directory holding the database,
     /// `secrets.key` and the rest of the daemon's state. Missing directories
-    /// are created with mode `0700`.
+    /// are created with mode `0700`. It can't contain `:` or `,`, which
+    /// Docker would read as separators when piqueld mounts it into the
+    /// ingress containers.
     #[schema(value_type = String)]
     pub data_dir: PathBuf,
     /// The absolute path of the directory holding the Unix API socket,

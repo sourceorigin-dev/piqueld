@@ -118,7 +118,7 @@ in
     dataDir = lib.mkOption {
       type = lib.types.str;
       default = "/var/lib/piqueld";
-      description = "Private state directory below /var/lib; contains the database and user data.";
+      description = "Private state directory below /var/lib; contains the database and user data. It can't contain `:` or `,`, which Docker reads as separators when piqueld mounts it into the ingress containers.";
     };
     runtimeDir = lib.mkOption {
       type = lib.types.str;
@@ -437,6 +437,10 @@ in
       {
         assertion = dedicatedBelow "/var/lib/" cfg.dataDir;
         message = "services.piqueld.dataDir must be a dedicated directory below /var/lib";
+      }
+      {
+        assertion = !(lib.hasInfix ":" cfg.dataDir || lib.hasInfix "," cfg.dataDir);
+        message = "services.piqueld.dataDir must not contain ':' or ','";
       }
       {
         assertion = dedicatedBelow "/run/" cfg.runtimeDir;

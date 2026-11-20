@@ -52,6 +52,10 @@ pub const TAILSCALE_IMAGE: &str = "tailscale/tailscale:v1.102.5@sha256:c507f3a2a
 /// Version of `cloudflared` released with piqueld; upgrades replace it.
 pub const CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared:2026.10.4@sha256:c6c7ae1d5dfdcb094ad344ed68ccffc26635c9c6be80965664c33baf064b0515";
 
+/// The Docker Engine API version requests use, the oldest the gateway's
+/// container spec supports (see `DockerVersion::supports_ingress`).
+const DOCKER_API: &str = "1.48";
+
 /// Socket in the control mount that the gateway forwards webhook deliveries to.
 const WEBHOOK_SOCKET: &str = "webhooks.sock";
 /// Socket in the control mount that the gateway forwards the dashboard
@@ -192,7 +196,7 @@ impl Ingress {
             name: format!("piqueld-ingress-{}", &suffix[..16]),
             caddy: UnixApi::new(directory.join("control/admin.sock"), request_timeout),
             directory,
-            docker: UnixApi::new(socket.into(), request_timeout),
+            docker: UnixApi::new(socket.into(), request_timeout).with_docker_api(DOCKER_API),
             images: piqueld_docker::BollardDocker::connect(socket)
                 .context("Docker socket is not UTF-8")?,
             store,
