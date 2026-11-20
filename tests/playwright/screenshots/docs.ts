@@ -280,6 +280,9 @@ async function fingerprint(page: Page): Promise<string> {
       return `id-${order.get(id)}:${id.replace(/[0-9a-f]/g, 'x')}`;
     })
     .replace(new RegExp(`${date}|${isoDate}`, 'g'), 'date')
+    // Passkey credential IDs, as audit records name them: the browser's
+    // authenticator draws them at random on every run.
+    .replace(/passkey "[\w-]+"/g, 'passkey "id"')
     // Ages such as "just now" or "2 min ago" grow with how long the spec
     // took to reach the page, which varies between machines.
     .replace(/\b(?:just now|in a moment|in \d+ (?:min|h|d)|\d+ (?:min|h|d) ago)\b/g, 'age')
