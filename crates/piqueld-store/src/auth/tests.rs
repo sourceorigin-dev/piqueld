@@ -515,7 +515,7 @@ async fn registrations_record_what_they_did() {
         .await
         .expect("the trail is read");
     let session =
-        |id| format!("browser {id} \"{id}\" grants of its account expires never tailnet none");
+        |id| format!("browser \"{id}\" \"{id}\" grants of its account expires never tailnet none");
     let (as_alice, as_bob) = (Some("alice".to_owned()), Some("bob".to_owned()));
     assert_eq!(
         rows,
@@ -530,7 +530,7 @@ async fn registrations_record_what_they_did() {
             ),
             (
                 format!(
-                    "{route} account \"bob\" \"bob\" created by invitation invite with grants \
+                    "{route} account \"bob\" \"bob\" created by invitation \"invite\" with grants \
                     (none) with passkey \"b-key\" \"b-key\"; {}",
                     session("b")
                 ),
@@ -542,6 +542,46 @@ async fn registrations_record_what_they_did() {
             ),
         ]
     );
+}
+
+/// Redeeming an enrollment link records its account under the name it has
+/// when redeemed, not the one the passkey ceremony started with.
+#[tokio::test]
+async fn enrollments_record_their_account_as_named_when_redeemed() {
+    let (_dir, store) = Store::temporary().await;
+    let alice = store.admin_with_passkey("alice").await;
+    store.seed_auth_user(&user("bob"), &Grants::default()).await;
+    let link = NewInvitation {
+        id: "enroll".into(),
+        secret_hash: "enroll".into(),
+        expires_at: now_secs() + 3600,
+    };
+    let enrolled = store.create_enrollment(alice, &link, "bob").await;
+    enrolled.expect("alice issues an enrollment link");
+    let route = "POST /api/v1/auth/register/finish";
+    let request = crate::testing::audit_request(route);
+    let started = User {
+        username: "robert".into(),
+        ..user("bob")
+    };
+    let owner = PasskeyOwner::Redeem {
+        user: &started,
+        invitation_hash: "enroll",
+        session: credential("b", CredentialKind::Browser),
+    };
+    let passkey = NewPasskey {
+        id: "b-key",
+        name: "b-key",
+        credential: "{}",
+    };
+    let redeemed = store.add_passkey(Some(&request), owner, passkey).await;
+    assert!(redeemed.expect("bob redeems the link"));
+    let actions = store.audit_actions().await;
+    let [action] = actions.as_slice() else {
+        panic!("one record expected: {actions:?}");
+    };
+    let enrolled = format!("{route} account \"bob\" \"bob\" enrolled by \"enroll\" with ");
+    assert!(action.starts_with(&enrolled), "{action}");
 }
 
 /// Issuing a recovery or host operator sign-in link records the link and

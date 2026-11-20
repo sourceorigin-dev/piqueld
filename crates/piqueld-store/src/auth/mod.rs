@@ -302,10 +302,9 @@ impl Redeemed {
         }
     }
 
-    /// What redeeming it for `user` did, as its audit record names it,
-    /// never the secret it consumed.
-    fn describe(&self, user: &User) -> String {
-        let (id, username) = (&user.id, &user.username);
+    /// What redeeming it for the account `id`, now named `username`, did,
+    /// as its audit record names it, never the secret it consumed.
+    fn describe(&self, id: &str, username: &str) -> String {
         match self {
             Self::Root(how) => {
                 let admin = Grants::admin();
@@ -315,10 +314,10 @@ impl Redeemed {
                 id: invitation,
                 grants,
             } => format!(
-                "account {id:?} {username:?} created by invitation {invitation} with grants ({grants})"
+                "account {id:?} {username:?} created by invitation {invitation:?} with grants ({grants})"
             ),
             Self::Enrollment(enrollment) => {
-                format!("account {id:?} {username:?} enrolled by {enrollment}")
+                format!("account {id:?} {username:?} enrolled by {enrollment:?}")
             }
         }
     }
@@ -730,11 +729,17 @@ impl Store {
                     .await?;
                 let issuer = Issued::Passkey(passkey.id);
                 session.insert(&mut tx, &user.id, Some(issuer)).await?;
-                let (account, opened) = (redeemed.describe(user), session.describe(None));
-                let change = format!("{account} with {added}; {opened}");
+                // An enrolled account keeps its stored name, whatever the
+                // ceremony started with.
+                let username = match redeemed {
+                    Redeemed::Enrollment(_) => Self::username_on(&mut tx, &user.id).await?,
+                    Redeemed::Root(_) | Redeemed::Invitation { .. } => user.username.clone(),
+                };
+                let account = redeemed.describe(&user.id, &username);
+                let change = format!("{account} with {added}; {}", session.describe(None));
                 let who = AuditPrincipal::Account {
                     id: &user.id,
-                    username: &user.username,
+                    username: &username,
                 };
                 let author = Author { actor: (), request };
                 author.commit_signed_in(tx, who, &change).await?;
