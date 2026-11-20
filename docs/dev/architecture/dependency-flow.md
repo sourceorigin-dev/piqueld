@@ -26,6 +26,13 @@ daemon example that only development builds compile; the client uses Progenitor'
 small runtime support crate. See
 [client generation](https://github.com/sourceorigin-dev/piqueld/blob/main/tools/client-codegen/README.md).
 
+The [field endpoints](../../user/reference/api.md#field-endpoints) come from
+one table, `piqueld_core::field_endpoints!` in `crates/piqueld-core/src/edit.rs`:
+each entry names an endpoint's operation, method, path, body and the
+`ApplicationEdit` it submits. The daemon's `api::http::editing` builds the
+handlers, their routes and their OpenAPI entries from it. To add a field, add
+its edit variant and one entry, then run `just generate`.
+
 The daemon is split into crates that build in parallel, so a change
 recompiles only the crates it touches and those above them:
 

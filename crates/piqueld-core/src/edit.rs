@@ -710,6 +710,125 @@ impl ServiceEdit {
     }
 }
 
+/// The table of field endpoints: every HTTP endpoint that submits one
+/// [`ApplicationEdit`], listed once. The daemon builds its handlers, routes
+/// and `OpenAPI` entries from it, so adding a field takes one entry here and
+/// its edit variant.
+///
+/// `field_endpoints!(callback)` expands to `callback! { entries }`. Each
+/// entry reads:
+///
+/// ```text
+/// /// Optional docs, the operation's `OpenAPI` description.
+/// operation_id: method "/api/v1/applications/{id}/..." (param = "param", ...) [body] => { edit };
+/// ```
+///
+/// - The path parameters follow the application `{id}`, which every
+///   endpoint takes first, in path order.
+/// - `[body]` is `[Type { value }]` for a `{ "value": ... }` body binding
+///   `value`, `[name: Type]` for a whole body binding `name`, or `[]` for
+///   none.
+/// - `edit` uses only the path parameters and body bindings, so it reads both
+///   as an expression, which the daemon builds from a request, and as a
+///   pattern, which a client can match to choose the request. An edit two
+///   entries could match belongs to the first: removals precede the entries
+///   that set the same thing.
+///
+/// The edit and body types are named unqualified: callers import them from
+/// this module and [`crate::manifest`].
+#[macro_export]
+macro_rules! field_endpoints {
+    ($callback:ident) => {
+        $callback! {
+            set_application_name: put "/api/v1/applications/{id}/name" () [StringValue { value }] => { ApplicationEdit::Name(value) };
+            set_application_volumes: put "/api/v1/applications/{id}/volumes" () [VolumesValue { value }] => { ApplicationEdit::Volumes(value) };
+            add_application_volume: post "/api/v1/applications/{id}/volumes" () [volume: Volume] => { ApplicationEdit::AddVolume(volume) };
+            /// Removes a named volume from the saved configuration.
+            ///
+            /// Pass `deploy=true` to also deploy the result (202 instead of 200).
+            remove_application_volume: delete "/api/v1/applications/{id}/volumes/{volume}" (volume = "volume") [] => { ApplicationEdit::RemoveVolume(volume) };
+            add_application_service: post "/api/v1/applications/{id}/services" () [service: Box<Service>] => { ApplicationEdit::AddService(service) };
+            /// Removes a service from the saved configuration.
+            ///
+            /// Pass `deploy=true` to also deploy the result (202 instead of 200).
+            remove_application_service: delete "/api/v1/applications/{id}/services/{service}" (service = "service") [] => { ApplicationEdit::RemoveService(service) };
+            set_application_routes: put "/api/v1/applications/{id}/routes" () [RoutesValue { value }] => { ApplicationEdit::Routes(value) };
+            set_application_jobs: put "/api/v1/applications/{id}/jobs" () [JobsValue { value }] => { ApplicationEdit::Jobs(value) };
+            set_application_exports: put "/api/v1/applications/{id}/exports" () [ExportsValue { value }] => { ApplicationEdit::Exports(value) };
+            set_application_imports: put "/api/v1/applications/{id}/imports" () [ImportsValue { value }] => { ApplicationEdit::Imports(value) };
+            set_application_generated_secrets: put "/api/v1/applications/{id}/generated-secrets" () [GeneratedSecretsValue { value }] => { ApplicationEdit::GeneratedSecrets(value) };
+            set_application_variables: put "/api/v1/applications/{id}/variables" () [VariablesValue { value }] => { ApplicationEdit::Variables(value) };
+            /// Sets an environment's visibility ceiling.
+            ///
+            /// `{environment}` is the environment's name, as in
+            /// `[spec.environments.<name>]`, not its ID. Every route of the environment
+            /// is at most this visible; `public` restricts nothing. Same query
+            /// options, idempotency, and 200/202 responses as the other editing
+            /// endpoints.
+            set_environment_visibility: put "/api/v1/applications/{id}/environments/{environment}/visibility" (environment = "environment") [VisibilityValue { value }] => { ApplicationEdit::EnvironmentVisibility { environment, visibility: value } };
+            /// Sets what happens when an environment's rollout fails.
+            ///
+            /// `{environment}` is the environment's name, as in
+            /// `[spec.environments.<name>]`, not its ID. `automatic` restores the
+            /// environment's last successful deployment when a service update fails
+            /// within its monitor window; `manual` leaves it degraded. `null` returns
+            /// to the default: automatic for promoted environments, manual otherwise.
+            /// Same query options, idempotency, and 200/202 responses as the other
+            /// editing endpoints.
+            set_environment_rollback: put "/api/v1/applications/{id}/environments/{environment}/rollback" (environment = "environment") [RollbackValue { value }] => { ApplicationEdit::EnvironmentRollback { environment, rollback: value } };
+            /// Disconnects the manifest repository.
+            ///
+            /// The saved configuration becomes directly editable. Same query options,
+            /// idempotency, and 200/202 responses as the other editing endpoints.
+            disconnect_manifest_repository: delete "/api/v1/applications/{id}/repository" () [] => { ApplicationEdit::Repository(None) };
+            set_manifest_repository: put "/api/v1/applications/{id}/repository" () [RepositoryValue { value }] => { ApplicationEdit::Repository(value) };
+            set_manifest_repository_url: put "/api/v1/applications/{id}/repository/url" () [StringValue { value }] => { ApplicationEdit::RepositoryUrl(value) };
+            set_manifest_repository_path: put "/api/v1/applications/{id}/repository/path" () [StringValue { value }] => { ApplicationEdit::RepositoryPath(value) };
+            set_manifest_repository_sync: put "/api/v1/applications/{id}/repository/sync" () [RepositorySyncValue { value }] => { ApplicationEdit::RepositorySync(value) };
+            set_service_name: put "/api/v1/applications/{id}/services/{service}/name" (service = "service") [StringValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Name(value) } };
+            set_service_source: put "/api/v1/applications/{id}/services/{service}/source" (service = "service") [SourceValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Source(value) } };
+            set_service_image: put "/api/v1/applications/{id}/services/{service}/source/image" (service = "service") [TemplateValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Image(value) } };
+            set_service_git_url: put "/api/v1/applications/{id}/services/{service}/source/git/url" (service = "service") [StringValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::GitUrl(value) } };
+            set_service_git_branch: put "/api/v1/applications/{id}/services/{service}/source/git/branch" (service = "service") [StringValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::GitBranch(value) } };
+            set_service_git_commit: put "/api/v1/applications/{id}/services/{service}/source/git/commit" (service = "service") [OptionalStringValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::GitCommit(value) } };
+            set_service_dockerfile: put "/api/v1/applications/{id}/services/{service}/source/git/dockerfile" (service = "service") [TemplateValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Dockerfile(value) } };
+            set_service_context: put "/api/v1/applications/{id}/services/{service}/source/git/context" (service = "service") [TemplateValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Context(value) } };
+            set_service_replicas: put "/api/v1/applications/{id}/services/{service}/replicas" (service = "service") [ReplicasValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Replicas(value) } };
+            set_service_environment: put "/api/v1/applications/{id}/services/{service}/environment" (service = "service") [EnvironmentValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Environment(value) } };
+            /// Removes an environment variable from a service.
+            ///
+            /// Pass `deploy=true` to also deploy the result (202 instead of 200).
+            remove_service_environment_entry: delete "/api/v1/applications/{id}/services/{service}/environment/{key}" (service = "service", key = "key") [] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::EnvironmentEntry((key, None)) } };
+            set_service_environment_entry: put "/api/v1/applications/{id}/services/{service}/environment/{key}" (service = "service", key = "key") [TemplateValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::EnvironmentEntry((key, Some(value))) } };
+            set_service_command: put "/api/v1/applications/{id}/services/{service}/command" (service = "service") [TemplatesValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Command(value) } };
+            set_service_arguments: put "/api/v1/applications/{id}/services/{service}/arguments" (service = "service") [TemplatesValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Arguments(value) } };
+            set_service_process: put "/api/v1/applications/{id}/services/{service}/process" (service = "service") [process: ServiceProcess] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Process(process) } };
+            set_service_general: put "/api/v1/applications/{id}/services/{service}/general" (service = "service") [general: ServiceGeneral] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::General(general) } };
+            set_service_mounts: put "/api/v1/applications/{id}/services/{service}/mounts" (service = "service") [MountsValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Mounts(value) } };
+            set_service_mount: put "/api/v1/applications/{id}/services/{service}/mount" (service = "service") [mount: Mount] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Mount(mount) } };
+            remove_service_mount: delete "/api/v1/applications/{id}/services/{service}/mount" (service = "service") [StringValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::RemoveMount(value) } };
+            set_service_files: put "/api/v1/applications/{id}/services/{service}/files" (service = "service") [FilesValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Files(value) } };
+            set_service_file: put "/api/v1/applications/{id}/services/{service}/file" (service = "service") [file: ServiceFile] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::File(file) } };
+            remove_service_file: delete "/api/v1/applications/{id}/services/{service}/file" (service = "service") [StringValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::RemoveFile(value) } };
+            set_service_secrets: put "/api/v1/applications/{id}/services/{service}/secrets" (service = "service") [SecretsValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Secrets(value) } };
+            set_service_depends_on: put "/api/v1/applications/{id}/services/{service}/depends-on" (service = "service") [StringsValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::DependsOn(value) } };
+            set_service_rollout: put "/api/v1/applications/{id}/services/{service}/rollout" (service = "service") [RolloutValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Rollout(value) } };
+            set_service_receives_telemetry: put "/api/v1/applications/{id}/services/{service}/receives-telemetry" (service = "service") [BoolValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::ReceivesTelemetry(value) } };
+            set_service_healthcheck: put "/api/v1/applications/{id}/services/{service}/healthcheck" (service = "service") [HealthValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Healthcheck(value) } };
+            set_service_health_port: put "/api/v1/applications/{id}/services/{service}/healthcheck/port" (service = "service") [ReplicasValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthPort(value) } };
+            set_service_health_path: put "/api/v1/applications/{id}/services/{service}/healthcheck/path" (service = "service") [TemplateValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthPath(value) } };
+            set_service_health_command: put "/api/v1/applications/{id}/services/{service}/healthcheck/command" (service = "service") [TemplatesValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthCommand(value) } };
+            set_service_health_interval: put "/api/v1/applications/{id}/services/{service}/healthcheck/interval" (service = "service") [SecondsValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthInterval(value) } };
+            set_service_health_timeout: put "/api/v1/applications/{id}/services/{service}/healthcheck/timeout" (service = "service") [SecondsValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthTimeout(value) } };
+            set_service_health_start_period: put "/api/v1/applications/{id}/services/{service}/healthcheck/start-period" (service = "service") [SecondsValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthStartPeriod(value) } };
+            set_service_health_retries: put "/api/v1/applications/{id}/services/{service}/healthcheck/retries" (service = "service") [CountValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthRetries(value) } };
+            set_service_resources: put "/api/v1/applications/{id}/services/{service}/resources" (service = "service") [ResourcesValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Resources(value) } };
+            set_service_cpu: put "/api/v1/applications/{id}/services/{service}/resources/cpu" (service = "service") [CpuValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Cpu(value) } };
+            set_service_memory: put "/api/v1/applications/{id}/services/{service}/resources/memory" (service = "service") [MemoryValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Memory(value) } };
+        }
+    };
+}
+
 /// Revision protection and deployment policy for a field edit.
 // Reserved for `edit_endpoint!`: the API contract test that classifies
 // write routes for the audit trail recognises typed edits by these options.
