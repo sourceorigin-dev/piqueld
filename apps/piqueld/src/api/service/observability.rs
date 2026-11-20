@@ -195,15 +195,35 @@ impl ApplicationService {
         true
     }
     /// Waits up to `deadline` for background audit records to be written, so a
-    /// shutdown keeps the requests it just served. Called once the API
-    /// listeners have stopped; records still pending afterwards are logged.
+    /// shutdown keeps the requests it just served, then, if `deadline` has
+    /// time left, writes the [`NewAuditEvent::lost`] marker of records lost
+    /// since the last one written, which no later record will carry. Called
+    /// once the API listeners have stopped; records still pending afterwards,
+    /// and a marker that could not be written, are logged.
     pub async fn drain_audit(&self, deadline: std::time::Duration) {
+        let until = tokio::time::Instant::now() + deadline;
         let all = u32::try_from(super::AUDIT_BACKLOG).unwrap_or(u32::MAX);
-        let drained = tokio::time::timeout(deadline, self.audit_backlog.acquire_many(all)).await;
+        let drained = tokio::time::timeout_at(until, self.audit_backlog.acquire_many(all)).await;
         if drained.is_err() {
             let pending = super::AUDIT_BACKLOG - self.audit_backlog.available_permits();
             tracing::error!(pending, "audit records still pending at shutdown were lost");
         }
+        let gap = self.audit_lost.swap(0, Ordering::Relaxed);
+        if gap == 0 {
+            return;
+        }
+        let marker = NewAuditEvent::lost(gap);
+        let error = match tokio::time::timeout_at(until, self.store.record_audit(&marker)).await {
+            Ok(Ok(())) => return,
+            Ok(Err(error)) => error.to_string(),
+            Err(elapsed) => elapsed.to_string(),
+        };
+        self.audit_lost.fetch_add(gap, Ordering::Relaxed);
+        tracing::error!(
+            error = %error,
+            gap,
+            "the marker of lost audit records could not be written"
+        );
     }
     /// Counts one refused API request for the `piqueld.access.denials` metric.
     pub(crate) fn count_denial(&self) {
@@ -366,7 +386,8 @@ mod tests {
     }
 
     /// An audit record that could not be written leaves a marker counting it
-    /// before the next one, so the trail shows the gap.
+    /// before the next one, so the trail shows the gap, or, when none
+    /// follows, once the trail is drained at shutdown.
     #[tokio::test]
     async fn lost_audit_records_leave_a_marker() {
         let temp = tempfile::tempdir().unwrap();
@@ -376,15 +397,23 @@ mod tests {
         let url = format!("sqlite:{}", database.display());
         let mut db = sqlx::SqliteConnection::connect(&url).await.unwrap();
         let drained = std::time::Duration::from_secs(5);
+        let (hide, show) = (
+            "audit_events RENAME TO hidden",
+            "hidden RENAME TO audit_events",
+        );
         for (rename, action) in [
-            ("audit_events RENAME TO hidden", "POST /lost"),
-            ("hidden RENAME TO audit_events", "POST /written"),
+            (hide, Some("POST /lost")),
+            (show, Some("POST /written")),
+            (hide, Some("POST /last")),
+            (show, None),
         ] {
             let rename = format!("ALTER TABLE {rename}");
             sqlx::query(&rename).execute(&mut db).await.unwrap();
-            let mut event = NewAuditEvent::lost(0);
-            event.action = action.into();
-            service.record_audit(event);
+            if let Some(action) = action {
+                let mut event = NewAuditEvent::lost(0);
+                event.action = action.into();
+                service.record_audit(event);
+            }
             service.drain_audit(drained).await;
         }
         let actions: Vec<String> =
@@ -392,9 +421,7 @@ mod tests {
                 .fetch_all(&mut db)
                 .await
                 .unwrap();
-        assert_eq!(
-            actions,
-            ["audit records missing before this one: 1", "POST /written"]
-        );
+        let missing = "audit records missing before this one: 1";
+        assert_eq!(actions, [missing, "POST /written", missing]);
     }
 }
