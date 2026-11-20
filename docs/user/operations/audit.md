@@ -58,8 +58,9 @@ them fails, the reservation's record stays, followed by the failed request.
 Recovering the secret key records how many values, webhook secrets and
 notification destinations it discarded.
 
-A notification destination's record names it and how it changed, never its
-URL, and a webhook secret's record never holds the secret.
+A notification destination's record names it, how it changed, and the
+categories, applications and previews it now receives, never its URL. A
+webhook secret's record never holds the secret.
 
 Other records are written in the background. If too many wait at once, or one
 can't be written, it's lost: the next record written then follows a **Failed**

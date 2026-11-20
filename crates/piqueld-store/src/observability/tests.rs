@@ -1528,12 +1528,12 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
         (Some(Phase::Planning), Some("data"))
     );
 }
-/// Requested notification and webhook changes commit with their audit
-/// record, which names what changed but never a destination's URL or a
-/// webhook secret: a failed append keeps the previous destination, its
-/// URL, the failed delivery and the webhook secret.
+/// Requested notification changes commit with their audit record, which
+/// names the destination and what it now receives but never its URL: a
+/// failed append keeps the previous destination, its URL and the failed
+/// delivery.
 #[tokio::test]
-async fn requested_notification_and_webhook_changes_commit_with_their_audit_record() {
+async fn requested_notification_changes_commit_with_their_audit_record() {
     let (_temp, store) = Store::temporary().await;
     notify(&store).await;
     let op = application(&store).await;
@@ -1555,31 +1555,33 @@ async fn requested_notification_and_webhook_changes_commit_with_their_audit_reco
         request: Some(&request),
     };
     let ops = DestinationName::parse("ops").expect("the name is valid");
-    let put = async |url: &str| {
+    // The replacement narrows it to one application, without previews.
+    let put = async |url: &str, narrowed: bool| {
+        let mut settings = settings();
+        if narrowed {
+            let only = [application.clone()].into();
+            (settings.applications, settings.previews) = (ApplicationSelection::Only(only), false);
+        }
         let url = Some(url.into());
-        let request = DestinationRequest {
-            url,
-            settings: settings(),
-        };
+        let request = DestinationRequest { url, settings };
         store
             .put_notification_destination(author, &ops, request)
             .await
     };
     let first = "https://example.com/private-token";
     let second = "https://example.com/other-token";
-    put(first).await.expect("the destination is created");
-    let rotate = async || {
-        let (secret, _) = store.generate_webhook_secret(author, &application).await?;
-        Ok::<_, StoreError>(secret)
-    };
-    let kept = rotate().await.expect("the webhook secret is generated");
+    put(first, false).await.expect("the destination is created");
+    let id: String =
+        sqlx::query_scalar("SELECT id FROM notification_destinations WHERE name='ops'")
+            .fetch_one(&store.pool)
+            .await
+            .expect("the destination has an ID");
     // Changes whose record can't be written keep what was there.
     store.refuse_audit(true).await;
-    assert!(put(second).await.is_err());
+    assert!(put(second, true).await.is_err());
     let deleted = store.delete_notification_destination(author, &ops);
     assert!(deleted.await.is_err());
     assert!(store.retry_delivery(author, &failure.id).await.is_err());
-    assert!(rotate().await.is_err());
     store.refuse_audit(false).await;
     let destination = store
         .notification_destination(&ops)
@@ -1599,39 +1601,69 @@ async fn requested_notification_and_webhook_changes_commit_with_their_audit_reco
             .expect("deliveries are claimed")
             .is_none()
     );
+    put(second, true)
+        .await
+        .expect("the destination is replaced");
+    store
+        .retry_delivery(author, &failure.id)
+        .await
+        .expect("the failed delivery is retried");
+    store
+        .delete_notification_destination(author, &ops)
+        .await
+        .expect("the destination is deleted");
+    let route = "POST /api/v1/notifications";
+    let receives = "categories build_failures,deployment_failures,service_degradation,\
+        daemon_failures,recovery,daemon_started; applications";
+    let actions = store.audit_actions().await;
+    assert_eq!(
+        actions,
+        [
+            format!("{route} destination \"ops\" {id} created: {receives} all; previews yes"),
+            format!(
+                "{route} destination \"ops\" {id} changed as a new receiver: \
+                {receives} {application}; previews no"
+            ),
+            format!("{route} delivery {} retry queued", failure.id),
+            format!("{route} destination \"ops\" {id} deleted"),
+        ]
+    );
+}
+
+/// A requested webhook secret rotation commits with its audit record, which
+/// never holds the secret: a failed append keeps the previous secret.
+#[tokio::test]
+async fn requested_webhook_secret_rotations_commit_with_their_audit_record() {
+    let (_temp, store) = Store::temporary().await;
+    let op = application(&store).await;
+    let application = application_of(&store, &op).await;
+    let route = "POST /api/v1/applications/{id}/webhook/secret";
+    let request = crate::testing::audit_request(route);
+    let author = Author {
+        actor: Actor::Daemon,
+        request: Some(&request),
+    };
+    let rotate = async || {
+        let (secret, _) = store.generate_webhook_secret(author, &application).await?;
+        Ok::<_, StoreError>(secret)
+    };
+    let kept = rotate().await.expect("the webhook secret is generated");
+    store.refuse_audit(true).await;
+    assert!(rotate().await.is_err());
+    store.refuse_audit(false).await;
     let webhook = store
         .webhook_secret(&application)
         .await
         .expect("the webhook secret is read")
         .expect("the application has a webhook secret");
     assert_eq!(webhook.as_slice(), kept.as_bytes());
-    put(second).await.expect("the destination is replaced");
-    store
-        .retry_delivery(author, &failure.id)
-        .await
-        .expect("the failed delivery is retried");
     let secret = rotate().await.expect("the webhook secret is rotated");
-    store
-        .delete_notification_destination(author, &ops)
-        .await
-        .expect("the destination is deleted");
-    let route = "POST /api/v1/notifications";
     let actions = store.audit_actions().await;
-    assert_eq!(
-        actions,
-        [
-            format!("{route} destination \"ops\" created"),
-            format!("{route} webhook secret generated"),
-            format!("{route} destination \"ops\" changed as a new receiver"),
-            format!("{route} delivery {} retry queued", failure.id),
-            format!("{route} webhook secret generated"),
-            format!("{route} destination \"ops\" deleted"),
-        ]
-    );
-    let secrets = [kept.as_str(), secret.as_str(), first, second];
+    let generated = format!("{route} webhook secret generated");
+    assert_eq!(actions, [generated.clone(), generated]);
     assert!(
         !actions
             .iter()
-            .any(|action| { secrets.iter().any(|secret| action.contains(secret)) })
+            .any(|action| { action.contains(kept.as_str()) || action.contains(secret.as_str()) })
     );
 }

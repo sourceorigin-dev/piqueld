@@ -107,6 +107,41 @@ struct SavedDestination {
     change: DestinationChange,
 }
 
+impl SavedDestination {
+    /// What saving it changed, as its audit record names it: the
+    /// destination, how it changed, and what it now receives, never its URL,
+    /// e.g. `destination "ops" <id> changed as a new receiver: categories
+    /// deployment_failed,security; applications all; previews no`.
+    fn audit_change(&self, name: &DestinationName, settings: &DestinationSettings) -> String {
+        let mut change = format!(
+            "destination {:?} {} {}",
+            name.as_str(),
+            self.id,
+            self.change
+        );
+        if self.replaced && self.change != DestinationChange::Created {
+            change.push_str(" as a new receiver");
+        }
+        if self.resumed {
+            change.push_str(" and enabled");
+        }
+        let categories: Vec<_> = settings.categories.keys().map(|c| c.as_str()).collect();
+        let applications = match &settings.applications {
+            ApplicationSelection::All => "all".to_owned(),
+            ApplicationSelection::Only(ids) if ids.is_empty() => "none".to_owned(),
+            ApplicationSelection::Only(ids) => {
+                let ids: Vec<_> = ids.iter().map(ApplicationId::as_str).collect();
+                ids.join(",")
+            }
+        };
+        let previews = if settings.previews { "yes" } else { "no" };
+        let categories = categories.join(",");
+        format!(
+            "{change}: categories {categories}; applications {applications}; previews {previews}"
+        )
+    }
+}
+
 /// How saving a destination changed it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DestinationChange {
@@ -222,8 +257,8 @@ impl Store {
 
     /// Creates or replaces the destination `name`, which the author's actor
     /// needs `notifications:manage` for, checked in the same transaction,
-    /// which also records the request's change: the destination's name and
-    /// how it changed, never its URL.
+    /// which also records the request's change (see
+    /// `SavedDestination::audit_change`), never its URL.
     ///
     /// A new URL or kind makes the destination a new receiver: its pending
     /// deliveries are cancelled, and its earlier deliveries detached, so no
@@ -274,13 +309,7 @@ impl Store {
         .await?;
         // Recorded after the event above, so a new receiver never gets it.
         Self::save_rules(&mut tx, &saved, &settings).await?;
-        let mut change = format!("destination {:?} {}", name.as_str(), saved.change);
-        if saved.replaced && saved.change != DestinationChange::Created {
-            change.push_str(" as a new receiver");
-        }
-        if saved.resumed {
-            change.push_str(" and enabled");
-        }
+        let change = saved.audit_change(name, &settings);
         author
             .commit_recorded(tx, 200, Some(&change), (None, None))
             .await?;
@@ -544,7 +573,7 @@ impl Store {
             actor.attribution(),
         )
         .await?;
-        let change = format!("destination {:?} deleted", name.as_str());
+        let change = format!("destination {:?} {id} deleted", name.as_str());
         author
             .commit_recorded(tx, 200, Some(&change), (None, None))
             .await?;
