@@ -604,13 +604,11 @@ fn sync_settings_and_environment_opt_outs_are_sent_as_typed_requests() {
         &json!({"value": {"mode": "poll", "interval_seconds": 120}}),
     );
 
-    // An interval only applies to polling, and nothing is sent.
-    let server = start_server(false, 0, |request| panic!("unexpected {}", request.path));
-    let output = run(
-        &server,
+    // An interval only applies to polling: the parser rejects it with any
+    // other mode, before anything is sent.
+    for arguments in [
+        &["sync", "app-notes-01", "off", "--interval", "120", "--yes"][..],
         &[
-            "app",
-            "repository",
             "sync",
             "app-notes-01",
             "webhook",
@@ -618,10 +616,27 @@ fn sync_settings_and_environment_opt_outs_are_sent_as_typed_requests() {
             "120",
             "--yes",
         ],
-    );
-    assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("--interval applies only to `poll`"));
-    assert!(server.finish().is_empty());
+        &[
+            "connect",
+            "app-notes-01",
+            "https://example.com/notes.git",
+            "app.toml",
+            "--interval",
+            "120",
+            "--yes",
+        ],
+    ] {
+        let server = start_server(false, 0, |request| panic!("unexpected {}", request.path));
+        let output = run_human(&server, &[&["app", "repository"][..], arguments].concat());
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}");
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("--interval applies only to `poll`"),
+            "{error}"
+        );
+        assert!(error.contains("Usage: piquelctl app repository"), "{error}");
+        assert!(server.finish().is_empty());
+    }
 
     let mut staging = environment("app-notes-01", "env-staging-01", "staging");
     staging["sync"] = json!(false);

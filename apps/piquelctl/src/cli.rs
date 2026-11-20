@@ -41,6 +41,52 @@ macro_rules! one_of {
 }
 pub(crate) use one_of;
 
+/// Implements clap's `Args` for `$parsed`, a value built from the arguments
+/// of `$flags`: `$parse`, a closure taking the parsed flags, returns it, or
+/// the `clap::Error` that `piquelctl` reports as a usage error. It holds the
+/// rules clap can't express, such as one argument's value ruling another out.
+/// Flatten it like any `Args`.
+///
+/// ```text
+/// parsed_args!(SyncSetting, SyncFlags, |flags: SyncFlags| flags.mode.with_interval(flags.interval).map(SyncSetting))
+/// ```
+macro_rules! parsed_args {
+    ($parsed:ty, $flags:ty, $parse:expr) => {
+        impl clap::FromArgMatches for $parsed {
+            fn from_arg_matches(
+                matches: &clap::ArgMatches,
+            ) -> std::result::Result<Self, clap::Error> {
+                let flags = <$flags as clap::FromArgMatches>::from_arg_matches(matches)?;
+                ($parse)(flags)
+            }
+
+            // Replaces the whole value; nothing in piquelctl calls `update_from`.
+            fn update_from_arg_matches(
+                &mut self,
+                matches: &clap::ArgMatches,
+            ) -> std::result::Result<(), clap::Error> {
+                *self = Self::from_arg_matches(matches)?;
+                Ok(())
+            }
+        }
+
+        impl clap::Args for $parsed {
+            fn group_id() -> Option<clap::Id> {
+                <$flags as clap::Args>::group_id()
+            }
+
+            fn augment_args(command: clap::Command) -> clap::Command {
+                <$flags as clap::Args>::augment_args(command)
+            }
+
+            fn augment_args_for_update(command: clap::Command) -> clap::Command {
+                <$flags as clap::Args>::augment_args_for_update(command)
+            }
+        }
+    };
+}
+pub(crate) use parsed_args;
+
 /// Implements clap's `Args` for `$choice`, a type holding one of several
 /// arguments: it declares the arguments of `$flags`, which must make clap
 /// require exactly one of them, and `$choose`, a method of `$flags`, turns the
@@ -55,39 +101,10 @@ pub(crate) use one_of;
 // clap already rejects while parsing.
 macro_rules! choice_args {
     ($choice:ty, $flags:ty, $choose:path) => {
-        impl clap::FromArgMatches for $choice {
-            fn from_arg_matches(
-                matches: &clap::ArgMatches,
-            ) -> std::result::Result<Self, clap::Error> {
-                let flags = <$flags as clap::FromArgMatches>::from_arg_matches(matches)?;
-                $choose(flags).ok_or_else(|| {
-                    clap::Error::new(clap::error::ErrorKind::MissingRequiredArgument)
-                })
-            }
-
-            // Replaces the whole choice; nothing in piquelctl calls `update_from`.
-            fn update_from_arg_matches(
-                &mut self,
-                matches: &clap::ArgMatches,
-            ) -> std::result::Result<(), clap::Error> {
-                *self = Self::from_arg_matches(matches)?;
-                Ok(())
-            }
-        }
-
-        impl clap::Args for $choice {
-            fn group_id() -> Option<clap::Id> {
-                <$flags as clap::Args>::group_id()
-            }
-
-            fn augment_args(command: clap::Command) -> clap::Command {
-                <$flags as clap::Args>::augment_args(command)
-            }
-
-            fn augment_args_for_update(command: clap::Command) -> clap::Command {
-                <$flags as clap::Args>::augment_args_for_update(command)
-            }
-        }
+        crate::cli::parsed_args!($choice, $flags, |flags: $flags| {
+            $choose(flags)
+                .ok_or_else(|| clap::Error::new(clap::error::ErrorKind::MissingRequiredArgument))
+        });
     };
 }
 pub(crate) use choice_args;

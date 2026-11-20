@@ -3,7 +3,9 @@
 use super::{EditFlags, RepositoryPathArgs, RepositoryUrlArgs, SyncMode};
 use crate::{commands::resolve_application, error::Result, output::Console};
 use clap::{Args, Subcommand};
-use piqueld_client::{Client, GitRepository, RepositoryManifest, edit::ApplicationEdit};
+use piqueld_client::{
+    Client, GitRepository, RepositoryManifest, edit::ApplicationEdit, sync::RepositorySync,
+};
 
 #[derive(Debug, Args)]
 pub(crate) struct RepositoryTarget {
@@ -37,18 +39,8 @@ pub(crate) enum RepositoryCommand {
         /// Pin this full commit hash instead of following the branch.
         #[arg(long)]
         commit: Option<String>,
-        /// Whether to deploy pushes, as `app repository sync` sets it.
-        #[arg(
-            long = "sync",
-            value_name = "MODE",
-            value_parser = SyncMode::parser(),
-            default_value = "off"
-        )]
-        sync: SyncMode,
-        /// Seconds between polls with `--sync poll`, from 60 to 86400. By
-        /// default, 300.
-        #[arg(long, value_name = "SECONDS")]
-        interval: Option<u32>,
+        #[command(flatten)]
+        sync: ConnectSync,
     },
     /// Stop reading the manifest from Git, keeping the saved manifest.
     ///
@@ -70,13 +62,8 @@ pub(crate) enum RepositoryCommand {
     Sync {
         #[command(flatten)]
         target: RepositoryTarget,
-        /// How to detect pushes.
-        #[arg(value_parser = SyncMode::parser())]
-        mode: SyncMode,
-        /// Seconds between polls with `poll`, from 60 to 86400. By default,
-        /// 300.
-        #[arg(long, value_name = "SECONDS")]
-        interval: Option<u32>,
+        #[command(flatten)]
+        sync: SyncSetting,
     },
     /// Discard the edits made since the manifest was last read from the
     /// repository, saving that manifest again.
@@ -90,6 +77,46 @@ pub(crate) enum RepositoryCommand {
         command: WebhookCommand,
     },
 }
+
+// `--sync` and the `--interval` only `poll` takes, for `connect`.
+#[derive(Debug, Args)]
+struct ConnectSyncFlags {
+    /// Whether to deploy pushes, as `app repository sync` sets it.
+    #[arg(
+        long = "sync",
+        value_name = "MODE",
+        value_parser = SyncMode::parser(),
+        default_value = "off"
+    )]
+    mode: SyncMode,
+    /// Seconds between polls with `--sync poll`, from 60 to 86400. By
+    /// default, 300.
+    #[arg(long, value_name = "SECONDS")]
+    interval: Option<u32>,
+}
+/// The push setting `connect` saves with the connection.
+#[derive(Debug)]
+pub(crate) struct ConnectSync(RepositorySync);
+crate::cli::parsed_args!(ConnectSync, ConnectSyncFlags, |flags: ConnectSyncFlags| {
+    flags.mode.with_interval(flags.interval).map(ConnectSync)
+});
+// The mode and the `--interval` only `poll` takes, for `sync`.
+#[derive(Debug, Args)]
+struct SyncFlags {
+    /// How to detect pushes.
+    #[arg(value_parser = SyncMode::parser())]
+    mode: SyncMode,
+    /// Seconds between polls with `poll`, from 60 to 86400. By default,
+    /// 300.
+    #[arg(long, value_name = "SECONDS")]
+    interval: Option<u32>,
+}
+/// The push setting `sync` saves.
+#[derive(Debug)]
+pub(crate) struct SyncSetting(RepositorySync);
+crate::cli::parsed_args!(SyncSetting, SyncFlags, |flags: SyncFlags| {
+    flags.mode.with_interval(flags.interval).map(SyncSetting)
+});
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum WebhookCommand {
@@ -124,8 +151,7 @@ impl RepositoryCommand {
                 path,
                 branch,
                 commit,
-                sync,
-                interval,
+                sync: ConnectSync(sync),
             } => (
                 target,
                 ApplicationEdit::Repository(Some(RepositoryManifest {
@@ -135,17 +161,13 @@ impl RepositoryCommand {
                         commit: commit.clone(),
                     },
                     path: path.clone(),
-                    sync: sync.with_interval(*interval)?,
+                    sync: *sync,
                 })),
             ),
             Self::Sync {
                 target,
-                mode,
-                interval,
-            } => (
-                target,
-                ApplicationEdit::RepositorySync(mode.with_interval(*interval)?),
-            ),
+                sync: SyncSetting(sync),
+            } => (target, ApplicationEdit::RepositorySync(*sync)),
             Self::Webhook { command } => return command.run(client, console).await,
             Self::Reset(target) => return target.flags.reset(client, console, &target.app).await,
             Self::Disconnect(target) => (target, ApplicationEdit::Repository(None)),
