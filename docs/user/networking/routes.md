@@ -154,7 +154,7 @@ The URL is `ready` once all of these hold:
 
 Until then, it is `pending`, followed by what it waits for.
 
-To see every route of the application, with what each one's hostname needs
+To see the application's deployed routes, with what each one's hostname needs
 from DNS, open its **Routes** tab: **Where routes are served** lists them. With
 `piquelctl`:
 

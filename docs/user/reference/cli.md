@@ -1330,5 +1330,7 @@ counts. Running Docker services are left alone. `app secret APP list` and
 `env secret list APP` mark discarded values as unavailable; set replacement
 stored values using the same names, then Deploy explicitly, which also generates
 new values for discarded generated secrets. Give each repository a new webhook
-secret with `app repository webhook rotate`, and add the notification
-destinations again with `notification set`.
+secret with `app repository webhook rotate`, and enter it in GitHub straight
+away: piqueld shows it only once, and GitHub's deliveries fail until it has it
+(see [rotate the secret](../applications/deploy-on-push.md#rotate-the-secret)).
+Then add the notification destinations again with `notification set`.
