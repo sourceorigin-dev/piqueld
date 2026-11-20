@@ -1,11 +1,7 @@
 //! Editing the secrets the daemon generates for an application.
 
-use super::EditFlags;
-use crate::{
-    commands::resolve_application,
-    error::{CliError, ErrorKind, Result},
-    output::Console,
-};
+use super::{Declarations, EditFlags};
+use crate::{commands::resolve_application, error::Result, output::Console};
 use clap::{Args, Subcommand, builder::TypedValueParser};
 use piqueld_client::{
     Client, SecretDeclaration, SecretEncoding, SecretGenerator, edit::ApplicationEdit,
@@ -95,39 +91,27 @@ impl GeneratedSecretCommand {
     /// Lists saved declarations, or edits them client-side and saves the whole
     /// list, like exports: setting a declared name replaces it in place.
     pub(crate) async fn run(&self, client: &Client, console: &mut Console) -> Result<()> {
-        let target = match self {
+        let (target, secret) = match self {
             Self::List { app } => {
                 let application = resolve_application(client, app).await?;
                 return console.emit(&application.application.to_manifest().spec.secrets);
             }
-            Self::Set(args) => &args.target,
-            Self::Remove(target) => target,
+            Self::Set(args) => (
+                &args.target,
+                Some(SecretDeclaration {
+                    name: args.target.name.clone(),
+                    generate: args.generator.0.clone(),
+                }),
+            ),
+            Self::Remove(target) => (target, None),
         };
         let current = resolve_application(client, &target.app).await?;
         let mut secrets = current.application.to_manifest().spec.secrets;
-        let existing = secrets.iter().position(|secret| secret.name == target.name);
-        match (self, existing) {
-            (Self::Set(args), existing) => {
-                let secret = SecretDeclaration {
-                    name: target.name.clone(),
-                    generate: args.generator.0.clone(),
-                };
-                match existing {
-                    Some(index) => secrets[index] = secret,
-                    None => secrets.push(secret),
-                }
-            }
-            (Self::Remove(_), Some(index)) => {
-                secrets.remove(index);
-            }
-            (_, None) => {
-                return Err(CliError::new(
-                    ErrorKind::Input,
-                    format!("secret {:?} is not declared", target.name),
-                ));
-            }
-            (Self::List { .. }, Some(_)) => unreachable!("listing returned above"),
-        }
+        secrets.set_or_remove(
+            |secret| secret.name == target.name,
+            secret,
+            || format!("secret {:?} is not declared", target.name),
+        )?;
         let edit = ApplicationEdit::GeneratedSecrets(secrets);
         target
             .flags

@@ -87,6 +87,38 @@ fn key_value(value: &str) -> std::result::Result<(String, String), String> {
         .ok_or_else(|| "expected `=` between the two parts".to_owned())
 }
 
+/// A list of declarations that an edit loads, changes, and saves whole, such
+/// as an application's exports.
+trait Declarations<T> {
+    /// Replaces the entry `matches` finds with `entry`, or appends `entry`
+    /// when there is none. Without an `entry`, removes the one `matches`
+    /// finds, and fails with the `missing` message when there is none.
+    fn set_or_remove(
+        &mut self,
+        matches: impl Fn(&T) -> bool,
+        entry: Option<T>,
+        missing: impl FnOnce() -> String,
+    ) -> Result<()>;
+}
+impl<T> Declarations<T> for Vec<T> {
+    fn set_or_remove(
+        &mut self,
+        matches: impl Fn(&T) -> bool,
+        entry: Option<T>,
+        missing: impl FnOnce() -> String,
+    ) -> Result<()> {
+        match (self.iter().position(matches), entry) {
+            (Some(index), Some(entry)) => self[index] = entry,
+            (None, Some(entry)) => self.push(entry),
+            (Some(index), None) => {
+                self.remove(index);
+            }
+            (None, None) => return Err(CliError::new(ErrorKind::Input, missing())),
+        }
+        Ok(())
+    }
+}
+
 // Flags shared by every edit: deployment, generation precondition, and confirmation.
 // Flattened `Args` structs use `//`: their doc comments would override the `about`
 // text of commands that flatten them. Field `///` comments are user-facing help.
