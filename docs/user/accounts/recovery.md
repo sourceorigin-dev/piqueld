@@ -86,7 +86,7 @@ First, they get a new passkey on their account, the first way that works:
 
   They open the link themselves, in a browser, and register a passkey, which
   also signs that browser in. The link signs in whoever uses it, so they
-  don't share it. Either way, the dashboard asks them to
+  don't share it. Either way, they're asked to
   [confirm with their passkey](accounts.md#confirm-with-your-passkey) first,
   which their remaining one does.
 - **Otherwise,** an administrator
