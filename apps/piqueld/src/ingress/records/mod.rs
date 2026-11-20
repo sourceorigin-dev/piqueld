@@ -39,10 +39,11 @@
 //! Changes are daemon-scoped journal actions with `ingress_dns_*` phases; a
 //! pass that changes nothing records nothing.
 use super::{
-    Ingress, Ticks,
+    Ingress,
     backoff::{Backoff, BackoffPolicy},
     wire::Journaled,
 };
+use crate::ticker::Ticker;
 use anyhow::{Context, Result};
 use piqueld_config::dns::provider::{DnsProvider, Found, Record, RecordId, Zone};
 use piqueld_core::Phase;
@@ -243,9 +244,9 @@ impl Ingress {
         if !dns.manages_any_records() {
             return;
         }
-        let mut ticks = Ticks::every(Duration::from_secs(10), cancellation);
+        let mut ticks = Ticker::new(Duration::from_secs(10));
         let mut schedule = Schedule::default();
-        while ticks.next().await {
+        while ticks.tick(cancellation).await {
             if cancellation
                 .run_until_cancelled(dns.refresh())
                 .await

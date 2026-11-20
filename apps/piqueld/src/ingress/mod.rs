@@ -13,6 +13,7 @@ mod traffic;
 mod tunnel;
 mod wire;
 
+use crate::ticker::Ticker;
 use anyhow::{Context, Result};
 use certificates::Certificates;
 use futures_util::{StreamExt, stream};
@@ -58,33 +59,6 @@ const WEBHOOK_SOCKET: &str = "webhooks.sock";
 /// Socket in the control mount that the gateway forwards the dashboard
 /// hostname to.
 const DASHBOARD_SOCKET: &str = "dashboard.sock";
-
-/// Ticks of a background loop, every period until cancellation; missed
-/// ticks are skipped.
-struct Ticks<'a> {
-    interval: tokio::time::Interval,
-    cancellation: &'a CancellationToken,
-}
-
-impl<'a> Ticks<'a> {
-    /// Ticks every `period`, the first at once.
-    fn every(period: Duration, cancellation: &'a CancellationToken) -> Self {
-        let mut interval = tokio::time::interval(period);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        Self {
-            interval,
-            cancellation,
-        }
-    }
-
-    /// Waits for the next tick: `false` once cancelled.
-    async fn next(&mut self) -> bool {
-        tokio::select! {
-            () = self.cancellation.cancelled() => false,
-            _ = self.interval.tick() => true,
-        }
-    }
-}
 
 /// The daemon's end of the dashboard hostname, which the private listener
 /// forwards to it.
@@ -475,8 +449,8 @@ impl Ingress {
     /// Every minute, issues and renews the DNS-01 certificates deployed routes
     /// need. The gateway loop loads new certificates into Caddy.
     async fn run_certificates(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticks::every(Duration::from_mins(1), cancellation);
-        while ticks.next().await {
+        let mut ticks = Ticker::new(Duration::from_mins(1));
+        while ticks.tick(cancellation).await {
             let desired = if self.enabled {
                 match self.store.routing_table().await {
                     Ok(table) => self.dns01_hostnames(&table),
@@ -498,8 +472,8 @@ impl Ingress {
     /// Every 10s, reconciles the gateway (see [`Self::refresh`]) and relays
     /// Caddy logs. Failures are logged and retried on the next tick.
     async fn run_gateway(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticks::every(Duration::from_secs(10), cancellation);
-        while ticks.next().await {
+        let mut ticks = Ticker::new(Duration::from_secs(10));
+        while ticks.tick(cancellation).await {
             let pass = async {
                 if let Err(error) = self.refresh().await {
                     tracing::warn!(?error, "ingress reconciliation failed; will retry");
@@ -516,8 +490,8 @@ impl Ingress {
 
     /// Every 15s, refreshes route status by probing HTTPS for acknowledged routes.
     async fn run_probes(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticks::every(Duration::from_secs(15), cancellation);
-        while ticks.next().await {
+        let mut ticks = Ticker::new(Duration::from_secs(15));
+        while ticks.tick(cancellation).await {
             // Slow public DNS/TLS must never delay gateway drift repair or disablement.
             let probes = cancellation.run_until_cancelled(self.probe_routes());
             if probes.await.is_none() {

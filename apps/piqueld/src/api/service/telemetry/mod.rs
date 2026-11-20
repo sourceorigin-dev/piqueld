@@ -1,8 +1,9 @@
 //! Feeds telemetry export from the journal, the store and the runtime.
 mod containers;
 
-use super::{ApplicationService, ticker::Ticker};
+use super::ApplicationService;
 use crate::telemetry::{EventContext, Journal, ServiceSample};
+use crate::ticker::Ticker;
 use piqueld_core::EnvironmentId;
 use piqueld_core::access::Scope;
 use piqueld_core::api::TelemetryStatus;
