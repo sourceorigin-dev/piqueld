@@ -232,11 +232,20 @@ async fn confirming_a_login_keeps_its_latest_proof() {
     let inserted = store.insert_credential("alice", &laptop).await;
     inserted.expect("the store keeps the login");
     let now = now_secs();
-    // The newer confirmation finishes first.
-    for proved in [now - 10, now - 50] {
-        let confirmed = store.confirm_login(alice, "laptop", proved).await;
+    // The newer confirmation finishes first; the older one, and a repeat,
+    // change nothing and record nothing.
+    let route = "POST /api/v1/auth/device/poll";
+    for (proved, recorded) in [(now - 10, true), (now - 50, false), (now - 10, false)] {
+        let request = crate::testing::audit_request(route);
+        let author = Author {
+            actor: alice,
+            request: Some(&request),
+        };
+        let confirmed = store.confirm_login(author, "laptop", proved).await;
         assert!(confirmed.expect("alice may confirm her own login"));
+        assert_eq!(request.recorded.get(), recorded);
     }
+    assert_eq!(store.audit_actions().await.len(), 1);
     let owner = store.credential_owner("laptop").await;
     let owner = owner.expect("credentials are readable");
     let owner = owner.expect("the login is live");
@@ -362,7 +371,10 @@ async fn sign_ins_record_who_they_signed_in() {
     let (_dir, store) = Store::temporary().await;
     let alice = store.admin_with_passkey("alice").await;
     let route = "POST /api/v1/auth/login/finish";
-    let request = crate::testing::audit_request(route);
+    // A request made with alice's login, which a sign-in doesn't name.
+    let mut request = crate::testing::audit_request(route);
+    request.origin.username = Some("alice".into());
+    request.origin.credential_id = Some("alice".into());
     let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
     let browser = proved(credential("browser", CredentialKind::Browser));
     let sign_in =
@@ -380,7 +392,11 @@ async fn sign_ins_record_who_they_signed_in() {
     };
     let confirmed = store.confirm_with_passkey(by, "alice-key", stored, now_secs());
     assert!(confirmed.await.expect("the step-up is stored"));
-    let cli = proved(credential("cli", CredentialKind::Cli));
+    // Approved a minute ago, so confirming it now changes its proof.
+    let cli = NewCredential {
+        authenticated_at: Some(now_secs() - 60),
+        ..credential("cli", CredentialKind::Cli)
+    };
     let issued = store.issue_for_credential_owner(by, &cli).await;
     issued
         .expect("the login is issued")
@@ -406,17 +422,17 @@ async fn sign_ins_record_who_they_signed_in() {
         rows,
         [
             alice(format!(
-                "{route} browser browser \"browser\" grants of its account expires never \
+                "{route} browser \"browser\" \"browser\" grants of its account expires never \
                 tailnet none with passkey \"alice-key\""
             )),
             (
                 format!("{route} credential \"alice\" confirmed with passkey \"alice-key\""),
-                None,
-                None,
+                Some("alice".into()),
+                Some("alice".into()),
                 None,
             ),
             alice(format!(
-                "{route} cli cli \"cli\" grants of its account expires never tailnet none \
+                "{route} cli \"cli\" \"cli\" grants of its account expires never tailnet none \
                 approved by \"alice\""
             )),
             alice(format!(

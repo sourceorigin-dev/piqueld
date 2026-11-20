@@ -1027,8 +1027,9 @@ impl Store {
     /// at `authenticated_at`, the approval's passkey proof, if that proof is
     /// still recent and the approver's credential still live. A later proof
     /// the login already holds stays, so confirmations finishing out of
-    /// order never make it stale early. Its expiry and grants stay as they
-    /// are. Returns `false` when the login ended, so it is never revived.
+    /// order never make it stale early, and such a confirmation changes
+    /// nothing and records nothing. Its expiry and grants stay as they are.
+    /// Returns `false` when the login ended, so it is never revived.
     ///
     /// # Errors
     /// Returns a revoked approver, a refusal, or storage errors.
@@ -1049,7 +1050,7 @@ impl Store {
         let now = now_secs();
         approval.require_fresh(now).map_err(StoreError::Denied)?;
         let confirmed = sqlx::query!(
-            "UPDATE auth_credentials SET authenticated_at=MAX(COALESCE(authenticated_at,?1),?1) WHERE id=?2 AND user_id=?3 AND kind='cli' AND (expires_at IS NULL OR expires_at>?4)",
+            "UPDATE auth_credentials SET authenticated_at=?1 WHERE id=?2 AND user_id=?3 AND kind='cli' AND (expires_at IS NULL OR expires_at>?4) AND (authenticated_at IS NULL OR authenticated_at<?1)",
             authenticated_at,
             credential_id,
             authority.user_id,
@@ -1060,8 +1061,16 @@ impl Store {
         .map_err(StoreError::database)?
         .rows_affected();
         if confirmed == 0 {
-            tx.commit().await.map_err(StoreError::database)?;
-            return Ok(false);
+            // Already proved as recently: live, but nothing to change.
+            return sqlx::query_scalar!(
+                r#"SELECT EXISTS(SELECT 1 FROM auth_credentials WHERE id=?1 AND user_id=?2 AND kind='cli' AND (expires_at IS NULL OR expires_at>?3)) AS "live!: bool""#,
+                credential_id,
+                authority.user_id,
+                now
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(StoreError::database);
         }
         let username = Self::username_on(&mut tx, &authority.user_id).await?;
         let approving = approver.credential_id;

@@ -183,6 +183,9 @@ impl AuditRequest {
 /// a request makes record themselves (see [`AuditRequest`]). An [`Actor`]
 /// alone, like the daemon's own work, records none. Writes only an account
 /// may make, such as issuing a token, take an `Author<'_, Caller<'_>>`.
+/// Public requests, which no verified caller makes, take an
+/// `Author<'_, ()>`: their writes, such as a sign-in, name who they signed
+/// in through [`Author::commit_signed_in`].
 #[derive(Clone, Copy, Debug)]
 pub struct Author<'a, A = Actor<'a>> {
     /// Who acts, re-read inside the writing transaction.
