@@ -41,6 +41,11 @@ enum Kind {
     },
 }
 
+/// Why a passkey could not confirm the session: it isn't one of the
+/// account's, or its assertion failed.
+const NOT_CONFIRMED: &str =
+    "this passkey could not confirm your session; use one of your account's passkeys";
+
 /// Why a link cannot be redeemed.
 const STALE_LINK: &str = "this link is invalid, expired, or already used";
 
@@ -342,6 +347,16 @@ impl Auth {
                 "this account has no passkey to confirm with",
             ));
         }
+        self.remember_reauthentication(binding, id, passkeys).await
+    }
+    /// Stores a ceremony confirming the session `credential_id` with one of
+    /// `passkeys`, returning the options the browser passes to `WebAuthn`.
+    pub(super) async fn remember_reauthentication(
+        &self,
+        binding: &str,
+        credential_id: &str,
+        passkeys: Vec<Credential>,
+    ) -> Result<Ceremony> {
         let builder = self
             .0
             .webauthn
@@ -349,7 +364,7 @@ impl Auth {
         let (options, state) = self.0.webauthn.generate_challenge_authenticate(builder)?;
         let kind = Kind::Reauthenticate {
             state,
-            credential_id: id.clone(),
+            credential_id: credential_id.to_owned(),
         };
         self.remember(binding, kind, serde_json::to_value(options)?)
             .await
@@ -369,21 +384,29 @@ impl Auth {
         else {
             return Err(AuthError::stale_ceremony());
         };
+        // Refusals here keep the session: a 401 would tell the dashboard it
+        // had signed out. Only a session that ended answers 401.
         let caller = caller.caller()?;
         if caller.credential_id != credential_id {
-            return Err(AuthError::Unauthorized);
+            return Err(AuthError::stale_ceremony());
         }
         let response: PublicKeyCredential = serde_json::from_value(input.credential)
             .map_err(|_| AuthError::Invalid("invalid passkey response"))?;
         let passkey_id = super::URL_SAFE_NO_PAD.encode(response.get_credential_id());
         let verify = self.assertion(&mut state, &response);
-        if !self
-            .0
-            .store
+        let store = &self.0.store;
+        match store
             .confirm_with_passkey(caller, &passkey_id, verify, now_secs())
-            .await?
+            .await
         {
-            return Err(AuthError::Unauthorized);
+            Ok(true) => {}
+            Ok(false) => return Err(AuthError::Invalid(NOT_CONFIRMED)),
+            Err(AuthError::Webauthn(source)) => {
+                // Includes counter regressions that can indicate a cloned authenticator.
+                tracing::warn!(error = %source, "passkey confirmation failed");
+                return Err(AuthError::Invalid(NOT_CONFIRMED));
+            }
+            Err(error) => return Err(error),
         }
         tracing::info!(user_id = %caller.user_id, "confirmed session with passkey");
         Ok(())

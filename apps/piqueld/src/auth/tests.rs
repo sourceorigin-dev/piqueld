@@ -895,6 +895,44 @@ async fn only_browser_sessions_start_a_passkey_confirmation() {
     }
 }
 
+/// A confirmation that fails leaves the session signed in: a ceremony
+/// another session started is stale, and a passkey that isn't the account's
+/// is refused, neither with the 401 that tells the dashboard it signed out.
+#[tokio::test]
+async fn failed_passkey_confirmations_keep_the_session() {
+    let f = Fixture::new().await;
+    let alice = f.identity("alice", &Grants::admin()).await;
+    let (_, session) = f.stale_session(&alice).await;
+    let (_, other) = f.stale_session(&alice).await;
+    let id = session.credential_id().expect("a session has an ID");
+    // No passkey is offered: the test's passkeys hold no real credential.
+    let start = || f.auth.remember_reauthentication("browser", id, Vec::new());
+    let assertion = serde_json::json!({
+        "id": "AA",
+        "rawId": "AA",
+        "response": {
+            "authenticatorData": "AA",
+            "clientDataJSON": "AA",
+            "signature": "AA",
+            "userHandle": null
+        },
+        "extensions": {},
+        "type": "public-key"
+    });
+    let finish = |ceremony: piqueld_core::auth::Ceremony| piqueld_core::auth::CeremonyFinish {
+        id: ceremony.id,
+        credential: assertion.clone(),
+    };
+    for identity in [&other, &session] {
+        let ceremony = start().await.expect("the ceremony is stored");
+        let refused = f
+            .auth
+            .reauthenticate_finish(finish(ceremony), "browser", identity)
+            .await;
+        assert!(matches!(refused, Err(AuthError::Invalid(_))), "{refused:?}");
+    }
+}
+
 /// Confirming with a passkey verifies it under the writer lock and marks
 /// only the confirming credential fresh, never another account's passkey,
 /// a token, or a revoked credential.
