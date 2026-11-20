@@ -348,11 +348,11 @@ account management, device approval and own-passkey registration. It asks
 `StepUp`, which `Gate` provides, to show **Confirm with your passkey**: a
 native modal dialog above the form, which keeps its input. Once the session is
 confirmed it retries the refused request once. Actions refused together share
-the one prompt, and **Cancel** fails them all. Registration confirms at its
-start, before any passkey is created. If the confirmation lapses while the
-authenticator is busy, the refused finish has consumed its challenge: `register`
-confirms once more and runs a new start, ceremony and finish, never resending
-the consumed response.
+the one prompt, and **Cancel** fails them all. Registration wraps its whole
+start, ceremony and finish: a stale session is refused at the start, before
+any passkey is created. If the confirmation lapses while the authenticator is
+busy, the refused finish has consumed its challenge, so the retry runs a new
+start, ceremony and finish, never resending the consumed response.
 
 ## Rate limits
 
