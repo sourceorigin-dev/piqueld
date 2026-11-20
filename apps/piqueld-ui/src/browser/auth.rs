@@ -1004,7 +1004,7 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
                     // Confirming a login already signed in names it and the
                     // action it is about to take, instead of the access a
                     // new login gets.
-                    let (what, approve_label) = match &pending.confirms {
+                    let (what, approve_label, printed) = match &pending.confirms {
                         Some(confirms) => {
                             (
                                 view! {
@@ -1017,6 +1017,7 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
                                 }
                                     .into_any(),
                                 "Confirm CLI login",
+                                "piquelctl printed this code, the address it connected from and the login. Approve only if all three match this request.",
                             )
                         }
                         None => {
@@ -1035,6 +1036,7 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
                                 }
                                     .into_any(),
                                 "Approve CLI login",
+                                "piquelctl printed this code and the address it connected from. Approve only if both match this request.",
                             )
                         }
                     };
@@ -1048,9 +1050,7 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
                             <dd>{pending.age_label()}</dd>
                             {what}
                         </dl>
-                        <p class="hint mt-sm">
-                            "piquelctl printed this code and the address it connected from. Approve only if both match this request."
-                        </p>
+                        <p class="hint mt-sm">{printed}</p>
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary" on:click={approve}>
                                 {approve_label}
