@@ -26,14 +26,14 @@ pub struct AuditEvent {
     pub id: i64,
     /// Unix milliseconds.
     pub created_at_ms: i64,
-    /// Method and route template, e.g. `POST /api/v1/applications/{id}/deploy`,
-    /// followed for account management by what it changed, e.g.
-    /// `POST /api/v1/auth/manage revoke_credential "0190…"`, and for a change
-    /// recorded with it by what it committed, e.g.
-    /// `POST /api/v1/environments/{id}/deploy generation 4 operation 0190…`.
-    /// A record without a
-    /// caller reading `audit records missing before this one: N` marks where
-    /// N records could not be written.
+    /// Method and route template, e.g. `POST /api/v1/applications/{id}/deploy`.
+    /// A change recorded with it adds what it committed, e.g.
+    /// `POST /api/v1/environments/{id}/deploy generation 4 operation 0190…`
+    /// or `POST /api/v1/auth/manage account "0190…" grants (apps:read)`; a
+    /// refused or failed account change adds what it attempted, e.g.
+    /// `POST /api/v1/auth/manage revoke_credential "0190…"`. A record without
+    /// a caller reading `audit records missing before this one: N` marks
+    /// where N records could not be written.
     pub action: String,
     /// Whether the request was allowed.
     pub outcome: AuditOutcome,

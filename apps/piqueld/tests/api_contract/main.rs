@@ -1158,6 +1158,7 @@ async fn two_environments(
 
 mod acceptance;
 mod applications;
+mod audit;
 mod authentication;
 mod authorization;
 mod dashboard;

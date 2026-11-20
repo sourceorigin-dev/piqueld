@@ -138,19 +138,38 @@ connecting), and reads of logs, the daemon configuration, manifest downloads,
 and the account directory. Routine reads, such as dashboard polling of
 application and environment views (whose saved configuration `apps:read`
 already allows) and CLI logins still awaiting approval, appear only in daemon
-logs. A change to an application, environment or preview appends its
-`allowed` record in the transaction that commits it (`Store::accept`), so a
-committed change always has one, and an audit write that fails rolls the change
-back. A request that changes nothing, such as a replay, keeps a background
-record. Other records are written in the background so requests never wait for
+logs. Every change a request makes appends its `allowed` record in the transaction
+that commits it, so a committed change always has one, and an audit write that
+fails rolls the change back. This covers applications, environments and
+previews (`Store::accept`), secrets and their staged deletion, key recovery,
+notification destinations and retries, webhook secrets, account changes,
+sign-ins, issued sessions and links. A request that changes nothing, such as a
+replay or setting a value it already has, keeps a background record, as do
+refusals, failures, sensitive reads, and requests whose effect is not
+persistent state: plans, test notifications, DNS refreshes, builder checks and
+the in-memory steps of a sign-in. `audit::every_write_route_records_its_changes_or_changes_nothing`
+in the API contract tests lists each write route under one of the two, so a new
+route must choose.
+
+A store write a request makes takes an `Author`: who acts, re-read in the
+transaction, and the `AuditRequest` it came through (`Author::from(actor)` has
+none, for the daemon's own work). It ends with `Author::commit_recorded`, or
+`commit_signed_in` for a sign-in, whose record names who signed in. Both take
+the change's description, `None` when it changed nothing, and append the record
+after the write's own checks, such as freshness and lineage, so it commits or
+rolls back with them. The record names safe resulting values: IDs, names,
+grants, expiries and counts, never a secret, its hash or a URL. Only a record
+that was appended marks the request recorded, which tells the middleware to
+skip its background record of the success. Other records are written in the background so requests never wait for
 them; at most 1,024 wait at once, of which anonymous requests (made by neither an
 account nor the host operator) may hold only half; records beyond that are
 dropped and logged. The next record written then follows a `failed` record with
 status 503 and no caller, `audit records missing before this one: N`, counting
 those dropped or whose write failed, so the trail shows the gap. On shutdown the daemon waits up to 10 seconds for pending records and logs any
 it loses. Each record keeps the action
-(method and route template; for account management, followed by the
-requested change, e.g. `POST /api/v1/auth/manage set_grants "<account ID>" (apps:read)`), outcome (`allowed`, `denied`, or `failed`), status,
+(method and route template, followed by what a change committed, or, for a
+refused or failed account change, what it attempted, e.g.
+`POST /api/v1/auth/manage set_grants "<account ID>" (apps:read)`), outcome (`allowed`, `denied`, or `failed`), status,
 account, credential and its kind, whether the credential was limited, the
 network address (and, through the [tailnet node](../../user/reference/configuration.md#tailnet-node),
 the tailnet user or tags and device, such as `alice@example.com on laptop`),
