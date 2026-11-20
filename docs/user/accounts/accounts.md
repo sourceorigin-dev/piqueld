@@ -125,7 +125,9 @@ browser where it's signed in, or through an enrollment link.
 2. Under **Passkeys**, select **Add passkey**, and name it after the device it
    lives on, such as `Phone`.
 3. Select **Add passkey** in the dialog, and save the passkey when your
-   browser asks.
+   browser asks. If you signed in more than 2 minutes ago, the dashboard
+   first asks you to
+   [confirm with your passkey](#confirm-with-your-passkey).
 
 ![The Passkeys card of alice's account: Laptop and Phone, each with Edit and Remove buttons](../../images/accounts/passkeys.png)
 
@@ -199,6 +201,25 @@ so a lost or stolen passkey loses all the access it opened. The account's
 other passkeys were usually added through its first one, so removing that one
 may remove them too. To end only the passkey, clear
 **Also revoke what it issued** in the dialog, or add `--no-cascade`.
+
+## Confirm with your passkey
+
+Some actions need a passkey sign-in within the last 2 minutes: adding a
+passkey, and [recovering a lost secret key](recovery.md#a-lost-secret-key).
+They protect the account if someone gets hold of a signed-in browser.
+
+When your sign-in is older, the dashboard shows **Confirm with your passkey**
+over the form. Select **Confirm with passkey** and use your passkey; the
+action then continues by itself. **Cancel** stops the action and keeps what
+you entered, so you can try again.
+
+A session opened by a setup, invitation, enrollment or recovery link counts as
+older, until you confirm once. Using piqueld doesn't renew the 2 minutes: only
+a passkey does.
+
+API tokens can never confirm, so these actions refuse them with
+`reauthentication_required`. Use a signed-in account instead. The
+[host operator](recovery.md#the-host-operator) is never asked.
 
 ## Edit a profile
 

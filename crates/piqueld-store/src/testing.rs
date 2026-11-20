@@ -53,6 +53,15 @@ pub(super) fn credential(id: &str, kind: CredentialKind) -> NewCredential<'_> {
     }
 }
 
+/// `credential`, which a passkey proved just now, as a passkey sign-in or a
+/// device approval records it, so it may take sensitive actions.
+pub(super) fn proved(credential: NewCredential<'_>) -> NewCredential<'_> {
+    NewCredential {
+        authenticated_at: Some(crate::now_secs()),
+        ..credential
+    }
+}
+
 /// An API request by `alice` on `route`, whose changes record themselves.
 pub(super) fn audit_request(route: &str) -> crate::AuditRequest {
     crate::AuditRequest {
@@ -174,10 +183,11 @@ impl Store {
     }
 
     /// Seeds the account `name` holding `grants`, with an unscoped CLI
-    /// session also named `name`, and returns the caller acting with it.
+    /// session also named `name` that a passkey just proved, and returns the
+    /// caller acting with it.
     pub(super) async fn seed_caller(&self, name: &'static str, grants: &Grants) -> Actor<'static> {
         self.seed_auth_user(&user(name), grants).await;
-        self.insert_credential(name, &credential(name, CredentialKind::Cli))
+        self.insert_credential(name, &proved(credential(name, CredentialKind::Cli)))
             .await
             .unwrap();
         Actor::Account(Caller {

@@ -512,6 +512,20 @@ impl ClientError {
         matches!(self, Self::Api { status, .. } if *status == http::StatusCode::NOT_FOUND)
     }
 
+    /// Whether the daemon refused a sensitive action until the caller
+    /// confirms with a passkey (403 `reauthentication_required` with
+    /// `step_up`). It changed nothing, so the caller may confirm, then send
+    /// the same request once more. A refused registration finish is the
+    /// exception: it consumed its ceremony, so registration starts again.
+    /// API tokens, which never can, are refused without `step_up`.
+    #[must_use]
+    pub fn step_up(&self) -> bool {
+        matches!(self, Self::Api { status, error }
+            if *status == http::StatusCode::FORBIDDEN
+                && error.code == "reauthentication_required"
+                && error.details["step_up"] == true)
+    }
+
     /// Builds an `Endpoint` error for requests rejected before they are sent.
     pub(crate) fn invalid_request(message: impl std::fmt::Display) -> Self {
         Self::Endpoint {

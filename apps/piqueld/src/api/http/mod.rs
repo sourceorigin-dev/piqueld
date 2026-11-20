@@ -318,6 +318,10 @@ fn documented_router() -> OpenApiRouter<ApiState> {
         .routes(public!(auth::login_start))
         .routes(auth::sign_in_route(public!(auth::login_finish)))
         .routes(auth::sign_in_route(public!(auth::operator_sign_in)))
+        .routes(authenticated!(auth::reauthenticate_start))
+        .routes(auth::sign_in_route(authenticated!(
+            auth::reauthenticate_finish
+        )))
         .routes(authenticated!(auth::logout))
         .routes(authenticated!(auth::directory))
         .routes(authenticated!(auth::manage))

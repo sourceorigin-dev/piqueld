@@ -170,6 +170,7 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
             request.uri().path(),
             "/api/v1/auth/login/start"
                 | "/api/v1/auth/register/start"
+                | "/api/v1/auth/reauthenticate/start"
                 | "/api/v1/auth/device/start"
                 | "/api/v1/auth/login/operator"
         )
@@ -255,6 +256,8 @@ async fn cross_site(
     if !mutation || origin == Some(auth.origin()) {
         return false;
     }
+    // Confirming a session with a passkey is no exception: it needs the
+    // session cookie, so the cookie rule already asks for the Origin.
     let ceremony = path.contains("/auth/register/") || path.contains("/auth/login/");
     origin.is_some()
         || (bearer.is_none() && session.is_some())
@@ -529,10 +532,11 @@ pub(super) async fn me(Extension(identity): Extension<Identity>) -> Json<Session
 ///
 /// Public. Registers a new account by redeeming an invitation or setup secret,
 /// adds a passkey to an existing account by redeeming an enrollment link, or,
-/// when signed in, adds a passkey to the caller's own account. Sets a
-/// short-lived ceremony cookie that the finish request must present. Rate
-/// limited per client address (429 with `Retry-After`).
-#[utoipa::path(post,path="/api/v1/auth/register/start",operation_id="authRegistrationStart",request_body=RegistrationStart,responses((status=200,body=Ceremony)))]
+/// when signed in, adds a passkey to the caller's own account. That needs a
+/// passkey sign-in within the last 2 minutes (see `authReauthenticateStart`).
+/// Sets a short-lived ceremony cookie that the finish request must present.
+/// Rate limited per client address (429 with `Retry-After`).
+#[utoipa::path(post,path="/api/v1/auth/register/start",operation_id="authRegistrationStart",request_body=RegistrationStart,responses((status=200,body=Ceremony),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn register_start(
     Extension(auth): Extension<Auth>,
     identity: Option<Extension<Identity>>,
@@ -553,8 +557,9 @@ pub(super) async fn register_start(
 /// Public. Verifies the passkey against the ceremony started in the same
 /// browser. Redeeming an invitation, setup, or enrollment secret signs the
 /// account in with a session cookie; a signed-in caller adding a passkey to
-/// itself gets none.
-#[utoipa::path(post,path="/api/v1/auth/register/finish",operation_id="authRegistrationFinish",request_body=CeremonyFinish,responses((status=200,body=User)))]
+/// itself gets none. A finish refused because the caller's passkey sign-in
+/// lapsed meanwhile still consumes the ceremony: confirm, then start again.
+#[utoipa::path(post,path="/api/v1/auth/register/finish",operation_id="authRegistrationFinish",request_body=CeremonyFinish,responses((status=200,body=User),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn register_finish(
     Extension(auth): Extension<Auth>,
     identity: Option<Extension<Identity>>,
@@ -592,6 +597,41 @@ pub(super) async fn login_finish(
 ) -> Result<Response, ApiError> {
     let (user, token) = auth.login_finish(input, binding(&auth, &headers)?).await?;
     Ok(session_response(&auth, user, Some(token)))
+}
+/// Starts confirming the browser session with a passkey.
+///
+/// Sensitive actions, like adding a passkey, need a passkey sign-in within
+/// the last 2 minutes and otherwise fail with 403 `reauthentication_required`.
+/// This starts a passkey ceremony limited to the signed-in account's
+/// passkeys; finishing it makes the current session fresh, then retry the
+/// action. Only browser sessions confirm this way: API tokens are refused
+/// with 403 `reauthentication_required`. Sets a short-lived ceremony cookie
+/// that the finish request must present. Rate limited per client address
+/// (429 with `Retry-After`).
+#[utoipa::path(post,path="/api/v1/auth/reauthenticate/start",operation_id="authReauthenticateStart",responses((status=200,body=Ceremony),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
+pub(super) async fn reauthenticate_start(
+    Extension(auth): Extension<Auth>,
+    Extension(identity): Extension<Identity>,
+) -> Result<Response, ApiError> {
+    let binding = Auth::secret()?;
+    let ceremony = auth.reauthenticate_start(&identity, &binding).await?;
+    Ok(challenge_response(&auth, ceremony, &binding))
+}
+/// Finishes confirming the browser session with a passkey.
+///
+/// Verifies the passkey against the ceremony started by the same session in
+/// the same browser, and marks that session fresh. It issues no new session
+/// and changes nothing else about it.
+#[utoipa::path(post,path="/api/v1/auth/reauthenticate/finish",operation_id="authReauthenticateFinish",request_body=CeremonyFinish,responses((status=200,body=Managed)))]
+pub(super) async fn reauthenticate_finish(
+    Extension(auth): Extension<Auth>,
+    Extension(identity): Extension<Identity>,
+    headers: HeaderMap,
+    ApiJson(input): ApiJson<CeremonyFinish>,
+) -> Result<Json<Managed>, ApiError> {
+    auth.reauthenticate_finish(input, binding(&auth, &headers)?, &identity)
+        .await?;
+    Ok(Json(Managed::default()))
 }
 /// Signs out.
 ///
@@ -662,8 +702,8 @@ pub(super) async fn device_start(
 }
 /// Bodies [`device_start`] accepts: pending logins are kept in memory.
 const DEVICE_START_LIMIT_BYTES: usize = 16 * 1024;
-/// Bodies the other public sign-in endpoints accept: anyone may send them
-/// before signing in, and their JSON, passkey responses included, is small.
+/// Bodies the other sign-in and passkey ceremony endpoints accept: most are
+/// public, and their JSON, passkey responses included, is small.
 const SIGN_IN_LIMIT_BYTES: usize = 64 * 1024;
 /// Caps the bodies `routes` accept at `bytes`; larger ones answer 413 while
 /// they are read, before anything is buffered beyond it.
@@ -673,8 +713,8 @@ fn limit_body<S: Clone + Send + Sync + 'static>(
 ) -> UtoipaMethodRouter<S> {
     (schemas, paths, router.layer(DefaultBodyLimit::max(bytes)))
 }
-/// Registers public sign-in `routes` with the [`SIGN_IN_LIMIT_BYTES`] body
-/// limit.
+/// Registers sign-in and passkey ceremony `routes` with the
+/// [`SIGN_IN_LIMIT_BYTES`] body limit.
 pub(super) fn sign_in_route<S: Clone + Send + Sync + 'static>(
     routes: UtoipaMethodRouter<S>,
 ) -> UtoipaMethodRouter<S> {

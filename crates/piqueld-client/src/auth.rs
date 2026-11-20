@@ -83,6 +83,26 @@ impl Client {
     pub async fn auth_login_finish(&self, input: &CeremonyFinish) -> Result<User, ClientError> {
         self.generated.auth_login_finish(input).payload().await
     }
+    /// Starts confirming the current browser session with a passkey, which
+    /// sensitive actions refused with `reauthentication_required` need.
+    /// # Errors
+    /// Returns authentication, transport, decoding, or API failures.
+    pub async fn auth_reauthenticate_start(&self) -> Result<Ceremony, ClientError> {
+        self.generated.auth_reauthenticate_start().payload().await
+    }
+    /// Completes the passkey confirmation, making the current browser
+    /// session fresh for sensitive actions.
+    /// # Errors
+    /// Returns authentication, transport, decoding, or API failures.
+    pub async fn auth_reauthenticate_finish(
+        &self,
+        input: &CeremonyFinish,
+    ) -> Result<Managed, ClientError> {
+        self.generated
+            .auth_reauthenticate_finish(input)
+            .payload()
+            .await
+    }
     /// Revokes the credential used for this request.
     /// # Errors
     /// Returns authentication, transport, decoding, or API failures.

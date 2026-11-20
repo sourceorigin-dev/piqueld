@@ -108,6 +108,15 @@ export class Passkeys {
   async reset() {
     await this.cdp.send('WebAuthn.clearCredentials', { authenticatorId: this.id });
   }
+  /** The passkeys the authenticator holds, to `restore` after a `reset`. */
+  async credentials() {
+    return (await this.cdp.send('WebAuthn.getCredentials', { authenticatorId: this.id })).credentials;
+  }
+  async restore(credentials: Awaited<ReturnType<Passkeys['credentials']>>) {
+    for (const credential of credentials) {
+      await this.cdp.send('WebAuthn.addCredential', { authenticatorId: this.id, credential });
+    }
+  }
   async close() { await this.cdp.detach(); }
 }
 
@@ -159,6 +168,14 @@ export async function proof(page: Page, ceremony: Ceremony, registration = false
     return (credential as PublicKeyCredential & { toJSON(): { response: Record<string, unknown> } }).toJSON();
   }, { options: ceremony.options, registration });
   return { id: ceremony.id, credential };
+}
+
+/** Confirms the signed-in browser session with its passkey, as the
+ * dashboard's prompt does, so sensitive actions in the next 2 minutes go
+ * through without asking. */
+export async function confirmPasskey(page: Page) {
+  const ceremony = await auth<Ceremony>(page, 'reauthenticate/start', {});
+  await auth(page, 'reauthenticate/finish', await proof(page, ceremony));
 }
 
 /** Calls the API from the signed-in page, returning the response's `data`.

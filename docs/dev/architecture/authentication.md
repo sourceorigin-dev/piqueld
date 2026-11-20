@@ -176,7 +176,17 @@ has none until its passkey signs in, and API tokens never have one.
 `reauthentication_required`. Its `step_up` detail is false for API tokens,
 which no passkey can confirm. `Authority::require_fresh` checks it inside a
 write's transaction; `Actor::require_fresh` exempts the host operator, and
-`Identity::require_fresh` refuses early. No endpoint calls these checks yet.
+`Identity::require_fresh` refuses early. Adding a passkey to one's own
+account checks it at registration start, before any passkey is created, and
+again when storing it; secret key recovery checks it with `system:operate`.
+
+A browser session confirms through `POST /auth/reauthenticate/start` and
+`/finish`: a passkey ceremony bound to the ceremony cookie and to the session
+that started it, offering only its account's passkeys.
+`Store::confirm_with_passkey` verifies the assertion under the writer lock, as
+sign-in does, and sets `authenticated_at` on that session alone. It issues no
+session and changes neither expiry nor grants. CLI logins and the host
+operator can't use it, and API tokens are refused.
 
 Browser sessions use HTTP-only, `SameSite=Strict` cookies. For HTTPS origins
 they are also `Secure` and use the `__Host-` prefix, so applications on sibling
@@ -332,22 +342,38 @@ dropping the previous one's data, drafts and one-time secrets. Failed
 mutations are never replayed. Signing out treats a 401 as success, so it works
 when the server has already invalidated the session.
 
+A 403 `reauthentication_required` with `step_up` set is different: the daemon
+refuses it before changing anything. `confirmed` in `browser/auth.rs` wraps
+account management, device approval and own-passkey registration. It asks
+`StepUp`, which `Gate` provides, to show **Confirm with your passkey**: a
+native modal dialog above the form, which keeps its input. Once the session is
+confirmed it retries the refused request once. Actions refused together share
+the one prompt, and **Cancel** fails them all. A confirmation belongs to the
+session that asked for it: when that session expires or another identity
+signs in, `Gate` cancels every pending one, and `confirmed` never retries once
+the signed-in identity has changed. Registration wraps its whole
+start, ceremony and finish: a stale session is refused at the start, before
+any passkey is created. If the confirmation lapses while the authenticator is
+busy, the refused finish has consumed its challenge, so the retry runs a new
+start, ceremony and finish, never resending the consumed response.
+
 ## Rate limits
 
-Public registration, login, and device-start requests, and redemptions of host
-operator sign-in links, are limited to 30 starts per TCP peer per minute,
-across all listeners. An unknown, used or expired sign-in link is turned away
-by a read, without waiting for the store's writer. Requests refused for their Host,
-Fetch Metadata, or Origin do not count. IPv6 peers are grouped by /64
-prefix, IPv4-mapped addresses count as IPv4, and Unix socket callers share one
-peer bucket. Excess requests receive
-HTTP 429 `authentication_busy` and `Retry-After: 60`; ongoing ceremonies and authenticated API work are
-unaffected. There is no daemon-wide limit, so one caller cannot block sign-in for
-everyone else. Client-supplied forwarded IP headers are deliberately ignored: callers behind the
-same external reverse proxy share its allowance. The daemon's own tailnet node
-and [dashboard hostname](../../user/networking/private-routes.md#serve-the-dashboard-on-your-own-domain) gateway pass each
-client's tailnet address. Limits reset on daemon restart, along
-with pending ceremonies and device requests.
+Public registration, login, and device-start requests, passkey confirmation
+starts, and redemptions of host operator sign-in links, are limited to 30
+starts per TCP peer per minute, across all listeners. An unknown, used or
+expired sign-in link is turned away by a read, without waiting for the store's
+writer. Requests refused for their Host, Fetch Metadata, or Origin do not
+count. IPv6 peers are grouped by /64 prefix, IPv4-mapped addresses count as
+IPv4, and Unix socket callers share one peer bucket. Excess requests receive
+HTTP 429 `authentication_busy` and `Retry-After: 60`; ongoing ceremonies and
+authenticated API work are unaffected. There is no daemon-wide limit, so one
+caller cannot block sign-in for everyone else. Client-supplied forwarded IP
+headers are deliberately ignored: callers behind the same external reverse
+proxy share its allowance. The daemon's own tailnet node and [dashboard
+hostname](../../user/networking/private-routes.md#serve-the-dashboard-on-your-own-domain)
+gateway pass each client's tailnet address. Limits reset on daemon restart,
+along with pending ceremonies and device requests.
 
 Never expose piqueld to the internet, including through a reverse proxy. These
 limits protect a trusted network from accidents, not a public endpoint from

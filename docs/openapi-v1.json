@@ -28056,6 +28056,86 @@
         "x-piqueld-access": "authenticated"
       }
     },
+    "/api/v1/auth/reauthenticate/finish": {
+      "post": {
+        "description": "Verifies the passkey against the ceremony started by the same session in\nthe same browser, and marks that session fresh. It issues no new session\nand changes nothing else about it.",
+        "operationId": "authReauthenticateFinish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CeremonyFinish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Managed"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request body stopped arriving"
+          }
+        },
+        "summary": "Finishes confirming the browser session with a passkey.",
+        "x-piqueld-access": "authenticated"
+      }
+    },
+    "/api/v1/auth/reauthenticate/start": {
+      "post": {
+        "description": "Sensitive actions, like adding a passkey, need a passkey sign-in within\nthe last 2 minutes and otherwise fail with 403 `reauthentication_required`.\nThis starts a passkey ceremony limited to the signed-in account's\npasskeys; finishing it makes the current session fresh, then retry the\naction. Only browser sessions confirm this way: API tokens are refused\nwith 403 `reauthentication_required`. Sets a short-lived ceremony cookie\nthat the finish request must present. Rate limited per client address\n(429 with `Retry-After`).",
+        "operationId": "authReauthenticateStart",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ceremony"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and send the request again, except a refused registration finish, which consumed its ceremony: start again from `authRegistrationStart`. API tokens never can. Also returned when the TCP authority or browser origin is not trusted"
+          }
+        },
+        "summary": "Starts confirming the browser session with a passkey.",
+        "x-piqueld-access": "authenticated"
+      }
+    },
     "/api/v1/auth/recovery": {
       "post": {
         "description": "Public, but only over the Unix socket and only to the host operator: root\nor the daemon's own user, identified by the kernel (`SO_PEERCRED`), sending\nno credential, which keeps its meaning; anyone else gets 404. The link is\nvalid for 24 hours, replaces any earlier one, and registers a new account\nwith `admin` on every application. Issuing it raises a `security`\nnotification.",
@@ -28109,7 +28189,7 @@
     },
     "/api/v1/auth/register/finish": {
       "post": {
-        "description": "Public. Verifies the passkey against the ceremony started in the same\nbrowser. Redeeming an invitation, setup, or enrollment secret signs the\naccount in with a session cookie; a signed-in caller adding a passkey to\nitself gets none.",
+        "description": "Public. Verifies the passkey against the ceremony started in the same\nbrowser. Redeeming an invitation, setup, or enrollment secret signs the\naccount in with a session cookie; a signed-in caller adding a passkey to\nitself gets none. A finish refused because the caller's passkey sign-in\nlapsed meanwhile still consumes the ceremony: confirm, then start again.",
         "operationId": "authRegistrationFinish",
         "requestBody": {
           "content": {
@@ -28140,7 +28220,7 @@
                 }
               }
             },
-            "description": "TCP authority or browser origin is not trusted"
+            "description": "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and send the request again, except a refused registration finish, which consumed its ceremony: start again from `authRegistrationStart`. API tokens never can. Also returned when the TCP authority or browser origin is not trusted"
           },
           "408": {
             "content": {
@@ -28160,7 +28240,7 @@
     },
     "/api/v1/auth/register/start": {
       "post": {
-        "description": "Public. Registers a new account by redeeming an invitation or setup secret,\nadds a passkey to an existing account by redeeming an enrollment link, or,\nwhen signed in, adds a passkey to the caller's own account. Sets a\nshort-lived ceremony cookie that the finish request must present. Rate\nlimited per client address (429 with `Retry-After`).",
+        "description": "Public. Registers a new account by redeeming an invitation or setup secret,\nadds a passkey to an existing account by redeeming an enrollment link, or,\nwhen signed in, adds a passkey to the caller's own account. That needs a\npasskey sign-in within the last 2 minutes (see `authReauthenticateStart`).\nSets a short-lived ceremony cookie that the finish request must present.\nRate limited per client address (429 with `Retry-After`).",
         "operationId": "authRegistrationStart",
         "requestBody": {
           "content": {
@@ -28191,7 +28271,7 @@
                 }
               }
             },
-            "description": "TCP authority or browser origin is not trusted"
+            "description": "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and send the request again, except a refused registration finish, which consumed its ceremony: start again from `authRegistrationStart`. API tokens never can. Also returned when the TCP authority or browser origin is not trusted"
           },
           "408": {
             "content": {
@@ -33027,7 +33107,7 @@
     },
     "/api/v1/system/secrets/recover-key": {
       "post": {
-        "description": "Discards every application's stored secret values, every environment's\ngenerated secret values, and the repository webhook secrets (applications\ngenerate new ones), and deletes the notification destinations, whose URLs\nit encrypts; metadata and running services are kept. Only a lost key\nis recovered: while something is encrypted (the key verifier, a value or a\nwebhook secret), one that is missing, does not hold 32 bytes, or decrypts\nnone of it. Fails with 409 while the key decrypts the verifier, when there\nis no verifier but it decrypts a value or webhook secret, or when nothing\nis encrypted and the key file is missing or loads. When nothing is\nencrypted but the key file does not hold 32 bytes, moves it aside and\nsucceeds with nothing discarded. Fails with 503 `secret_storage_unavailable`, discarding\nnothing, when it decrypts a value or webhook secret but not a corrupt\nverifier, or can't be read for another reason, such as an I/O error or a\nkey file that is not private.\nThe next value write generates a new key.",
+        "description": "Discards every application's stored secret values, every environment's\ngenerated secret values, and the repository webhook secrets (applications\ngenerate new ones), and deletes the notification destinations, whose URLs\nit encrypts; metadata and running services are kept. Only a lost key\nis recovered: while something is encrypted (the key verifier, a value or a\nwebhook secret), one that is missing, does not hold 32 bytes, or decrypts\nnone of it. Fails with 409 while the key decrypts the verifier, when there\nis no verifier but it decrypts a value or webhook secret, or when nothing\nis encrypted and the key file is missing or loads. When nothing is\nencrypted but the key file does not hold 32 bytes, moves it aside and\nsucceeds with nothing discarded. Fails with 503 `secret_storage_unavailable`, discarding\nnothing, when it decrypts a value or webhook secret but not a corrupt\nverifier, or can't be read for another reason, such as an I/O error or a\nkey file that is not private.\nThe next value write generates a new key. Accounts need a passkey\nsign-in within the last 2 minutes; API tokens cannot recover the key.",
         "operationId": "recoverSecretKey",
         "responses": {
           "200": {
@@ -33048,7 +33128,7 @@
                 }
               }
             },
-            "description": "TCP authority or browser origin is not trusted"
+            "description": "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and send the request again, except a refused registration finish, which consumed its ceremony: start again from `authRegistrationStart`. API tokens never can. Also returned when the TCP authority or browser origin is not trusted"
           },
           "409": {
             "content": {

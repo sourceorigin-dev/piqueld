@@ -227,7 +227,8 @@ impl Store {
     /// other failures, such as I/O errors or a key that is not private, are
     /// returned too, all without discarding anything. Repeating it, also after
     /// a crash, never creates a key.
-    /// The author's actor needs `system:operate`, checked in the recovering
+    /// The author's actor needs `system:operate` and a recent passkey sign-in
+    /// (see [`crate::Actor::require_fresh`]), checked in the recovering
     /// transaction, which also records the request's discard, even if
     /// moving the key aside then fails.
     /// # Errors
@@ -244,6 +245,7 @@ impl Store {
             piqueld_core::access::GlobalPermission::SystemOperate,
         );
         actor.require_on(&mut tx, operate, None).await?;
+        actor.require_fresh(&mut tx).await?;
         let verifier = Self::secret_key_verifier_on(&mut *tx).await?;
         let key = match SecretCipher::load(&self.secret_key_path, true) {
             Ok(cipher) => Ok(cipher),

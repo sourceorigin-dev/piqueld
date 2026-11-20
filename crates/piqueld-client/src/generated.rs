@@ -7943,6 +7943,104 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
+    /*Finishes confirming the browser session with a passkey
+
+    Verifies the passkey against the ceremony started by the same session in
+    the same browser, and marks that session fresh. It issues no new session
+    and changes nothing else about it.
+
+    Sends a `POST` request to `/api/v1/auth/reauthenticate/finish`
+
+    */
+    pub async fn auth_reauthenticate_finish<'a>(
+        &'a self,
+        body: &'a piqueld_core::auth::CeremonyFinish,
+    ) -> Result<ResponseValue<piqueld_core::auth::Managed>, Error<piqueld_core::api::ErrorBody>>
+    {
+        let url = format!("{}/api/v1/auth/reauthenticate/finish", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .json(&body)
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "auth_reauthenticate_finish",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            408u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Starts confirming the browser session with a passkey
+
+    Sensitive actions, like adding a passkey, need a passkey sign-in within
+    the last 2 minutes and otherwise fail with 403 `reauthentication_required`.
+    This starts a passkey ceremony limited to the signed-in account's
+    passkeys; finishing it makes the current session fresh, then retry the
+    action. Only browser sessions confirm this way: API tokens are refused
+    with 403 `reauthentication_required`. Sets a short-lived ceremony cookie
+    that the finish request must present. Rate limited per client address
+    (429 with `Retry-After`).
+
+    Sends a `POST` request to `/api/v1/auth/reauthenticate/start`
+
+    */
+    pub async fn auth_reauthenticate_start<'a>(
+        &'a self,
+    ) -> Result<ResponseValue<piqueld_core::auth::Ceremony>, Error<piqueld_core::api::ErrorBody>>
+    {
+        let url = format!("{}/api/v1/auth/reauthenticate/start", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "auth_reauthenticate_start",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
     /*Issues a one-time admin recovery link
 
     Public, but only over the Unix socket and only to the host operator: root
@@ -8001,7 +8099,8 @@ impl Client {
     Public. Verifies the passkey against the ceremony started in the same
     browser. Redeeming an invitation, setup, or enrollment secret signs the
     account in with a session cookie; a signed-in caller adding a passkey to
-    itself gets none.
+    itself gets none. A finish refused because the caller's passkey sign-in
+    lapsed meanwhile still consumes the ceremony: confirm, then start again.
 
     Sends a `POST` request to `/api/v1/auth/register/finish`
 
@@ -8049,9 +8148,10 @@ impl Client {
 
     Public. Registers a new account by redeeming an invitation or setup secret,
     adds a passkey to an existing account by redeeming an enrollment link, or,
-    when signed in, adds a passkey to the caller's own account. Sets a
-    short-lived ceremony cookie that the finish request must present. Rate
-    limited per client address (429 with `Retry-After`).
+    when signed in, adds a passkey to the caller's own account. That needs a
+    passkey sign-in within the last 2 minutes (see `authReauthenticateStart`).
+    Sets a short-lived ceremony cookie that the finish request must present.
+    Rate limited per client address (429 with `Retry-After`).
 
     Sends a `POST` request to `/api/v1/auth/register/start`
 
@@ -11664,7 +11764,8 @@ impl Client {
     nothing, when it decrypts a value or webhook secret but not a corrupt
     verifier, or can't be read for another reason, such as an I/O error or a
     key file that is not private.
-    The next value write generates a new key.
+    The next value write generates a new key. Accounts need a passkey
+    sign-in within the last 2 minutes; API tokens cannot recover the key.
 
     Sends a `POST` request to `/api/v1/system/secrets/recover-key`
 

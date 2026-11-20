@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises';
 import {
   test, expect, api, auth, adminToken, apply, card, register, proof, resolveEnvironment, webManifest, applicationTab, environmentTab, title, head,
-  accountRows, openAccount, done, signUp, Passkeys, type Account, type Session, type Directory, type Managed, type Ceremony,
+  accountRows, openAccount, done, signUp, confirmPasskey, Passkeys, type Account, type Session, type Directory, type Managed, type Ceremony,
 } from '../fixtures.js';
 
 test('setup gates anonymous access, closes permanently, and supports username-less login', async ({ page, daemon, passkeys }) => {
@@ -117,6 +117,120 @@ test('an application shows only the controls the account may use on it', async (
   await expect(head(page).getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Delete environment', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Rename environment', exact: true })).toBeDisabled();
+});
+
+test('a confirmation pending when the session ends is cancelled, never retried as someone else', async ({ page, account, passkeys }) => {
+  void account;
+  await confirmPasskey(page);
+  const link = (await auth<Managed>(page, 'manage', { action: 'create_invitation', grants: [] })).invitation_url;
+  // Each account signs in with its own passkey: the authenticator holds only
+  // the one whose turn it is.
+  const alices = await passkeys.credentials();
+  await passkeys.reset();
+  await register(page, link, 'bob');
+  const bobs = await passkeys.credentials();
+  await api(page, 'logout', {});
+  await passkeys.reset();
+  await passkeys.restore(alices);
+  await page.goto('/dashboard/');
+  await page.getByRole('button', { name: 'Sign in with a passkey', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: 'Dashboard navigation' })).toBeVisible();
+
+  // Alice's invitation is refused for want of a recent sign-in.
+  let invitations = 0;
+  await page.route('**/api/v1/auth/manage', async route => {
+    if (route.request().postDataJSON().action !== 'create_invitation') return route.continue();
+    if (++invitations > 1) return route.continue();
+    await route.fulfill({ status: 403, json: {
+      code: 'reauthentication_required', message: 'Confirm with your passkey', details: { step_up: true },
+    } });
+  });
+  await page.goto('/dashboard/accounts');
+  await page.getByRole('button', { name: 'Invite', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Create invitation' }).getByRole('button', { name: 'Create link', exact: true }).click();
+  const confirming = page.getByRole('dialog', { name: 'Confirm with your passkey' });
+  await expect(confirming).toBeVisible();
+  // Her session ends while she is asked, and bob signs in instead.
+  await api(page, 'logout', {});
+  await confirming.getByRole('button', { name: 'Confirm with passkey', exact: true }).click();
+  const expired = page.getByRole('dialog', { name: 'Your session has expired' });
+  await expect(expired).toBeVisible();
+  await passkeys.reset();
+  await passkeys.restore(bobs);
+  await expired.getByRole('button', { name: 'Sign in with a passkey', exact: true }).click();
+  await expect(expired).toHaveCount(0);
+  await expect(page.getByRole('main')).toBeVisible();
+  // Alice's confirmation went with her session, so nothing asks bob to
+  // confirm it, and her invitation is never sent again.
+  await expect(confirming).toHaveCount(0);
+  expect(invitations).toBe(1);
+});
+
+test('adding a passkey asks to confirm with an existing one, then continues once', async ({ page, account, passkeys }) => {
+  void account;
+  const alice = await openAccount(page, 'alice', 'Access');
+  await alice.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  const adding = page.getByRole('dialog', { name: 'Add passkey' });
+  await adding.getByLabel('Passkey name', { exact: true }).fill('Phone');
+  // The account signed up through its setup link, which is no passkey sign-in.
+  const confirming = page.getByRole('dialog', { name: 'Confirm with your passkey' });
+  await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  await confirming.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(adding.getByText(/^Cancelled/)).toBeVisible();
+  await expect(adding.getByLabel('Passkey name', { exact: true })).toHaveValue('Phone');
+  // Confirming retries the refused request: this authenticator already holds
+  // alice's passkey, so only the registration it starts then fails.
+  await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  await confirming.getByRole('button', { name: 'Confirm with passkey', exact: true }).click();
+  await expect(confirming).toHaveCount(0);
+  await expect(adding.getByText(/^Cancelled/)).toHaveCount(0);
+  await expect(adding.locator('.notice')).toBeVisible();
+  // The session is fresh now, so another authenticator adds without asking.
+  await passkeys.reset();
+  await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  await expect(page.getByText('Passkey added.', { exact: true })).toBeVisible();
+  await expect(confirming).toHaveCount(0);
+});
+
+test('a passkey registration whose confirmation lapsed confirms again and starts over', async ({ page, account, passkeys }) => {
+  void account;
+  await confirmPasskey(page);
+  // The authenticator holds alice's passkey only while she confirms with it:
+  // registering refuses an authenticator that holds one already.
+  const alices = await passkeys.credentials();
+  await passkeys.reset();
+  let starts = 0;
+  await page.route('**/api/v1/auth/register/start', async route => {
+    if (++starts === 2) await passkeys.reset();
+    await route.continue();
+  });
+  // The first finish is refused as if the 2 minutes ran out meanwhile.
+  const finishes: string[] = [];
+  await page.route('**/api/v1/auth/register/finish', async route => {
+    finishes.push(route.request().postDataJSON().id);
+    if (finishes.length > 1) return route.continue();
+    await route.fulfill({ status: 403, json: {
+      code: 'reauthentication_required', message: 'Confirm with your passkey', details: { step_up: true },
+    } });
+  });
+  const alice = await openAccount(page, 'alice', 'Access');
+  await alice.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  const adding = page.getByRole('dialog', { name: 'Add passkey' });
+  await adding.getByLabel('Passkey name', { exact: true }).fill('Phone');
+  await adding.getByRole('button', { name: 'Add passkey', exact: true }).click();
+  const confirming = page.getByRole('dialog', { name: 'Confirm with your passkey' });
+  await expect(confirming).toBeVisible();
+  // Without the passkey the refused ceremony created, which is alice's too.
+  await passkeys.reset();
+  await passkeys.restore(alices);
+  await confirming.getByRole('button', { name: 'Confirm with passkey', exact: true }).click();
+  await expect(page.getByText('Passkey added.', { exact: true })).toBeVisible();
+  // A new ceremony, never the consumed one again.
+  expect(starts).toBe(2);
+  expect(finishes).toHaveLength(2);
+  expect(finishes[1]).not.toBe(finishes[0]);
+  const keys = alice.getByRole('list', { name: 'Passkeys' }).getByRole('listitem');
+  await expect(keys).toHaveCount(2);
 });
 
 test('copy buttons are hidden without a clipboard API, as on plain HTTP origins', async ({ page, account }) => {

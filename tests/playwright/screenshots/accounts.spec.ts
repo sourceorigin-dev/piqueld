@@ -1,4 +1,4 @@
-import { adminToken, accountRows, openAccount, chooseGrants, done, expect, signUp, submitRegistration } from '../fixtures.js';
+import { adminToken, accountRows, openAccount, chooseGrants, confirmPasskey, done, expect, signUp, submitRegistration } from '../fixtures.js';
 import { test, accountForm, accounts, invite, shoot } from './docs.js';
 
 // docs/user/accounts: the directory, alice's passkeys, a new API token and
@@ -19,6 +19,8 @@ test('accounts', async ({ page, browser, daemon, cli, passkeys }) => {
 
   // A second passkey, from another device: the first one is already registered.
   let alice = await openAccount(page, 'alice', 'Access');
+  // Adding a passkey needs a recent sign-in, confirmed with the first one.
+  await confirmPasskey(page);
   await passkeys.reset();
   await alice.getByRole('button', { name: 'Add passkey', exact: true }).click();
   const adding = page.getByRole('dialog', { name: 'Add passkey' });

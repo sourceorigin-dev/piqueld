@@ -328,10 +328,11 @@ pub(super) async fn delete_stored(
 /// nothing, when it decrypts a value or webhook secret but not a corrupt
 /// verifier, or can't be read for another reason, such as an I/O error or a
 /// key file that is not private.
-/// The next value write generates a new key.
+/// The next value write generates a new key. Accounts need a passkey
+/// sign-in within the last 2 minutes; API tokens cannot recover the key.
 #[utoipa::path(post,path="/api/v1/system/secrets/recover-key",operation_id="recoverSecretKey",
     responses((status=200,description="Values discarded; the next value write generates a new key",body=Envelope<piqueld_core::api::SecretKeyRecovery>),
-    ApiErrors<409, 503>))]
+    (status=403,response=inline(super::openapi::ReauthenticationResponse)),ApiErrors<409, 503>))]
 pub(super) async fn recover_key(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
