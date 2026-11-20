@@ -1,6 +1,5 @@
 use super::*;
 use crate::Actor::Daemon;
-use crate::Attribution;
 use piqueld_core::manifest::ApplicationTemplate;
 
 /// The [`prebuilt`](crate::testing::prebuilt) application these tests save.
@@ -133,7 +132,7 @@ async fn deletion_reservations_survive_restart_and_do_not_block_other_writes() {
     assert_eq!(retry.id, deletion.id);
     assert_eq!(retry.versions, deletion.versions);
     store
-        .finish_secret_deletion(Attribution::default(), &env, "token", &retry.id)
+        .finish_secret_deletion(Daemon, &env, "token", &retry.id)
         .await
         .unwrap();
     store
@@ -141,7 +140,7 @@ async fn deletion_reservations_survive_restart_and_do_not_block_other_writes() {
         .await
         .unwrap();
     store
-        .finish_secret_deletion(Attribution::default(), &env, "token", &deletion.id)
+        .finish_secret_deletion(Daemon, &env, "token", &deletion.id)
         .await
         .unwrap();
     let names = store.secret_names(&env).await.unwrap();
@@ -195,7 +194,7 @@ async fn wrong_master_key_blocks_writes_and_original_key_restores_them() {
         .await
         .unwrap();
     store
-        .finish_secret_deletion(Attribution::default(), &env, "token", &deletion.id)
+        .finish_secret_deletion(Daemon, &env, "token", &deletion.id)
         .await
         .unwrap();
     std::fs::remove_file(&key).unwrap();
@@ -244,7 +243,7 @@ async fn retained_version_quota_rejects_writes_without_removing_values() {
         .await
         .unwrap();
     store
-        .finish_secret_deletion(Attribution::default(), &env, "token", &deletion.id)
+        .finish_secret_deletion(Daemon, &env, "token", &deletion.id)
         .await
         .unwrap();
     store
@@ -834,7 +833,7 @@ async fn secret_writes_use_the_callers_current_grants() {
         .unwrap();
     store.interrupt_actions(None).await.unwrap();
     store
-        .finish_secret_deletion(by, &production, "token", &deletion.id)
+        .finish_secret_deletion(caller, &production, "token", &deletion.id)
         .await
         .unwrap();
     let expected = [
@@ -957,4 +956,132 @@ async fn secret_key_check_reports_the_key_without_changing_it() {
         .await
         .unwrap();
     assert_eq!(verifiers, 0);
+}
+
+/// Each stage of a requested secret deletion commits with its own audit
+/// record, while resuming a reservation and a stale completion change
+/// nothing, record nothing, and leave their request's background record.
+/// Key recovery records what it discarded.
+#[tokio::test]
+async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
+    let temp = tempfile::tempdir().expect("a temporary directory is created");
+    let store = Store::open_unsynced(temp.path().join("db"))
+        .await
+        .expect("the store opens");
+    let app = application();
+    store
+        .save_application(&ApplicationTemplate::from(&app), None, None)
+        .await
+        .expect("the application is saved");
+    let env = store.production(app.id()).await;
+    store
+        .put_secret(Daemon, &env, "token", 0, b"value".to_vec())
+        .await
+        .expect("the generated secret is stored");
+    store
+        .put_stored_secret(Daemon, app.id(), "stripe", 0, b"value".to_vec(), None)
+        .await
+        .expect("the stored secret to delete is stored");
+    store
+        .put_stored_secret(Daemon, app.id(), "kept", 0, b"value".to_vec(), None)
+        .await
+        .expect("the stored secret to discard is stored");
+    let route = "DELETE /api/v1/environments/{id}/secrets/{name}";
+    // Runtime cleanup failed after the first reservation, so a retry resumes
+    // it, and a late retry then completes a deletion already done. Each
+    // stage runs under its own request, which only a recorded change marks.
+    macro_rules! stages {
+        ($begin:ident, $finish:ident, $owner:expr, $name:literal) => {{
+            let requests = [(); 4].map(|()| crate::testing::audit_request(route));
+            let by = |stage: usize| crate::Author {
+                actor: Daemon,
+                request: Some(&requests[stage]),
+            };
+            let deletion = store
+                .$begin(by(0), $owner, $name, 1)
+                .await
+                .expect("the deletion is reserved");
+            store
+                .$begin(by(1), $owner, $name, 1)
+                .await
+                .expect("the reservation resumes");
+            for stage in [2, 3] {
+                store
+                    .$finish(by(stage), $owner, $name, &deletion.id)
+                    .await
+                    .expect("completing the deletion succeeds, or does nothing");
+            }
+            let recorded = requests.each_ref().map(|request| request.recorded.get());
+            assert_eq!(recorded, [true, false, true, false]);
+            deletion.id
+        }};
+    }
+    let token = stages!(begin_secret_deletion, finish_secret_deletion, &env, "token");
+    let stripe = stages!(
+        begin_stored_secret_deletion,
+        finish_stored_secret_deletion,
+        app.id(),
+        "stripe"
+    );
+    std::fs::write(temp.path().join("secrets.key"), [42; 32]).expect("the lost key is written");
+    let request = crate::testing::audit_request(route);
+    let author = crate::Author {
+        actor: Daemon,
+        request: Some(&request),
+    };
+    store
+        .recover_secret_key(author)
+        .await
+        .expect("the lost key is recovered");
+    assert!(request.recorded.get());
+    assert_eq!(
+        store.audit_actions().await,
+        [
+            format!("{route} secret \"token\" deletion {token} reserved"),
+            format!("{route} secret \"token\" deletion {token} completed"),
+            format!("{route} secret \"stripe\" deletion {stripe} reserved"),
+            format!("{route} secret \"stripe\" deletion {stripe} completed"),
+            format!(
+                "{route} secret key recovery discarded 1 values across 0 environments \
+                and 1 applications, 0 webhook secrets, and 0 notification destinations"
+            ),
+        ]
+    );
+}
+
+/// Key recovery records the webhook secrets it deletes, even when they are
+/// all it discards.
+#[tokio::test]
+async fn key_recovery_records_the_webhook_secrets_it_deletes() {
+    let temp = tempfile::tempdir().expect("a temporary directory is created");
+    let store = Store::open_unsynced(temp.path().join("db"))
+        .await
+        .expect("the store opens");
+    let app = application();
+    store
+        .save_application(&ApplicationTemplate::from(&app), None, None)
+        .await
+        .expect("the application is saved");
+    store
+        .generate_webhook_secret(Daemon, app.id())
+        .await
+        .expect("the webhook secret is generated");
+    std::fs::write(temp.path().join("secrets.key"), [42; 32]).expect("the lost key is written");
+    let route = "POST /api/v1/system/secrets/recover-key";
+    let request = crate::testing::audit_request(route);
+    let author = crate::Author {
+        actor: Daemon,
+        request: Some(&request),
+    };
+    store
+        .recover_secret_key(author)
+        .await
+        .expect("the lost key is recovered");
+    assert_eq!(
+        store.audit_actions().await,
+        [format!(
+            "{route} secret key recovery discarded 0 values across 0 environments \
+            and 0 applications, 1 webhook secrets, and 0 notification destinations"
+        )]
+    );
 }

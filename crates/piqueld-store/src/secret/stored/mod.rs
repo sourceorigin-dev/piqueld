@@ -5,7 +5,7 @@ use super::{
     NormalizedApplication, SecretOwner, SecretScope, SecretSource, Store, StoreError,
     deletion::SecretDeletion, now_ms,
 };
-use crate::{Actor, Attribution, Author};
+use crate::{Actor, Author};
 use piqueld_core::{
     ApplicationId, EnvironmentId, ValidationError, ValidationErrors,
     access::Permission,
@@ -441,11 +441,13 @@ impl Store {
     /// Returns a storage error.
     pub async fn begin_stored_secret_deletion(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
         name: &str,
         expected: i64,
     ) -> Result<SecretDeletion, StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::require_secrets_write_on(&mut tx, actor, application).await?;
         let id = application.as_str();
@@ -482,6 +484,7 @@ impl Store {
                 }
             }
         }
+        let reserving = row.deletion_id.is_none();
         let deletion_id = row
             .deletion_id
             .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
@@ -494,7 +497,10 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        tx.commit().await.map_err(StoreError::database)?;
+        let change = reserving.then(|| Self::deletion_change(name, &deletion_id, "reserved"));
+        author
+            .commit_recorded(tx, 200, change.as_deref(), (Some(id), None))
+            .await?;
         Ok(SecretDeletion {
             id: deletion_id,
             versions,
@@ -509,11 +515,12 @@ impl Store {
     /// Returns a storage error.
     pub async fn finish_stored_secret_deletion(
         &self,
-        actor: Attribution<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
         name: &str,
         deletion_id: &str,
     ) -> Result<(), StoreError> {
+        let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
         let id = application.as_str();
         // The reservation token keeps late retries away from a new secret of the same name.
@@ -521,12 +528,18 @@ impl Store {
             .execute(&mut *tx).await.map_err(StoreError::database)?;
         let deleted = sqlx::query!("DELETE FROM application_secrets WHERE application_id=?1 AND name=?2 AND deletion_id=?3",id,name,deletion_id)
             .execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
+        let mut change = None;
         if deleted > 0 {
             let scope = SecretScope::Application(application);
             let event = ("secret_deleted", Self::SECRET_DELETED, name);
-            Self::secret_event_on(&mut tx, scope, event, actor, now_ms()).await?;
+            let by = author.actor.attribution();
+            Self::secret_event_on(&mut tx, scope, event, by, now_ms()).await?;
+            change = Some(Self::deletion_change(name, deletion_id, "completed"));
         }
-        tx.commit().await.map_err(StoreError::database)
+        author
+            .commit_recorded(tx, 200, change.as_deref(), (Some(id), None))
+            .await?;
+        Ok(())
     }
 }
 
