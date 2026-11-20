@@ -300,7 +300,9 @@ comparison cannot tell callers apart.
   action instead of access. Approval records the approver's proof as for a
   login. The poll marks the request as issuing, as for a login, and calls
   `Store::confirm_login`, which, if that proof is still recent, sets the CLI
-  row's `authenticated_at` to it, only while the row is live. It answers
+  row's `authenticated_at` to it, only while the row is live and unless the
+  row holds a later one already, from a confirmation that finished first. It
+  answers
   `complete` without a token and removes the request; so does a refusal or
   a login that ended, while any other failure leaves it to the next poll.
   The start response echoes the login and action in `confirms`, which
