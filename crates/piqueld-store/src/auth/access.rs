@@ -1,7 +1,7 @@
 //! Grant storage. Each `auth_grants` row grants one permission on one
 //! application, or on every application when `application_id` is NULL, to
 //! exactly one account, credential, or invitation.
-use crate::{Store, StoreError, now_secs};
+use crate::{Author, Store, StoreError, now_secs};
 use piqueld_core::{
     ApplicationId, EnvironmentId,
     access::{AppPermission, Denied, Grants, Permission, Scope, Target},
@@ -471,16 +471,23 @@ impl Store {
         self.access_changes.subscribe()
     }
 
-    /// Commits a change to accounts, credentials, or grants and notifies
-    /// [`Self::access_changes`].
+    /// Commits a change to accounts, credentials, or grants with the record
+    /// of its request's `change` (see [`Author::commit_recorded`]), and
+    /// notifies [`Self::access_changes`].
     ///
     /// # Errors
     /// Returns a storage error.
     pub async fn commit_access_change(
         &self,
         tx: sqlx::Transaction<'_, sqlx::Sqlite>,
+        author: impl Into<Author<'_>>,
+        change: Option<&str>,
     ) -> Result<(), StoreError> {
-        tx.commit().await.map_err(StoreError::database)?;
+        let target = (None, None);
+        author
+            .into()
+            .commit_recorded(tx, 200, change, target)
+            .await?;
         self.access_changes.send_replace(());
         Ok(())
     }
@@ -496,21 +503,27 @@ impl Store {
     /// Returns a storage error.
     pub async fn set_user_grants(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         user_id: &str,
         grants: &Grants,
     ) -> Result<(), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
-        if let Some(caller) = Self::check_account_on(&mut tx, actor, user_id).await? {
+        let caller = Self::check_account_on(&mut tx, actor, user_id).await?;
+        let current = Holder::User(user_id).grants(&mut tx).await?;
+        if let Some(caller) = caller {
             caller.may_hand_out(Some(grants))?;
-            if grants.escalates(&Holder::User(user_id).grants(&mut tx).await?) {
+            if grants.escalates(&current) {
                 caller.require_fresh()?;
             }
         }
         let how = "by an account change";
         Self::replace_user_grants_on(&mut tx, user_id, grants, actor.attribution(), how).await?;
         Self::require_an_admin(&mut tx).await?;
-        self.commit_access_change(tx).await
+        let change = (current != *grants).then(|| format!("account {user_id:?} grants ({grants})"));
+        self.commit_access_change(tx, author, change.as_deref())
+            .await
     }
 
     /// Checks that `actor` may change the account `user_id`, against both

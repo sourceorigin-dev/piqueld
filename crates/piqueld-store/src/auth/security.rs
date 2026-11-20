@@ -158,7 +158,10 @@ impl Store {
     }
 
     /// An account's username.
-    async fn username_on(db: &mut SqliteConnection, user_id: &str) -> Result<String, StoreError> {
+    pub(super) async fn username_on(
+        db: &mut SqliteConnection,
+        user_id: &str,
+    ) -> Result<String, StoreError> {
         sqlx::query_scalar!("SELECT username FROM auth_users WHERE id=?1", user_id)
             .fetch_one(db)
             .await

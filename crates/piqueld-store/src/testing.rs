@@ -182,6 +182,25 @@ impl Store {
             .unwrap();
     }
 
+    /// Seeds the administrator `user`, signed in with the login `user`,
+    /// which adds the passkey `<user>-key`, so it may take changes that
+    /// must leave an administrator able to sign in. Returns that login.
+    pub(super) async fn admin_with_passkey(&self, user: &'static str) -> Caller<'static> {
+        let Actor::Account(caller) = self.seed_caller(user, &Grants::admin()).await else {
+            unreachable!("seeded an account caller")
+        };
+        let key = format!("{user}-key");
+        let passkey = crate::NewPasskey {
+            id: &key,
+            name: &key,
+            credential: "{}",
+        };
+        let own = crate::PasskeyOwner::Existing(caller, user);
+        let added = self.add_passkey(own, passkey).await;
+        assert!(added.expect("an account adds its own passkey"));
+        caller
+    }
+
     /// Seeds the account `name` holding `grants`, with an unscoped CLI
     /// session also named `name` that a passkey just proved, and returns the
     /// caller acting with it.

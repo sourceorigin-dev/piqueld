@@ -20,6 +20,15 @@ pub enum Cascade {
     No,
 }
 
+impl std::fmt::Display for Cascade {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Yes => "cascading",
+            Self::No => "alone",
+        })
+    }
+}
+
 impl From<bool> for Cascade {
     fn from(cascade: bool) -> Self {
         if cascade { Self::Yes } else { Self::No }
@@ -36,6 +45,39 @@ pub(super) enum AccountRoots {
     Credentials,
     /// Its credentials and passkeys alike: deleting the account.
     Everything,
+}
+
+/// What a revocation deleted, counted, as audit records name it: never the
+/// credentials themselves.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Revoked {
+    /// Browser sessions, CLI logins and API tokens.
+    credentials: u64,
+    /// Account invitations and enrollment links.
+    invitations: u64,
+    /// Registered passkeys.
+    passkeys: u64,
+}
+
+impl Revoked {
+    /// Whether it deleted anything.
+    pub(super) const fn any(self) -> bool {
+        self.credentials + self.invitations + self.passkeys > 0
+    }
+}
+
+impl std::fmt::Display for Revoked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            credentials,
+            invitations,
+            passkeys,
+        } = self;
+        write!(
+            f,
+            "{credentials} credentials, {invitations} invitations and {passkeys} passkeys"
+        )
+    }
 }
 
 /// A credential, invitation or passkey, as a node of the issuance tree.
@@ -123,12 +165,13 @@ impl Store {
     /// invitation and passkey issued through them. Callers have authorized
     /// the roots; their authority reaches all they issued. Refuses with
     /// [`super::Lockout::LastAdmin`] when removed passkeys leave no
-    /// administrator able to sign in. Accounts are never deleted.
+    /// administrator able to sign in. Accounts are never deleted. Returns
+    /// what it deleted.
     pub(super) async fn revoke_on(
         db: &mut SqliteConnection,
         roots: &[Issued<'_>],
         cascade: Cascade,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Revoked, StoreError> {
         Self::revoke_keys_on(db, Issued::json(roots), cascade).await
     }
 
@@ -139,7 +182,7 @@ impl Store {
         user_id: &str,
         roots: AccountRoots,
         cascade: Cascade,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Revoked, StoreError> {
         let credentials_only = roots == AccountRoots::Credentials;
         let roots = sqlx::query_scalar!(
             r#"SELECT json_group_array(json_array(kind,id)) AS "roots!: String" FROM (
@@ -162,7 +205,7 @@ impl Store {
         db: &mut SqliteConnection,
         roots: String,
         cascade: Cascade,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Revoked, StoreError> {
         // `[[kind, id], …]`: the roots, then what descends from them.
         let targets = match cascade {
             Cascade::No => roots,
@@ -181,20 +224,22 @@ impl Store {
             .await
             .map_err(StoreError::database)?,
         };
-        sqlx::query!(
+        let credentials = sqlx::query!(
             "DELETE FROM auth_credentials WHERE id IN (SELECT value->>1 FROM json_each(?1) WHERE value->>0='credential')",
             targets
         )
         .execute(&mut *db)
         .await
-        .map_err(StoreError::database)?;
-        sqlx::query!(
+        .map_err(StoreError::database)?
+        .rows_affected();
+        let invitations = sqlx::query!(
             "DELETE FROM auth_invitations WHERE id IN (SELECT value->>1 FROM json_each(?1) WHERE value->>0='invitation')",
             targets
         )
         .execute(&mut *db)
         .await
-        .map_err(StoreError::database)?;
+        .map_err(StoreError::database)?
+        .rows_affected();
         let passkeys = sqlx::query!(
             "DELETE FROM auth_passkeys WHERE id IN (SELECT value->>1 FROM json_each(?1) WHERE value->>0='passkey')",
             targets
@@ -206,7 +251,11 @@ impl Store {
         if passkeys > 0 {
             Self::require_an_admin(db).await?;
         }
-        Ok(())
+        Ok(Revoked {
+            credentials,
+            invitations,
+            passkeys,
+        })
     }
 
     /// Deletes the lineage nodes that neither name a live credential,

@@ -10,7 +10,7 @@ mod lineage;
 mod security;
 pub use security::SecurityEvent;
 
-use super::{Actor, Attribution, Store, StoreError, now_secs};
+use super::{Actor, Attribution, Author, Store, StoreError, now_secs};
 use access::{Authority, Caller, Holder};
 pub use lineage::Cascade;
 use lineage::{AccountRoots, Issued};
@@ -150,6 +150,23 @@ pub struct NewCredential<'a> {
 }
 
 impl NewCredential<'_> {
+    /// The credential as the audit record of its creation names it, never
+    /// its secret: its kind, ID, name, grants, expiry and the tailnet
+    /// identity it is bound to, e.g. `token 0190… "deploy" grants
+    /// (apps:deploy) expires never tailnet none`.
+    fn describe(&self, tailnet: Option<&str>) -> String {
+        let grants = self.grants.map_or_else(
+            || "of its account".to_owned(),
+            |grants| format!("({grants})"),
+        );
+        let expires = self
+            .expires_at
+            .map_or_else(|| "never".to_owned(), |at| at.to_string());
+        let tailnet = tailnet.unwrap_or("none");
+        let (kind, id, name) = (self.kind.as_str(), &self.id, self.name);
+        format!("{kind} {id} {name:?} grants {grants} expires {expires} tailnet {tailnet}")
+    }
+
     /// Inserts the credential for `user_id`, marking it used now, as issued
     /// by `issuer` (see [`Issued::record`]). A duplicate ID or hash maps to
     /// `AlreadyExists`, and a missing account to `NotFound`.
@@ -1006,21 +1023,24 @@ impl Store {
     /// Returns a storage error.
     pub async fn revoke_credential(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         id: &str,
         cascade: Cascade,
     ) -> Result<(), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let owner = sqlx::query_scalar!("SELECT user_id FROM auth_credentials WHERE id=?1", id)
             .fetch_optional(&mut *tx)
             .await
             .map_err(StoreError::database)?;
-        if let Some(owner) = owner {
+        let change = if let Some(owner) = owner {
             let own = matches!(actor, Actor::Account(caller) if caller.credential_id == id);
             if !own {
                 Self::check_account_on(&mut tx, actor, &owner).await?;
             }
-            Self::revoke_on(&mut tx, &[Issued::Credential(id)], cascade).await?;
+            let revoked = Self::revoke_on(&mut tx, &[Issued::Credential(id)], cascade).await?;
+            format!("credential {id:?} of account {owner:?} revoked {cascade}: {revoked}")
         } else if Self::operator_session_on(&mut tx, id).await? {
             if let Some(caller) = actor.load(&mut tx).await? {
                 caller
@@ -1032,10 +1052,11 @@ impl Store {
                 .execute(&mut *tx)
                 .await
                 .map_err(StoreError::database)?;
+            format!("host operator session {id:?} ended")
         } else {
             return Err(StoreError::NotFound);
-        }
-        self.commit_access_change(tx).await
+        };
+        self.commit_access_change(tx, author, Some(&change)).await
     }
 
     /// Deletes every stored credential of an account, signing it out
@@ -1046,15 +1067,20 @@ impl Store {
     /// Returns a storage error.
     pub async fn revoke_credentials(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         user_id: &str,
         cascade: Cascade,
     ) -> Result<(), StoreError> {
+        let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
-        Self::check_account_on(&mut tx, actor, user_id).await?;
+        Self::check_account_on(&mut tx, author.actor, user_id).await?;
         let roots = AccountRoots::Credentials;
-        Self::revoke_account_on(&mut tx, user_id, roots, cascade).await?;
-        self.commit_access_change(tx).await
+        let revoked = Self::revoke_account_on(&mut tx, user_id, roots, cascade).await?;
+        let change = revoked
+            .any()
+            .then(|| format!("credentials of account {user_id:?} revoked {cascade}: {revoked}"));
+        self.commit_access_change(tx, author, change.as_deref())
+            .await
     }
 
     /// The part of the account directory `view` covers, read in one
@@ -1172,13 +1198,22 @@ impl Store {
     /// Returns a storage error.
     pub async fn update_user(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         id: &str,
         username: &str,
         display_name: &str,
     ) -> Result<(), StoreError> {
+        let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
-        Self::check_account_on(&mut tx, actor, id).await?;
+        Self::check_account_on(&mut tx, author.actor, id).await?;
+        let current = sqlx::query!(
+            "SELECT username,display_name FROM auth_users WHERE id=?1",
+            id
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(StoreError::database)?;
+        let changed = current.username != username || current.display_name != display_name;
         sqlx::query!(
             "UPDATE auth_users SET username=?1,display_name=?2 WHERE id=?3",
             username,
@@ -1188,7 +1223,11 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::constraint)?;
-        tx.commit().await.map_err(StoreError::database)
+        let change = changed
+            .then(|| format!("account {id:?} username {username:?} display name {display_name:?}"));
+        author
+            .commit_recorded(tx, 200, change.as_deref(), (None, None))
+            .await
     }
 
     /// Deletes an account with its passkeys, credentials, grants, and
@@ -1199,36 +1238,39 @@ impl Store {
     /// Returns a storage error.
     pub async fn delete_user(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         id: &str,
         cascade: Cascade,
     ) -> Result<(), StoreError> {
+        let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
-        Self::check_account_on(&mut tx, actor, id).await?;
+        Self::check_account_on(&mut tx, author.actor, id).await?;
+        let username = Self::username_on(&mut tx, id).await?;
         let roots = AccountRoots::Everything;
-        Self::revoke_account_on(&mut tx, id, roots, cascade).await?;
+        let revoked = Self::revoke_account_on(&mut tx, id, roots, cascade).await?;
         sqlx::query!("DELETE FROM auth_users WHERE id=?1", id)
             .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         Self::require_an_admin(&mut tx).await?;
-        self.commit_access_change(tx).await
+        let change = format!("account {id:?} {username:?} deleted {cascade}: {revoked}");
+        self.commit_access_change(tx, author, Some(&change)).await
     }
 
-    /// Checks that `actor` may change the account owning a passkey. Unknown
-    /// passkeys are `NotFound`.
+    /// Checks that `actor` may change the account owning a passkey, and
+    /// returns that account's ID. Unknown passkeys are `NotFound`.
     async fn check_passkey_owner_on(
         db: &mut SqliteConnection,
         actor: Actor<'_>,
         id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<String, StoreError> {
         let owner = sqlx::query_scalar!("SELECT user_id FROM auth_passkeys WHERE id=?1", id)
             .fetch_optional(&mut *db)
             .await
             .map_err(StoreError::database)?
             .ok_or(StoreError::NotFound)?;
         Self::check_account_on(db, actor, &owner).await?;
-        Ok(())
+        Ok(owner)
     }
 
     /// Deletes one passkey, with the sessions it signed in and what they
@@ -1239,14 +1281,16 @@ impl Store {
     /// Returns a storage error.
     pub async fn remove_passkey(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         id: &str,
         cascade: Cascade,
     ) -> Result<(), StoreError> {
+        let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
-        Self::check_passkey_owner_on(&mut tx, actor, id).await?;
-        Self::revoke_on(&mut tx, &[Issued::Passkey(id)], cascade).await?;
-        self.commit_access_change(tx).await
+        let owner = Self::check_passkey_owner_on(&mut tx, author.actor, id).await?;
+        let revoked = Self::revoke_on(&mut tx, &[Issued::Passkey(id)], cascade).await?;
+        let change = format!("passkey {id:?} of account {owner:?} removed {cascade}: {revoked}");
+        self.commit_access_change(tx, author, Some(&change)).await
     }
 
     /// Changes a passkey's label.
@@ -1255,17 +1299,27 @@ impl Store {
     /// Returns a storage error.
     pub async fn rename_passkey(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         id: &str,
         name: &str,
     ) -> Result<(), StoreError> {
+        let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
-        Self::check_passkey_owner_on(&mut tx, actor, id).await?;
-        sqlx::query!("UPDATE auth_passkeys SET name=?1 WHERE id=?2", name, id)
-            .execute(&mut *tx)
+        let owner = Self::check_passkey_owner_on(&mut tx, author.actor, id).await?;
+        let renamed = sqlx::query!(
+            "UPDATE auth_passkeys SET name=?1 WHERE id=?2 AND name IS NOT ?1",
+            name,
+            id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::database)?
+        .rows_affected()
+            > 0;
+        let change = renamed.then(|| format!("passkey {id:?} of account {owner:?} named {name:?}"));
+        author
+            .commit_recorded(tx, 200, change.as_deref(), (None, None))
             .await
-            .map_err(StoreError::database)?;
-        tx.commit().await.map_err(StoreError::database)
     }
 
     /// Stores an account invitation that gives the created account `grants`,
@@ -1277,10 +1331,12 @@ impl Store {
     /// Returns a storage error.
     pub async fn create_invitation(
         &self,
-        caller: Caller<'_>,
+        author: impl Into<Author<'_, Caller<'_>>>,
         invitation: &NewInvitation,
         grants: &Grants,
     ) -> Result<(), StoreError> {
+        let author = author.into();
+        let caller = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let authority = caller.load(&mut tx).await?;
         authority.require_unscoped()?;
@@ -1291,7 +1347,11 @@ impl Store {
         Holder::Invitation(&invitation.id)
             .replace(&mut tx, grants)
             .await?;
-        tx.commit().await.map_err(StoreError::database)
+        let (id, expires) = (&invitation.id, invitation.expires_at);
+        let change = format!("invitation {id} grants ({grants}) expires {expires}");
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await
     }
 
     /// Requires `accounts:manage` and every grant an invitation hands out.
@@ -1309,10 +1369,12 @@ impl Store {
     /// Returns a storage error.
     pub async fn create_enrollment(
         &self,
-        caller: Caller<'_>,
+        author: impl Into<Author<'_, Caller<'_>>>,
         invitation: &NewInvitation,
         user_id: &str,
     ) -> Result<(), StoreError> {
+        let author = author.into();
+        let caller = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let account = Actor::Account(caller);
         if let Some(authority) = Self::check_account_on(&mut tx, account, user_id).await? {
@@ -1321,7 +1383,11 @@ impl Store {
         }
         let (issuer, credential) = (caller.user_id, caller.credential_id);
         Self::insert_invitation_on(&mut tx, invitation, issuer, credential, Some(user_id)).await?;
-        tx.commit().await.map_err(StoreError::database)
+        let (id, expires) = (&invitation.id, invitation.expires_at);
+        let change = format!("enrollment {id} for account {user_id:?} expires {expires}");
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await
     }
 
     /// Inserts an invitation row issued by the account `issuer` through its
@@ -1356,29 +1422,39 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn revoke_invitation(&self, actor: Actor<'_>, id: &str) -> Result<(), StoreError> {
+    pub async fn revoke_invitation(
+        &self,
+        author: impl Into<Author<'_>>,
+        id: &str,
+    ) -> Result<(), StoreError> {
+        let author = author.into();
+        let actor = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let target = sqlx::query_scalar!("SELECT user_id FROM auth_invitations WHERE id=?1", id)
             .fetch_optional(&mut *tx)
             .await
             .map_err(StoreError::database)?;
-        match target {
+        let change = match target {
             None => return Err(StoreError::NotFound),
             Some(Some(user_id)) => {
                 Self::check_account_on(&mut tx, actor, &user_id).await?;
+                format!("enrollment {id} for account {user_id:?} revoked")
             }
             Some(None) => {
                 if let Some(authority) = actor.load(&mut tx).await? {
                     let grants = Holder::Invitation(id).grants(&mut tx).await?;
                     Self::may_invite(&authority.grants, &grants)?;
                 }
+                format!("invitation {id} revoked")
             }
-        }
+        };
         sqlx::query!("DELETE FROM auth_invitations WHERE id=?1", id)
             .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
-        tx.commit().await.map_err(StoreError::database)
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await
     }
 
     /// Stores an API token for the caller's own account, limited to grants the
@@ -1390,10 +1466,12 @@ impl Store {
     /// Returns a storage error.
     pub async fn create_token(
         &self,
-        caller: Caller<'_>,
+        author: impl Into<Author<'_, Caller<'_>>>,
         credential: &NewCredential<'_>,
         tailnet: Option<&TailnetBinding>,
     ) -> Result<(), StoreError> {
+        let author = author.into();
+        let caller = author.actor;
         let (_writer, mut tx) = self.begin_immediate().await?;
         let authority = caller.load(&mut tx).await?;
         authority.may_hand_out(credential.grants)?;
@@ -1413,7 +1491,10 @@ impl Store {
         .map_err(StoreError::database)?;
         let actor = Actor::Account(caller).attribution();
         Self::check_token_on(&mut tx, credential, actor).await?;
-        tx.commit().await.map_err(StoreError::database)
+        let change = credential.describe(tailnet);
+        author
+            .commit_recorded(tx, 200, Some(&change), (None, None))
+            .await
     }
 
     /// Deletes auth state that can no longer be used: expired credentials
@@ -1455,7 +1536,7 @@ impl Store {
         .map_err(StoreError::database)?;
         Self::forget_lineage_on(&mut tx).await?;
         if credentials > 0 {
-            self.commit_access_change(tx).await
+            self.commit_access_change(tx, Actor::Daemon, None).await
         } else {
             tx.commit().await.map_err(StoreError::database)
         }
