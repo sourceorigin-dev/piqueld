@@ -2,6 +2,7 @@
 //! lifetime. Public routes are served on its published listener, or on a
 //! tunnel listener that only `cloudflared` reaches; private routes on a
 //! private listener that only the apps tailnet node reaches.
+mod backoff;
 mod certificates;
 mod checks;
 mod configuration;

@@ -124,12 +124,16 @@ impl Harness {
         self.store.acknowledge_routes(&table).await.unwrap();
     }
 
-    /// One reconciliation pass of `ingress`, returning whether it completed.
+    /// One reconciliation pass of `ingress` over every hostname, returning
+    /// whether each succeeded.
     async fn pass_of(ingress: &Ingress) -> bool {
         let plan = ingress.plan_records().await.unwrap();
+        let every = plan.keys().cloned().collect();
         ingress
-            .reconcile_records(&plan, &CancellationToken::new())
+            .reconcile_records(&plan, &every, &CancellationToken::new())
             .await
+            .unwrap()
+            .is_empty()
     }
 
     async fn pass(&self) -> bool {
@@ -277,6 +281,48 @@ fn changes_update_in_place_and_delete_before_creating() {
             ..Changes::default()
         }
     );
+}
+
+/// A failed hostname is retried on its own, a minute later and then less
+/// often, while the others wait for their plan to change or the next repair.
+#[test]
+fn failed_hostnames_back_off_while_others_wait_for_a_repair() {
+    let hostname = |name: &str| RouteHostname::parse(name).unwrap();
+    let (failing, working) = (hostname("a.example.com"), hostname("b.example.com"));
+    let mut plan = BTreeMap::from([
+        (failing.clone(), Plan::Manual),
+        (working.clone(), Plan::Manual),
+    ]);
+    let mut schedule = Schedule::default();
+    let start = Instant::now();
+    let at = |seconds: u64| {
+        (
+            start + Duration::from_secs(seconds),
+            i64::try_from(seconds * 1000).unwrap(),
+        )
+    };
+    let mut pass = |plan: &BTreeMap<RouteHostname, Plan>, seconds, failed: &[&RouteHostname]| {
+        let (now, now_ms) = at(seconds);
+        let due = schedule.due(plan, now, now_ms);
+        let failed = failed.iter().map(|hostname| (*hostname).clone()).collect();
+        schedule.record(plan.clone(), &due, failed, now, now_ms);
+        due.into_iter().collect::<Vec<_>>()
+    };
+    assert_eq!(
+        pass(&plan, 0, &[&failing]),
+        [failing.clone(), working.clone()]
+    );
+    assert_eq!(pass(&plan, 10, &[]), []);
+    assert_eq!(pass(&plan, 60, &[&failing]), std::slice::from_ref(&failing));
+    // The second failure doubles the wait, to two minutes.
+    assert_eq!(pass(&plan, 120, &[]), []);
+    // A changed plan is due at once.
+    let added = hostname("c.example.com");
+    plan.insert(added.clone(), Plan::Manual);
+    assert_eq!(pass(&plan, 130, &[]), [added]);
+    assert_eq!(pass(&plan, 180, &[]), std::slice::from_ref(&failing));
+    // Five minutes after the first pass, every hostname is repaired.
+    assert_eq!(pass(&plan, 300, &[]).len(), 3);
 }
 
 #[tokio::test]
@@ -723,11 +769,12 @@ async fn a_route_changed_during_a_pass_waits_for_the_next_one() {
     // The pass was planned while the route was applied, then the gateway
     // withdrew it: the stale plan writes nothing.
     let plan = harness.ingress.plan_records().await.unwrap();
+    let every = plan.keys().cloned().collect();
     harness.stage(&id, &[], true).await;
     harness.apply().await;
     harness
         .ingress
-        .reconcile_records(&plan, &CancellationToken::new())
+        .reconcile_records(&plan, &every, &CancellationToken::new())
         .await;
     harness.unchanged();
     assert_eq!(

@@ -112,7 +112,7 @@ The DNS state is one of:
 | State | Meaning |
 | --- | --- |
 | `managed` | piqueld created the records and keeps them current. |
-| `pending` | piqueld will write them, but hasn't yet: the gateway doesn't serve the route yet, the apps node has no tailnet addresses yet, private routes are turned off, or the provider failed and piqueld retries within a minute. |
+| `pending` | piqueld will write them, but hasn't yet: the gateway doesn't serve the route yet, the apps node has no tailnet addresses yet, private routes are turned off, or the provider failed and piqueld retries after a minute, then less often, up to every hour. |
 | `dns_conflict` | Records piqueld doesn't own are in the way. |
 | `manual` | No provider manages the zone, a public route has no `public_addresses`, the provider couldn't list its zones, or two providers list the zone. You create the records. |
 
@@ -148,7 +148,9 @@ records piqueld manages, once the gateway has stopped.
   see [records piqueld owns](#records-piqueld-owns).
 - **A route stays `pending` with `The DNS provider could not update the
   records`.** Check the provider's credentials and permissions on its page,
-  and the daemon logs. piqueld retries within a minute.
+  and the daemon logs. piqueld retries after a minute, then waits twice as
+  long after each failure, up to an hour; a change to the route, or a restart,
+  retries at once.
 - **A tunnel route stays `pending` in an OVH zone.** OVH can't hold the
   proxied CNAME a tunnel route needs. Move the zone to Cloudflare.
 - **After a restart, every route's DNS state is `pending` for a while.**

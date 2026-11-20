@@ -24,7 +24,11 @@
 //! where `<name>` is the hostname, or `_wildcard.<parent>` for wildcards. One
 //! file holds both, so a renewal replaces the pair atomically.
 
-use super::{Ingress, wire::Journaled};
+use super::{
+    Ingress,
+    backoff::{Backoff, BackoffPolicy},
+    wire::Journaled,
+};
 use anyhow::{Context, Result, bail};
 use instant_acme::{
     Account, AuthorizationStatus, ChallengeType, Identifier, NewAccount, NewOrder, OrderStatus,
@@ -207,38 +211,6 @@ struct Entry {
     unowned: Option<ZoneError>,
     /// When the next attempt may be made after failures.
     backoff: Backoff,
-}
-
-/// How long to wait after each failure: `first_ms`, doubling up to `max_ms`.
-#[derive(Clone, Copy)]
-struct BackoffPolicy {
-    first_ms: i64,
-    max_ms: i64,
-}
-
-/// Consecutive failures of a retried task, and when it may run again.
-#[derive(Clone, Copy, Debug, Default)]
-struct Backoff {
-    failures: u32,
-    /// No attempt is made before this time.
-    retry_at_ms: i64,
-}
-
-impl Backoff {
-    /// Whether an attempt may be made at `now_ms`. A pass reads the clock
-    /// a little later each time, so an attempt due within a second is ready
-    /// rather than left to the next pass.
-    fn ready(self, now_ms: i64) -> bool {
-        now_ms + 1000 >= self.retry_at_ms
-    }
-
-    /// Records a failure at `failed_at_ms`, delaying the next attempt as
-    /// `policy` says.
-    fn fail(&mut self, policy: BackoffPolicy, failed_at_ms: i64) {
-        self.failures += 1;
-        let delay = policy.first_ms << (self.failures - 1).min(10);
-        self.retry_at_ms = failed_at_ms + delay.min(policy.max_ms);
-    }
 }
 
 /// DNS providers, the ACME account and every known certificate.
