@@ -957,7 +957,8 @@ impl Progress {
                 .filter(|step| step.state.running())
                 .map(|step| step.key.to_string())
                 .collect(),
-            elapsed_ms: started.map(|started| u64::try_from(end - started).unwrap_or(0)),
+            elapsed_ms: started
+                .map(|started| u64::try_from(end.saturating_sub(started)).unwrap_or(0)),
             left_ms: timeline.remaining_ms(now_ms),
             usual_ms: if operation.state.terminal() {
                 timeline.comparable_usual_ms()
