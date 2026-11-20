@@ -1,19 +1,27 @@
 import { test, expect, apply, call, card, confirmNext, webManifest, applicationTab, environmentTab } from '../fixtures.js';
-import type { Request } from '@playwright/test';
+import type { Page, Request } from '@playwright/test';
 
 /** Whether `request` is a `method` request for exactly `path`. */
 const sent = (request: Request, method: string, path: string) =>
   request.method() === method && new URL(request.url()).pathname === `/api/v1/${path}`;
 
-test('replacing a stored value keeps an access list changed elsewhere, and access saves on its own', async ({ page, account }) => {
-  void account;
+/** Stores `api-token` in a new application, readable by `environments`
+ * (its production environment's ID when omitted), and opens the
+ * application's Secrets tab: the production environment's ID `env`, the
+ * secret's API `path`, the `store` card and the secret's `row` in it. */
+async function storedSecret(page: Page, environments?: string) {
   const { app, env } = await apply(page, webManifest('vault'));
   const path = `applications/${app}/secrets/api-token`;
-  await call(page, 'PUT', `${path}?environments=${env}`, 'first', { 'X-Expected-Generation': '0' });
+  await call(page, 'PUT', `${path}?environments=${environments ?? env}`, 'first', { 'X-Expected-Generation': '0' });
   await page.goto(`/dashboard/applications/${app}`);
   await applicationTab(page, 'Secrets').click();
   const store = card(page, 'Secret store');
-  const row = store.getByRole('row').filter({ hasText: 'api-token' });
+  return { env, path, store, row: store.getByRole('row').filter({ hasText: 'api-token' }) };
+}
+
+test('replacing a stored value keeps an access list changed elsewhere, and access saves on its own', async ({ page, account }) => {
+  void account;
+  const { path, store, row } = await storedSecret(page);
   await expect(row).toContainText('production');
 
   // Editing loads the secret's access list.
@@ -70,13 +78,7 @@ test('replacing a stored value keeps an access list changed elsewhere, and acces
 
 test('saving a value that changes access sends the access the form loaded', async ({ page, account }) => {
   void account;
-  const { app, env } = await apply(page, webManifest('vault'));
-  const path = `applications/${app}/secrets/api-token`;
-  await call(page, 'PUT', `${path}?environments=${env}`, 'first', { 'X-Expected-Generation': '0' });
-  await page.goto(`/dashboard/applications/${app}`);
-  await applicationTab(page, 'Secrets').click();
-  const store = card(page, 'Secret store');
-  const row = store.getByRole('row').filter({ hasText: 'api-token' });
+  const { env, path, store, row } = await storedSecret(page);
   await row.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(store.getByLabel('production', { exact: true })).toBeChecked();
 
@@ -97,13 +99,7 @@ test('saving a value that changes access sends the access the form loaded', asyn
 
 test('a refused secret write clears the value and waits for a refresh', async ({ page, account }) => {
   void account;
-  const { app } = await apply(page, webManifest('vault'));
-  const path = `applications/${app}/secrets/api-token`;
-  await call(page, 'PUT', `${path}?environments=all`, 'first', { 'X-Expected-Generation': '0' });
-  await page.goto(`/dashboard/applications/${app}`);
-  await applicationTab(page, 'Secrets').click();
-  const store = card(page, 'Secret store');
-  const row = store.getByRole('row').filter({ hasText: 'api-token' });
+  const { path, store, row } = await storedSecret(page, 'all');
   await expect(row.getByRole('cell').nth(1)).toHaveText('1');
 
   // Replaced elsewhere, so the shown version is stale.
