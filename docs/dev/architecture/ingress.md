@@ -191,8 +191,8 @@ attachments and keeps applying other route changes meanwhile.
 Switching between direct and tunnel mode changes the spec, but is not deferred
 like an upgrade, since the old gateway can't serve the other mode's listeners.
 The new gateway can't attach an unverified network either, so during a switch
-`prepare_routes` withdraws the routes of every application whose network
-failed, as for a tailnet overlap, and the switch goes ahead. That application
+from a running or stopped gateway `prepare_routes` withdraws the routes of
+every application whose network failed, as for a tailnet overlap, and the switch goes ahead. That application
 shows in the degraded health and its `Ingress::apply` fails; the others keep
 deploying. `replace_gateway` still refuses a switch over a retained route
 lacking a verified network, which only a caller skipping `prepare_routes`

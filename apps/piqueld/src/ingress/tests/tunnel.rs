@@ -254,15 +254,19 @@ async fn a_deferred_replacement_never_switches_modes() {
     );
 }
 
-/// What `ingress` keeps of an application's acknowledged public route while
-/// a direct-mode gateway runs and the application's ingress network is gone.
-async fn kept_beside_a_direct_gateway(tunnel: Option<&TunnelConfig>) -> Vec<ValidatedRoute> {
+/// What `ingress` keeps of an application's acknowledged public route beside
+/// a direct-mode gateway, `running` or stopped, while the application's
+/// ingress network is gone.
+async fn kept_beside_a_direct_gateway(
+    tunnel: Option<&TunnelConfig>,
+    running: bool,
+) -> Vec<ValidatedRoute> {
     use axum::response::IntoResponse;
     let engine = Engine::serving(|store| {
         let container = owned_container(
             store,
             json!({
-                "State":{"Running":true},
+                "State":{"Running":running},
                 "HostConfig":{"PortBindings":{"443/tcp":[{"HostIp":"","HostPort":"443"}]}}
             }),
         );
@@ -292,15 +296,17 @@ async fn kept_beside_a_direct_gateway(tunnel: Option<&TunnelConfig>) -> Vec<Vali
 }
 
 /// A switch to tunnel mode goes ahead when one application's network is
-/// broken: that application's routes are withdrawn instead of blocking it.
+/// broken, from a running or a stopped gateway: that application's routes
+/// are withdrawn instead of blocking it.
 #[tokio::test]
 async fn a_mode_switch_withdraws_the_routes_of_an_application_with_a_broken_network() {
-    assert_eq!(Box::pin(kept_beside_a_direct_gateway(None)).await.len(), 1);
     let tunnel = tunnel("c2VjcmV0");
-    assert_eq!(
-        Box::pin(kept_beside_a_direct_gateway(Some(&tunnel))).await,
-        []
-    );
+    for running in [true, false] {
+        let kept = Box::pin(kept_beside_a_direct_gateway(None, running)).await;
+        assert_eq!(kept.len(), 1, "running: {running}");
+        let kept = Box::pin(kept_beside_a_direct_gateway(Some(&tunnel), running)).await;
+        assert_eq!(kept, [], "running: {running}");
+    }
 }
 
 #[tokio::test]

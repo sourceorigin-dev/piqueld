@@ -883,18 +883,17 @@ impl Ingress {
         Ok(())
     }
 
-    /// Whether an inspected gateway publishes host ports, as in direct mode.
-    /// Whether the running gateway serves the other mode than this daemon's
-    /// configuration, so replacing it switches between direct and tunnel
-    /// ingress.
+    /// Whether the gateway, running or stopped, was built for the other mode
+    /// than this daemon's configuration, so replacing it switches between
+    /// direct and tunnel ingress.
     async fn switches_mode(&self) -> Result<bool> {
         Ok(self
             .container()
             .await?
-            .filter(Self::running)
             .is_some_and(|container| Self::publishes_ports(&container) == self.tunnel.is_some()))
     }
 
+    /// Whether an inspected gateway publishes host ports, as in direct mode.
     fn publishes_ports(container: &Value) -> bool {
         container["HostConfig"]["PortBindings"]
             .as_object()
