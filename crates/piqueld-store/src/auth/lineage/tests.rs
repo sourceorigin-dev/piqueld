@@ -1,8 +1,8 @@
 use super::*;
-use crate::{Actor, Caller, CredentialKind, NewCredential, NewInvitation, NewPasskey};
+use crate::testing::{credential, user};
+use crate::{Actor, Caller, CredentialKind, NewInvitation, NewPasskey};
 use crate::{PasskeyOwner, now_secs};
 use piqueld_core::access::{GlobalPermission, Grants, Permission, Scope};
-use piqueld_core::auth::User;
 
 /// The IDs of `node`'s issuers, nearest first.
 async fn ancestry(store: &Store, node: Issued<'_>) -> Vec<String> {
@@ -20,19 +20,6 @@ async fn ancestry(store: &Store, node: Issued<'_>) -> Vec<String> {
     .fetch_all(&store.pool)
     .await
     .unwrap()
-}
-
-/// A credential with no expiry or limits, named after its ID.
-fn credential(id: &str, kind: CredentialKind) -> NewCredential<'_> {
-    NewCredential {
-        id: id.into(),
-        secret_hash: id.into(),
-        kind,
-        name: id,
-        expires_at: None,
-        grants: None,
-        authenticated_at: None,
-    }
 }
 
 /// Seeds the administrator `user`, signed in with the login `user`, which
@@ -65,11 +52,7 @@ async fn invite_and_redeem(store: &Store, issuer: Caller<'_>, user: &str) {
     let none = Grants::default();
     let created = store.create_invitation(issuer, &invitation, &none).await;
     created.expect("the issuer may invite");
-    let account = User {
-        id: user.into(),
-        username: user.into(),
-        display_name: String::new(),
-    };
+    let account = crate::testing::user(user);
     let (key, session) = (format!("{user}-key"), format!("{user}-session"));
     let redeem = PasskeyOwner::Redeem {
         user: &account,
@@ -119,11 +102,7 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         .create_invitation(alice, &invitation, &Grants::default())
         .await
         .unwrap();
-    let bob = User {
-        id: "bob".into(),
-        username: "bob".into(),
-        display_name: String::new(),
-    };
+    let bob = user("bob");
     let passkey = |id| NewPasskey {
         id,
         name: id,

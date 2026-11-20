@@ -30,6 +30,29 @@ pub(super) fn prebuilt(id: &str) -> NormalizedApplication {
     .normalize(ApplicationId::parse(id).unwrap())
 }
 
+/// The account `name`, its username too.
+pub(super) fn user(name: &str) -> User {
+    User {
+        id: name.into(),
+        username: name.into(),
+        display_name: String::new(),
+    }
+}
+
+/// A credential of `kind` with no expiry, limits or passkey proof, named and
+/// hashed after its ID.
+pub(super) fn credential(id: &str, kind: CredentialKind) -> NewCredential<'_> {
+    NewCredential {
+        id: id.into(),
+        secret_hash: id.into(),
+        kind,
+        name: id,
+        expires_at: None,
+        grants: None,
+        authenticated_at: None,
+    }
+}
+
 /// An API request by `alice` on `route`, whose changes record themselves.
 pub(super) fn audit_request(route: &str) -> crate::AuditRequest {
     crate::AuditRequest {
@@ -153,22 +176,10 @@ impl Store {
     /// Seeds the account `name` holding `grants`, with an unscoped CLI
     /// session also named `name`, and returns the caller acting with it.
     pub(super) async fn seed_caller(&self, name: &'static str, grants: &Grants) -> Actor<'static> {
-        let user = User {
-            id: name.into(),
-            username: name.into(),
-            display_name: String::new(),
-        };
-        self.seed_auth_user(&user, grants).await;
-        let credential = NewCredential {
-            id: name.into(),
-            secret_hash: name.into(),
-            kind: CredentialKind::Cli,
-            name,
-            expires_at: None,
-            grants: None,
-            authenticated_at: None,
-        };
-        self.insert_credential(name, &credential).await.unwrap();
+        self.seed_auth_user(&user(name), grants).await;
+        self.insert_credential(name, &credential(name, CredentialKind::Cli))
+            .await
+            .unwrap();
         Actor::Account(Caller {
             credential_id: name,
             user_id: name,

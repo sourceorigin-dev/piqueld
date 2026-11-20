@@ -570,7 +570,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::template;
+    use crate::testing::{credential, template, user};
     use crate::{Actor, Mutation, MutationResponse};
     use crate::{CredentialKind, NewCredential};
     use piqueld_core::access::{AppPermission, Preset};
@@ -595,11 +595,6 @@ mod tests {
     async fn only_unscoped_creators_receive_creator_grants() {
         let (_temp, store) = Store::temporary().await;
         let blog = application(&store, "blog").await;
-        let user = piqueld_core::auth::User {
-            id: "alice".into(),
-            username: "alice".into(),
-            display_name: String::new(),
-        };
         let mut grants = Preset::Developer.grants(&Scope::one(blog.clone()));
         grants
             .grant(
@@ -607,21 +602,13 @@ mod tests {
                 &Scope::All,
             )
             .unwrap();
-        store.seed_auth_user(&user, &grants).await;
+        store.seed_auth_user(&user("alice"), &grants).await;
         for (id, scoped) in [("token", Some(&grants)), ("session", None)] {
             let credential = NewCredential {
-                id: id.into(),
-                secret_hash: id.into(),
-                kind: CredentialKind::Cli,
-                name: id,
-                expires_at: None,
                 grants: scoped,
-                authenticated_at: None,
+                ..credential(id, CredentialKind::Cli)
             };
-            store
-                .insert_credential(&user.id, &credential)
-                .await
-                .unwrap();
+            store.insert_credential("alice", &credential).await.unwrap();
         }
         let create = |credential_id, name: &str| {
             let manifest = template(name, "[spec]");
@@ -827,12 +814,7 @@ mod tests {
         let (_temp, store) = Store::temporary().await;
         let blog = application(&store, "blog").await;
         let shop = application(&store, "shop").await;
-        let user = piqueld_core::auth::User {
-            id: "alice".into(),
-            username: "alice".into(),
-            display_name: String::new(),
-        };
-        store.seed_auth_user(&user, &Grants::admin()).await;
+        store.seed_auth_user(&user("alice"), &Grants::admin()).await;
         let deploy_blog = Preset::Deploy.grants(&Scope::one(blog.clone()));
         let mut both = deploy_blog.clone();
         both.extend(&Preset::ReadOnly.grants(&Scope::one(shop.clone())));
@@ -842,18 +824,10 @@ mod tests {
             ("session", None),
         ] {
             let credential = NewCredential {
-                id: id.into(),
-                secret_hash: id.into(),
-                kind: CredentialKind::Token,
-                name: id,
-                expires_at: None,
                 grants,
-                authenticated_at: None,
+                ..credential(id, CredentialKind::Token)
             };
-            store
-                .insert_credential(&user.id, &credential)
-                .await
-                .unwrap();
+            store.insert_credential("alice", &credential).await.unwrap();
         }
         let delete = Mutation::DeleteApplication {
             id: blog.clone(),
