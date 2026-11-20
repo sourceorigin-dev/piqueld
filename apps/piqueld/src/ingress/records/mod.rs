@@ -51,6 +51,7 @@ use piqueld_core::{
     manifest::{Hostname, RouteHostname, Visibility},
     observability::DiagnosticCode,
 };
+use piqueld_store::ingress::HostnameRoutes;
 use std::{
     collections::{BTreeMap, BTreeSet},
     net::IpAddr,
@@ -75,6 +76,9 @@ enum Desired {
     Pending(&'static str),
     /// No route needs the hostname: the records piqueld owns are deleted.
     Removed,
+    /// The operator manages them, such as a direct public route's without
+    /// `[ingress] public_addresses`.
+    Manual,
 }
 
 impl Desired {
@@ -155,18 +159,20 @@ impl Schedule {
             .collect()
     }
 
-    /// Records a pass at `now` over the `due` hostnames of `plan`, of which
-    /// `failed` failed.
+    /// Records a pass over the `due` hostnames of `plan`, of which `failed`
+    /// failed. It started at `started`, and finished at `finished_ms` on the
+    /// wall clock: provider calls are slow, so a failure's backoff starts
+    /// when the pass ends.
     fn record(
         &mut self,
         plan: BTreeMap<RouteHostname, Plan>,
         due: &BTreeSet<RouteHostname>,
         failed: BTreeSet<RouteHostname>,
-        now: Instant,
-        now_ms: i64,
+        started: Instant,
+        finished_ms: i64,
     ) {
-        if self.repairs(now) {
-            self.repaired = Some(now);
+        if self.repairs(started) {
+            self.repaired = Some(started);
         }
         self.failing.retain(|hostname, _| {
             plan.contains_key(hostname) && (!due.contains(hostname) || failed.contains(hostname))
@@ -175,7 +181,7 @@ impl Schedule {
             self.failing
                 .entry(hostname)
                 .or_default()
-                .fail(RETRY, now_ms);
+                .fail(RETRY, finished_ms);
         }
         self.plan = plan;
     }
@@ -259,7 +265,7 @@ impl Ingress {
             let Some(failed) = self.reconcile_records(&plan, &due, cancellation).await else {
                 return;
             };
-            schedule.record(plan, &due, failed, now, now_ms);
+            schedule.record(plan, &due, failed, now, piqueld_store::now_ms());
         }
     }
 
@@ -280,65 +286,92 @@ impl Ingress {
 
     /// Each hostname's desired records, `None` when they are manual, before
     /// their zones are looked up; see [`Self::plan_records`].
-    async fn wanted_records(&self) -> Result<BTreeMap<RouteHostname, Option<Desired>>> {
-        let mut wanted: BTreeMap<RouteHostname, Option<Desired>> = BTreeMap::new();
-        let addresses: Vec<IpAddr> = self
-            .health
-            .read()
-            .await
-            .private
-            .addresses
-            .iter()
-            .filter_map(|address| address.parse().ok())
-            .collect();
-        if self.enabled {
-            for route in self.store.applied_table().await?.into_values().flatten() {
-                let desired = self.desired_records(route.visibility, &addresses);
-                wanted.insert(route.hostname, desired);
-            }
-            // The webhook hostname is served on the public listener, like a
-            // public route, from the gateway's own configuration.
-            if let Some(hostname) = self.webhook_hostname() {
-                let desired = self.desired_records(Visibility::Public, &addresses);
-                wanted.insert(hostname.clone().into(), desired);
-            }
-            // The dashboard hostname is served on the private listener.
-            if let Some(hostname) = self.dashboard_hostname() {
-                let desired = self.desired_records(Visibility::Private, &addresses);
-                wanted.insert(hostname.clone().into(), desired);
-            }
-            for route in self.store.routing_table().await?.into_values().flatten() {
-                wanted
-                    .entry(route.hostname)
-                    .or_insert(Some(Desired::Pending(
-                        "Waiting for the gateway to apply the route",
-                    )));
-            }
+    async fn wanted_records(&self) -> Result<BTreeMap<RouteHostname, Desired>> {
+        let mut routes: BTreeMap<RouteHostname, HostnameRoutes> = BTreeMap::new();
+        for route in self.store.applied_table().await?.into_values().flatten() {
+            routes.entry(route.hostname).or_default().applied = Some(route.visibility);
+        }
+        for route in self.store.routing_table().await?.into_values().flatten() {
+            routes.entry(route.hostname).or_default().desired = true;
         }
         for hostname in self.store.dns_records().await? {
-            wanted.entry(hostname).or_insert(Some(Desired::Removed));
+            routes.entry(hostname).or_default().tracked = true;
         }
-        if !self
-            .gateway_converged
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
-            for desired in wanted.values_mut().flatten() {
-                *desired = Desired::Pending(
-                    "Waiting for the gateway to apply this daemon's configuration",
-                );
-            }
+        for hostname in (self.webhook_hostname().into_iter()).chain(self.dashboard_hostname()) {
+            routes.entry(hostname.clone().into()).or_default();
         }
-        Ok(wanted)
+        let addresses = self.node_addresses().await;
+        Ok(routes
+            .into_iter()
+            .filter_map(|(hostname, routes)| {
+                let wanted = self.wanted(&hostname, &routes, &addresses)?;
+                Some((hostname, wanted))
+            })
+            .collect())
     }
 
-    /// The plan for `hostname`, whose records should be `desired` (`None`
-    /// is manual): managed in its zone when that zone's provider manages
-    /// records, otherwise manual.
-    async fn plan_hostname(&self, hostname: &RouteHostname, desired: Option<Desired>) -> Plan {
+    /// The desired records of `hostname`, from what the routing tables say of
+    /// it (`routes`) and the apps node's `addresses`: an applied route's, the
+    /// webhook or dashboard hostname's, pending while a route waits for the
+    /// gateway, and removed for a tracked name without a route. Disabled
+    /// ingress removes every record, and until the gateway has converged (or
+    /// stopped) with this daemon's configuration, such as a new ingress mode
+    /// after a restart, every record is kept. `None` is a hostname nothing
+    /// wants.
+    fn wanted(
+        &self,
+        hostname: &RouteHostname,
+        routes: &HostnameRoutes,
+        addresses: &[IpAddr],
+    ) -> Option<Desired> {
+        let is =
+            |name: Option<&Hostname>| name.is_some_and(|name| name.as_str() == hostname.as_str());
+        // The dashboard hostname is served on the private listener, and the
+        // webhook hostname on the public one, from the gateway's own
+        // configuration.
+        let served = if is(self.dashboard_hostname()) {
+            Some(Visibility::Private)
+        } else if is(self.webhook_hostname()) {
+            Some(Visibility::Public)
+        } else {
+            routes.applied.filter(|_| self.enabled)
+        };
+        let wanted = match served {
+            Some(visibility) => self.desired_records(visibility, addresses),
+            None if self.enabled && routes.desired => {
+                Desired::Pending("Waiting for the gateway to apply the route")
+            }
+            None if routes.tracked => Desired::Removed,
+            None => return None,
+        };
+        let converged = self
+            .gateway_converged
+            .load(std::sync::atomic::Ordering::SeqCst);
+        Some(match wanted {
+            Desired::Manual => Desired::Manual,
+            _ if !converged => {
+                Desired::Pending("Waiting for the gateway to apply this daemon's configuration")
+            }
+            wanted => wanted,
+        })
+    }
+
+    /// The apps node's tailnet addresses.
+    async fn node_addresses(&self) -> Vec<IpAddr> {
+        (self.health.read().await.private.addresses.iter())
+            .filter_map(|address| address.parse().ok())
+            .collect()
+    }
+
+    /// The plan for `hostname`, whose records should be `desired`: managed in
+    /// its zone when that zone's provider manages records, otherwise manual.
+    async fn plan_hostname(&self, hostname: &RouteHostname, desired: Desired) -> Plan {
+        if desired == Desired::Manual {
+            return Plan::Manual;
+        }
         let dns = &self.certificates.dns;
-        let owner = dns.zone_for(&hostname.domain()).await;
-        match (desired, owner) {
-            (Some(desired), Ok((provider, zone))) if dns.manages_records(provider) => {
+        match dns.zone_for(&hostname.domain()).await {
+            Ok((provider, zone)) if dns.manages_records(provider) => {
                 // Writing them would fail on every pass.
                 let desired = if desired.proxied() && !dns.provider(provider).proxies() {
                     Desired::Pending(
@@ -357,36 +390,33 @@ impl Ingress {
         }
     }
 
-    /// The records a hostname served with `visibility` needs, or `None` when
-    /// they are manual: a direct public one without `[ingress]
-    /// public_addresses`. Private ones only ever get the apps node's tailnet
-    /// `addresses`.
-    fn desired_records(&self, visibility: Visibility, addresses: &[IpAddr]) -> Option<Desired> {
+    /// The records a hostname served with `visibility` needs, manual for a
+    /// direct public one without `[ingress] public_addresses`. Private ones
+    /// only ever get the apps node's tailnet `addresses`.
+    fn desired_records(&self, visibility: Visibility, addresses: &[IpAddr]) -> Desired {
         let addresses = match (visibility, &self.tunnel) {
             (Visibility::Private, _) if self.node.is_none() => {
-                return Some(Desired::Pending(
-                    "Private ingress is disabled, so the route is not served",
-                ));
+                return Desired::Pending("Private ingress is disabled, so the route is not served");
             }
             (Visibility::Private, _) if addresses.is_empty() => {
-                return Some(Desired::Pending(
-                    "Waiting for the apps node's tailnet addresses",
-                ));
+                return Desired::Pending("Waiting for the apps node's tailnet addresses");
             }
             (Visibility::Private, _) => addresses,
             (Visibility::Public, Some(tunnel)) => {
-                let target = Hostname::parse(tunnel.hostname()).ok()?;
-                return Some(Desired::Records(BTreeSet::from([Record::Cname {
+                let Ok(target) = Hostname::parse(tunnel.hostname()) else {
+                    return Desired::Manual;
+                };
+                return Desired::Records(BTreeSet::from([Record::Cname {
                     target,
                     proxied: true,
-                }])));
+                }]));
             }
-            (Visibility::Public, None) if self.public_addresses.is_empty() => return None,
+            (Visibility::Public, None) if self.public_addresses.is_empty() => {
+                return Desired::Manual;
+            }
             (Visibility::Public, None) => &self.public_addresses,
         };
-        Some(Desired::Records(
-            addresses.iter().copied().map(Record::address).collect(),
-        ))
+        Desired::Records(addresses.iter().copied().map(Record::address).collect())
     }
 
     /// Reconciles the `due` hostnames of `plan`, one at a time, and publishes
@@ -443,9 +473,12 @@ impl Ingress {
             }
             Desired::Records(records) => Some(records),
             Desired::Removed => None,
+            // Never planned as managed.
+            Desired::Manual => return Ok(RouteDns::default()),
         };
-        let wanted = self.wanted_records().await?.remove(hostname);
-        let current = match wanted {
+        let routes = self.store.hostname_routes(hostname).await?;
+        let addresses = self.node_addresses().await;
+        let current = match self.wanted(hostname, &routes, &addresses) {
             Some(desired) => Some(self.plan_hostname(hostname, desired).await),
             None => None,
         };

@@ -283,8 +283,9 @@ fn changes_update_in_place_and_delete_before_creating() {
     );
 }
 
-/// A failed hostname is retried on its own, a minute later and then less
-/// often, while the others wait for their plan to change or the next repair.
+/// A failed hostname is retried on its own, a minute after its pass ended
+/// and then less often, while the others wait for their plan to change or
+/// the next repair.
 #[test]
 fn failed_hostnames_back_off_while_others_wait_for_a_repair() {
     let hostname = |name: &str| RouteHostname::parse(name).unwrap();
@@ -295,34 +296,36 @@ fn failed_hostnames_back_off_while_others_wait_for_a_repair() {
     ]);
     let mut schedule = Schedule::default();
     let start = Instant::now();
-    let at = |seconds: u64| {
-        (
-            start + Duration::from_secs(seconds),
-            i64::try_from(seconds * 1000).unwrap(),
-        )
-    };
-    let mut pass = |plan: &BTreeMap<RouteHostname, Plan>, seconds, failed: &[&RouteHostname]| {
-        let (now, now_ms) = at(seconds);
-        let due = schedule.due(plan, now, now_ms);
-        let failed = failed.iter().map(|hostname| (*hostname).clone()).collect();
-        schedule.record(plan.clone(), &due, failed, now, now_ms);
-        due.into_iter().collect::<Vec<_>>()
-    };
+    let ms = |seconds: u64| i64::try_from(seconds * 1000).unwrap();
+    // A pass starting at `seconds` that takes `took` seconds, in which
+    // `failed` fail; returns the hostnames it reconciled.
+    let mut pass =
+        |plan: &BTreeMap<RouteHostname, Plan>, seconds, took, failed: &[&RouteHostname]| {
+            let started = start + Duration::from_secs(seconds);
+            let due = schedule.due(plan, started, ms(seconds));
+            let failed = failed.iter().map(|hostname| (*hostname).clone()).collect();
+            schedule.record(plan.clone(), &due, failed, started, ms(seconds + took));
+            due.into_iter().collect::<Vec<_>>()
+        };
+    // The first pass takes 90 seconds, so its failure is retried at 150.
     assert_eq!(
-        pass(&plan, 0, &[&failing]),
+        pass(&plan, 0, 90, &[&failing]),
         [failing.clone(), working.clone()]
     );
-    assert_eq!(pass(&plan, 10, &[]), []);
-    assert_eq!(pass(&plan, 60, &[&failing]), std::slice::from_ref(&failing));
+    assert_eq!(pass(&plan, 100, 0, &[]), []);
+    assert_eq!(
+        pass(&plan, 150, 0, &[&failing]),
+        std::slice::from_ref(&failing)
+    );
     // The second failure doubles the wait, to two minutes.
-    assert_eq!(pass(&plan, 120, &[]), []);
+    assert_eq!(pass(&plan, 200, 0, &[]), []);
     // A changed plan is due at once.
     let added = hostname("c.example.com");
     plan.insert(added.clone(), Plan::Manual);
-    assert_eq!(pass(&plan, 130, &[]), [added]);
-    assert_eq!(pass(&plan, 180, &[]), std::slice::from_ref(&failing));
+    assert_eq!(pass(&plan, 210, 0, &[]), [added]);
+    assert_eq!(pass(&plan, 270, 0, &[]), std::slice::from_ref(&failing));
     // Five minutes after the first pass, every hostname is repaired.
-    assert_eq!(pass(&plan, 300, &[]).len(), 3);
+    assert_eq!(pass(&plan, 300, 0, &[]).len(), 3);
 }
 
 #[tokio::test]
