@@ -299,7 +299,7 @@ mod tests {
         support::looks_like_application_id,
     };
 
-    /// The argument forms no command test in `tests/cli.rs` runs.
+    /// The argument forms no command test in `tests/cli/` runs.
     #[test]
     fn parser_accepts_combined_exec_flags_and_build_filters() {
         for arguments in [
