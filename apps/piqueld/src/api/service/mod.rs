@@ -344,9 +344,9 @@ impl ApplicationService {
     /// storage errors.
     pub async fn recover_secret_key(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
     ) -> Result<piqueld_core::api::SecretKeyRecovery, ApplicationError> {
-        Ok(self.store.recover_secret_key(actor).await?)
+        Ok(self.store.recover_secret_key(author).await?)
     }
 
     /// Lists an environment's generated secrets without exposing their values.
@@ -438,19 +438,21 @@ impl ApplicationService {
     /// Returns when the secret is referenced or storage or runtime cleanup fails.
     pub async fn delete_secret(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         environment: &EnvironmentId,
         name: &str,
         expected_generation: i64,
     ) -> Result<(), ApplicationError> {
+        let author = author.into();
         let _mutations = self.runtime.lock_mutations().await;
         let deletion = self
             .store
-            .begin_secret_deletion(actor, environment, name, expected_generation)
+            .begin_secret_deletion(author, environment, name, expected_generation)
             .await?;
-        self.remove_secret_versions(actor, name, &deletion).await?;
+        self.remove_secret_versions(author.actor, name, &deletion)
+            .await?;
         self.store
-            .finish_secret_deletion(actor.attribution(), environment, name, &deletion.id)
+            .finish_secret_deletion(author, environment, name, &deletion.id)
             .await?;
         Ok(())
     }
@@ -463,19 +465,21 @@ impl ApplicationService {
     /// Returns when the secret is referenced or storage or runtime cleanup fails.
     pub async fn delete_stored_secret(
         &self,
-        actor: Actor<'_>,
+        author: impl Into<Author<'_>>,
         application: &ApplicationId,
         name: &str,
         expected_generation: i64,
     ) -> Result<(), ApplicationError> {
+        let author = author.into();
         let _mutations = self.runtime.lock_mutations().await;
         let deletion = self
             .store
-            .begin_stored_secret_deletion(actor, application, name, expected_generation)
+            .begin_stored_secret_deletion(author, application, name, expected_generation)
             .await?;
-        self.remove_secret_versions(actor, name, &deletion).await?;
+        self.remove_secret_versions(author.actor, name, &deletion)
+            .await?;
         self.store
-            .finish_stored_secret_deletion(actor.attribution(), application, name, &deletion.id)
+            .finish_stored_secret_deletion(author, application, name, &deletion.id)
             .await?;
         Ok(())
     }

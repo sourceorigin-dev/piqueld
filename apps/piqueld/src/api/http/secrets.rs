@@ -70,13 +70,14 @@ fn expected(headers: &HeaderMap) -> Result<i64, ApiError> {
 pub(super) async fn delete(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
+    audited: Audited,
     ApiPath((id, name)): ApiPath<(String, String)>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     let generation = expected(&headers)?;
     state
         .delete_secret(
-            identity.actor(),
+            audited.author(&identity),
             &EnvironmentId::parse(id)?,
             &name,
             generation,
@@ -295,13 +296,14 @@ pub(super) async fn set_access(
 pub(super) async fn delete_stored(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
+    audited: Audited,
     ApiPath((id, name)): ApiPath<(String, String)>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     let generation = expected(&headers)?;
     state
         .delete_stored_secret(
-            identity.actor(),
+            audited.author(&identity),
             &ApplicationId::parse(id)?,
             &name,
             generation,
@@ -333,6 +335,9 @@ pub(super) async fn delete_stored(
 pub(super) async fn recover_key(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
+    audited: Audited,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok(ok(state.recover_secret_key(identity.actor()).await?))
+    Ok(ok(state
+        .recover_secret_key(audited.author(&identity))
+        .await?))
 }
