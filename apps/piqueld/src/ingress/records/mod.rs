@@ -284,8 +284,9 @@ impl Ingress {
         Ok(plan)
     }
 
-    /// Each hostname's desired records, `None` when they are manual, before
-    /// their zones are looked up; see [`Self::plan_records`].
+    /// Each hostname's desired records, [`Desired::Manual`] when the operator
+    /// manages them, before their zones are looked up; see
+    /// [`Self::plan_records`].
     async fn wanted_records(&self) -> Result<BTreeMap<RouteHostname, Desired>> {
         let mut routes: BTreeMap<RouteHostname, HostnameRoutes> = BTreeMap::new();
         for route in self.store.applied_table().await?.into_values().flatten() {
