@@ -133,6 +133,7 @@ pub fn safe_decode_path(path: &str) -> String {
         "rollout",
         "order",
         "monitor_seconds",
+        "rollback",
         "variables",
         "environments",
         "exports",
@@ -151,6 +152,8 @@ pub fn safe_decode_path(path: &str) -> String {
         "promote_from",
         "sync",
         "volume_access",
+        "stop_service",
+        "receives_telemetry",
     ];
     let mut safe = Vec::new();
     for component in path.split('.') {
