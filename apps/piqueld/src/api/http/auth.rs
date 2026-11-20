@@ -557,7 +557,8 @@ pub(super) async fn register_start(
 /// Public. Verifies the passkey against the ceremony started in the same
 /// browser. Redeeming an invitation, setup, or enrollment secret signs the
 /// account in with a session cookie; a signed-in caller adding a passkey to
-/// itself gets none.
+/// itself gets none. A finish refused because the caller's passkey sign-in
+/// lapsed meanwhile still consumes the ceremony: confirm, then start again.
 #[utoipa::path(post,path="/api/v1/auth/register/finish",operation_id="authRegistrationFinish",request_body=CeremonyFinish,responses((status=200,body=User),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn register_finish(
     Extension(auth): Extension<Auth>,

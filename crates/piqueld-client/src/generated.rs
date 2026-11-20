@@ -8099,7 +8099,8 @@ impl Client {
     Public. Verifies the passkey against the ceremony started in the same
     browser. Redeeming an invitation, setup, or enrollment secret signs the
     account in with a session cookie; a signed-in caller adding a passkey to
-    itself gets none.
+    itself gets none. A finish refused because the caller's passkey sign-in
+    lapsed meanwhile still consumes the ceremony: confirm, then start again.
 
     Sends a `POST` request to `/api/v1/auth/register/finish`
 

@@ -149,7 +149,7 @@ impl<
 )]
 #[derive(ToResponse)]
 #[response(
-    description = "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and retry; API tokens never can"
+    description = "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and send the request again, except a refused registration finish, which consumed its ceremony: start again from `authRegistrationStart`. API tokens never can"
 )]
 pub(super) struct ReauthenticationResponse(ErrorBody);
 

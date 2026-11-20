@@ -515,8 +515,9 @@ impl ClientError {
     /// Whether the daemon refused a sensitive action until the caller
     /// confirms with a passkey (403 `reauthentication_required` with
     /// `step_up`). It changed nothing, so the caller may confirm, then send
-    /// the same request once more. API tokens, which never can, are refused
-    /// without `step_up`.
+    /// the same request once more. A refused registration finish is the
+    /// exception: it consumed its ceremony, so registration starts again.
+    /// API tokens, which never can, are refused without `step_up`.
     #[must_use]
     pub fn step_up(&self) -> bool {
         matches!(self, Self::Api { status, error }
