@@ -658,8 +658,9 @@ consumer_key_file = "ovh-consumer-key"
 The OVH consumer key needs `GET /domain/zone`, `GET /auth/time`, and `POST`,
 `DELETE` on `/domain/zone/*`; with `manage_records`, also `GET` and `PUT` on
 `/domain/zone/*`. Zones are discovered through each provider's API at
-startup and hourly, which also checks the credentials; a failed discovery is
-retried every minute. To check now, for example after changing a token's
+startup and hourly, which also checks the credentials; a provider whose
+discovery failed is retried after a minute, then less often, up to every 15
+minutes. To check now, for example after changing a token's
 permissions or adding a zone, run `piquelctl dns refresh`, press **Check DNS
 providers** in the dashboard's System status panel, or call
 `POST /api/v1/system/dns/refresh`. Replacing a credential file needs a restart.
