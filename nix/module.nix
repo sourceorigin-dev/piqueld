@@ -13,14 +13,15 @@ let
   withoutNulls = lib.filterAttrsRecursive (_: value: value != null);
   absolutePath = lib.types.strMatching "/.+";
   nodeName = lib.types.strMatching "[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?";
-  # A `_file` setting: a string, not a path, so the secret is never copied
-  # into the Nix store.
+  # A `_file` setting, which piqueld gets as a systemd credential: a string,
+  # not a path, so the secret is never copied into the Nix store. Its
+  # description says what the file holds, then `more`, which may be empty.
   credentialFile =
-    description:
+    what: more:
     lib.mkOption {
       type = lib.types.nullOr absolutePath;
       default = null;
-      inherit description;
+      description = "${what}, such as an agenix secret, passed to piqueld as a systemd credential.${more}";
     };
   # Whether `dir` is a dedicated directory below `parent`, such as /var/lib/.
   dedicatedBelow =
@@ -172,7 +173,7 @@ in
             default = "piqueld";
             description = "Node name, which becomes <hostname>.<tailnet>.ts.net.";
           };
-          tailscale.auth_key_file = credentialFile "Host file with a Tailscale auth key for the node's first login, such as an agenix secret, passed to piqueld as a systemd credential. Node state in dataDir makes it unnecessary afterwards.";
+          tailscale.auth_key_file = credentialFile "Host file with a Tailscale auth key for the node's first login" " Node state in dataDir makes it unnecessary afterwards.";
           tailscale.https_port = lib.mkOption {
             type = lib.types.ints.between 1 65535;
             default = 443;
@@ -253,13 +254,13 @@ in
             example = "dashboard.example.com";
             description = "Private hostname on which the gateway serves piqueld's website (dashboard and API) to the tailnet, with a DNS-01 certificate. It gets a private route's DNS records, managed when a provider sets manage_records, applications may not route it or its subdomains, and an unset auth.public_url becomes its HTTPS origin. Requires ingress.enabled and ingress.private.enabled. Restart piqueld to apply.";
           };
-          ingress.private.auth_key_file = credentialFile "Host file with a Tailscale auth key for the apps node's first login, such as an agenix secret, passed to piqueld as a systemd credential. Without one, the daemon logs the node's login URL.";
+          ingress.private.auth_key_file = credentialFile "Host file with a Tailscale auth key for the apps node's first login" " Without one, the daemon logs the node's login URL.";
           ingress.tunnel.enabled = lib.mkOption {
             type = lib.types.bool;
             default = false;
             description = "Serve public routes through a locally managed Cloudflare Tunnel instead of ports 80/443, which are then closed. Each public hostname needs a proxied CNAME to <tunnel-id>.cfargotunnel.com. Restart piqueld to apply.";
           };
-          ingress.tunnel.credentials_file = credentialFile "Host file with the tunnel's credentials, from `cloudflared tunnel create`, such as an agenix secret, passed to piqueld as a systemd credential. Required while the tunnel is enabled.";
+          ingress.tunnel.credentials_file = credentialFile "Host file with the tunnel's credentials, from `cloudflared tunnel create`" " Required while the tunnel is enabled.";
           ingress.webhook_hostname = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
             default = null;
@@ -274,41 +275,35 @@ in
           dns.providers = lib.mkOption {
             type = lib.types.listOf (
               lib.types.submodule {
-                options =
-                  let
-                    file =
-                      description:
-                      credentialFile "${description}, such as an agenix secret, passed to piqueld as a systemd credential.";
-                  in
-                  {
-                    kind = lib.mkOption {
-                      type = lib.types.enum [
-                        "cloudflare"
-                        "ovh"
-                      ];
-                      description = "Provider API.";
-                    };
-                    api_token_file = file "Cloudflare: host file with an API token scoped to Zone:Read and DNS:Edit";
-                    endpoint = lib.mkOption {
-                      type = lib.types.nullOr (
-                        lib.types.enum [
-                          "ovh-eu"
-                          "ovh-ca"
-                          "ovh-us"
-                        ]
-                      );
-                      default = null;
-                      description = "OVH: API region of the account.";
-                    };
-                    application_key_file = file "OVH: host file with the application key";
-                    application_secret_file = file "OVH: host file with the application secret";
-                    consumer_key_file = file "OVH: host file with the consumer key";
-                    manage_records = lib.mkOption {
-                      type = lib.types.bool;
-                      default = false;
-                      description = "Create, update and delete routes' A/AAAA/CNAME records in this provider's zones. Off by default, so its zones stay manual.";
-                    };
+                options = {
+                  kind = lib.mkOption {
+                    type = lib.types.enum [
+                      "cloudflare"
+                      "ovh"
+                    ];
+                    description = "Provider API.";
                   };
+                  api_token_file = credentialFile "Cloudflare: host file with an API token scoped to Zone:Read and DNS:Edit" "";
+                  endpoint = lib.mkOption {
+                    type = lib.types.nullOr (
+                      lib.types.enum [
+                        "ovh-eu"
+                        "ovh-ca"
+                        "ovh-us"
+                      ]
+                    );
+                    default = null;
+                    description = "OVH: API region of the account.";
+                  };
+                  application_key_file = credentialFile "OVH: host file with the application key" "";
+                  application_secret_file = credentialFile "OVH: host file with the application secret" "";
+                  consumer_key_file = credentialFile "OVH: host file with the consumer key" "";
+                  manage_records = lib.mkOption {
+                    type = lib.types.bool;
+                    default = false;
+                    description = "Create, update and delete routes' A/AAAA/CNAME records in this provider's zones. Off by default, so its zones stay manual.";
+                  };
+                };
               }
             );
             default = [ ];
@@ -425,12 +420,7 @@ in
             example = "unix:///run/otel/otlp.sock";
             description = "OTLP/gRPC collector receiving the daemon's traces, metrics and logs: https://host:port, http://host:port, or unix:///path. Null disables export.";
           };
-          telemetry.headers_file = lib.mkOption {
-            # A string, not a path, so the secret is never copied into the Nix store.
-            type = lib.types.nullOr (lib.types.strMatching "/.+");
-            default = null;
-            description = "Host file with gRPC headers for the collector, one `name: value` per line (such as `authorization: Bearer …`), such as an agenix secret, passed to piqueld as a systemd credential.";
-          };
+          telemetry.headers_file = credentialFile "Host file with gRPC headers for the collector, one `name: value` per line (such as `authorization: Bearer …`)" "";
           telemetry.containers = lib.mkOption {
             type = lib.types.bool;
             default = true;
