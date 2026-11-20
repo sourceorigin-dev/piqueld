@@ -157,7 +157,7 @@ impl Store {
             return Ok(());
         };
         let previews = sqlx::query!(
-            r#"SELECT e.id AS "id!",e.application_id AS "application_id!",e.name AS "slug!",e.branch AS "branch!",e.preview_slot,e.delete_intent AS "deleting!: bool",d.id AS "deployment_id?",d.created_at_ms AS "deployed_at_ms?" FROM environments e LEFT JOIN deployments d ON d.id=(SELECT MAX(id) FROM deployments WHERE environment_id=e.id) WHERE e.kind='preview' AND e.id!=?2 AND (?1 IS NULL OR e.application_id=?1) ORDER BY COALESCE(d.created_at_ms,e.created_at_ms),e.id"#,
+            r#"SELECT e.id AS "id!",e.application_id AS "application_id!",e.name AS "slug!",e.branch AS "branch!",e.preview_slot,e.delete_intent AS "deleting!: bool",d.id AS "deployment_id?",d.created_at_ms AS "deployed_at_ms?" FROM environments e LEFT JOIN deployments d ON d.id=(SELECT l.id FROM deployments l JOIN operations o ON o.id=l.id WHERE o.environment_id=e.id ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) WHERE e.kind='preview' AND e.id!=?2 AND (?1 IS NULL OR e.application_id=?1) ORDER BY COALESCE(d.created_at_ms,e.created_at_ms),e.id"#,
             scope,
             created
         )
@@ -256,7 +256,7 @@ impl Store {
     ) -> Result<PreviewOrigins, StoreError> {
         let id = id.as_str();
         let row = sqlx::query!(
-            r#"SELECT (SELECT d.origin_json FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND o.promoted=1 ORDER BY d.id DESC LIMIT 1) AS current,(SELECT d.origin_json FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) AS latest"#,
+            r#"SELECT (SELECT d.origin_json FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND o.promoted=1 ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) AS current,(SELECT d.origin_json FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) AS latest"#,
             id
         )
         .fetch_one(&mut *connection)
@@ -344,7 +344,7 @@ impl Store {
     ) -> Result<Vec<DiagnosticView>, StoreError> {
         let id = id.as_str();
         let warnings = sqlx::query_scalar!(
-            "SELECT d.warnings_json FROM deployments d JOIN operations o ON o.id=d.id WHERE d.environment_id=?1 AND o.promoted=1 ORDER BY d.id DESC LIMIT 1",
+            "SELECT d.warnings_json FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND o.promoted=1 ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1",
             id
         )
         .fetch_optional(&self.pool)
