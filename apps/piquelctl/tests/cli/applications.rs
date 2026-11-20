@@ -153,9 +153,11 @@ fn apply_deploy_retries_a_dropped_request_with_the_same_identity() {
 fn noninteractive_apply_stops_after_inspection() {
     let directory = tempdir().expect("manifest directory");
     let manifest = write_manifest(&directory);
-    let server = start_server(false, 1, move |request| match request.path.as_str() {
-        "/api/v1/applications?name=notes" => Reply::json(page(Vec::new(), None)),
-        path => panic!("mutation must not be sent; got {path}"),
+    let server = start_server(false, usize::MAX, move |request| {
+        match request.path.as_str() {
+            "/api/v1/applications?name=notes" => Reply::json(page(Vec::new(), None)),
+            path => panic!("mutation must not be sent; got {path}"),
+        }
     });
     let output = run(
         &server,
@@ -170,7 +172,7 @@ fn noninteractive_apply_stops_after_inspection() {
     assert!(!output.status.success());
     assert_eq!(output.stdout, b"");
     assert!(String::from_utf8_lossy(&output.stderr).contains("confirmation"));
-    let _ = server.finish();
+    assert_eq!(server.stop().len(), 1);
 }
 
 #[test]
