@@ -160,8 +160,17 @@ at all.
    application, and the dashboard opens, signed in.
 3. Repair access on the **Accounts** page: send enrollment links to the
    administrators who lost their passkeys, remove the lost passkeys, and
-   revoke the sessions and tokens that may be compromised.
-4. Delete the recovery account once you no longer need it.
+   revoke the sessions and tokens that may be compromised. Removing a lost
+   passkey also revokes
+   [what was issued through it](accounts.md#what-revoking-also-revokes),
+   such as the passkeys of accounts invited from its sessions. For a passkey
+   that was lost but not stolen, clear **Also revoke what it issued**, or add
+   `--no-cascade`.
+4. Delete the recovery account once you no longer need it, with
+   **Also revoke what it issued** cleared, or with
+   `piquelctl account delete --no-cascade`. The passkeys the administrators
+   registered through its enrollment links descend from it, so deleting it
+   with what it issued would remove them and lock them out again.
 
 The link works once, within 24 hours. Running `recover-admin` again replaces
 it. It only creates a new account and never changes existing ones, so a

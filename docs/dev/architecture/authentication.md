@@ -239,6 +239,11 @@ transaction that stores it:
 Host operator links and sessions are not in the tree. Nothing recorded before
 lineage existed has an issuer.
 
+A step-up only renews a credential's proof time; it never changes its issuer.
+A session opened with passkey A and confirmed with passkey B stays A's
+descendant, as a CLI login confirmed from another browser session stays its
+approver's, so removing B with cascade doesn't reach what that session issued.
+
 A node outlives its row while anything live descends from it. A session that
 logged out, expired or was pruned, and a redeemed invitation, still connect
 what they issued to their own issuer. `prune_auth` forgets the nodes nothing
