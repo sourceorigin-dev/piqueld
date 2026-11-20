@@ -9,6 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::api::{Envelope, ErrorBody};
 use piqueld_core::auth::HostOperator;
 use serde::Serialize;
@@ -169,7 +170,7 @@ pub fn gateway_router(router: Router) -> Router {
             let Some(client) = client else {
                 return ApiError::new(
                     StatusCode::FORBIDDEN,
-                    "untrusted_client",
+                    ApiErrorCode::UntrustedClient,
                     "request did not come through the gateway",
                 )
                 .into_response();
@@ -534,10 +535,15 @@ impl ApiState {
         environment: Option<&piqueld_core::EnvironmentId>,
         actor: piqueld_store::Attribution<'_>,
     ) {
+        let code = ApiErrorCode::parse(&error.code);
         if !status.is_server_error()
             || matches!(
-                error.code.as_str(),
-                "configuration_unavailable" | "server_busy" | "tailnet_unavailable"
+                code,
+                Some(
+                    ApiErrorCode::ConfigurationUnavailable
+                        | ApiErrorCode::ServerBusy
+                        | ApiErrorCode::TailnetUnavailable
+                )
             )
         {
             return;
@@ -552,8 +558,8 @@ impl ApiState {
         // Storage failures are not written back to the failing store: retrying the
         // write would only queue behind the global writer during the outage.
         if !matches!(
-            error.code.as_str(),
-            "storage_unavailable" | "schema_mismatch"
+            code,
+            Some(ApiErrorCode::StorageUnavailable | ApiErrorCode::SchemaMismatch)
         ) {
             self.record_diagnostic(&diagnostic, Some(&error.request_id), environment, actor)
                 .await;
@@ -591,7 +597,7 @@ async fn api_fallback(request: Request) -> Response {
 fn method_not_allowed(allow_routes: &AllowRoutes, matched: Option<&MatchedPath>) -> ApiError {
     let mut error = ApiError::new(
         StatusCode::METHOD_NOT_ALLOWED,
-        "method_not_allowed",
+        ApiErrorCode::MethodNotAllowed,
         "HTTP method is not allowed",
     );
     // The header advertises only methods registered for the matched route;

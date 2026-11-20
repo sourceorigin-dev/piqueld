@@ -1,6 +1,7 @@
 //! Recent container output of an environment's services.
 use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{extract::State, response::IntoResponse};
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     EnvironmentId,
     api::{ApplicationLogs, Envelope},
@@ -34,7 +35,7 @@ impl Default for LogQuery {
 }
 
 impl QueryParams for LogQuery {
-    const INVALID_CODE: &'static str = "logs_query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::LogsQueryInvalid;
     const INVALID_MESSAGE: &'static str = "Invalid log query";
 }
 

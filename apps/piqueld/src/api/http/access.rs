@@ -25,6 +25,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::audit::AuditOutcome;
 use piqueld_core::auth::Principal;
 use piqueld_core::tailnet::TailnetPeer;
@@ -633,30 +634,28 @@ impl From<Denied> for ApiError {
     /// the caller lacks.
     fn from(denied: Denied) -> Self {
         let mut error = match denied {
-            Denied::Hidden => {
-                Self::new(StatusCode::NOT_FOUND, "not_found", "resource was not found")
-            }
+            Denied::Hidden => Self::not_found(),
             Denied::Missing(permission) => Self::new(
                 StatusCode::FORBIDDEN,
-                "permission_denied",
+                ApiErrorCode::PermissionDenied,
                 format!("This action requires the {permission} permission"),
             )
             .details(json!({"permission": permission})),
             Denied::Exceeds => Self::new(
                 StatusCode::FORBIDDEN,
-                "permission_exceeded",
+                ApiErrorCode::PermissionExceeded,
                 "The account or grants include access you do not hold",
             ),
             Denied::Scoped => Self::new(
                 StatusCode::FORBIDDEN,
-                "credential_scoped",
+                ApiErrorCode::CredentialScoped,
                 "Credentials with limited access, like API tokens, cannot create credentials or change their account",
             ),
             // Clients confirm with a passkey and retry only when `step_up` is
             // set: no passkey can make an API token fresh.
             Denied::Reauthenticate(reason) => Self::new(
                 StatusCode::FORBIDDEN,
-                "reauthentication_required",
+                ApiErrorCode::ReauthenticationRequired,
                 match reason {
                     Reauthenticate::Stale => {
                         "This action needs a passkey sign-in within the last 2 minutes; confirm with your passkey, then retry"

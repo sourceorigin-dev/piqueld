@@ -6,6 +6,7 @@ use super::{
 };
 use crate::api::Mutation;
 use axum::response::Response;
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     ApplicationId,
     api::{Envelope, SavedApplication},
@@ -22,7 +23,7 @@ use piqueld_core::{
 use utoipa_axum::router::OpenApiRouter;
 
 impl QueryParams for EditOptions {
-    const INVALID_CODE: &'static str = "query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::QueryInvalid;
     const INVALID_MESSAGE: &'static str =
         "expected_generation must be an integer; force and deploy must be true or false";
 }
@@ -183,7 +184,7 @@ struct CreateQuery {
 }
 
 impl QueryParams for CreateQuery {
-    const INVALID_CODE: &'static str = "query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::QueryInvalid;
     const INVALID_MESSAGE: &'static str = "deploy must be true or false";
 }
 

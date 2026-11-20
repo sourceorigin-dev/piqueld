@@ -9,6 +9,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::auth::{
     AuthStatus, Ceremony, CeremonyFinish, DeviceApprove, DeviceConfirmRequest, DevicePoll,
     DeviceRequest, DeviceStart, DeviceStartRequest, DeviceToken, Directory, HostOperator, Manage,
@@ -47,30 +48,32 @@ impl From<AuthError> for ApiError {
             }
             AuthError::Unauthorized => Self::new(
                 StatusCode::UNAUTHORIZED,
-                "authentication_required",
+                ApiErrorCode::AuthenticationRequired,
                 "Sign in with a passkey or run piquelctl login",
             ),
-            AuthError::Invalid(message) => {
-                Self::new(StatusCode::BAD_REQUEST, "authentication_invalid", message)
-            }
+            AuthError::Invalid(message) => Self::new(
+                StatusCode::BAD_REQUEST,
+                ApiErrorCode::AuthenticationInvalid,
+                message,
+            ),
             AuthError::Busy => Self::new(
                 StatusCode::TOO_MANY_REQUESTS,
-                "authentication_busy",
+                ApiErrorCode::AuthenticationBusy,
                 "Too many authentication requests; try again shortly",
             ),
             AuthError::SetupCompleted => Self::new(
                 StatusCode::CONFLICT,
-                "setup_completed",
+                ApiErrorCode::SetupCompleted,
                 "First-account setup is already completed; run piquelctl login",
             ),
             AuthError::SetupPending => Self::new(
                 StatusCode::CONFLICT,
-                "setup_pending",
+                ApiErrorCode::SetupPending,
                 "First-account setup is not completed; run piquelctl setup-link instead",
             ),
             AuthError::Store(StoreError::AlreadyExists) => Self::new(
                 StatusCode::CONFLICT,
-                "account_conflict",
+                ApiErrorCode::AccountConflict,
                 "Account name or passkey is already registered",
             ),
             AuthError::Store(source) => source.into(),
@@ -79,7 +82,7 @@ impl From<AuthError> for ApiError {
                 tracing::error!(error = ?error, "authentication operation failed");
                 Self::new(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "authentication_failed",
+                    ApiErrorCode::AuthenticationFailed,
                     "Authentication operation failed",
                 )
             }
@@ -159,7 +162,7 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
     if cross_site(auth, target, bearer, session).await {
         let response = ApiError::new(
             StatusCode::FORBIDDEN,
-            "origin_mismatch",
+            ApiErrorCode::OriginMismatch,
             "Request origin does not match the configured website",
         )
         .into_response();
@@ -296,7 +299,7 @@ impl FreshTailnet {
         let peer = self.0.as_ref().map_err(|LookupTimedOut| {
             ApiError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "tailnet_unavailable",
+                ApiErrorCode::TailnetUnavailable,
                 "The tailnet peer could not be identified in time; try again",
             )
         })?;
@@ -308,7 +311,7 @@ impl FreshTailnet {
         if !matches {
             return Err(ApiError::new(
                 StatusCode::UNAUTHORIZED,
-                "tailnet_binding_mismatch",
+                ApiErrorCode::TailnetBindingMismatch,
                 "This token is bound to a tailnet identity; use it through the daemon's tailnet node from a matching device",
             ));
         }

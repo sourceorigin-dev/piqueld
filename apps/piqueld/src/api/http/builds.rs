@@ -2,6 +2,7 @@
 use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use crate::auth::Identity;
 use axum::{Extension, extract::State, response::IntoResponse};
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     ApplicationId, EnvironmentId,
     access::AppPermission,
@@ -25,7 +26,7 @@ pub(super) struct BuildQuery {
 }
 
 impl QueryParams for BuildQuery {
-    const INVALID_CODE: &'static str = "pagination_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::PaginationInvalid;
     const INVALID_MESSAGE: &'static str = "invalid build query";
 }
 
@@ -65,7 +66,7 @@ pub(super) struct OutputQuery {
 }
 
 impl QueryParams for OutputQuery {
-    const INVALID_CODE: &'static str = "build_query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::BuildQueryInvalid;
     const INVALID_MESSAGE: &'static str = "invalid build log query";
 }
 

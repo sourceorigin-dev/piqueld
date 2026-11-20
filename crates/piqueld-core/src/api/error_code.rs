@@ -5,13 +5,12 @@ use crate::names::string_enum;
 string_enum! {
     #[serde]
     /// A stable machine-readable code the API returns: the `code` of an
-    /// `ErrorBody`, and the `code` of each validation error, compilation
-    /// error, plan diagnostic and status diagnostic it reports.
-    ///
-    /// Its string form is part of the API, so a variant's value never
-    /// changes. Wire types keep `code` a `String`, so clients still read the
-    /// codes a newer daemon adds; compare one with [`ApiErrorCode::parse`] or
-    /// `==`.
+    /// error response, and of each validation error, compilation error, plan
+    /// diagnostic and status diagnostic it reports. A code never changes, but
+    /// new ones are added, so a client should expect codes it doesn't know.
+    //
+    // Wire types keep `code` a `String`, so clients still read the codes a
+    // newer daemon adds; compare one with `ApiErrorCode::parse` or `==`.
     pub enum ApiErrorCode {
         // Requests the daemon can't read.
         /// 400: the request is invalid, such as a malformed `Idempotency-Key`,
@@ -24,6 +23,10 @@ string_enum! {
         QueryInvalid => "query_invalid",
         /// 400: a listing's page size or cursor is invalid.
         PaginationInvalid => "pagination_invalid",
+        /// 400: a build output query is malformed.
+        BuildQueryInvalid => "build_query_invalid",
+        /// 400: the `force` query parameter is neither `true` nor `false`.
+        ForceInvalid => "force_invalid",
         /// 400: a log query's tail or time window is out of range.
         LogsQueryInvalid => "logs_query_invalid",
         /// 400: a traffic query's window is out of range.

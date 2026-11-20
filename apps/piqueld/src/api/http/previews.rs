@@ -10,6 +10,7 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::api::{
     AcceptedOperation, CreatePreviewRequest, CreatedPreview, DeletedPreview, Envelope, PreviewView,
     PrunePreviewsRequest, RestoreRequest,
@@ -57,7 +58,7 @@ pub(super) struct LocalPreviewQuery {
 }
 
 impl QueryParams for LocalPreviewQuery {
-    const INVALID_CODE: &'static str = "query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::QueryInvalid;
     const INVALID_MESSAGE: &'static str = "branch is required, and branch and slot may appear once";
 }
 
@@ -97,7 +98,7 @@ pub(super) async fn deploy_local(
     if content_type(mutator.headers()) != Some("application/octet-stream") {
         return Err(ApiError::new(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "content_type_unsupported",
+            ApiErrorCode::ContentTypeUnsupported,
             "Content-Type must be application/octet-stream",
         ));
     }

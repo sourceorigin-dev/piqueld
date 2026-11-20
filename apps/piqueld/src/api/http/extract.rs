@@ -16,6 +16,7 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     response::Response,
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::api::{ApplyApplicationRequest, PromotionSelection};
 use piqueld_core::manifest::ValidatedTemplate;
 use piqueld_core::{ApplicationId, EnvironmentId, GitBranch, PreviewSlot};
@@ -226,7 +227,7 @@ impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for ApiPath
             .map_err(|_| {
                 ApiError::new(
                     StatusCode::BAD_REQUEST,
-                    "path_invalid",
+                    ApiErrorCode::PathInvalid,
                     "invalid URL path parameter",
                 )
             })
@@ -237,7 +238,7 @@ impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for ApiPath
 pub(super) trait QueryParams: DeserializeOwned {
     /// Code of the 400 answering a query string that does not decode, e.g.
     /// `force_invalid`.
-    const INVALID_CODE: &'static str;
+    const INVALID_CODE: ApiErrorCode;
     /// Message of that 400, e.g. `force must be true or false`.
     const INVALID_MESSAGE: &'static str;
 }
@@ -271,7 +272,7 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for ApiJson<T> {
         if content_type(request.headers()) != Some(JSON) {
             return Err(ApiError::new(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "content_type_unsupported",
+                ApiErrorCode::ContentTypeUnsupported,
                 "Content-Type must be application/json",
             ));
         }
@@ -324,12 +325,17 @@ impl ManifestUpload {
                 let text = std::str::from_utf8(body).map_err(|_| {
                     ApiError::new(
                         StatusCode::BAD_REQUEST,
-                        "toml_malformed",
+                        ApiErrorCode::TomlMalformed,
                         "request TOML is malformed",
                     )
                 })?;
-                let invalid =
-                    |message| ApiError::new(StatusCode::BAD_REQUEST, "generation_invalid", message);
+                let invalid = |message| {
+                    ApiError::new(
+                        StatusCode::BAD_REQUEST,
+                        ApiErrorCode::GenerationInvalid,
+                        message,
+                    )
+                };
                 let expected_generation = single_header(headers, "x-expected-generation", || {
                     invalid("expected generation must occur once")
                 })?
@@ -349,7 +355,7 @@ impl ManifestUpload {
             }
             _ => Err(ApiError::new(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "content_type_unsupported",
+                ApiErrorCode::ContentTypeUnsupported,
                 "Content-Type must be application/json or application/toml",
             )),
         }
@@ -379,13 +385,13 @@ pub(super) fn request_body(body: Result<Bytes, BytesRejection>) -> Result<Bytes,
         } else if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
             ApiError::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                "request_body_too_large",
+                ApiErrorCode::RequestBodyTooLarge,
                 "request body exceeds the maximum allowed size",
             )
         } else {
             ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "request_body_unreadable",
+                ApiErrorCode::RequestBodyUnreadable,
                 "request body could not be read",
             )
         }
@@ -403,7 +409,7 @@ pub(super) fn body_timeout(rejection: &BytesRejection) -> Option<ApiError> {
     .then(|| {
         ApiError::new(
             StatusCode::REQUEST_TIMEOUT,
-            "request_body_timeout",
+            ApiErrorCode::RequestBodyTimeout,
             "request body stopped arriving before it was complete",
         )
     })
@@ -416,7 +422,7 @@ pub(super) fn decode_json<T: DeserializeOwned>(body: &[u8]) -> Result<T, ApiErro
     let malformed = || {
         ApiError::new(
             StatusCode::BAD_REQUEST,
-            "json_malformed",
+            ApiErrorCode::JsonMalformed,
             "request JSON is malformed or contains unknown fields",
         )
     };
@@ -433,7 +439,13 @@ pub(super) fn decode_json<T: DeserializeOwned>(body: &[u8]) -> Result<T, ApiErro
 /// Reads an optional single-valued header; repeated or non-ASCII values are
 /// rejected with `header_invalid`.
 pub(super) fn optional_header(headers: &HeaderMap, name: &str) -> Result<Option<String>, ApiError> {
-    let invalid = |message| ApiError::new(StatusCode::BAD_REQUEST, "header_invalid", message);
+    let invalid = |message| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            ApiErrorCode::HeaderInvalid,
+            message,
+        )
+    };
     single_header(headers, name, || {
         invalid("mutation headers must occur once")
     })?
@@ -478,6 +490,6 @@ mod tests {
         let request = Request::new(axum::body::Body::new(body));
         let error = request_body(Bytes::from_request(request, &()).await).unwrap_err();
         assert_eq!(error.status, StatusCode::REQUEST_TIMEOUT);
-        assert_eq!(error.body().code, "request_body_timeout");
+        assert_eq!(error.body().code, ApiErrorCode::RequestBodyTimeout);
     }
 }

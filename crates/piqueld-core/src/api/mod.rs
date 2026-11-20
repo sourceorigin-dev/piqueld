@@ -67,7 +67,8 @@ pub struct Page<T> {
 /// Structured error returned by the API.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct ErrorBody {
-    /// Stable machine-readable error code.
+    /// Stable machine-readable error code; `ApiErrorCode` lists them. A
+    /// client should expect codes it doesn't know yet.
     pub code: String,
     /// Safe human-readable error message.
     pub message: String,
