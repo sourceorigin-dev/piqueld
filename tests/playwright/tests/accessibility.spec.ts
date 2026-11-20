@@ -6,9 +6,20 @@ import type { Page } from '@playwright/test';
  * for now, while the moderate and minor ones are worked through. */
 const failing = new Set(['serious', 'critical']);
 
-/** Scans the shown page with axe and expects no failing violation, naming
- * each one's rule and elements so a failure says what to fix. */
+/** Waits until the shown page's requests have answered: no loading notice
+ * (`.loading`, such as "Loading traffic…") or "Loading…" placeholder is
+ * left, so what is scanned is the loaded content or its empty state. */
+async function settled(page: Page) {
+  const main = page.getByRole('main');
+  await expect(main.locator('.loading').filter({ visible: true })).toHaveCount(0);
+  await expect(main.getByText(/^Loading/).filter({ visible: true })).toHaveCount(0);
+}
+
+/** Scans the shown page with axe once it has loaded, and expects no failing
+ * violation, naming each one's rule and elements so a failure says what to
+ * fix. */
 async function scan(page: Page, label: string) {
+  await settled(page);
   const { violations } = await new AxeBuilder({ page }).analyze();
   const found = violations
     .filter(violation => failing.has(violation.impact ?? ''))
