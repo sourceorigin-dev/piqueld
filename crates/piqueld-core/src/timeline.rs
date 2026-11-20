@@ -8,10 +8,13 @@
 //! before the operation planned that far, from its environment's previous
 //! successful operation ([`StepState::Forecast`]).
 
-use crate::observability::Diagnostic;
+use crate::observability::{Diagnostic, Elapsed};
 use crate::resource::TaskState;
-use crate::{Event, EventDetail, Operation, OperationState, Phase, names::string_enum};
+use crate::{
+    Event, EventDetail, Operation, OperationKind, OperationState, Phase, names::string_enum,
+};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use utoipa::ToSchema;
 
 /// What a step does and on what: a journaled action's identity.
@@ -904,6 +907,129 @@ impl PlanCoverage {
     }
 }
 
+/// How far an operation has come, as `piquelctl`'s live header and the
+/// dashboard's progress show it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Progress {
+    kind: OperationKind,
+    /// Where the operation stands.
+    pub state: OperationState,
+    /// Steps finished.
+    pub done: usize,
+    /// Steps altogether, done and left.
+    pub total: usize,
+    /// The steps running, such as "Build web".
+    pub running: Vec<String>,
+    /// How long it has run, or ran, from the first start of the operation
+    /// or any step; `None` before anything started.
+    pub elapsed_ms: Option<u64>,
+    /// How much longer it should take, while it runs.
+    pub left_ms: Option<u64>,
+    /// How long it usually takes, while it runs; once it ended, only when
+    /// its run compares with the usual one.
+    pub usual_ms: Option<u64>,
+}
+
+impl Progress {
+    /// Where `timeline` stands at `now_ms`.
+    #[must_use]
+    pub fn new(timeline: &Timeline, now_ms: i64) -> Self {
+        let operation = &timeline.operation;
+        let started = timeline
+            .steps
+            .iter()
+            .filter_map(|step| step.started_at_ms)
+            .chain(operation.started_at_ms)
+            .min();
+        let end = operation.finished_at_ms.unwrap_or(now_ms);
+        Self {
+            kind: operation.kind,
+            state: operation.state,
+            done: timeline
+                .steps
+                .iter()
+                .filter(|step| step.state.finished())
+                .count(),
+            total: timeline.steps.len(),
+            running: timeline
+                .steps
+                .iter()
+                .filter(|step| step.state.running())
+                .map(|step| step.key.to_string())
+                .collect(),
+            elapsed_ms: started.map(|started| u64::try_from(end - started).unwrap_or(0)),
+            left_ms: timeline.remaining_ms(now_ms),
+            usual_ms: if operation.state.terminal() {
+                timeline.comparable_usual_ms()
+            } else {
+                timeline.usual_ms()
+            },
+        }
+    }
+
+    /// How many of `cells` the steps done fill, rounded down: a bar of
+    /// `cells` cells, or with 100, the percent done.
+    #[must_use]
+    pub fn filled(&self, cells: usize) -> usize {
+        (self.done * cells).checked_div(self.total).unwrap_or(0)
+    }
+
+    /// Steps done, in percent, rounded down.
+    #[must_use]
+    pub fn percent(&self) -> usize {
+        self.filled(100)
+    }
+
+    /// Where the operation stands, in a word: "Deploying" or "Deployed".
+    #[must_use]
+    pub const fn status(&self) -> &'static str {
+        let delete = matches!(self.kind, OperationKind::Delete);
+        match self.state {
+            OperationState::Requested => "Queued",
+            OperationState::Running if delete => "Deleting",
+            OperationState::Running => "Deploying",
+            OperationState::Succeeded if delete => "Deleted",
+            OperationState::Succeeded => "Deployed",
+            OperationState::Failed => "Failed",
+            OperationState::Cancelled => "Cancelled",
+            OperationState::Superseded => "Superseded",
+        }
+    }
+
+    /// Steps done of all, such as "4/9".
+    #[must_use]
+    pub fn steps(&self) -> String {
+        format!("{}/{}", self.done, self.total)
+    }
+
+    /// How long a running operation should still take, such as "~48.0 s
+    /// left", or how a finished one compared with its usual duration.
+    #[must_use]
+    pub fn outlook(&self) -> Option<String> {
+        self.against_usual().or_else(|| {
+            let left = self.left_ms.filter(|_| !self.state.terminal())?;
+            Some(format!("~{} left", Elapsed(Duration::from_millis(left))))
+        })
+    }
+
+    /// How a finished operation compared with its usual duration, such as
+    /// "6.0 s faster than usual".
+    fn against_usual(&self) -> Option<String> {
+        let usual = self.usual_ms.filter(|_| self.state.terminal())?;
+        let elapsed = self.elapsed_ms?;
+        let difference = elapsed.abs_diff(usual);
+        Some(if difference < 1_000 {
+            "as long as usual".to_owned()
+        } else {
+            let faster = if elapsed < usual { "faster" } else { "slower" };
+            format!(
+                "{} {faster} than usual",
+                Elapsed(Duration::from_millis(difference))
+            )
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1431,5 +1557,92 @@ mod tests {
         other.operation_id = Some("other".into());
         timeline.apply(&other);
         assert_eq!(timeline.steps[0].state, StepState::Running);
+    }
+
+    #[test]
+    fn progress_counts_from_the_first_start_and_rounds_down() {
+        let mut timeline = timeline(&[
+            (Phase::BuildGit, "web", 30_000),
+            (Phase::RunJob, "migrate", 4_000),
+            (Phase::EnsureService, "web", 2_000),
+        ]);
+        timeline.operation.state = OperationState::Requested;
+        timeline.operation.started_at_ms = None;
+        let queued = Progress::new(&timeline, 1_000);
+        assert_eq!(
+            (queued.status(), queued.steps(), queued.percent()),
+            ("Queued", "0/3".into(), 0)
+        );
+        assert_eq!(queued.elapsed_ms, None);
+
+        // The operation's own start trails its first step's.
+        timeline.operation.state = OperationState::Running;
+        timeline.operation.started_at_ms = Some(2_000);
+        apply(
+            &mut timeline,
+            vec![
+                action("action_started", "a1", Phase::BuildGit, "web", 1_000),
+                action("action_succeeded", "a1", Phase::BuildGit, "web", 11_000),
+                action("action_started", "a2", Phase::RunJob, "migrate", 11_000),
+            ],
+        );
+        let running = Progress::new(&timeline, 13_000);
+        assert_eq!(running.status(), "Deploying");
+        assert_eq!(running.running, ["Run job migrate"]);
+        assert_eq!(running.elapsed_ms, Some(12_000));
+        // One step of three: 33 %, and 4 of a 12-cell bar.
+        assert_eq!((running.percent(), running.filled(12)), (33, 4));
+        // The job has 2 s left, then the service's 2 s.
+        assert_eq!(running.outlook().as_deref(), Some("~4.0 s left"));
+    }
+
+    #[test]
+    fn progress_of_no_steps_is_none_done() {
+        let progress = Progress::new(&timeline(&[]), 0);
+        assert_eq!((progress.percent(), progress.filled(12)), (0, 0));
+        assert_eq!(progress.steps(), "0/0");
+    }
+
+    #[test]
+    fn progress_names_its_state_by_kind() {
+        let mut timeline = timeline(&[]);
+        let status = |timeline: &Timeline| Progress::new(timeline, 0).status();
+        timeline.operation.kind = OperationKind::Delete;
+        assert_eq!(status(&timeline), "Deleting");
+        timeline.operation.state = OperationState::Succeeded;
+        assert_eq!(status(&timeline), "Deleted");
+        timeline.operation.kind = OperationKind::Apply;
+        assert_eq!(status(&timeline), "Deployed");
+        timeline.operation.state = OperationState::Superseded;
+        assert_eq!(status(&timeline), "Superseded");
+    }
+
+    #[test]
+    fn progress_tells_the_time_left_then_against_the_usual() {
+        let mut progress = Progress {
+            kind: OperationKind::Apply,
+            state: OperationState::Running,
+            done: 4,
+            total: 9,
+            running: vec!["Build web".into()],
+            elapsed_ms: Some(30_000),
+            left_ms: Some(48_000),
+            usual_ms: Some(80_000),
+        };
+        assert_eq!(progress.steps(), "4/9");
+        assert_eq!(progress.outlook().as_deref(), Some("~48.0 s left"));
+        progress.state = OperationState::Succeeded;
+        for (elapsed, outlook) in [
+            (74_000, "6.0 s faster than usual"),
+            (79_001, "as long as usual"),
+            (80_999, "as long as usual"),
+            (81_000, "1.0 s slower than usual"),
+        ] {
+            progress.elapsed_ms = Some(elapsed);
+            assert_eq!(progress.outlook().as_deref(), Some(outlook), "{elapsed}");
+        }
+        // A run that is not comparable with the usual one says nothing.
+        progress.usual_ms = None;
+        assert_eq!(progress.outlook(), None);
     }
 }

@@ -406,6 +406,13 @@ they run: those done, the one running, and those left.
   ○ Update service web
 ```
 
+The first line says where the deployment stands, like the dashboard:
+`Queued`, `Deploying` or `Deleting`, then its outcome, such as `Deployed` or
+`Failed`, while the command still waits once it ended. The time counts from
+when the deployment or its first step started, whichever came first. Once a
+clean run ended, the time left gives way to how its time compared with the
+usual one, such as `6.0 s faster than usual`.
+
 A step that ran much longer or shorter than usual shows how long it usually
 takes, from the environment's last successful deployments. Steps left show
 how long they usually take, and the time left adds them up. A failed step

@@ -15,14 +15,14 @@ use super::super::ui::{Icon, Tone, badge, empty, icon, loading, notice};
 use super::super::{Alive, ClientErrorExt, document_hidden, format::now_ms, operation_events};
 use super::editor;
 use crate::log_output::LogLine;
-use crate::timeline::{Lanes, Progress, Row, RowId, TaskLook, Waterfall, percent};
+use crate::timeline::{Lanes, Row, RowId, TabTitle, TaskLook, Waterfall, percent};
 use gloo_timers::callback::Interval;
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::components::A;
 use piqueld_client::observability::Elapsed;
-use piqueld_client::timeline::{Step, StepKey, StepState, Timeline};
+use piqueld_client::timeline::{Progress, Step, StepKey, StepState, Timeline};
 use piqueld_client::{
     API_PREFIX, BuildRecord, Client, Event, Operation, Phase, access::AppPermission,
 };
@@ -410,7 +410,7 @@ pub(super) fn DeploymentProgress(live: LiveTimeline, subject: String) -> impl In
                                         .usual_ms
                                         .map(|usual| format!(" · usually {}", duration(usual)));
                                     view! {
-                                        <strong>{duration(p.elapsed_ms)}</strong>
+                                        <strong>{duration(p.elapsed_ms.unwrap_or(0))}</strong>
                                         " elapsed"
                                         {outlook}
                                         {usual}
