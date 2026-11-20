@@ -1043,8 +1043,45 @@ async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
             format!("{route} secret \"stripe\" deletion {stripe} completed"),
             format!(
                 "{route} secret key recovery discarded 1 values across 0 environments \
-                and 1 applications, and 0 notification destinations"
+                and 1 applications, 0 webhook secrets, and 0 notification destinations"
             ),
         ]
+    );
+}
+
+/// Key recovery records the webhook secrets it deletes, even when they are
+/// all it discards.
+#[tokio::test]
+async fn key_recovery_records_the_webhook_secrets_it_deletes() {
+    let temp = tempfile::tempdir().expect("a temporary directory is created");
+    let store = Store::open_unsynced(temp.path().join("db"))
+        .await
+        .expect("the store opens");
+    let app = application();
+    store
+        .save_application(&ApplicationTemplate::from(&app), None, None)
+        .await
+        .expect("the application is saved");
+    store
+        .generate_webhook_secret(Daemon, app.id())
+        .await
+        .expect("the webhook secret is generated");
+    std::fs::write(temp.path().join("secrets.key"), [42; 32]).expect("the lost key is written");
+    let route = "POST /api/v1/system/secrets/recover-key";
+    let request = crate::testing::audit_request(route);
+    let author = crate::Author {
+        actor: Daemon,
+        request: Some(&request),
+    };
+    store
+        .recover_secret_key(author)
+        .await
+        .expect("the lost key is recovered");
+    assert_eq!(
+        store.audit_actions().await,
+        [format!(
+            "{route} secret key recovery discarded 0 values across 0 environments \
+            and 0 applications, 1 webhook secrets, and 0 notification destinations"
+        )]
     );
 }

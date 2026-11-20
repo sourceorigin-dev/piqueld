@@ -313,10 +313,11 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         // Webhook secrets are encrypted too; applications generate new ones.
-        sqlx::query!("DELETE FROM webhook_secrets")
+        let webhooks = sqlx::query!("DELETE FROM webhook_secrets")
             .execute(&mut *tx)
             .await
-            .map_err(StoreError::database)?;
+            .map_err(StoreError::database)?
+            .rows_affected();
         // So are notification destinations' URLs; they are created again.
         let destinations = sqlx::query_scalar!("SELECT COUNT(*) FROM notification_destinations")
             .fetch_one(&mut *tx)
@@ -343,7 +344,7 @@ impl Store {
             .map_err(StoreError::database)?;
         let discarded = usage.versions + stored.versions;
         let counts = format!(
-            "{discarded} values across {} environments and {} applications, and {destinations} notification destinations",
+            "{discarded} values across {} environments and {} applications, {webhooks} webhook secrets, and {destinations} notification destinations",
             usage.environments, stored.applications
         );
         let message = format!("Recovered the secret master key; discarded {counts}");

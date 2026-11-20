@@ -54,7 +54,8 @@ A secret's record names the secret, never its value, and what changed:
 Deleting a secret takes two records: one when piqueld reserves it for
 deletion, and one once its copies are removed and it is deleted. If removing
 them fails, the reservation's record stays, followed by the failed request.
-Recovering the secret key records how many values it discarded.
+Recovering the secret key records how many values, webhook secrets and
+notification destinations it discarded.
 
 Other records are written in the background. If too many wait at once, or one
 can't be written, it's lost: the next record written then follows a **Failed**
