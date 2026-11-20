@@ -2879,6 +2879,37 @@
         ],
         "type": "object"
       },
+      "DeviceConfirmRequest": {
+        "description": "Asks to confirm the calling CLI login with a passkey before `action`.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/SensitiveAction",
+            "description": "The action the CLI retries once the login is confirmed."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "DeviceConfirmation": {
+        "description": "What a device request confirms, instead of signing in a new CLI.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/SensitiveAction",
+            "description": "The action the CLI is about to retry."
+          },
+          "login": {
+            "description": "ID of the existing CLI login to confirm.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "login"
+        ],
+        "type": "object"
+      },
       "DevicePoll": {
         "description": "CLI polling request.",
         "properties": {
@@ -2900,6 +2931,25 @@
             "format": "int32",
             "minimum": 0,
             "type": "integer"
+          },
+          "confirms": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceConfirmation"
+                  }
+                ],
+                "description": "Set when the request confirms an existing CLI login of the approver's\naccount for an action, rather than signing in a new one."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
           },
           "expires_in": {
             "description": "Seconds until the request expires.",
@@ -2946,6 +2996,25 @@
       "DeviceStart": {
         "description": "Device login challenge for an interactive CLI.",
         "properties": {
+          "confirms": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceConfirmation"
+                  }
+                ],
+                "description": "For a request confirming an existing CLI login, the login and the\naction, as the approval page names them."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          },
           "device_code": {
             "description": "Secret used only by the initiating CLI to poll.",
             "type": "string"
@@ -3042,7 +3111,7 @@
             "type": "string"
           },
           "token": {
-            "description": "Issued CLI credential.",
+            "description": "Issued CLI credential; absent when the request confirmed an existing\nlogin instead.",
             "nullable": true,
             "type": "string"
           },
@@ -11913,6 +11982,17 @@
           "value"
         ],
         "type": "object"
+      },
+      "SensitiveAction": {
+        "description": "An action that needs a recent passkey sign-in, which a CLI login\nconfirms through the dashboard before retrying it.",
+        "enum": [
+          "create_token",
+          "create_invitation",
+          "create_enrollment",
+          "set_grants",
+          "recover_secret_key"
+        ],
+        "type": "string"
       },
       "Service": {
         "additionalProperties": false,
@@ -27563,7 +27643,7 @@
     },
     "/api/v1/auth/device/approve": {
       "post": {
-        "description": "The device's next poll receives a token for the signed-in user. Needs a\npasskey sign-in within the last 2 minutes; the issued login counts as\nsigned in when that was.",
+        "description": "The device's next poll receives a token for the signed-in user, or, for a\nrequest confirming an existing CLI login of the same account, marks that\nlogin confirmed. Needs a passkey sign-in within the last 2 minutes; the\nissued or confirmed login counts as signed in when that was.",
         "operationId": "authDeviceApprove",
         "requestBody": {
           "content": {
@@ -27611,9 +27691,59 @@
         "x-piqueld-access": "authenticated"
       }
     },
+    "/api/v1/auth/device/confirm": {
+      "post": {
+        "description": "Sensitive actions need a passkey sign-in within the last 2 minutes and\notherwise fail with 403 `reauthentication_required`. A CLI login asks\nhere for a device request naming `action`, approved like a sign-in, on the\ndashboard page `verification_uri_complete`, by its own account. Once\napproved, polling answers `complete` without a token: the CLI keeps its\nlogin, now confirmed, and retries the action. Only CLI logins confirm this\nway; API tokens are refused with 403 `reauthentication_required`. Rate\nlimited per client address (429 with `Retry-After`).",
+        "operationId": "authDeviceConfirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceStart"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and send the request again, except a refused registration finish, which consumed its ceremony: start again from `authRegistrationStart`. API tokens never can. Also returned when the TCP authority or browser origin is not trusted"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request body stopped arriving"
+          }
+        },
+        "summary": "Starts confirming the calling CLI login with a passkey.",
+        "x-piqueld-access": "authenticated"
+      }
+    },
     "/api/v1/auth/device/inspect": {
       "post": {
-        "description": "Shows the requesting address and remaining lifetime so the user can confirm\nthe request before approving it.",
+        "description": "Shows the requesting address and remaining lifetime so the user can confirm\nthe request before approving it. A request confirming an existing CLI\nlogin names its action and login, and only that login's account sees it.",
         "operationId": "authDeviceInspect",
         "requestBody": {
           "content": {

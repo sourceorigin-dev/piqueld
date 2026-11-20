@@ -10,9 +10,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use piqueld_core::auth::{
-    AuthStatus, Ceremony, CeremonyFinish, DeviceApprove, DevicePoll, DeviceRequest, DeviceStart,
-    DeviceStartRequest, DeviceToken, Directory, HostOperator, Manage, Managed, OperatorLink,
-    OperatorSignIn, Principal, RegistrationStart, Session, SetupLink, User,
+    AuthStatus, Ceremony, CeremonyFinish, DeviceApprove, DeviceConfirmRequest, DevicePoll,
+    DeviceRequest, DeviceStart, DeviceStartRequest, DeviceToken, Directory, HostOperator, Manage,
+    Managed, OperatorLink, OperatorSignIn, Principal, RegistrationStart, Session, SetupLink, User,
 };
 use piqueld_core::tailnet::TailnetPeer;
 use piqueld_store::StoreError;
@@ -171,6 +171,7 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
             "/api/v1/auth/login/start"
                 | "/api/v1/auth/register/start"
                 | "/api/v1/auth/reauthenticate/start"
+                | "/api/v1/auth/device/confirm"
                 | "/api/v1/auth/device/start"
                 | "/api/v1/auth/login/operator"
         )
@@ -703,6 +704,30 @@ pub(super) async fn device_start(
     };
     Ok(Json(auth.device_start(requester, request.grants)?))
 }
+/// Starts confirming the calling CLI login with a passkey.
+///
+/// Sensitive actions need a passkey sign-in within the last 2 minutes and
+/// otherwise fail with 403 `reauthentication_required`. A CLI login asks
+/// here for a device request naming `action`, approved like a sign-in, on the
+/// dashboard page `verification_uri_complete`, by its own account. Once
+/// approved, polling answers `complete` without a token: the CLI keeps its
+/// login, now confirmed, and retries the action. Only CLI logins confirm this
+/// way; API tokens are refused with 403 `reauthentication_required`. Rate
+/// limited per client address (429 with `Retry-After`).
+#[utoipa::path(post,path="/api/v1/auth/device/confirm",operation_id="authDeviceConfirm",request_body=DeviceConfirmRequest,responses((status=200,body=DeviceStart),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
+pub(super) async fn device_confirm(
+    Extension(auth): Extension<Auth>,
+    Extension(identity): Extension<Identity>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    ApiJson(input): ApiJson<DeviceConfirmRequest>,
+) -> Result<Json<DeviceStart>, ApiError> {
+    let requester = peer.map(|Extension(ConnectInfo(peer))| peer.ip());
+    Ok(Json(auth.device_confirm(
+        &identity,
+        requester,
+        input.action,
+    )?))
+}
 /// Bodies [`device_start`] accepts: pending logins are kept in memory.
 const DEVICE_START_LIMIT_BYTES: usize = 16 * 1024;
 /// Bodies the other sign-in and passkey ceremony endpoints accept: most are
@@ -767,19 +792,22 @@ pub(super) async fn device_poll(
 /// Inspects a pending device sign-in.
 ///
 /// Shows the requesting address and remaining lifetime so the user can confirm
-/// the request before approving it.
+/// the request before approving it. A request confirming an existing CLI
+/// login names its action and login, and only that login's account sees it.
 #[utoipa::path(post,path="/api/v1/auth/device/inspect",operation_id="authDeviceInspect",request_body=DeviceApprove,responses((status=200,body=DeviceRequest)))]
 pub(super) async fn device_inspect(
     Extension(auth): Extension<Auth>,
+    Extension(identity): Extension<Identity>,
     ApiJson(input): ApiJson<DeviceApprove>,
 ) -> Result<Json<DeviceRequest>, ApiError> {
-    Ok(Json(auth.device_inspect(&input.user_code)?))
+    Ok(Json(auth.device_inspect(&input.user_code, &identity)?))
 }
 /// Approves a pending device sign-in.
 ///
-/// The device's next poll receives a token for the signed-in user. Needs a
-/// passkey sign-in within the last 2 minutes; the issued login counts as
-/// signed in when that was.
+/// The device's next poll receives a token for the signed-in user, or, for a
+/// request confirming an existing CLI login of the same account, marks that
+/// login confirmed. Needs a passkey sign-in within the last 2 minutes; the
+/// issued or confirmed login counts as signed in when that was.
 #[utoipa::path(post,path="/api/v1/auth/device/approve",operation_id="authDeviceApprove",request_body=DeviceApprove,responses((status=200,body=Managed),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn device_approve(
     Extension(auth): Extension<Auth>,

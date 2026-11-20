@@ -186,6 +186,88 @@ fn secret_access_changes_send_the_listed_access_as_expected() {
     );
 }
 
+/// A CLI login asked for a recent passkey sign-in confirms itself through
+/// the browser, waiting beyond `--timeout`, then sends the refused request
+/// once more; with `--noninteractive` it reports the refusal instead.
+#[test]
+fn refused_sensitive_actions_confirm_the_login_then_retry_once() {
+    let mut recoveries = 0;
+    let server = start_server(false, 5, move |request| {
+        match (request.method.as_str(), request.path.as_str()) {
+            ("POST", "/api/v1/system/secrets/recover-key") => {
+                recoveries += 1;
+                if recoveries < 3 {
+                    let refusal = json!({
+                        "code": "reauthentication_required",
+                        "message": "This action needs a passkey sign-in within the last 2 minutes",
+                        "details": {"step_up": true}
+                    });
+                    return Reply::status("403 Forbidden", &refusal);
+                }
+                Reply::json(json!({
+                    "affected_environments": 0,
+                    "affected_applications": 0,
+                    "affected_secrets": 0,
+                    "discarded_versions": 0,
+                }))
+            }
+            ("POST", "/api/v1/auth/device/confirm") => {
+                let body: Value =
+                    serde_json::from_slice(&request.body).expect("the CLI sends a JSON body");
+                assert_eq!(body, json!({"action": "recover_secret_key"}));
+                Reply::bare(&json!({
+                    "device_code": "device",
+                    "user_code": "ABCD-EFGH",
+                    "verification_uri": "http://localhost:7845/dashboard/auth#device",
+                    "verification_uri_complete": "http://localhost:7845/dashboard/auth#device=ABCD-EFGH",
+                    "expires_in": 600,
+                    // Longer than `--timeout`, which approval doesn't count.
+                    "interval": 3,
+                    "requester": null,
+                    "confirms": {"action": "recover_secret_key", "login": "login-01"}
+                }))
+            }
+            ("POST", "/api/v1/auth/device/poll") => Reply::bare(&json!({
+                "status": "complete",
+                "token": null,
+                "user": {"id": "alice", "username": "alice", "display_name": ""}
+            })),
+            other => panic!("unexpected request {other:?}"),
+        }
+    });
+    let refused = run(
+        &server,
+        &["--noninteractive", "secrets", "recover-key", "--yes"],
+    );
+    assert!(!refused.status.success());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains("reauthentication_required"), "{stderr}");
+    let recovered = run_human(&server, &["secrets", "recover-key", "--yes"]);
+    let stderr = String::from_utf8_lossy(&recovered.stderr);
+    assert!(recovered.status.success(), "{stderr}");
+    assert!(stderr.contains("Open http://localhost:7845/dashboard/auth#device=ABCD-EFGH"));
+    assert!(stderr.contains("to recover the secret key"), "{stderr}");
+    assert!(
+        stderr.contains("The page names this login: login-01"),
+        "{stderr}"
+    );
+    let paths: Vec<_> = server
+        .finish()
+        .into_iter()
+        .map(|request| request.path)
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "/api/v1/system/secrets/recover-key",
+            "/api/v1/system/secrets/recover-key",
+            "/api/v1/auth/device/confirm",
+            "/api/v1/auth/device/poll",
+            "/api/v1/system/secrets/recover-key",
+        ]
+    );
+}
+
 #[test]
 fn secret_key_recovery_requires_confirmation() {
     let server = start_server(false, 1, |request| {

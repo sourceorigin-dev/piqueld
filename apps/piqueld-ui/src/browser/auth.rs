@@ -947,10 +947,12 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
             confirmed(|| client.auth_device_approve(&pending.user_code)).await?;
             request.set(None);
             code.set(String::new());
-            Ok((
-                "CLI approved. You can return to your terminal.".into(),
-                None,
-            ))
+            let done = if pending.confirms.is_some() {
+                "CLI login confirmed. piquelctl continues by itself."
+            } else {
+                "CLI approved. You can return to your terminal."
+            };
+            Ok((done.into(), None))
         });
     };
     view! {
@@ -999,6 +1001,45 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
                         .into_any()
                 }
                 Some(pending) => {
+                    // Confirming a login already signed in names it and the
+                    // action it is about to take, instead of the access a
+                    // new login gets.
+                    let (what, approve_label, printed) = match &pending.confirms {
+                        Some(confirms) => {
+                            (
+                                view! {
+                                    <dt>"Login to confirm"</dt>
+                                    <dd>
+                                        <code>{confirms.login.clone()}</code>
+                                    </dd>
+                                    <dt>"About to"</dt>
+                                    <dd>{confirms.action.description()}</dd>
+                                }
+                                    .into_any(),
+                                "Confirm CLI login",
+                                "piquelctl printed this code, the address it connected from and the login. Approve only if all three match this request.",
+                            )
+                        }
+                        None => {
+                            (
+                                view! {
+                                    <dt>"Access"</dt>
+                                    <dd>
+                                        {pending
+                                            .grants
+                                            .as_ref()
+                                            .map_or_else(
+                                                || "Your account's full access".into_any(),
+                                                summary,
+                                            )}
+                                    </dd>
+                                }
+                                    .into_any(),
+                                "Approve CLI login",
+                                "piquelctl printed this code and the address it connected from. Approve only if both match this request.",
+                            )
+                        }
+                    };
                     view! {
                         <dl class="kv device-request">
                             <dt>"Code"</dt>
@@ -1007,23 +1048,12 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
                             <dd>{pending.requester_label()}</dd>
                             <dt>"Started"</dt>
                             <dd>{pending.age_label()}</dd>
-                            <dt>"Access"</dt>
-                            <dd>
-                                {pending
-                                    .grants
-                                    .as_ref()
-                                    .map_or_else(
-                                        || "Your account's full access".into_any(),
-                                        summary,
-                                    )}
-                            </dd>
+                            {what}
                         </dl>
-                        <p class="hint mt-sm">
-                            "piquelctl printed this code and the address it connected from. Approve only if both match this request."
-                        </p>
+                        <p class="hint mt-sm">{printed}</p>
                         <div class="form-actions">
                             <button type="button" class="btn btn-primary" on:click={approve}>
-                                "Approve CLI login"
+                                {approve_label}
                             </button>
                             <button type="button" class="btn" on:click={move |_| request.set(None)}>
                                 "Cancel"

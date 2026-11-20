@@ -291,6 +291,25 @@ comparison cannot tell callers apart.
   an approval. The issued session inherits it. An approval whose proof is
   too old by the time the poll issues it is refused with 403 and dropped; the
   CLI signs in again.
+- A CLI login refused with `reauthentication_required` confirms itself
+  through the same machinery. `POST /auth/device/confirm`, authenticated as
+  that CLI login, starts a request whose `Confirmation` names the login, its
+  account and a typed `SensitiveAction`. API tokens are refused, and browser
+  sessions use `/auth/reauthenticate`. Inspection and approval treat the
+  request as unknown to any other account, and the page shows the login and
+  action instead of access. Approval records the approver's proof as for a
+  login. The poll marks the request as issuing, as for a login, and calls
+  `Store::confirm_login`, which, if that proof is still recent, sets the CLI
+  row's `authenticated_at` to it, only while the row is live and unless the
+  row holds a later one already, from a confirmation that finished first. It
+  answers
+  `complete` without a token and removes the request; so does a refusal or
+  a login that ended, while any other failure leaves it to the next poll.
+  The start response echoes the login and action in `confirms`, which
+  `piquelctl` prints so the approver can match them. `piquelctl`'s
+  `auth::confirmed` wraps each sensitive request: on that 403 with
+  `step_up`, it waits for approval as `login` does, outside `--timeout`,
+  then retries once. `--noninteractive` returns the refusal instead.
 - One poll at a time issues the session, without holding the pending logins
   while it writes; a concurrent poll gets `authorization_pending`. The first
   poll after approval prepares the session's secret and ID and stores them.

@@ -1,9 +1,10 @@
 //! Durable opaque sessions, host operator sessions, and short-lived,
 //! explicitly approved device logins.
 use super::{Auth, AuthError, CredentialKind, DAY, MAX_PENDING, Result, now_secs};
-use piqueld_core::access::{Denied, Grants};
+use piqueld_core::access::{Denied, Grants, Reauthenticate};
 use piqueld_core::auth::{
-    DeviceRequest, DeviceStart, DeviceToken, HostOperator, OperatorLink, Principal, Session, User,
+    DeviceConfirmation, DeviceRequest, DeviceStart, DeviceToken, HostOperator, OperatorLink,
+    Principal, SensitiveAction, Session, User,
 };
 use piqueld_store::{Actor, Caller, Cascade, NewCredential, Proof, StoreError};
 use std::collections::{HashMap, hash_map::Entry};
@@ -208,6 +209,41 @@ pub(super) struct Device {
     pub(super) prepared: Option<Prepared>,
     /// Whether a poll is issuing the session (see [`Issuing`]).
     issuing: bool,
+    /// Set when the request confirms an existing CLI login with a passkey
+    /// instead of signing in a new one.
+    confirms: Option<Confirmation>,
+}
+
+/// What the poll of an approved device request does.
+enum Approved {
+    /// Confirms this existing CLI login.
+    Confirm(Confirmation),
+    /// Issues a session limited to `grants`, from its `prepared` secret;
+    /// `retry` when an earlier poll began storing it.
+    Issue {
+        grants: Option<Grants>,
+        prepared: Prepared,
+        retry: bool,
+    },
+}
+
+/// An existing CLI login a device request confirms, for one action.
+#[derive(Clone)]
+struct Confirmation {
+    /// The CLI login, which only its own account may confirm.
+    credential_id: String,
+    user: User,
+    action: SensitiveAction,
+}
+
+impl Confirmation {
+    /// The login and action, as the CLI and the approval page show them.
+    fn shown(&self) -> DeviceConfirmation {
+        DeviceConfirmation {
+            action: self.action,
+            login: self.credential_id.clone(),
+        }
+    }
 }
 
 /// Who approved a device login, and when their passkey last proved them
@@ -414,6 +450,51 @@ impl Auth {
         requester: Option<std::net::IpAddr>,
         grants: Option<Grants>,
     ) -> Result<DeviceStart> {
+        self.start_device(requester, grants, None)
+    }
+    /// Starts a device request that confirms the caller's own CLI login with
+    /// a passkey before `action`, through the same code and dashboard page as
+    /// signing in. Approving it marks that login as signed in when the
+    /// approver's passkey last proved them present; it issues no session.
+    /// API tokens can never be confirmed; browser sessions confirm directly.
+    pub(crate) fn device_confirm(
+        &self,
+        identity: &Identity,
+        requester: Option<std::net::IpAddr>,
+        action: SensitiveAction,
+    ) -> Result<DeviceStart> {
+        let Credential::Account { user, id, proof } = &identity.credential else {
+            return Err(AuthError::Invalid(
+                "the host operator needs no passkey confirmation",
+            ));
+        };
+        match proof.kind {
+            CredentialKind::Cli => {}
+            CredentialKind::Token => {
+                return Err(Denied::Reauthenticate(Reauthenticate::Token).into());
+            }
+            CredentialKind::Browser => {
+                return Err(AuthError::Invalid(
+                    "browser sessions confirm with a passkey through /auth/reauthenticate",
+                ));
+            }
+        }
+        let confirms = Confirmation {
+            credential_id: id.clone(),
+            user: user.clone(),
+            action,
+        };
+        self.start_device(requester, None, Some(confirms))
+    }
+    /// Stores a pending device request, signing in a new CLI limited to
+    /// `grants`, or confirming an existing one.
+    fn start_device(
+        &self,
+        requester: Option<std::net::IpAddr>,
+        grants: Option<Grants>,
+        confirms: Option<Confirmation>,
+    ) -> Result<DeviceStart> {
+        let shown = confirms.as_ref().map(Confirmation::shown);
         let mut devices = self.0.devices.lock();
         devices.retain(|_, device| device.expires > now_secs());
         if devices.len() >= MAX_PENDING {
@@ -445,6 +526,7 @@ impl Auth {
                 grants: grants.clone(),
                 prepared: None,
                 issuing: false,
+                confirms,
             },
         );
         let verification_uri = format!("{}/dashboard/auth#device", self.origin());
@@ -457,27 +539,39 @@ impl Auth {
             interval: 5,
             requester: requester.map(|address| address.to_string()),
             grants,
+            confirms: shown,
         })
     }
-    /// Finds a live, unapproved request by the code the user typed.
+    /// Finds a live, unapproved request by the code the user typed. Requests
+    /// confirming another account's CLI login look like no request at all.
     fn pending_device<'a>(
         devices: &'a mut HashMap<String, Device>,
         code: &str,
+        identity: &Identity,
     ) -> Result<&'a mut Device> {
         let normalized = code.trim().to_ascii_uppercase();
+        let viewer = identity.user().map(|user| user.id.as_str());
         let device = devices
             .values_mut()
             .find(|device| device.user_code == normalized && device.expires > now_secs())
+            .filter(|device| {
+                device
+                    .confirms
+                    .as_ref()
+                    .is_none_or(|confirms| Some(confirms.user.id.as_str()) == viewer)
+            })
             .ok_or(AuthError::Invalid("device code is invalid or expired"))?;
         if device.approved_by.is_some() {
             return Err(AuthError::Invalid("device code has already been approved"));
         }
         Ok(device)
     }
-    /// Describes a pending request so the approver can check where it came from.
-    pub(crate) fn device_inspect(&self, code: &str) -> Result<DeviceRequest> {
+    /// Describes a pending request so the approver can check where it came
+    /// from. A request confirming a CLI login is only shown to that login's
+    /// account.
+    pub(crate) fn device_inspect(&self, code: &str, identity: &Identity) -> Result<DeviceRequest> {
         let mut devices = self.0.devices.lock();
-        let device = Self::pending_device(&mut devices, code)?;
+        let device = Self::pending_device(&mut devices, code, identity)?;
         let now = now_secs();
         Ok(DeviceRequest {
             user_code: device.user_code.clone(),
@@ -485,6 +579,7 @@ impl Auth {
             age: u32::try_from(now - device.created).unwrap_or(0),
             expires_in: u32::try_from(device.expires - now).unwrap_or(0),
             grants: device.grants.clone(),
+            confirms: device.confirms.as_ref().map(Confirmation::shown),
         })
     }
     /// Marks a pending device login as approved by the caller's credential,
@@ -499,7 +594,7 @@ impl Auth {
         }
         let authenticated_at = identity.fresh_proof(APPROVAL_MARGIN_SECS)?;
         let mut devices = self.0.devices.lock();
-        let device = Self::pending_device(&mut devices, code)?;
+        let device = Self::pending_device(&mut devices, code, identity)?;
         if let Some(grants) = &device.grants {
             identity.grants.may_grant(grants)?;
         }
@@ -542,7 +637,7 @@ impl Auth {
             user: None,
         };
         let key = Self::hash(code);
-        let (approver, grants, prepared, retry) = {
+        let (approver, next) = {
             let mut devices = self.0.devices.lock();
             let Entry::Occupied(mut entry) = devices.entry(key.clone()) else {
                 return Err(AuthError::Unauthorized);
@@ -560,17 +655,33 @@ impl Auth {
             let Some(approver) = device.approved_by.clone().filter(|_| !device.issuing) else {
                 return Ok(pending("authorization_pending"));
             };
-            let retry = device.prepared.is_some();
-            let prepared = match &device.prepared {
-                Some(prepared) => prepared.clone(),
-                None => device.prepared.insert(Self::prepare()?).clone(),
+            let next = match &device.confirms {
+                Some(confirms) => Approved::Confirm(confirms.clone()),
+                None => Approved::Issue {
+                    retry: device.prepared.is_some(),
+                    prepared: match &device.prepared {
+                        Some(prepared) => prepared.clone(),
+                        None => device.prepared.insert(Self::prepare()?).clone(),
+                    },
+                    grants: device.grants.clone(),
+                },
             };
             device.issuing = true;
-            (approver, device.grants.clone(), prepared, retry)
+            (approver, next)
         };
         let issuing = Issuing {
             devices: &self.0.devices,
             key: Some(key),
+        };
+        let (grants, prepared, retry) = match next {
+            Approved::Confirm(confirms) => {
+                return self.confirm_login(&approver, confirms, issuing).await;
+            }
+            Approved::Issue {
+                grants,
+                prepared,
+                retry,
+            } => (grants, prepared, retry),
         };
         let user = if retry {
             let hash = Self::hash(&prepared.token);
@@ -604,6 +715,50 @@ impl Auth {
             status: "complete".into(),
             token: Some(prepared.token),
             user: Some(user),
+        })
+    }
+    /// Marks the CLI login an approved request confirms as signed in when its
+    /// approval's passkey proof was, completing the request without a token.
+    /// A login revoked meanwhile is unauthorized, and an approval whose proof
+    /// is no longer recent is refused, as when issuing a session; both end
+    /// the request. Any other failure, such as a busy store, leaves it to the
+    /// next poll, as `issuing` does when dropped.
+    async fn confirm_login(
+        &self,
+        approval: &Approval,
+        confirms: Confirmation,
+        issuing: Issuing<'_>,
+    ) -> Result<DeviceToken> {
+        let approver = Caller {
+            credential_id: &approval.credential_id,
+            user_id: &approval.user_id,
+        };
+        let confirmed = self.0.store.confirm_login(
+            approver,
+            &confirms.credential_id,
+            approval.authenticated_at,
+        );
+        match confirmed.await {
+            Ok(true) => issuing.finish(),
+            Ok(false) => {
+                issuing.finish();
+                return Err(AuthError::Unauthorized);
+            }
+            Err(error @ StoreError::Denied(_)) => {
+                issuing.finish();
+                return Err(error.into());
+            }
+            Err(error) => return Err(error.into()),
+        }
+        tracing::info!(
+            user_id = %confirms.user.id,
+            action = confirms.action.description(),
+            "confirmed CLI login with passkey"
+        );
+        Ok(DeviceToken {
+            status: "complete".into(),
+            token: None,
+            user: Some(confirms.user),
         })
     }
     /// Prepares the 30-day CLI session a device login issues.

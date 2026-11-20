@@ -5,8 +5,8 @@ use crate::{
     output::{Console, reports::report},
 };
 use piqueld_client::{
-    Client,
-    auth::{OperatorLink, SetupLink, User},
+    Client, ClientError,
+    auth::{DeviceStart, DeviceToken, OperatorLink, SensitiveAction, SetupLink, User},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -417,17 +417,11 @@ fn operator_link(console: &mut Console, link: &OperatorLink, warning: &str) -> R
 }
 /// Runs the browser device-code login:
 /// 1. Refuses when the daemon has no first account yet (that needs the setup link).
-/// 2. Starts a device login and prints the verification URL (with the code filled in
-///    when the daemon supports it), the code, and the requester address.
-/// 3. Polls at the daemon's interval (backing off on `slow_down`) until complete.
-/// 4. Saves the token as the endpoint's selected account and emits it.
+/// 2. Starts a device login and waits for its approval (see [`Approval::wait`]).
+/// 3. Saves the token as the endpoint's selected account and emits it.
 ///
 /// A limited login stops before anyone can approve it unless the daemon echoes
 /// the requested grants: older daemons ignore them and would issue full access.
-///
-/// Bounded by the daemon's `expires_in` (capped at `MAX_DEVICE_LOGIN_SECS`) and Ctrl-C
-/// rather than the whole-command `--timeout`, since approval waits on the operator.
-/// Each individual request still uses `--timeout`.
 pub(crate) async fn login(cli: &Cli, client: &Client, console: &mut Console) -> Result<()> {
     let status = client.auth_status().await?;
     if !status.initialized {
@@ -447,74 +441,164 @@ pub(crate) async fn login(cli: &Cli, client: &Client, console: &mut Console) -> 
             "the daemon ignored the requested access; it predates limited logins",
         ));
     }
-    // A link with the code filled in only needs the code checked, not typed.
-    let (link, code) = match &start.verification_uri_complete {
-        Some(link) => (link, "Check the page shows code"),
-        None => (&start.verification_uri, "Enter code"),
-    };
-    console.prompt_lines(&[
-        format!("Open {link}"),
-        format!("{code}: {}", start.user_code),
-        // The approval page shows the same address, so the approver can match them.
-        format!(
-            "The daemon sees this login coming from: {}",
-            start
-                .requester
-                .as_deref()
-                .unwrap_or("the daemon's local Unix socket")
-        ),
-        "Waiting for passkey login…".into(),
-    ])?;
-    let finish = async {
-        // Never let a daemon response turn polling into a tight loop.
-        let mut interval = u64::from(start.interval).max(1);
-        loop {
-            tokio::time::sleep(Duration::from_secs(interval)).await;
-            let result = client.auth_device_poll(&start.device_code).await?;
-            match result.status.as_str() {
-                "authorization_pending" => {}
-                "slow_down" => interval += 5,
-                "complete" => {
-                    let user = result.user.ok_or_else(|| {
-                        CliError::new(ErrorKind::General, "device login omitted account")
-                    })?;
-                    let token = result.token.ok_or_else(|| {
-                        CliError::new(ErrorKind::General, "device login omitted credential")
-                    })?;
-                    Credentials::update_at(&Credentials::path()?, |credentials| {
-                        let endpoint = credentials
-                            .endpoints
-                            .entry(Credentials::key(cli))
-                            .or_default();
-                        endpoint.selected.clone_from(&user.id);
-                        endpoint.accounts.insert(
-                            user.id.clone(),
-                            Account {
-                                username: user.username.clone(),
-                                token,
-                            },
-                        );
-                        Ok(())
-                    })?;
-                    return console.emit(&user);
+    let result = Approval::Login.wait(client, console, &start).await?;
+    let user = result
+        .user
+        .ok_or_else(|| CliError::new(ErrorKind::General, "device login omitted account"))?;
+    let token = result
+        .token
+        .ok_or_else(|| CliError::new(ErrorKind::General, "device login omitted credential"))?;
+    Credentials::update_at(&Credentials::path()?, |credentials| {
+        let endpoint = credentials
+            .endpoints
+            .entry(Credentials::key(cli))
+            .or_default();
+        endpoint.selected.clone_from(&user.id);
+        endpoint.accounts.insert(
+            user.id.clone(),
+            Account {
+                username: user.username.clone(),
+                token,
+            },
+        );
+        Ok(())
+    })?;
+    console.emit(&user)
+}
+/// Sends `request`, made for `action`. When the daemon asks this CLI login
+/// to confirm with a passkey first (403 `reauthentication_required` with
+/// `step_up`), it has changed nothing: the login is confirmed in a browser,
+/// like `piquelctl login` signs in, and `request` is sent once more. It never
+/// waits with `--noninteractive`, and API tokens, which can't confirm, get
+/// the refusal as it is.
+pub(crate) async fn confirmed<T, F>(
+    client: &Client,
+    console: &mut Console,
+    action: SensitiveAction,
+    request: impl Fn() -> F,
+) -> Result<T>
+where
+    F: Future<Output = std::result::Result<T, ClientError>>,
+{
+    match request().await {
+        Err(error) if error.step_up() && console.interactive() => {
+            let start = client.auth_device_confirm(action).await?;
+            Approval::Confirm(action)
+                .wait(client, console, &start)
+                .await?;
+            Ok(request().await?)
+        }
+        result => Ok(result?),
+    }
+}
+/// What a device request waits for a browser to approve: signing in a new
+/// login, or confirming this one with a passkey before an action.
+#[derive(Clone, Copy)]
+enum Approval {
+    Login,
+    Confirm(SensitiveAction),
+}
+
+impl Approval {
+    /// The instructions printed while waiting, after the link and code.
+    fn instructions(self, start: &DeviceStart, requester: &str) -> Vec<String> {
+        match self {
+            Self::Login => vec![
+                format!("The daemon sees this login coming from: {requester}"),
+                "Waiting for passkey login…".into(),
+            ],
+            Self::Confirm(action) => {
+                let mut lines = vec![format!(
+                    "The daemon sees this confirmation coming from: {requester}"
+                )];
+                // The page names the same login, so the approver can match it.
+                if let Some(confirms) = &start.confirms {
+                    lines.push(format!("The page names this login: {}", confirms.login));
                 }
-                _ => {
-                    return Err(CliError::new(
-                        ErrorKind::General,
-                        "unexpected device login response",
-                    ));
-                }
+                lines.push(format!(
+                    "Waiting for you to confirm this login with your passkey, to {}…",
+                    action.description()
+                ));
+                lines
             }
         }
-    };
-    let expiry = Duration::from_secs(u64::from(start.expires_in).min(MAX_DEVICE_LOGIN_SECS));
-    tokio::select! {
-        result = finish => result,
-        () = tokio::time::sleep(expiry) => Err(CliError::new(
-            ErrorKind::Input,
-            "login expired; run piquelctl login again",
-        )),
-        error = CliError::on_interrupt("login cancelled") => Err(error),
+    }
+
+    /// Why the wait ended without approval: `(expired, cancelled)`.
+    const fn failures(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Login => (
+                "login expired; run piquelctl login again",
+                "login cancelled",
+            ),
+            Self::Confirm(_) => (
+                "passkey confirmation expired; run the command again",
+                "passkey confirmation cancelled; nothing was changed",
+            ),
+        }
+    }
+
+    /// Waits for device request `start` to be approved in a browser:
+    /// 1. Prints the verification URL (with the code filled in when the
+    ///    daemon supports it), the code, and the requester address.
+    /// 2. Polls at the daemon's interval (backing off on `slow_down`) until
+    ///    complete, returning the result.
+    ///
+    /// Bounded by the daemon's `expires_in` (capped at
+    /// `MAX_DEVICE_LOGIN_SECS`) and Ctrl-C rather than the whole-command
+    /// `--timeout`, since approval waits on the operator. Each individual
+    /// request still uses `--timeout`.
+    async fn wait(
+        self,
+        client: &Client,
+        console: &mut Console,
+        start: &DeviceStart,
+    ) -> Result<DeviceToken> {
+        // A link with the code filled in only needs the code checked, not typed.
+        let (link, code) = match &start.verification_uri_complete {
+            Some(link) => (link, "Check the page shows code"),
+            None => (&start.verification_uri, "Enter code"),
+        };
+        // The approval page shows the same address, so the approver can match them.
+        let requester = start
+            .requester
+            .as_deref()
+            .unwrap_or("the daemon's local Unix socket");
+        let mut lines = vec![
+            format!("Open {link}"),
+            format!("{code}: {}", start.user_code),
+        ];
+        lines.extend(self.instructions(start, requester));
+        console.prompt_lines(&lines)?;
+        let finish = async {
+            // Never let a daemon response turn polling into a tight loop.
+            let mut interval = u64::from(start.interval).max(1);
+            loop {
+                tokio::time::sleep(Duration::from_secs(interval)).await;
+                let result = client.auth_device_poll(&start.device_code).await?;
+                match result.status.as_str() {
+                    "authorization_pending" => {}
+                    "slow_down" => interval += 5,
+                    "complete" => return Ok(result),
+                    _ => {
+                        return Err(CliError::new(
+                            ErrorKind::General,
+                            "unexpected device login response",
+                        ));
+                    }
+                }
+            }
+        };
+        let expiry = Duration::from_secs(u64::from(start.expires_in).min(MAX_DEVICE_LOGIN_SECS));
+        let (expired, cancelled) = self.failures();
+        crate::support::interactive(async {
+            tokio::select! {
+                result = finish => result,
+                () = tokio::time::sleep(expiry) => Err(CliError::new(ErrorKind::Input, expired)),
+                error = CliError::on_interrupt(cancelled) => Err(error),
+            }
+        })
+        .await
     }
 }
 /// Revokes the current credential on the daemon, then drops its saved copy.
