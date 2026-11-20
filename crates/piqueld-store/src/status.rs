@@ -86,8 +86,9 @@ impl Store {
     /// task, else `degraded`.
     /// Expected are the services of the operation's target while it is in
     /// progress, else of the environment's active target, and none while it
-    /// is deleted. The observation time is refreshed on every call, while a
-    /// `health_changed` event is recorded only when the value changes.
+    /// is deleted. A `health_changed` event is recorded when the value
+    /// changes. The observation time is refreshed then, or once it is a scan
+    /// interval old: an unchanged observation within that writes nothing.
     /// # Errors
     /// Returns a store error. Superseded observations are ignored.
     pub async fn record_health(
@@ -95,7 +96,7 @@ impl Store {
         operation_id: &str,
         observed: &piqueld_core::ObservedApplication,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.snapshot().await?;
         let expected = sqlx::query_scalar!(
             r#"SELECT json_extract(service.value,'$.name') AS "name!: String"
             FROM operations o JOIN environments e ON e.id=o.environment_id,
@@ -116,6 +117,14 @@ impl Store {
         .await
         .map_err(StoreError::database)?
         .unwrap_or_default();
+        let recorded = sqlx::query!(
+            "SELECT s.runtime_health,s.health_observed_at_ms FROM environment_status s JOIN operations o ON o.environment_id=s.environment_id WHERE o.id=?1",
+            operation_id
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(StoreError::database)?;
+        tx.commit().await.map_err(StoreError::database)?;
         let health = if observed.services.is_empty() {
             "absent"
         } else if expected.iter().all(|name| {
@@ -137,6 +146,15 @@ impl Store {
             "degraded"
         };
         let now = now_ms();
+        if recorded.is_some_and(|recorded| {
+            recorded.runtime_health.as_deref() == Some(health)
+                && recorded
+                    .health_observed_at_ms
+                    .is_some_and(|at| now.saturating_sub(at) < self.health_refresh_ms)
+        }) {
+            return Ok(());
+        }
+        let (_writer, mut tx) = self.begin_immediate().await?;
         let changed=sqlx::query!("UPDATE environment_status SET runtime_health=?1 WHERE runtime_health IS NOT ?1 AND environment_id=(SELECT environment_id FROM operations WHERE id=?2) AND ?2=(SELECT latest.id FROM operations latest WHERE latest.environment_id=environment_status.environment_id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1)",health,operation_id).execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
         sqlx::query!("UPDATE environment_status SET health_observed_at_ms=?1 WHERE environment_id=(SELECT environment_id FROM operations WHERE id=?2) AND ?2=(SELECT id FROM operations WHERE environment_id=environment_status.environment_id ORDER BY created_at_ms DESC,id DESC LIMIT 1)",now,operation_id).execute(&mut *tx).await.map_err(StoreError::database)?;
         if changed == 1 {

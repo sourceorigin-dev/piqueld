@@ -611,6 +611,9 @@ pub struct Store {
     traffic_days: u64,
     /// How much deployment history each environment keeps.
     deployment_retention: history::DeploymentRetention,
+    /// How old an unchanged health observation gets before
+    /// [`Store::record_health`] writes its time again: one scan interval.
+    health_refresh_ms: i64,
     /// How many previews may exist and what their services may use.
     previews: piqueld_core::manifest::PreviewLimits,
     /// Signalled after each committed change to accounts, credentials, or
@@ -752,6 +755,7 @@ impl Store {
         if metadata_version != SCHEMA_VERSION {
             return Err(StoreError::SchemaMismatch);
         }
+        Self::optimize_on(&pool).await?;
         Ok(Self {
             pool,
             instance_id,
@@ -766,6 +770,9 @@ impl Store {
             audit_days: 0,
             traffic_days: 0,
             deployment_retention: history::DeploymentRetention::default(),
+            health_refresh_ms: Self::scan_interval_ms(
+                &piqueld_config::ReconciliationConfig::default(),
+            ),
             previews: piqueld_core::manifest::PreviewLimits::default(),
             access_changes: tokio::sync::watch::Sender::new(()),
         })
@@ -842,6 +849,27 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
         Ok((writer, tx))
+    }
+
+    /// Refreshes the query planner's statistics of tables whose size changed
+    /// a lot since they were last analyzed. Cheap when none did; the
+    /// coordinator runs it after each pruning pass.
+    ///
+    /// # Errors
+    /// Returns a storage error.
+    pub async fn optimize(&self) -> Result<(), StoreError> {
+        let _writer = self.writers.lock().await;
+        Self::optimize_on(&self.pool).await
+    }
+
+    /// [`Store::optimize`] on `pool`, checking every table rather than only
+    /// those the connection it runs on has read.
+    async fn optimize_on(pool: &SqlitePool) -> Result<(), StoreError> {
+        sqlx::query("PRAGMA optimize=0x10002")
+            .execute(pool)
+            .await
+            .map_err(StoreError::database)?;
+        Ok(())
     }
 
     /// Changes after each write to the database: a stream following it
