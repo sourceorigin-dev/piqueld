@@ -97,6 +97,7 @@ pub use containers::{
     Workload,
 };
 mod engine;
+pub use engine::ErrorResponse;
 mod exec;
 mod files;
 pub use exec::{Exec, ExecIo};
@@ -109,6 +110,8 @@ mod errors;
 pub mod fake;
 mod identity;
 mod images;
+mod infrastructure;
+pub use infrastructure::{EngineVersion, Infrastructure};
 mod jobs;
 mod observation;
 mod policy;

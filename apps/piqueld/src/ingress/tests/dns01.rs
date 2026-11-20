@@ -7,12 +7,12 @@ use super::{
     scenario::{Scenario, peer_certificate},
 };
 use crate::ingress::{Ingress, certificates::Certificates, node::proxy_relay, records::RouteDns};
+use futures_util::TryStreamExt as _;
 use hickory_resolver::{
     Resolver,
     config::{ConnectionConfig, NameServerConfig, ResolverConfig},
     net::runtime::TokioRuntimeProvider,
 };
-use hyper::Method;
 use piqueld_config::AcmeConfig;
 use piqueld_config::dns::{
     Dns,
@@ -68,19 +68,7 @@ fn routes(names: &[&str]) -> BTreeSet<RouteHostname> {
 impl Scenario {
     /// Pulls an image into the isolated daemon.
     pub(super) async fn pull(&self, image: &str) {
-        use bollard::query_parameters::CreateImageOptionsBuilder;
-        use futures_util::TryStreamExt;
-        let options = CreateImageOptionsBuilder::default()
-            .from_image(image)
-            .build();
-        self.gateway
-            .images
-            .client()
-            .unwrap()
-            .create_image(Some(options), None, None)
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap();
+        self.gateway.docker.pull_image(image).await.unwrap();
     }
 
     /// Starts `challtestsrv` and Pebble on a shared bridge network and returns
@@ -88,11 +76,7 @@ impl Scenario {
     async fn start_pebble(&self) -> Vec<u8> {
         let docker = &self.gateway.docker;
         docker
-            .external(
-                Method::POST,
-                "/networks/create",
-                Some(&json!({"Name":"pebble"})),
-            )
+            .create_bridge_network("pebble", &json!({}))
             .await
             .unwrap();
         for (name, image, command, ports, env) in [
@@ -130,26 +114,25 @@ impl Scenario {
             ),
         ] {
             self.pull(image).await;
-            docker
-                .external(
-                    Method::POST,
-                    &format!("/containers/create?name={name}"),
-                    Some(&json!({
-                        "Image":image,"Cmd":command,"Env":env,
-                        "HostConfig":{"NetworkMode":"pebble","PortBindings":ports}
-                    })),
-                )
-                .await
-                .unwrap();
-            docker
-                .external(Method::POST, &format!("/containers/{name}/start"), None)
-                .await
-                .unwrap();
+            let spec = json!({
+                "Image":image,"Cmd":command,"Env":env,
+                "HostConfig":{"NetworkMode":"pebble","PortBindings":ports}
+            });
+            docker.create_container(name, &spec).await.unwrap();
+            docker.start_container(name).await.unwrap();
         }
         // `/archive` answers with a tar stream: a 512-byte header whose octal
         // size field starts at byte 124, then the file.
-        let archive = docker
-            .read("/containers/pebble/archive?path=/test/certs/pebble.minica.pem")
+        let path = bollard::query_parameters::DownloadFromContainerOptionsBuilder::default()
+            .path("/test/certs/pebble.minica.pem")
+            .build();
+        let archive = self
+            .docker
+            .client()
+            .unwrap()
+            .download_from_container("pebble", Some(path))
+            .map_ok(Vec::from)
+            .try_concat()
             .await
             .unwrap();
         let size = usize::from_str_radix(
@@ -164,17 +147,10 @@ impl Scenario {
 
     /// Removes the Pebble containers and network.
     async fn stop_pebble(&self) {
-        for path in [
-            "/containers/pebble?force=true",
-            "/containers/challtestsrv?force=true",
-            "/networks/pebble",
-        ] {
-            let _ = self
-                .gateway
-                .docker
-                .external(Method::DELETE, path, None)
-                .await;
-        }
+        let docker = &self.gateway.docker;
+        let _ = docker.remove_container("pebble").await;
+        let _ = docker.remove_container("challtestsrv").await;
+        let _ = docker.remove_network("pebble").await;
     }
 
     /// A second manager of this scenario's gateway, issuing from Pebble.
@@ -265,37 +241,13 @@ impl Scenario {
     pub(super) async fn curl(&self, network: &str, arguments: &[String]) -> (i64, String) {
         let docker = &self.gateway.docker;
         let name = "piqueld-test-curl";
-        docker
-            .external(
-                Method::POST,
-                &format!("/containers/create?name={name}"),
-                Some(&json!({"Image":CURL_IMAGE,"Cmd":arguments,"HostConfig":{"NetworkMode":network}})),
-            )
-            .await
-            .unwrap();
-        docker
-            .external(Method::POST, &format!("/containers/{name}/start"), None)
-            .await
-            .unwrap();
-        let exited = docker
-            .external(Method::POST, &format!("/containers/{name}/wait"), None)
-            .await
-            .unwrap();
-        let output = self
-            .gateway
-            .container_logs(name, "tail=100")
-            .await
-            .unwrap()
-            .join("\n");
-        docker
-            .external(
-                Method::DELETE,
-                &format!("/containers/{name}?force=true"),
-                None,
-            )
-            .await
-            .unwrap();
-        (exited["StatusCode"].as_i64().unwrap(), output)
+        let spec = json!({"Image":CURL_IMAGE,"Cmd":arguments,"HostConfig":{"NetworkMode":network}});
+        docker.create_container(name, &spec).await.unwrap();
+        docker.start_container(name).await.unwrap();
+        let exited = docker.wait_container(name).await.unwrap();
+        let output = docker.log_lines(name, 100, None).await.unwrap().join("\n");
+        docker.remove_container(name).await.unwrap();
+        (exited.unwrap(), output)
     }
 
     /// Applications reach the gateway's private listener over their ingress

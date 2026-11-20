@@ -56,6 +56,10 @@ pub enum DockerError {
     /// found" until it is gone, which can take more than ten seconds.
     #[error("Docker network is still being removed")]
     NetworkRemoving(#[source] bollard::errors::Error),
+    /// Docker could not start a container publishing a host port another
+    /// listener holds, such as ports 80 and 443 of the ingress gateway.
+    #[error("Docker could not publish a host port another program uses")]
+    PortInUse(#[source] crate::engine::ErrorResponse),
     /// The build machine could not be reached to build an image.
     #[error(transparent)]
     BuilderUnavailable(#[from] crate::builder::BuilderUnavailable),
@@ -105,6 +109,7 @@ impl DockerError {
             Self::BuilderUnavailable(_) => DiagnosticCode::BuilderUnavailable,
             Self::NetworkInUse(_)
             | Self::NetworkRemoving(_)
+            | Self::PortInUse(_)
             | Self::SecretInUse(_)
             | Self::Request(_)
             | Self::RequestSource { .. } => DiagnosticCode::DockerRequestFailed,

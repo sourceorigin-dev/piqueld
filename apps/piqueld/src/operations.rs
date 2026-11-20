@@ -248,6 +248,9 @@ impl OperationError {
             DockerError::SecretInUse(_) => {
                 Self::DockerRequestFailed("delete a secret a service still mounts")
             }
+            DockerError::PortInUse(_) => {
+                Self::DockerRequestFailed("start a container on a host port in use")
+            }
             DockerError::BuilderUnavailable(_) => Self::BuilderUnavailable,
             DockerError::Request(operation) | DockerError::RequestSource { operation, .. } => {
                 Self::DockerRequestFailed(operation)
@@ -345,6 +348,7 @@ impl OperationError {
                     DockerError::NetworkInUse(_) | DockerError::NetworkRemoving(_) => {
                         Some("delete network")
                     }
+                    DockerError::PortInUse(_) => Some("start container"),
                     _ => None,
                 };
                 if let Some(operation) = operation {
@@ -355,6 +359,12 @@ impl OperationError {
             }
             if let Some(failure) = error.downcast_ref::<piqueld_store::secrets::KeyFailure>() {
                 diagnostic.causes.push(failure.fact().into());
+            }
+            if let Some(error) = error.downcast_ref::<piqueld_docker::ErrorResponse>() {
+                diagnostic.causes.push(format!(
+                    "Docker returned HTTP status {}",
+                    error.status().as_u16()
+                ));
             }
             if let Some(error) = error.downcast_ref::<crate::ingress::ResponseError>() {
                 diagnostic.causes.push(format!(

@@ -609,7 +609,10 @@ Ingress has its own fields under `ingress` in `GET /api/v1/system/readiness`
 Every gateway change (network, image pull, start, replacement, recovery, route
 reload, stop) is a daemon-scoped journal action with an `ingress_*` phase.
 Methods decide from reads before opening an action, so steady-state passes
-record no history. Health changes of the gateway, the apps node or the tunnel
+record no history. The gateway reaches Docker through `piqueld-docker`'s
+`Infrastructure`, which sends Docker's own JSON for its containers and
+networks, so a failed change's diagnostic names the Docker operation and HTTP
+status like the reconciler's. Health changes of the gateway, the apps node or the tunnel
 feed the `ingress_unavailable` condition and diagnostic, which notifies under
 `daemon_failures` when sustained. The containers' logs are relayed to the
 daemon's every 10 seconds, at most 100 lines per container, each cut to 4096

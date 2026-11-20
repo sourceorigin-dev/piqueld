@@ -12,11 +12,9 @@
 use super::{
     CADDY_IMAGE, Ingress,
     node::{PRIVATE_HTTPS_PORT, Subnet, TailnetOverlap},
-    wire::{Journaled, ResponseError},
+    wire::Journaled,
 };
 use anyhow::{Context, Result, ensure};
-use futures_util::TryStreamExt;
-use hyper::Method;
 use piqueld_config::directories::PrivateFile;
 use piqueld_core::Phase;
 use piqueld_core::{
@@ -32,50 +30,16 @@ use std::{
     time::Duration,
 };
 
-/// Docker Engine and API versions, e.g. `28.1.1` and `1.49`.
-#[derive(Debug)]
-pub(super) struct DockerVersion {
-    pub(super) engine: String,
-    pub(super) api: String,
-}
-
-impl DockerVersion {
-    /// Whether the engine is Docker Engine 28+ with API 1.48+, which support
-    /// the per-endpoint `GwPriority` used to keep the edge network as the
-    /// default route.
-    ///
-    /// ```text
-    /// {"Version": "28.1.1", "ApiVersion": "1.49"}  -> true
-    /// {"Version": "27.5.0", "ApiVersion": "1.47"}  -> false
-    /// ```
-    pub(super) fn supports_ingress(&self) -> bool {
-        let major = self
-            .engine
-            .split('.')
-            .next()
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(0);
-        let api = self.api.split_once('.').and_then(|(major, minor)| {
-            Some((major.parse::<u32>().ok()?, minor.parse::<u32>().ok()?))
-        });
-        major >= 28 && api.is_some_and(|v| v >= (1, 48))
-    }
-}
-
-impl std::fmt::Display for DockerVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Docker Engine {} with API {}", self.engine, self.api)
-    }
-}
-
 /// A host requirement of the gateway that is not met. Unlike other gateway
 /// failures, its message carries no Docker response body, so the ingress
 /// health message shows it.
 #[derive(Debug, thiserror::Error)]
 pub(super) enum UnmetRequirement {
-    /// The engine does not [support ingress](DockerVersion::supports_ingress).
+    /// The engine does not support the [gateway
+    /// priority](piqueld_docker::EngineVersion::supports_gateway_priority)
+    /// that keeps the edge network the gateway's default route.
     #[error("{0} is too old for ingress, which needs Engine 28+ with API 1.48+")]
-    Docker(DockerVersion),
+    Docker(piqueld_docker::EngineVersion),
     /// Docker could not publish port 80 or 443 because another listener holds it.
     #[error("another program uses port 80 or 443, which the gateway publishes")]
     Ports,
@@ -145,10 +109,7 @@ impl Ingress {
 
     /// Inspects a container by name, verifying ownership when it exists.
     pub(super) async fn named_container(&self, name: &str) -> Result<Option<Value>> {
-        let container = self
-            .docker
-            .inspect(&format!("/containers/{name}/json"))
-            .await?;
+        let container = self.docker.inspect_container(name).await?;
         if let Some(container) = &container {
             self.check_owner(&container["Config"]["Labels"])?;
         }
@@ -203,7 +164,7 @@ impl Ingress {
     /// own action, which records a failure. Records nothing if it doesn't
     /// exist, and refuses one this installation doesn't own.
     async fn remove_edge_network(&self) -> Result<()> {
-        let Some(network) = self.network(&self.name).await? else {
+        let Some(network) = self.docker.inspect_network(&self.name).await? else {
             return Ok(());
         };
         self.check_owner(&network["Labels"])?;
@@ -211,10 +172,7 @@ impl Ingress {
         let journal = self
             .journal(Phase::IngressRemoveNetwork, &self.name)
             .await?;
-        let result = self
-            .docker
-            .send(&journal, Method::DELETE, &format!("/networks/{id}"), None)
-            .await;
+        let result = journal.send(self.docker.remove_network(id)).await;
         journal.finish(result).await?;
         tracing::info!(network=%self.name,"removed managed ingress edge network");
         Ok(())
@@ -235,40 +193,22 @@ impl Ingress {
         if let Some(container) = self.named_container(name).await? {
             // Removing the container also removes its restart policy. Persistent
             // data and config are host directories retained across disablement.
-            self.docker
-                .send(
-                    journal,
-                    Method::DELETE,
-                    &format!(
-                        "/containers/{}?force=true",
-                        container["Id"].as_str().context("container ID missing")?
-                    ),
-                    None,
-                )
-                .await?;
+            let id = container["Id"].as_str().context("container ID missing")?;
+            journal.send(self.docker.remove_container(id)).await?;
             tracing::info!(container=%name,"removed managed ingress container");
         }
         Ok(())
     }
 
-    /// Requires a Docker Engine that [supports ingress](DockerVersion::supports_ingress).
+    /// Requires a Docker Engine that supports the [gateway
+    /// priority](piqueld_docker::EngineVersion::supports_gateway_priority).
     async fn check_version(&self) -> Result<()> {
-        let version = self.docker_version().await?;
+        let version = self.docker.version().await?;
         ensure!(
-            version.supports_ingress(),
+            version.supports_gateway_priority(),
             UnmetRequirement::Docker(version)
         );
         Ok(())
-    }
-
-    /// The engine's versions, as `GET /version` reports them.
-    pub(super) async fn docker_version(&self) -> Result<DockerVersion> {
-        let version = self.docker.get("/version").await?;
-        let field = |name: &str| version[name].as_str().unwrap_or_default().to_owned();
-        Ok(DockerVersion {
-            engine: field("Version"),
-            api: field("ApiVersion"),
-        })
     }
 
     /// The subnets of the edge network: the only peers whose PROXY headers the
@@ -276,17 +216,13 @@ impl Ingress {
     /// networks, also attached to the gateway, are not.
     pub(super) async fn edge_subnets(&self) -> Result<Vec<String>> {
         let network = self
-            .network(&self.name)
+            .docker
+            .inspect_network(&self.name)
             .await?
             .context("gateway edge network is not ready")?;
         let subnets: Vec<String> = Self::subnets(&network).map(str::to_owned).collect();
         ensure!(!subnets.is_empty(), "gateway edge network has no subnet");
         Ok(subnets)
-    }
-
-    /// Inspects the Docker network `name`, if it exists.
-    async fn network(&self, name: &str) -> Result<Option<Value>> {
-        self.docker.inspect(&format!("/networks/{name}")).await
     }
 
     /// The subnets of an inspected Docker `network`.
@@ -321,7 +257,7 @@ impl Ingress {
     /// Ensures the gateway's own non-internal bridge network (named like the
     /// container), which provides public egress for ACME and published ports.
     async fn ensure_edge_network(&self) -> Result<()> {
-        if let Some(network) = self.network(&self.name).await? {
+        if let Some(network) = self.docker.inspect_network(&self.name).await? {
             self.check_owner(&network["Labels"])?;
             ensure!(
                 network["Driver"] == "bridge" && network["Internal"] == false,
@@ -331,13 +267,10 @@ impl Ingress {
             let journal = self
                 .journal(Phase::IngressCreateNetwork, &self.name)
                 .await?;
-            let result = self
-                .docker
+            let result = journal
                 .send(
-                    &journal,
-                    Method::POST,
-                    "/networks/create",
-                    Some(&json!({"Name":self.name,"Driver":"bridge","Labels":self.labels()})),
+                    self.docker
+                        .create_bridge_network(&self.name, &self.labels()),
                 )
                 .await;
             journal.finish(result).await?;
@@ -423,7 +356,8 @@ impl Ingress {
         name: &str,
     ) -> Result<()> {
         let network = self
-            .network(name)
+            .docker
+            .inspect_network(name)
             .await?
             .context("application ingress network is not ready")?;
         ensure!(
@@ -648,12 +582,7 @@ impl Ingress {
 
     /// Pulls a pinned image unless Docker already has it.
     pub(super) async fn ensure_image(&self, image: &str) -> Result<()> {
-        if self
-            .docker
-            .inspect(&format!("/images/{image}/json"))
-            .await?
-            .is_none()
-        {
+        if !self.docker.has_image(image).await? {
             self.pull_image(image).await?;
         }
         Ok(())
@@ -661,45 +590,20 @@ impl Ingress {
 
     /// Pulls a pinned image in its own action, bounded to three minutes.
     async fn pull_image(&self, image: &str) -> Result<()> {
-        use bollard::query_parameters::CreateImageOptionsBuilder;
         let journal = self.journal(Phase::IngressPullImage, image).await?;
-        let result = async {
-            journal.request().await?;
-            tokio::time::timeout(Duration::from_mins(3), async {
-                let mut pull = self.images.client()?.create_image(
-                    Some(
-                        CreateImageOptionsBuilder::default()
-                            .from_image(image)
-                            .build(),
-                    ),
-                    None,
-                    None,
-                );
-                while let Some(event) = pull.try_next().await? {
-                    if let Some(error) = event.error {
-                        anyhow::bail!("pull {image}: {error}");
-                    }
-                }
-                Ok::<_, anyhow::Error>(())
+        let result = journal
+            .send(async {
+                let pull = self.docker.pull_image(image);
+                let pulled = tokio::time::timeout(Duration::from_mins(3), pull).await;
+                Ok::<_, anyhow::Error>(pulled.with_context(|| format!("pull {image} timed out"))??)
             })
-            .await
-            .with_context(|| format!("pull {image} timed out"))?
-        }
-        .await;
+            .await;
         journal.finish(result).await
     }
 
     /// Starts the container `name`.
     async fn start_named(&self, journal: &Journaled<'_>, name: &str) -> Result<()> {
-        self.docker
-            .send(
-                journal,
-                Method::POST,
-                &format!("/containers/{name}/start"),
-                None,
-            )
-            .await?;
-        Ok(())
+        journal.send(self.docker.start_container(name)).await
     }
 
     /// Creates a container with the given name and spec without starting it.
@@ -709,15 +613,7 @@ impl Ingress {
         name: &str,
         spec: &Value,
     ) -> Result<()> {
-        self.docker
-            .send(
-                journal,
-                Method::POST,
-                &format!("/containers/create?name={name}"),
-                Some(spec),
-            )
-            .await?;
-        Ok(())
+        journal.send(self.docker.create_container(name, spec)).await
     }
 
     /// Replaces the gateway container with one built from `spec`, then removes
@@ -801,13 +697,8 @@ impl Ingress {
             .await?;
         // All preparation above leaves the current listener untouched.
         let result = async {
-            self.docker
-                .send(
-                    journal,
-                    Method::POST,
-                    &format!("/containers/{}/stop?t=10", self.name),
-                    None,
-                )
+            journal
+                .send(self.docker.stop_container(&self.name, 10))
                 .await?;
             // Docker cannot reliably rename a running overlay endpoint.
             self.rename_container(journal, &self.name, &previous)
@@ -849,17 +740,9 @@ impl Ingress {
         self.remove_container(journal, name).await?;
         self.create_container(journal, name, &validation).await?;
         self.start_named(journal, name).await?;
-        let exited = self
-            .docker
-            .send(
-                journal,
-                Method::POST,
-                &format!("/containers/{name}/wait?condition=not-running"),
-                None,
-            )
-            .await?;
-        if exited["StatusCode"] != 0 {
-            let diagnostics = self.container_logs(name, "tail=20").await.context(
+        let exited = journal.send(self.docker.wait_container(name)).await?;
+        if exited != Some(0) {
+            let diagnostics = self.docker.log_lines(name, 20, None).await.context(
                 "replacement Caddy configuration validation failed; could not read diagnostics",
             )?;
             anyhow::bail!(
@@ -872,15 +755,7 @@ impl Ingress {
 
     /// Renames a container.
     async fn rename_container(&self, journal: &Journaled<'_>, from: &str, to: &str) -> Result<()> {
-        self.docker
-            .send(
-                journal,
-                Method::POST,
-                &format!("/containers/{from}/rename?name={to}"),
-                None,
-            )
-            .await?;
-        Ok(())
+        journal.send(self.docker.rename_container(from, to)).await
     }
 
     /// Whether the gateway, running or stopped, was built for the other mode
@@ -984,9 +859,10 @@ impl Ingress {
         self.start_named(journal, &self.name)
             .await
             .map_err(|error| {
-                let taken = error
-                    .downcast_ref::<ResponseError>()
-                    .is_some_and(ResponseError::port_in_use);
+                let taken = matches!(
+                    error.downcast_ref(),
+                    Some(piqueld_docker::DockerError::PortInUse(_))
+                );
                 if taken {
                     error.context(UnmetRequirement::Ports)
                 } else {
@@ -1092,13 +968,8 @@ impl Ingress {
             .await?
             .context("gateway container disappeared")?;
         for network in Self::missing_networks(&container, desired) {
-            self.docker
-                .send(
-                    journal,
-                    Method::POST,
-                    &format!("/networks/{network}/connect"),
-                    Some(&json!({"Container":name,"EndpointConfig":{"GwPriority":0}})),
-                )
+            journal
+                .send(self.docker.connect_network(network, name))
                 .await?;
         }
         Ok(())
@@ -1132,7 +1003,7 @@ impl Ingress {
             .attached_networks(container)
             .filter(|name| !networks.contains(*name))
         {
-            let Some(network) = self.network(name).await? else {
+            let Some(network) = self.docker.inspect_network(name).await? else {
                 continue;
             };
             let mut subnets = Self::subnets(&network).peekable();
@@ -1149,15 +1020,9 @@ impl Ingress {
 
     /// Detaches the gateway from `network`.
     async fn detach(&self, journal: &Journaled<'_>, network: &str) -> Result<()> {
-        self.docker
-            .send(
-                journal,
-                Method::POST,
-                &format!("/networks/{network}/disconnect"),
-                Some(&json!({"Container":self.name,"Force":false})),
-            )
-            .await?;
-        Ok(())
+        journal
+            .send(self.docker.disconnect_network(network, &self.name))
+            .await
     }
 
     /// Desired networks the inspected container is not attached to.
@@ -1218,7 +1083,7 @@ impl Ingress {
             self.attach_networks(&journal, &self.name, networks).await?;
             if reload {
                 self.caddy
-                    .send(&journal, Method::POST, "/load", Some(&desired))
+                    .send(&journal, hyper::Method::POST, "/load", Some(&desired))
                     .await?;
                 tracing::info!(
                     applications = table.len(),
@@ -1250,9 +1115,7 @@ impl Ingress {
                 continue;
             }
             let from = since.get(&name).copied().unwrap_or(0);
-            let lines = self
-                .container_logs(&name, &format!("tail=100&since={from}&until={now}"))
-                .await?;
+            let lines = self.docker.log_lines(&name, 100, Some((from, now))).await?;
             for line in lines {
                 // Access log lines reach the output only while the daemon's
                 // traffic socket is down; they aren't diagnostics.
@@ -1271,33 +1134,11 @@ impl Ingress {
         }
         Ok(())
     }
-
-    /// Reads container logs and decodes Docker's multiplexed stream framing into
-    /// lines, each truncated to 4096 characters. `query` is appended to the URL.
-    ///
-    /// ```text
-    /// [stream: u8][0; 3][length: u32 big-endian][payload: length bytes] ...
-    /// ```
-    pub(super) async fn container_logs(&self, name: &str, query: &str) -> Result<Vec<String>> {
-        let path = format!("/containers/{name}/logs?stdout=1&stderr=1&{query}");
-        let bytes = self.docker.read(&path).await?;
-        let mut lines = Vec::new();
-        let mut remaining = bytes.as_slice();
-        while remaining.len() >= 8 {
-            let length = u32::from_be_bytes(remaining[4..8].try_into()?) as usize;
-            ensure!(length <= remaining.len() - 8, "truncated Caddy log frame");
-            for line in String::from_utf8_lossy(&remaining[8..8 + length]).lines() {
-                lines.push(line.chars().take(4096).collect());
-            }
-            remaining = &remaining[8 + length..];
-        }
-        Ok(lines)
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DockerVersion, UnmetRequirement};
+    use super::UnmetRequirement;
     use crate::ingress::tests::Engine;
     use anyhow::Context;
 
@@ -1330,22 +1171,5 @@ mod tests {
             matches!(error.downcast_ref(), Some(UnmetRequirement::Ports)),
             "{error:?}"
         );
-    }
-
-    #[test]
-    fn ingress_needs_engine_28_with_api_1_48() {
-        for (engine, api, supported) in [
-            ("28.1.1", "1.49", true),
-            ("29.0.0", "1.48", true),
-            ("27.5.0", "1.47", false),
-            ("28.0.0", "1.47", false),
-            ("", "", false),
-        ] {
-            let version = DockerVersion {
-                engine: engine.into(),
-                api: api.into(),
-            };
-            assert_eq!(version.supports_ingress(), supported, "{engine} {api}");
-        }
     }
 }

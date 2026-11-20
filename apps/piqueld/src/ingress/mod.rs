@@ -53,10 +53,6 @@ pub const TAILSCALE_IMAGE: &str = "tailscale/tailscale:v1.102.5@sha256:c507f3a2a
 /// Version of `cloudflared` released with piqueld; upgrades replace it.
 pub const CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared:2026.10.4@sha256:c6c7ae1d5dfdcb094ad344ed68ccffc26635c9c6be80965664c33baf064b0515";
 
-/// The Docker Engine API version requests use, the oldest the gateway's
-/// container spec supports (see `DockerVersion::supports_ingress`).
-const DOCKER_API: &str = "1.48";
-
 /// Socket in the control mount that the gateway forwards webhook deliveries to.
 const WEBHOOK_SOCKET: &str = "webhooks.sock";
 /// Socket in the control mount that the gateway forwards the dashboard
@@ -112,13 +108,10 @@ pub struct Ingress {
     name: String,
     /// Host directory holding Caddy's data, config, and control mounts.
     directory: PathBuf,
-    /// Raw Docker Engine API over its Unix socket.
-    docker: UnixApi,
+    /// Docker Engine, for the gateway's containers, networks and images.
+    docker: piqueld_docker::Infrastructure,
     /// Caddy's private admin API socket inside the control mount.
     caddy: UnixApi,
-    /// Docker client used only for streaming image pulls, which needs
-    /// Docker's socket only once it pulls.
-    images: piqueld_docker::BollardDocker,
     store: Arc<Store>,
     /// Gateway writer lock serializing configuration and lifecycle changes.
     update: Mutex<()>,
@@ -183,7 +176,7 @@ impl Ingress {
             Sha256::digest(store.instance_id().as_str().as_bytes())
         );
         let directory = data_dir.join("ingress");
-        // Local Docker and Caddy control requests share the daemon's request budget.
+        // Caddy control requests share the daemon's Docker request budget.
         // Deployment convergence still imposes its configured outer deadline.
         let request_timeout = piqueld_docker::DockerTimeout::Request.duration();
         let certificates = Certificates::new(
@@ -197,8 +190,7 @@ impl Ingress {
             name: format!("piqueld-ingress-{}", &suffix[..16]),
             caddy: UnixApi::new(directory.join("control/admin.sock"), request_timeout),
             directory,
-            docker: UnixApi::new(socket.into(), request_timeout).with_docker_api(DOCKER_API),
-            images: piqueld_docker::BollardDocker::connect(socket)
+            docker: piqueld_docker::Infrastructure::connect(socket)
                 .context("Docker socket is not UTF-8")?,
             store,
             update: Mutex::new(()),

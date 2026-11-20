@@ -177,13 +177,13 @@ impl Scenario {
 
     /// Restarts the gateway's container behind the daemon's back.
     pub(super) async fn restart_gateway(&self) {
-        self.gateway
-            .docker
-            .external(
-                Method::POST,
-                &format!("/containers/{}/restart?t=1", self.gateway.name),
-                None,
-            )
+        let restart = bollard::query_parameters::RestartContainerOptionsBuilder::default()
+            .t(1)
+            .build();
+        self.docker
+            .client()
+            .unwrap()
+            .restart_container(&self.gateway.name, Some(restart))
             .await
             .unwrap();
     }

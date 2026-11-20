@@ -33,10 +33,31 @@ pub(super) enum WireError {
 #[derive(Debug, thiserror::Error)]
 #[error("Docker returned HTTP {status}: {message}")]
 /// Diagnostic source for an Engine error response, with a control-free,
-/// length-bounded message.
-struct ServiceResponseDiagnostic {
+/// length-bounded message. Diagnostics record only its status.
+pub struct ErrorResponse {
     status: StatusCode,
     message: String,
+}
+
+impl ErrorResponse {
+    /// The HTTP status Docker answered with.
+    #[must_use]
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    /// Whether Docker could not publish a host port because another listener
+    /// holds it, as its container start response says:
+    ///
+    /// ```text
+    /// ... Bind for 0.0.0.0:80 failed: port is already allocated
+    /// ... listen tcp4 0.0.0.0:443: bind: address already in use
+    /// ```
+    pub(super) fn port_in_use(&self) -> bool {
+        ["port is already allocated", "address already in use"]
+            .iter()
+            .any(|message| self.message.contains(message))
+    }
 }
 
 impl From<DockerError> for WireError {
@@ -46,24 +67,31 @@ impl From<DockerError> for WireError {
 }
 
 impl WireError {
-    /// Converts the failure into a [`DockerError`] labelled with `operation`.
-    ///
-    /// Engine response bodies become a [`ServiceResponseDiagnostic`] source
-    /// with control characters stripped and at most 2048 characters kept.
+    /// Converts the failure into a [`DockerError`] labelled with `operation`;
+    /// a response becomes an [`ErrorResponse`] source (see [`Self::response`]).
     pub(super) fn sanitized(self, operation: &'static str) -> DockerError {
+        match self.response() {
+            Ok(response) => DockerError::RequestSource {
+                operation,
+                source: Box::new(response),
+            },
+            Err(error) => error,
+        }
+    }
+
+    /// The Engine's error response, with control characters stripped and at
+    /// most 2048 characters of its body kept, or the public failure.
+    pub(super) fn response(self) -> Result<ErrorResponse, DockerError> {
         match self {
-            Self::Public(error) => error,
-            Self::Response { status, body } => {
-                let message = String::from_utf8_lossy(&body)
+            Self::Public(error) => Err(error),
+            Self::Response { status, body } => Ok(ErrorResponse {
+                status,
+                message: String::from_utf8_lossy(&body)
                     .chars()
                     .filter(|character| !character.is_control())
                     .take(2_048)
-                    .collect();
-                DockerError::RequestSource {
-                    operation,
-                    source: Box::new(ServiceResponseDiagnostic { status, message }),
-                }
-            }
+                    .collect(),
+            }),
         }
     }
 
@@ -166,8 +194,13 @@ impl BollardDocker {
         path: &str,
         body: Vec<u8>,
     ) -> Result<Vec<u8>, WireError> {
-        self.engine_exchange(method, path, body, Self::read_service_response)
-            .await
+        self.engine_exchange(
+            method,
+            path,
+            body,
+            Self::read_response::<MAX_SERVICE_RESPONSE_BYTES>,
+        )
+        .await
     }
 
     /// Lists `T`s with a raw `GET` of `path`, decoding the JSON array as it
@@ -180,7 +213,7 @@ impl BollardDocker {
     ) -> Result<Vec<T>, WireError> {
         self.engine_exchange(Method::GET, path, Vec::new(), async |response| {
             if !response.status().is_success() {
-                return Self::read_service_response(response)
+                return Self::read_response::<MAX_SERVICE_RESPONSE_BYTES>(response)
                     .await
                     .map(|_| Vec::new());
             }
@@ -209,7 +242,7 @@ impl BollardDocker {
     ///
     /// All steps share one [`SERVICE_REQUEST_TIMEOUT`] deadline; elapsed
     /// deadlines surface as unavailability.
-    async fn engine_exchange<T>(
+    pub(super) async fn engine_exchange<T>(
         &self,
         method: Method,
         path: &str,
@@ -270,9 +303,9 @@ impl BollardDocker {
 
     /// Collects a bounded response while retaining transport failures.
     ///
-    /// Bodies larger than [`MAX_SERVICE_RESPONSE_BYTES`] are rejected, and
-    /// non-success statuses keep their body for exact error matching.
-    async fn read_service_response(
+    /// Bodies larger than `LIMIT` bytes are rejected, and non-success
+    /// statuses keep their body for exact error matching.
+    pub(super) async fn read_response<const LIMIT: usize>(
         response: hyper::Response<hyper::body::Incoming>,
     ) -> Result<Vec<u8>, WireError> {
         let status = response.status();
@@ -284,7 +317,7 @@ impl BollardDocker {
             let Ok(data) = frame.into_data() else {
                 continue;
             };
-            if body.len().saturating_add(data.len()) > MAX_SERVICE_RESPONSE_BYTES {
+            if body.len().saturating_add(data.len()) > LIMIT {
                 return Err(DockerError::Request("read Docker service response").into());
             }
             body.extend_from_slice(&data);

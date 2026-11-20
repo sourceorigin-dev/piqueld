@@ -1,11 +1,13 @@
-//! Sends HTTP requests through local socket files to Docker Engine, Caddy's
-//! private admin API, and the apps tailnet node's `LocalAPI`. The gateway uses
-//! these APIs to manage its containers, load routing configuration, and read
-//! the node's state. Each request has a timeout and an 8 MiB response
-//! limit so an unresponsive API cannot leave reconciliation waiting indefinitely.
+//! Sends HTTP requests through local socket files to Caddy's private admin
+//! API and the apps tailnet node's `LocalAPI`. The gateway uses these APIs to
+//! load routing configuration and read the node's state; it reaches Docker
+//! through [`piqueld_docker::Infrastructure`]. Each request has a timeout and
+//! an 8 MiB response limit so an unresponsive API cannot leave reconciliation
+//! waiting indefinitely.
 //!
-//! Reads are unrestricted. A mutating request can only be sent with an open
-//! [`Journaled`] action, which commits intent before the request is made.
+//! Reads are unrestricted. A mutating request, to any of these APIs or
+//! Docker, can only be sent with an open [`Journaled`] action, which commits
+//! intent before the request is made.
 use crate::operations::OperationError;
 use anyhow::{Context, Result};
 use http_body_util::{BodyExt, Full, Limited};
@@ -27,28 +29,15 @@ use tokio::net::UnixStream;
 #[derive(Debug, thiserror::Error)]
 #[error("{path}: HTTP {status}: {body}")]
 pub struct ResponseError {
-    /// Request path, such as `/containers/{name}/json`.
+    /// Request path, such as `/config/`.
     path: String,
-    /// Status returned by Docker Engine or Caddy.
+    /// Status returned by Caddy or the `LocalAPI`.
     pub status: StatusCode,
     /// Lossy UTF-8 response body, truncated to 2048 characters.
     body: String,
 }
 
 impl ResponseError {
-    /// Whether Docker could not publish a host port because another listener
-    /// holds it, as its start response body says:
-    ///
-    /// ```text
-    /// ... Bind for 0.0.0.0:80 failed: port is already allocated
-    /// ... listen tcp4 0.0.0.0:443: bind: address already in use
-    /// ```
-    pub(super) fn port_in_use(&self) -> bool {
-        ["port is already allocated", "address already in use"]
-            .iter()
-            .any(|message| self.body.contains(message))
-    }
-
     /// Passes successful statuses and wraps any other status with its bounded body.
     fn check(path: &str, status: StatusCode, body: &[u8]) -> Result<(), Self> {
         if status.is_success() {
@@ -79,6 +68,17 @@ impl Journaled<'_> {
         let request = self.requests.fetch_add(1, Ordering::SeqCst) + 1;
         self.store.action_request(&self.action, request).await?;
         Ok(())
+    }
+
+    /// Commits intent for `request`, then sends it. A future sends nothing
+    /// until awaited, so a request built first is still never made unless its
+    /// intent committed.
+    pub(super) async fn send<T, E>(&self, request: impl Future<Output = Result<T, E>>) -> Result<T>
+    where
+        anyhow::Error: From<E>,
+    {
+        self.request().await?;
+        Ok(request.await?)
     }
 
     /// Records the action's outcome, with a sanitized diagnostic on failure.
@@ -157,30 +157,18 @@ pub(super) struct UnixApi {
     timeout: Duration,
     /// `Host` header of every request.
     host: &'static str,
-    /// Prefixed to every path but `/version`, such as `/v1.48` to pin Docker's
-    /// API version.
-    prefix: &'static str,
 }
 
 impl UnixApi {
     /// Uses the caller's timeout for the entire request, including connecting
-    /// and reading the response. Ingress supplies the global Docker request timeout.
+    /// and reading the response. Ingress supplies the global Docker request
+    /// timeout, which its Docker requests also use.
     pub(super) fn new(socket: PathBuf, timeout: Duration) -> Self {
         Self {
             socket,
             timeout,
             host: "localhost",
-            prefix: "",
         }
-    }
-
-    /// Pins Docker's API `version`, such as `1.48`, so a newer engine keeps
-    /// answering in the shapes piqueld reads. `/version` stays unversioned,
-    /// so an engine too old for it still reports its version instead of
-    /// rejecting the request.
-    pub(super) fn with_docker_api(mut self, version: &'static str) -> Self {
-        self.prefix = version;
-        self
     }
 
     /// Sends `host` instead of `localhost`, as Tailscale's `LocalAPI` requires
@@ -215,7 +203,7 @@ impl UnixApi {
                 .unwrap_or_default();
             let request = Request::builder()
                 .method(method)
-                .uri(self.path(path))
+                .uri(path)
                 .header("Host", self.host)
                 .header("Content-Type", "application/json")
                 .header("Connection", "close")
@@ -233,26 +221,11 @@ impl UnixApi {
         .context("ingress HTTP request timed out")?
     }
 
-    /// `path` with the pinned API version, if any.
-    fn path(&self, path: &str) -> String {
-        if self.prefix.is_empty() || path == "/version" {
-            path.to_owned()
-        } else {
-            format!("/v{}{path}", self.prefix)
-        }
-    }
-
-    /// Requires a successful HTTP status and returns the response's bytes.
-    async fn checked(&self, method: Method, path: &str, value: Option<&Value>) -> Result<Vec<u8>> {
+    /// Requires a successful HTTP status and decodes JSON, or returns `Null`
+    /// for an empty response.
+    async fn json(&self, method: Method, path: &str, value: Option<&Value>) -> Result<Value> {
         let (status, body) = self.request(method, path, value).await?;
         ResponseError::check(path, status, &body)?;
-        Ok(body)
-    }
-
-    /// Requires a successful HTTP status and decodes JSON, or returns `Null`
-    /// for an empty response (as returned by Docker start/stop operations).
-    async fn json(&self, method: Method, path: &str, value: Option<&Value>) -> Result<Value> {
-        let body = self.checked(method, path, value).await?;
         if body.is_empty() {
             Ok(Value::Null)
         } else {
@@ -265,11 +238,6 @@ impl UnixApi {
         self.json(Method::GET, path, None).await
     }
 
-    /// Reads a resource's raw bytes, such as multiplexed Docker logs.
-    pub(super) async fn read(&self, path: &str) -> Result<Vec<u8>> {
-        self.checked(Method::GET, path, None).await
-    }
-
     /// Sends a mutating request after committing its intent to `journal`.
     pub(super) async fn send(
         &self,
@@ -278,8 +246,7 @@ impl UnixApi {
         path: &str,
         value: Option<&Value>,
     ) -> Result<Value> {
-        journal.request().await?;
-        self.json(method, path, value).await
+        journal.send(self.json(method, path, value)).await
     }
 
     /// Simulates a change made outside the daemon, which the journal never sees.
@@ -292,38 +259,12 @@ impl UnixApi {
     ) -> Result<Value> {
         self.json(method, path, value).await
     }
-
-    /// Reads a Docker resource. A 404 means it does not exist; other failures
-    /// remain errors so reconciliation cannot mistake an API outage for absence.
-    pub(super) async fn inspect(&self, path: &str) -> Result<Option<Value>> {
-        let (status, body) = self.request(Method::GET, path, None).await?;
-        if status == StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-        ResponseError::check(path, status, &body)?;
-        Ok(Some(
-            serde_json::from_slice(&body).context("decode ingress inspection")?,
-        ))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    #[test]
-    fn a_pinned_docker_api_versions_every_path_but_version() {
-        let docker =
-            UnixApi::new("docker.sock".into(), Duration::from_secs(1)).with_docker_api("1.48");
-        assert_eq!(
-            docker.path("/containers/x/json?all=1"),
-            "/v1.48/containers/x/json?all=1"
-        );
-        assert_eq!(docker.path("/version"), "/version");
-        let caddy = UnixApi::new("admin.sock".into(), Duration::from_secs(1));
-        assert_eq!(caddy.path("/load"), "/load");
-    }
 
     #[tokio::test]
     async fn supplied_budget_covers_a_stalled_response_body() {
