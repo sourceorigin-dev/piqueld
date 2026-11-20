@@ -6,6 +6,7 @@ import { test, accountForm, accounts, invite, shoot } from './docs.js';
 test('accounts', async ({ page, browser, daemon, cli, passkeys }) => {
   await accountForm(page, daemon.setup);
   await submitRegistration(page);
+  await confirmPasskey(page);
   const token = await adminToken(page, 'Screenshots');
   for (const name of ['blog', 'shop', 'wiki']) {
     const created = await cli.run(['app', 'create', name, '--yes'], token);

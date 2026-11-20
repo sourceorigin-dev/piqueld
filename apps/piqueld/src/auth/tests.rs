@@ -255,6 +255,11 @@ fn team_lead() -> Grants {
 }
 
 fn denied(result: Result<piqueld_core::auth::Managed>) -> Denied {
+    denied_auth(result.map(|_| ()))
+}
+
+/// Why an authentication action was refused.
+fn denied_auth(result: Result<()>) -> Denied {
     match result {
         Err(AuthError::Denied(denied) | AuthError::Store(StoreError::Denied(denied))) => denied,
         other => panic!("expected a refusal: {other:?}"),
@@ -988,6 +993,166 @@ async fn confirming_with_a_passkey_refreshes_only_the_confirming_session() {
     ));
 }
 
+/// Creating any credential or link, and handing out `admin`,
+/// `accounts:manage` or `system:operate`, need a recent passkey sign-in.
+/// Other grant changes don't, and neither does the host operator.
+#[tokio::test]
+async fn minting_and_privileged_grants_need_a_recent_sign_in() {
+    let f = Fixture::new().await;
+    let fresh = f.identity("alice", &Grants::admin()).await;
+    f.passkey(&fresh).await;
+    let (_, stale) = f.stale_session(&fresh).await;
+    let bob = f.identity("bob", &developer()).await;
+    let bob_id = bob.account().id.clone();
+    let grants = |grants: Grants| Manage::SetGrants {
+        user_id: bob_id.clone(),
+        grants,
+    };
+    let minting = || {
+        [
+            Manage::CreateToken {
+                grants: Preset::ReadOnly.grants(&Scope::All),
+                name: "ci".into(),
+                days: Some(1),
+                tailnet: None,
+            },
+            Manage::CreateInvitation {
+                grants: Grants::default(),
+            },
+            Manage::CreateEnrollment {
+                user_id: bob_id.clone(),
+            },
+            grants(Grants::admin()),
+            grants(team_lead()),
+        ]
+    };
+    let refused = Denied::Reauthenticate(Reauthenticate::Stale);
+    for command in minting() {
+        assert_eq!(denied(f.auth.manage(&stale, command).await), refused);
+    }
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("a device login starts");
+    assert_eq!(
+        denied_auth(f.auth.device_approve(&start.user_code, &stale)),
+        refused
+    );
+    // Narrowing or widening ordinary access needs no passkey.
+    let read_only = Preset::ReadOnly.grants(&Scope::All);
+    f.auth
+        .manage(&stale, grants(read_only))
+        .await
+        .expect("the account change is allowed");
+    f.auth
+        .manage(&stale, grants(developer()))
+        .await
+        .expect("the account change is allowed");
+    for command in minting() {
+        f.auth
+            .manage(&fresh, command)
+            .await
+            .expect("the account change is allowed");
+    }
+    f.auth
+        .manage(&stale, grants(developer()))
+        .await
+        .expect("the account change is allowed");
+    let operator = Identity::operator(HostOperator { uid: 0 }, None);
+    f.auth
+        .manage(&operator, grants(Grants::admin()))
+        .await
+        .expect("the account change is allowed");
+}
+
+/// A CLI login inherits the passkey proof its approval recorded. Approving
+/// needs that proof to stay recent a while longer, and an approval whose
+/// proof is too old by the time the CLI polls is refused for good, even if
+/// the approver has confirmed again since.
+#[tokio::test]
+async fn device_logins_inherit_their_approvals_passkey_proof() {
+    let f = Fixture::new().await;
+    let alice = f.identity("alice", &Grants::admin()).await;
+    // A browser session of alice's that a passkey proved at `proved`.
+    let approver = async |proved: i64| {
+        let session = Auth::new_credential(CredentialKind::Browser, "Browser", None, None);
+        let (secret, mut session) = session.expect("the system RNG yields a credential secret");
+        session.authenticated_at = Some(proved);
+        f.auth
+            .0
+            .store
+            .insert_credential(&alice.account().id, &session)
+            .await
+            .expect("the store keeps the credential");
+        f.auth
+            .authenticate(&secret)
+            .await
+            .expect("the stored credential authenticates")
+    };
+    // Proved 100 seconds ago: recent, but about to lapse before the poll.
+    let lapsing = approver(now_secs() - 100).await;
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("a device login starts");
+    let refused = Denied::Reauthenticate(Reauthenticate::Stale);
+    assert_eq!(
+        denied_auth(f.auth.device_approve(&start.user_code, &lapsing)),
+        refused
+    );
+    // Proved a minute ago: never the time the CLI polls.
+    let proved = now_secs() - 60;
+    let approver = approver(proved).await;
+    f.auth
+        .device_approve(&start.user_code, &approver)
+        .expect("the approver may approve the request");
+    let issued = f
+        .auth
+        .device_poll(&start.device_code)
+        .await
+        .expect("the poll answers");
+    let login = f
+        .auth
+        .authenticate(&issued.token.expect("the approved login was issued a token"))
+        .await
+        .expect("the issued login authenticates");
+    let Credential::Account { proof, .. } = &login.credential else {
+        panic!("a CLI login belongs to an account");
+    };
+    assert_eq!(proof.authenticated_at, Some(proved));
+
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("a device login starts");
+    f.auth
+        .device_approve(&start.user_code, &alice)
+        .expect("the approver may approve the request");
+    let key = Auth::hash(&start.device_code);
+    let old = now_secs() - Reauthenticate::WINDOW_SECS - 1;
+    if let Some(approval) = &mut f
+        .auth
+        .0
+        .devices
+        .lock()
+        .get_mut(&key)
+        .expect("the request was approved")
+        .approved_by
+    {
+        approval.authenticated_at = old;
+    }
+    assert!(matches!(
+        f.auth.device_poll(&start.device_code).await,
+        Err(AuthError::Store(StoreError::Denied(
+            Denied::Reauthenticate(Reauthenticate::Stale)
+        )))
+    ));
+    assert!(matches!(
+        f.auth.device_poll(&start.device_code).await,
+        Err(AuthError::Unauthorized)
+    ));
+}
+
 /// `auth.max_token_days` bounds new tokens, and secrets issued before the
 /// `pqd_` prefix still authenticate, including ones that happen to start
 /// with it.
@@ -1077,7 +1242,7 @@ async fn device_logins_can_request_limited_sessions() {
 async fn deleting_an_issuer_invalidates_its_invitations_and_credentials() {
     let f = Fixture::new().await;
     let (token, alice) = f
-        .signed_in("alice", CredentialKind::Token, None, &Grants::admin())
+        .signed_in("alice", CredentialKind::Cli, None, &Grants::admin())
         .await;
     let bob = f.identity("bob", &Grants::admin()).await;
     f.passkey(&bob).await;
@@ -1279,8 +1444,12 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
         cancelled.abort();
         assert!(cancelled.await.unwrap_err().is_cancelled());
         drop(writer);
-        let prepared = f.auth.0.devices.lock()[&key].prepared.clone().unwrap();
-        let credential = prepared.credential(None);
+        let (prepared, approval) = {
+            let device = &f.auth.0.devices.lock()[&key];
+            (device.prepared.clone(), device.approved_by.clone())
+        };
+        let prepared = prepared.expect("the first poll prepared the session");
+        let credential = prepared.credential(None, &approval.expect("the request was approved"));
         let store = &f.auth.0.store;
         let stored = store.issue_for_credential_owner(alice.caller().unwrap(), &credential);
         assert!(stored.await.unwrap().is_some());

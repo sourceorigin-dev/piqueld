@@ -76,7 +76,11 @@ use `http://localhost:7845`. To keep the address for good, save it as a
    the login request straight away.
 
 3. Check that the code and **Requested from** match what your terminal
-   printed, then select **Approve CLI login**.
+   printed, then select **Approve CLI login**. Creating your account with the
+   setup link doesn't count as signing in with your passkey, so the
+   dashboard first asks you to
+   [confirm with your passkey](../accounts/accounts.md#confirm-with-your-passkey),
+   as it does for your first invitation or token.
 
 Check who you're signed in as:
 

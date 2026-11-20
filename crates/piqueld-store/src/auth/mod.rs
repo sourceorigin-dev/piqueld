@@ -112,18 +112,16 @@ pub struct Proof {
 
 impl Proof {
     /// Requires a passkey sign-in or step-up within the last
-    /// [`Reauthenticate::WINDOW_SECS`] before `now`. A missing or future time
-    /// fails closed, and API tokens always fail, as no passkey confirms them.
+    /// [`Reauthenticate::WINDOW_SECS`] before `now`, returning when it was. A
+    /// missing or future time fails closed, and API tokens always fail, as no
+    /// passkey confirms them.
     ///
     /// # Errors
     /// Returns [`Denied::Reauthenticate`] with the reason.
-    pub fn require_fresh(self, now: i64) -> Result<(), Denied> {
-        let fresh = self
-            .authenticated_at
-            .is_some_and(|at| (0..=Reauthenticate::WINDOW_SECS).contains(&(now - at)));
-        match self.kind {
-            CredentialKind::Token => Err(Denied::Reauthenticate(Reauthenticate::Token)),
-            _ if fresh => Ok(()),
+    pub fn require_fresh(self, now: i64) -> Result<i64, Denied> {
+        match (self.kind, self.authenticated_at) {
+            (CredentialKind::Token, _) => Err(Denied::Reauthenticate(Reauthenticate::Token)),
+            (_, Some(at)) if (0..=Reauthenticate::WINDOW_SECS).contains(&(now - at)) => Ok(at),
             _ => Err(Denied::Reauthenticate(Reauthenticate::Stale)),
         }
     }
@@ -144,8 +142,10 @@ pub struct NewCredential<'a> {
     /// Grants a scoped credential is limited to; `None` acts with the
     /// account's full access.
     pub grants: Option<&'a Grants>,
-    /// When a passkey proved the holder present, in Unix seconds: set only
-    /// for a session a passkey sign-in opens; `None` otherwise.
+    /// When a passkey proved the holder present, in Unix seconds: for a
+    /// session a passkey sign-in opens, the time of that sign-in; for a CLI
+    /// login a device approval issues, the approver's, which the approval
+    /// recorded. `None` otherwise.
     pub authenticated_at: Option<i64>,
 }
 
@@ -917,8 +917,9 @@ impl Store {
 
     /// Issues `credential` to the account behind the approving credential, if
     /// the approver may still create credentials and holds every grant the new
-    /// one is limited to. The approver issues it. Returns `None` when the
-    /// approving session has ended.
+    /// one is limited to, and the passkey proof the approval recorded, the
+    /// credential's `authenticated_at`, is still recent. The approver issues
+    /// it. Returns `None` when the approving session has ended.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -934,6 +935,15 @@ impl Store {
             Err(error) => return Err(error),
         };
         authority.may_hand_out(credential.grants)?;
+        // The approval's proof, which the new login inherits: the approver
+        // confirming again later, for something else, doesn't extend it.
+        let approval = Proof {
+            authenticated_at: credential.authenticated_at,
+            ..authority.proof
+        };
+        approval
+            .require_fresh(now_secs())
+            .map_err(StoreError::Denied)?;
         let user = sqlx::query_as!(
             User,
             r#"SELECT id AS "id!",username,display_name FROM auth_users WHERE id=?1"#,
@@ -1221,8 +1231,9 @@ impl Store {
     }
 
     /// Stores an account invitation that gives the created account `grants`,
-    /// if `caller` may manage accounts, holds every grant, and is not scoped:
-    /// redeeming it yields a passkey and session. `add_passkey` consumes it.
+    /// if `caller` may manage accounts, holds every grant, is not scoped, and
+    /// recently signed in with a passkey: redeeming it yields a passkey and
+    /// session. `add_passkey` consumes it.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -1236,6 +1247,7 @@ impl Store {
         let authority = caller.load(&mut tx).await?;
         authority.require_unscoped()?;
         Self::may_invite(&authority.grants, grants)?;
+        authority.require_fresh()?;
         let issuer = &authority.user_id;
         Self::insert_invitation_on(&mut tx, invitation, issuer, caller.credential_id, None).await?;
         Holder::Invitation(&invitation.id)
@@ -1253,7 +1265,7 @@ impl Store {
     }
 
     /// Stores an enrollment invitation that adds a passkey to `user_id`, if
-    /// `caller` may change that account.
+    /// `caller` may change that account and recently signed in with a passkey.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -1267,6 +1279,7 @@ impl Store {
         let account = Actor::Account(caller);
         if let Some(authority) = Self::check_account_on(&mut tx, account, user_id).await? {
             authority.require_unscoped()?;
+            authority.require_fresh()?;
         }
         let (issuer, credential) = (caller.user_id, caller.credential_id);
         Self::insert_invitation_on(&mut tx, invitation, issuer, credential, Some(user_id)).await?;
@@ -1332,7 +1345,8 @@ impl Store {
 
     /// Stores an API token for the caller's own account, limited to grants the
     /// caller holds and optionally bound to a tailnet user or tag. Scoped
-    /// callers cannot create tokens.
+    /// callers cannot create tokens, and others need a recent passkey sign-in
+    /// (see [`Authority::require_fresh`]).
     ///
     /// # Errors
     /// Returns a storage error.
@@ -1345,6 +1359,7 @@ impl Store {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let authority = caller.load(&mut tx).await?;
         authority.may_hand_out(credential.grants)?;
+        authority.require_fresh()?;
         let issuer = Issued::Credential(caller.credential_id);
         credential
             .insert(&mut tx, &authority.user_id, Some(issuer))
@@ -1578,9 +1593,10 @@ mod tests {
     fn freshness_needs_a_recent_passkey_proof() {
         let now = 1_000_000;
         let stale = Err(Denied::Reauthenticate(Reauthenticate::Stale));
+        let oldest = now - Reauthenticate::WINDOW_SECS;
         for (authenticated_at, expected) in [
-            (Some(now), Ok(())),
-            (Some(now - Reauthenticate::WINDOW_SECS), Ok(())),
+            (Some(now), Ok(now)),
+            (Some(oldest), Ok(oldest)),
             (Some(now - Reauthenticate::WINDOW_SECS - 1), stale),
             (Some(now + 1), stale),
             (None, stale),

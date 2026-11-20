@@ -75,12 +75,10 @@ or run `piquelctl token revoke` with its ID. Revoking one needs
 
 First, they get a new passkey on their account, the first way that works:
 
-- **They still have another passkey, or a browser still signed in as their
-  account.** On their own account's page, they
-  [add a passkey](accounts.md#to-your-own-account).
-- **`piquelctl` is still signed in as their account, with its full access.**
-  On that machine, they create an enrollment link for their own account,
-  which needs no `accounts:manage`:
+- **They still have another passkey.** On their own account's page, they
+  [add a passkey](accounts.md#to-your-own-account). Or, with `piquelctl`
+  signed in as their account with its full access, they create an
+  enrollment link for their own account, which needs no `accounts:manage`:
 
   ```console
   piquelctl account enroll bob
@@ -88,14 +86,19 @@ First, they get a new passkey on their account, the first way that works:
 
   They open the link themselves, in a browser, and register a passkey, which
   also signs that browser in. The link signs in whoever uses it, so they
-  don't share it.
+  don't share it. Either way, they're asked to
+  [confirm with their passkey](accounts.md#confirm-with-your-passkey) first,
+  which their remaining one does.
 - **Otherwise,** an administrator
   [sends them an enrollment link](accounts.md#to-someone-elses-account). That
   needs `accounts:manage` and every grant of their account.
 
-API tokens and [limited logins](cli-and-tokens.md#ask-for-less-access) can't
-add passkeys or create enrollment links. If nobody who can sign in may send
-the link, see the next section.
+A browser or `piquelctl` still signed in as their account isn't enough on its
+own: adding a passkey and creating a link need a passkey sign-in within the
+last 2 minutes, which a lost passkey can't give. API tokens and
+[limited logins](cli-and-tokens.md#ask-for-less-access) can't add passkeys or
+create enrollment links at all. If nobody who can sign in may send the link,
+see the next section.
 
 Then, signed in as their account or as that administrator:
 
@@ -134,10 +137,11 @@ Then, signed in as their account or as that administrator:
 
 ## No administrator can sign in
 
-When every administrator has lost their passkeys, and none is still signed
-in to a browser or to `piquelctl` with their account's full access, the host
-operator creates a new administrator. Their API tokens and limited logins
-can't help: they can't add passkeys or create links.
+When every administrator has lost their passkeys, the host operator creates
+a new administrator. A browser or `piquelctl` still signed in can't help:
+adding a passkey and creating links need a recent passkey sign-in, which a
+lost passkey can't give, and API tokens and limited logins can't do either
+at all.
 
 1. On the host, print a recovery link:
 

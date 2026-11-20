@@ -1,7 +1,7 @@
 // Helpers for the documentation screenshots: each one brings the dashboard to
 // a page, or state, a guide shows; `shoot` then saves it into docs/images.
 import type { Locator, Page, Route } from '@playwright/test';
-import { test as base, expect, accountRows, adminToken, fillRegistration, applicationTab, card, rewrite, title, chooseGrants, done, Process, type Cli } from '../fixtures.js';
+import { test as base, expect, accountRows, adminToken, confirmPasskey, fillRegistration, applicationTab, card, rewrite, title, chooseGrants, done, Process, type Cli } from '../fixtures.js';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -370,6 +370,9 @@ export class Piquelctl {
   private constructor(readonly cli: Cli, readonly token: string) {}
 
   static async signIn(page: Page, cli: Cli): Promise<Piquelctl> {
+    // Creating a token needs a recent passkey sign-in, which a setup
+    // link's session isn't.
+    await confirmPasskey(page);
     return new Piquelctl(cli, await adminToken(page, 'Screenshots'));
   }
 

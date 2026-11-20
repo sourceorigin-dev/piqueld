@@ -471,6 +471,16 @@ async fn seed_account(database: &Path, name: &str, grants: &[(&str, Option<&str>
     token
 }
 
+/// Makes the credential [`seed_account`] gave `name` a CLI login that a
+/// passkey approved just now, so it may create credentials and take other
+/// actions that need a recent passkey sign-in, which API tokens never may.
+async fn sign_in_with_passkey(database: &Path, name: &str) {
+    let sql = format!(
+        "UPDATE auth_credentials SET kind='cli',authenticated_at=CAST(strftime('%s','now') AS INTEGER) WHERE id='{name}'"
+    );
+    execute(database, &sql).await;
+}
+
 /// Runs `sql` against the database at `database`.
 async fn execute(database: &Path, sql: &str) {
     sqlx::query(sql)

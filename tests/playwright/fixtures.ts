@@ -394,9 +394,13 @@ export const test = base.extend<Options & { daemon: Daemon; passkeys: Passkeys; 
     const passkeys = await Passkeys.create(page);
     try { await use(passkeys); } finally { await passkeys.close(); }
   },
+  // Confirmed with its passkey, as a setup link's session isn't, so the
+  // test may create credentials and links in its first 2 minutes.
   account: async ({ page, daemon, passkeys }, use) => {
     void passkeys;
-    await use(await register(page, daemon.setup, 'alice'));
+    const account = await register(page, daemon.setup, 'alice');
+    await confirmPasskey(page);
+    await use(account);
   },
   cli: async ({ daemon, processEnv }, use, testInfo) => { await use(new Cli(daemon, testInfo, processEnv)); },
   browserErrors: [async ({ page }, use) => {

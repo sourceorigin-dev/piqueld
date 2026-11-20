@@ -136,14 +136,15 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         .create_token(bob_caller("signed-in"), &token, None)
         .await
         .unwrap();
-    let cli = credential("cli", CredentialKind::Cli);
+    // Device logins inherit the passkey proof of their approval.
+    let cli = proved(credential("cli", CredentialKind::Cli));
     store
         .issue_for_credential_owner(bob_caller("redeemed"), &cli)
         .await
         .unwrap()
         .unwrap();
     // A leaf nothing descends from, gone once its credential is.
-    let leaf = credential("leaf", CredentialKind::Token);
+    let leaf = proved(credential("leaf", CredentialKind::Token));
     store
         .issue_for_credential_owner(alice, &leaf)
         .await
@@ -196,6 +197,15 @@ async fn revoking_cascades_through_ended_issuers() {
         credential_id: "bob-session",
         user_id: "bob",
     };
+    // Bob signs in with his passkey, so his session may create a token.
+    let signed_in_at = now_secs();
+    sqlx::query!(
+        "UPDATE auth_credentials SET authenticated_at=?1 WHERE id='bob-session'",
+        signed_in_at
+    )
+    .execute(&store.pool)
+    .await
+    .expect("the session is stored");
     let created = store.create_token(bob, &token, None).await;
     created.expect("bob's session creates a token");
     let logout = store.revoke_credential(Actor::Daemon, "bob-session", Cascade::No);
@@ -207,7 +217,8 @@ async fn revoking_cascades_through_ended_issuers() {
         credential_id: "other",
         user_id: "alice",
     };
-    let sibling = credential("sibling", CredentialKind::Cli);
+    // Device logins inherit the passkey proof of their approval.
+    let sibling = proved(credential("sibling", CredentialKind::Cli));
     let issued = store.issue_for_credential_owner(other, &sibling).await;
     let issued = issued.expect("the other login issues a sibling");
     issued.expect("the other login is live");
@@ -310,7 +321,7 @@ async fn bulk_revocations_cascade_from_every_root() {
     for (user, cascade, kept) in [("carol", Cascade::No, true), ("grace", Cascade::Yes, false)] {
         invite_and_redeem(&store, erin, user).await;
         let (key, session) = (format!("{user}-key"), format!("{user}-signed-in"));
-        let signed_in = credential(&session, CredentialKind::Browser);
+        let signed_in = proved(credential(&session, CredentialKind::Browser));
         let sign_in = store
             .sign_in_with_passkey(&key, user, stored, &signed_in)
             .await;
@@ -358,7 +369,7 @@ async fn ended_issuer(store: &Store, user: &'static str) {
     let alone = store.revoke_credential(Actor::Daemon, user, Cascade::No);
     alone.await.expect("the login is revoked alone");
     let (key, session) = (format!("{user}-key"), format!("{user}-signed-in"));
-    let signed_in = credential(&session, CredentialKind::Browser);
+    let signed_in = proved(credential(&session, CredentialKind::Browser));
     let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
     let sign_in = store.sign_in_with_passkey(&key, user, stored, &signed_in);
     let sign_in = sign_in.await.expect("the passkey signs in");

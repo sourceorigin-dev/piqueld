@@ -635,8 +635,10 @@ Fetch Metadata headers before authentication; DNS names need `server.allowed_hos
 [configuration](configuration.md)). Rejected requests return
 `403 browser_access_denied`, even without credentials. Authentication checks API mutation origins against
 `auth.public_url`, returning `403 origin_mismatch` for rejected origins.
-Sensitive actions, like adding a passkey or recovering the secret key, need a
-passkey sign-in within the last 2 minutes and otherwise return
+Sensitive actions, like creating credentials and links, handing out `admin`,
+`accounts:manage` or `system:operate`, approving a CLI login, or recovering
+the secret key, need a passkey sign-in within the last 2 minutes and
+otherwise return
 `403 reauthentication_required`. When its `details.step_up` is `true`, a
 browser session confirms with a passkey through
 `POST /api/v1/auth/reauthenticate/start` and `/finish`, then retries; it is

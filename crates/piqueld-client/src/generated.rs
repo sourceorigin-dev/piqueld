@@ -7426,7 +7426,9 @@ impl Client {
     }
     /*Approves a pending device sign-in
 
-    The device's next poll receives a token for the signed-in user.
+    The device's next poll receives a token for the signed-in user. Needs a
+    passkey sign-in within the last 2 minutes; the issued login counts as
+    signed in when that was.
 
     Sends a `POST` request to `/api/v1/auth/device/approve`
 
@@ -7524,7 +7526,8 @@ impl Client {
     Public. Poll at most every five seconds: the status is
     `authorization_pending` until approval, `slow_down` when polled too fast, and
     `complete` with a 30-day token exactly once after approval. Expired or unknown
-    codes fail with 401.
+    codes fail with 401. An approval whose passkey sign-in is over 2 minutes
+    old by then fails with 403 `reauthentication_required`; sign in again.
 
     Sends a `POST` request to `/api/v1/auth/device/poll`
 
@@ -7856,6 +7859,9 @@ impl Client {
     Anyone may manage their own account. Changing other accounts requires
     `accounts:manage` and every grant the account holds; handing out grants
     requires holding them (403 `permission_denied` or `permission_exceeded`).
+    Creating tokens, invitations or enrollment links, and handing out `admin`,
+    `accounts:manage` or `system:operate`, need a passkey sign-in within the
+    last 2 minutes.
 
     Sends a `POST` request to `/api/v1/auth/manage`
 

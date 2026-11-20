@@ -27,7 +27,11 @@ Waiting for passkey login…
 alice (01a16b4b-ef93-7971-b6f6-e8359d3c4d52)
 ```
 
-Open the link, sign in with your passkey, and approve the login. The link
+Open the link, sign in with your passkey, and approve the login. If you
+signed in more than 2 minutes ago, the dashboard asks you to
+[confirm with your passkey](accounts.md#confirm-with-your-passkey) first. The
+new login counts as signed in when your passkey last confirmed you in that
+browser. The link
 already carries the code, so you never have to type or copy the code:
 [creating your account](../getting-started/first-account.md#sign-piquelctl-in)
 walks through it. `piquelctl` then prints the account it signed in as. This
@@ -138,7 +142,9 @@ lowering your access lowers your tokens' access too.
 3. Enter a **New token name**, such as `ci`.
 4. Under **Expires in days (blank: never)**, keep `90` or enter another number
    of days.
-5. Select **Create token**.
+5. Select **Create token**, and
+   [confirm with your passkey](accounts.md#confirm-with-your-passkey) if the
+   dashboard asks.
 6. At the top of the page, select **Copy** next to the new token, then
    **Done**. The token isn't shown again.
 
