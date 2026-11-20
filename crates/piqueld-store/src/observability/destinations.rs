@@ -111,7 +111,7 @@ impl SavedDestination {
     /// What saving it changed, as its audit record names it: the
     /// destination, how it changed, and what it now receives, never its URL,
     /// e.g. `destination "ops" <id> changed as a new receiver: categories
-    /// deployment_failed,security; applications all; previews no`.
+    /// build_failures,deployment_failures; applications all; previews no`.
     fn audit_change(&self, name: &DestinationName, settings: &DestinationSettings) -> String {
         let mut change = format!(
             "destination {:?} {} {}",
@@ -147,7 +147,7 @@ impl SavedDestination {
 enum DestinationChange {
     /// It is new.
     Created,
-    /// It existed and stays enabled, or was enabled again.
+    /// It existed and isn't newly disabled.
     Changed,
     /// It existed and was disabled.
     Disabled,
