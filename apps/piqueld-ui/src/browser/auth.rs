@@ -155,9 +155,19 @@ where
     F: Future<Output = Result<T, E>>,
 {
     let step_up = use_context::<StepUp>();
+    let state = use_context::<AuthState>();
+    let signed_in = move || state.and_then(AuthState::identity_untracked);
+    let started = signed_in();
     match (request().await.map_err(Into::into), step_up) {
         (Err(ActionError::Client(error)), Some(step_up)) if error.step_up() => {
             step_up.confirm().await?;
+            // Never retry as someone else: the action belongs to whoever
+            // started it.
+            if signed_in() != started {
+                return Err(ActionError::Message(
+                    "Signed in as someone else, so the action was not retried.".into(),
+                ));
+            }
             request().await.map_err(Into::into)
         }
         (result, _) => result,
@@ -373,6 +383,15 @@ impl AuthState {
         self.loaded.get() && self.error.get().is_empty() && self.current.get().is_some()
     }
 
+    /// Who is signed in now, without tracking it.
+    fn identity_untracked(self) -> Option<Identity> {
+        self.current.with_untracked(|session| {
+            session
+                .as_ref()
+                .map(|session| Identity::from(&session.principal))
+        })
+    }
+
     /// Resumes `session` after it expired.
     fn resume(self, session: Session) {
         self.current.set(Some(session));
@@ -499,6 +518,20 @@ pub(super) fn Gate() -> impl IntoView {
                 .as_ref()
                 .map(|session| Identity::from(&session.principal))
         })
+    });
+    // A pending confirmation belongs to the session that asked for it:
+    // losing that session, or another identity signing in, cancels it.
+    Effect::new(move |_| {
+        if state.expired.get() {
+            step_up.finish(false);
+        }
+    });
+    Effect::new(move |previous: Option<Option<Identity>>| {
+        let current = identity.get();
+        if previous.is_some_and(|previous| previous != current) {
+            step_up.finish(false);
+        }
+        current
     });
     view! {
         <div inert={move || {

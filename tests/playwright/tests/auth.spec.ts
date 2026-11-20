@@ -119,6 +119,53 @@ test('an application shows only the controls the account may use on it', async (
   await expect(page.getByRole('button', { name: 'Rename environment', exact: true })).toBeDisabled();
 });
 
+test('a confirmation pending when the session ends is cancelled, never retried as someone else', async ({ page, account, passkeys }) => {
+  void account;
+  await confirmPasskey(page);
+  const link = (await auth<Managed>(page, 'manage', { action: 'create_invitation', grants: [] })).invitation_url;
+  // Each account signs in with its own passkey: the authenticator holds only
+  // the one whose turn it is.
+  const alices = await passkeys.credentials();
+  await passkeys.reset();
+  await register(page, link, 'bob');
+  const bobs = await passkeys.credentials();
+  await api(page, 'logout', {});
+  await passkeys.reset();
+  await passkeys.restore(alices);
+  await page.goto('/dashboard/');
+  await page.getByRole('button', { name: 'Sign in with a passkey', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: 'Dashboard navigation' })).toBeVisible();
+
+  // Alice's invitation is refused for want of a recent sign-in.
+  let invitations = 0;
+  await page.route('**/api/v1/auth/manage', async route => {
+    if (route.request().postDataJSON().action !== 'create_invitation') return route.continue();
+    if (++invitations > 1) return route.continue();
+    await route.fulfill({ status: 403, json: {
+      code: 'reauthentication_required', message: 'Confirm with your passkey', details: { step_up: true },
+    } });
+  });
+  await page.goto('/dashboard/accounts');
+  await page.getByRole('button', { name: 'Invite', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Create invitation' }).getByRole('button', { name: 'Create link', exact: true }).click();
+  const confirming = page.getByRole('dialog', { name: 'Confirm with your passkey' });
+  await expect(confirming).toBeVisible();
+  // Her session ends while she is asked, and bob signs in instead.
+  await api(page, 'logout', {});
+  await confirming.getByRole('button', { name: 'Confirm with passkey', exact: true }).click();
+  const expired = page.getByRole('dialog', { name: 'Your session has expired' });
+  await expect(expired).toBeVisible();
+  await passkeys.reset();
+  await passkeys.restore(bobs);
+  await expired.getByRole('button', { name: 'Sign in with a passkey', exact: true }).click();
+  await expect(expired).toHaveCount(0);
+  await expect(page.getByRole('main')).toBeVisible();
+  // Alice's confirmation went with her session, so nothing asks bob to
+  // confirm it, and her invitation is never sent again.
+  await expect(confirming).toHaveCount(0);
+  expect(invitations).toBe(1);
+});
+
 test('adding a passkey asks to confirm with an existing one, then continues once', async ({ page, account, passkeys }) => {
   void account;
   const alice = await openAccount(page, 'alice', 'Access');
