@@ -256,6 +256,16 @@ impl EditorContext {
         self.saved.with(|saved| saved.environment_name(environment))
     }
 
+    /// Whether one of the application's environments or previews is being
+    /// deleted, or is already gone.
+    fn deleting(self, environment: &str) -> bool {
+        self.saved.with(|saved| {
+            saved
+                .deployable(environment)
+                .is_none_or(|environment| environment.delete_intent)
+        })
+    }
+
     /// Where an environment deploys from (see `ApplicationViewExt::describe_source`).
     fn describe_source(self, source: &EnvironmentSource) -> String {
         self.saved.with(|saved| saved.describe_source(source))

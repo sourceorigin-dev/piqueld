@@ -70,21 +70,20 @@ impl EditorContext {
 /// which links to its page. Each whole row opens the environment's page; its
 /// Deploy button deploys it,
 /// or for a promoted environment its Promote button promotes into it. Also
-/// creates new environments.
+/// creates new environments. Rows are keyed by environment and read it live,
+/// so a refresh updates them without closing an open promotion preview.
 #[component]
 pub(super) fn EnvironmentList() -> impl IntoView {
     let context = editor();
-    let signals = context.signals();
-    // Latest deployment of an environment among the listed deployments.
-    let latest = move |environment: &str| {
-        signals.applications.with(|rows| {
-            rows.iter()
-                .flat_map(|row| &row.deployments)
-                .filter(|deployment| deployment.operation.environment_id.as_str() == environment)
-                .max_by_key(|deployment| deployment.operation.created_at_ms)
-                .map(|deployment| deployment.operation.clone())
+    let ids = Memo::new(move |_| {
+        context.saved.with(|saved| {
+            saved
+                .environments
+                .iter()
+                .map(|environment| environment.id.to_string())
+                .collect::<Vec<_>>()
         })
-    };
+    });
     view! {
         <div class="stack">
             <div class="section-header">
@@ -97,65 +96,106 @@ pub(super) fn EnvironmentList() -> impl IntoView {
                 <NewEnvironment />
             </div>
             <Drift />
-            {move || {
-                let environments = context.saved.with(|saved| saved.environments.clone());
-                if environments.is_empty() {
-                    return empty("No environments yet. Create one to deploy this application.");
-                }
-                view! {
-                    <ul class="list" aria-label="Environments">
-                        {environments
-                            .into_iter()
-                            .map(|environment| {
-                                let id = environment.id.to_string();
-                                let href = context.environment_href(&id);
-                                let deleting = environment.delete_intent;
-                                let name = environment.name.to_string();
-                                let source = context.describe_source(&environment.source);
-                                let health = signals.environment_row(&id).map(|row| row.health());
-                                let latest = latest(&id);
-                                view! {
-                                    <li class="list-row list-row-link">
-                                        <span class="title">
-                                            <A href={href}>{name}</A>
-                                            <small>{format!("{id} · {source}")}</small>
-                                        </span>
-                                        <span class="meta">
-                                            {latest
-                                                .map_or_else(
-                                                    || "Never deployed".into_any(),
-                                                    |operation| {
-                                                        view! {
-                                                            <A
-                                                                href={context.deployment_href(&id, &operation.id)}
-                                                                attr:class="btn-group latest-deployment"
-                                                            >
-                                                                {operation_badge(operation.state)}
-                                                                {when(operation.created_at_ms)}
-                                                            </A>
-                                                        }
-                                                            .into_any()
-                                                    },
-                                                )}
-                                        </span>
-                                        {if deleting {
-                                            badge(Tone::Warn, "Deleting")
-                                        } else {
-                                            health.map(health_badge).into_any()
-                                        }}
-                                        <EnvironmentAction environment={environment} compact=true />
-                                        <span class="chevron" aria-hidden="true">
-                                            {icon(Icon::ChevronRight)}
-                                        </span>
-                                    </li>
-                                }
-                            })
-                            .collect_view()}
-                    </ul>
-                }
-                    .into_any()
-            }}
+            <Show
+                when={move || !ids.with(Vec::is_empty)}
+                fallback={|| empty("No environments yet. Create one to deploy this application.")}
+            >
+                <ul class="list" aria-label="Environments">
+                    <For
+                        each={move || ids.get()}
+                        key={String::clone}
+                        children={|id| view! { <EnvironmentRow id={id} /> }}
+                    />
+                </ul>
+            </Show>
         </div>
+    }
+}
+
+/// One row of `EnvironmentList`: environment `id`'s name and source, its
+/// latest deployment, health and action, each read live.
+#[component]
+fn EnvironmentRow(id: String) -> impl IntoView {
+    let context = editor();
+    let signals = context.signals();
+    let href = context.environment_href(&id);
+    let id = StoredValue::new(id);
+    let environment = Memo::new(move |_| {
+        context
+            .saved
+            .with(|saved| id.with_value(|id| saved.deployable(id).cloned()))
+    });
+    let name = move || {
+        environment.with(|environment| {
+            environment
+                .as_ref()
+                .map(|environment| environment.name.to_string())
+        })
+    };
+    let source = move || {
+        environment.with(|environment| {
+            environment.as_ref().map(|environment| {
+                format!(
+                    "{} · {}",
+                    id.get_value(),
+                    context.describe_source(&environment.source)
+                )
+            })
+        })
+    };
+    // Latest deployment of the environment among the listed deployments.
+    let latest = move || {
+        signals.applications.with(|rows| {
+            rows.iter()
+                .flat_map(|row| &row.deployments)
+                .filter(|deployment| {
+                    id.with_value(|id| deployment.operation.environment_id.as_str() == id)
+                })
+                .max_by_key(|deployment| deployment.operation.created_at_ms)
+                .map(|deployment| deployment.operation.clone())
+        })
+    };
+    let status = move || {
+        if id.with_value(|id| context.deleting(id)) {
+            badge(Tone::Warn, "Deleting")
+        } else {
+            id.with_value(|id| signals.environment_row(id))
+                .map(|row| health_badge(row.health()))
+                .into_any()
+        }
+    };
+    view! {
+        <li class="list-row list-row-link">
+            <span class="title">
+                <A href={href}>{name}</A>
+                <small>{source}</small>
+            </span>
+            <span class="meta">
+                {move || {
+                    latest()
+                        .map_or_else(
+                            || "Never deployed".into_any(),
+                            |operation| {
+                                view! {
+                                    <A
+                                        href={id.with_value(|id| context.deployment_href(id, &operation.id))}
+                                        attr:class="btn-group latest-deployment"
+                                    >
+                                        {operation_badge(operation.state)}
+                                        {when(operation.created_at_ms)}
+                                    </A>
+                                }
+                                    .into_any()
+                            },
+                        )
+                }}
+            </span>
+            {status}
+            <EnvironmentAction environment={id.get_value()} compact=true />
+            <span class="chevron" aria-hidden="true">
+                {icon(Icon::ChevronRight)}
+            </span>
+        </li>
     }
 }
 
