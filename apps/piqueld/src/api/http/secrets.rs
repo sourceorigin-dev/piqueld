@@ -1,5 +1,6 @@
 //! Write-only values and metadata-only secret lifecycle endpoints: generated
 //! secrets per environment, and each application's store of manually set secrets.
+use super::access::Audited;
 use super::extract::{body_timeout, single_header};
 use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{
@@ -94,13 +95,14 @@ pub(super) async fn delete(
 pub(super) async fn regenerate(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
+    audited: Audited,
     ApiPath((id, name)): ApiPath<(String, String)>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     let generation = expected(&headers)?;
     Ok(ok(state
         .regenerate_secret(
-            identity.actor(),
+            audited.author(&identity),
             &EnvironmentId::parse(id)?,
             &name,
             generation,
@@ -206,6 +208,7 @@ impl AccessQuery {
 pub(super) async fn put_stored(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
+    audited: Audited,
     ApiPath((id, name)): ApiPath<(String, String)>,
     ApiQuery(query): ApiQuery<AccessQuery>,
     request: Request,
@@ -243,7 +246,7 @@ pub(super) async fn put_stored(
     }
     Ok(ok(state
         .put_stored_secret(
-            identity.actor(),
+            audited.author(&identity),
             &ApplicationId::parse(id)?,
             &name,
             piqueld_store::SecretPrecondition {
@@ -268,13 +271,14 @@ pub(super) async fn put_stored(
 pub(super) async fn set_access(
     State(state): State<ApiState>,
     axum::Extension(identity): axum::Extension<crate::auth::Identity>,
+    audited: Audited,
     ApiPath((id, name)): ApiPath<(String, String)>,
     ApiJson(change): ApiJson<SecretAccessChange>,
 ) -> Result<impl IntoResponse, ApiError> {
     let (access, expected) = change.into_parts();
     Ok(ok(state
         .set_secret_access(
-            identity.actor(),
+            audited.author(&identity),
             &ApplicationId::parse(id)?,
             &name,
             &access,

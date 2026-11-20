@@ -168,6 +168,24 @@ impl<'a> Author<'a> {
         Store::append_audit_on(db, &event, now_ms()).await?;
         Ok(Appended(Some(&request.recorded)))
     }
+
+    /// Ends a write transaction that its request's `change` is the last step
+    /// of: appends its record (see [`Self::record_on`]), commits `tx`, then
+    /// notes the record.
+    /// # Errors
+    /// Returns storage errors, which roll the change back too.
+    pub(crate) async fn commit_recorded(
+        self,
+        mut tx: sqlx::Transaction<'_, sqlx::Sqlite>,
+        status: u16,
+        change: Option<&str>,
+        target: (Option<&str>, Option<&str>),
+    ) -> Result<(), StoreError> {
+        let appended = self.record_on(&mut tx, status, change, target).await?;
+        tx.commit().await.map_err(StoreError::database)?;
+        appended.committed();
+        Ok(())
+    }
 }
 
 /// What [`Author::record_on`] appended: the request whose change it
