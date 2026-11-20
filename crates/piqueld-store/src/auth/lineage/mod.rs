@@ -43,7 +43,9 @@ pub(super) enum AccountRoots {
     /// Every credential the account ever had that something still descends
     /// from, or that is still stored: revoking all of them.
     Credentials,
-    /// Its credentials and passkeys alike: deleting the account.
+    /// Its credentials and passkeys alike, and the links it issued or that
+    /// target it, which its deletion would remove anyway: deleting the
+    /// account.
     Everything,
 }
 
@@ -68,15 +70,16 @@ impl Revoked {
 
 impl std::fmt::Display for Revoked {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            credentials,
-            invitations,
-            passkeys,
-        } = self;
-        write!(
-            f,
-            "{credentials} credentials, {invitations} invitations and {passkeys} passkeys"
-        )
+        let count = |count: u64, what: &str| match count {
+            1 => format!("1 {what}"),
+            count => format!("{count} {what}s"),
+        };
+        let credentials = count(self.credentials, "credential");
+        let (invitations, passkeys) = (
+            count(self.invitations, "invitation"),
+            count(self.passkeys, "passkey"),
+        );
+        write!(f, "{credentials}, {invitations} and {passkeys}")
     }
 }
 
@@ -190,6 +193,8 @@ impl Store {
                 WHERE user_id=?1 AND (kind='credential' OR NOT ?2)
                 UNION SELECT 'credential',id FROM auth_credentials WHERE user_id=?1
                 UNION SELECT 'passkey',id FROM auth_passkeys WHERE user_id=?1 AND NOT ?2
+                UNION SELECT 'invitation',id FROM auth_invitations
+                WHERE (issuer_id=?1 OR user_id=?1) AND NOT ?2
             )"#,
             user_id,
             credentials_only

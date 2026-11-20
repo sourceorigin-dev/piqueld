@@ -29,8 +29,9 @@ The audit trail records:
 Each record keeps the request and its outcome: **Allowed**, **Denied** or
 **Failed**. It names the account and credential that made it, and where it
 came from: a network address, the Unix socket, or a tailnet user and device.
-Request bodies are never recorded, but a refused or failed account change
-names what it attempted, such as the grants it would have set. Records
+Request bodies are never recorded, but an account change that was refused,
+failed or changed nothing names what it attempted, such as the grants it
+would have set. Records
 outlive the accounts, credentials and applications they name.
 
 Routine reads, such as the dashboard refreshing a page, aren't recorded.
@@ -64,7 +65,8 @@ expiry, never its secret. Revoking a credential, removing a passkey or
 deleting an account also says how many credentials, links and passkeys it
 removed, including those they issued unless you chose not to cascade.
 A change that leaves things as they were, such as setting the grants an
-account already has, records nothing new.
+account already has, records no change: its request is recorded like any
+other, as **Allowed**, naming what it asked for.
 
 A notification destination's record names it, how it changed, and the
 categories, applications and previews it now receives, never its URL. A

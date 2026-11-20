@@ -168,7 +168,7 @@ impl fmt::Display for Expiry {
 impl NewCredential<'_> {
     /// The credential as the audit record of its creation names it, never
     /// its secret: its kind, ID, name, grants, expiry and the tailnet
-    /// identity it is bound to, e.g. `token 0190… "deploy" grants
+    /// identity it is bound to, e.g. `token "0190…" "deploy" grants
     /// (apps:deploy) expires never tailnet none`.
     fn describe(&self, tailnet: Option<&str>) -> String {
         let grants = self.grants.map_or_else(
@@ -178,7 +178,7 @@ impl NewCredential<'_> {
         let expires = Expiry(self.expires_at);
         let tailnet = tailnet.unwrap_or("none");
         let (kind, id, name) = (self.kind.as_str(), &self.id, self.name);
-        format!("{kind} {id} {name:?} grants {grants} expires {expires} tailnet {tailnet}")
+        format!("{kind} {id:?} {name:?} grants {grants} expires {expires} tailnet {tailnet}")
     }
 
     /// Inserts the credential for `user_id`, marking it used now, as issued
@@ -1362,7 +1362,7 @@ impl Store {
             .replace(&mut tx, grants)
             .await?;
         let (id, expires) = (&invitation.id, Expiry(Some(invitation.expires_at)));
-        let change = format!("invitation {id} grants ({grants}) expires {expires}");
+        let change = format!("invitation {id:?} grants ({grants}) expires {expires}");
         author
             .commit_recorded(tx, 200, Some(&change), (None, None))
             .await
@@ -1398,7 +1398,7 @@ impl Store {
         let (issuer, credential) = (caller.user_id, caller.credential_id);
         Self::insert_invitation_on(&mut tx, invitation, issuer, credential, Some(user_id)).await?;
         let (id, expires) = (&invitation.id, Expiry(Some(invitation.expires_at)));
-        let change = format!("enrollment {id} for account {user_id:?} expires {expires}");
+        let change = format!("enrollment {id:?} for account {user_id:?} expires {expires}");
         author
             .commit_recorded(tx, 200, Some(&change), (None, None))
             .await
@@ -1452,14 +1452,14 @@ impl Store {
             None => return Err(StoreError::NotFound),
             Some(Some(user_id)) => {
                 Self::check_account_on(&mut tx, actor, &user_id).await?;
-                format!("enrollment {id} for account {user_id:?} revoked")
+                format!("enrollment {id:?} for account {user_id:?} revoked")
             }
             Some(None) => {
                 if let Some(authority) = actor.load(&mut tx).await? {
                     let grants = Holder::Invitation(id).grants(&mut tx).await?;
                     Self::may_invite(&authority.grants, &grants)?;
                 }
-                format!("invitation {id} revoked")
+                format!("invitation {id:?} revoked")
             }
         };
         sqlx::query!("DELETE FROM auth_invitations WHERE id=?1", id)
