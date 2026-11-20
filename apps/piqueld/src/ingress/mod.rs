@@ -108,8 +108,10 @@ pub struct Ingress {
     name: String,
     /// Host directory holding Caddy's data, config, and control mounts.
     directory: PathBuf,
-    /// Docker Engine, for the gateway's containers, networks and images.
+    /// Docker Engine reads, for the gateway's containers, networks and images.
     docker: piqueld_docker::Infrastructure,
+    /// Their changes, which only a journal action makes.
+    changes: wire::DockerChanges,
     /// Caddy's private admin API socket inside the control mount.
     caddy: UnixApi,
     store: Arc<Store>,
@@ -192,6 +194,7 @@ impl Ingress {
             directory,
             docker: piqueld_docker::Infrastructure::connect(socket)
                 .context("Docker socket is not UTF-8")?,
+            changes: wire::DockerChanges::connect(socket)?,
             store,
             update: Mutex::new(()),
             requester: Mutex::new(None),

@@ -111,7 +111,7 @@ pub mod fake;
 mod identity;
 mod images;
 mod infrastructure;
-pub use infrastructure::{EngineVersion, Infrastructure};
+pub use infrastructure::{EngineVersion, Infrastructure, InfrastructureChanges};
 mod jobs;
 mod observation;
 mod policy;

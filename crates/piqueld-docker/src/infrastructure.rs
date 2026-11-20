@@ -3,10 +3,11 @@
 //!
 //! Container specs and inspections stay Docker's JSON, which ingress builds
 //! and compares field by field. Requests go raw to the engine socket through
-//! [`BollardDocker::engine_exchange`], each under the request budget. Nothing
-//! here is journaled: callers commit their intent before each change.
-use super::{BollardDocker, DockerError, engine::WireError};
-use futures_util::TryStreamExt as _;
+//! [`BollardDocker::engine_exchange`], each under the request budget, except
+//! pulls, which go through Bollard. Reads ([`Infrastructure`]) and changes
+//! ([`InfrastructureChanges`]) are separate handles: nothing here is
+//! journaled, so callers keep the changes behind their journal.
+use super::{BollardDocker, DockerError, ImageSource, engine::WireError};
 use hyper::Method;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -31,7 +32,8 @@ pub struct EngineVersion {
 
 impl EngineVersion {
     /// Whether the engine is Docker Engine 28+ with API 1.48+, which support
-    /// the per-endpoint `GwPriority` [`Infrastructure::connect_network`] sets.
+    /// the per-endpoint `GwPriority` [`InfrastructureChanges::connect_network`]
+    /// sets.
     ///
     /// ```text
     /// {"Version": "28.1.1", "ApiVersion": "1.49"}  -> true
@@ -58,20 +60,16 @@ impl std::fmt::Display for EngineVersion {
     }
 }
 
-/// An error Docker reported in an image pull's progress stream.
-#[derive(Debug, thiserror::Error)]
-#[error("pull {image}: {message}")]
-struct PullFailure {
-    image: String,
-    message: String,
-}
-
-/// The engine, for the containers, networks and images piqueld runs itself.
-/// Cheap to clone; connecting performs no I/O.
-#[derive(Clone)]
+/// Reads of the engine, for the containers, networks and images piqueld runs
+/// itself. Connecting performs no I/O.
 pub struct Infrastructure {
     docker: BollardDocker,
 }
+
+/// Changes to the containers, networks and images piqueld runs itself. A
+/// handle of its own, apart from [`Infrastructure`]'s reads, so a caller can
+/// keep it behind its journal. Connecting performs no I/O.
+pub struct InfrastructureChanges(Infrastructure);
 
 impl Infrastructure {
     /// Connects to the engine at `socket`, which need not exist yet.
@@ -208,139 +206,6 @@ impl Infrastructure {
             .is_some())
     }
 
-    /// Pulls `image`, failing on any error in its progress stream. Callers
-    /// bound how long it takes.
-    ///
-    /// # Errors
-    /// The failed pull.
-    pub async fn pull_image(&self, image: &str) -> Result<(), DockerError> {
-        use bollard::query_parameters::CreateImageOptionsBuilder;
-        let operation = "pull image";
-        let mut pull = self.docker.client()?.create_image(
-            Some(
-                CreateImageOptionsBuilder::default()
-                    .from_image(image)
-                    .build(),
-            ),
-            None,
-            None,
-        );
-        while let Some(event) = pull
-            .try_next()
-            .await
-            .map_err(|source| DockerError::request(operation, source))?
-        {
-            if let Some(message) = event.error {
-                return Err(DockerError::request(
-                    operation,
-                    PullFailure {
-                        image: image.to_owned(),
-                        message,
-                    },
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    /// Creates the container `name` from `spec` without starting it.
-    ///
-    /// # Errors
-    /// The failed request.
-    pub async fn create_container(&self, name: &str, spec: &Value) -> Result<(), DockerError> {
-        self.send(
-            "create container",
-            Method::POST,
-            &format!("/containers/create?name={name}"),
-            Some(spec),
-        )
-        .await
-        .map(drop)
-    }
-
-    /// Starts the container `name`.
-    ///
-    /// # Errors
-    /// [`DockerError::PortInUse`] when another listener holds a host port it
-    /// publishes, or the failed request.
-    pub async fn start_container(&self, name: &str) -> Result<(), DockerError> {
-        let operation = "start container";
-        let path = format!("/containers/{name}/start");
-        match self.request(Method::POST, &path, None).await {
-            Ok(bytes) => Self::decode(operation, &bytes).map(drop),
-            Err(error) => match error.response() {
-                Ok(response) if response.port_in_use() => Err(DockerError::PortInUse(response)),
-                Ok(response) => Err(DockerError::RequestSource {
-                    operation,
-                    source: Box::new(response),
-                }),
-                Err(error) => Err(error),
-            },
-        }
-    }
-
-    /// Stops the container `name`, killing it after `seconds`.
-    ///
-    /// # Errors
-    /// The failed request.
-    pub async fn stop_container(&self, name: &str, seconds: u32) -> Result<(), DockerError> {
-        self.send(
-            "stop container",
-            Method::POST,
-            &format!("/containers/{name}/stop?t={seconds}"),
-            None,
-        )
-        .await
-        .map(drop)
-    }
-
-    /// Waits until the container `name` is not running and returns its exit
-    /// code, if Docker reports one.
-    ///
-    /// # Errors
-    /// The failed request.
-    pub async fn wait_container(&self, name: &str) -> Result<Option<i64>, DockerError> {
-        let exit = self
-            .send(
-                "wait for container",
-                Method::POST,
-                &format!("/containers/{name}/wait?condition=not-running"),
-                None,
-            )
-            .await?;
-        Ok(exit["StatusCode"].as_i64())
-    }
-
-    /// Renames the container `from` to `to`.
-    ///
-    /// # Errors
-    /// The failed request.
-    pub async fn rename_container(&self, from: &str, to: &str) -> Result<(), DockerError> {
-        self.send(
-            "rename container",
-            Method::POST,
-            &format!("/containers/{from}/rename?name={to}"),
-            None,
-        )
-        .await
-        .map(drop)
-    }
-
-    /// Force-removes the container `id`, running or not.
-    ///
-    /// # Errors
-    /// The failed request, including a missing container.
-    pub async fn remove_container(&self, id: &str) -> Result<(), DockerError> {
-        self.send(
-            "remove container",
-            Method::DELETE,
-            &format!("/containers/{id}?force=true"),
-            None,
-        )
-        .await
-        .map(drop)
-    }
-
     /// Reads the last `tail` lines the container `name` wrote to stdout and
     /// stderr, or only those between `between`'s Unix seconds, each
     /// truncated to [`MAX_LOG_LINE_CHARS`]. Docker multiplexes both streams
@@ -381,6 +246,108 @@ impl Infrastructure {
         }
         Ok(lines)
     }
+}
+
+impl InfrastructureChanges {
+    /// Connects to the engine at `socket`, which need not exist yet.
+    ///
+    /// # Errors
+    /// [`DockerError::Unavailable`] for a non-UTF-8 socket path.
+    pub fn connect(socket: &Path) -> Result<Self, DockerError> {
+        Infrastructure::connect(socket).map(Self)
+    }
+
+    /// Sends one change, ignoring its response, labelling a failure with
+    /// `operation`.
+    async fn change(
+        &self,
+        operation: &'static str,
+        method: Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<(), DockerError> {
+        self.0.send(operation, method, path, body).await.map(drop)
+    }
+
+    /// Pulls `image` like image resolution does, failing on an error in its
+    /// progress stream. Callers bound how long it takes.
+    ///
+    /// # Errors
+    /// The failed pull.
+    pub async fn pull_image(&self, image: &str) -> Result<(), DockerError> {
+        ImageSource::pull(self.0.docker.client()?, image).await
+    }
+
+    /// Creates the container `name` from `spec` without starting it.
+    ///
+    /// # Errors
+    /// The failed request.
+    pub async fn create_container(&self, name: &str, spec: &Value) -> Result<(), DockerError> {
+        let path = format!("/containers/create?name={name}");
+        self.change("create container", Method::POST, &path, Some(spec))
+            .await
+    }
+
+    /// Starts the container `name`.
+    ///
+    /// # Errors
+    /// [`DockerError::PortInUse`] when another listener holds a host port it
+    /// publishes, or the failed request.
+    pub async fn start_container(&self, name: &str) -> Result<(), DockerError> {
+        let operation = "start container";
+        let path = format!("/containers/{name}/start");
+        match self.0.request(Method::POST, &path, None).await {
+            Ok(bytes) => Infrastructure::decode(operation, &bytes).map(drop),
+            Err(error) if error.port_in_use() => Err(error
+                .response()
+                .map_or_else(|error| error, DockerError::PortInUse)),
+            Err(error) => Err(error.sanitized(operation)),
+        }
+    }
+
+    /// Stops the container `name`, killing it after `seconds`.
+    ///
+    /// # Errors
+    /// The failed request.
+    pub async fn stop_container(&self, name: &str, seconds: u32) -> Result<(), DockerError> {
+        let path = format!("/containers/{name}/stop?t={seconds}");
+        self.change("stop container", Method::POST, &path, None)
+            .await
+    }
+
+    /// Waits until the container `name` is not running and returns its exit
+    /// code, if Docker reports one.
+    ///
+    /// # Errors
+    /// The failed request.
+    pub async fn wait_container(&self, name: &str) -> Result<Option<i64>, DockerError> {
+        let path = format!("/containers/{name}/wait?condition=not-running");
+        let exit = self
+            .0
+            .send("wait for container", Method::POST, &path, None)
+            .await?;
+        Ok(exit["StatusCode"].as_i64())
+    }
+
+    /// Renames the container `from` to `to`.
+    ///
+    /// # Errors
+    /// The failed request.
+    pub async fn rename_container(&self, from: &str, to: &str) -> Result<(), DockerError> {
+        let path = format!("/containers/{from}/rename?name={to}");
+        self.change("rename container", Method::POST, &path, None)
+            .await
+    }
+
+    /// Force-removes the container `id`, running or not.
+    ///
+    /// # Errors
+    /// The failed request, including a missing container.
+    pub async fn remove_container(&self, id: &str) -> Result<(), DockerError> {
+        let path = format!("/containers/{id}?force=true");
+        self.change("remove container", Method::DELETE, &path, None)
+            .await
+    }
 
     /// Creates a bridge network `name` labelled with `labels`.
     ///
@@ -391,14 +358,14 @@ impl Infrastructure {
         name: &str,
         labels: &Value,
     ) -> Result<(), DockerError> {
-        self.send(
+        let network = json!({"Name":name,"Driver":"bridge","Labels":labels});
+        self.change(
             "create network",
             Method::POST,
             "/networks/create",
-            Some(&json!({"Name":name,"Driver":"bridge","Labels":labels})),
+            Some(&network),
         )
         .await
-        .map(drop)
     }
 
     /// Removes the network `id`.
@@ -406,14 +373,9 @@ impl Infrastructure {
     /// # Errors
     /// The failed request.
     pub async fn remove_network(&self, id: &str) -> Result<(), DockerError> {
-        self.send(
-            "remove network",
-            Method::DELETE,
-            &format!("/networks/{id}"),
-            None,
-        )
-        .await
-        .map(drop)
+        let path = format!("/networks/{id}");
+        self.change("remove network", Method::DELETE, &path, None)
+            .await
     }
 
     /// Connects `container` to `network` with gateway priority 0, so the
@@ -422,14 +384,10 @@ impl Infrastructure {
     /// # Errors
     /// The failed request.
     pub async fn connect_network(&self, network: &str, container: &str) -> Result<(), DockerError> {
-        self.send(
-            "connect network",
-            Method::POST,
-            &format!("/networks/{network}/connect"),
-            Some(&json!({"Container":container,"EndpointConfig":{"GwPriority":0}})),
-        )
-        .await
-        .map(drop)
+        let path = format!("/networks/{network}/connect");
+        let endpoint = json!({"Container":container,"EndpointConfig":{"GwPriority":0}});
+        self.change("connect network", Method::POST, &path, Some(&endpoint))
+            .await
     }
 
     /// Disconnects `container` from `network`, without force.
@@ -441,14 +399,10 @@ impl Infrastructure {
         network: &str,
         container: &str,
     ) -> Result<(), DockerError> {
-        self.send(
-            "disconnect network",
-            Method::POST,
-            &format!("/networks/{network}/disconnect"),
-            Some(&json!({"Container":container,"Force":false})),
-        )
-        .await
-        .map(drop)
+        let path = format!("/networks/{network}/disconnect");
+        let endpoint = json!({"Container":container,"Force":false});
+        self.change("disconnect network", Method::POST, &path, Some(&endpoint))
+            .await
     }
 }
 
@@ -498,7 +452,8 @@ mod tests {
         docker.version().await.unwrap();
         docker.inspect_container("gateway").await.unwrap();
         docker.log_lines("gateway", 20, Some((1, 2))).await.unwrap();
-        docker.remove_network("edge").await.unwrap();
+        let changes = InfrastructureChanges::connect(&socket).unwrap();
+        changes.remove_network("edge").await.unwrap();
         assert_eq!(
             server.await.unwrap(),
             [

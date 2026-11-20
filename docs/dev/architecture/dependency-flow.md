@@ -47,8 +47,9 @@ macros against its migrations. Its `testing` feature adds
 
 `piqueld-docker` holds the Docker boundary and `command`, which runs Git's and
 Docker's commands with bounded output capture. The boundary is the reconciler's
-`DockerApi` and `Infrastructure`, which handles the containers, bridge networks
-and images ingress runs itself, outside Swarm. It streams output into any
+`DockerApi`, and `Infrastructure` and `InfrastructureChanges`, which read and
+change the containers, bridge networks and images ingress runs itself, outside
+Swarm. It streams output into any
 `command::OutputLog`, such as the daemon's `BuildLog`, so it doesn't depend
 on the store, and the two build in parallel. It classifies its errors with
 `DockerError::diagnostic_code`. Its build script builds the health probe with

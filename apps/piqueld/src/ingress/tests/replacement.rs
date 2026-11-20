@@ -84,7 +84,7 @@ impl Scenario {
         .await
         .unwrap();
         let previous = format!("{}-previous", self.gateway.name);
-        let docker = &self.gateway.docker;
+        let docker = self.gateway.external();
         docker.stop_container(&self.gateway.name, 1).await.unwrap();
         docker
             .rename_container(&self.gateway.name, &previous)
@@ -115,7 +115,7 @@ impl Scenario {
         let previous = format!("{}-previous", self.gateway.name);
         let replaced = self.gateway.container_id().await;
         self.gateway
-            .docker
+            .external()
             .create_container(&previous, &self.gateway.container_spec())
             .await
             .unwrap();
@@ -170,7 +170,7 @@ impl Scenario {
         assert_eq!(upgraded.container_id().await, original);
         let network = piqueld_core::DockerNetworkName::for_ingress(&unavailable).to_string();
         self.gateway
-            .docker
+            .external()
             .create_bridge_network(&network, &json!({}))
             .await
             .unwrap();
@@ -208,7 +208,11 @@ impl Scenario {
         assert!(upgraded.status().await.healthy);
         assert_ne!(upgraded.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
-        self.gateway.docker.remove_network(&network).await.unwrap();
+        self.gateway
+            .external()
+            .remove_network(&network)
+            .await
+            .unwrap();
         // Restore the controller's specification before testing ordinary reloads.
         self.gateway.synchronize().await.unwrap();
     }

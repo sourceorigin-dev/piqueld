@@ -7,7 +7,8 @@
 //!
 //! Reads are unrestricted. A mutating request, to any of these APIs or
 //! Docker, can only be sent with an open [`Journaled`] action, which commits
-//! intent before the request is made.
+//! intent before the request is made. Docker changes go through
+//! [`DockerChanges`], whose handle only [`Journaled::change`] lends out.
 use crate::operations::OperationError;
 use anyhow::{Context, Result};
 use http_body_util::{BodyExt, Full, Limited};
@@ -15,6 +16,7 @@ use hyper::{Method, Request, StatusCode, body::Bytes};
 use hyper_util::rt::TokioIo;
 use piqueld_core::Phase;
 use piqueld_core::observability::DiagnosticCode;
+use piqueld_docker::InfrastructureChanges;
 use piqueld_store::JournalAction;
 use serde_json::Value;
 use std::{
@@ -51,9 +53,25 @@ impl ResponseError {
     }
 }
 
+/// Docker changes to the gateway's containers, networks and images. Its
+/// handle is private to this module: only an open [`Journaled`] action
+/// reaches it, through [`Journaled::change`].
+pub(super) struct DockerChanges(InfrastructureChanges);
+
+impl DockerChanges {
+    /// Connects to the engine at `socket`; see [`InfrastructureChanges::connect`].
+    pub(super) fn connect(socket: &std::path::Path) -> Result<Self> {
+        let changes =
+            InfrastructureChanges::connect(socket).context("Docker socket is not UTF-8")?;
+        Ok(Self(changes))
+    }
+}
+
 /// An open journal action for one daemon-owned gateway change.
 pub(super) struct Journaled<'a> {
     store: &'a piqueld_store::Store,
+    /// The ingress's Docker changes, made only through [`Self::change`].
+    docker: &'a InfrastructureChanges,
     action: JournalAction,
     /// Classification of a failed outcome.
     code: DiagnosticCode,
@@ -61,7 +79,7 @@ pub(super) struct Journaled<'a> {
     requests: AtomicU32,
 }
 
-impl Journaled<'_> {
+impl<'a> Journaled<'a> {
     /// Commits `action_requested` for the next mutating request. The request
     /// must not be sent if this fails.
     pub(super) async fn request(&self) -> Result<()> {
@@ -73,12 +91,29 @@ impl Journaled<'_> {
     /// Commits intent for `request`, then sends it. A future sends nothing
     /// until awaited, so a request built first is still never made unless its
     /// intent committed.
-    pub(super) async fn send<T, E>(&self, request: impl Future<Output = Result<T, E>>) -> Result<T>
+    async fn send<T, E>(&self, request: impl Future<Output = Result<T, E>>) -> Result<T>
     where
         anyhow::Error: From<E>,
     {
         self.request().await?;
         Ok(request.await?)
+    }
+
+    /// Commits intent for one Docker change, then makes it with the
+    /// ingress's change handle:
+    ///
+    /// ```text
+    /// journal.change(|docker| docker.start_container(name)).await?;
+    /// ```
+    pub(super) async fn change<T, E, F>(
+        &self,
+        change: impl FnOnce(&'a InfrastructureChanges) -> F,
+    ) -> Result<T>
+    where
+        F: Future<Output = Result<T, E>>,
+        anyhow::Error: From<E>,
+    {
+        self.send(change(self.docker)).await
     }
 
     /// Records the action's outcome, with a sanitized diagnostic on failure.
@@ -143,10 +178,19 @@ impl super::Ingress {
             .await?;
         Ok(Journaled {
             store: &self.store,
+            docker: &self.changes.0,
             action,
             code,
             requests: AtomicU32::new(0),
         })
+    }
+}
+
+#[cfg(test)]
+impl super::Ingress {
+    /// Docker changes made outside the daemon, which the journal never sees.
+    pub(super) fn external(&self) -> &InfrastructureChanges {
+        &self.changes.0
     }
 }
 

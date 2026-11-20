@@ -13,8 +13,9 @@ async fn journaled_requests_commit_intent_and_record_sanitized_failures() {
         .journal(Phase::IngressCreateNetwork, "edge")
         .await
         .unwrap();
+    let labels = json!({});
     let result = journal
-        .send(ingress.docker.create_bridge_network("edge", &json!({})))
+        .change(|docker| docker.create_bridge_network("edge", &labels))
         .await;
     journal.finish(result).await.unwrap_err();
 

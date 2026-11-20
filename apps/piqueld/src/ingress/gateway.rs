@@ -172,7 +172,7 @@ impl Ingress {
         let journal = self
             .journal(Phase::IngressRemoveNetwork, &self.name)
             .await?;
-        let result = journal.send(self.docker.remove_network(id)).await;
+        let result = journal.change(|docker| docker.remove_network(id)).await;
         journal.finish(result).await?;
         tracing::info!(network=%self.name,"removed managed ingress edge network");
         Ok(())
@@ -194,7 +194,7 @@ impl Ingress {
             // Removing the container also removes its restart policy. Persistent
             // data and config are host directories retained across disablement.
             let id = container["Id"].as_str().context("container ID missing")?;
-            journal.send(self.docker.remove_container(id)).await?;
+            journal.change(|docker| docker.remove_container(id)).await?;
             tracing::info!(container=%name,"removed managed ingress container");
         }
         Ok(())
@@ -267,11 +267,9 @@ impl Ingress {
             let journal = self
                 .journal(Phase::IngressCreateNetwork, &self.name)
                 .await?;
+            let labels = self.labels();
             let result = journal
-                .send(
-                    self.docker
-                        .create_bridge_network(&self.name, &self.labels()),
-                )
+                .change(|docker| docker.create_bridge_network(&self.name, &labels))
                 .await;
             journal.finish(result).await?;
         }
@@ -592,10 +590,13 @@ impl Ingress {
     async fn pull_image(&self, image: &str) -> Result<()> {
         let journal = self.journal(Phase::IngressPullImage, image).await?;
         let result = journal
-            .send(async {
-                let pull = self.docker.pull_image(image);
-                let pulled = tokio::time::timeout(Duration::from_mins(3), pull).await;
-                Ok::<_, anyhow::Error>(pulled.with_context(|| format!("pull {image} timed out"))??)
+            .change(|docker| async move {
+                let pulled = tokio::time::timeout(Duration::from_mins(3), docker.pull_image(image));
+                Ok::<_, anyhow::Error>(
+                    pulled
+                        .await
+                        .with_context(|| format!("pull {image} timed out"))??,
+                )
             })
             .await;
         journal.finish(result).await
@@ -603,7 +604,7 @@ impl Ingress {
 
     /// Starts the container `name`.
     async fn start_named(&self, journal: &Journaled<'_>, name: &str) -> Result<()> {
-        journal.send(self.docker.start_container(name)).await
+        journal.change(|docker| docker.start_container(name)).await
     }
 
     /// Creates a container with the given name and spec without starting it.
@@ -613,7 +614,9 @@ impl Ingress {
         name: &str,
         spec: &Value,
     ) -> Result<()> {
-        journal.send(self.docker.create_container(name, spec)).await
+        journal
+            .change(|docker| docker.create_container(name, spec))
+            .await
     }
 
     /// Replaces the gateway container with one built from `spec`, then removes
@@ -698,7 +701,7 @@ impl Ingress {
         // All preparation above leaves the current listener untouched.
         let result = async {
             journal
-                .send(self.docker.stop_container(&self.name, 10))
+                .change(|docker| docker.stop_container(&self.name, 10))
                 .await?;
             // Docker cannot reliably rename a running overlay endpoint.
             self.rename_container(journal, &self.name, &previous)
@@ -740,7 +743,7 @@ impl Ingress {
         self.remove_container(journal, name).await?;
         self.create_container(journal, name, &validation).await?;
         self.start_named(journal, name).await?;
-        let exited = journal.send(self.docker.wait_container(name)).await?;
+        let exited = journal.change(|docker| docker.wait_container(name)).await?;
         if exited != Some(0) {
             let diagnostics = self.docker.log_lines(name, 20, None).await.context(
                 "replacement Caddy configuration validation failed; could not read diagnostics",
@@ -755,7 +758,9 @@ impl Ingress {
 
     /// Renames a container.
     async fn rename_container(&self, journal: &Journaled<'_>, from: &str, to: &str) -> Result<()> {
-        journal.send(self.docker.rename_container(from, to)).await
+        journal
+            .change(|docker| docker.rename_container(from, to))
+            .await
     }
 
     /// Whether the gateway, running or stopped, was built for the other mode
@@ -969,7 +974,7 @@ impl Ingress {
             .context("gateway container disappeared")?;
         for network in Self::missing_networks(&container, desired) {
             journal
-                .send(self.docker.connect_network(network, name))
+                .change(|docker| docker.connect_network(network, name))
                 .await?;
         }
         Ok(())
@@ -1021,7 +1026,7 @@ impl Ingress {
     /// Detaches the gateway from `network`.
     async fn detach(&self, journal: &Journaled<'_>, network: &str) -> Result<()> {
         journal
-            .send(self.docker.disconnect_network(network, &self.name))
+            .change(|docker| docker.disconnect_network(network, &self.name))
             .await
     }
 

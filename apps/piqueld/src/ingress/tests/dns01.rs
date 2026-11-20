@@ -68,13 +68,13 @@ fn routes(names: &[&str]) -> BTreeSet<RouteHostname> {
 impl Scenario {
     /// Pulls an image into the isolated daemon.
     pub(super) async fn pull(&self, image: &str) {
-        self.gateway.docker.pull_image(image).await.unwrap();
+        self.gateway.external().pull_image(image).await.unwrap();
     }
 
     /// Starts `challtestsrv` and Pebble on a shared bridge network and returns
     /// Pebble's test root CA, which signs its ACME API certificate.
     async fn start_pebble(&self) -> Vec<u8> {
-        let docker = &self.gateway.docker;
+        let docker = self.gateway.external();
         docker
             .create_bridge_network("pebble", &json!({}))
             .await
@@ -147,7 +147,7 @@ impl Scenario {
 
     /// Removes the Pebble containers and network.
     async fn stop_pebble(&self) {
-        let docker = &self.gateway.docker;
+        let docker = self.gateway.external();
         let _ = docker.remove_container("pebble").await;
         let _ = docker.remove_container("challtestsrv").await;
         let _ = docker.remove_network("pebble").await;
@@ -239,13 +239,19 @@ impl Scenario {
 
     /// Runs `curl` on `network` and returns its exit code and output.
     pub(super) async fn curl(&self, network: &str, arguments: &[String]) -> (i64, String) {
-        let docker = &self.gateway.docker;
+        let docker = self.gateway.external();
         let name = "piqueld-test-curl";
         let spec = json!({"Image":CURL_IMAGE,"Cmd":arguments,"HostConfig":{"NetworkMode":network}});
         docker.create_container(name, &spec).await.unwrap();
         docker.start_container(name).await.unwrap();
         let exited = docker.wait_container(name).await.unwrap();
-        let output = docker.log_lines(name, 100, None).await.unwrap().join("\n");
+        let output = self
+            .gateway
+            .docker
+            .log_lines(name, 100, None)
+            .await
+            .unwrap()
+            .join("\n");
         docker.remove_container(name).await.unwrap();
         (exited.unwrap(), output)
     }
