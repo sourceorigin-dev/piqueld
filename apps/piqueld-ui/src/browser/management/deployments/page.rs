@@ -9,7 +9,7 @@ use crate::browser::management::timeline::{
 use crate::browser::management::{EditorContext, EditorFeedback, back_link, editor};
 use crate::browser::ui::{Icon, Tone, empty, icon, notice, operation_badge, when};
 use crate::browser::{Alive, ClientErrorExt, confirm, operation_events, release_link};
-use crate::deployments::{Attempts, DeploymentSummary};
+use crate::deployments::{Attempts, DeploymentFacts};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::NavigateOptions;
@@ -47,7 +47,7 @@ impl ShownDeployment {
             let client = Client::browser();
             let (deployment, newest) = futures_util::join!(
                 client.deployment(&environment, &operation),
-                client.deployments(&environment, None, Some(1)),
+                client.deployment_summaries(&environment, None, Some(1)),
             );
             if !alive.get() {
                 return;

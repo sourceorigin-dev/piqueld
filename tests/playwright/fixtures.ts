@@ -221,7 +221,8 @@ export async function deployed(page: Page) {
 }
 
 /** Serves `pages(cursor)` as `environment`'s deployment pages, and each
- * deployment they list as `/deployments/{id}`. */
+ * deployment they list as `/deployments/{id}`. Summary pages are served as
+ * whole snapshots, which the client reads as summaries too. */
 export async function serveDeployments(page: Page, environment: string, pages: (cursor: string | null) => { items: Deployment[]; next_cursor: string | null }) {
   const list = `/api/v1/environments/${environment}/deployments`;
   await page.route(url => url.pathname === list, async (route: Route) => {

@@ -6,7 +6,8 @@ use piqueld_core::timeline::Timeline;
 use piqueld_core::{
     ApplicationId, EnvironmentId, Operation, OperationState,
     api::{
-        ApplicationLogs, BuildLogPage, BuildRecord, DeploymentView, LogStream, Page, ReleaseView,
+        ApplicationLogs, BuildLogPage, BuildRecord, DeploymentListView, DeploymentPage,
+        DeploymentView, LogStream, Page, ReleaseView,
     },
     observability::TrafficReport,
 };
@@ -102,8 +103,9 @@ impl ApplicationService {
         Ok(advanced)
     }
 
-    /// Lists deployment snapshots, newest first, `limit` per page (up to
-    /// `MAX_PAGE_SIZE`), three without a limit.
+    /// Lists deployments, newest first, `limit` per page (up to
+    /// `MAX_PAGE_SIZE`), three without a limit: whole snapshots, or
+    /// summaries without manifests.
     /// # Errors
     /// Returns pagination, absence, or storage errors.
     pub async fn deployments(
@@ -111,15 +113,21 @@ impl ApplicationService {
         id: &EnvironmentId,
         cursor: Option<&str>,
         limit: Option<u16>,
-    ) -> Result<Page<DeploymentView>, ApplicationError> {
+        view: DeploymentListView,
+    ) -> Result<DeploymentPage, ApplicationError> {
         let limit = limit.unwrap_or(3);
         if !(1..=piqueld_core::api::MAX_PAGE_SIZE).contains(&limit) {
             return Err(ApplicationError::InvalidPagination);
         }
-        Ok(self
-            .store
-            .deployments(id, cursor, usize::from(limit))
-            .await?)
+        let limit = usize::from(limit);
+        Ok(match view {
+            DeploymentListView::Full => {
+                DeploymentPage::Full(self.store.deployments(id, cursor, limit).await?)
+            }
+            DeploymentListView::Summary => {
+                DeploymentPage::Summary(self.store.deployment_summaries(id, cursor, limit).await?)
+            }
+        })
     }
 
     /// Reads one deployment of environment `id`.

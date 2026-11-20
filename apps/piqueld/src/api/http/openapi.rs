@@ -58,7 +58,9 @@ use utoipa::{OpenApi, ToResponse};
         // `details` of `preview_limit_reached`.
         piqueld_core::api::PreviewLimitReached,
         // The first message of the exec WebSocket.
-        piqueld_core::exec::ExecRequest
+        piqueld_core::exec::ExecRequest,
+        // `view` of `listDeployments`.
+        piqueld_core::api::DeploymentListView
     ))
 )]
 struct ApiDoc;

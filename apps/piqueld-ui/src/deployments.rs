@@ -3,34 +3,60 @@
 //! attempt lists, promotion confirmation, and preview creation.
 
 use piqueld_client::{
-    CreatePreviewRequest, DeploymentOrigin, DeploymentView, Operation, Page, PlanView,
-    PromoteRequest, ReleaseAvailability, SystemVariable, sync::short_commit,
+    CreatePreviewRequest, DeploymentOrigin, DeploymentSummary, DeploymentView, Operation, Page,
+    PlanView, PromoteRequest, ReleaseAvailability, SystemVariable, sync::short_commit,
 };
 
-/// What a deployment's row in its environment's history says of it.
-pub trait DeploymentSummary {
+/// What a deployment's row in its environment's history, and its page, say
+/// of it: from its summary or its whole snapshot.
+pub trait DeploymentFacts {
+    /// The deployment's operation.
+    fn operation(&self) -> &Operation;
+
+    /// The commit and the branch its manifest was read from; `None` for a
+    /// saved manifest.
+    fn source(&self) -> (Option<&str>, Option<&str>);
+
     /// The branch and commit its manifest was read from, such as
     /// "main @ 0123456789ab"; `None` for a saved manifest.
-    fn commit(&self) -> Option<String>;
-
-    /// How long it ran once it ended, from its start, or creation if it
-    /// never started.
-    fn duration_ms(&self) -> Option<u64>;
-}
-
-impl DeploymentSummary for DeploymentView {
     fn commit(&self) -> Option<String> {
-        let commit = short_commit(self.system_value(SystemVariable::GitSha)?);
-        Some(match self.system_value(SystemVariable::GitBranch) {
+        let (sha, branch) = self.source();
+        let commit = short_commit(sha?);
+        Some(match branch {
             Some(branch) => format!("{branch} @ {commit}"),
             None => commit.to_owned(),
         })
     }
 
+    /// How long it ran once it ended, from its start, or creation if it
+    /// never started.
     fn duration_ms(&self) -> Option<u64> {
-        let operation = &self.operation;
+        let operation = self.operation();
         let started = operation.started_at_ms.unwrap_or(operation.created_at_ms);
         u64::try_from(operation.finished_at_ms? - started).ok()
+    }
+}
+
+impl DeploymentFacts for DeploymentView {
+    fn operation(&self) -> &Operation {
+        &self.operation
+    }
+
+    fn source(&self) -> (Option<&str>, Option<&str>) {
+        (
+            self.system_value(SystemVariable::GitSha),
+            self.system_value(SystemVariable::GitBranch),
+        )
+    }
+}
+
+impl DeploymentFacts for DeploymentSummary {
+    fn operation(&self) -> &Operation {
+        &self.operation
+    }
+
+    fn source(&self) -> (Option<&str>, Option<&str>) {
+        (self.git_sha.as_deref(), self.git_branch.as_deref())
     }
 }
 
@@ -42,14 +68,14 @@ pub trait DeploymentList {
     /// older ones, and the `current_target` and `last_successful` flags are
     /// cleared on listed deployments when the page carries them, so only one
     /// deployment holds each flag.
-    fn merge_newest(&mut self, page: Vec<DeploymentView>);
+    fn merge_newest(&mut self, page: Vec<DeploymentSummary>);
 
     /// Appends an older page, skipping deployments already listed.
-    fn append_older(&mut self, page: Vec<DeploymentView>);
+    fn append_older(&mut self, page: Vec<DeploymentSummary>);
 }
 
-impl DeploymentList for Vec<DeploymentView> {
-    fn merge_newest(&mut self, page: Vec<DeploymentView>) {
+impl DeploymentList for Vec<DeploymentSummary> {
+    fn merge_newest(&mut self, page: Vec<DeploymentSummary>) {
         let has_current = page.iter().any(|item| item.current_target);
         let has_successful = page.iter().any(|item| item.last_successful);
         for item in self.iter_mut() {
@@ -69,7 +95,7 @@ impl DeploymentList for Vec<DeploymentView> {
         self.sort_by(|a, b| b.operation.id.cmp(&a.operation.id));
     }
 
-    fn append_older(&mut self, page: Vec<DeploymentView>) {
+    fn append_older(&mut self, page: Vec<DeploymentSummary>) {
         for item in page {
             if !self.iter().any(|old| old.operation.id == item.operation.id) {
                 self.push(item);
@@ -244,7 +270,12 @@ mod tests {
         .unwrap()
     }
 
-    fn ids(list: &[DeploymentView]) -> Vec<&str> {
+    /// Deployment `id`'s summary, with its flags.
+    fn summary(id: &str, current: bool, successful: bool) -> DeploymentSummary {
+        deployment(id, current, successful).into()
+    }
+
+    fn ids(list: &[DeploymentSummary]) -> Vec<&str> {
         list.iter().map(|item| item.operation.id.as_str()).collect()
     }
 
@@ -266,23 +297,23 @@ mod tests {
     #[test]
     fn a_polled_newest_page_keeps_older_pages_and_moves_the_flags() {
         let mut list = vec![
-            deployment("operation-2", true, true),
-            deployment("operation-1", false, false),
+            summary("operation-2", true, true),
+            summary("operation-1", false, false),
         ];
         list.append_older(vec![
-            deployment("operation-1", false, false),
-            deployment("operation-0", false, false),
+            summary("operation-1", false, false),
+            summary("operation-0", false, false),
         ]);
         assert_eq!(ids(&list), ["operation-2", "operation-1", "operation-0"]);
 
-        let flags = |list: &[DeploymentView]| {
+        let flags = |list: &[DeploymentSummary]| {
             list.iter()
                 .map(|item| (item.current_target, item.last_successful))
                 .collect::<Vec<_>>()
         };
         // A newer deployment became the current target, but hasn't succeeded
         // yet: deployment 2, off the polled page, stays the last successful.
-        list.merge_newest(vec![deployment("operation-3", true, false)]);
+        list.merge_newest(vec![summary("operation-3", true, false)]);
         assert_eq!(
             ids(&list),
             ["operation-3", "operation-2", "operation-1", "operation-0"]
@@ -292,7 +323,7 @@ mod tests {
             [(true, false), (false, true), (false, false), (false, false)]
         );
         // Then a newer one succeeded without becoming the current target.
-        list.merge_newest(vec![deployment("operation-4", false, true)]);
+        list.merge_newest(vec![summary("operation-4", false, true)]);
         assert_eq!(
             flags(&list)[..3],
             [(false, true), (true, false), (false, false)]

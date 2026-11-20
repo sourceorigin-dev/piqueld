@@ -34,9 +34,10 @@ async fn environment_branches_are_validated_like_preview_branches() {
     }
 }
 
-/// A deployment reads on its own only through its environment.
+/// A deployment reads on its own only through its environment, and
+/// `view=summary` lists the same deployments without their manifests.
 #[tokio::test]
-async fn a_deployment_reads_alone_through_its_environment() {
+async fn deployments_read_alone_and_list_as_summaries() {
     let temp = tempfile::tempdir().unwrap();
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
     let client = server.client();
@@ -46,6 +47,28 @@ async fn a_deployment_reads_alone_through_its_environment() {
     assert_eq!(&one.operation.id, id);
     let missing = client.deployment("app-missing", id).await.unwrap_err();
     assert_eq!(api_error(missing).status, StatusCode::NOT_FOUND);
+
+    let full = client.deployments(environment, None, None).await.unwrap();
+    let summaries = client
+        .deployment_summaries(environment, None, None)
+        .await
+        .unwrap();
+    let ids = |ids: Vec<&String>| ids.into_iter().cloned().collect::<Vec<_>>();
+    assert_eq!(
+        ids(full.items.iter().map(|item| &item.operation.id).collect()),
+        ids(summaries
+            .items
+            .iter()
+            .map(|item| &item.operation.id)
+            .collect()),
+    );
+    let path = format!("/api/v1/environments/{environment}/deployments?view=summary");
+    let body = server.send(Method::GET, &path, &[], Vec::new()).await.body;
+    assert!(
+        !String::from_utf8(body.to_vec())
+            .unwrap()
+            .contains("\"template\"")
+    );
 }
 
 #[tokio::test]
