@@ -6,7 +6,7 @@ use progenitor_client::{ClientHooks, ClientInfo, Error, OperationInfo, ResponseV
 use serde::de::DeserializeOwned;
 use std::time::Duration;
 
-use crate::{ClientError, Envelope, ErrorBody, TransportFailure, generated};
+use crate::{ApiErrorCode, ClientError, Envelope, ErrorBody, TransportFailure, generated};
 use piqueld_core::auth::is_localhost;
 
 /// Upper bound on buffered response bodies for every operation.
@@ -522,7 +522,7 @@ impl ClientError {
     pub fn step_up(&self) -> bool {
         matches!(self, Self::Api { status, error }
             if *status == http::StatusCode::FORBIDDEN
-                && error.code == "reauthentication_required"
+                && error.code == ApiErrorCode::ReauthenticationRequired
                 && error.details["step_up"] == true)
     }
 
@@ -596,7 +596,7 @@ impl ClientError {
         Self::Api {
             status,
             error: serde_json::from_slice(payload).unwrap_or_else(|error| ErrorBody {
-                code: "invalid_error_response".into(),
+                code: ApiErrorCode::InvalidErrorResponse.into(),
                 message: format!("server returned an unreadable error: {error}"),
                 details: serde_json::Value::Null,
                 request_id: String::new(),

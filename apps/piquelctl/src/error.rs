@@ -5,7 +5,8 @@ use crate::{
     output::{DiagnosticReport, Event, HumanWriter},
 };
 use piqueld_client::{
-    ClientError, PlanView, PreviewLimitReached, TransportFailure, observability::Timestamp,
+    ApiErrorCode, ClientError, PlanView, PreviewLimitReached, TransportFailure,
+    observability::Timestamp,
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -470,7 +471,8 @@ impl From<ClientError> for CliError {
                     408 | 429 | 502..=504 => ErrorKind::Unavailable,
                     _ => ErrorKind::General,
                 };
-                let diagnostic = if error.code == "invalid_error_response"
+                let code = ApiErrorCode::parse(&error.code);
+                let diagnostic = if code == Some(ApiErrorCode::InvalidErrorResponse)
                     || status.is_redirection()
                 {
                     Some(Diagnostic::Response(Some(status)))
@@ -478,9 +480,13 @@ impl From<ClientError> for CliError {
                     // Only missing or rejected credentials and missing grants get a
                     // hint: other 401s and 403s, such as a tailnet-bound token used
                     // elsewhere or an untrusted client, explain themselves.
-                    match error.code.as_str() {
-                        "authentication_required" => Some(Diagnostic::Unauthenticated),
-                        "permission_denied" | "permission_exceeded" => Some(Diagnostic::Forbidden),
+                    match code {
+                        Some(ApiErrorCode::AuthenticationRequired) => {
+                            Some(Diagnostic::Unauthenticated)
+                        }
+                        Some(ApiErrorCode::PermissionDenied | ApiErrorCode::PermissionExceeded) => {
+                            Some(Diagnostic::Forbidden)
+                        }
                         _ => None,
                     }
                 };
