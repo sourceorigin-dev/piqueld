@@ -48,6 +48,27 @@ async fn a_deployment_reads_alone_through_its_environment() {
     assert_eq!(api_error(missing).status, StatusCode::NOT_FOUND);
 }
 
+/// The application listing carries each environment's status and latest
+/// operation, so listing applications needs no request per environment.
+#[tokio::test]
+async fn the_listing_carries_each_environments_status_and_latest_operation() {
+    let temp = tempfile::tempdir().unwrap();
+    let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
+    let client = server.client();
+    let deployed = client.apply_and_deploy(&new_application()).await.unwrap();
+    let listed = client.applications().await.unwrap().items.remove(0);
+    let environment = &listed.environments[0];
+    assert_eq!(environment.environment.id.as_str(), deployed.environment_id);
+    let status = environment.status.as_ref().expect("a status");
+    let expected = client
+        .environment_status(&deployed.environment_id)
+        .await
+        .unwrap();
+    assert_eq!(status.state, expected.state);
+    let latest = environment.latest_operation.as_ref().expect("an operation");
+    assert_eq!(latest.id, deployed.operation_id);
+}
+
 #[tokio::test]
 async fn environments_deploy_independently_and_runtime_commands_never_pick_one() {
     use piqueld::api::{ApplicationError, Mutation, MutationResponse};
@@ -293,6 +314,7 @@ async fn previews_compare_with_the_selected_environment() {
         .find(|application| application.name == "other")
         .unwrap()
         .environments[0]
+        .environment
         .id
         .clone();
     assert!(matches!(

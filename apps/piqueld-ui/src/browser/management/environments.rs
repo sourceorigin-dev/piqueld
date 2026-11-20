@@ -143,16 +143,13 @@ fn EnvironmentRow(id: String) -> impl IntoView {
             })
         })
     };
-    // Latest deployment of the environment among the listed deployments.
+    // Latest deployment of the environment, as the listing carries it.
     let latest = move || {
         signals.applications.with(|rows| {
             rows.iter()
                 .flat_map(|row| &row.deployments)
-                .filter(|deployment| {
-                    id.with_value(|id| deployment.operation.environment_id.as_str() == id)
-                })
-                .max_by_key(|deployment| deployment.operation.created_at_ms)
-                .map(|deployment| deployment.operation.clone())
+                .find(|operation| id.with_value(|id| operation.environment_id.as_str() == id))
+                .cloned()
         })
     };
     let status = move || {

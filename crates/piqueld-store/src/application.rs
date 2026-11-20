@@ -7,7 +7,7 @@ use super::{
 use piqueld_core::manifest::ApplicationTemplate;
 use piqueld_core::{
     EnvironmentId, EnvironmentName, EnvironmentSource,
-    api::{ApplicationSummary, EnvironmentView, Page},
+    api::{ApplicationSummary, EnvironmentSummary, EnvironmentView, Page},
 };
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
@@ -238,6 +238,23 @@ impl Store {
         Self::deployables_of_kind_on(connection, id, Kind::Environment).await
     }
 
+    /// `environment` with its status and latest operation, in `tx`.
+    async fn environment_summary_on(
+        tx: &mut Transaction<'_, Sqlite>,
+        environment: EnvironmentView,
+    ) -> Result<EnvironmentSummary, StoreError> {
+        let status = match Self::status_on(tx, &environment.id).await {
+            Ok(status) => Some(status.into()),
+            Err(StoreError::NotFound) => None,
+            Err(error) => return Err(error),
+        };
+        Ok(EnvironmentSummary {
+            latest_operation: Self::latest_operation_on(tx, &environment.id).await?,
+            status,
+            environment,
+        })
+    }
+
     /// Lists an application's previews on an existing connection or transaction.
     pub(super) async fn previews_on(
         connection: &mut SqliteConnection,
@@ -361,7 +378,8 @@ impl Store {
 
     /// Lists live application metadata and environments by ID, within
     /// `visible`, without reading manifest documents; only the one named
-    /// `name` when it is given.
+    /// `name` when it is given. Each environment comes with its status and
+    /// latest operation, read in the same snapshot.
     ///
     /// # Errors
     /// Returns a storage error or an invalid pagination error.
@@ -393,8 +411,12 @@ impl Store {
         let next_cursor = paging.next_cursor(&mut rows, |row| row.id.clone());
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
+            let mut environments = Vec::new();
+            for environment in Self::environments_on(&mut tx, &row.id).await? {
+                environments.push(Self::environment_summary_on(&mut tx, environment).await?);
+            }
             items.push(ApplicationSummary {
-                environments: Self::environments_on(&mut tx, &row.id).await?,
+                environments,
                 id: ApplicationId::parse(row.id).map_err(StoreError::corrupt)?,
                 name: row.name,
                 generation: u64::try_from(row.generation).map_err(StoreError::corrupt)?,

@@ -961,9 +961,9 @@
             "type": "boolean"
           },
           "environments": {
-            "description": "Environments in name order.",
+            "description": "Environments in name order, with their status and latest operation.",
             "items": {
-              "$ref": "#/components/schemas/EnvironmentView"
+              "$ref": "#/components/schemas/EnvironmentSummary"
             },
             "type": "array"
           },
@@ -5218,9 +5218,9 @@
                       "type": "boolean"
                     },
                     "environments": {
-                      "description": "Environments in name order.",
+                      "description": "Environments in name order, with their status and latest operation.",
                       "items": {
-                        "$ref": "#/components/schemas/EnvironmentView"
+                        "$ref": "#/components/schemas/EnvironmentSummary"
                       },
                       "type": "array"
                     },
@@ -7730,6 +7730,58 @@
           "updated_at_ms"
         ],
         "type": "object"
+      },
+      "EnvironmentSummary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EnvironmentView",
+            "description": "The environment."
+          },
+          {
+            "properties": {
+              "latest_operation": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Operation"
+                      }
+                    ],
+                    "description": "Its newest operation, a deployment unless it is being deleted; absent\nbefore its first."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              },
+              "status": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/EnvironmentStatusView"
+                      }
+                    ],
+                    "description": "Its last recorded status; absent before one is recorded."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          }
+        ],
+        "description": "An environment as the application listing shows it: with its status and\nlatest operation, so a listing needs no request per environment."
       },
       "EnvironmentSyncRequest": {
         "additionalProperties": false,

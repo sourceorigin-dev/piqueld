@@ -2,47 +2,68 @@
 //! health and latest activity, the newest deployments, and preview limits.
 use crate::state::ApplicationHealth;
 use piqueld_client::{
-    ApplicationSummary, DeploymentView, EnvironmentStatusView, EnvironmentView, PreviewUsage,
+    ApplicationSummary, EnvironmentStatusView, EnvironmentView, Operation, OperationKind,
+    PreviewUsage,
 };
 use std::cmp::Reverse;
 
 /// One application in the dashboard list, with its environments' statuses and
-/// deployment history fetched alongside; per-application failures are kept as
-/// messages so one broken application does not fail the whole refresh.
+/// latest deployments, all from the application listing.
 #[derive(Clone, Debug)]
 pub struct ApplicationRow {
     /// The listed application.
     pub application: ApplicationSummary,
     /// Its environments, in name order.
     pub environments: Vec<EnvironmentRow>,
-    /// Deployments of every environment.
-    pub deployments: Vec<DeploymentView>,
-    /// Why some environment's deployments could not be read.
-    pub deployment_error: Option<String>,
+    /// The latest deployment of each environment that has one.
+    pub deployments: Vec<Operation>,
 }
 
-/// One environment of a listed application with its status, or the reason it
-/// could not be read.
+impl From<ApplicationSummary> for ApplicationRow {
+    fn from(application: ApplicationSummary) -> Self {
+        // An environment being deleted has no deployment to show.
+        let deployments = application
+            .environments
+            .iter()
+            .filter_map(|listed| listed.latest_operation.clone())
+            .filter(|operation| operation.kind != OperationKind::Delete)
+            .collect();
+        let environments = application
+            .environments
+            .iter()
+            .map(|listed| EnvironmentRow {
+                environment: listed.environment.clone(),
+                status: listed.status.clone(),
+            })
+            .collect();
+        Self {
+            application,
+            environments,
+            deployments,
+        }
+    }
+}
+
+/// One environment of a listed application, with its status.
 #[derive(Clone, Debug)]
 pub struct EnvironmentRow {
     /// The listed environment.
     pub environment: EnvironmentView,
-    /// Its status, once read.
+    /// Its status; absent before one is recorded.
     pub status: Option<EnvironmentStatusView>,
-    /// Why its status could not be read.
-    pub status_error: Option<String>,
 }
 
 impl EnvironmentRow {
-    /// Health from the environment's status, `Stopped` while it is; missing
-    /// or failed reads show as pending.
+    /// Health from the environment's status, `Stopped` while it is; a missing
+    /// status shows as pending.
     #[must_use]
     pub fn health(&self) -> ApplicationHealth {
-        match (&self.status, &self.status_error) {
-            (Some(status), None) => ApplicationHealth::from_server_state(status.state),
-            _ => ApplicationHealth::Pending,
-        }
-        .unless_stopped(self.environment.stopped())
+        self.status
+            .as_ref()
+            .map_or(ApplicationHealth::Pending, |status| {
+                ApplicationHealth::from_server_state(status.state)
+            })
+            .unless_stopped(self.environment.stopped())
     }
 }
 
@@ -79,18 +100,19 @@ impl ApplicationRow {
     pub fn last_deployed_ms(&self) -> Option<i64> {
         self.deployments
             .iter()
-            .map(|deployment| deployment.operation.created_at_ms)
+            .map(|operation| operation.created_at_ms)
             .max()
     }
 
     /// The `limit` newest deployments across `rows`, newest first, each with
-    /// its application. Deployments requested in the same millisecond come
-    /// in descending operation ID order, so the list never reshuffles.
+    /// its application: at most one per environment, its latest. Deployments
+    /// requested in the same millisecond come in descending operation ID
+    /// order, so the list never reshuffles.
     #[must_use]
     pub fn recent_deployments(
         rows: &[Self],
         limit: usize,
-    ) -> Vec<(&ApplicationSummary, &DeploymentView)> {
+    ) -> Vec<(&ApplicationSummary, &Operation)> {
         let mut deployments = rows
             .iter()
             .flat_map(|row| {
@@ -99,11 +121,8 @@ impl ApplicationRow {
                     .map(move |deployment| (&row.application, deployment))
             })
             .collect::<Vec<_>>();
-        deployments.sort_by_key(|(_, deployment)| {
-            Reverse((
-                deployment.operation.created_at_ms,
-                deployment.operation.id.as_str(),
-            ))
+        deployments.sort_by_key(|(_, operation)| {
+            Reverse((operation.created_at_ms, operation.id.as_str()))
         });
         deployments.truncate(limit);
         deployments
@@ -168,17 +187,17 @@ mod tests {
         assert_eq!(row(Vec::new()), ApplicationHealth::NotDeployed);
         assert_eq!(
             row(vec![
-                environment("production", false, Ok((ApplicationState::Ready, None))),
-                environment("staging", false, Ok((ApplicationState::Failed, None))),
-                environment("qa", false, Ok((ApplicationState::Degraded, None))),
+                environment("production", false, Some((ApplicationState::Ready, None))),
+                environment("staging", false, Some((ApplicationState::Failed, None))),
+                environment("qa", false, Some((ApplicationState::Degraded, None))),
             ]),
             ApplicationHealth::Failed
         );
-        // An unreadable status is pending, never healthy.
+        // A missing status is pending, never healthy.
         assert_eq!(
             row(vec![
-                environment("production", false, Ok((ApplicationState::Ready, None))),
-                environment("staging", false, Err("timed out")),
+                environment("production", false, Some((ApplicationState::Ready, None))),
+                environment("staging", false, None),
             ]),
             ApplicationHealth::Pending
         );
@@ -186,15 +205,15 @@ mod tests {
         // which ranks above a healthy one but below any problem.
         assert_eq!(
             row(vec![
-                environment("production", false, Ok((ApplicationState::Ready, None))),
-                environment("staging", true, Ok((ApplicationState::Failed, None))),
+                environment("production", false, Some((ApplicationState::Ready, None))),
+                environment("staging", true, Some((ApplicationState::Failed, None))),
             ]),
             ApplicationHealth::Stopped
         );
         assert_eq!(
             row(vec![
-                environment("production", false, Ok((ApplicationState::Pending, None))),
-                environment("staging", true, Err("timed out")),
+                environment("production", false, Some((ApplicationState::Pending, None))),
+                environment("staging", true, None),
             ]),
             ApplicationHealth::Pending
         );
@@ -205,17 +224,17 @@ mod tests {
         let mut row = application(
             "app-shop0001",
             vec![
-                environment("production", false, Ok((ApplicationState::Ready, None))),
-                environment("staging", false, Err("timed out")),
+                environment("production", false, Some((ApplicationState::Ready, None))),
+                environment("staging", false, None),
                 environment(
                     "qa",
                     false,
-                    Ok((ApplicationState::Failed, Some("image pull failed"))),
+                    Some((ApplicationState::Failed, Some("image pull failed"))),
                 ),
                 environment(
                     "dev",
                     false,
-                    Ok((ApplicationState::Degraded, Some("1 of 2"))),
+                    Some((ApplicationState::Degraded, Some("1 of 2"))),
                 ),
             ],
             &[],
@@ -225,7 +244,7 @@ mod tests {
         assert_eq!(row.subtitle(), "Deletion requested");
         let quiet = application(
             "app-shop0001",
-            vec![environment("production", false, Err("timed out"))],
+            vec![environment("production", false, None)],
             &[],
         );
         assert_eq!(quiet.subtitle(), "Generation 4");
@@ -244,9 +263,7 @@ mod tests {
         ];
         let recent = ApplicationRow::recent_deployments(&rows, 4)
             .into_iter()
-            .map(|(application, deployment)| {
-                (application.id.as_str(), deployment.operation.id.as_str())
-            })
+            .map(|(application, operation)| (application.id.as_str(), operation.id.as_str()))
             .collect::<Vec<_>>();
         assert_eq!(
             recent,
