@@ -4,7 +4,7 @@ use super::{
     BTreeMap, BollardDocker, BollardResult, DockerError, Duration, HashMap, HealthConfig,
     InspectServiceOptions, JobOutput, JobRuns, JobStatus, ListServicesOptionsBuilder,
     ListTasksOptionsBuilder, ResourceKind, ServiceSpec, ServiceSpecMode, StreamExt,
-    TaskSpecRestartPolicy, TaskSpecRestartPolicyConditionEnum,
+    TaskSpecRestartPolicy, TaskSpecRestartPolicyConditionEnum, identity::SWARM_SERVICE_NAME_LABEL,
 };
 use bollard::{
     container::LogOutput,
@@ -27,8 +27,6 @@ const JOB_OUTPUT_MAX_BYTES: usize = 1024 * 1024;
 const JOB_STOP_POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// Label carrying when a run's timeout expires, in Unix milliseconds.
 const JOB_DEADLINE_LABEL: &str = "io.piqueld.job-deadline";
-/// Label Swarm sets on each task's container, naming its service.
-const SWARM_SERVICE_LABEL: &str = "com.docker.swarm.service.name";
 
 impl BollardDocker {
     /// Converts a service specification into a single-completion job without
@@ -218,7 +216,7 @@ impl BollardDocker {
         labels: &[String],
     ) -> Result<Vec<TaskSpecContainerSpec>, DockerError> {
         let options = ListTasksOptionsBuilder::default()
-            .filters(&HashMap::from([("label", labels.to_vec())]))
+            .filters(&Self::label_filter(labels.to_vec()))
             .build();
         let tasks = self
             .client()?
@@ -279,7 +277,7 @@ impl BollardDocker {
         self.client()?
             .list_services(Some(
                 ListServicesOptionsBuilder::default()
-                    .filters(&HashMap::from([("label", labels)]))
+                    .filters(&Self::label_filter(labels))
                     .build(),
             ))
             .await
@@ -294,7 +292,7 @@ impl BollardDocker {
         self.client()?
             .list_containers(Some(
                 ListContainersOptionsBuilder::default()
-                    .filters(&HashMap::from([("label", labels)]))
+                    .filters(&Self::label_filter(labels))
                     .build(),
             ))
             .await
@@ -328,7 +326,7 @@ impl BollardDocker {
                 .ok_or(DockerError::Validation("job ownership"))?;
             if !self.live_tasks(&labels).await?.is_empty()
                 || !self
-                    .labelled_containers(vec![format!("{SWARM_SERVICE_LABEL}={service}")])
+                    .labelled_containers(vec![format!("{SWARM_SERVICE_NAME_LABEL}={service}")])
                     .await?
                     .is_empty()
             {
@@ -523,13 +521,10 @@ impl BollardDocker {
             .client()?
             .list_services(Some(
                 ListServicesOptionsBuilder::default()
-                    .filters(&HashMap::from([(
-                        "label",
-                        vec![
-                            format!("{APPLICATION_LABEL}={application}"),
-                            JOB_LABEL.to_owned(),
-                        ],
-                    )]))
+                    .filters(&Self::label_filter(vec![
+                        format!("{APPLICATION_LABEL}={application}"),
+                        JOB_LABEL.to_owned(),
+                    ]))
                     .build(),
             ))
             .await

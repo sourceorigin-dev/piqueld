@@ -4,6 +4,7 @@
 //! puts discovery and usage polls under its observation limit.
 use super::{
     BollardDocker, BollardResult, DockerError, HashMap, ListServicesOptionsBuilder, StreamExt,
+    identity::{SWARM_SERVICE_ID_LABEL, SWARM_TASK_ID_LABEL},
 };
 use bollard::{
     container::LogOutput,
@@ -21,11 +22,6 @@ use piqueld_core::{
         TELEMETRY_TARGET,
     },
 };
-
-/// Label Swarm puts on every task container, naming its service's ID.
-const SWARM_SERVICE_LABEL: &str = "com.docker.swarm.service.id";
-/// Label Swarm puts on every task container, naming its task's ID.
-const SWARM_TASK_LABEL: &str = "com.docker.swarm.task.id";
 
 /// A container piqueld runs.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,13 +116,10 @@ impl BollardDocker {
         let services: HashMap<_, _> = client
             .list_services(Some(
                 ListServicesOptionsBuilder::default()
-                    .filters(&HashMap::from([(
-                        "label",
-                        vec![
-                            format!("{INSTANCE_LABEL}={instance}"),
-                            format!("{MANAGED_LABEL}=true"),
-                        ],
-                    )]))
+                    .filters(&Self::label_filter(vec![
+                        format!("{INSTANCE_LABEL}={instance}"),
+                        format!("{MANAGED_LABEL}=true"),
+                    ]))
                     .build(),
             ))
             .await
@@ -153,7 +146,7 @@ impl BollardDocker {
     ) -> Option<ManagedContainer> {
         let mut labels = container.labels.unwrap_or_default();
         if let Some(service) = labels
-            .get(SWARM_SERVICE_LABEL)
+            .get(SWARM_SERVICE_ID_LABEL)
             .and_then(|id| services.get(id))
         {
             for (key, value) in service {
@@ -203,7 +196,7 @@ impl BollardDocker {
                 | ContainerSummaryStateEnum::DEAD => ContainerState::Stopped,
             },
             created: container.created.unwrap_or_default(),
-            task: label(SWARM_TASK_LABEL).map(str::to_owned),
+            task: label(SWARM_TASK_ID_LABEL).map(str::to_owned),
             receiver: container
                 .mounts
                 .iter()
@@ -481,8 +474,8 @@ mod tests {
             classify(container(
                 "web.1.abc",
                 labels(&[
-                    (SWARM_SERVICE_LABEL, "service-1"),
-                    (SWARM_TASK_LABEL, "task-1")
+                    (SWARM_SERVICE_ID_LABEL, "service-1"),
+                    (SWARM_TASK_ID_LABEL, "task-1")
                 ]),
             )),
             Some((
