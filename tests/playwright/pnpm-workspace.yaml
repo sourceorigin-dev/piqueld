@@ -1,0 +1,4 @@
+# Keeps axe-core on a release at least two weeks old; @axe-core/playwright
+# accepts any 4.14 patch.
+overrides:
+  axe-core: 4.14.0
