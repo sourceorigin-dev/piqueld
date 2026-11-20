@@ -253,8 +253,11 @@ Your logins are listed as `piquelctl`, and browser sessions as `Browser`.
 Revoking one also revokes the tokens, logins, links and passkeys created
 through it; see
 [what revoking also revokes](accounts.md#what-revoking-also-revokes).
-`piquelctl` then prints `revoked <id> and what it issued`. A daemon older than
-piqueld 0.2.0 revokes only the one credential, and still reports success.
+`piquelctl` then prints `revoked <id> and what it issued`. A daemon without
+cascading revocation ignores that part for `token revoke`,
+`token revoke --all`, `account passkey remove` and `account delete` alike:
+it revokes only what you name, while `piquelctl` still reports what it asked
+for.
 
 Deleting an application removes every grant on it. A token or limited login
 left with no grant at all can do nothing, and expires a minute later. That

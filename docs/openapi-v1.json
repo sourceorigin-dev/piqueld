@@ -8801,6 +8801,11 @@
                 ],
                 "type": "string"
               },
+              "cascade": {
+                "default": true,
+                "description": "Also revoke every credential, link and passkey issued through its\ncredentials and passkeys, in any account, even through credentials\nthat have since ended.\nAbsent means `true`.",
+                "type": "boolean"
+              },
               "user_id": {
                 "description": "Target account.",
                 "type": "string"
@@ -8813,13 +8818,18 @@
             "type": "object"
           },
           {
-            "description": "Remove an authenticator without revoking existing sessions.",
+            "description": "Remove an authenticator.",
             "properties": {
               "action": {
                 "enum": [
                   "remove_passkey"
                 ],
                 "type": "string"
+              },
+              "cascade": {
+                "default": true,
+                "description": "Also revoke the sessions it signed in and every credential, link and\npasskey issued through them, in any account, even through\ncredentials that have since ended.\nAbsent means `true`.",
+                "type": "boolean"
               },
               "id": {
                 "description": "Passkey identifier.",
@@ -8890,6 +8900,11 @@
                   "revoke_all"
                 ],
                 "type": "string"
+              },
+              "cascade": {
+                "default": true,
+                "description": "Also revoke every credential, link and passkey issued through\nthem, in any account, even through credentials that have since\nended.\nAbsent means `true`.",
+                "type": "boolean"
               },
               "user_id": {
                 "description": "Target account.",

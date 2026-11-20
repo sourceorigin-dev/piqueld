@@ -26,6 +26,18 @@ impl From<bool> for Cascade {
     }
 }
 
+/// What of an account's lineage a bulk revocation starts from. Nodes
+/// remember their owner, so both reach what the account's ended
+/// credentials issued, whether or not pruning removed their rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AccountRoots {
+    /// Every credential the account ever had that something still descends
+    /// from, or that is still stored: revoking all of them.
+    Credentials,
+    /// Its credentials and passkeys alike: deleting the account.
+    Everything,
+}
+
 /// A credential, invitation or passkey, as a node of the issuance tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Issued<'a> {
@@ -57,13 +69,15 @@ impl<'a> Issued<'a> {
         serde_json::to_string(&keys).expect("string pairs serialize as JSON")
     }
 
-    /// Records this newly stored credential, invitation or passkey as issued
-    /// by `issuer`, or as a root for `None`. Live rows the store wrote always
-    /// have a node; an issuer written around it, e.g. by hand, gets one as a
-    /// root, so the new edge is still recorded.
+    /// Records this newly stored credential, invitation or passkey, owned by
+    /// the account `owner` (`None` for invitations), as issued by `issuer`,
+    /// or as a root for `None`. Live rows the store wrote always have a node;
+    /// an issuer written around it, e.g. by hand, gets one as a root, so the
+    /// new edge is still recorded.
     pub(super) async fn record(
         self,
         db: &mut SqliteConnection,
+        owner: Option<&str>,
         issuer: Option<Issued<'_>>,
     ) -> Result<(), StoreError> {
         let parent = match issuer {
@@ -91,10 +105,11 @@ impl<'a> Issued<'a> {
         };
         let (kind, id) = self.key();
         sqlx::query!(
-            "INSERT INTO auth_lineage(kind,id,issued_by) VALUES(?1,?2,?3)",
+            "INSERT INTO auth_lineage(kind,id,issued_by,user_id) VALUES(?1,?2,?3,?4)",
             kind,
             id,
-            parent
+            parent,
+            owner
         )
         .execute(db)
         .await
@@ -114,7 +129,40 @@ impl Store {
         roots: &[Issued<'_>],
         cascade: Cascade,
     ) -> Result<(), StoreError> {
-        let roots = Issued::json(roots);
+        Self::revoke_keys_on(db, Issued::json(roots), cascade).await
+    }
+
+    /// Revokes like [`Self::revoke_on`], starting from `roots` of the account
+    /// `user_id`: its nodes, ended or not, and its stored rows.
+    pub(super) async fn revoke_account_on(
+        db: &mut SqliteConnection,
+        user_id: &str,
+        roots: AccountRoots,
+        cascade: Cascade,
+    ) -> Result<(), StoreError> {
+        let credentials_only = roots == AccountRoots::Credentials;
+        let roots = sqlx::query_scalar!(
+            r#"SELECT json_group_array(json_array(kind,id)) AS "roots!: String" FROM (
+                SELECT kind,id FROM auth_lineage
+                WHERE user_id=?1 AND (kind='credential' OR NOT ?2)
+                UNION SELECT 'credential',id FROM auth_credentials WHERE user_id=?1
+                UNION SELECT 'passkey',id FROM auth_passkeys WHERE user_id=?1 AND NOT ?2
+            )"#,
+            user_id,
+            credentials_only
+        )
+        .fetch_one(&mut *db)
+        .await
+        .map_err(StoreError::database)?;
+        Self::revoke_keys_on(db, roots, cascade).await
+    }
+
+    /// Revokes `roots`, as JSON `[[kind, id], …]` (see [`Self::revoke_on`]).
+    async fn revoke_keys_on(
+        db: &mut SqliteConnection,
+        roots: String,
+        cascade: Cascade,
+    ) -> Result<(), StoreError> {
         // `[[kind, id], …]`: the roots, then what descends from them.
         let targets = match cascade {
             Cascade::No => roots,

@@ -99,14 +99,38 @@ the link, see the next section.
 
 Then, signed in as their account or as that administrator:
 
-1. Open their account from the **Accounts** page and, on its **Access** tab,
-   select **Remove** next to the lost passkey, or run
+1. Decide first whether removing the lost passkey should also revoke what it
+   issued. With [cascading revocation](accounts.md#what-revoking-also-revokes),
+   removing it also ends the sessions it signed in, and everything issued
+   through them, in turn. Clear **Also revoke what it issued** in the
+   dialog, or add `--no-cascade`, unless you're sure the new passkey doesn't
+   descend from the lost one. It does if it was added in a browser the lost
+   passkey signed in, or through a link or `piquelctl` login created there.
+   When the lost passkey was the account's first, that's usually every other
+   passkey.
+
+   Then open their account from the **Accounts** page and, on its **Access**
+   tab, select **Remove** next to the lost passkey, or run
    `piquelctl account passkey remove` with its ID, from
    `piquelctl account passkey list bob`.
-2. If the passkey may have been stolen, select **Revoke all** under
-   **Sessions and API tokens**, or run
-   `piquelctl token revoke --all --user bob`. Removing a passkey doesn't end
-   the sessions it opened.
+2. If the passkey may have been stolen, and you cleared the box or the daemon
+   [predates cascading revocation](cli-and-tokens.md#revoke-a-token), what a
+   thief set up with it stays valid. If the new passkey came from a browser
+   session or `piquelctl` login, sign in with the new passkey, then revoke
+   that session or login with the box cleared, or `--no-cascade`, so the new
+   passkey stays. Then remove the rest you don't recognize:
+   - sessions, `piquelctl` logins and API tokens under
+     **Sessions and API tokens**, one at a time, with **Revoke**, or with
+     `piquelctl token list --user bob` and `piquelctl token revoke` and an ID;
+   - passkeys under **Passkeys**, with **Remove**, or with
+     `piquelctl account passkey remove`;
+   - passkeys of each other account the lost passkey could change: an
+     enrollment link it created leaves **Pending links** once used;
+   - links under **Pending links**, on the **Accounts** page (needs
+     `accounts:manage`), with **Revoke**, or with
+     `piquelctl account invitation list` and
+     `piquelctl account invitation revoke`;
+   - accounts on the **Accounts** page, if theirs could manage accounts.
 
 ## No administrator can sign in
 

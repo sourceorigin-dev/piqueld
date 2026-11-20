@@ -165,10 +165,10 @@ fn whoami_names_grant_applications_past_the_first_page() {
 /// `update` keeps the profile fields it was not asked to change, and renames
 /// the account's saved login so `--account` still finds it. Passkey IDs are
 /// base64url credential IDs, so some start with `-` and must still parse as
-/// the ID rather than as a flag.
+/// the ID rather than as a flag. Revocations cascade unless `--no-cascade`.
 #[test]
 fn account_changes_resolve_usernames_to_typed_requests() {
-    let server = start_server(false, 13, |request| match request.path.as_str() {
+    let server = start_server(false, 14, |request| match request.path.as_str() {
         "/api/v1/auth/me" => Reply::bare(&json!({
             "user": {"id": "bob-id", "username": "bob", "display_name": "Bob"},
             "grants": [],
@@ -214,10 +214,18 @@ fn account_changes_resolve_usernames_to_typed_requests() {
     for arguments in [
         &["account", "delete", "bob", "--yes"][..],
         &["account", "passkey", "rename", "-_key", "laptop"],
-        &["account", "passkey", "remove", "-_key", "--yes"],
+        &[
+            "account",
+            "passkey",
+            "remove",
+            "-_key",
+            "--yes",
+            "--no-cascade",
+        ],
         &["account", "invitation", "revoke", "inv-1"],
         &["token", "revoke", "--all", "--user", "bob", "--yes"],
-        &["token", "revoke", "--all", "--yes"],
+        &["token", "revoke", "--all", "--yes", "--no-cascade"],
+        &["token", "revoke", "token-1"],
     ] {
         let output = run(&server, arguments);
         assert!(
@@ -236,12 +244,13 @@ fn account_changes_resolve_usernames_to_typed_requests() {
         sent,
         [
             json!({"action": "update_user", "user_id": "bob-id", "username": "robert", "display_name": "Bob"}),
-            json!({"action": "delete_user", "user_id": "bob-id"}),
+            json!({"action": "delete_user", "user_id": "bob-id", "cascade": true}),
             json!({"action": "rename_passkey", "id": "-_key", "name": "laptop"}),
-            json!({"action": "remove_passkey", "id": "-_key"}),
+            json!({"action": "remove_passkey", "id": "-_key", "cascade": false}),
             json!({"action": "revoke_invitation", "id": "inv-1"}),
-            json!({"action": "revoke_all", "user_id": "bob-id"}),
-            json!({"action": "revoke_all", "user_id": "bob-id"}),
+            json!({"action": "revoke_all", "user_id": "bob-id", "cascade": true}),
+            json!({"action": "revoke_all", "user_id": "bob-id", "cascade": false}),
+            json!({"action": "revoke_credential", "id": "token-1", "cascade": true}),
         ]
     );
 }

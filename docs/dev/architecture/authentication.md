@@ -235,8 +235,17 @@ valid when its issuer ends.
 Explicit revocation cascades by default: `Store::revoke_on` collects the
 named rows and every node below them with one recursive query, then deletes
 their live credentials, invitations and passkeys in the same transaction.
-`Cascade::No` deletes only the named rows. Logout, expiry and pruning never
-cascade. Removing a passkey this way runs the
+`Cascade::No` deletes only the named rows. Revoking a credential names it;
+revoking all of an account's names every credential node it owns and every
+credential it still stores; removing a passkey names the passkey; deleting an
+account names every node it owns and its stored credentials and passkeys,
+collected before the foreign keys delete them. Credential and passkey nodes
+record their owning account (`user_id`) at issuance, so the account's
+credentials that logged out or were pruned still lead to what they issued,
+and the result doesn't depend on when pruning last ran.
+Revoking a pending invitation deletes only it, since nothing descends from a
+link until it is redeemed, and a redeemed link can't be named. Logout, expiry
+and pruning never cascade. Removing a passkey this way runs the
 [lockout check](authorization.md#lockout-protection), so a cascade that would
 leave no administrator rolls back whole. Accounts are never deleted by a
 cascade.

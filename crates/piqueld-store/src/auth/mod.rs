@@ -13,7 +13,7 @@ pub use security::SecurityEvent;
 use super::{Actor, Attribution, Store, StoreError, now_secs};
 use access::{Authority, Caller, Holder};
 pub use lineage::Cascade;
-use lineage::Issued;
+use lineage::{AccountRoots, Issued};
 use piqueld_core::access::{Denied, GlobalPermission, Grants, Permission, Reauthenticate};
 use piqueld_core::auth::{
     Account, CredentialView, Directory, HostOperator, InvitationView, OperatorSessionView,
@@ -180,7 +180,9 @@ impl NewCredential<'_> {
         if let Some(grants) = self.grants {
             Holder::Credential(&self.id).replace(db, grants).await?;
         }
-        Issued::Credential(&self.id).record(db, issuer).await
+        Issued::Credential(&self.id)
+            .record(db, Some(user_id), issuer)
+            .await
     }
 }
 
@@ -215,7 +217,9 @@ impl NewPasskey<'_> {
         .execute(&mut *db)
         .await
         .map_err(StoreError::constraint)?;
-        Issued::Passkey(self.id).record(db, issuer).await
+        Issued::Passkey(self.id)
+            .record(db, Some(user_id), issuer)
+            .await
     }
 }
 
@@ -927,7 +931,9 @@ impl Store {
         self.commit_access_change(tx).await
     }
 
-    /// Deletes every credential of an account, signing it out everywhere.
+    /// Deletes every stored credential of an account, signing it out
+    /// everywhere, with what they and its ended credentials issued as
+    /// `cascade` says (see [`AccountRoots::Credentials`]).
     ///
     /// # Errors
     /// Returns a storage error.
@@ -935,13 +941,12 @@ impl Store {
         &self,
         actor: Actor<'_>,
         user_id: &str,
+        cascade: Cascade,
     ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, actor, user_id).await?;
-        sqlx::query!("DELETE FROM auth_credentials WHERE user_id=?1", user_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(StoreError::database)?;
+        let roots = AccountRoots::Credentials;
+        Self::revoke_account_on(&mut tx, user_id, roots, cascade).await?;
         self.commit_access_change(tx).await
     }
 
@@ -1080,13 +1085,21 @@ impl Store {
     }
 
     /// Deletes an account with its passkeys, credentials, grants, and
-    /// invitations. Refuses to leave no administrator able to sign in.
+    /// invitations, and what its credentials and passkeys issued as
+    /// `cascade` says. Refuses to leave no administrator able to sign in.
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn delete_user(&self, actor: Actor<'_>, id: &str) -> Result<(), StoreError> {
+    pub async fn delete_user(
+        &self,
+        actor: Actor<'_>,
+        id: &str,
+        cascade: Cascade,
+    ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, actor, id).await?;
+        let roots = AccountRoots::Everything;
+        Self::revoke_account_on(&mut tx, id, roots, cascade).await?;
         sqlx::query!("DELETE FROM auth_users WHERE id=?1", id)
             .execute(&mut *tx)
             .await
@@ -1111,19 +1124,22 @@ impl Store {
         Ok(())
     }
 
-    /// Deletes one passkey, refusing to leave no administrator able to sign in.
+    /// Deletes one passkey, with the sessions it signed in and what they
+    /// issued as `cascade` says, refusing to leave no administrator able to
+    /// sign in.
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn remove_passkey(&self, actor: Actor<'_>, id: &str) -> Result<(), StoreError> {
+    pub async fn remove_passkey(
+        &self,
+        actor: Actor<'_>,
+        id: &str,
+        cascade: Cascade,
+    ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::check_passkey_owner_on(&mut tx, actor, id).await?;
-        sqlx::query!("DELETE FROM auth_passkeys WHERE id=?1", id)
-            .execute(&mut *tx)
-            .await
-            .map_err(StoreError::database)?;
-        Self::require_an_admin(&mut tx).await?;
-        tx.commit().await.map_err(StoreError::database)
+        Self::revoke_on(&mut tx, &[Issued::Passkey(id)], cascade).await?;
+        self.commit_access_change(tx).await
     }
 
     /// Changes a passkey's label.
@@ -1220,7 +1236,7 @@ impl Store {
         .map_err(StoreError::constraint)?;
         let issuer = Issued::Credential(credential);
         Issued::Invitation(&invitation.id)
-            .record(db, Some(issuer))
+            .record(db, None, Some(issuer))
             .await
     }
 

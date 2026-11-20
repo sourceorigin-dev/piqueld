@@ -308,7 +308,7 @@ Options:
 
 Delete an account, with its passkeys, sessions and API tokens.
 
-Anyone may delete their own account; another account needs `accounts:manage` and every grant it has. An API token or limited login can't delete its own account. The daemon refuses when no account with `admin` and a passkey would remain.
+It also revokes everything they issued, in any account, as `token revoke` does. Anyone may delete their own account; another account needs `accounts:manage` and every grant it has. An API token or limited login can't delete its own account. The daemon refuses when no account with `admin` and a passkey would remain.
 
 ```text
 piquelctl account delete [OPTIONS] <ACCOUNT>
@@ -320,6 +320,7 @@ Arguments:
 
 Options:
 
+- `--no-cascade`: Revoke only what you name, leaving valid the credentials, links and passkeys issued through what you named.
 - `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl account passkey`
@@ -371,7 +372,9 @@ Arguments:
 
 Remove a passkey, so it can no longer sign in.
 
-Sessions it signed in stay valid until revoked with `token revoke`. Anyone may remove their own; another account's needs `accounts:manage` and every grant it has. An API token or limited login can't remove its own account's. The daemon refuses when no account with `admin` and a passkey would remain.
+It also revokes the sessions it signed in, and everything issued through them, as `token revoke` does. The account's other passkeys were usually added through its first one, so removing that one may remove them too: pass `--no-cascade` to keep them.
+
+Anyone may remove their own; another account's needs `accounts:manage` and every grant it has. An API token or limited login can't remove its own account's. The daemon refuses when no account with `admin` and a passkey would remain.
 
 ```text
 piquelctl account passkey remove [OPTIONS] <ID>
@@ -383,6 +386,7 @@ Arguments:
 
 Options:
 
+- `--no-cascade`: Revoke only what you name, leaving valid the credentials, links and passkeys issued through what you named.
 - `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl account invitation`
@@ -412,7 +416,7 @@ piquelctl account invitation list [OPTIONS]
 
 Revoke a pending invitation or enrollment link, so it no longer works.
 
-An invitation needs `accounts:manage` and every grant it hands out. An enrollment link needs what `account enroll` does.
+A pending link hasn't issued anything yet, so this revokes only the link, and has no `--no-cascade`. An invitation needs `accounts:manage` and every grant it hands out. An enrollment link needs what `account enroll` does.
 
 ```text
 piquelctl account invitation revoke [OPTIONS] <ID>
@@ -523,10 +527,10 @@ Arguments:
 
 Options:
 
-- `--no-cascade`: Revoke only the credential, leaving what was issued through it valid.
+- `--no-cascade`: Revoke only what you name, leaving valid the credentials, links and passkeys issued through what you named.
 - `--all`: Revoke every session and API token of an account instead.
 
-  Without `--user`, revokes yours, including the login this command uses. An API token or limited login can't revoke its own account's.
+  Without `--user`, revokes yours, including the login this command uses. An API token or limited login can't revoke its own account's. It also removes the passkeys the account added while signed in, usually all but its first: pass `--no-cascade` to keep them.
 - `--user <ACCOUNT>`: Revoke this account's with `--all`, by username or ID.
 
   Accounts other than yours need `accounts:manage` and every grant the account has.

@@ -94,14 +94,17 @@ pub(crate) enum AccountCommand {
     },
     /// Delete an account, with its passkeys, sessions and API tokens.
     ///
-    /// Anyone may delete their own account; another account needs
-    /// `accounts:manage` and every grant it has. An API token or limited
-    /// login can't delete its own account. The daemon refuses when no
-    /// account with `admin` and a passkey would remain.
+    /// It also revokes everything they issued, in any account, as
+    /// `token revoke` does. Anyone may delete their own account; another
+    /// account needs `accounts:manage` and every grant it has. An API token
+    /// or limited login can't delete its own account. The daemon refuses
+    /// when no account with `admin` and a passkey would remain.
     Delete {
         /// Account username or ID.
         #[arg(value_name = "ACCOUNT")]
         target: String,
+        #[command(flatten)]
+        cascade: CascadeArg,
         /// Skip the confirmation prompt.
         #[arg(long, short)]
         yes: bool,
@@ -147,7 +150,11 @@ pub(crate) enum PasskeyCommand {
     },
     /// Remove a passkey, so it can no longer sign in.
     ///
-    /// Sessions it signed in stay valid until revoked with `token revoke`.
+    /// It also revokes the sessions it signed in, and everything issued
+    /// through them, as `token revoke` does. The account's other passkeys
+    /// were usually added through its first one, so removing that one may
+    /// remove them too: pass `--no-cascade` to keep them.
+    ///
     /// Anyone may remove their own; another account's needs `accounts:manage`
     /// and every grant it has. An API token or limited login can't remove its
     /// own account's. The daemon refuses when no account with `admin` and a
@@ -157,6 +164,8 @@ pub(crate) enum PasskeyCommand {
         // Base64url credential IDs may start with `-`.
         #[arg(allow_hyphen_values = true)]
         id: String,
+        #[command(flatten)]
+        cascade: CascadeArg,
         /// Skip the confirmation prompt.
         #[arg(long, short)]
         yes: bool,
@@ -173,8 +182,10 @@ pub(crate) enum InvitationCommand {
     List,
     /// Revoke a pending invitation or enrollment link, so it no longer works.
     ///
-    /// An invitation needs `accounts:manage` and every grant it hands out. An
-    /// enrollment link needs what `account enroll` does.
+    /// A pending link hasn't issued anything yet, so this revokes only the
+    /// link, and has no `--no-cascade`. An invitation needs `accounts:manage`
+    /// and every grant it hands out. An enrollment link needs what
+    /// `account enroll` does.
     Revoke {
         /// Invitation ID, from `account invitation list`.
         id: String,
@@ -333,15 +344,15 @@ pub(crate) enum TokenCommand {
         /// Credential ID.
         #[arg(required_unless_present = "all")]
         id: Option<String>,
-        /// Revoke only the credential, leaving what was issued through it
-        /// valid.
-        #[arg(long, conflicts_with = "all")]
-        no_cascade: bool,
+        #[command(flatten)]
+        cascade: CascadeArg,
         /// Revoke every session and API token of an account instead.
         ///
         /// Without `--user`, revokes yours, including the login this command
         /// uses. An API token or limited login can't revoke its own
-        /// account's.
+        /// account's. It also removes the passkeys the account added while
+        /// signed in, usually all but its first: pass `--no-cascade` to keep
+        /// them.
         #[arg(long, conflicts_with = "id")]
         all: bool,
         /// Revoke this account's with `--all`, by username or ID.
@@ -408,39 +419,37 @@ impl TokenCommand {
             }
             Self::Revoke {
                 id: Some(id),
-                no_cascade,
+                cascade,
                 ..
             } => {
                 client
                     .auth_manage(&Manage::RevokeCredential {
                         id: id.clone(),
-                        cascade: !no_cascade,
+                        cascade: cascade.enabled(),
                     })
                     .await?;
-                let also = if *no_cascade {
-                    ""
-                } else {
-                    " and what it issued"
-                };
-                console.info(format_args!("revoked {id}{also}"))
+                console.info(format_args!("revoked {id}{}", cascade.suffix(Named::One)))
             }
-            Self::Revoke { user, yes, .. } => {
+            Self::Revoke {
+                user, yes, cascade, ..
+            } => {
                 let directory = client.auth_directory().await?;
                 let owner = owner(client, &directory, user.as_deref()).await?;
-                console
-                    .confirm(
-                        *yes,
-                        &format!("Revoke every session and token of {:?}?", owner.username),
-                    )
+                let warning = "this also removes the passkeys the account added while signed in, usually all but its first; pass --no-cascade to keep them";
+                let question = format!("Revoke every session and token of {:?}", owner.username);
+                cascade
+                    .confirm(console, *yes, Some(warning), &question, Named::Many)
                     .await?;
                 client
                     .auth_manage(&Manage::RevokeAll {
                         user_id: owner.id.clone(),
+                        cascade: cascade.enabled(),
                     })
                     .await?;
                 console.info(format_args!(
-                    "revoked every session and token of {}",
-                    owner.username
+                    "revoked every session and token of {}{}",
+                    owner.username,
+                    cascade.suffix(Named::Many)
                 ))
             }
         }
@@ -448,6 +457,32 @@ impl TokenCommand {
 }
 
 impl AccountCommand {
+    /// Deletes the account `target`, by username or ID, once confirmed.
+    async fn delete(
+        client: &Client,
+        console: &mut Console,
+        target: &str,
+        yes: bool,
+        cascade: CascadeArg,
+    ) -> Result<()> {
+        let target = find(&client.auth_directory().await?, target)?.user;
+        let question = format!("Delete account {:?}", target.username);
+        cascade
+            .confirm(console, yes, None, &question, Named::One)
+            .await?;
+        client
+            .auth_manage(&Manage::DeleteUser {
+                user_id: target.id,
+                cascade: cascade.enabled(),
+            })
+            .await?;
+        let deleted = target.username;
+        console.info(format_args!(
+            "deleted {deleted}{}",
+            cascade.suffix(Named::One)
+        ))
+    }
+
     /// Runs one `account` subcommand.
     pub(crate) async fn run(
         &self,
@@ -532,16 +567,11 @@ impl AccountCommand {
                 }
                 AccountsReport::emit_one(client, console, account).await
             }
-            Self::Delete { target, yes } => {
-                let target = find(&client.auth_directory().await?, target)?.user;
-                console
-                    .confirm(*yes, &format!("Delete account {:?}?", target.username))
-                    .await?;
-                client
-                    .auth_manage(&Manage::DeleteUser { user_id: target.id })
-                    .await?;
-                console.info(format_args!("deleted {}", target.username))
-            }
+            Self::Delete {
+                target,
+                yes,
+                cascade,
+            } => Self::delete(client, console, target, *yes, *cascade).await,
             Self::Passkey { command } => command.run(client, console).await,
             Self::Invitation { command } => command.run(client, console).await,
         }
@@ -572,14 +602,22 @@ impl PasskeyCommand {
                     .await?;
                 console.info(format_args!("renamed passkey {id} to {name}"))
             }
-            Self::Remove { id, yes } => {
-                console
-                    .confirm(*yes, &format!("Remove passkey {id}?"))
+            Self::Remove { id, yes, cascade } => {
+                let warning = "if this is the account's first passkey, its other passkeys were usually added through it and are removed too; pass --no-cascade to keep them";
+                let question = format!("Remove passkey {id}");
+                cascade
+                    .confirm(console, *yes, Some(warning), &question, Named::One)
                     .await?;
                 client
-                    .auth_manage(&Manage::RemovePasskey { id: id.clone() })
+                    .auth_manage(&Manage::RemovePasskey {
+                        id: id.clone(),
+                        cascade: cascade.enabled(),
+                    })
                     .await?;
-                console.info(format_args!("removed passkey {id}"))
+                console.info(format_args!(
+                    "removed passkey {id}{}",
+                    cascade.suffix(Named::One)
+                ))
             }
         }
     }
@@ -625,6 +663,62 @@ async fn owner(client: &Client, directory: &Directory, user: Option<&str>) -> Re
                 "the host operator has no account; name one with --user",
             )
         })
+}
+
+// `--no-cascade`, shared by the commands that also revoke what was issued
+// through what they name; `///` on the field is user-facing help.
+#[derive(Clone, Copy, Debug, Args)]
+pub(crate) struct CascadeArg {
+    /// Revoke only what you name, leaving valid the credentials, links and
+    /// passkeys issued through what you named.
+    #[arg(long)]
+    no_cascade: bool,
+}
+
+/// How many things a command names, for how [`CascadeArg`] words its cascade.
+#[derive(Clone, Copy, Debug)]
+enum Named {
+    /// One credential, passkey or account: "and what it issued".
+    One,
+    /// Several, like every credential of an account: "and what they issued".
+    Many,
+}
+
+impl CascadeArg {
+    /// Whether to ask the daemon to revoke what was issued too.
+    const fn enabled(self) -> bool {
+        !self.no_cascade
+    }
+
+    /// How a prompt or result line about what was `named` mentions the
+    /// cascade, as in `revoked <id> and what it issued`; empty with
+    /// `--no-cascade`.
+    const fn suffix(self, named: Named) -> &'static str {
+        match (self.no_cascade, named) {
+            (true, _) => "",
+            (false, Named::One) => " and what it issued",
+            (false, Named::Many) => " and what they issued",
+        }
+    }
+
+    /// Asks to confirm `question` about what was `named`, given without its
+    /// question mark, adding the cascade. Unless `--yes` skips the prompt, a
+    /// cascade's `warning` comes first.
+    async fn confirm(
+        self,
+        console: &mut Console,
+        yes: bool,
+        warning: Option<&str>,
+        question: &str,
+        named: Named,
+    ) -> Result<()> {
+        if let Some(warning) = warning.filter(|_| self.enabled() && !yes) {
+            console.warning(warning)?;
+        }
+        console
+            .confirm(yes, &format!("{question}{}?", self.suffix(named)))
+            .await
+    }
 }
 
 /// Username of a visible account, or its ID when hidden.

@@ -182,10 +182,11 @@ deleting an enrollment's target account deletes its enrollment links.
 
 ## Revocation reaches what was issued
 
-Whoever may revoke a credential may revoke everything issued through it (see
+Whoever may revoke a credential, remove a passkey or delete an account may
+revoke everything issued through it (see
 [issuance lineage](authentication.md#issuance-lineage)), even in accounts it
 couldn't change itself: an invitation's account, or an account it enrolled a
-passkey for. The authority checked is the one over the named credential. A
+passkey for. The authority checked is the one over what was named. A
 credential issued through another is access delegated from it, so revoking
 the delegation must not depend on what the delegate has become since.
 

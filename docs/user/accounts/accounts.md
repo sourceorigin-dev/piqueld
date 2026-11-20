@@ -97,6 +97,11 @@ expire. Enrollment links show **Add a passkey to** and the account's name.
 Select **Revoke** to cancel a link before it's used. Deleting the account that
 issued a link also revokes it.
 
+A pending link hasn't issued anything yet, so revoking it cancels only the
+link, and there's no **Also revoke what it issued** option. Once used, the
+link no longer appears here: to take back the passkey and session it gave,
+revoke [the credential that created it](#what-revoking-also-revokes).
+
 With `piquelctl`, list the links to find the one to revoke, then revoke it by
 its ID:
 
@@ -173,8 +178,8 @@ first; revoke the ones you no longer need under **Pending links**.
 Under **Passkeys**, on the account's **Access** tab, select **Edit** next to
 the passkey, change its **Passkey name** and select **Save**.
 
-Removing a passkey can't be undone, and the dashboard doesn't ask to confirm.
-To remove one, select **Remove** next to it.
+Removing a passkey can't be undone. To remove one, select **Remove** next to
+it, then **Remove** in the dialog that asks you to confirm.
 
 With `piquelctl`, list the passkeys to find their IDs, then rename or remove
 one:
@@ -188,9 +193,12 @@ $ piquelctl account passkey remove 01a16b4f-2c8d-7b16-a5e3-9f0d4c7b2e61
 
 `account passkey remove` asks you to confirm first.
 
-Removing a passkey stops it from signing in, but it doesn't end the sessions
-and tokens already open. If the passkey was lost or stolen,
-[revoke the account's sessions and tokens](#revoke-sessions-and-tokens) too.
+Removing a passkey stops it from signing in. It also ends the browser sessions
+it signed in, and [everything issued through them](#what-revoking-also-revokes),
+so a lost or stolen passkey loses all the access it opened. The account's
+other passkeys were usually added through its first one, so removing that one
+may remove them too. To end only the passkey, clear
+**Also revoke what it issued** in the dialog, or add `--no-cascade`.
 
 ## Edit a profile
 
@@ -227,8 +235,10 @@ expires.
 
 - **Revoke** asks you to confirm, then ends one at once, with
   [what it issued](#what-revoking-also-revokes).
-- **Revoke all** ends all of them, including the session you're using if it's
-  your own account.
+- **Revoke all** asks you to confirm, then ends all of them, with what they
+  issued, including the session you're using if it's your own account. That
+  also removes the passkeys the account added while signed in, usually all
+  but its first; clear **Also revoke what it issued** to keep them.
 - **Activity** opens its requests in the audit trail.
 
 With `piquelctl`, `token list` lists your own sessions and tokens, and
@@ -242,7 +252,10 @@ piquelctl token revoke --all --user bob
 ```
 
 Without `--user`, `token revoke --all` signs your own account out everywhere,
-including the `piquelctl` login running it. An API token or
+including the `piquelctl` login running it. It also revokes what they
+issued, including what the account's sessions and logins issued before they
+logged out, expired or were pruned, and so removes the passkeys the account
+added while signed in: add `--no-cascade` to keep them. An API token or
 [limited login](cli-and-tokens.md#ask-for-less-access) can't do this for its
 own account.
 
@@ -262,8 +275,10 @@ expired. It never deletes an account: someone who loses a passkey this way
 keeps the account and its access, and can get an
 [enrollment link](#to-someone-elses-account) to add a new one.
 
-To revoke only the one credential, clear **Also revoke what it issued** in the
-confirmation dialog. With `piquelctl`, add `--no-cascade`:
+Removing a passkey and deleting an account revoke what was issued through them
+the same way. To revoke only what you selected, clear
+**Also revoke what it issued** in the confirmation dialog. With `piquelctl`,
+add `--no-cascade`:
 
 ```console
 piquelctl token revoke --no-cascade 01a16b4e-6995-79b2-bfb1-0f72630a4d96
@@ -276,12 +291,16 @@ revoked on their own.
 ## Delete an account
 
 Deleting an account also deletes its passkeys, sessions and tokens, and the
-links it issued. It can't be undone. Its requests stay in the audit trail.
+links it issued. It also revokes
+[everything they issued](#what-revoking-also-revokes) in other accounts:
+passkeys registered through its invitations, for example. It can't be undone.
+Its requests stay in the audit trail.
 
 1. Open the account from the **Accounts** page and select **Delete account**,
    at the top of its page.
 2. Confirm in the dialog that asks whether to delete the account and all its
-   passkeys, sessions, and tokens.
+   passkeys, sessions, and tokens. To leave what it issued elsewhere valid,
+   clear **Also revoke what it issued** first.
 
 You can delete your own account. With `piquelctl`, which asks you to confirm
 first:
@@ -290,14 +309,18 @@ first:
 piquelctl account delete bob
 ```
 
+Add `--no-cascade` to leave what it issued elsewhere valid.
+
 ## Troubleshooting
 
 - **The change is refused with `account_lockout`.** At least one account must
   keep `admin` on every application and a passkey, so that someone can always
   sign in and manage piqueld. piqueld refuses to remove the last such
-  account's access, its last passkey, or the account itself, including
-  through [what a revocation also revokes](#what-revoking-also-revokes). Make another
-  account that has a passkey an administrator first.
+  account's access, its last passkey, or the account itself. Make another
+  account that has a passkey an administrator first. When a revocation is
+  refused because of [what it also revokes](#what-revoking-also-revokes),
+  clear **Also revoke what it issued**, or add `--no-cascade`, and revoke
+  what you mean to one at a time.
 - **The change is refused with `permission_exceeded`.** The account holds
   access you don't, or you're handing out access you don't hold. Ask someone
   who holds it.

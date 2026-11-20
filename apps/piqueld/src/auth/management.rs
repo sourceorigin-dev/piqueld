@@ -54,8 +54,12 @@ impl Auth {
                     .update_user(by, &user_id, &username, &display_name)
                     .await?;
             }
-            Manage::DeleteUser { user_id } => store.delete_user(by, &user_id).await?,
-            Manage::RemovePasskey { id } => store.remove_passkey(by, &id).await?,
+            Manage::DeleteUser { user_id, cascade } => {
+                store.delete_user(by, &user_id, cascade.into()).await?;
+            }
+            Manage::RemovePasskey { id, cascade } => {
+                store.remove_passkey(by, &id, cascade.into()).await?;
+            }
             Manage::RenamePasskey { id, name } => {
                 Self::validate_passkey_name(&name)?;
                 store.rename_passkey(by, &id, &name).await?;
@@ -63,7 +67,11 @@ impl Auth {
             Manage::RevokeCredential { id, cascade } => {
                 store.revoke_credential(by, &id, cascade.into()).await?;
             }
-            Manage::RevokeAll { user_id } => store.revoke_credentials(by, &user_id).await?,
+            Manage::RevokeAll { user_id, cascade } => {
+                store
+                    .revoke_credentials(by, &user_id, cascade.into())
+                    .await?;
+            }
             Manage::SetGrants { user_id, grants } => {
                 store.set_user_grants(by, &user_id, &grants).await?;
             }
