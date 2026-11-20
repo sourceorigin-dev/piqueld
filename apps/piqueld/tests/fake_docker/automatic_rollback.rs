@@ -42,44 +42,16 @@ async fn fail_second_rollout(
     (first, second)
 }
 
-/// The latest operation of `harness`'s environment `id`.
-async fn latest(harness: &ControllerHarness, id: &EnvironmentId) -> Operation {
-    harness
-        .store
-        .latest_operation_for_environment(id)
-        .await
-        .unwrap()
-        .unwrap()
-}
-
-/// The origin of deployment `id` of environment `environment`.
-async fn origin(
-    harness: &ControllerHarness,
-    environment: &EnvironmentId,
-    id: &str,
-) -> DeploymentOrigin {
-    harness
-        .store
-        .deployments(environment, None, 50)
-        .await
-        .unwrap()
-        .items
-        .into_iter()
-        .find(|deployment| deployment.operation.id == id)
-        .unwrap()
-        .origin
-}
-
 #[tokio::test]
 async fn a_failed_rollout_restores_the_last_successful_deployment() {
     let harness = ControllerHarness::new().await;
     let (first, second) = fail_second_rollout(&harness, manifest(Some(Rollback::Automatic))).await;
     let environment = &first.environment_id;
     let original = harness.operation(&first.id).await;
-    let rollback = latest(&harness, environment).await;
+    let rollback = harness.latest(environment).await;
     assert_ne!(rollback.id, second.id);
     assert_eq!(
-        origin(&harness, environment, &rollback.id).await,
+        harness.deployment(environment, &rollback.id).await.origin,
         DeploymentOrigin::Restore {
             deployment: first.id.clone(),
             rolled_back: Some(second.id.clone()),
@@ -113,7 +85,7 @@ async fn a_failed_rollout_restores_the_last_successful_deployment() {
     assert_eq!(harness.started_jobs().await, ["migrate", "migrate"]);
     // Repair maintains the rollback, never the failed deployment.
     harness.scan().await;
-    assert_eq!(latest(&harness, environment).await.id, rollback.id);
+    assert_eq!(harness.latest(environment).await.id, rollback.id);
 }
 
 /// A rollback whose own rollout fails is left failed.
@@ -121,15 +93,12 @@ async fn a_failed_rollout_restores_the_last_successful_deployment() {
 async fn a_failed_rollback_is_not_rolled_back_again() {
     let harness = ControllerHarness::new().await;
     let (first, _) = fail_second_rollout(&harness, manifest(Some(Rollback::Automatic))).await;
-    let rollback = latest(&harness, &first.environment_id).await;
+    let rollback = harness.latest(&first.environment_id).await;
     assert_eq!(
         harness.scan_result(&rollback).await,
         (OperationState::Failed, Some("service_update_failed".into()))
     );
-    assert_eq!(
-        latest(&harness, &first.environment_id).await.id,
-        rollback.id
-    );
+    assert_eq!(harness.latest(&first.environment_id).await.id, rollback.id);
 }
 
 #[tokio::test]
@@ -137,7 +106,7 @@ async fn manual_environments_stay_on_the_failed_deployment() {
     for rollback in [None, Some(Rollback::Manual)] {
         let harness = ControllerHarness::new().await;
         let (first, second) = fail_second_rollout(&harness, manifest(rollback)).await;
-        assert_eq!(latest(&harness, &first.environment_id).await.id, second.id);
+        assert_eq!(harness.latest(&first.environment_id).await.id, second.id);
     }
 }
 
@@ -165,7 +134,7 @@ async fn a_failure_without_an_earlier_success_says_why_it_was_not_rolled_back() 
         Some("not rolled back automatically: no earlier deployment of the environment succeeded")
     );
     assert_eq!(
-        latest(&harness, &operation.environment_id).await.id,
+        harness.latest(&operation.environment_id).await.id,
         operation.id
     );
 }

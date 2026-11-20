@@ -17,13 +17,6 @@ fn image(byte: char, labels: &[(&str, &str)]) -> LocalImage {
 }
 
 impl ControllerHarness {
-    /// Deploys the fixture with `web` built from Git, as image `b`s.
-    async fn deploy_git_build(&self, fixture: &git_fixture::GitBuildFixture) -> Operation {
-        let mut input = manifest();
-        input.spec.services[0].source = fixture.source.clone();
-        self.apply(input, Some(0)).await
-    }
-
     /// IDs of the images left in the engine.
     async fn image_ids(&self) -> Vec<char> {
         self.docker

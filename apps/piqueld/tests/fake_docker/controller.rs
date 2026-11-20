@@ -145,13 +145,7 @@ async fn controller_enforces_global_io_bounds_on_a_single_thread() {
     assert!((1..=8).contains(&docker.observations.maximum.load(Ordering::SeqCst)));
     for app in harness.store.list(None, 100).await.unwrap().items {
         assert_eq!(
-            harness
-                .store
-                .latest_operation_for_environment(app.id())
-                .await
-                .unwrap()
-                .unwrap()
-                .state,
+            harness.latest(app.id()).await.state,
             OperationState::Succeeded
         );
     }

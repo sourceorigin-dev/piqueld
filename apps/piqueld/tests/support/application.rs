@@ -120,7 +120,7 @@ impl TestApplications {
     }
 
     /// Accepts `mutation` and returns the operation it requested.
-    async fn submit(
+    pub async fn submit(
         &self,
         mutation: Mutation,
         expected_generation: Option<u64>,

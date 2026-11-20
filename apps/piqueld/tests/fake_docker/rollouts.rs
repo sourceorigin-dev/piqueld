@@ -480,16 +480,7 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
     assert_eq!(after.services, before.services);
     assert_eq!(after.networks, before.networks);
     assert_eq!(after.volumes, before.volumes);
-    assert_eq!(
-        harness
-            .store
-            .latest_operation_for_environment(&first.environment_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .id,
-        refreshed.id
-    );
+    assert_eq!(harness.latest(&first.environment_id).await.id, refreshed.id);
     let events = harness.store.events(None, None, 100).await.unwrap().items;
     assert!(events.iter().any(|event| event.kind == "resource_mutated"
         && event.phase.map(piqueld_core::Phase::as_str) == Some("ensure_service")
@@ -848,12 +839,7 @@ async fn preparation_timeout_is_retried_after_backoff() {
     harness.controller = harness.new_controller();
     gate.release.notify_one();
     harness.scan().await;
-    let latest = harness
-        .store
-        .latest_operation_for_environment(&operation.environment_id)
-        .await
-        .unwrap()
-        .unwrap();
+    let latest = harness.latest(&operation.environment_id).await;
     assert_eq!(latest.state, OperationState::Succeeded);
     assert_eq!(harness.docker.observed.lock().await.services.len(), 1);
 }
@@ -882,12 +868,7 @@ async fn changed_swarm_topology_blocks_preparation_and_recovers_after_backoff() 
         .store(false, Ordering::SeqCst);
     harness.expire_backoff(&operation).await;
     harness.scan().await;
-    let latest = harness
-        .store
-        .latest_operation_for_environment(&operation.environment_id)
-        .await
-        .unwrap()
-        .unwrap();
+    let latest = harness.latest(&operation.environment_id).await;
     assert_eq!(latest.state, OperationState::Succeeded);
 }
 
@@ -1031,28 +1012,14 @@ async fn an_unreachable_build_machine_fails_the_deployment_as_builder_unavailabl
         .builder_unavailable
         .store(true, std::sync::atomic::Ordering::SeqCst);
     let fixture = git_fixture::GitBuildFixture::new();
-    let mut input = manifest();
-    input.spec.services[0].source = fixture.source.clone();
-    let deployment = harness.apply(input, Some(0)).await;
+    let deployment = harness.deploy_git_build(&fixture).await;
     harness.scan().await;
     let failure = harness.operation(&deployment.id).await;
     assert_eq!(failure.state, OperationState::Failed);
     assert_eq!(failure.phase, Some(piqueld_core::Phase::BuildGit));
     assert_eq!(failure.error_code.as_deref(), Some("builder_unavailable"));
     // Nothing was built, so the output doesn't say a build failed.
-    let build = harness
-        .store
-        .builds(
-            None,
-            Some(&deployment.environment_id),
-            &piqueld_core::access::Scope::All,
-            None,
-            1,
-        )
-        .await
-        .unwrap()
-        .items
-        .remove(0);
+    let build = harness.builds(&deployment.environment_id).await.remove(0);
     let output = harness
         .store
         .build_logs(build.id, None, None)

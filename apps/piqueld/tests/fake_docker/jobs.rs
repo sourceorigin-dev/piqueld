@@ -950,19 +950,9 @@ async fn recorded_success_survives_a_crash_before_cleanup() {
     // The success is stored before the run is removed; dropping the scan
     // there is a crash.
     let succeeded = eventually(Duration::from_secs(10), POLL, async || {
-        let builds = harness
-            .store
-            .builds(
-                None,
-                Some(&operation.environment_id),
-                &piqueld_core::access::Scope::All,
-                None,
-                10,
-            )
+        harness
+            .builds(&operation.environment_id)
             .await
-            .unwrap();
-        builds
-            .items
             .first()
             .is_some_and(|run| run.state == piqueld_core::api::BuildState::Succeeded)
             .then_some(())

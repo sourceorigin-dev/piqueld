@@ -175,12 +175,6 @@ impl ControllerHarness {
         self.production_of(self.application.id()).await
     }
 
-    /// The `production` environment of the application `saved` saved.
-    async fn production(&self, saved: &piqueld_core::api::SavedApplication) -> EnvironmentId {
-        self.production_of(&ApplicationId::parse(&saved.application_id).unwrap())
-            .await
-    }
-
     /// The application environment `environment` belongs to.
     async fn application_of(&self, environment: &EnvironmentId) -> ApplicationId {
         let stored = self.store.get(environment).await.unwrap();
@@ -249,6 +243,30 @@ impl ControllerHarness {
         )
         .await
         .unwrap()
+    }
+
+    /// Saves and deploys the fixture with `web` built from `fixture`'s Git
+    /// source, as image `b`s.
+    async fn deploy_git_build(&self, fixture: &git_fixture::GitBuildFixture) -> Operation {
+        let mut input = manifest();
+        input.spec.services[0].source = fixture.source.clone();
+        self.apply(input, Some(0)).await
+    }
+
+    /// Requests a deployment of `id` at `revision`, or what it tracks,
+    /// building every Git source again when `rebuild` is set.
+    async fn request_deploy(
+        &self,
+        id: &EnvironmentId,
+        revision: Option<piqueld_core::manifest::ManifestRevision>,
+        rebuild: bool,
+    ) -> Operation {
+        let deploy = piqueld::api::Mutation::Deploy {
+            id: id.clone(),
+            revision,
+            rebuild,
+        };
+        self.applications().submit(deploy, None).await.unwrap()
     }
 
     /// Journals the application with its resolved target.
@@ -331,6 +349,46 @@ impl ControllerHarness {
 
     async fn operation(&self, id: &str) -> Operation {
         self.store.operation(id).await.unwrap()
+    }
+
+    /// The latest operation of environment `id`.
+    async fn latest(&self, id: &EnvironmentId) -> Operation {
+        self.store
+            .latest_operation_for_environment(id)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    /// Environment `environment`'s deployment by operation `id`.
+    async fn deployment(
+        &self,
+        environment: &EnvironmentId,
+        id: &str,
+    ) -> piqueld_core::api::DeploymentView {
+        self.store
+            .deployments(environment, None, 50)
+            .await
+            .unwrap()
+            .items
+            .into_iter()
+            .find(|deployment| deployment.operation.id == id)
+            .unwrap()
+    }
+
+    /// Environment `environment`'s builds, newest first.
+    async fn builds(&self, environment: &EnvironmentId) -> Vec<piqueld_core::api::BuildRecord> {
+        self.store
+            .builds(
+                None,
+                Some(environment),
+                &piqueld_core::access::Scope::All,
+                None,
+                50,
+            )
+            .await
+            .unwrap()
+            .items
     }
 
     /// The events operation `id` recorded.
@@ -665,19 +723,7 @@ impl ControllerHarness {
         &self,
         application: &EnvironmentId,
     ) -> (piqueld_core::api::BuildRecord, String) {
-        let run = self
-            .store
-            .builds(
-                None,
-                Some(application),
-                &piqueld_core::access::Scope::All,
-                None,
-                10,
-            )
-            .await
-            .unwrap()
-            .items
-            .remove(0);
+        let run = self.builds(application).await.remove(0);
         let output = self
             .store
             .build_logs(run.id, None, None)
@@ -691,31 +737,22 @@ impl ControllerHarness {
     }
 
     async fn assert_git_build_history(&self, id: &EnvironmentId) {
-        let builds = self
-            .store
-            .builds(None, Some(id), &piqueld_core::access::Scope::All, None, 50)
-            .await
-            .unwrap();
+        let builds = self.builds(id).await;
         assert_eq!(
-            builds.items.len(),
+            builds.len(),
             3,
             "one record per executed preparation, not per accepted/replayed request"
         );
-        assert_eq!(builds.items[0].state, piqueld_core::api::BuildState::Failed);
+        assert_eq!(builds[0].state, piqueld_core::api::BuildState::Failed);
+        assert!(builds.iter().all(|b| b.commit.is_some() && b.log_bytes > 0));
         assert!(
-            builds
-                .items
-                .iter()
-                .all(|b| b.commit.is_some() && b.log_bytes > 0)
-        );
-        assert!(
-            builds.items[1..].iter().all(
+            builds[1..].iter().all(
                 |b| b.state == piqueld_core::api::BuildState::Succeeded && b.image_id.is_some()
             )
         );
         assert!(
             self.store
-                .build_logs(builds.items[0].id, None, None)
+                .build_logs(builds[0].id, None, None)
                 .await
                 .unwrap()
                 .items
