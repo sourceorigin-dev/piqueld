@@ -236,7 +236,9 @@ expires.
 - **Revoke** asks you to confirm, then ends one at once, with
   [what it issued](#what-revoking-also-revokes).
 - **Revoke all** asks you to confirm, then ends all of them, with what they
-  issued, including the session you're using if it's your own account.
+  issued, including the session you're using if it's your own account. That
+  also removes the passkeys the account added while signed in, usually all
+  but its first; clear **Also revoke what it issued** to keep them.
 - **Activity** opens its requests in the audit trail.
 
 With `piquelctl`, `token list` lists your own sessions and tokens, and
@@ -252,7 +254,8 @@ piquelctl token revoke --all --user bob
 Without `--user`, `token revoke --all` signs your own account out everywhere,
 including the `piquelctl` login running it. It also revokes what they
 issued, including what the account's sessions and logins issued before they
-logged out or expired. An API token or
+logged out, expired or were pruned, and so removes the passkeys the account
+added while signed in: add `--no-cascade` to keep them. An API token or
 [limited login](cli-and-tokens.md#ask-for-less-access) can't do this for its
 own account.
 

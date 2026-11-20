@@ -13,7 +13,7 @@ pub use security::SecurityEvent;
 use super::{Actor, Attribution, Store, StoreError, now_secs};
 use access::{Authority, Caller, Holder};
 pub use lineage::Cascade;
-use lineage::Issued;
+use lineage::{AccountRoots, Issued};
 use piqueld_core::access::{Denied, GlobalPermission, Grants, Permission, Reauthenticate};
 use piqueld_core::auth::{
     Account, CredentialView, Directory, HostOperator, InvitationView, OperatorSessionView,
@@ -180,7 +180,9 @@ impl NewCredential<'_> {
         if let Some(grants) = self.grants {
             Holder::Credential(&self.id).replace(db, grants).await?;
         }
-        Issued::Credential(&self.id).record(db, issuer).await
+        Issued::Credential(&self.id)
+            .record(db, Some(user_id), issuer)
+            .await
     }
 }
 
@@ -215,7 +217,9 @@ impl NewPasskey<'_> {
         .execute(&mut *db)
         .await
         .map_err(StoreError::constraint)?;
-        Issued::Passkey(self.id).record(db, issuer).await
+        Issued::Passkey(self.id)
+            .record(db, Some(user_id), issuer)
+            .await
     }
 }
 
@@ -928,8 +932,8 @@ impl Store {
     }
 
     /// Deletes every stored credential of an account, signing it out
-    /// everywhere, with what they and the account's ended sessions issued as
-    /// `cascade` says (see `account_credentials_on`).
+    /// everywhere, with what they and its ended credentials issued as
+    /// `cascade` says (see [`AccountRoots::Credentials`]).
     ///
     /// # Errors
     /// Returns a storage error.
@@ -941,33 +945,9 @@ impl Store {
     ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, actor, user_id).await?;
-        let credentials = Self::account_credentials_on(&mut tx, user_id).await?;
-        let roots = credentials.iter().map(|id| Issued::Credential(id));
-        Self::revoke_on(&mut tx, &roots.collect::<Vec<_>>(), cascade).await?;
+        let roots = AccountRoots::Credentials;
+        Self::revoke_account_on(&mut tx, user_id, roots, cascade).await?;
         self.commit_access_change(tx).await
-    }
-
-    /// The IDs of every credential `user_id` has stored, live or not, and of
-    /// the sessions its passkeys signed in, even ones that logged out or were
-    /// pruned since: their lineage still leads to what they issued. Ended
-    /// sessions have no row, so revoking them alone deletes nothing more.
-    async fn account_credentials_on(
-        db: &mut SqliteConnection,
-        user_id: &str,
-    ) -> Result<Vec<String>, StoreError> {
-        sqlx::query_scalar!(
-            r#"SELECT id AS "id!" FROM auth_credentials WHERE user_id=?1
-            UNION
-            SELECT session.id FROM auth_passkeys p
-            JOIN auth_lineage passkey ON passkey.kind='passkey' AND passkey.id=p.id
-            JOIN auth_lineage session ON session.issued_by=passkey.node
-                AND session.kind='credential'
-            WHERE p.user_id=?1"#,
-            user_id
-        )
-        .fetch_all(db)
-        .await
-        .map_err(StoreError::database)
     }
 
     /// The part of the account directory `view` covers, read in one
@@ -1118,18 +1098,8 @@ impl Store {
     ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, actor, id).await?;
-        let credentials = Self::account_credentials_on(&mut tx, id).await?;
-        let passkeys = sqlx::query_scalar!(
-            r#"SELECT id AS "id!" FROM auth_passkeys WHERE user_id=?1"#,
-            id
-        )
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(StoreError::database)?;
-        let credentials = credentials.iter().map(|id| Issued::Credential(id));
-        let passkeys = passkeys.iter().map(|id| Issued::Passkey(id));
-        let roots = credentials.chain(passkeys).collect::<Vec<_>>();
-        Self::revoke_on(&mut tx, &roots, cascade).await?;
+        let roots = AccountRoots::Everything;
+        Self::revoke_account_on(&mut tx, id, roots, cascade).await?;
         sqlx::query!("DELETE FROM auth_users WHERE id=?1", id)
             .execute(&mut *tx)
             .await
@@ -1266,7 +1236,7 @@ impl Store {
         .map_err(StoreError::constraint)?;
         let issuer = Issued::Credential(credential);
         Issued::Invitation(&invitation.id)
-            .record(db, Some(issuer))
+            .record(db, None, Some(issuer))
             .await
     }
 

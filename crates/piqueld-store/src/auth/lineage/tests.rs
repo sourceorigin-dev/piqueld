@@ -369,35 +369,48 @@ async fn bulk_revocations_cascade_from_every_root() {
     assert!(passkey("erin-key").await && live(&store, "erin").await);
 }
 
-/// Revoking all of an account's credentials also starts from the sessions
-/// its passkeys signed in that have since logged out and been pruned, so
-/// what they issued goes too, whether or not housekeeping ran.
+/// Gives the administrator `user` a passkey whose session invited
+/// `<user>-guest`, then removes that passkey alone and logs the session
+/// out, so nothing live of `user` leads to the guest any more.
+async fn ended_issuer(store: &Store, user: &'static str) {
+    admin_with_passkey(store, user).await;
+    let alone = store.revoke_credential(Actor::Daemon, user, Cascade::No);
+    alone.await.expect("the login is revoked alone");
+    let (key, session) = (format!("{user}-key"), format!("{user}-signed-in"));
+    let signed_in = credential(&session, CredentialKind::Browser);
+    let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
+    let sign_in = store.sign_in_with_passkey(&key, user, stored, &signed_in);
+    let sign_in = sign_in.await.expect("the passkey signs in");
+    sign_in.expect("the passkey is its user's");
+    let by_session = Caller {
+        credential_id: &session,
+        user_id: user,
+    };
+    invite_and_redeem(store, by_session, &format!("{user}-guest")).await;
+    let remove = store.remove_passkey(Actor::Daemon, &key, Cascade::No);
+    remove.await.expect("the passkey is removed alone");
+    let logout = store.revoke_credential(Actor::Daemon, &session, Cascade::No);
+    logout.await.expect("the session logs out");
+}
+
+/// Revoking all of an account's credentials, and deleting it, also start
+/// from its sessions that ended, even after the passkey that signed them in
+/// went and pruning ran, so what they issued goes too.
 #[tokio::test]
-async fn revoking_all_reaches_what_ended_sessions_issued() {
+async fn bulk_revocations_reach_what_ended_credentials_issued() {
     let (_dir, store) = Store::temporary().await;
     // An administrator nothing here touches, so no cascade locks out.
     admin_with_passkey(&store, "erin").await;
-    admin_with_passkey(&store, "alice").await;
-    // Alice's passkey no longer descends from a live credential.
-    let alone = store.revoke_credential(Actor::Daemon, "alice", Cascade::No);
-    alone.await.expect("alice's login is revoked alone");
-    let signed_in = credential("alice-signed-in", CredentialKind::Browser);
-    let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
-    let sign_in = store.sign_in_with_passkey("alice-key", "alice", stored, &signed_in);
-    let sign_in = sign_in.await.expect("alice's passkey signs in");
-    sign_in.expect("the passkey is alice's");
-    let session = Caller {
-        credential_id: "alice-signed-in",
-        user_id: "alice",
-    };
-    invite_and_redeem(&store, session, "bob").await;
-    let logout = store.revoke_credential(Actor::Daemon, "alice-signed-in", Cascade::No);
-    logout.await.expect("alice's session logs out");
+    ended_issuer(&store, "alice").await;
+    ended_issuer(&store, "dave").await;
     store.prune_auth().await.expect("housekeeping runs");
 
     let all = store.revoke_credentials(Actor::Daemon, "alice", Cascade::Yes);
     all.await
         .expect("the daemon revokes all of alice's credentials");
-    assert!(!live(&store, "bob-session").await);
-    assert_eq!(passkeys(&store).await, ["alice-key", "erin-key"]);
+    assert!(!live(&store, "alice-guest-session").await);
+    let delete = store.delete_user(Actor::Daemon, "dave", Cascade::Yes);
+    delete.await.expect("the daemon deletes dave");
+    assert!(!live(&store, "dave-guest-session").await);
+    assert_eq!(passkeys(&store).await, ["erin-key"]);
 }

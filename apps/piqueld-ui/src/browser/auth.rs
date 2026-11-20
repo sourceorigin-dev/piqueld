@@ -1763,7 +1763,7 @@ fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
                 title="Remove passkey"
                 message={Signal::derive(move || {
                     format!(
-                        "{} can no longer sign in. The account's other passkeys were usually added through its first one, so they may be removed too: to keep them, clear the box below.",
+                        "{} can no longer sign in. If it's the account's first passkey, its other passkeys were usually added through it and are removed too: to keep them, clear the box below.",
                         saved.get_value(),
                     )
                 })}
@@ -1864,7 +1864,7 @@ fn Credentials(
                 <CascadeDialog
                     opened={revoking_all}
                     title="Revoke all sessions and tokens"
-                    message="Every session, piquelctl login and API token of this account stops working at once, including the session you're using if it's yours."
+                    message="Every session, piquelctl login and API token of this account stops working at once, including the session you're using if it's yours. This also removes the passkeys the account added while signed in, usually all but its first: to keep them, clear the box below."
                     hint="API tokens, piquelctl logins, links and passkeys they created, and the sessions those passkeys signed in, in any account."
                     confirm="Revoke all"
                     on_confirm={revoke_all}

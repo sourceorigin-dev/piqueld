@@ -320,7 +320,7 @@ Arguments:
 
 Options:
 
-- `--no-cascade`: Leave what was issued through it valid; see `token revoke`.
+- `--no-cascade`: Revoke only what you name, leaving the credentials, links and passkeys issued through it valid.
 - `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl account passkey`
@@ -386,7 +386,7 @@ Arguments:
 
 Options:
 
-- `--no-cascade`: Leave what was issued through it valid; see `token revoke`.
+- `--no-cascade`: Revoke only what you name, leaving the credentials, links and passkeys issued through it valid.
 - `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl account invitation`
@@ -527,10 +527,10 @@ Arguments:
 
 Options:
 
-- `--no-cascade`: Revoke only the credential, or with `--all` only the account's credentials, leaving what was issued through them valid.
+- `--no-cascade`: Revoke only what you name, leaving the credentials, links and passkeys issued through it valid.
 - `--all`: Revoke every session and API token of an account instead.
 
-  Without `--user`, revokes yours, including the login this command uses. An API token or limited login can't revoke its own account's.
+  Without `--user`, revokes yours, including the login this command uses. An API token or limited login can't revoke its own account's. It also removes the passkeys the account added while signed in, usually all but its first: pass `--no-cascade` to keep them.
 - `--user <ACCOUNT>`: Revoke this account's with `--all`, by username or ID.
 
   Accounts other than yours need `accounts:manage` and every grant the account has.
