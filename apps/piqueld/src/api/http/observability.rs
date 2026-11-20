@@ -1,5 +1,6 @@
 //! Diagnostics, daemon resources, deployment analytics, notification
 //! destinations and deliveries, and the audit trail.
+use super::access::Audited;
 use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use crate::auth::Identity;
 use axum::{Extension, extract::State, response::IntoResponse};
@@ -115,9 +116,12 @@ pub(super) async fn deliveries(
 pub(super) async fn retry_delivery(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(id): ApiPath<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    state.retry_notification(identity.actor(), &id).await?;
+    state
+        .retry_notification(audited.author(&identity), &id)
+        .await?;
     Ok(ok(true))
 }
 /// Lists notification destinations by name.
@@ -154,11 +158,16 @@ pub(super) async fn destinations(
 pub(super) async fn put_destination(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(name): ApiPath<String>,
     ApiJson(request): ApiJson<DestinationRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     Ok(ok(state
-        .put_notification_destination(identity.actor(), &DestinationName::parse(name)?, request)
+        .put_notification_destination(
+            audited.author(&identity),
+            &DestinationName::parse(name)?,
+            request,
+        )
         .await?))
 }
 /// Deletes a notification destination.
@@ -168,10 +177,11 @@ pub(super) async fn put_destination(
 pub(super) async fn delete_destination(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     ApiPath(name): ApiPath<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     state
-        .delete_notification_destination(identity.actor(), &DestinationName::parse(name)?)
+        .delete_notification_destination(audited.author(&identity), &DestinationName::parse(name)?)
         .await?;
     Ok(ok(true))
 }

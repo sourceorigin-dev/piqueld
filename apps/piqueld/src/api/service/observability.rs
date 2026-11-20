@@ -251,13 +251,13 @@ impl ApplicationService {
     /// Returns refusal, invalid destination, secret storage or storage failures.
     pub async fn put_notification_destination(
         &self,
-        actor: super::Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         name: &piqueld_core::observability::DestinationName,
         request: piqueld_core::observability::DestinationRequest,
     ) -> Result<piqueld_core::observability::NotificationDestination, ApplicationError> {
         Ok(self
             .store
-            .put_notification_destination(actor, name, request)
+            .put_notification_destination(author, name, request)
             .await?)
     }
     /// Deletes a notification destination.
@@ -265,12 +265,12 @@ impl ApplicationService {
     /// Returns refusal, absence or storage failures.
     pub async fn delete_notification_destination(
         &self,
-        actor: super::Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         name: &piqueld_core::observability::DestinationName,
     ) -> Result<(), ApplicationError> {
         Ok(self
             .store
-            .delete_notification_destination(actor, name)
+            .delete_notification_destination(author, name)
             .await?)
     }
     /// Requests another delivery attempt under the current configuration.
@@ -278,10 +278,10 @@ impl ApplicationService {
     /// Returns absent, disabled or invalid delivery errors.
     pub async fn retry_notification(
         &self,
-        actor: super::Actor<'_>,
+        author: impl Into<super::Author<'_>>,
         id: &str,
     ) -> Result<(), ApplicationError> {
-        Ok(self.store.retry_delivery(actor, id).await?)
+        Ok(self.store.retry_delivery(author, id).await?)
     }
 }
 
