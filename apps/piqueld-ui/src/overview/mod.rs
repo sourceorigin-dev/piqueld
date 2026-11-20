@@ -10,7 +10,7 @@ mod fixtures;
 mod format;
 mod notifications;
 
-pub use builds::{BuildList, build_arguments};
+pub use builds::{BuildList, OutputChunks, build_arguments};
 pub use dashboard::{ApplicationRow, EnvironmentRow, PreviewLoad};
 pub use format::Age;
 pub use notifications::{DestinationDraft, Receives};
