@@ -1,6 +1,7 @@
 //! Bounded deployment history. Every deploy, promotion, restore and refresh
 //! records a deployment, so without a bound history grows forever.
 use super::{Store, StoreError, days_ago_ms, now_ms};
+use piqueld_core::{ImagesConfig, RetentionConfig};
 
 /// Deployments pruned per transaction, so pruning never holds the writer long.
 const PRUNE_BATCH: usize = 1_000;
@@ -24,11 +25,11 @@ pub(super) struct DeploymentRetention {
 }
 
 impl DeploymentRetention {
-    pub(super) fn new(config: &piqueld_config::DaemonConfig) -> Self {
+    pub(super) fn new(retention: &RetentionConfig, images: &ImagesConfig) -> Self {
         Self {
-            days: config.retention.deployment_days,
-            per_environment: config.retention.deployments_per_environment,
-            succeeded: config.images.keep_deployments,
+            days: retention.deployment_days,
+            per_environment: retention.deployments_per_environment,
+            succeeded: images.keep_deployments,
         }
     }
 }

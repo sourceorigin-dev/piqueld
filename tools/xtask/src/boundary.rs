@@ -41,14 +41,16 @@ const BOUNDARIES: [Boundary; 4] = [
     Boundary {
         package: "piqueld-config",
         edges: "normal,build",
-        forbidden: &["bollard", "leptos", "sqlx", "piqueld"],
-        reason: "builds before the daemon's Docker, store, and server crates",
+        forbidden: &["bollard", "leptos", "sqlx", "piqueld", "piqueld-store"],
+        reason: "builds alongside the daemon's Docker and store crates, before its server",
     },
     Boundary {
         package: "piqueld-store",
-        edges: "normal,build",
-        forbidden: &["axum", "bollard", "leptos", "piqueld"],
-        reason: "builds alongside the daemon's Docker crate, without a server, Docker, or browser framework",
+        // Its tests must not reach for the configuration either, or a
+        // configuration change would rebuild them.
+        edges: "all",
+        forbidden: &["axum", "bollard", "leptos", "piqueld", "piqueld-config"],
+        reason: "builds alongside the daemon's configuration and Docker crates, without a server, Docker, or browser framework",
     },
     Boundary {
         package: "piqueld-docker",

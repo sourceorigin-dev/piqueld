@@ -27,7 +27,7 @@ impl Fixture {
         let store = Store::open_unsynced(temp.path().join("state.db"))
             .await
             .unwrap()
-            .with_build_history(piqueld_config::BuildHistoryConfig {
+            .with_build_history(piqueld_core::BuildHistoryConfig {
                 log_max_bytes: 70_000,
                 log_retention_days: 1,
             });

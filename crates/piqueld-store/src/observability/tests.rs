@@ -2,7 +2,6 @@
 use crate::testing::{credential, template, user};
 use crate::*;
 use crate::{Mutation, MutationResponse};
-use piqueld_config::DaemonConfig;
 use piqueld_core::Phase;
 use piqueld_core::observability::{
     ApplicationSelection, DeliveryState, DestinationKind, DestinationName, DestinationRequest,
@@ -583,12 +582,18 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
     for daemon in [false, true] {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("db");
-        let mut config = DaemonConfig::default();
-        config.retention.daemon_event_days = 1;
+        let retention = piqueld_core::RetentionConfig {
+            daemon_event_days: 1,
+            ..Default::default()
+        };
         let store = Store::open_unsynced(&path)
             .await
             .unwrap()
-            .with_observability(&config);
+            .with_observability(
+                &retention,
+                &piqueld_core::ImagesConfig::default(),
+                std::time::Duration::from_secs(60),
+            );
         notify(&store).await;
         let op = application(&store).await;
         let application = (!daemon).then_some(op.environment_id.as_str());
@@ -621,7 +626,11 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
         let store = Store::open_unsynced(&path)
             .await
             .unwrap()
-            .with_observability(&config);
+            .with_observability(
+                &retention,
+                &piqueld_core::ImagesConfig::default(),
+                std::time::Duration::from_secs(60),
+            );
         store.restart_failure_windows().await.unwrap();
         store
             .observe_condition(key, application, false, started + 150_000, 45_000)

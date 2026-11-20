@@ -14,6 +14,9 @@ mod view;
 pub use build::BuildConfig;
 use credential::Resolution;
 pub use credential::{Credential, CredentialError, CredentialFile};
+// The retention tables live in core so the store can read them without
+// depending on this crate.
+pub use piqueld_core::{BuildHistoryConfig, ImagesConfig, RetentionConfig};
 pub use telemetry::{Headers, HeadersError, OtlpEndpoint, TelemetryConfig};
 pub use tunnel::{TunnelConfig, TunnelConfigError, TunnelCredentials};
 
@@ -640,32 +643,6 @@ pub struct DnsConfig {
     pub providers: Vec<crate::dns::provider::DnsProviderConfig>,
 }
 
-/// How much output of each build is kept, and for how long. Builds
-/// themselves are listed until deployment history pruning removes their
-/// operation.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
-#[serde(default, deny_unknown_fields)]
-pub struct BuildHistoryConfig {
-    /// The most output kept per build, in bytes. Output within it is kept
-    /// whole. Of longer output, a build keeps the first half and the end,
-    /// with a note of how many bytes it left out between them when the note
-    /// fits.
-    #[schema(minimum = 1, maximum = 67_108_864)]
-    pub log_max_bytes: u32,
-    /// Days a build's output is kept after it finishes. The build stays
-    /// listed, marked as expired.
-    #[schema(minimum = 1, maximum = 3650)]
-    pub log_retention_days: u32,
-}
-impl Default for BuildHistoryConfig {
-    fn default() -> Self {
-        Self {
-            log_max_bytes: 4 * 1024 * 1024,
-            log_retention_days: 30,
-        }
-    }
-}
-
 /// Uploads of local worktrees by `piquelctl preview deploy --local`.
 // Kept apart from `[previews]`, whose limits the API also reports.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
@@ -707,29 +684,6 @@ impl Default for CheckoutsConfig {
                 std::num::NonZeroU64::new(4 * 1024 * 1024 * 1024)
                     .expect("the default checkout budget is not zero")
             },
-        }
-    }
-}
-
-/// Cleanup of the images this installation builds. Cleanup keeps what every
-/// environment and preview runs or is deploying, and removes the rest. It
-/// never removes pulled images, images built by hand, or images other
-/// installations built on the same Docker Engine.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
-#[serde(default, deny_unknown_fields)]
-pub struct ImagesConfig {
-    /// How many of each environment's latest successful deployments also
-    /// keep their images, so their releases can be deployed again.
-    pub keep_deployments: u32,
-    /// Seconds between cleanups. Cleanup also runs after each operation.
-    #[schema(minimum = 1, maximum = 86_400)]
-    pub cleanup_interval_seconds: u64,
-}
-impl Default for ImagesConfig {
-    fn default() -> Self {
-        Self {
-            keep_deployments: 3,
-            cleanup_interval_seconds: 3600,
         }
     }
 }
@@ -903,61 +857,6 @@ impl Default for ReconciliationConfig {
             scan_interval_seconds: 60,
             prepare_timeout_seconds: 300,
             convergence_timeout_seconds: 120,
-        }
-    }
-}
-
-/// How long history is kept. `0` keeps it forever.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
-#[serde(default, deny_unknown_fields)]
-pub struct RetentionConfig {
-    /// Days finished operations are kept; `0` keeps them forever. Older ones
-    /// are removed during reconciliation, except each environment's latest
-    /// operation and those in its deployment history or with job cleanup
-    /// pending.
-    pub finished_operation_days: u64,
-    /// Days each environment's deployment history is kept; `0` keeps it
-    /// forever. A deployment is removed only once it is older than this and
-    /// beyond the newest `deployments_per_environment`, never while it is
-    /// its environment's current or latest deployment, one of its newest
-    /// `images.keep_deployments` successful ones (at least one, even when
-    /// that is `0`, so automatic rollback has a target), one a remaining
-    /// deployment restored, or one whose jobs still need cleaning up. A preview keeps only its current and latest
-    /// deployments, its newest successful one, and those a remaining
-    /// deployment restored, of the deployments that finished over an hour
-    /// ago, however recent or few. Releases no remaining deployment uses
-    /// are removed beyond each application's newest 50, and build and job
-    /// records once their deployment is gone and their output expired, except
-    /// a build whose image a remaining build reused. `0`
-    /// here or in `deployments_per_environment` stops all of this pruning,
-    /// of previews, releases and build records too.
-    pub deployment_days: u64,
-    /// Deployments each environment keeps however old they are; `0` keeps
-    /// every deployment, release and build record, as for `deployment_days`.
-    pub deployments_per_environment: u32,
-    /// Days application events are kept; `0` keeps them forever. Deleting an
-    /// application also removes its events.
-    pub event_days: u64,
-    /// Days events not tied to an application, such as those about shared
-    /// infrastructure, are kept; `0` keeps them forever.
-    pub daemon_event_days: u64,
-    /// Days the audit trail of API requests is kept; `0` keeps it forever.
-    pub audit_days: u64,
-    /// Days each environment's traffic counts are kept; `0` keeps them
-    /// forever. Deleting an environment also removes its counts.
-    pub traffic_days: u64,
-}
-
-impl Default for RetentionConfig {
-    fn default() -> Self {
-        Self {
-            finished_operation_days: 10,
-            deployment_days: 90,
-            deployments_per_environment: 50,
-            event_days: 90,
-            daemon_event_days: 90,
-            audit_days: 365,
-            traffic_days: 90,
         }
     }
 }

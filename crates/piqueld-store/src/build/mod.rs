@@ -132,7 +132,7 @@ impl BuildRow {
 impl Store {
     /// Configures output retention and the per-build byte cap.
     #[must_use]
-    pub fn with_build_history(mut self, policy: piqueld_config::BuildHistoryConfig) -> Self {
+    pub fn with_build_history(mut self, policy: piqueld_core::BuildHistoryConfig) -> Self {
         self.build_history = policy;
         self
     }

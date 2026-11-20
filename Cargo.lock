@@ -2825,7 +2825,6 @@ dependencies = [
  "futures-util",
  "getrandom 0.3.4",
  "openssl",
- "piqueld-config",
  "piqueld-core",
  "rustix",
  "serde",
