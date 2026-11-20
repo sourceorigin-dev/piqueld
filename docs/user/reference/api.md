@@ -302,15 +302,16 @@ Apply and plan accept JSON `{ "manifest": ..., "expected_generation": 3,
 `X-Expected-Generation` and `X-Expected-Application-Id`.
 
 Every mutation of an application or one of its environments, except sync opt-ins,
-telemetry grants and previews, is conditioned on the inspected application revision. Apply, deploy, delete, [field edits](#field-endpoints), and environment
-creation require preconditions unless the endpoint is explicitly
+telemetry grants and previews, is conditioned on the inspected application revision. Apply, deploy, delete, [field edits](#field-endpoints), environment renames,
+and environment creation require preconditions unless the endpoint is explicitly
 called with the query parameter `force=true`. Missing preconditions return 400
 `precondition_required`. Apply requires generation zero to create an absent name,
 or both the inspected application ID and generation to update an existing name.
 Generation zero for a taken name returns 409 `application_name_collision`, as
 renaming to a taken name does.
 Deploy, delete and field edits require `expected_generation` in their query;
-environment creation, source changes and promotions take it in JSON.
+environment creation, environment renames, source changes and promotions take
+it in JSON.
 Revision mismatches return 409 `generation_conflict`; identity mismatches return
 409 `identity_conflict`. Checks and acceptance are atomic.
 

@@ -1,5 +1,5 @@
 //! Applications: listing, reading, applying and planning whole manifests,
-//! renaming, deletion, and manifest download. Mutations of applications and
+//! deletion, and manifest download. Mutations of applications and
 //! their environments are submitted through an `extract::Mutator`.
 use super::extract::{IdempotencyKey, ManifestUpload, Mutator};
 use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
