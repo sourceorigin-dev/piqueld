@@ -44,8 +44,12 @@ deploying it:
 POST /api/v1/environments/{id}/deploy generation 4 operation 0190…
 ```
 
-A secret's record names the secret, its new version and who may mount it,
-never its value.
+A secret's record names the secret, never its value, and what changed:
+
+- storing a value names its new version, and who may mount it when that
+  changes too;
+- regenerating a generated secret names its new version;
+- changing who may mount a stored secret names who may now.
 
 Other records are written in the background. If too many wait at once, or one
 can't be written, it's lost: the next record written then follows a **Failed**
