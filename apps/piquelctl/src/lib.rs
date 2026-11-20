@@ -81,32 +81,21 @@ pub async fn run() -> ExitCode {
                 .map(|()| ExitCode::SUCCESS);
         }
         profiles.resolve(&mut cli, &matches)?;
+        // Built before the supervisor's deadline can win, so timeout
+        // diagnostics can never echo rejected URL input.
+        let client = commands::build_client(&cli)?;
         match &cli.command {
-            cli::Command::Login { .. } => {
-                let client = commands::build_client(&cli)?;
-                auth::login(&cli, &client, &mut console).await?;
-            }
+            cli::Command::Login { .. } => auth::login(&cli, &client, &mut console).await?,
             // One request, bounded by the client's own timeout, so a timeout
             // still reports the resolved connection rather than dropping it.
-            cli::Command::Doctor => {
-                commands::doctor(&cli, &commands::build_client(&cli)?, &mut console).await?;
-            }
-            // Validate the endpoint before the supervisor's deadline can win,
-            // so timeout diagnostics can never echo rejected URL input.
+            cli::Command::Doctor => commands::doctor(&cli, &client, &mut console).await?,
             cli::Command::App {
                 command: cli::AppCommand::Exec(args),
-            } => {
-                let client = commands::build_client(&cli)?;
-                return run_with_timeout(&cli, args.run(&client)).await;
-            }
+            } => return run_with_timeout(&cli, args.run(&client)).await,
             cli::Command::Preview {
                 command: previews::PreviewCommand::Exec(args),
-            } => {
-                let client = commands::build_client(&cli)?;
-                return run_with_timeout(&cli, args.run(&client)).await;
-            }
+            } => return run_with_timeout(&cli, args.run(&client)).await,
             _ => {
-                let client = commands::build_client(&cli)?;
                 // Boxed: every command's state would otherwise be inlined here.
                 let command = Box::pin(commands::run(&cli, &client, &mut console));
                 run_with_timeout(&cli, command).await?;

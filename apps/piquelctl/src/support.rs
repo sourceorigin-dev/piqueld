@@ -4,6 +4,7 @@ use crate::{
     error::{CliError, ErrorKind, Result},
     output::Console,
 };
+use parking_lot::Mutex;
 use piqueld_client::ClientError;
 use rustix::termios::{LocalModes, OptionalActions, Termios, tcgetattr, tcsetattr};
 use serde_json::json;
@@ -13,10 +14,7 @@ use std::{
     io::{self, BufRead, IsTerminal, Read},
     num::NonZeroU64,
     path::{Path, PathBuf},
-    sync::{
-        Mutex, PoisonError,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::Duration,
 };
 use tokio::{sync::Notify, time};
@@ -98,7 +96,7 @@ static LAST_FAILURE: Mutex<Option<String>> = Mutex::new(None);
 
 impl Waiting {
     pub(crate) fn start() -> Self {
-        *LAST_FAILURE.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        *LAST_FAILURE.lock() = None;
         WAITING.store(WAITS.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
         INTERACTION_CHANGED.notify_one();
         Self
@@ -107,15 +105,12 @@ impl Waiting {
     /// Records `code`, a failure the current wait goes on through, so the
     /// timeout error can name it.
     pub(crate) fn failed(code: String) {
-        *LAST_FAILURE.lock().unwrap_or_else(PoisonError::into_inner) = Some(code);
+        *LAST_FAILURE.lock() = Some(code);
     }
 
     /// The code of the last failure the current wait went on through.
     pub(crate) fn last_failure() -> Option<String> {
-        LAST_FAILURE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        LAST_FAILURE.lock().clone()
     }
 
     /// The current wait's number; each wait gets a new one, so one starting
