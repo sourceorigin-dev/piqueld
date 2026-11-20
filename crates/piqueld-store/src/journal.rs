@@ -5,10 +5,11 @@ use piqueld_core::{EventDetail, Phase};
 use sqlx::{Sqlite, Transaction};
 
 /// Handle to one journaled runtime request, recorded in `active_actions` until
-/// finished. Lifecycle: `begin_action` (or `begin_application_action`), then
-/// `action_request` before each attempt, `action_retry` after a retryable
-/// failure, and finally `finish_action`. Actions left open by a crash are closed
-/// by `interrupt_actions` as `action_outcome_unknown`.
+/// finished. Lifecycle: `begin_action` (or `begin_daemon_action` or
+/// `begin_application_action`), then `action_request` before each attempt,
+/// `action_retry` after a retryable failure, `action_progress` with what it
+/// observes while it runs, and finally `finish_action`. Actions left open by a
+/// crash are closed by `interrupt_actions` as `action_outcome_unknown`.
 #[derive(Clone, Debug)]
 pub struct JournalAction {
     /// Stable action ID.
@@ -44,6 +45,37 @@ impl JournalAction {
             actor_credential_id: None,
             actor_operator_uid: None,
             actor_system: None,
+        }
+    }
+}
+/// A step of a [`JournalAction`]'s lifecycle, recorded as one event.
+enum Step<'a> {
+    /// `action_started`: the action was journaled.
+    Started,
+    /// `action_requested`: attempt `retry` is about to be sent.
+    Requested { retry: i64 },
+    /// `action_retry`: attempt `retry` failed with `diagnostic` and will be
+    /// retried, as `message` says.
+    Retry {
+        retry: i64,
+        diagnostic: &'a Diagnostic,
+        message: &'a str,
+    },
+    /// `action_progressed`: what the running action observed.
+    Progressed(&'a EventDetail),
+    /// `action_succeeded`, or `action_failed` with a diagnostic.
+    Finished(Option<&'a Diagnostic>),
+}
+impl Step<'_> {
+    /// The event's kind.
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Started => "action_started",
+            Self::Requested { .. } => "action_requested",
+            Self::Retry { .. } => "action_retry",
+            Self::Progressed(_) => "action_progressed",
+            Self::Finished(None) => "action_succeeded",
+            Self::Finished(Some(_)) => "action_failed",
         }
     }
 }
@@ -103,13 +135,13 @@ impl Store {
     pub async fn begin_application_action(
         &self,
         actor: Attribution<'_>,
-        application: &EnvironmentId,
+        environment: &EnvironmentId,
         phase: Phase,
         resource: Option<&str>,
     ) -> Result<JournalAction, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let action = JournalAction {
-            environment_id: Some(application.to_string()),
+            environment_id: Some(environment.to_string()),
             actor_user_id: actor.user_id.map(str::to_owned),
             actor_credential_id: actor.credential_id.map(str::to_owned),
             actor_operator_uid: actor.operator_uid().map(i64::from),
@@ -168,7 +200,7 @@ impl Store {
         .execute(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        Self::action_event_on(tx, action, "action_started", None, None, None, None).await
+        Self::action_event_on(tx, action, Step::Started).await
     }
     /// Records that attempt `retry` is about to be sent to the runtime.
     /// Fails with `StoreError::IllegalTransition` if the action is no longer active.
@@ -194,16 +226,7 @@ impl Store {
         if changed != 1 {
             return Err(StoreError::IllegalTransition);
         }
-        Self::action_event_on(
-            &mut tx,
-            action,
-            "action_requested",
-            Some(retry),
-            None,
-            None,
-            None,
-        )
-        .await?;
+        Self::action_event_on(&mut tx, action, Step::Requested { retry }).await?;
         tx.commit().await.map_err(StoreError::database)
     }
     /// Records a retryable failure and the backoff before the next attempt.
@@ -224,16 +247,12 @@ impl Store {
             diagnostic.summary,
             delay.as_millis()
         );
-        Self::action_event_on(
-            &mut tx,
-            action,
-            "action_retry",
-            Some(i64::from(retry)),
-            Some(diagnostic),
-            Some(&message),
-            None,
-        )
-        .await?;
+        let step = Step::Retry {
+            retry: i64::from(retry),
+            diagnostic,
+            message: &message,
+        };
+        Self::action_event_on(&mut tx, action, step).await?;
         let delay_ms = i64::try_from(delay.as_millis()).unwrap_or(i64::MAX);
         sqlx::query!(
             "UPDATE events SET retry_delay_ms=?1 WHERE id=last_insert_rowid()",
@@ -256,16 +275,7 @@ impl Store {
         detail: &EventDetail,
     ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        Self::action_event_on(
-            &mut tx,
-            action,
-            "action_progressed",
-            None,
-            None,
-            None,
-            Some(detail),
-        )
-        .await?;
+        Self::action_event_on(&mut tx, action, Step::Progressed(detail)).await?;
         tx.commit().await.map_err(StoreError::database)
     }
     /// Records the action's final outcome (`action_succeeded`, or
@@ -303,38 +313,34 @@ impl Store {
             }
             None => {}
         }
-        Self::action_event_on(
-            &mut tx,
-            action,
-            if diagnostic.is_some() {
-                "action_failed"
-            } else {
-                "action_succeeded"
-            },
-            None,
-            diagnostic.as_ref(),
-            None,
-            None,
-        )
-        .await?;
+        Self::action_event_on(&mut tx, action, Step::Finished(diagnostic.as_ref())).await?;
         sqlx::query!("DELETE FROM active_actions WHERE id=?1", action.id,)
             .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         tx.commit().await.map_err(StoreError::database)
     }
-    /// Appends an action lifecycle event to `events`. Daemon-scoped actions
-    /// force their diagnostic scope to `Daemon`; terminal kinds also record the
-    /// action's duration. `message` overrides the diagnostic summary.
+    /// Appends the event of `action`'s `step` to `events`. Daemon-scoped
+    /// actions force their diagnostic scope to `Daemon`; finished actions
+    /// also record their duration. A retry's message overrides its
+    /// diagnostic's summary.
     async fn action_event_on(
         tx: &mut Transaction<'_, Sqlite>,
         action: &JournalAction,
-        kind: &str,
-        retry: Option<i64>,
-        diagnostic: Option<&Diagnostic>,
-        message: Option<&str>,
-        detail: Option<&EventDetail>,
+        step: Step<'_>,
     ) -> Result<(), StoreError> {
+        let (kind, finished) = (step.kind(), matches!(step, Step::Finished(_)));
+        let (retry, diagnostic, message, detail) = match step {
+            Step::Started => (None, None, None, None),
+            Step::Requested { retry } => (Some(retry), None, None, None),
+            Step::Retry {
+                retry,
+                diagnostic,
+                message,
+            } => (Some(retry), Some(diagnostic), Some(message), None),
+            Step::Progressed(detail) => (None, None, None, Some(detail)),
+            Step::Finished(diagnostic) => (None, diagnostic, None, None),
+        };
         let diagnostic = diagnostic.cloned().map(|mut d| {
             if action.environment_id.is_none() {
                 d.scope = EventScope::Daemon;
@@ -343,8 +349,7 @@ impl Store {
         });
         let diagnostic = diagnostic.as_ref();
         let now = now_ms();
-        let duration = matches!(kind, "action_succeeded" | "action_failed")
-            .then_some(now.saturating_sub(action.started_at_ms));
+        let duration = finished.then_some(now.saturating_sub(action.started_at_ms));
         let scope = diagnostic
             .map_or(
                 if action.environment_id.is_some() {
