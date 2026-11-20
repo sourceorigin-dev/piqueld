@@ -47,23 +47,25 @@ pub struct Count(pub i64);
 
 impl fmt::Display for Count {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let n = self.0;
-        if formatter.alternate() && n.abs() >= 10_000 {
+        // Both forms format the magnitude and put the sign in front.
+        let sign = if self.0 < 0 { "-" } else { "" };
+        let n = self.0.unsigned_abs();
+        if formatter.alternate() && n >= 10_000 {
             // From 999,950 on, a thousand thousands round to a million.
-            let (unit, suffix) = if n.abs() >= 999_950 {
+            let (unit, suffix) = if n >= 999_950 {
                 (1_000_000, "M")
             } else {
                 (1_000, "K")
             };
             // Tenths of the unit, rounded half up; whole units drop the `.0`.
             let tenths = (n * 10 + unit / 2) / unit;
-            return if tenths % 10 == 0 {
-                write!(formatter, "{}{suffix}", tenths / 10)
+            return if tenths.is_multiple_of(10) {
+                write!(formatter, "{sign}{}{suffix}", tenths / 10)
             } else {
-                write!(formatter, "{}.{}{suffix}", tenths / 10, tenths % 10)
+                write!(formatter, "{sign}{}.{}{suffix}", tenths / 10, tenths % 10)
             };
         }
-        let digits = n.unsigned_abs().to_string();
+        let digits = n.to_string();
         let mut grouped = String::new();
         for (index, digit) in digits.chars().enumerate() {
             if index > 0 && (digits.len() - index).is_multiple_of(3) {
@@ -71,7 +73,7 @@ impl fmt::Display for Count {
             }
             grouped.push(digit);
         }
-        write!(formatter, "{}{grouped}", if n < 0 { "-" } else { "" })
+        write!(formatter, "{sign}{grouped}")
     }
 }
 
@@ -120,6 +122,9 @@ mod tests {
             (4_210_000, "4,210,000", "4.2M"),
             (999_960, "999,960", "1M"),
             (-1_000, "-1,000", "-1,000"),
+            (-12_940, "-12,940", "-12.9K"),
+            (-15_000, "-15,000", "-15K"),
+            (-4_210_000, "-4,210,000", "-4.2M"),
         ] {
             assert_eq!(Count(n).to_string(), full);
             assert_eq!(format!("{:#}", Count(n)), compact);
