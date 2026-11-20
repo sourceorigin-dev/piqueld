@@ -7,7 +7,7 @@ use piqueld_core::resource::{
     ObservedApplication, ResolutionSet, ResolvedApplication, compile_application,
     preview_resolution,
 };
-use piqueld_core::{ApplicationId, Plan, codes, parse_toml};
+use piqueld_core::{ApiErrorCode, ApplicationId, Plan, parse_toml};
 
 use super::{environment, instance, observed, resolutions, resolve_all};
 
@@ -91,7 +91,7 @@ fn jobs_add_their_environment_and_secrets_to_their_container_only() {
             .iter()
             .map(|error| (error.code.as_str(), error.resource.as_str()))
             .collect::<Vec<_>>(),
-        [(codes::SECRET_UNRESOLVED, "migrate")]
+        [(ApiErrorCode::SecretUnresolved.as_str(), "migrate")]
     );
 
     let mut pinned = resolutions();
@@ -262,7 +262,10 @@ fn previews_list_jobs_after_their_dependencies_and_warn_about_stopped_services()
             .iter()
             .map(|diagnostic| (diagnostic.code.as_str(), diagnostic.resource.as_str()))
             .collect::<Vec<_>>(),
-        [(piqueld_core::codes::JOB_STOPS_SERVICES, "migrate")]
+        [(
+            piqueld_core::ApiErrorCode::JobStopsServices.as_str(),
+            "migrate"
+        )]
     );
 
     // Unresolved sources leave only resolution actions, which jobs follow.
@@ -295,7 +298,7 @@ fn previews_list_jobs_after_their_dependencies_and_warn_about_stopped_services()
             .map(|diagnostic| (diagnostic.code.as_str(), diagnostic.message.as_str()))
             .collect::<Vec<_>>(),
         [(
-            piqueld_core::codes::JOB_STOPS_SERVICES,
+            piqueld_core::ApiErrorCode::JobStopsServices.as_str(),
             "job migrate stops web before it runs, until the rollout"
         )]
     );

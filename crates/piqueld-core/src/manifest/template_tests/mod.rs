@@ -2,7 +2,7 @@
 
 use super::variables::{Reference, Segment, SystemVariable};
 use super::*;
-use crate::{ApplicationId, EnvironmentName, codes};
+use crate::{ApiErrorCode, ApplicationId, EnvironmentName};
 use serde_json::{Value, json};
 
 mod rendering;
@@ -59,11 +59,16 @@ fn render(
     ))
 }
 
-fn codes_and_paths(errors: &ValidationErrors) -> Vec<(&str, &str)> {
+fn codes_and_paths(errors: &ValidationErrors) -> Vec<(ApiErrorCode, &str)> {
     errors
         .0
         .iter()
-        .map(|error| (error.code.as_str(), error.path.as_str()))
+        .map(|error| {
+            (
+                ApiErrorCode::parse(&error.code).unwrap(),
+                error.path.as_str(),
+            )
+        })
         .collect()
 }
 

@@ -5,7 +5,7 @@ use super::super::{
     Build, GitRepository, ManifestRevision, RepositoryManifest, Source, SourceRepository,
 };
 use super::{MAX_IDENTIFIER_BYTES, ValidationError, ValidationErrors, VariableMap};
-use crate::codes;
+use crate::ApiErrorCode;
 
 /// Build arguments are passed on the `docker build` command line, whose
 /// arguments and environment share the kernel's ~2 MiB `ARG_MAX`.
@@ -31,7 +31,7 @@ impl Build {
                 .is_some_and(|value| !valid_repository_path(&value))
             {
                 errors.push(ValidationError::new(
-                    codes::REPOSITORY_PATH_INVALID,
+                    ApiErrorCode::RepositoryPathInvalid,
                     format!("{path}.{field}"),
                     "path must be relative to the repository root and remain within it",
                 ));
@@ -45,7 +45,7 @@ impl Build {
             .sum();
         if total > MAX_BUILD_ARG_TOTAL_BYTES {
             errors.push(ValidationError::new(
-                codes::BUILD_ARG_TOTAL_EXCESSIVE,
+                ApiErrorCode::BuildArgTotalExcessive,
                 format!("{path}.args"),
                 format!("build arguments must total at most {MAX_BUILD_ARG_TOTAL_BYTES} bytes"),
             ));
@@ -56,7 +56,7 @@ impl Build {
             .is_some_and(|target| !valid_build_target(&target))
         {
             errors.push(ValidationError::new(
-                codes::BUILD_TARGET_INVALID,
+                ApiErrorCode::BuildTargetInvalid,
                 format!("{path}.target"),
                 format!(
                     "build target must start with a letter, use letters, digits, '-', '_', or '.', and be at most {MAX_IDENTIFIER_BYTES} bytes"
@@ -81,7 +81,7 @@ impl GitRepository {
             .any(|value| Template::mentions_reference(value))
         {
             errors.push(ValidationError::new(
-                codes::VARIABLE_NOT_ALLOWED,
+                ApiErrorCode::VariableNotAllowed,
                 path,
                 "repository URLs, branches, and commits cannot reference variables",
             ));
@@ -96,7 +96,7 @@ impl GitRepository {
         });
         if inline_credentials {
             errors.push(ValidationError::new(
-                codes::GIT_CREDENTIALS_INLINE,
+                ApiErrorCode::GitCredentialsInline,
                 path,
                 "configure Git credentials on the host, not in repository URLs",
             ));
@@ -107,7 +107,7 @@ impl GitRepository {
             || self.url.chars().any(char::is_control)
         {
             errors.push(ValidationError::new(
-                codes::GIT_REPOSITORY_INVALID,
+                ApiErrorCode::GitRepositoryInvalid,
                 path,
                 "repository URL must be a nonempty Git location",
             ));
@@ -150,7 +150,7 @@ impl ManifestRevision {
     /// Records that `path` needs a repository-backed manifest.
     pub(crate) fn unbacked(path: &str, errors: &mut Vec<ValidationError>) {
         errors.push(ValidationError::new(
-            codes::MANIFEST_REPOSITORY_REQUIRED,
+            ApiErrorCode::ManifestRepositoryRequired,
             path,
             "the manifest repository applies only when spec.manifest is configured",
         ));

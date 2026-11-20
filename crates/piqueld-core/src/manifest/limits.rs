@@ -3,7 +3,7 @@
 
 use super::validation::{MAX_CPU_MILLIS, REPLICAS};
 use super::{NormalizedApplication, ValidatedResourceLimits};
-use crate::{DiagnosticSeverity, PlanDiagnostic, codes};
+use crate::{ApiErrorCode, DiagnosticSeverity, PlanDiagnostic};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -96,7 +96,7 @@ impl PreviewLimits {
     pub(crate) fn bound(&self, application: &mut NormalizedApplication) -> Vec<PlanDiagnostic> {
         let mut warnings = Vec::new();
         for service in &mut application.spec.services {
-            let warning = |code: &str, message: String| {
+            let warning = |code: ApiErrorCode, message: String| {
                 PlanDiagnostic::new(
                     code,
                     DiagnosticSeverity::Warning,
@@ -119,7 +119,7 @@ impl PreviewLimits {
             }
             if !defaulted.is_empty() {
                 warnings.push(warning(
-                    codes::PREVIEW_LIMITS_DEFAULTED,
+                    ApiErrorCode::PreviewLimitsDefaulted,
                     format!(
                         "{} runs with the [previews] default of {}, since its manifest sets no limit",
                         service.name,
@@ -129,7 +129,7 @@ impl PreviewLimits {
             }
             if service.replicas > self.max_replicas {
                 warnings.push(warning(
-                    codes::PREVIEW_REPLICAS_CAPPED,
+                    ApiErrorCode::PreviewReplicasCapped,
                     format!(
                         "{} asks for {} replicas; previews run at most {} ([previews] max_replicas)",
                         service.name, service.replicas, self.max_replicas
@@ -222,9 +222,9 @@ cpu_millis = 2000
                 .map(|warning| (warning.resource.as_str(), warning.code.as_str()))
                 .collect::<Vec<_>>(),
             [
-                ("db", codes::PREVIEW_LIMITS_DEFAULTED),
-                ("web", codes::PREVIEW_LIMITS_DEFAULTED),
-                ("web", codes::PREVIEW_REPLICAS_CAPPED),
+                ("db", ApiErrorCode::PreviewLimitsDefaulted.as_str()),
+                ("web", ApiErrorCode::PreviewLimitsDefaulted.as_str()),
+                ("web", ApiErrorCode::PreviewReplicasCapped.as_str()),
             ]
         );
         assert_eq!(

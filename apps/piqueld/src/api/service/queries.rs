@@ -140,10 +140,10 @@ impl ApplicationService {
                 Ok(observed) => (observed, None),
                 Err(error) => {
                     tracing::warn!(%error, "environment detail observation failed");
-                    let diagnostic = DiagnosticView {
-                        code: piqueld_core::codes::RUNTIME_UNAVAILABLE.into(),
-                        message: "Runtime observation is unavailable. Saved configuration and deployment history are still available.".into(),
-                    };
+                    let diagnostic = DiagnosticView::new(
+                        piqueld_core::ApiErrorCode::RuntimeUnavailable,
+                        "Runtime observation is unavailable. Saved configuration and deployment history are still available.",
+                    );
                     (ObservedApplication::default(), Some(diagnostic))
                 }
             }

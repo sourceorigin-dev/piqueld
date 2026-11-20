@@ -14,7 +14,8 @@ use super::image_repository;
 use crate::manifest::domain::ValidatedSecretMount;
 use crate::manifest::{FileSource, NormalizedApplication, SourceRepository, ValidatedSource};
 use crate::{
-    BuildInputs, BuiltImage, ImageReference, ImmutableImage, RepositoryDigest, ServiceName, codes,
+    ApiErrorCode, BuildInputs, BuiltImage, ImageReference, ImmutableImage, RepositoryDigest,
+    ServiceName,
 };
 
 /// Immutable image resolution used by the Docker runtime.
@@ -204,7 +205,7 @@ impl ResolutionSet {
             .map(|requirement| match requirement {
                 ResolutionRequirement::ResolveImage { service, .. }
                 | ResolutionRequirement::BuildGit { service, .. } => CompileError::new(
-                    codes::SOURCE_UNRESOLVED,
+                    ApiErrorCode::SourceUnresolved,
                     service.as_str(),
                     "service source has not been resolved to an immutable image",
                 ),
@@ -216,7 +217,7 @@ impl ResolutionSet {
                     && app.files().get(path).is_none()
                 {
                     errors.push(CompileError::new(
-                        codes::FILE_UNRESOLVED,
+                        ApiErrorCode::FileUnresolved,
                         service.name.as_str(),
                         format!("repository file {path} was not captured with the manifest"),
                     ));
@@ -238,7 +239,7 @@ impl ResolutionSet {
             for secret in secrets {
                 if !self.secret_names.contains_key(&secret.name) {
                     errors.push(CompileError::new(
-                        codes::SECRET_UNRESOLVED,
+                        ApiErrorCode::SecretUnresolved,
                         owner,
                         format!("secret {} has not been pinned", secret.name),
                     ));
@@ -258,14 +259,14 @@ impl ResolutionSet {
             if !incompatible.is_empty() {
                 errors.extend(incompatible.into_iter().map(|field| {
                     CompileError::new(
-                        codes::RELEASE_INCOMPATIBLE,
+                        ApiErrorCode::ReleaseIncompatible,
                         format!("{}.{field}", service.name),
                         "renders differently in this environment than in the release, whose images were built from it",
                     )
                 }));
             } else if !resolved.resolves(&service.source) {
                 errors.push(CompileError::new(
-                    codes::SOURCE_RESOLUTION_MISMATCH,
+                    ApiErrorCode::SourceResolutionMismatch,
                     service.name.as_str(),
                     "resolved source does not immutably resolve the normalized service source",
                 ));

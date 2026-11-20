@@ -74,7 +74,7 @@ fn plan_shows_effective_rollouts_and_warns_about_overlapping_writers() {
     assert_eq!(
         (warning.code.as_str(), warning.resource.as_str()),
         (
-            piqueld_core::codes::ROLLOUT_START_FIRST_WRITABLE_VOLUME,
+            piqueld_core::ApiErrorCode::RolloutStartFirstWritableVolume.as_str(),
             "web"
         )
     );
@@ -107,7 +107,9 @@ fn automatic_rollback_warns_about_routed_services_without_health_checks() {
     assert_eq!(
         warnings(&routed, Rollback::Automatic),
         [(
-            piqueld_core::codes::ROLLBACK_WITHOUT_HEALTH_CHECK.to_owned(),
+            piqueld_core::ApiErrorCode::RollbackWithoutHealthCheck
+                .as_str()
+                .to_owned(),
             "web".to_owned()
         )]
     );
@@ -183,7 +185,8 @@ fn converged_services_need_no_work_and_delete_retains_volumes() {
     );
     assert!(foreign_deletion.is_blocked());
     assert!(foreign_deletion.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == piqueld_core::codes::UNOWNED_NAME_COLLISION && diagnostic.blocking
+        diagnostic.code == piqueld_core::ApiErrorCode::UnownedNameCollision.as_str()
+            && diagnostic.blocking
     }));
 }
 

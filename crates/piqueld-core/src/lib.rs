@@ -9,7 +9,6 @@ pub mod audit;
 pub mod auth;
 pub mod build_machine;
 mod changes;
-pub mod codes;
 pub mod docker_names;
 pub mod edit;
 pub mod environment;
@@ -33,6 +32,7 @@ pub mod timeline;
 pub mod toml_diagnostic;
 pub mod urls;
 
+pub use api::ApiErrorCode;
 pub use docker_names::{DockerConfigName, DockerNetworkName, DockerServiceName, DockerVolumeName};
 pub use environment::{EnvironmentKind, EnvironmentSource, Preview, PromotedFrom, TrackedBranch};
 pub use event::{Event, EventActor, EventDetail};

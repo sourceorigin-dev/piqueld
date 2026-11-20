@@ -28,12 +28,12 @@ fn references_allow_whitespace_and_escapes_while_shell_syntax_stays_text() {
         ))]
     );
     for (text, code) in [
-        ("${{ vars.domain", codes::TEMPLATE_INVALID),
-        ("${{ domain }}", codes::TEMPLATE_INVALID),
-        ("${{ vars. }}", codes::TEMPLATE_INVALID),
-        ("${{ secrets.token }}", codes::VARIABLE_RESERVED),
-        ("${{ var.domain }}", codes::VARIABLE_NAMESPACE_UNKNOWN),
-        ("${{ env.region }}", codes::VARIABLE_UNKNOWN),
+        ("${{ vars.domain", ApiErrorCode::TemplateInvalid),
+        ("${{ domain }}", ApiErrorCode::TemplateInvalid),
+        ("${{ vars. }}", ApiErrorCode::TemplateInvalid),
+        ("${{ secrets.token }}", ApiErrorCode::VariableReserved),
+        ("${{ var.domain }}", ApiErrorCode::VariableNamespaceUnknown),
+        ("${{ env.region }}", ApiErrorCode::VariableUnknown),
     ] {
         assert_eq!(
             Template::from(text).segments().unwrap_err().code(),
@@ -171,7 +171,7 @@ fn identifiers_and_reference_errors_have_bounded_precise_diagnostics() {
                 .segments()
                 .unwrap_err()
                 .code(),
-            codes::TEMPLATE_INVALID
+            ApiErrorCode::TemplateInvalid
         );
     }
     for variable in SystemVariable::ALL {

@@ -1178,7 +1178,10 @@ mod tests {
         let Err(StoreError::Validation(errors)) = store.save_prepared(&op, &target).await else {
             panic!("secret name conflict expected")
         };
-        assert_eq!(errors.0[0].code, piqueld_core::codes::SECRET_NAME_CONFLICT);
+        assert_eq!(
+            errors.0[0].code,
+            piqueld_core::ApiErrorCode::SecretNameConflict
+        );
         assert!(store.get(&production).await.unwrap().manifest().is_none());
     }
 
@@ -1216,6 +1219,9 @@ mod tests {
         else {
             panic!("secret name conflict expected")
         };
-        assert_eq!(errors.0[0].code, piqueld_core::codes::SECRET_NAME_CONFLICT);
+        assert_eq!(
+            errors.0[0].code,
+            piqueld_core::ApiErrorCode::SecretNameConflict
+        );
     }
 }

@@ -8,7 +8,7 @@ use crate::resource::{
     Convergence, DesiredJob, DesiredNetwork, DesiredService, DesiredVolume, ObservedApplication,
     ResolutionRequirement, ResolvedApplication,
 };
-use crate::{DockerServiceName, EnvironmentId, InstanceId, ServiceName, codes};
+use crate::{ApiErrorCode, DockerServiceName, EnvironmentId, InstanceId, ServiceName};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -374,7 +374,7 @@ impl PlanDiagnostic {
     #[must_use]
     pub fn telemetry_not_granted(service: &str) -> Self {
         Self::new(
-            codes::TELEMETRY_NOT_GRANTED,
+            ApiErrorCode::TelemetryNotGranted,
             DiagnosticSeverity::Warning,
             service,
             "this environment is not granted telemetry, so the service runs without the telemetry socket until `piquelctl env telemetry APP ENV on` grants it",
@@ -384,7 +384,7 @@ impl PlanDiagnostic {
     /// A diagnostic about `resource`. Only errors block execution.
     #[must_use]
     pub fn new(
-        code: &str,
+        code: ApiErrorCode,
         severity: DiagnosticSeverity,
         resource: impl Into<String>,
         message: impl Into<String>,
@@ -508,7 +508,7 @@ impl Plan {
     fn collision(&mut self, name: &str, seen: &mut BTreeSet<String>) {
         if seen.insert(name.into()) {
             self.diagnostics.push(PlanDiagnostic::new(
-                codes::UNOWNED_NAME_COLLISION,
+                ApiErrorCode::UnownedNameCollision,
                 DiagnosticSeverity::Error,
                 name,
                 "a same-name resource is not owned by this piqueld application and will not be changed",
@@ -520,7 +520,7 @@ impl Plan {
     /// settings drifted; Docker cannot update these in place.
     fn immutable_drift(&mut self, name: &str, resource: &str) {
         self.diagnostics.push(PlanDiagnostic::new(
-            codes::IMMUTABLE_CONFIGURATION_DRIFT,
+            ApiErrorCode::ImmutableConfigurationDrift,
             DiagnosticSeverity::Error,
             name,
             format!(
@@ -533,7 +533,7 @@ impl Plan {
     /// because this application does not own it.
     fn ignored(&mut self, name: &str) {
         self.diagnostics.push(PlanDiagnostic::new(
-            codes::FOREIGN_RESOURCE_IGNORED,
+            ApiErrorCode::ForeignResourceIgnored,
             DiagnosticSeverity::Info,
             name,
             "foreign or unowned resource is outside this plan",
@@ -544,7 +544,7 @@ impl Plan {
     /// the desired resources converge.
     fn cleanup_deferred(&mut self, name: &str, resource: &str) {
         self.diagnostics.push(PlanDiagnostic::new(
-            codes::CLEANUP_DEFERRED,
+            ApiErrorCode::CleanupDeferred,
             DiagnosticSeverity::Info,
             name,
             format!(
@@ -557,7 +557,7 @@ impl Plan {
     /// exporting environment's services are still attached to it.
     fn link_cleanup_deferred(&mut self, name: &str) {
         self.diagnostics.push(PlanDiagnostic::new(
-            codes::CLEANUP_DEFERRED,
+            ApiErrorCode::CleanupDeferred,
             DiagnosticSeverity::Info,
             name,
             "the link network remains until the exporting environment's services leave it",
@@ -928,7 +928,7 @@ impl Plan {
                         Convergence::Failed => {
                             ready = false;
                             self.diagnostics.push(PlanDiagnostic::new(
-                                codes::SERVICE_UPDATE_FAILED,
+                                ApiErrorCode::ServiceUpdateFailed,
                                 DiagnosticSeverity::Error,
                                 service.name.as_str(),
                                 "service update failed; inspect the operation and Docker task state",
@@ -1138,7 +1138,7 @@ impl Plan {
             .filter(|service| service.rollout_overlaps_writable_volume())
             .map(|service| {
                 PlanDiagnostic::new(
-                    codes::ROLLOUT_START_FIRST_WRITABLE_VOLUME,
+                    ApiErrorCode::RolloutStartFirstWritableVolume,
                     DiagnosticSeverity::Warning,
                     service.name.as_str(),
                     "start-first rollouts briefly run two tasks on the same writable volume; single-writer stores such as PostgreSQL or SQLite can corrupt their data",
@@ -1154,7 +1154,7 @@ impl Plan {
             })
             .map(|service| {
                 PlanDiagnostic::new(
-                    codes::ROLLBACK_WITHOUT_HEALTH_CHECK,
+                    ApiErrorCode::RollbackWithoutHealthCheck,
                     DiagnosticSeverity::Warning,
                     service.name.as_str(),
                     format!(
@@ -1202,7 +1202,7 @@ impl Plan {
                 ),
             };
             Some(PlanDiagnostic::new(
-                codes::IMPORT_UNCONNECTED,
+                ApiErrorCode::ImportUnconnected,
                 DiagnosticSeverity::Warning,
                 import.alias.as_str(),
                 reason,
@@ -1273,7 +1273,7 @@ impl Plan {
                 .collect::<Vec<_>>();
             (!services.is_empty()).then(|| {
                 PlanDiagnostic::new(
-                    codes::JOB_STOPS_SERVICES,
+                    ApiErrorCode::JobStopsServices,
                     DiagnosticSeverity::Warning,
                     job.name.as_str(),
                     format!(

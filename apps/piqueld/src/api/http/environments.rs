@@ -20,8 +20,8 @@ use piqueld_core::api::{
 };
 use piqueld_core::sync::EnvironmentSyncRequest;
 use piqueld_core::{
-    ApplicationId, EnvironmentId, EnvironmentName, ReleaseId, TrackedBranch, ValidationErrors,
-    codes,
+    ApiErrorCode, ApplicationId, EnvironmentId, EnvironmentName, ReleaseId, TrackedBranch,
+    ValidationErrors,
 };
 
 /// Adds an environment to an application.
@@ -297,14 +297,14 @@ fn tracked_branch(branch: String, commit: Option<String>) -> Result<TrackedBranc
     TrackedBranch::new(branch, commit).map_err(|ValidationErrors(errors)| {
         let code = if errors
             .iter()
-            .any(|error| error.code == codes::GIT_BRANCH_INVALID)
+            .any(|error| error.code == ApiErrorCode::GitBranchInvalid)
         {
-            codes::GIT_BRANCH_INVALID
+            ApiErrorCode::GitBranchInvalid
         } else {
-            codes::GIT_COMMIT_INVALID
+            ApiErrorCode::GitCommitInvalid
         };
         let messages: Vec<_> = errors.into_iter().map(|error| error.message).collect();
-        ApiError::new(StatusCode::BAD_REQUEST, code, messages.join("; "))
+        ApiError::new(StatusCode::BAD_REQUEST, code.as_str(), messages.join("; "))
     })
 }
 

@@ -361,7 +361,7 @@ async fn previews_render_variables_for_the_selected_environment() {
     assert_eq!(
         (errors.0[0].code.as_str(), errors.0[0].path.as_str()),
         (
-            piqueld_core::codes::VARIABLE_VALUE_MISSING,
+            "variable_value_missing",
             "spec.services[0].environment.LEVEL"
         )
     );

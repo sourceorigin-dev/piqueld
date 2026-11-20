@@ -5,7 +5,8 @@ use piqueld_core::manifest::{
 };
 use piqueld_core::resource::{ResolvedSource, Sha256Digest};
 use piqueld_core::{
-    ApplicationId, EnvironmentId, InstanceId, ResolutionSet, codes, compile_application, parse_json,
+    ApiErrorCode, ApplicationId, EnvironmentId, InstanceId, ResolutionSet, compile_application,
+    parse_json,
 };
 
 fn manifest() -> serde_json::Value {
@@ -154,22 +155,22 @@ fn docker_build_arguments_and_target_validate_and_are_part_of_source_identity() 
         (
             "args",
             serde_json::json!({"1BAD": "x"}),
-            codes::BUILD_ARG_NAME_INVALID,
+            ApiErrorCode::BuildArgNameInvalid,
         ),
         (
             "args",
             serde_json::json!({"OK": "a\0b"}),
-            codes::BUILD_ARG_VALUE_INVALID,
+            ApiErrorCode::BuildArgValueInvalid,
         ),
         (
             "args",
             (0..5)
                 .map(|index| (format!("A{index}"), "x".repeat(60_000)))
                 .collect(),
-            codes::BUILD_ARG_TOTAL_EXCESSIVE,
+            ApiErrorCode::BuildArgTotalExcessive,
         ),
-        ("target", "--push".into(), codes::BUILD_TARGET_INVALID),
-        ("target", "".into(), codes::BUILD_TARGET_INVALID),
+        ("target", "--push".into(), ApiErrorCode::BuildTargetInvalid),
+        ("target", "".into(), ApiErrorCode::BuildTargetInvalid),
     ] {
         let mut invalid = valid.clone();
         invalid["spec"]["services"][0]["source"]["build"][field] = value.clone();

@@ -5,7 +5,7 @@ use super::input::{
 };
 use super::variables::{Template, Typed};
 use super::{RolloutPolicy, ValidatedRollout, ValidationError, ValidationErrors};
-use crate::{ApplicationName, JobName, ServiceName, VolumeName, codes};
+use crate::{ApiErrorCode, ApplicationName, JobName, ServiceName, VolumeName};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use utoipa::ToSchema;
@@ -430,7 +430,7 @@ pub struct ValidatedMount {
 impl ValidationErrors {
     /// Wraps a typed name parse failure as a single `NAME_INVALID` error at `path`.
     pub(super) fn invalid_name(path: impl Into<String>, source: impl std::fmt::Display) -> Self {
-        ValidationError::new(codes::NAME_INVALID, path, source.to_string()).into()
+        ValidationError::new(ApiErrorCode::NameInvalid, path, source.to_string()).into()
     }
 
     /// Parses `value` into the typed name `N`, wrapping a failure as a single
@@ -449,7 +449,7 @@ impl ValidationError {
     /// A value at `path` that still references variables.
     pub(super) fn unresolved(path: impl Into<String>) -> Self {
         Self::new(
-            codes::VARIABLE_UNRESOLVED,
+            ApiErrorCode::VariableUnresolved,
             path,
             "references must be rendered for an environment first",
         )

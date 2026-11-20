@@ -8,7 +8,7 @@
 //! [`super::NormalizedApplication`].
 
 use super::{ApplicationSpec, RepositoryManifest, ValidationError, input::Variable};
-use crate::{EnvironmentName, PreviewSlug, codes, names::string_enum};
+use crate::{ApiErrorCode, EnvironmentName, PreviewSlug, names::string_enum};
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -129,7 +129,7 @@ impl Template {
         &self,
         path: &str,
         errors: &mut Vec<ValidationError>,
-        problem: impl Fn(Reference) -> Option<(&'static str, String)>,
+        problem: impl Fn(Reference) -> Option<(ApiErrorCode, String)>,
     ) {
         match self.segments() {
             Err(source) => errors.push(source.at(path)),
@@ -235,11 +235,11 @@ impl Reference {
     }
 
     /// The error for `git.*` unless the manifest is repository-backed.
-    fn unavailable(&self, repository: bool) -> Option<(&'static str, String)> {
+    fn unavailable(&self, repository: bool) -> Option<(ApiErrorCode, String)> {
         matches!(self, Self::System(variable) if variable.needs_repository() && !repository).then(
             || {
                 (
-                    codes::VARIABLE_UNAVAILABLE,
+                    ApiErrorCode::VariableUnavailable,
                     format!("{self} is only set when spec.manifest is configured"),
                 )
             },
@@ -308,12 +308,12 @@ pub enum TemplateError {
 impl TemplateError {
     /// The stable validation code for this error.
     #[must_use]
-    pub const fn code(&self) -> &'static str {
+    pub const fn code(&self) -> ApiErrorCode {
         match self {
-            Self::Unterminated | Self::Malformed(_) => codes::TEMPLATE_INVALID,
-            Self::Reserved(_) => codes::VARIABLE_RESERVED,
-            Self::UnknownNamespace(_) => codes::VARIABLE_NAMESPACE_UNKNOWN,
-            Self::UnknownSystemVariable(_) => codes::VARIABLE_UNKNOWN,
+            Self::Unterminated | Self::Malformed(_) => ApiErrorCode::TemplateInvalid,
+            Self::Reserved(_) => ApiErrorCode::VariableReserved,
+            Self::UnknownNamespace(_) => ApiErrorCode::VariableNamespaceUnknown,
+            Self::UnknownSystemVariable(_) => ApiErrorCode::VariableUnknown,
         }
     }
 
@@ -829,14 +829,14 @@ impl ApplicationSpec {
                 .any(|config| config.variables.len() > MAX_VARIABLES)
         {
             errors.push(ValidationError::new(
-                codes::VARIABLE_COUNT_EXCESSIVE,
+                ApiErrorCode::VariableCountExcessive,
                 "spec.variables",
                 format!("each variables table may declare at most {MAX_VARIABLES} variables"),
             ));
         }
         if self.environments.len() > MAX_ENVIRONMENTS {
             errors.push(ValidationError::new(
-                codes::VARIABLE_COUNT_EXCESSIVE,
+                ApiErrorCode::VariableCountExcessive,
                 "spec.environments",
                 format!("at most {MAX_ENVIRONMENTS} environments may be configured"),
             ));
@@ -844,7 +844,7 @@ impl ApplicationSpec {
         for (path, name, value) in self.declarations() {
             if !valid_identifier(name) {
                 errors.push(ValidationError::new(
-                    codes::VARIABLE_NAME_INVALID,
+                    ApiErrorCode::VariableNameInvalid,
                     &path,
                     "variable names start with a letter or `_` and use letters, digits, `_`, or `-`, at most 63 bytes",
                 ));
@@ -854,14 +854,14 @@ impl ApplicationSpec {
             };
             if template.as_str().len() > MAX_VALUE_BYTES {
                 errors.push(ValidationError::new(
-                    codes::VARIABLE_VALUE_EXCESSIVE,
+                    ApiErrorCode::VariableValueExcessive,
                     &path,
                     format!("variable values must be at most {MAX_VALUE_BYTES} bytes"),
                 ));
             }
             template.check(&path, errors, |reference| match reference {
                 Reference::Variable(_) => Some((
-                    codes::VARIABLE_NOT_ALLOWED,
+                    ApiErrorCode::VariableNotAllowed,
                     format!("variables may reference system variables, but not {reference}"),
                 )),
                 Reference::System(_) => reference.unavailable(repository),
@@ -884,7 +884,7 @@ impl ApplicationSpec {
             };
             template.check(path, errors, |reference| match reference {
                 Reference::Variable(name) if !declared.contains(&name) => Some((
-                    codes::VARIABLE_UNDECLARED,
+                    ApiErrorCode::VariableUndeclared,
                     format!(
                         "vars.{name} is not declared in [spec.variables], any [spec.environments.<name>.variables], or [spec.previews.variables]"
                     ),
@@ -1026,15 +1026,15 @@ impl<'a> Scope<'a> {
             let target = &self.context.target;
             let (code, message) = match reference {
                 Reference::Variable(_) => (
-                    codes::VARIABLE_VALUE_MISSING,
+                    ApiErrorCode::VariableValueMissing,
                     format!("{reference} has no value for {target}"),
                 ),
                 Reference::System(SystemVariable::DeploymentId) => (
-                    codes::VARIABLE_UNAVAILABLE,
+                    ApiErrorCode::VariableUnavailable,
                     format!("{reference} is only set when deploying {target}"),
                 ),
                 Reference::System(_) => (
-                    codes::VARIABLE_UNAVAILABLE,
+                    ApiErrorCode::VariableUnavailable,
                     format!(
                         "{reference} is only set for repository-backed deployments of {target}"
                     ),
@@ -1071,7 +1071,7 @@ impl<'a> Scope<'a> {
             self.rendered.set(rendered + part.len());
             if rendered + part.len() > MAX_RENDERED_BYTES {
                 errors.push(ValidationError::new(
-                    codes::VARIABLE_VALUE_EXCESSIVE,
+                    ApiErrorCode::VariableValueExcessive,
                     path,
                     format!("the manifest renders to more than {MAX_RENDERED_BYTES} bytes of text"),
                 ));
@@ -1104,7 +1104,7 @@ impl<'a> Scope<'a> {
                     let shown = value.to_string();
                     if let Err(expected) = typed.set(value) {
                         errors.push(ValidationError::new(
-                            codes::VARIABLE_TYPE_INVALID,
+                            ApiErrorCode::VariableTypeInvalid,
                             path,
                             format!("renders to {}, expected {expected}", echo(&shown)),
                         ));

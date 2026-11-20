@@ -9,7 +9,7 @@ use super::{
     MAX_CPU_MILLIS, REPLICAS, ValidationError, VariableMap, lacks_executable, safe_key_echo,
     valid_image_reference, valid_repository_path, validate_name, validate_process_arguments,
 };
-use crate::codes;
+use crate::ApiErrorCode;
 use std::collections::BTreeSet;
 
 const MAX_MOUNTS_PER_SERVICE: usize = 32;
@@ -42,7 +42,7 @@ impl Service {
             .is_some_and(|replicas| !REPLICAS.contains(replicas))
         {
             errors.push(ValidationError::new(
-                codes::REPLICAS_OUT_OF_RANGE,
+                ApiErrorCode::ReplicasOutOfRange,
                 format!("{base}.replicas"),
                 format!(
                     "replicas must be between {} and {}",
@@ -57,7 +57,7 @@ impl Service {
                 .is_some_and(|image| !valid_image_reference(&image))
         {
             errors.push(ValidationError::new(
-                codes::IMAGE_INVALID,
+                ApiErrorCode::ImageInvalid,
                 format!("{base}.source.image"),
                 "image must be a valid registry reference without credentials or a URL scheme",
             ));
@@ -75,13 +75,13 @@ impl Service {
         validate_process_arguments(
             &self.command,
             &format!("{base}.command"),
-            codes::PROCESS_COMMAND_EXCESSIVE,
+            ApiErrorCode::ProcessCommandExcessive,
             errors,
         );
         validate_process_arguments(
             &self.arguments,
             &format!("{base}.arguments"),
-            codes::PROCESS_ARGUMENTS_EXCESSIVE,
+            ApiErrorCode::ProcessArgumentsExcessive,
             errors,
         );
         if self
@@ -91,7 +91,7 @@ impl Service {
             .is_some_and(|value| value.trim().is_empty())
         {
             errors.push(ValidationError::new(
-                codes::PROCESS_COMMAND_INVALID,
+                ApiErrorCode::ProcessCommandInvalid,
                 format!("{base}.command[0]"),
                 "an explicit container command must start with a non-empty executable",
             ));
@@ -119,7 +119,7 @@ impl Service {
         let files = &self.files;
         if files.len() > ServiceFile::MAX_PER_SERVICE {
             errors.push(ValidationError::new(
-                codes::FILE_COUNT_EXCESSIVE,
+                ApiErrorCode::FileCountExcessive,
                 format!("{base}.files"),
                 format!(
                     "a service must mount at most {} files",
@@ -141,7 +141,7 @@ impl Service {
                 || !targets.insert(&file.target)
             {
                 errors.push(ValidationError::new(
-                    codes::FILE_TARGET_INVALID,
+                    ApiErrorCode::FileTargetInvalid,
                     format!("{path}.target"),
                     format!(
                         "file targets must be unique among the service's mount, secret, and file targets, contain none of them, and stay clear of {}",
@@ -151,22 +151,22 @@ impl Service {
             }
             let (code, field, message) = match &file.source {
                 FileSource::Path(_) if !manifest_backed => (
-                    codes::FILE_REQUIRES_REPOSITORY,
+                    ApiErrorCode::FileRequiresRepository,
                     "path",
                     "only applications whose manifest comes from a repository can mount repository files; set content instead".to_owned(),
                 ),
                 FileSource::Path(relative) if !valid_repository_path(relative) => (
-                    codes::REPOSITORY_PATH_INVALID,
+                    ApiErrorCode::RepositoryPathInvalid,
                     "path",
                     "file path must remain within the repository root".to_owned(),
                 ),
                 FileSource::Content(content) if content.is_empty() => (
-                    codes::FILE_EMPTY,
+                    ApiErrorCode::FileEmpty,
                     "content",
                     "file content cannot be empty".to_owned(),
                 ),
                 FileSource::Content(content) if content.len() > ServiceFile::MAX_BYTES => (
-                    codes::FILE_TOO_LARGE,
+                    ApiErrorCode::FileTooLarge,
                     "content",
                     format!(
                         "file content must be at most {} bytes",
@@ -195,7 +195,7 @@ impl Service {
         let mut targets = BTreeSet::new();
         if mounts.len() > MAX_MOUNTS_PER_SERVICE {
             errors.push(ValidationError::new(
-                codes::MOUNT_COUNT_EXCESSIVE,
+                ApiErrorCode::MountCountExcessive,
                 format!("{base}.mounts"),
                 format!("a service must declare at most {MAX_MOUNTS_PER_SERVICE} mounts"),
             ));
@@ -204,7 +204,7 @@ impl Service {
             let path = format!("{base}.mounts[{index}]");
             if !volume_names.contains(&mount.volume) {
                 errors.push(ValidationError::new(
-                    codes::MOUNT_VOLUME_MISSING,
+                    ApiErrorCode::MountVolumeMissing,
                     format!("{path}.volume"),
                     "mount references an undeclared volume",
                 ));
@@ -218,7 +218,7 @@ impl Service {
             ] {
                 if mount.target == reserved || mount.target.starts_with(&format!("{reserved}/")) {
                     errors.push(ValidationError::new(
-                        codes::MOUNT_TARGET_UNSAFE,
+                        ApiErrorCode::MountTargetUnsafe,
                         format!("{path}.target"),
                         format!("mount target {reserved} is reserved for piqueld's {purpose}"),
                     ));
@@ -226,7 +226,7 @@ impl Service {
             }
             if !targets.insert(mount.target.clone()) {
                 errors.push(ValidationError::new(
-                    codes::MOUNT_TARGET_DUPLICATE,
+                    ApiErrorCode::MountTargetDuplicate,
                     format!("{path}.target"),
                     "mount target is duplicated in this service",
                 ));
@@ -245,7 +245,7 @@ impl super::super::Rollout {
             .is_some_and(|seconds| !(1..=ValidatedRollout::MAX_MONITOR_SECONDS).contains(seconds))
         {
             errors.push(ValidationError::new(
-                codes::ROLLOUT_MONITOR_INVALID,
+                ApiErrorCode::RolloutMonitorInvalid,
                 format!("{base}.rollout.monitor_seconds"),
                 format!(
                     "rollout monitor must be between 1 and {} seconds",
@@ -275,7 +275,7 @@ impl SecretMount {
             validate_absolute_path(&secret.target, &format!("{path}.target"), errors);
             if !secret.target.starts_with("/run/secrets/") || !targets.insert(&secret.target) {
                 errors.push(ValidationError::new(
-                    codes::SECRET_TARGET_INVALID,
+                    ApiErrorCode::SecretTargetInvalid,
                     &path,
                     "secret targets must be unique file paths under /run/secrets",
                 ));
@@ -283,7 +283,7 @@ impl SecretMount {
         }
         if secrets.len() > MAX_SECRET_MOUNTS {
             errors.push(ValidationError::new(
-                codes::SECRETS_EXCESSIVE,
+                ApiErrorCode::SecretsExcessive,
                 base,
                 format!("at most {MAX_SECRET_MOUNTS} secret file mounts per service or job"),
             ));
@@ -297,7 +297,7 @@ impl ResourceLimits {
     pub(super) fn validate(&self, base: &str, errors: &mut Vec<ValidationError>) {
         if self.cpu_millis.is_none() && self.memory_bytes.is_none() {
             errors.push(ValidationError::new(
-                codes::RESOURCE_LIMITS_EMPTY,
+                ApiErrorCode::ResourceLimitsEmpty,
                 format!("{base}.resources"),
                 "resource limits must configure CPU, memory, or both",
             ));
@@ -306,14 +306,14 @@ impl ResourceLimits {
         let memory_bytes = self.memory_bytes.as_ref().and_then(Typed::literal);
         if cpu_millis == Some(&0) {
             errors.push(ValidationError::new(
-                codes::CPU_LIMIT_INVALID,
+                ApiErrorCode::CpuLimitInvalid,
                 format!("{base}.resources.cpu_millis"),
                 "CPU limit must be greater than zero",
             ));
         }
         if cpu_millis.is_some_and(|value| *value > MAX_CPU_MILLIS) {
             errors.push(ValidationError::new(
-                codes::CPU_LIMIT_EXCESSIVE,
+                ApiErrorCode::CpuLimitExcessive,
                 format!("{base}.resources.cpu_millis"),
                 format!("CPU limit must be at most {MAX_CPU_MILLIS} millicores"),
             ));
@@ -322,7 +322,7 @@ impl ResourceLimits {
             || memory_bytes.is_some_and(|value| i64::try_from(*value).is_err())
         {
             errors.push(ValidationError::new(
-                codes::MEMORY_LIMIT_INVALID,
+                ApiErrorCode::MemoryLimitInvalid,
                 format!("{base}.resources.memory_bytes"),
                 "memory limit must be greater than zero and fit the runtime value",
             ));
@@ -343,7 +343,7 @@ impl Job {
         for key in self.environment.keys() {
             if service.environment.contains_key(key) {
                 errors.push(ValidationError::new(
-                    codes::JOB_SETTING_CONFLICT,
+                    ApiErrorCode::JobSettingConflict,
                     format!("{base}.environment.name"),
                     format!(
                         "environment key {} is already set by service {}",
@@ -364,7 +364,7 @@ impl Job {
         for (index, secret) in self.secrets.iter().enumerate() {
             if service_targets.contains(&secret.target) {
                 errors.push(ValidationError::new(
-                    codes::JOB_SETTING_CONFLICT,
+                    ApiErrorCode::JobSettingConflict,
                     format!("{base}.secrets[{index}].target"),
                     format!(
                         "{} is already mounted by service {}",
@@ -394,7 +394,7 @@ impl Job {
             .collect::<BTreeSet<_>>();
         if volumes.is_empty() {
             errors.push(ValidationError::new(
-                codes::JOB_VOLUME_ACCESS_INVALID,
+                ApiErrorCode::JobVolumeAccessInvalid,
                 format!("{base}.volume_access"),
                 format!(
                     "exclusive volume access requires service {} to mount a writable volume",
@@ -409,7 +409,7 @@ impl Job {
             .filter(|(_, mount)| volumes.contains(mount.volume.as_str()))
         {
             errors.push(ValidationError::new(
-                codes::JOB_VOLUME_ACCESS_INVALID,
+                ApiErrorCode::JobVolumeAccessInvalid,
                 format!("{base}.volume_access"),
                 format!(
                     "startup dependency {} mounts volume {}, which job {} needs exclusively",
@@ -436,7 +436,7 @@ impl HealthCheck {
             } => {
                 if port.literal() == Some(&0) {
                     errors.push(ValidationError::new(
-                        codes::PORT_INVALID,
+                        ApiErrorCode::PortInvalid,
                         format!("{path}.port"),
                         "health-check port must be between 1 and 65535",
                     ));
@@ -457,7 +457,7 @@ impl HealthCheck {
                         .any(|character| character.is_whitespace() || character.is_control())
                 {
                     errors.push(ValidationError::new(
-                        codes::HEALTHCHECK_PATH_INVALID,
+                        ApiErrorCode::HealthcheckPathInvalid,
                         format!("{path}.path"),
                         "HTTP health-check path must start with / and contain no whitespace",
                     ));
@@ -470,7 +470,7 @@ impl HealthCheck {
                         .any(|value| value.as_literal().is_some_and(|value| value.contains('\0')))
                 {
                     errors.push(ValidationError::new(
-                        codes::HEALTHCHECK_COMMAND_INVALID,
+                        ApiErrorCode::HealthcheckCommandInvalid,
                         format!("{path}.command"),
                         "health-check command must contain at least one NUL-free argument",
                     ));
@@ -478,7 +478,7 @@ impl HealthCheck {
                 validate_process_arguments(
                     command,
                     &format!("{path}.command"),
-                    codes::PROCESS_COMMAND_EXCESSIVE,
+                    ApiErrorCode::ProcessCommandExcessive,
                     errors,
                 );
             }
@@ -499,7 +499,7 @@ impl HealthCheck {
             .is_some_and(|&start_period| start_period > MAX_HEALTHCHECK_START_PERIOD_SECONDS)
         {
             errors.push(ValidationError::new(
-                codes::HEALTHCHECK_START_PERIOD_EXCESSIVE,
+                ApiErrorCode::HealthcheckStartPeriodExcessive,
                 format!("{path}.start_period_seconds"),
                 format!(
                     "health-check start period must be at most {MAX_HEALTHCHECK_START_PERIOD_SECONDS} seconds"
@@ -511,7 +511,7 @@ impl HealthCheck {
             .is_some_and(|retries| !HEALTHCHECK_RETRIES.contains(retries))
         {
             errors.push(ValidationError::new(
-                codes::HEALTHCHECK_RETRIES_INVALID,
+                ApiErrorCode::HealthcheckRetriesInvalid,
                 format!("{path}.retries"),
                 format!(
                     "health-check retries must be between {} and {}",
@@ -526,14 +526,14 @@ impl HealthCheck {
         };
         if interval == 0 {
             errors.push(ValidationError::new(
-                codes::HEALTHCHECK_INTERVAL_INVALID,
+                ApiErrorCode::HealthcheckIntervalInvalid,
                 format!("{path}.interval_seconds"),
                 "health-check interval must be greater than zero",
             ));
         }
         if interval > MAX_HEALTHCHECK_INTERVAL_SECONDS {
             errors.push(ValidationError::new(
-            codes::HEALTHCHECK_INTERVAL_EXCESSIVE,
+            ApiErrorCode::HealthcheckIntervalExcessive,
             format!("{path}.interval_seconds"),
             format!(
                 "health-check interval must be at most {MAX_HEALTHCHECK_INTERVAL_SECONDS} seconds"
@@ -542,7 +542,7 @@ impl HealthCheck {
         }
         if interval > 0 && timeout.is_some_and(|&timeout| timeout == 0 || timeout > interval) {
             errors.push(ValidationError::new(
-                codes::HEALTHCHECK_TIMEOUT_INVALID,
+                ApiErrorCode::HealthcheckTimeoutInvalid,
                 format!("{path}.timeout_seconds"),
                 "health-check timeout must be greater than zero and no longer than its interval",
             ));
@@ -556,7 +556,7 @@ fn validate_absolute_path(value: &str, path: &str, errors: &mut Vec<ValidationEr
     let components = value.split('/').skip(1);
     if Template::mentions_reference(value) {
         errors.push(ValidationError::new(
-            codes::VARIABLE_NOT_ALLOWED,
+            ApiErrorCode::VariableNotAllowed,
             path,
             "container paths cannot reference variables",
         ));
@@ -571,7 +571,7 @@ fn validate_absolute_path(value: &str, path: &str, errors: &mut Vec<ValidationEr
             .any(|part| part.is_empty() || part.len() > 255 || part == ".." || part == ".")
     {
         errors.push(ValidationError::new(
-            codes::MOUNT_TARGET_UNSAFE,
+            ApiErrorCode::MountTargetUnsafe,
             path,
             "mount target must be an absolute, normalized container path below root",
         ));

@@ -57,8 +57,6 @@ mod sse;
 pub use piqueld_core::access;
 /// Audit trail contracts.
 pub use piqueld_core::audit;
-/// Stable API error and diagnostic codes.
-pub use piqueld_core::codes;
 /// Typed saved-configuration editing contracts.
 pub use piqueld_core::edit;
 /// Private links between applications.
@@ -84,7 +82,7 @@ pub use environments::{
 };
 /// Request size and page size limits the daemon enforces.
 pub use piqueld_core::api::{
-    DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_REQUEST_BODY_BYTES, MAX_SECRET_VALUE_BYTES,
+    ApiErrorCode, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_REQUEST_BODY_BYTES, MAX_SECRET_VALUE_BYTES,
 };
 pub use piqueld_core::manifest::{
     ApplicationManifest, ApplicationSpec, ApplicationTemplate, Build, DeclaredSource,

@@ -183,24 +183,24 @@ impl ApiError {
             .details(json!({"environment": environment})),
             ref error @ StoreError::EnvironmentDeclared { ref environment } => Self::new(
                 StatusCode::CONFLICT,
-                piqueld_core::codes::ENVIRONMENT_DECLARED,
+                piqueld_core::ApiErrorCode::EnvironmentDeclared.as_str(),
                 error.to_string(),
             )
             .details(json!({"environment": environment})),
             ref error @ StoreError::EnvironmentUnknown { ref environment } => Self::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                piqueld_core::codes::ENVIRONMENT_UNKNOWN,
+                piqueld_core::ApiErrorCode::EnvironmentUnknown.as_str(),
                 error.to_string(),
             )
             .details(json!({"environment": environment})),
             ref error @ StoreError::PreviewRequiresRepository => Self::new(
                 StatusCode::CONFLICT,
-                piqueld_core::codes::PREVIEW_REQUIRES_REPOSITORY,
+                piqueld_core::ApiErrorCode::PreviewRequiresRepository.as_str(),
                 error.to_string(),
             ),
             ref error @ StoreError::PreviewLimitReached(ref reached) => Self::new(
                 StatusCode::CONFLICT,
-                piqueld_core::codes::PREVIEW_LIMIT_REACHED,
+                piqueld_core::ApiErrorCode::PreviewLimitReached.as_str(),
                 error.to_string(),
             )
             .details(json!(reached)),
@@ -485,7 +485,7 @@ impl From<BoundaryError> for ApiError {
             ),
             BoundaryError::ImageUnavailable(error) => Self::new(
                 StatusCode::CONFLICT,
-                piqueld_core::codes::IMAGE_UNAVAILABLE,
+                piqueld_core::ApiErrorCode::ImageUnavailable.as_str(),
                 error.to_string(),
             ),
         };
@@ -524,7 +524,7 @@ impl From<piqueld_core::ValidationErrors> for ApiError {
     fn from(piqueld_core::ValidationErrors(errors): piqueld_core::ValidationErrors) -> Self {
         let error = if errors
             .iter()
-            .all(|error| error.code == piqueld_core::codes::MANIFEST_DECODE_FAILED)
+            .all(|error| error.code == piqueld_core::ApiErrorCode::ManifestDecodeFailed)
         {
             Self::new(
                 StatusCode::BAD_REQUEST,
@@ -660,30 +660,30 @@ impl From<crate::git::snapshot::SnapshotError> for ApiError {
         match error {
             SnapshotError::TooLarge { limit } => Self::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                piqueld_core::codes::SNAPSHOT_TOO_LARGE,
+                piqueld_core::ApiErrorCode::SnapshotTooLarge.as_str(),
                 format!("{message}; raise [snapshots] max_upload_bytes, or upload against a base the repository has"),
             )
             .details(json!({ "limit": limit })),
             SnapshotError::TreeTooLarge { limit } => Self::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                piqueld_core::codes::SNAPSHOT_TOO_LARGE,
+                piqueld_core::ApiErrorCode::SnapshotTooLarge.as_str(),
                 format!("{message}; raise [checkouts] max_bytes, or ignore the files the preview doesn't need"),
             )
             .details(json!({ "limit": limit })),
             SnapshotError::Invalid(_) => Self::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                piqueld_core::codes::SNAPSHOT_INVALID,
+                piqueld_core::ApiErrorCode::SnapshotInvalid.as_str(),
                 message,
             ),
             SnapshotError::BaseUnavailable { prerequisites } => Self::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                piqueld_core::codes::SNAPSHOT_BASE_UNAVAILABLE,
+                piqueld_core::ApiErrorCode::SnapshotBaseUnavailable.as_str(),
                 format!("{message}; push the base, or upload a complete bundle"),
             )
             .details(json!({ "prerequisites": prerequisites })),
             SnapshotError::TimedOut => Self::new(
                 StatusCode::REQUEST_TIMEOUT,
-                piqueld_core::codes::SNAPSHOT_TIMED_OUT,
+                piqueld_core::ApiErrorCode::SnapshotTimedOut.as_str(),
                 message,
             ),
             SnapshotError::Internal(error) => {

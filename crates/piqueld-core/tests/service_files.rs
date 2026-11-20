@@ -8,8 +8,8 @@ use piqueld_core::manifest::{
 };
 use piqueld_core::resource::{ResolutionSet, ResolvedApplication, ResolvedSource};
 use piqueld_core::{
-    ApplicationId, DockerConfigName, EnvironmentId, EnvironmentName, InstanceId,
-    NormalizedApplication, Release, codes, compile_application,
+    ApiErrorCode, ApplicationId, DockerConfigName, EnvironmentId, EnvironmentName, InstanceId,
+    NormalizedApplication, Release, compile_application,
 };
 
 /// A manifest of `notes`, with `spec` appended as written.
@@ -133,43 +133,49 @@ fn validation_keeps_files_apart_from_mounts_secrets_and_piqueld() {
         errors
             .0
             .iter()
-            .map(|error| (error.code.as_str(), error.path.as_str()))
+            .map(|error| (
+                ApiErrorCode::parse(&error.code).unwrap(),
+                error.path.as_str()
+            ))
             .collect::<Vec<_>>(),
         [
             (
-                codes::FILE_REQUIRES_REPOSITORY,
+                ApiErrorCode::FileRequiresRepository,
                 "spec.services[0].files[0].path"
             ),
             (
-                codes::FILE_TARGET_INVALID,
+                ApiErrorCode::FileTargetInvalid,
                 "spec.services[0].files[1].target"
             ),
-            (codes::FILE_EMPTY, "spec.services[0].files[2].content"),
+            (ApiErrorCode::FileEmpty, "spec.services[0].files[2].content"),
             (
-                codes::FILE_TARGET_INVALID,
+                ApiErrorCode::FileTargetInvalid,
                 "spec.services[0].files[2].target"
             ),
             (
-                codes::FILE_TARGET_INVALID,
+                ApiErrorCode::FileTargetInvalid,
                 "spec.services[0].files[3].target"
             ),
             (
-                codes::FILE_TARGET_INVALID,
+                ApiErrorCode::FileTargetInvalid,
                 "spec.services[0].files[5].target"
             ),
             (
-                codes::MOUNT_TARGET_UNSAFE,
+                ApiErrorCode::MountTargetUnsafe,
                 "spec.services[0].files[6].target"
             ),
             (
-                codes::FILE_TARGET_INVALID,
+                ApiErrorCode::FileTargetInvalid,
                 "spec.services[0].files[7].target"
             ),
             (
-                codes::FILE_TARGET_INVALID,
+                ApiErrorCode::FileTargetInvalid,
                 "spec.services[0].files[8].target"
             ),
-            (codes::FILE_TOO_LARGE, "spec.services[0].files[9].content"),
+            (
+                ApiErrorCode::FileTooLarge,
+                "spec.services[0].files[9].content"
+            ),
         ]
     );
 }
@@ -185,7 +191,7 @@ fn repository_files_are_captured_hashed_and_mounted_by_content() {
     .unwrap();
     assert_eq!(
         compile(&render(&template)).unwrap_err(),
-        [codes::FILE_UNRESOLVED]
+        [ApiErrorCode::FileUnresolved]
     );
 
     let deployed = |content: &str| {

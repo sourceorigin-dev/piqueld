@@ -10,7 +10,7 @@
 use super::validation::validate_name;
 use super::variables::Template;
 use super::{ApplicationSpec, ValidationError, ValidationErrors};
-use crate::{ApplicationName, EnvironmentName, ServiceName, codes};
+use crate::{ApiErrorCode, ApplicationName, EnvironmentName, ServiceName};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use utoipa::ToSchema;
@@ -170,7 +170,7 @@ impl ApplicationSpec {
         ] {
             if count > MAX_LINKS {
                 errors.push(ValidationError::new(
-                    codes::LINK_COUNT_EXCESSIVE,
+                    ApiErrorCode::LinkCountExcessive,
                     path,
                     format!("an application must declare at most {MAX_LINKS} of these"),
                 ));
@@ -180,7 +180,7 @@ impl ApplicationSpec {
         for (index, export) in self.exports.iter().enumerate() {
             if export.applications.len() > MAX_LINKS {
                 errors.push(ValidationError::new(
-                    codes::LINK_COUNT_EXCESSIVE,
+                    ApiErrorCode::LinkCountExcessive,
                     format!("spec.exports[{index}].applications"),
                     format!("an export must grant at most {MAX_LINKS} applications"),
                 ));
@@ -209,14 +209,14 @@ impl ApplicationSpec {
             validate_name(&export.service, &format!("{path}.service"), errors);
             if !services.contains(export.service.as_str()) {
                 errors.push(ValidationError::new(
-                    codes::EXPORT_SERVICE_MISSING,
+                    ApiErrorCode::ExportServiceMissing,
                     format!("{path}.service"),
                     "an export must reference a service in this application",
                 ));
             }
             if !exported.insert(&export.service) {
                 errors.push(ValidationError::new(
-                    codes::EXPORT_DUPLICATE,
+                    ApiErrorCode::ExportDuplicate,
                     format!("{path}.service"),
                     "the service is already exported",
                 ));
@@ -224,7 +224,7 @@ impl ApplicationSpec {
             let path = format!("{path}.applications");
             if export.applications.is_empty() {
                 errors.push(ValidationError::new(
-                    codes::EXPORT_APPLICATIONS_EMPTY,
+                    ApiErrorCode::ExportApplicationsEmpty,
                     &path,
                     "an export must grant at least one application",
                 ));
@@ -235,7 +235,7 @@ impl ApplicationSpec {
                 validate_name(application, &path, errors);
                 if !granted.insert(application) {
                     errors.push(ValidationError::new(
-                        codes::EXPORT_DUPLICATE,
+                        ApiErrorCode::ExportDuplicate,
                         &path,
                         "the application is already granted",
                     ));
@@ -249,7 +249,7 @@ impl ApplicationSpec {
             validate_name(&import.service, &format!("{path}.service"), errors);
             if !imported.insert((&import.application, &import.service)) {
                 errors.push(ValidationError::new(
-                    codes::IMPORT_DUPLICATE,
+                    ApiErrorCode::ImportDuplicate,
                     format!("{path}.service"),
                     "the service is already imported",
                 ));
@@ -258,7 +258,7 @@ impl ApplicationSpec {
                 && let Err(source) = EnvironmentName::parse(environment)
             {
                 errors.push(ValidationError::new(
-                    codes::NAME_INVALID,
+                    ApiErrorCode::NameInvalid,
                     format!("{path}.environment"),
                     source.to_string(),
                 ));

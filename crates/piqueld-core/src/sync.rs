@@ -7,8 +7,8 @@
 //! whose branch head moved past the commit it last synced. A webhook only
 //! hints that something moved; its payload is never trusted.
 
+use crate::ApiErrorCode;
 use crate::api::EnvironmentView;
-use crate::codes;
 use crate::manifest::{RepositoryManifest, ValidationError};
 use crate::names::string_enum;
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ impl RepositorySync {
             && !(Self::MIN_INTERVAL..=Self::MAX_INTERVAL).contains(&interval_seconds)
         {
             errors.push(ValidationError::new(
-                codes::SYNC_INTERVAL_INVALID,
+                ApiErrorCode::SyncIntervalInvalid,
                 format!("{path}.interval_seconds"),
                 format!(
                     "the poll interval must be between {} and {} seconds",

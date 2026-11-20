@@ -2,8 +2,8 @@
 //! and whether a release's images are still present.
 
 use crate::{
-    BuiltImage, DiagnosticSeverity, ImmutableImage, PlanDiagnostic, RepositoryDigest, ServiceName,
-    codes, resource::ResolvedApplication, resource::ResolvedSource,
+    ApiErrorCode, BuiltImage, DiagnosticSeverity, ImmutableImage, PlanDiagnostic, RepositoryDigest,
+    ServiceName, resource::ResolvedApplication, resource::ResolvedSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -78,7 +78,7 @@ impl ReleaseAvailability {
                 .iter()
                 .map(|missing| {
                     PlanDiagnostic::new(
-                        codes::IMAGE_UNAVAILABLE,
+                        ApiErrorCode::ImageUnavailable,
                         DiagnosticSeverity::Error,
                         missing.service.as_str(),
                         format!(
@@ -267,7 +267,7 @@ mod tests {
                 .iter()
                 .map(|diagnostic| (diagnostic.code.as_str(), diagnostic.resource.as_str()))
                 .collect::<Vec<_>>(),
-            [(codes::IMAGE_UNAVAILABLE, "web")]
+            [(ApiErrorCode::ImageUnavailable.as_str(), "web")]
         );
         assert!(diagnostics[0].blocking);
         let pullable = ReleaseAvailability::Pullable {
