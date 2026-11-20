@@ -14,7 +14,7 @@ mod stream;
 mod ui;
 
 use dashboard::{ApplicationsPage, OverviewPage, Sidebar};
-use ui::{Icon, Tone, icon, notice};
+use ui::{Icon, STALE, Tone, icon, notice};
 
 use crate::overview::{ApplicationRow, EnvironmentRow};
 use crate::state::{
@@ -111,8 +111,8 @@ impl DashboardSignals {
     /// `manual` refreshes are queued even while hidden or busy and rerun once the current
     /// request finishes. On success all dashboard signals are replaced and the selected
     /// application's detail is reloaded, or cleared if it disappeared from a complete
-    /// listing. On failure application data is kept (marked stale unless still loading)
-    /// and readiness is cleared.
+    /// listing. On failure application data and readiness are kept (marked stale unless
+    /// still loading), since the stale notice and connection state say they are old.
     fn start_refresh(self, client: Client, controller: StoredValue<PollController>, manual: bool) {
         if manual {
             controller.update_value(PollController::request_manual_refresh);
@@ -137,8 +137,6 @@ impl DashboardSignals {
                 }
                 Err(failure) => {
                     controller.update_value(PollController::record_failure);
-                    self.readiness.set(None);
-                    self.readiness_error.set(None);
                     self.connection.set(if failure.unreachable {
                         ConnectionState::Unreachable
                     } else {
@@ -297,7 +295,7 @@ impl DashboardSignals {
                 }}
             </div>
             <div class="stack-sm mb-md" hidden={move || self.data_state.get() != DataState::Stale}>
-                {notice(Tone::Warn, "Showing the last successful view; the latest refresh failed.")}
+                {notice(Tone::Warn, STALE)}
             </div>
         }
     }

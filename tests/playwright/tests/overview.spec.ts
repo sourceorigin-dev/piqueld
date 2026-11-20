@@ -72,11 +72,15 @@ test('a failed refresh keeps the last successful view, marked stale, until one s
   await expect(metric(page, 'Applications')).toHaveText('1');
   await expect(connection).toHaveText('Reachable');
   await expect(main.getByText('Refresh failed', { exact: true })).toHaveCount(0);
+  // Readiness, like the applications, stays from the last successful view.
+  const docker = main.locator('.status-list').getByText('Docker Engine', { exact: true });
+  await expect(docker).toBeVisible();
 
   await refresh('refused');
   await expect(main.getByRole('alert').first()).toContainText(/Refresh failed\s*maintenance window/);
   await expect(stale).toBeVisible();
   await expect(metric(page, 'Applications')).toHaveText('1');
+  await expect(docker).toBeVisible();
 
   await refresh('unreachable');
   await expect(main.getByRole('alert').first()).toContainText('Daemon unreachable');

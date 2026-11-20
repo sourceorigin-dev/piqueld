@@ -484,19 +484,41 @@ pub(super) fn loading(message: impl Into<String>) -> AnyView {
     .into_any()
 }
 
-/// A loaded resource: `pending` until it loads, then its failure or `show`
-/// of its value.
+/// A loaded resource: `pending` until it loads, then `show` of its value. A
+/// failed refetch keeps showing the last value under its error, marked stale.
 pub(super) fn loaded<T: Clone + Send + Sync + 'static>(
     data: LocalResource<Result<T, String>>,
     pending: &'static str,
     show: impl Fn(T) -> AnyView + Send + Sync + 'static,
 ) -> impl Fn() -> AnyView + Send + Sync + 'static {
+    let last = StoredValue::new(None::<T>);
     move || match data.get() {
         None => loading(pending),
-        Some(Err(error)) => notice(Tone::Bad, error),
-        Some(Ok(value)) => show(value),
+        Some(Ok(value)) => {
+            last.set_value(Some(value.clone()));
+            show(value)
+        }
+        Some(Err(error)) => match last.get_value() {
+            None => notice(Tone::Bad, error),
+            Some(value) => view! {
+                <div class="stack-sm mb-md">
+                    {notice(
+                        Tone::Bad,
+                        view! {
+                            <strong>"Refresh failed"</strong>
+                            {error}
+                        },
+                    )} {notice(Tone::Warn, STALE)}
+                </div>
+                {show(value)}
+            }
+            .into_any(),
+        },
     }
 }
+
+/// Says that the shown data is from an earlier load.
+pub(super) const STALE: &str = "Showing the last successful view; the latest refresh failed.";
 
 /// Definition list of `(term, description)` pairs.
 pub(super) fn key_values<K: IntoView + 'static, V: IntoView + 'static>(

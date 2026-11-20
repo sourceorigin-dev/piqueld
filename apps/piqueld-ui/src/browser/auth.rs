@@ -1542,7 +1542,9 @@ const ACCOUNT_TABS: [&str; 2] = ["Profile", "Access"];
 /// its passkeys, sessions and tokens on the other, and deletion. Passkeys
 /// and tokens are only created for the signed-in account itself; others
 /// receive an enrollment link instead, which the host operator, not being an
-/// account, cannot issue.
+/// account, cannot issue. Each card reads its own part of the directory, so
+/// the refetch after an action remounts only the cards whose data changed,
+/// keeping an edit open in another.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn AccountPage() -> impl IntoView {
@@ -1553,6 +1555,57 @@ pub(super) fn AccountPage() -> impl IntoView {
     let adding = Feedback::new();
     let creating = Feedback::new();
     let directory = directory(&[feedback, adding, creating]);
+    // The shown account: `None` until the directory loads, then `None`
+    // inside when it is gone or hidden.
+    let account = Memo::new(move |_| {
+        directory.with(|data| {
+            data.as_ref().map(|data| {
+                id.with(|id| {
+                    data.users
+                        .iter()
+                        .find(|account| &account.user.id == id)
+                        .cloned()
+                })
+            })
+        })
+    });
+    let shown = Memo::new(move |_| {
+        account.with(|account| {
+            account
+                .as_ref()
+                .map(|account| account.as_ref().map(|account| account.user.id.clone()))
+        })
+    });
+    let user =
+        Memo::new(move |_| account.with(|account| account.clone().flatten().map(|a| a.user)));
+    let grants =
+        Memo::new(move |_| account.with(|account| account.clone().flatten().map(|a| a.grants)));
+    let passkeys = Memo::new(move |_| {
+        directory.with(|data| {
+            data.as_ref().map_or_default(|data| {
+                id.with(|id| {
+                    data.passkeys
+                        .iter()
+                        .filter(|p| &p.user_id == id)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+            })
+        })
+    });
+    let credentials = Memo::new(move |_| {
+        directory.with(|data| {
+            data.as_ref().map_or_default(|data| {
+                id.with(|id| {
+                    data.credentials
+                        .iter()
+                        .filter(|c| &c.user_id == id)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+            })
+        })
+    });
     let requested = leptos_router::hooks::use_query_map().with_untracked(|query| query.get("tab"));
     let tabs = TabSet::new(
         "Account sections",
@@ -1560,7 +1613,7 @@ pub(super) fn AccountPage() -> impl IntoView {
     );
     remember_tab(tabs.selected);
     view! {
-        {move || match directory.get() {
+        {move || match shown.get() {
             None => {
                 view! {
                     {breadcrumb("Account")}
@@ -1574,53 +1627,42 @@ pub(super) fn AccountPage() -> impl IntoView {
                 }
                     .into_any()
             }
-            Some(data) => {
-                let Some(account) = data
-                    .users
-                    .iter()
-                    .find(|account| account.user.id == id.get())
-                    .cloned() else {
-                    return view! {
-                        {breadcrumb("Account")}
-                        <div class="stack-sm">
-                            {notice(
-                                Tone::Bad,
-                                "This account no longer exists, or you may not see it.",
-                            )} <div class="btn-group">
-                                <A attr:class="btn" href="/dashboard/accounts">
-                                    {icon(Icon::ArrowLeft)}
-                                    "Back to accounts"
-                                </A>
-                            </div>
-                        </div>
-                    }
-                        .into_any();
-                };
-                let user = account.user.clone();
-                let passkeys = data
-                    .passkeys
-                    .iter()
-                    .filter(|p| p.user_id == user.id)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                let credentials = data
-                    .credentials
-                    .iter()
-                    .filter(|c| c.user_id == user.id)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                let own = own_account(&user.id);
+            Some(None) => {
                 view! {
-                    {breadcrumb(user.username.clone())}
-                    <header class="detail-head">
-                        <div class="detail-title">
-                            <h1>{user.username.clone()}</h1>
-                            {own.then(|| view! { <span class="tag">"You"</span> })}
+                    {breadcrumb("Account")}
+                    <div class="stack-sm">
+                        {notice(Tone::Bad, "This account no longer exists, or you may not see it.")}
+                        <div class="btn-group">
+                            <A attr:class="btn" href="/dashboard/accounts">
+                                {icon(Icon::ArrowLeft)}
+                                "Back to accounts"
+                            </A>
                         </div>
-                        <div class="page-actions">
-                            <DeleteAccount user={user.clone()} feedback={feedback} />
-                        </div>
-                    </header>
+                    </div>
+                }
+                    .into_any()
+            }
+            Some(Some(user_id)) => {
+                let own = own_account(&user_id);
+                let user_id = StoredValue::new(user_id);
+                view! {
+                    {move || {
+                        user.get()
+                            .map(|user| {
+                                view! {
+                                    {breadcrumb(user.username.clone())}
+                                    <header class="detail-head">
+                                        <div class="detail-title">
+                                            <h1>{user.username.clone()}</h1>
+                                            {own.then(|| view! { <span class="tag">"You"</span> })}
+                                        </div>
+                                        <div class="page-actions">
+                                            <DeleteAccount user={user} feedback={feedback} />
+                                        </div>
+                                    </header>
+                                }
+                            })
+                    }}
                     <div class="stack-sm mb-md">
                         {feedback.view()} {adding.outcome()} {creating.outcome()}
                     </div>
@@ -1630,8 +1672,25 @@ pub(super) fn AccountPage() -> impl IntoView {
                             "Profile",
                             view! {
                                 <fieldset class="stack" disabled={move || feedback.busy.get()}>
-                                    <Profile user={user.clone()} feedback={feedback} />
-                                    <Access account={account.clone()} feedback={feedback} />
+                                    {move || {
+                                        user.get()
+                                            .map(|user| {
+                                                view! { <Profile user={user} feedback={feedback} /> }
+                                            })
+                                    }}
+                                    {move || {
+                                        grants
+                                            .get()
+                                            .map(|grants| {
+                                                view! {
+                                                    <Access
+                                                        user={user_id.get_value()}
+                                                        grants={grants}
+                                                        feedback={feedback}
+                                                    />
+                                                }
+                                            })
+                                    }}
                                 </fieldset>
                             },
                         )}
@@ -1640,21 +1699,33 @@ pub(super) fn AccountPage() -> impl IntoView {
                             "Access",
                             view! {
                                 <fieldset class="stack" disabled={move || feedback.busy.get()}>
-                                    <Passkeys
-                                        passkeys={passkeys}
-                                        user={user.id.clone()}
-                                        own={own}
-                                        feedback={feedback}
-                                        adding={adding}
-                                    />
-                                    <Credentials
-                                        credentials={credentials}
-                                        user={user.id.clone()}
-                                        grants={account.grants.clone()}
-                                        own={own}
-                                        feedback={feedback}
-                                        creating={creating}
-                                    />
+                                    {move || {
+                                        view! {
+                                            <Passkeys
+                                                passkeys={passkeys.get()}
+                                                user={user_id.get_value()}
+                                                own={own}
+                                                feedback={feedback}
+                                                adding={adding}
+                                            />
+                                        }
+                                    }}
+                                    {move || {
+                                        grants
+                                            .get()
+                                            .map(|grants| {
+                                                view! {
+                                                    <Credentials
+                                                        credentials={credentials.get()}
+                                                        user={user_id.get_value()}
+                                                        grants={grants}
+                                                        own={own}
+                                                        feedback={feedback}
+                                                        creating={creating}
+                                                    />
+                                                }
+                                            })
+                                    }}
                                 </fieldset>
                             },
                         )}
@@ -1750,14 +1821,14 @@ fn Profile(user: User, feedback: Feedback) -> impl IntoView {
     }
 }
 
-/// The account's grants, edited in place with `accounts:manage`.
+/// The `user` account's `grants`, edited in place with `accounts:manage`.
 #[component]
-fn Access(account: Account, feedback: Feedback) -> impl IntoView {
+fn Access(user: String, grants: Grants, feedback: Feedback) -> impl IntoView {
     let manage = can(Permission::Global(GlobalPermission::AccountsManage));
-    let id = StoredValue::new(account.user.id);
+    let id = StoredValue::new(user);
     let editing = RwSignal::new(false);
-    let grants = RwSignal::new(account.grants.clone());
-    let initial = StoredValue::new(account.grants);
+    let initial = StoredValue::new(grants.clone());
+    let grants = RwSignal::new(grants);
     view! {
         <section class="card" aria-labelledby="access-heading">
             <header>
