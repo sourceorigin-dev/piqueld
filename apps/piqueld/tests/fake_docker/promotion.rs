@@ -65,13 +65,48 @@ impl Shop {
         }
     }
 
-    /// Saves `manifest` again, converging the environments it declares.
-    async fn save(&self, manifest: &str) {
+    /// `shop` with the default image, whose `production` is not promoted
+    /// yet but tracks its own configuration.
+    async fn tracking() -> Self {
+        Self::new(&shop_toml("", "", IMAGE).replace(PROMOTED, "")).await
+    }
+
+    /// Saves [`Self::tracking`]'s manifest again with `production` promoted
+    /// from `staging`, converging the environments it declares.
+    async fn declare_promoted(&self) {
         self.harness
             .applications()
-            .save(parse_template_toml(manifest).unwrap(), None)
+            .save(
+                parse_template_toml(&shop_toml("", "", IMAGE)).unwrap(),
+                None,
+            )
             .await
             .unwrap();
+    }
+
+    /// Requests a deployment of `production`, without running it.
+    async fn deploy_production(&self) -> Operation {
+        self.harness
+            .applications()
+            .deploy(&self.production, None)
+            .await
+            .unwrap()
+    }
+
+    /// Retries `production`'s failed deployment `requested` and asserts it
+    /// fails again as `environment_promoted`.
+    async fn assert_retry_refused(&self, requested: &Operation) {
+        let retried = self
+            .harness
+            .applications()
+            .reconcile(&self.production, None)
+            .await
+            .unwrap();
+        assert_eq!(retried.id, requested.id);
+        self.harness.scan().await;
+        let failed = self.harness.operation(&requested.id).await;
+        assert_eq!(failed.state, OperationState::Failed);
+        assert_eq!(failed.error_code.as_deref(), Some("environment_promoted"));
     }
 
     /// Deploys `staging` until it succeeds.
@@ -544,15 +579,8 @@ async fn a_release_whose_build_inputs_render_differently_is_refused() {
 /// building once it is promoted.
 #[tokio::test]
 async fn a_promoted_environment_never_builds_a_deployment_requested_before() {
-    let promoted = shop_toml("", "", IMAGE);
-    let tracking = promoted.replace(PROMOTED, "");
-    let shop = Shop::new(&tracking).await;
-    let requested = shop
-        .harness
-        .applications()
-        .deploy(&shop.production, None)
-        .await
-        .unwrap();
+    let shop = Shop::tracking().await;
+    let requested = shop.deploy_production().await;
     let source = || async {
         shop.harness
             .store
@@ -564,7 +592,7 @@ async fn a_promoted_environment_never_builds_a_deployment_requested_before() {
             .promoted_from()
             .cloned()
     };
-    shop.save(&promoted).await;
+    shop.declare_promoted().await;
     assert_eq!(source().await, None);
 
     // It fails before preparing anything, then the environment is promoted.
@@ -579,21 +607,11 @@ async fn a_promoted_environment_never_builds_a_deployment_requested_before() {
         .docker
         .incompatible_swarm
         .store(false, Ordering::SeqCst);
-    shop.save(&promoted).await;
+    shop.declare_promoted().await;
     assert_eq!(source().await, Some(shop.staging.clone()));
 
     let pulls = shop.harness.pulls().await;
-    let retried = shop
-        .harness
-        .applications()
-        .reconcile(&shop.production, None)
-        .await
-        .unwrap();
-    assert_eq!(retried.id, requested.id);
-    shop.harness.scan().await;
-    let failed = shop.harness.operation(&requested.id).await;
-    assert_eq!(failed.state, OperationState::Failed);
-    assert_eq!(failed.error_code.as_deref(), Some("environment_promoted"));
+    shop.assert_retry_refused(&requested).await;
     assert_eq!(shop.harness.pulls().await, pulls);
 }
 
@@ -601,18 +619,10 @@ async fn a_promoted_environment_never_builds_a_deployment_requested_before() {
 /// runs: converging its active target again rolls nothing new in.
 #[tokio::test]
 async fn a_promoted_environment_repairs_the_build_it_runs() {
-    let promoted = shop_toml("", "", IMAGE);
-    let tracking = promoted.replace(PROMOTED, "");
-    let shop = Shop::new(&tracking).await;
-    let deployed = shop
-        .harness
-        .applications()
-        .deploy(&shop.production, None)
-        .await
-        .unwrap();
-    let deployed = shop.harness.operation(&deployed.id).await;
+    let shop = Shop::tracking().await;
+    let deployed = shop.deploy_production().await;
     shop.harness.finish(&deployed).await;
-    shop.save(&promoted).await;
+    shop.declare_promoted().await;
     let production = shop.production.to_string();
     let web = async || {
         let mut observed = shop.harness.docker.observed.lock().await;
@@ -636,16 +646,9 @@ async fn a_promoted_environment_repairs_the_build_it_runs() {
 /// environment only runs releases.
 #[tokio::test]
 async fn a_promoted_environment_never_rolls_out_a_build_prepared_before() {
-    let promoted = shop_toml("", "", IMAGE);
-    let tracking = promoted.replace(PROMOTED, "");
-    let mut shop = Shop::new(&tracking).await;
+    let mut shop = Shop::tracking().await;
     shop.harness.set_convergence_timeout(Duration::from_secs(1));
-    let requested = shop
-        .harness
-        .applications()
-        .deploy(&shop.production, None)
-        .await
-        .unwrap();
+    let requested = shop.deploy_production().await;
     // It prepares, then fails before rolling out.
     shop.harness
         .docker
@@ -668,19 +671,9 @@ async fn a_promoted_environment_never_rolls_out_a_build_prepared_before() {
         .docker
         .fail_observations
         .store(false, Ordering::SeqCst);
-    shop.save(&promoted).await;
+    shop.declare_promoted().await;
 
-    let retried = shop
-        .harness
-        .applications()
-        .reconcile(&shop.production, None)
-        .await
-        .unwrap();
-    assert_eq!(retried.id, requested.id);
-    shop.harness.scan().await;
-    let failed = shop.harness.operation(&requested.id).await;
-    assert_eq!(failed.state, OperationState::Failed);
-    assert_eq!(failed.error_code.as_deref(), Some("environment_promoted"));
+    shop.assert_retry_refused(&requested).await;
     assert!(
         shop.harness
             .store
