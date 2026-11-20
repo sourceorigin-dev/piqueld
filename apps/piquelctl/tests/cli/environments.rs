@@ -437,6 +437,9 @@ fn history_lists_restores_and_restore_names_the_deployment() {
     let _ = server.finish();
 }
 
+/// Where `operation-01`, a deployment of `app-notes-01`, reads alone.
+const DEPLOYMENT: &str = "/api/v1/environments/app-notes-01/deployments/operation-01";
+
 /// `operation-01` as a deployment of `app-notes-01` read from `main`.
 fn deployment(state: &str) -> Value {
     json!({
@@ -468,6 +471,7 @@ fn wait_server(states: Vec<&'static str>, details: Vec<Value>) -> TestServer {
             "/api/v1/environments/app-notes-01/deployments" => {
                 Reply::json(page(vec![deployment(state)], None))
             }
+            DEPLOYMENT => Reply::json(deployment(state)),
             TIMELINE_STREAM => Reply::timelines(&timelines),
             "/api/v1/environments/app-notes-01/detail" => {
                 current = details.next().or(current.take());
@@ -519,6 +523,10 @@ fn wait_reports_the_local_snapshot_a_restore_runs() {
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
             "/api/v1/environments/app-notes-01/deployments" => {
                 Reply::json(page(vec![restored.clone(), snapshot.clone()], None))
+            }
+            DEPLOYMENT => Reply::json(restored.clone()),
+            "/api/v1/environments/app-notes-01/deployments/operation-00" => {
+                Reply::json(snapshot.clone())
             }
             TIMELINE_STREAM => Reply::timeline(&operation("succeeded")),
             "/api/v1/environments/app-notes-01/detail" => {
@@ -626,9 +634,7 @@ fn deploy_output_carries_the_deployment_fields_agents_need() {
                     Reply::accepted(accepted("app-notes-01"))
                 }
                 TIMELINE_STREAM => Reply::timeline(&operation("succeeded")),
-                "/api/v1/environments/app-notes-01/deployments" => {
-                    Reply::json(page(vec![deployment("succeeded")], None))
-                }
+                DEPLOYMENT => Reply::json(deployment("succeeded")),
                 "/api/v1/environments/app-notes-01/detail" => {
                     Reply::json(detail("operation-01", true, "pending"))
                 }

@@ -71,6 +71,11 @@
       "rustType": "piqueld_core::api::Envelope<piqueld_core::api::Page<piqueld_core::api::DeploymentView>>"
     },
     {
+      "schema": "Envelope_DeploymentView",
+      "name": "EnvelopeDeploymentView",
+      "rustType": "piqueld_core::api::Envelope<piqueld_core::api::DeploymentView>"
+    },
+    {
       "schema": "AuditOutcome",
       "name": "AuditOutcome",
       "rustType": "piqueld_core::audit::AuditOutcome"

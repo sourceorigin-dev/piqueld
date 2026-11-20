@@ -122,6 +122,17 @@ impl ApplicationService {
             .await?)
     }
 
+    /// Reads one deployment of environment `id`.
+    /// # Errors
+    /// Returns absence, when `id` has no such deployment, or storage errors.
+    pub async fn deployment(
+        &self,
+        id: &EnvironmentId,
+        deployment: &str,
+    ) -> Result<DeploymentView, ApplicationError> {
+        Ok(self.store.deployment(id, deployment).await?)
+    }
+
     /// Lists an application's releases, newest first, twenty per page, with
     /// whether each one's images are still present. Availability is left out
     /// when Docker can't be asked.

@@ -372,6 +372,7 @@ fn documented_router() -> OpenApiRouter<ApiState> {
         .routes(granted!(App(PreviewsDelete) => previews::prune))
         .routes(granted!(App(Deploy) => deployments::deploy))
         .routes(granted!(App(Read) => deployments::list))
+        .routes(granted!(App(Read) => deployments::get))
         .routes(granted!(App(Read) => deployments::attempts))
         .routes(granted!(App(Read) => deployments::releases))
         .routes(authenticated!(events::list))

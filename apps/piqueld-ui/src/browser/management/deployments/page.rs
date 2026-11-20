@@ -1,6 +1,5 @@
 //! One deployment's page: its progress and timeline, details, snapshot and
 //! attempts, and Restore.
-use super::PAGE;
 use super::snapshot::DeploymentSnapshot;
 use crate::application::DEPLOYMENT_TABS;
 use crate::browser::format::timestamp;
@@ -17,11 +16,11 @@ use leptos_router::NavigateOptions;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use piqueld_client::{
-    AcceptedOperation, Client, DeploymentView, MAX_PAGE_SIZE, Operation, access::AppPermission,
+    AcceptedOperation, Client, ClientError, DeploymentView, Operation, access::AppPermission,
 };
 
-/// The deployment a deployment page shows, read from its environment's
-/// history, as the page opens and again once it ended.
+/// The deployment a deployment page shows, read as the page opens and again
+/// once it ended.
 #[derive(Clone, Copy)]
 struct ShownDeployment {
     deployment: RwSignal<Option<DeploymentView>>,
@@ -40,45 +39,34 @@ impl ShownDeployment {
         }
     }
 
-    /// Reads deployment `operation` of `environment`, paging back through
-    /// the environment's history until it is found. Abandoned when the
-    /// calling owner is cleaned up.
+    /// Reads deployment `operation` of `environment`, and whether a newer
+    /// deployment is listed. Abandoned when the calling owner is cleaned up.
     fn load(self, environment: String, operation: String) {
         let alive = Alive::new();
         spawn_local(async move {
             let client = Client::browser();
-            let mut cursor = None;
-            let mut newest = true;
-            loop {
-                // Most pages show a recent deployment, on the first page;
-                // older ones are looked for as many at a time as allowed.
-                let limit = if newest { PAGE } else { MAX_PAGE_SIZE };
-                let result = client
-                    .deployments(&environment, cursor.as_deref(), Some(limit))
-                    .await;
-                if !alive.get() {
-                    return;
+            let (deployment, newest) = futures_util::join!(
+                client.deployment(&environment, &operation),
+                client.deployments(&environment, None, Some(1)),
+            );
+            if !alive.get() {
+                return;
+            }
+            match deployment.and_then(|deployment| Ok((deployment, newest?))) {
+                Ok((deployment, newest)) => {
+                    self.newer.set(
+                        newest
+                            .items
+                            .first()
+                            .is_some_and(|newest| newest.operation.id != operation),
+                    );
+                    self.deployment.set(Some(deployment));
+                    self.error.set(None);
                 }
-                let page = match result {
-                    Ok(page) => page,
-                    Err(error) => return self.error.set(Some(error.user_message())),
-                };
-                if let Some(index) = page
-                    .items
-                    .iter()
-                    .position(|deployment| deployment.operation.id == operation)
-                {
-                    self.newer.set(!newest || index > 0);
-                    self.deployment.set(page.items.into_iter().nth(index));
-                    return self.error.set(None);
-                }
-                newest = false;
-                cursor = page.next_cursor;
-                if cursor.is_none() {
-                    return self.error.set(Some(
-                        "This deployment is not in the environment's history.".into(),
-                    ));
-                }
+                Err(ClientError::Api { status, .. }) if status.as_u16() == 404 => self.error.set(
+                    Some("This deployment is not in the environment's history.".into()),
+                ),
+                Err(error) => self.error.set(Some(error.user_message())),
             }
         });
     }

@@ -13,9 +13,10 @@ use crate::{
 };
 use clap::{Args, ValueEnum};
 use piqueld_client::{
-    AcceptedOperation, ApplicationId, ApplicationView, Client, DeploymentOrigin, DeploymentView,
-    EnvironmentDetailView, EnvironmentId, EnvironmentName, EnvironmentView, LocalSnapshot,
-    Operation, OperationKind, OperationState, ReleaseId, RouteUrl, SystemVariable, UrlState,
+    AcceptedOperation, ApplicationId, ApplicationView, Client, ClientError, DeploymentOrigin,
+    DeploymentView, EnvironmentDetailView, EnvironmentId, EnvironmentName, EnvironmentView,
+    LocalSnapshot, Operation, OperationKind, OperationState, ReleaseId, RouteUrl, SystemVariable,
+    UrlState,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -155,31 +156,22 @@ fn urls(detail: &EnvironmentDetailView) -> Result<&[RouteUrl]> {
     })
 }
 
-/// Finds a deployment of `environment` by ID, newest pages first.
+/// Reads deployment `id` of `environment`.
 async fn find_deployment(
     client: &Client,
     environment: &EnvironmentView,
     id: &str,
 ) -> Result<DeploymentView> {
-    let mut cursor = None;
-    loop {
-        let page = client
-            .deployments(environment.id.as_str(), cursor.as_deref(), None)
-            .await?;
-        if let Some(deployment) = page
-            .items
-            .into_iter()
-            .find(|deployment| deployment.operation.id == id)
-        {
-            return Ok(deployment);
-        }
-        cursor = Some(page.next_cursor.ok_or_else(|| {
-            CliError::new(
+    client
+        .deployment(environment.id.as_str(), id)
+        .await
+        .map_err(|error| match error {
+            ClientError::Api { status, .. } if status.as_u16() == 404 => CliError::new(
                 ErrorKind::Input,
                 format!("deployment {id:?} of {} was not found", environment.name),
-            )
-        })?);
-    }
+            ),
+            error => error.into(),
+        })
 }
 
 /// Emits an accepted deployment as is with `no_wait`, otherwise waits for it

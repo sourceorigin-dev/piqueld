@@ -141,6 +141,22 @@ pub(super) async fn list(
         .await?))
 }
 
+/// Reads one deployment of an environment: its whole snapshot.
+///
+/// A deployment of another environment is reported as not found.
+#[utoipa::path(get,path="/api/v1/environments/{id}/deployments/{deployment}",operation_id="getDeployment",
+    params(("id"=String,Path),("deployment"=String,Path)),
+    responses((status=200,description="The deployment",body=Envelope<DeploymentView>),
+    ApiErrors<400, 404, 500>))]
+pub(super) async fn get(
+    State(state): State<ApiState>,
+    ApiPath((id, deployment)): ApiPath<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(ok(state
+        .deployment(&EnvironmentId::parse(id)?, &deployment)
+        .await?))
+}
+
 /// Lists an application's releases, newest first.
 ///
 /// A release is recorded by each successful preparation in a tracking
