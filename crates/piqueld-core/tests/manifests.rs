@@ -246,17 +246,63 @@ image = "nginx:1.27"
     );
 }
 
+/// Every property name in the manifest JSON schema survives decode path
+/// redaction, so a new manifest field can't truncate its decode errors.
 #[test]
 fn decode_paths_keep_every_manifest_field() {
-    for path in [
-        "spec.services[0].files[0].mode",
-        "spec.routes[0].redirect.preserve_path",
-        "spec.manifest.sync.mode",
-        "spec.previews.visibility",
-        "spec.jobs[0].volume_access",
-    ] {
-        assert_eq!(piqueld_core::manifest::safe_decode_path(path), path);
+    fn property_names(schema: &serde_json::Value, names: &mut Vec<String>) {
+        match schema {
+            serde_json::Value::Object(object) => {
+                if let Some(serde_json::Value::Object(properties)) = object.get("properties") {
+                    names.extend(properties.keys().cloned());
+                }
+                for value in object.values() {
+                    property_names(value, names);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    property_names(item, names);
+                }
+            }
+            _ => {}
+        }
     }
+    let mut names = Vec::new();
+    property_names(
+        &piqueld_core::manifest::ApplicationManifest::json_schema(),
+        &mut names,
+    );
+    assert!(names.iter().any(|name| name == "stop_service"));
+    let redacted = names
+        .iter()
+        .filter(|name| piqueld_core::manifest::safe_decode_path(name) != **name)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        redacted.is_empty(),
+        "redacted manifest fields: {redacted:?}"
+    );
+}
+
+#[test]
+fn decode_errors_name_the_rejected_field() {
+    let manifest = format!(
+        r#"{}
+[[spec.jobs]]
+name = "migrate"
+service = "web"
+command = ["notes"]
+run = "before-rollout"
+stop_service = "yes"
+"#,
+        valid_manifest("notes")
+    );
+    let error = parse_toml(&manifest).unwrap_err();
+    let [error] = error.0.as_slice() else {
+        panic!("expected one decode error: {error}");
+    };
+    assert_eq!(error.code, codes::MANIFEST_DECODE_FAILED);
+    assert_eq!(error.path, "spec.jobs[0].stop_service");
 }
 
 #[test]
