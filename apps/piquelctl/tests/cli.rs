@@ -3546,6 +3546,32 @@ fn audit_matches_accounts_missing_from_the_directory() {
     );
 }
 
+/// Grants name their applications from every page of the application list,
+/// not only the first.
+#[test]
+fn whoami_names_grant_applications_past_the_first_page() {
+    let server = start_server(false, 3, |request| match request.path.as_str() {
+        "/api/v1/auth/me" => Reply::bare(&json!({
+            "user": {"id": "bob-id", "username": "bob", "display_name": "Bob"},
+            "grants": [{"permission": "apps:deploy", "applications": ["app-second-01"]}],
+            "scoped": false
+        })),
+        path if path.starts_with("/api/v1/applications") && path.contains("cursor=") => {
+            Reply::json(page(vec![app_summary("app-second-01", "second")], None))
+        }
+        path if path.starts_with("/api/v1/applications") => Reply::json(page(
+            vec![app_summary("app-first-01", "first")],
+            Some("v1:app-first-01"),
+        )),
+        path => panic!("unexpected path {path}"),
+    });
+    let output = run_human(&server, &["whoami"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{output:?}");
+    assert!(stdout.contains("apps:deploy on second"), "{stdout}");
+    let _ = server.finish();
+}
+
 /// Account commands name accounts by username and send the daemon's IDs;
 /// `update` keeps the profile fields it was not asked to change, and renames
 /// the account's saved login so `--account` still finds it. Passkey IDs are
@@ -3569,7 +3595,7 @@ fn account_changes_resolve_usernames_to_typed_requests() {
             "invitations": []
         })),
         "/api/v1/auth/manage" => Reply::bare(&json!({})),
-        "/api/v1/applications" => Reply::json(page(Vec::new(), None)),
+        "/api/v1/applications?limit=100" => Reply::json(page(Vec::new(), None)),
         path => panic!("unexpected path {path}"),
     });
     let Endpoint::Tcp(url) = &server.endpoint else {
