@@ -1065,33 +1065,44 @@ async fn minting_and_privileged_grants_need_a_recent_sign_in() {
         .expect("the account change is allowed");
 }
 
-/// A CLI login inherits the passkey proof its approval recorded, and an
-/// approval whose proof is too old by the time the CLI polls is refused for
-/// good, even if the approver has confirmed again since.
+/// A CLI login inherits the passkey proof its approval recorded. Approving
+/// needs that proof to stay recent a while longer, and an approval whose
+/// proof is too old by the time the CLI polls is refused for good, even if
+/// the approver has confirmed again since.
 #[tokio::test]
 async fn device_logins_inherit_their_approvals_passkey_proof() {
     let f = Fixture::new().await;
     let alice = f.identity("alice", &Grants::admin()).await;
-    // The approver's passkey proved them a minute ago: still recent, and
-    // never the time the CLI polls.
-    let proved = now_secs() - 60;
-    let session = Auth::new_credential(CredentialKind::Browser, "Browser", None, None);
-    let (secret, mut session) = session.expect("the system RNG yields a credential secret");
-    session.authenticated_at = Some(proved);
-    let store = &f.auth.0.store;
-    store
-        .insert_credential(&alice.account().id, &session)
-        .await
-        .expect("the store keeps the credential");
-    let approver = f
-        .auth
-        .authenticate(&secret)
-        .await
-        .expect("the stored credential authenticates");
+    // A browser session of alice's that a passkey proved at `proved`.
+    let approver = async |proved: i64| {
+        let session = Auth::new_credential(CredentialKind::Browser, "Browser", None, None);
+        let (secret, mut session) = session.expect("the system RNG yields a credential secret");
+        session.authenticated_at = Some(proved);
+        f.auth
+            .0
+            .store
+            .insert_credential(&alice.account().id, &session)
+            .await
+            .expect("the store keeps the credential");
+        f.auth
+            .authenticate(&secret)
+            .await
+            .expect("the stored credential authenticates")
+    };
+    // Proved 100 seconds ago: recent, but about to lapse before the poll.
+    let lapsing = approver(now_secs() - 100).await;
     let start = f
         .auth
         .device_start(None, None)
         .expect("a device login starts");
+    let refused = Denied::Reauthenticate(Reauthenticate::Stale);
+    assert_eq!(
+        denied_auth(f.auth.device_approve(&start.user_code, &lapsing)),
+        refused
+    );
+    // Proved a minute ago: never the time the CLI polls.
+    let proved = now_secs() - 60;
+    let approver = approver(proved).await;
     f.auth
         .device_approve(&start.user_code, &approver)
         .expect("the approver may approve the request");
@@ -1128,7 +1139,7 @@ async fn device_logins_inherit_their_approvals_passkey_proof() {
         .expect("the request was approved")
         .approved_by
     {
-        approval.authenticated_at = Some(old);
+        approval.authenticated_at = old;
     }
     assert!(matches!(
         f.auth.device_poll(&start.device_code).await,

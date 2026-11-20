@@ -112,18 +112,16 @@ pub struct Proof {
 
 impl Proof {
     /// Requires a passkey sign-in or step-up within the last
-    /// [`Reauthenticate::WINDOW_SECS`] before `now`. A missing or future time
-    /// fails closed, and API tokens always fail, as no passkey confirms them.
+    /// [`Reauthenticate::WINDOW_SECS`] before `now`, returning when it was. A
+    /// missing or future time fails closed, and API tokens always fail, as no
+    /// passkey confirms them.
     ///
     /// # Errors
     /// Returns [`Denied::Reauthenticate`] with the reason.
-    pub fn require_fresh(self, now: i64) -> Result<(), Denied> {
-        let fresh = self
-            .authenticated_at
-            .is_some_and(|at| (0..=Reauthenticate::WINDOW_SECS).contains(&(now - at)));
-        match self.kind {
-            CredentialKind::Token => Err(Denied::Reauthenticate(Reauthenticate::Token)),
-            _ if fresh => Ok(()),
+    pub fn require_fresh(self, now: i64) -> Result<i64, Denied> {
+        match (self.kind, self.authenticated_at) {
+            (CredentialKind::Token, _) => Err(Denied::Reauthenticate(Reauthenticate::Token)),
+            (_, Some(at)) if (0..=Reauthenticate::WINDOW_SECS).contains(&(now - at)) => Ok(at),
             _ => Err(Denied::Reauthenticate(Reauthenticate::Stale)),
         }
     }
@@ -144,8 +142,10 @@ pub struct NewCredential<'a> {
     /// Grants a scoped credential is limited to; `None` acts with the
     /// account's full access.
     pub grants: Option<&'a Grants>,
-    /// When a passkey proved the holder present, in Unix seconds: set only
-    /// for a session a passkey sign-in opens; `None` otherwise.
+    /// When a passkey proved the holder present, in Unix seconds: for a
+    /// session a passkey sign-in opens, the time of that sign-in; for a CLI
+    /// login a device approval issues, the approver's, which the approval
+    /// recorded. `None` otherwise.
     pub authenticated_at: Option<i64>,
 }
 
@@ -1593,9 +1593,10 @@ mod tests {
     fn freshness_needs_a_recent_passkey_proof() {
         let now = 1_000_000;
         let stale = Err(Denied::Reauthenticate(Reauthenticate::Stale));
+        let oldest = now - Reauthenticate::WINDOW_SECS;
         for (authenticated_at, expected) in [
-            (Some(now), Ok(())),
-            (Some(now - Reauthenticate::WINDOW_SECS), Ok(())),
+            (Some(now), Ok(now)),
+            (Some(oldest), Ok(oldest)),
             (Some(now - Reauthenticate::WINDOW_SECS - 1), stale),
             (Some(now + 1), stale),
             (None, stale),

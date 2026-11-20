@@ -316,6 +316,7 @@ impl Authority {
     pub fn require_fresh(&self) -> Result<(), StoreError> {
         self.proof
             .require_fresh(now_secs())
+            .map(drop)
             .map_err(StoreError::Denied)
     }
 

@@ -8,6 +8,13 @@ use piqueld_core::auth::{
 use piqueld_store::{Actor, Caller, Cascade, NewCredential, Proof, StoreError};
 use std::collections::{HashMap, hash_map::Entry};
 
+/// Why the host operator can't do what only an account does.
+const NOT_AN_ACCOUNT: &str =
+    "the host operator is not an account; sign in with an account to do this";
+/// Seconds an approval's passkey proof must stay recent beyond approving:
+/// the CLI's poll issues the login seconds later and checks the proof again,
+/// so a proof about to lapse asks to confirm now rather than failing then.
+const APPROVAL_MARGIN_SECS: i64 = 30;
 /// Seconds a host operator sign-in link stays redeemable.
 const OPERATOR_LINK_LIFETIME: i64 = 600;
 /// Seconds between refreshes of a credential's last-used time.
@@ -139,8 +146,20 @@ impl Identity {
     /// Returns [`AuthError::Denied`] with [`Denied::Reauthenticate`].
     pub fn require_fresh(&self) -> Result<()> {
         match &self.credential {
-            Credential::Account { proof, .. } => Ok(proof.require_fresh(now_secs())?),
+            Credential::Account { .. } => self.fresh_proof(0).map(drop),
             Credential::Operator { .. } => Ok(()),
+        }
+    }
+    /// When a passkey last proved this account caller present, which must
+    /// stay recent for `margin` more seconds (see [`Proof::require_fresh`]).
+    ///
+    /// # Errors
+    /// Returns [`AuthError::Denied`] with [`Denied::Reauthenticate`], or
+    /// [`AuthError::Invalid`] for the host operator, which has no passkey.
+    pub fn fresh_proof(&self, margin: i64) -> Result<i64> {
+        match &self.credential {
+            Credential::Account { proof, .. } => Ok(proof.require_fresh(now_secs() + margin)?),
+            Credential::Operator { .. } => Err(AuthError::Invalid(NOT_AN_ACCOUNT)),
         }
     }
     /// This caller, for changes that re-read its grants in their transaction.
@@ -164,9 +183,7 @@ impl Identity {
     pub fn caller(&self) -> Result<Caller<'_>> {
         match self.actor() {
             Actor::Account(caller) => Ok(caller),
-            _ => Err(AuthError::Invalid(
-                "the host operator is not an account; sign in with an account to do this",
-            )),
+            _ => Err(AuthError::Invalid(NOT_AN_ACCOUNT)),
         }
     }
 }
@@ -199,7 +216,7 @@ pub(super) struct Device {
 pub(super) struct Approval {
     credential_id: String,
     user_id: String,
-    pub(super) authenticated_at: Option<i64>,
+    pub(super) authenticated_at: i64,
 }
 
 /// The CLI session an approved device login issues: its secret, credential
@@ -230,7 +247,7 @@ impl Prepared {
             name: CLI_SESSION,
             expires_at: Some(self.expires_at),
             grants,
-            authenticated_at: approval.authenticated_at,
+            authenticated_at: Some(approval.authenticated_at),
         }
     }
 }
@@ -480,11 +497,7 @@ impl Auth {
         if identity.scoped {
             return Err(Denied::Scoped.into());
         }
-        identity.require_fresh()?;
-        let authenticated_at = match &identity.credential {
-            Credential::Account { proof, .. } => proof.authenticated_at,
-            Credential::Operator { .. } => None,
-        };
+        let authenticated_at = identity.fresh_proof(APPROVAL_MARGIN_SECS)?;
         let mut devices = self.0.devices.lock();
         let device = Self::pending_device(&mut devices, code)?;
         if let Some(grants) = &device.grants {

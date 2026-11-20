@@ -283,7 +283,9 @@ comparison cannot tell callers apart.
   the 30-day CLI session, named `piquelctl`. If the approver's session ends
   before the next poll, no credential is issued. Approval doesn't create an
   account.
-- Approval also needs a recent passkey sign-in, and records the approver's
+- Approval also needs a recent passkey sign-in, one that stays recent for
+  30 seconds more (`APPROVAL_MARGIN_SECS`), so the dashboard asks to confirm
+  rather than the poll failing moments later. It records the approver's
   `authenticated_at`. The poll checks that recorded time, not the approver's
   current one, so confirming again later for something else doesn't extend
   an approval. The issued session inherits it. An approval whose proof is
