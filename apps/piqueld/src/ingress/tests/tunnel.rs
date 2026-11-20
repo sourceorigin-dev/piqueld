@@ -1,10 +1,17 @@
 //! Tunnel mode: `cloudflared`'s configuration and container, and the gateway's
 //! tunnel listener. The harness test emulates `cloudflared` with a container
 //! on the edge network, since a real tunnel needs Cloudflare.
-use super::{Engine, Scenario, dns01::CURL_IMAGE, listener_table, private_config, routes};
+use super::{
+    Engine, Scenario, application, dns01::CURL_IMAGE, listener_table, private_config,
+    request_deployment, routes,
+};
 use crate::ingress::Ingress;
 use piqueld_config::{Credential, TunnelConfig, TunnelCredentials};
-use piqueld_core::{EnvironmentId, api::PublicIngressStatus, manifest::Visibility};
+use piqueld_core::{
+    EnvironmentId,
+    api::PublicIngressStatus,
+    manifest::{ValidatedRoute, Visibility},
+};
 use piqueld_store::Store;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -244,6 +251,55 @@ async fn a_deferred_replacement_never_switches_modes() {
             .to_string()
             .contains("cannot switch between direct and tunnel"),
         "{error:#}"
+    );
+}
+
+/// What `ingress` keeps of an application's acknowledged public route while
+/// a direct-mode gateway runs and the application's ingress network is gone.
+async fn kept_beside_a_direct_gateway(tunnel: Option<&TunnelConfig>) -> Vec<ValidatedRoute> {
+    use axum::response::IntoResponse;
+    let engine = Engine::serving(|store| {
+        let container = owned_container(
+            store,
+            json!({
+                "State":{"Running":true},
+                "HostConfig":{"PortBindings":{"443/tcp":[{"HostIp":"","HostPort":"443"}]}}
+            }),
+        );
+        axum::Router::new().fallback(move |uri: axum::http::Uri| async move {
+            if uri.path().contains("/networks/") {
+                hyper::StatusCode::NOT_FOUND.into_response()
+            } else {
+                axum::Json(container).into_response()
+            }
+        })
+    })
+    .await;
+    let mut ingress = engine.ingress(true);
+    if let Some(tunnel) = tunnel {
+        ingress = ingress.with_tunnel(tunnel);
+    }
+    let store = &engine.store;
+    let app = application("broken", "www.example.com", "body");
+    let (id, _) = request_deployment(store, crate::api::Actor::Daemon, app).await;
+    let route = routes(Visibility::Public, "www.example.com");
+    store.stage_routes(&id, &route, true, None).await.unwrap();
+    let table = store.routing_table().await.unwrap();
+    store.acknowledge_routes(&table).await.unwrap();
+    let (mut prepared, _, failures) = ingress.prepare_routes(&table).await.unwrap();
+    assert!(failures.contains_key(&id), "{failures:?}");
+    prepared.remove(&id).unwrap()
+}
+
+/// A switch to tunnel mode goes ahead when one application's network is
+/// broken: that application's routes are withdrawn instead of blocking it.
+#[tokio::test]
+async fn a_mode_switch_withdraws_the_routes_of_an_application_with_a_broken_network() {
+    assert_eq!(Box::pin(kept_beside_a_direct_gateway(None)).await.len(), 1);
+    let tunnel = tunnel("c2VjcmV0");
+    assert_eq!(
+        Box::pin(kept_beside_a_direct_gateway(Some(&tunnel))).await,
+        []
     );
 }
 
