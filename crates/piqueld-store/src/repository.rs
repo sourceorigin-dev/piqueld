@@ -670,10 +670,7 @@ mod tests {
         };
         for mutation in [
             repository(None),
-            Mutation::Rename {
-                id: application.clone(),
-                name: "journal".into(),
-            },
+            crate::testing::rename_application(&application, "journal"),
             repository(connection().spec().manifest.clone()),
         ] {
             store.force(mutation).await.unwrap();

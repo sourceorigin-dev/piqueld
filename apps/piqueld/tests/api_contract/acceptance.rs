@@ -1,6 +1,7 @@
 //! Mutation acceptance: generations, preconditions, forced applies and receipts that replay across restarts.
 
 use super::*;
+use piqueld_client::edit::{EditOptions, StringValue};
 
 #[tokio::test]
 async fn generations_deploy_reconcile_and_event_pagination_share_the_http_contract() {
@@ -162,13 +163,13 @@ async fn rename_is_conditioned_idle_only_and_replayable_without_deployment() {
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
     let accepted = api.deploy().await;
-    let request = piqueld_client::RenameApplicationRequest {
-        name: "renamed".into(),
-        expected_generation: Some(1),
+    let name = StringValue {
+        value: "renamed".into(),
     };
+    let options = at_generation(1);
     let keyed = api.client.clone().with_request_id("rename-command");
     let error = keyed
-        .rename_application(&accepted.application_id, &request)
+        .set_application_name(&accepted.application_id, &name, &options)
         .await
         .unwrap_err();
     assert_eq!(api_error(error).code, "application_busy");
@@ -178,13 +179,14 @@ async fn rename_is_conditioned_idle_only_and_replayable_without_deployment() {
     )
     .await;
     let renamed = keyed
-        .rename_application(&accepted.application_id, &request)
+        .set_application_name(&accepted.application_id, &name, &options)
         .await
         .unwrap();
     assert_eq!(renamed.application_id, accepted.application_id);
     assert_eq!(renamed.generation, 2);
+    assert_eq!(renamed.operation_id, None);
     let replay = keyed
-        .rename_application(&accepted.application_id, &request)
+        .set_application_name(&accepted.application_id, &name, &options)
         .await
         .unwrap();
     assert_eq!(replay.generation, 2);
@@ -566,49 +568,38 @@ async fn forced_rename_bypasses_revision_but_preserves_busy_and_name_checks() {
     let temp = tempfile::tempdir().unwrap();
     let api = AcceptanceApi::start(&temp).await;
     let accepted = api.deploy().await;
-    let mut rename = piqueld_client::RenameApplicationRequest {
-        name: "renamed".into(),
-        expected_generation: None,
+    let mut name = StringValue {
+        value: "renamed".into(),
+    };
+    let rename = async |name: &StringValue, options: EditOptions| {
+        api.client
+            .set_application_name(&accepted.application_id, name, &options)
+            .await
+    };
+    let forced = EditOptions {
+        force: true,
+        ..EditOptions::default()
     };
     assert_eq!(
-        api_error(
-            api.client
-                .rename_application(&accepted.application_id, &rename)
-                .await
-                .unwrap_err()
-        )
-        .code,
+        api_error(rename(&name, EditOptions::default()).await.unwrap_err()).code,
         "precondition_required"
     );
     assert_eq!(
-        api_error(
-            api.client
-                .rename_application_with_force(&accepted.application_id, &rename, true)
-                .await
-                .unwrap_err()
-        )
-        .code,
+        api_error(rename(&name, forced).await.unwrap_err()).code,
         "application_busy"
     );
     api.finish_operation(&accepted.operation_id, None).await;
-    rename.expected_generation = Some(99);
-    let renamed = api
-        .client
-        .rename_application_with_force(&accepted.application_id, &rename, true)
-        .await
-        .unwrap();
+    let stale = EditOptions {
+        force: true,
+        ..at_generation(99)
+    };
+    let renamed = rename(&name, stale).await.unwrap();
     assert_eq!(renamed.generation, 2);
     assert_eq!(renamed.application_id, accepted.application_id);
     api.deploy().await;
-    rename.name = "notes".into();
+    name.value = "notes".into();
     assert_eq!(
-        api_error(
-            api.client
-                .rename_application_with_force(&accepted.application_id, &rename, true)
-                .await
-                .unwrap_err()
-        )
-        .code,
+        api_error(rename(&name, forced).await.unwrap_err()).code,
         "application_name_collision"
     );
 }

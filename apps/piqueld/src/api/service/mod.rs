@@ -151,8 +151,7 @@ pub(crate) const AUDIT_BACKLOG: usize = 1024;
 impl ApplicationService {
     /// Checks what submitting `mutation` needs before any state is read or
     /// work is done for it: the revision precondition unless `force`d (see
-    /// `lacks_precondition`), a well-formed idempotency key `request_id`, and
-    /// a valid name for a rename.
+    /// `lacks_precondition`) and a well-formed idempotency key `request_id`.
     ///
     /// # Errors
     /// `PreconditionRequired`, or invalid input.
@@ -166,11 +165,6 @@ impl ApplicationService {
             return Err(ApplicationError::PreconditionRequired);
         }
         if request_id.is_some_and(|id| !piqueld_core::is_request_id(id)) {
-            return Err(StoreError::InvalidInput.into());
-        }
-        if let Mutation::Rename { name, .. } = mutation
-            && !piqueld_core::valid_logical_name(name)
-        {
             return Err(StoreError::InvalidInput.into());
         }
         Ok(())
@@ -533,7 +527,7 @@ impl ApplicationService {
     /// also require the inspected identity when the revision is nonzero. An
     /// explicit force override bypasses revision and name-based identity checks.
     /// `request_id` is the caller's idempotency key, not an operation ID: replay
-    /// returns the original response, including for rename which has no operation.
+    /// returns the original response, including for changes that start no operation.
     /// # Errors
     /// Returns validation, conflict, or persistence errors.
     pub async fn accept(

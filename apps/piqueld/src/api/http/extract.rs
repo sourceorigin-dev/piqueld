@@ -123,7 +123,6 @@ impl Mutator {
         Ok(match response {
             MutationResponse::Saved(saved) => reply(started, saved),
             MutationResponse::Preview(preview) => reply(started, preview),
-            MutationResponse::Rename(renamed) => reply(started, renamed),
             MutationResponse::Environment(environment) => reply(started, environment),
             MutationResponse::Operation(operation) => reply(started, operation),
             MutationResponse::Promotion(promotion) => reply(started, promotion),

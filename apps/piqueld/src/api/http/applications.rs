@@ -2,7 +2,7 @@
 //! renaming, deletion, and manifest download. Mutations of applications and
 //! their environments are submitted through an `extract::Mutator`.
 use super::extract::{IdempotencyKey, ManifestUpload, Mutator};
-use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
+use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use crate::api::Mutation;
 use crate::auth::Identity;
 use axum::{
@@ -13,7 +13,7 @@ use axum::{
 };
 use piqueld_core::api::{
     ApplicationSummary, ApplicationView, ApplyApplicationRequest, DeletedApplication, Envelope,
-    Page, PlanView, RenameApplicationRequest, RenamedApplication, SavedApplication,
+    Page, PlanView, SavedApplication,
 };
 use piqueld_core::{ApplicationId, EnvironmentId, EnvironmentName};
 use serde::Deserialize;
@@ -242,47 +242,6 @@ pub(super) struct GenerationQuery {
 impl QueryParams for GenerationQuery {
     const INVALID_CODE: &'static str = "generation_invalid";
     const INVALID_MESSAGE: &'static str = "invalid expected generation";
-}
-
-/// Renames an application.
-///
-/// Changes only the user-facing name, without redeploying. The inspected
-/// `expected_generation` goes in the JSON body; the new name must not already be
-/// in use, even with `force=true`.
-#[utoipa::path(post,path="/api/v1/applications/{id}/rename",operation_id="renameApplication",
-    params(("id"=String,Path),ForceQuery,IdempotencyKey),
-    request_body=RenameApplicationRequest,
-    responses((status=200,description="Application renamed without redeployment",body=Envelope<RenamedApplication>),
-    ApiErrors<400, 404, 409, 500, 503>))]
-pub(super) async fn rename(
-    mutator: Mutator,
-    ApiQuery(query): ApiQuery<ForceQuery>,
-    ApiPath(id): ApiPath<String>,
-    ApiJson(request): ApiJson<RenameApplicationRequest>,
-) -> Result<Response, ApiError> {
-    mutator
-        .accept(
-            Mutation::Rename {
-                id: ApplicationId::parse(id)?,
-                name: request.name,
-            },
-            request.expected_generation,
-            query.force,
-        )
-        .await
-}
-
-#[derive(Default, Deserialize, utoipa::IntoParams)]
-#[serde(default, deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
-pub(super) struct ForceQuery {
-    /// Explicitly bypass the intent revision precondition. Name availability is always enforced.
-    pub(super) force: bool,
-}
-
-impl QueryParams for ForceQuery {
-    const INVALID_CODE: &'static str = "force_invalid";
-    const INVALID_MESSAGE: &'static str = "force must be true or false";
 }
 
 /// Downloads the saved configuration as a TOML manifest.

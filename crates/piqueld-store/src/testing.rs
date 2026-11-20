@@ -30,6 +30,16 @@ pub(super) fn prebuilt(id: &str) -> NormalizedApplication {
     .normalize(ApplicationId::parse(id).unwrap())
 }
 
+/// Renames application `id` to `name` through the name edit, as the CLI and
+/// the dashboard do.
+pub(super) fn rename_application(id: &ApplicationId, name: &str) -> Mutation {
+    Mutation::Edit {
+        id: id.clone(),
+        edit: Box::new(piqueld_core::edit::ApplicationEdit::Name(name.into())),
+        deploy: false,
+    }
+}
+
 /// The account `name`, its username too.
 pub(super) fn user(name: &str) -> User {
     User {

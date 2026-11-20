@@ -280,11 +280,10 @@ async fn restored_links_stay_bound_to_their_applications() {
     let first = deploy(&store, &exporting, 'a', true).await;
     // The next deployment exports nothing, so binds nothing.
     deploy(&store, &app, 'b', true).await;
-    let rename = Mutation::Rename {
-        id: shop.clone(),
-        name: "market".into(),
-    };
-    store.force(rename).await.unwrap();
+    store
+        .force(crate::testing::rename_application(&shop, "market"))
+        .await
+        .unwrap();
     store.save_template(template("shop", "[spec]"), false).await;
 
     let restored = restore(&store, &environment, &first.id).await.unwrap();

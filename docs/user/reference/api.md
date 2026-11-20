@@ -123,7 +123,6 @@ when the complete normalized manifest is needed.
 | POST | `/api/v1/applications/plan` | Plan a manifest without pulling images; `environment=ID` selects the environment to compare with |
 | POST | `/api/v1/applications/apply` | Save configuration by name, converging the environments it [declares](manifest.md#declared-environments); `?deploy=true` also deploys its only environment, or every declared one that builds (`operation_ids`) |
 | DELETE | `/api/v1/applications/{id}` | Request deletion of every environment and preview; no body. `environments=a,b` must name every environment when there are several |
-| POST | `/api/v1/applications/{id}/rename` | Rename an idle application without redeployment; 409 `repository_managed` for a repository-backed one |
 | POST | `/api/v1/applications/{id}/environments` | Add an environment: `{ "name": "staging", "branch": "main", "commit": null, "expected_generation": 3 }`; `branch` defaults to the one `spec.manifest` names and requires a repository-backed application. `"promote_from": "env-..."` instead creates a promoted environment; it excludes `branch` and `commit` (400 `source_invalid`). A `commit` without `branch` is 400 `revision_invalid`. 409 `environment_declared` for a name the saved manifest declares |
 | PUT | `/api/v1/environments/{id}/branch` | Follow another branch, or pin or unpin a commit, without redeploying: `{ "branch": "release", "commit": null, "expected_generation": 3 }`; 409 `environment_promoted` for a promoted environment |
 | PUT | `/api/v1/environments/{id}/telemetry` | Grant or revoke an environment's [telemetry](../operations/telemetry.md#receive-telemetry-in-an-application): `{ "granted": true }`; needs `telemetry:grant` and no `expected_generation`. Revoking stops export at once. 404 for previews, which are never granted |
@@ -303,14 +302,14 @@ Apply and plan accept JSON `{ "manifest": ..., "expected_generation": 3,
 `X-Expected-Generation` and `X-Expected-Application-Id`.
 
 Every mutation of an application or one of its environments, except sync opt-ins,
-telemetry grants and previews, is conditioned on the inspected application revision. Apply, deploy, delete, rename, and environment
+telemetry grants and previews, is conditioned on the inspected application revision. Apply, deploy, delete, [field edits](#field-endpoints), and environment
 creation require preconditions unless the endpoint is explicitly
 called with the query parameter `force=true`. Missing preconditions return 400
 `precondition_required`. Apply requires generation zero to create an absent name,
 or both the inspected application ID and generation to update an existing name.
 Generation zero for a taken name returns 409 `application_name_collision`, as
-renames do.
-Deploy and delete require `expected_generation` in its query; renames,
+renaming to a taken name does.
+Deploy, delete and field edits require `expected_generation` in their query;
 environment creation, source changes and promotions take it in JSON.
 Revision mismatches return 409 `generation_conflict`; identity mismatches return
 409 `identity_conflict`. Checks and acceptance are atomic.
@@ -508,8 +507,8 @@ raw request bodies, and do not guarantee exactly-once Docker effects. Force is
 part of request identity: retrying a forced request replays its receipt instead of
 overwriting intervening changes again. A new forced command needs a new key.
 
-Rename accepts JSON `{ "name": "new-name", "expected_generation": 3 }` and returns
-200 with `RenamedApplication`. It rejects pending/running operations in any
+Renaming an application with the `PUT /name` [field endpoint](#field-endpoints)
+deploys nothing unless asked with `deploy=true`. It rejects pending/running operations in any
 environment and deletion intent with 409 `application_busy`, occupied names
 with 409 `application_name_collision`, and repository-backed applications, whose
 name their fetched manifests must keep, with 409 `repository_managed`. It preserves the stable ID, runtime

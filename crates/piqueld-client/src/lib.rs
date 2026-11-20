@@ -71,8 +71,8 @@ pub use piqueld_core::timeline;
 pub use applications::{
     AcceptedOperation, ApplicationSummary, ApplicationView, ApplyApplicationRequest, ApplyOptions,
     DeletedApplication, DeploymentView, DiagnosticView, ListApplicationsOptions,
-    ObservedApplicationView, ObservedServiceView, PlanView, ReleaseView, RenameApplicationRequest,
-    RenamedApplication, RuntimeCoverage, SavedApplication,
+    ObservedApplicationView, ObservedServiceView, PlanView, ReleaseView, RuntimeCoverage,
+    SavedApplication,
 };
 pub use client::Client;
 pub use environments::{

@@ -485,9 +485,10 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
     let renamed = applications
         .accept(
             Daemon,
-            piqueld::api::Mutation::Rename {
+            piqueld::api::Mutation::Edit {
                 id: harness.application_of(&first.environment_id).await,
-                name: "renamed".into(),
+                edit: Box::new(piqueld_core::edit::ApplicationEdit::Name("renamed".into())),
+                deploy: false,
             },
             Some(2),
             false,
@@ -495,7 +496,7 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
         )
         .await
         .unwrap();
-    let piqueld::api::MutationResponse::Rename(renamed) = renamed else {
+    let piqueld::api::MutationResponse::Saved(renamed) = renamed else {
         panic!("rename response")
     };
     assert_eq!(renamed.generation, 3);

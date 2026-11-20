@@ -151,10 +151,7 @@ async fn application_history_spans_its_environments() {
     service
         .accept(
             Daemon,
-            Mutation::Rename {
-                id: application.clone(),
-                name: "renamed".into(),
-            },
+            rename(&application, "renamed"),
             Some(saved.generation),
             false,
             None,
