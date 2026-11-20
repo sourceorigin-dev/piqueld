@@ -54,6 +54,9 @@ pub const TAILSCALE_IMAGE: &str = "tailscale/tailscale:v1.102.5@sha256:c507f3a2a
 /// Version of `cloudflared` released with piqueld; upgrades replace it.
 pub const CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared:2026.10.4@sha256:c6c7ae1d5dfdcb094ad344ed68ccffc26635c9c6be80965664c33baf064b0515";
 
+/// How long relaying Caddy's logs may stretch a gateway pass.
+const LOG_RELAY_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Socket in the control mount that the gateway forwards webhook deliveries to.
 const WEBHOOK_SOCKET: &str = "webhooks.sock";
 /// Socket in the control mount that the gateway forwards the dashboard
@@ -98,6 +101,9 @@ pub struct Ingress {
     health: RwLock<IngressStatus>,
     /// Unix timestamp (seconds) up to which each container's logs were relayed.
     logs_since: Mutex<BTreeMap<String, u64>>,
+    /// Unix timestamp (seconds) of the daemon's start, where relaying a
+    /// container's logs begins: earlier lines were relayed before a restart.
+    logs_from: u64,
     /// DNS providers and the DNS-01 certificates loaded into Caddy.
     certificates: Certificates,
     /// The apps tailnet node, while `[ingress.private]` is enabled.
@@ -182,6 +188,9 @@ impl Ingress {
                 routes: Vec::new(),
             }),
             logs_since: Mutex::default(),
+            logs_from: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs(),
             certificates,
             node: None,
             dashboard: None,
@@ -478,8 +487,12 @@ impl Ingress {
                 if let Err(error) = self.refresh().await {
                     tracing::warn!(?error, "ingress reconciliation failed; will retry");
                 }
-                if let Err(error) = self.relay_logs().await {
-                    tracing::debug!(?error, "could not read Caddy diagnostics");
+                match tokio::time::timeout(LOG_RELAY_TIMEOUT, self.relay_logs()).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        tracing::debug!(?error, "could not read Caddy diagnostics");
+                    }
+                    Err(_) => tracing::debug!("reading Caddy diagnostics timed out"),
                 }
             };
             if cancellation.run_until_cancelled(pass).await.is_none() {
@@ -698,12 +711,14 @@ impl Ingress {
     /// the rest stay pending; when disabled, routes report disabled (or failed while
     /// shutdown is unconfirmed).
     async fn probe_routes(&self) {
-        let (Ok(table), Ok(everything)) = (
+        let (Ok(table), Ok(everything), Ok(applied)) = (
             self.store.served_table().await,
             self.store.routing_table().await,
+            self.store.applied_table().await,
         ) else {
             return;
         };
+        let applied = &applied;
         let Ok(exact) = self.exact_hostnames(&everything).await else {
             return;
         };
@@ -719,8 +734,9 @@ impl Ingress {
         let private = &private;
         let mut probes = stream::iter(routes)
             .map(|(id, route)| async move {
-                let (state, mut message) =
-                    self.route_state(&id, &route, exact, healthy, private).await;
+                let (state, mut message) = self
+                    .route_state(&id, &route, exact, applied, healthy, private)
+                    .await;
                 let dns = self.route_dns(&route.hostname);
                 // Until the route is ready, a DNS conflict or failure explains it.
                 if let Some(problem) = dns.message.filter(|_| state != "ready") {
@@ -768,6 +784,7 @@ impl Ingress {
         id: &EnvironmentId,
         route: &ValidatedRoute,
         exact: &[Hostname],
+        applied: &RoutingTable,
         healthy: bool,
         private: &PrivateIngressStatus,
     ) -> (&'static str, String) {
@@ -795,11 +812,9 @@ impl Ingress {
         }
         // A broken app must not hide verified readiness for unrelated
         // routes. Only probe destinations acknowledged by the gateway.
-        if !self
-            .store
-            .applied_routes(id)
-            .await
-            .is_ok_and(|applied| applied.contains(route))
+        if !applied
+            .get(id)
+            .is_some_and(|applied| applied.contains(route))
         {
             return (
                 "pending",

@@ -426,15 +426,28 @@ impl Store {
         Ok(routes)
     }
 
-    /// Records `table` as each application's applied routes and recomputes their
-    /// hostname reservations.
+    /// Records `table` as each application's applied routes and recomputes the
+    /// hostname reservations of the environments whose routes changed. Returns
+    /// whether any did; when none did, nothing is written.
     /// Called only after this exact table is accepted (or the gateway is stopped).
+    ///
+    /// The table is compared outside the writer lock: acknowledgements are
+    /// serialized by their callers, and the gateway acknowledges every pass, so
+    /// one that raced another is corrected by the next.
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn acknowledge_routes(&self, table: &RoutingTable) -> Result<(), StoreError> {
+    pub async fn acknowledge_routes(&self, table: &RoutingTable) -> Result<bool, StoreError> {
+        let applied = self.applied_table().await?;
+        let changed: Vec<_> = table
+            .iter()
+            .filter(|(id, routes)| applied.get(*id) != Some(*routes))
+            .collect();
+        if changed.is_empty() {
+            return Ok(false);
+        }
         let (_writer, mut tx) = self.begin_immediate().await?;
-        for (environment_id, routes) in table {
+        for (environment_id, routes) in &changed {
             let id = environment_id.as_str();
             let json = serde_json::to_string(routes).map_err(StoreError::corrupt)?;
             sqlx::query!(
@@ -446,7 +459,9 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
         }
-        Self::commit_environment_changes(tx, table.keys().map(EnvironmentId::as_str)).await
+        let changed: Vec<&str> = changed.iter().map(|(id, _)| id.as_str()).collect();
+        Self::commit_environment_changes(tx, changed).await?;
+        Ok(true)
     }
 
     /// The routes the gateway last acknowledged, for every environment. DNS
@@ -1040,6 +1055,26 @@ mod tests {
             .await
             .unwrap();
         assert!(!store.hostname_routes(&hostname).await.unwrap().desired);
+    }
+
+    #[tokio::test]
+    async fn only_changed_routes_are_acknowledged() {
+        let (_directory, store) = Store::temporary().await;
+        let input = app("one", Some("site.example.com"));
+        let saved = save(&store, input.clone(), false).await.unwrap();
+        let id = store.saved_production(&saved).await;
+        store
+            .stage_routes(&id, &input.spec().routes, true, None)
+            .await
+            .unwrap();
+        let table = store.routing_table().await.unwrap();
+        assert!(store.acknowledge_routes(&table).await.unwrap());
+        assert!(!store.acknowledge_routes(&table).await.unwrap());
+        assert_eq!(store.applied_table().await.unwrap(), table);
+        store.stage_routes(&id, &[], true, None).await.unwrap();
+        let withdrawn = store.routing_table().await.unwrap();
+        assert!(store.acknowledge_routes(&withdrawn).await.unwrap());
+        assert_eq!(store.applied_table().await.unwrap(), withdrawn);
     }
 
     #[tokio::test]

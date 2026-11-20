@@ -49,6 +49,8 @@ pub(super) enum UnmetRequirement {
 pub(super) const CONFIGURATION_LABEL: &str = "io.piqueld.ingress-configuration";
 /// The writable scratch space of managed containers with a temporary directory.
 pub(super) const TMPFS: &str = "rw,noexec,nosuid,size=16777216";
+/// Log lines read from each container per relay.
+const LOG_LINES: u16 = 100;
 
 impl Ingress {
     /// Ownership labels applied to the gateway container, the apps node,
@@ -1105,8 +1107,10 @@ impl Ingress {
     }
 
     /// Forwards Caddy's and `cloudflared`'s log lines emitted since the
-    /// previous relay into daemon logs, and the apps node's at debug level
-    /// since `tailscaled` is verbose (at most 100 lines per container and pass).
+    /// previous relay, or since the daemon started, into daemon logs, and the
+    /// apps node's at debug level since `tailscaled` is verbose. At most
+    /// [`LOG_LINES`] lines per container and pass are read; a warning says
+    /// when that cut a burst short.
     pub(super) async fn relay_logs(&self) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -1119,8 +1123,14 @@ impl Ingress {
             if self.named_container(&name).await?.is_none() {
                 continue;
             }
-            let from = since.get(&name).copied().unwrap_or(0);
-            let lines = self.docker.log_lines(&name, 100, Some((from, now))).await?;
+            let from = since.get(&name).copied().unwrap_or(self.logs_from);
+            let lines = self
+                .docker
+                .log_lines(&name, LOG_LINES, Some((from, now)))
+                .await?;
+            if lines.len() >= usize::from(LOG_LINES) {
+                tracing::warn!(container=%name, "more than {LOG_LINES} log lines in one pass; only the latest are relayed");
+            }
             for line in lines {
                 // Access log lines reach the output only while the daemon's
                 // traffic socket is down; they aren't diagnostics.

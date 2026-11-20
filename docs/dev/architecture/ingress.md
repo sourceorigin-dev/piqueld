@@ -403,7 +403,8 @@ Each route's state (`Ingress::route_state`) is, in order:
 2. For a private route without private ingress, `disabled`, or `failed` while
    the node's removal is unconfirmed.
 3. `failed` when it needs a DNS-01 certificate that has a problem.
-4. `pending` until the gateway has acknowledged it (`applied_routes`), and,
+4. `pending` until the gateway has acknowledged it (`applied_table`, read
+   once per pass), and,
    for a private route, while the node is unhealthy.
 5. `ready` once its probe passes, else `pending`.
 
@@ -617,9 +618,12 @@ version the container spec needs, except `/version`, which an older engine
 still answers. A failed request's
 diagnostic names the Docker operation and HTTP status like the reconciler's. Health changes of the gateway, the apps node or the tunnel
 feed the `ingress_unavailable` condition and diagnostic, which notifies under
-`daemon_failures` when sustained. The containers' logs are relayed to the
-daemon's every 10 seconds, at most 100 lines per container, each cut to 4096
-characters. Gateway startup,
+`daemon_failures` when sustained. Each pass acknowledges the routes it applied, but writes only the
+environments whose routes changed, so a steady pass writes nothing. The
+containers' logs are relayed to the daemon's every 10 seconds, starting from
+the daemon's start, at most 100 lines per container (a warning says when a
+burst had more), each cut to 4096 characters, and the relay may take at most
+5 seconds of the pass. Gateway startup,
 port and configuration failures leave the daemon available.
 
 Disabling ingress and restarting removes the containers and then their edge
