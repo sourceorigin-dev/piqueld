@@ -34,9 +34,40 @@ fn with_generated_secret(app: &NormalizedApplication) -> NormalizedApplication {
     manifest.validate().unwrap().normalize(app.id().clone())
 }
 
+/// Opens a store and saves `with_secret(application())` in it with the value
+/// `original` of `token`. Returns the store's directory, which holds
+/// `secrets.key`, the store, the application, and the deployment saving it
+/// requested.
+async fn stored_token() -> (tempfile::TempDir, Store, NormalizedApplication, Operation) {
+    let (temp, store) = Store::temporary().await;
+    let app = with_secret(&application());
+    let deployed = store
+        .save_application(&ApplicationTemplate::from(&app), None, None)
+        .await
+        .unwrap();
+    store
+        .put_stored_secret(Daemon, app.id(), "token", 0, b"original".to_vec(), None)
+        .await
+        .unwrap();
+    (temp, store, app, deployed)
+}
+
+/// Saves `app` over the application it names, as the daemon at revision
+/// `expected`, without deploying it.
+async fn save(store: &Store, app: &NormalizedApplication, expected: u64) -> Result<(), StoreError> {
+    let save = crate::Mutation::Save {
+        application: Box::new(ApplicationTemplate::from(app)),
+        expected_application_id: Some(app.id().to_string()),
+        deploy: false,
+    };
+    store
+        .accept(Daemon, save, Some(expected), false, None)
+        .await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn captured_deployment_protects_secrets_before_pinning() {
-    use crate::Mutation;
     let (_temp, store) = Store::temporary().await;
     let app = application();
     let captured = with_secret(&app);
@@ -48,20 +79,7 @@ async fn captured_deployment_protects_secrets_before_pinning() {
         .put_stored_secret(Daemon, app.id(), "token", 0, b"value".to_vec(), None)
         .await
         .unwrap();
-    store
-        .accept(
-            Daemon,
-            Mutation::Save {
-                application: Box::new(ApplicationTemplate::from(&app)),
-                expected_application_id: Some(app.id().to_string()),
-                deploy: false,
-            },
-            Some(1),
-            false,
-            None,
-        )
-        .await
-        .unwrap();
+    save(&store, &app, 1).await.unwrap();
     assert!(matches!(
         store
             .begin_stored_secret_deletion(Daemon, app.id(), "token", 1)
@@ -344,18 +362,8 @@ async fn rotation_preserves_retry_pins_and_secret_values_never_enter_snapshots()
 
 #[tokio::test]
 async fn lost_key_recovery_discards_values_until_replacements_are_deployed() {
-    let temp = tempfile::tempdir().unwrap();
+    let (temp, store, app, deployed) = stored_token().await;
     let key = temp.path().join("secrets.key");
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
-    let app = with_secret(&application());
-    let deployed = store
-        .save_application(&ApplicationTemplate::from(&app), None, None)
-        .await
-        .unwrap();
-    store
-        .put_stored_secret(Daemon, app.id(), "token", 0, b"original".to_vec(), None)
-        .await
-        .unwrap();
     let pinned = store.pin_secrets(&deployed, &app).await.unwrap();
     let env = &deployed.environment_id;
     assert!(matches!(
@@ -430,18 +438,8 @@ async fn lost_key_recovery_discards_values_until_replacements_are_deployed() {
 #[tokio::test]
 async fn key_recovery_keeps_values_of_a_key_that_is_not_lost() {
     use std::os::unix::fs::PermissionsExt;
-    let temp = tempfile::tempdir().unwrap();
+    let (temp, store, app, _) = stored_token().await;
     let key = temp.path().join("secrets.key");
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
-    let app = with_secret(&application());
-    store
-        .save_application(&ApplicationTemplate::from(&app), None, None)
-        .await
-        .unwrap();
-    store
-        .put_stored_secret(Daemon, app.id(), "token", 0, b"original".to_vec(), None)
-        .await
-        .unwrap();
     std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert!(matches!(
         store.recover_secret_key(Daemon).await,
@@ -457,9 +455,8 @@ async fn key_recovery_keeps_values_of_a_key_that_is_not_lost() {
 #[tokio::test]
 async fn key_recovery_keeps_values_behind_a_corrupt_verifier() {
     for webhook in [false, true] {
-        let temp = tempfile::tempdir().unwrap();
+        let (temp, store) = Store::temporary().await;
         let key = temp.path().join("secrets.key");
-        let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
         let app = with_secret(&application());
         store
             .save_application(&ApplicationTemplate::from(&app), None, None)
@@ -502,17 +499,7 @@ async fn key_recovery_keeps_values_behind_a_corrupt_verifier() {
 /// recovered then too.
 #[tokio::test]
 async fn key_recovery_needs_no_verifier() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
-    let app = with_secret(&application());
-    store
-        .save_application(&ApplicationTemplate::from(&app), None, None)
-        .await
-        .unwrap();
-    store
-        .put_stored_secret(Daemon, app.id(), "token", 0, b"original".to_vec(), None)
-        .await
-        .unwrap();
+    let (temp, store, _, _) = stored_token().await;
     sqlx::query("DELETE FROM secret_key_verification")
         .execute(&store.pool)
         .await
@@ -528,18 +515,8 @@ async fn key_recovery_needs_no_verifier() {
 #[tokio::test]
 async fn writes_bind_only_the_key_of_values_without_a_verifier() {
     use std::os::unix::fs::PermissionsExt;
-    let temp = tempfile::tempdir().unwrap();
+    let (temp, store, app, _) = stored_token().await;
     let key = temp.path().join("secrets.key");
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
-    let app = with_secret(&application());
-    store
-        .save_application(&ApplicationTemplate::from(&app), None, None)
-        .await
-        .unwrap();
-    store
-        .put_stored_secret(Daemon, app.id(), "token", 0, b"original".to_vec(), None)
-        .await
-        .unwrap();
     let original = Zeroizing::new(std::fs::read(&key).unwrap());
     sqlx::query("DELETE FROM secret_key_verification")
         .execute(&store.pool)
@@ -650,8 +627,7 @@ async fn mounted_declared_secrets_are_generated_once_until_regenerated() {
 /// repository deployment, since `regenerate_secret` reads the accepted one.
 #[tokio::test]
 async fn deployments_replace_generated_values_discarded_by_key_recovery() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
+    let (temp, store) = Store::temporary().await;
     let accepted = ApplicationTemplate::from(&application());
     let first = store.save_application(&accepted, None, None).await.unwrap();
     let (app, env) = (with_generated_secret(&application()), &first.environment_id);
@@ -712,20 +688,7 @@ async fn sibling_environment_deletions_do_not_block_another_environments_deploym
     // Production captures a deployment that mounts the secret, then the shared
     // configuration stops mounting it.
     let deployment = store.request_deploy(&production, Some(2)).await.unwrap();
-    store
-        .accept(
-            Daemon,
-            Mutation::Save {
-                application: Box::new(ApplicationTemplate::from(&app)),
-                expected_application_id: Some(app.id().to_string()),
-                deploy: false,
-            },
-            Some(2),
-            false,
-            None,
-        )
-        .await
-        .unwrap();
+    save(&store, &app, 2).await.unwrap();
     store
         .begin_secret_deletion(Daemon, &staging.id, "token", 1)
         .await
@@ -740,19 +703,7 @@ async fn sibling_environment_deletions_do_not_block_another_environments_deploym
     );
     // Shared configuration still cannot start using the secret being deleted.
     assert!(matches!(
-        store
-            .accept(
-                Daemon,
-                Mutation::Save {
-                    application: Box::new(ApplicationTemplate::from(&captured)),
-                    expected_application_id: Some(app.id().to_string()),
-                    deploy: false,
-                },
-                Some(3),
-                false,
-                None,
-            )
-            .await,
+        save(&store, &captured, 3).await,
         Err(StoreError::SecretDeleting)
     ));
 }
@@ -906,9 +857,8 @@ async fn stored_secret_writes_use_the_callers_current_grants() {
 #[tokio::test]
 async fn secret_key_check_reports_the_key_without_changing_it() {
     use piqueld_core::api::CheckStatus;
-    let temp = tempfile::tempdir().unwrap();
+    let (temp, store) = Store::temporary().await;
     let key = temp.path().join("secrets.key");
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
     let status = async || store.secret_key_check().await.status;
     // A new installation has no key yet, and checking does not create one.
     assert_eq!(status().await, CheckStatus::Pass);
