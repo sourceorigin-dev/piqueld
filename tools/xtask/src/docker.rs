@@ -151,22 +151,23 @@ impl Engine {
             .force(true)
             .v(true)
             .build();
-        match self.remove_container(container, Some(options)).await {
-            Err(error) if !Self::is_not_found(&error) => {
-                Err(error).with_context(|| format!("remove container {container}"))
-            }
-            _ => Ok(()),
-        }
+        Self::found(self.remove_container(container, Some(options)).await)
+            .with_context(|| format!("remove container {container}"))?;
+        Ok(())
     }
 
-    pub fn is_not_found(error: &bollard::errors::Error) -> bool {
-        matches!(
-            error,
-            bollard::errors::Error::DockerResponseServerError {
-                status_code: 404,
-                ..
-            }
-        )
+    /// The outcome of a request about a container or volume, with one that
+    /// doesn't exist as `None`.
+    pub fn found<T>(
+        result: Result<T, bollard::errors::Error>,
+    ) -> Result<Option<T>, bollard::errors::Error> {
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn running(&self, container: &str) -> Result<bool> {
