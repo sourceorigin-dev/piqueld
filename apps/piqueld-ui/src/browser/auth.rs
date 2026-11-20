@@ -1105,7 +1105,10 @@ fn revoke_button(feedback: Feedback, command: impl Fn() -> Manage + 'static) -> 
 }
 
 /// What a credential issued, for a [`CascadeDialog`]'s hint.
-const ISSUED: &str = "API tokens, piquelctl logins, links and passkeys created with it, and the sessions those passkeys signed in, in any account. It reaches them even when credentials in between have ended.";
+const ISSUED: &str = "API tokens, piquelctl logins, links and passkeys created with it, and the sessions those passkeys signed in, in any account.";
+
+/// How far every [`CascadeDialog`] reaches, after its own hint.
+const REACH: &str = "It reaches them even when credentials in between have ended.";
 
 /// Confirms a revocation in a dialog with a checked "Also revoke what it
 /// issued" box, checked again each time it opens, and `hint` saying what
@@ -1133,7 +1136,7 @@ fn CascadeDialog(
             <p>{message}</p>
             <div class="stack-sm">
                 {checkbox("Also revoke what it issued", cascade)}
-                <p class="hint">{hint}</p>
+                <p class="hint">{hint} " " {REACH}</p>
             </div>
             <div class="form-actions">
                 <button type="button" class="btn btn-ghost" on:click={move |_| opened.set(false)}>
@@ -1486,7 +1489,7 @@ fn DeleteAccount(user: User, feedback: Feedback) -> impl IntoView {
             opened={opened}
             title="Delete account"
             message={message}
-            hint="What its sessions, tokens and passkeys issued in other accounts: API tokens, piquelctl logins, links and passkeys, and the sessions those passkeys signed in. It reaches them even when credentials in between have ended."
+            hint="What its sessions, tokens and passkeys issued in other accounts: API tokens, piquelctl logins, links and passkeys, and the sessions those passkeys signed in."
             confirm="Delete account"
             on_confirm={delete}
         />
@@ -1758,8 +1761,13 @@ fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
             <CascadeDialog
                 opened={removing}
                 title="Remove passkey"
-                message={Signal::derive(move || format!("{} can no longer sign in.", saved.get_value()))}
-                hint="The sessions it signed in, and the API tokens, piquelctl logins, links and passkeys those created, in any account. It reaches them even when credentials in between have ended."
+                message={Signal::derive(move || {
+                    format!(
+                        "{} can no longer sign in. The account's other passkeys were usually added through its first one, so they may be removed too: to keep them, clear the box below.",
+                        saved.get_value(),
+                    )
+                })}
+                hint="The sessions it signed in, and the API tokens, piquelctl logins, links and passkeys those created, in any account."
                 confirm="Remove"
                 on_confirm={remove}
             />
@@ -1857,7 +1865,7 @@ fn Credentials(
                     opened={revoking_all}
                     title="Revoke all sessions and tokens"
                     message="Every session, piquelctl login and API token of this account stops working at once, including the session you're using if it's yours."
-                    hint="API tokens, piquelctl logins, links and passkeys they created, and the sessions those passkeys signed in, in any account. It reaches them even when credentials in between have ended."
+                    hint="API tokens, piquelctl logins, links and passkeys they created, and the sessions those passkeys signed in, in any account."
                     confirm="Revoke all"
                     on_confirm={revoke_all}
                 />

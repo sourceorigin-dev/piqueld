@@ -928,7 +928,8 @@ impl Store {
     }
 
     /// Deletes every stored credential of an account, signing it out
-    /// everywhere, with what they issued as `cascade` says.
+    /// everywhere, with what they and the account's ended sessions issued as
+    /// `cascade` says (see `account_credentials_on`).
     ///
     /// # Errors
     /// Returns a storage error.
@@ -946,13 +947,22 @@ impl Store {
         self.commit_access_change(tx).await
     }
 
-    /// The IDs of every credential `user_id` has stored, live or not.
+    /// The IDs of every credential `user_id` has stored, live or not, and of
+    /// the sessions its passkeys signed in, even ones that logged out or were
+    /// pruned since: their lineage still leads to what they issued. Ended
+    /// sessions have no row, so revoking them alone deletes nothing more.
     async fn account_credentials_on(
         db: &mut SqliteConnection,
         user_id: &str,
     ) -> Result<Vec<String>, StoreError> {
         sqlx::query_scalar!(
-            r#"SELECT id AS "id!" FROM auth_credentials WHERE user_id=?1"#,
+            r#"SELECT id AS "id!" FROM auth_credentials WHERE user_id=?1
+            UNION
+            SELECT session.id FROM auth_passkeys p
+            JOIN auth_lineage passkey ON passkey.kind='passkey' AND passkey.id=p.id
+            JOIN auth_lineage session ON session.issued_by=passkey.node
+                AND session.kind='credential'
+            WHERE p.user_id=?1"#,
             user_id
         )
         .fetch_all(db)

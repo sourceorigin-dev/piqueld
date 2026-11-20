@@ -368,3 +368,36 @@ async fn bulk_revocations_cascade_from_every_root() {
     assert!(frank.is_some(), "accounts are never deleted");
     assert!(passkey("erin-key").await && live(&store, "erin").await);
 }
+
+/// Revoking all of an account's credentials also starts from the sessions
+/// its passkeys signed in that have since logged out and been pruned, so
+/// what they issued goes too, whether or not housekeeping ran.
+#[tokio::test]
+async fn revoking_all_reaches_what_ended_sessions_issued() {
+    let (_dir, store) = Store::temporary().await;
+    // An administrator nothing here touches, so no cascade locks out.
+    admin_with_passkey(&store, "erin").await;
+    admin_with_passkey(&store, "alice").await;
+    // Alice's passkey no longer descends from a live credential.
+    let alone = store.revoke_credential(Actor::Daemon, "alice", Cascade::No);
+    alone.await.expect("alice's login is revoked alone");
+    let signed_in = credential("alice-signed-in", CredentialKind::Browser);
+    let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
+    let sign_in = store.sign_in_with_passkey("alice-key", "alice", stored, &signed_in);
+    let sign_in = sign_in.await.expect("alice's passkey signs in");
+    sign_in.expect("the passkey is alice's");
+    let session = Caller {
+        credential_id: "alice-signed-in",
+        user_id: "alice",
+    };
+    invite_and_redeem(&store, session, "bob").await;
+    let logout = store.revoke_credential(Actor::Daemon, "alice-signed-in", Cascade::No);
+    logout.await.expect("alice's session logs out");
+    store.prune_auth().await.expect("housekeeping runs");
+
+    let all = store.revoke_credentials(Actor::Daemon, "alice", Cascade::Yes);
+    all.await
+        .expect("the daemon revokes all of alice's credentials");
+    assert!(!live(&store, "bob-session").await);
+    assert_eq!(passkeys(&store).await, ["alice-key", "erin-key"]);
+}

@@ -103,10 +103,18 @@ Then, signed in as their account or as that administrator:
    select **Remove** next to the lost passkey, or run
    `piquelctl account passkey remove` with its ID, from
    `piquelctl account passkey list bob`.
-2. If the passkey may have been stolen, select **Revoke all** under
-   **Sessions and API tokens**, or run
-   `piquelctl token revoke --all --user bob`. Removing a passkey doesn't end
-   the sessions it opened.
+
+   Removing it also ends the sessions it signed in, and
+   [everything they issued](accounts.md#what-revoking-also-revokes),
+   including passkeys added from those sessions. If the new passkey came
+   from one of them, added in a browser the lost passkey signed in or
+   through an enrollment link created there, clear
+   **Also revoke what it issued** in the dialog, or add `--no-cascade`, so
+   the new passkey stays.
+2. If the passkey may have been stolen and you kept what it issued, revoke
+   each session you don't recognize under **Sessions and API tokens**, one
+   at a time, with **Revoke**, or with `piquelctl token revoke` and its ID.
+   Don't revoke the session the new passkey was added from.
 
 ## No administrator can sign in
 

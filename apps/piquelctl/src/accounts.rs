@@ -106,7 +106,6 @@ pub(crate) enum AccountCommand {
         /// Leave what was issued through it valid; see `token revoke`.
         #[arg(long)]
         no_cascade: bool,
-
         /// Skip the confirmation prompt.
         #[arg(long, short)]
         yes: bool,
@@ -153,10 +152,14 @@ pub(crate) enum PasskeyCommand {
     /// Remove a passkey, so it can no longer sign in.
     ///
     /// It also revokes the sessions it signed in, and everything issued
-    /// through them, as `token revoke` does. Anyone may remove their own;
-    /// another account's needs `accounts:manage` and every grant it has. An
-    /// API token or limited login can't remove its own account's. The daemon
-    /// refuses when no account with `admin` and a passkey would remain.
+    /// through them, as `token revoke` does. The account's other passkeys
+    /// were usually added through its first one, so removing that one may
+    /// remove them too: pass `--no-cascade` to keep them.
+    ///
+    /// Anyone may remove their own; another account's needs `accounts:manage`
+    /// and every grant it has. An API token or limited login can't remove its
+    /// own account's. The daemon refuses when no account with `admin` and a
+    /// passkey would remain.
     Remove {
         /// Passkey ID, from `account passkey list`.
         // Base64url credential IDs may start with `-`.
@@ -165,7 +168,6 @@ pub(crate) enum PasskeyCommand {
         /// Leave what was issued through it valid; see `token revoke`.
         #[arg(long)]
         no_cascade: bool,
-
         /// Skip the confirmation prompt.
         #[arg(long, short)]
         yes: bool,
@@ -183,8 +185,9 @@ pub(crate) enum InvitationCommand {
     /// Revoke a pending invitation or enrollment link, so it no longer works.
     ///
     /// A pending link hasn't issued anything yet, so this revokes only the
-    /// link, and has no `--no-cascade`. An invitation needs `accounts:manage` and every grant it hands out. An
-    /// enrollment link needs what `account enroll` does.
+    /// link, and has no `--no-cascade`. An invitation needs `accounts:manage`
+    /// and every grant it hands out. An enrollment link needs what
+    /// `account enroll` does.
     Revoke {
         /// Invitation ID, from `account invitation list`.
         id: String,
@@ -595,6 +598,11 @@ impl PasskeyCommand {
                 yes,
                 no_cascade,
             } => {
+                if !*no_cascade && !*yes {
+                    console.warning(
+                        "the account's other passkeys were usually added through its first one, so they may be removed too; pass --no-cascade to keep them",
+                    )?;
+                }
                 let question = format!("Remove passkey {id}");
                 confirm_revocation(console, *yes, *no_cascade, &question).await?;
                 client

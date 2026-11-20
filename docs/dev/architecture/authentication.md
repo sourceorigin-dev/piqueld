@@ -237,8 +237,10 @@ named rows and every node below them with one recursive query, then deletes
 their live credentials, invitations and passkeys in the same transaction.
 `Cascade::No` deletes only the named rows. Revoking a credential names it;
 revoking all of an account's names every credential it has stored, expired
-ones included; removing a passkey names the passkey; deleting an account names
-its credentials and passkeys, collected before the foreign keys delete them.
+ones included, and the sessions its passkeys signed in, even ones already
+logged out or pruned, so the result doesn't depend on when pruning last ran;
+removing a passkey names the passkey; deleting an account names its
+credentials and passkeys, collected before the foreign keys delete them.
 Revoking a pending invitation deletes only it, since nothing descends from a
 link until it is redeemed, and a redeemed link can't be named. Logout, expiry
 and pruning never cascade. Removing a passkey this way runs the

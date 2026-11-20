@@ -372,7 +372,9 @@ Arguments:
 
 Remove a passkey, so it can no longer sign in.
 
-It also revokes the sessions it signed in, and everything issued through them, as `token revoke` does. Anyone may remove their own; another account's needs `accounts:manage` and every grant it has. An API token or limited login can't remove its own account's. The daemon refuses when no account with `admin` and a passkey would remain.
+It also revokes the sessions it signed in, and everything issued through them, as `token revoke` does. The account's other passkeys were usually added through its first one, so removing that one may remove them too: pass `--no-cascade` to keep them.
+
+Anyone may remove their own; another account's needs `accounts:manage` and every grant it has. An API token or limited login can't remove its own account's. The daemon refuses when no account with `admin` and a passkey would remain.
 
 ```text
 piquelctl account passkey remove [OPTIONS] <ID>

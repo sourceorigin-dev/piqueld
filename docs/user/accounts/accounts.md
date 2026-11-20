@@ -195,9 +195,10 @@ $ piquelctl account passkey remove 01a16b4f-2c8d-7b16-a5e3-9f0d4c7b2e61
 
 Removing a passkey stops it from signing in. It also ends the browser sessions
 it signed in, and [everything issued through them](#what-revoking-also-revokes),
-so a lost or stolen passkey loses all the access it opened. To end only the
-passkey, clear **Also revoke what it issued** in the dialog, or add
-`--no-cascade`.
+so a lost or stolen passkey loses all the access it opened. The account's
+other passkeys were usually added through its first one, so removing that one
+may remove them too. To end only the passkey, clear
+**Also revoke what it issued** in the dialog, or add `--no-cascade`.
 
 ## Edit a profile
 
@@ -249,8 +250,9 @@ piquelctl token revoke --all --user bob
 ```
 
 Without `--user`, `token revoke --all` signs your own account out everywhere,
-including the `piquelctl` login running it. It also revokes what those
-credentials issued, even ones that have expired since. An API token or
+including the `piquelctl` login running it. It also revokes what they
+issued, including what the account's sessions and logins issued before they
+logged out or expired. An API token or
 [limited login](cli-and-tokens.md#ask-for-less-access) can't do this for its
 own account.
 
@@ -311,9 +313,11 @@ Add `--no-cascade` to leave what it issued elsewhere valid.
 - **The change is refused with `account_lockout`.** At least one account must
   keep `admin` on every application and a passkey, so that someone can always
   sign in and manage piqueld. piqueld refuses to remove the last such
-  account's access, its last passkey, or the account itself, including
-  through [what a revocation also revokes](#what-revoking-also-revokes). Make another
-  account that has a passkey an administrator first.
+  account's access, its last passkey, or the account itself. Make another
+  account that has a passkey an administrator first. When a revocation is
+  refused because of [what it also revokes](#what-revoking-also-revokes),
+  clear **Also revoke what it issued**, or add `--no-cascade`, and revoke
+  what you mean to one at a time.
 - **The change is refused with `permission_exceeded`.** The account holds
   access you don't, or you're handing out access you don't hold. Ask someone
   who holds it.
