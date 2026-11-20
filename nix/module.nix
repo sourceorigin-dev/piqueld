@@ -342,7 +342,7 @@ in
           build_history.log_max_bytes = lib.mkOption {
             type = lib.types.ints.between 1 67108864;
             default = 4194304;
-            description = "Maximum persisted output bytes per build.";
+            description = "Maximum persisted output bytes per build. Of longer output, a build keeps the first and the last half.";
           };
           build_history.log_retention_days = lib.mkOption {
             type = lib.types.ints.between 1 3650;

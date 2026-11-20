@@ -161,8 +161,9 @@ impl LoggedCommand {
 
     /// Reads a stream to the end, returning its last `TAIL_BYTES`.
     ///
-    /// When `log` is supplied, output is appended as it arrives, holding back an
-    /// incomplete trailing UTF-8 character until the next read or end of stream.
+    /// When `log` is supplied, output is appended in [`Batch`]es as it
+    /// arrives, holding back an incomplete trailing UTF-8 character until the
+    /// next read or end of stream.
     async fn tail_recorded(
         mut stream: impl AsyncRead + Unpin,
         log: Option<&dyn crate::command::OutputLog>,
@@ -170,20 +171,30 @@ impl LoggedCommand {
     ) -> anyhow::Result<Vec<u8>> {
         let mut tail = VecDeque::with_capacity(Self::TAIL_BYTES);
         let mut buffer = [0; 4096];
-        let mut pending = Vec::new();
+        let mut batch = log.map(|log| Batch::new(log, source));
         loop {
-            let read = stream.read(&mut buffer).await?;
+            let due = batch.as_ref().and_then(|batch| batch.due);
+            let read = match due {
+                // Reading is cancel safe: a read that times out read nothing.
+                Some(due) => match tokio::time::timeout_at(due, stream.read(&mut buffer)).await {
+                    Ok(read) => read?,
+                    Err(_elapsed) => {
+                        if let Some(batch) = &mut batch {
+                            batch.append(false).await?;
+                        }
+                        continue;
+                    }
+                },
+                None => stream.read(&mut buffer).await?,
+            };
             if read == 0 {
-                if let Some(log) = log {
-                    log.append(&pending, source).await?;
+                if let Some(batch) = &mut batch {
+                    batch.append(true).await?;
                 }
                 return Ok(tail.into());
             }
-            if let Some(log) = log {
-                pending.extend_from_slice(&buffer[..read]);
-                let end = piqueld_core::api::BuildLogChunk::complete_prefix(&pending);
-                log.append(&pending[..end], source).await?;
-                pending.drain(..end);
+            if let Some(batch) = &mut batch {
+                batch.add(&buffer[..read]).await?;
             }
             let discard = (tail.len() + read).saturating_sub(Self::TAIL_BYTES);
             tail.drain(..discard);
@@ -192,68 +203,60 @@ impl LoggedCommand {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Output of one stream read but not yet appended to its log. Appending in
+/// batches takes a durable log's writer once per batch instead of once per
+/// read, while output still shows within [`Batch::DELAY`].
+struct Batch<'a> {
+    log: &'a dyn OutputLog,
+    stream: piqueld_core::api::LogStream,
+    pending: Vec<u8>,
+    /// When pending output is appended even if no more arrives.
+    due: Option<tokio::time::Instant>,
+}
 
-    /// Failures report only the end of each stream, read to completion.
-    #[tokio::test]
-    async fn drains_both_streams_and_preserves_non_utf8_failures() {
-        let error = LoggedCommand::run_recorded(Command::new("sh").args(["-c", "head -c 131072 /dev/zero; head -c 131072 /dev/zero >&2; printf '\\377stdout tail'; printf '\\377stderr tail' >&2; exit 7"]), "fixture", None).await.unwrap_err().to_string();
-        assert!(error.contains("exit status: 7"), "{error}");
-        assert!(error.contains("�stdout tail"));
-        assert!(error.contains("�stderr tail"));
-        assert!(error.len() < LoggedCommand::TAIL_BYTES * 2 + 200);
-    }
+impl<'a> Batch<'a> {
+    /// Pending bytes that are appended at once.
+    const BYTES: usize = 64 * 1024;
+    /// How long output may wait for more before it is appended.
+    const DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
-    #[tokio::test]
-    async fn cancellation_kills_descendants_in_the_command_group() {
-        // Exercise cancellation with both a live leader and an exited leader
-        // whose descendant still owns its output streams.
-        for ending in ["wait", "exit 0"] {
-            let directory = tempfile::tempdir().unwrap();
-            let pidfile = directory.path().join("descendant.pid");
-            let path = pidfile.clone();
-            let script = format!(r#"sh -c 'echo $$ > "$1"; exec sleep 60' child "$1" & {ending}"#);
-            let command = tokio::spawn(async move {
-                LoggedCommand::run_recorded(
-                    Command::new("sh").args(["-c", &script, "parent", path.to_str().unwrap()]),
-                    "cancellation fixture",
-                    None,
-                )
-                .await
-            });
-            let pid = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                loop {
-                    if let Ok(contents) = tokio::fs::read_to_string(&pidfile).await
-                        && let Ok(pid) = contents.trim().parse::<u32>()
-                    {
-                        break pid;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                }
-            })
-            .await
-            .unwrap();
-            command.abort();
-            assert!(command.await.unwrap_err().is_cancelled());
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                loop {
-                    // Orphaned descendants can briefly be zombies until PID 1 reaps
-                    // them. They cannot continue work or retain build pipes/slots.
-                    let status = tokio::fs::read_to_string(format!("/proc/{pid}/stat")).await;
-                    if status
-                        .as_ref()
-                        .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
-                        || status.as_ref().is_ok_and(|status| status.contains(") Z "))
-                    {
-                        break;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                }
-            })
-            .await
-            .expect("cancelled command descendant stopped");
+    fn new(log: &'a dyn OutputLog, stream: piqueld_core::api::LogStream) -> Self {
+        Self {
+            log,
+            stream,
+            pending: Vec::new(),
+            due: None,
         }
     }
+
+    /// Adds output read from the stream, appending the batch once it holds
+    /// [`Self::BYTES`].
+    async fn add(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
+        self.pending.extend_from_slice(bytes);
+        if self.pending.len() >= Self::BYTES {
+            return self.append(false).await;
+        }
+        self.due
+            .get_or_insert_with(|| tokio::time::Instant::now() + Self::DELAY);
+        Ok(())
+    }
+
+    /// Appends the pending output. Unless the stream `ended`, an incomplete
+    /// trailing character waits for the rest of its bytes.
+    async fn append(&mut self, ended: bool) -> anyhow::Result<()> {
+        self.due = None;
+        let end = if ended {
+            self.pending.len()
+        } else {
+            piqueld_core::api::BuildLogChunk::complete_prefix(&self.pending)
+        };
+        if end > 0 {
+            self.log.append(&self.pending[..end], self.stream).await?;
+            self.pending.drain(..end);
+        }
+        Ok(())
+    }
 }
+
+#[cfg(test)]
+mod tests;

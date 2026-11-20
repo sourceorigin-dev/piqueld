@@ -158,7 +158,7 @@ How much output of each build is kept, and for how long. Builds themselves are l
 
 Type: integer from 1 to 67108864. Default: `4194304` (4 MiB).
 
-The most output kept per build, in bytes.
+The most output kept per build, in bytes. Of longer output, a build keeps the first and the last half.
 
 ### `build_history.log_retention_days`
 
