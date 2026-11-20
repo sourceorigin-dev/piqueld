@@ -1,6 +1,6 @@
 use super::{
-    ApplicationView, BuildLogChunk, EnvironmentAccess, EnvironmentView, LogRecord, MountedSecret,
-    SecretAccess, SecretMetadata, StoredSecret,
+    ApplicationView, BuildLogChunk, DeploymentPage, EnvironmentAccess, EnvironmentView, LogRecord,
+    MountedSecret, SecretAccess, SecretMetadata, StoredSecret,
 };
 
 use crate::{ApplicationId, EnvironmentId, EnvironmentName, EnvironmentSource};
@@ -128,4 +128,14 @@ fn terminal_controls_are_removed_but_text_and_lines_survive() {
         ),
         "text link"
     );
+}
+
+/// A whole page also matches the summary schema, and an empty page matches
+/// both, so a deployment page is documented as `anyOf`, never `oneOf`.
+#[test]
+fn deployment_pages_are_documented_as_any_of() {
+    let schema = serde_json::to_value(<DeploymentPage as utoipa::PartialSchema>::schema())
+        .expect("schema JSON");
+    assert!(schema.get("oneOf").is_none());
+    assert_eq!(schema["anyOf"].as_array().map(Vec::len), Some(2));
 }
