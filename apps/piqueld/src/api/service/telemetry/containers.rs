@@ -7,7 +7,7 @@
 //! cursors saved for restarts only pass a line once every copy queued for
 //! export was sent or dropped, so a line still queued when the daemon dies is
 //! read again after the restart rather than lost.
-use super::{ApplicationService, Names, RECEIVERS_INTERVAL, interval, step};
+use super::{ApplicationService, Names, RECEIVERS_INTERVAL, Ticker, step};
 use crate::application::{BoundaryError, RuntimeBoundary};
 use crate::telemetry::{ContainerExport, ContainerSample, Telemetry};
 use futures_util::StreamExt as _;
@@ -143,16 +143,13 @@ impl ApplicationService {
     /// [`RECEIVERS_INTERVAL`]. Once nothing does, forgets where it stopped
     /// reading, so export starts again from the present.
     pub(super) async fn export_received_containers(&self, cancellation: &CancellationToken) {
-        let mut tick = interval(RECEIVERS_INTERVAL);
+        let mut tick = Ticker::new(RECEIVERS_INTERVAL);
         loop {
             if !self.telemetry.exporting() {
-                if let Err(error) = self.store.clear_container_cursors().await {
-                    tracing::error!(?error, "container log cursors could not be cleared");
-                }
+                self.forget_container_cursors().await;
                 while !self.telemetry.exporting() {
-                    tokio::select! {
-                        () = cancellation.cancelled() => return,
-                        _ = tick.tick() => {}
+                    if !tick.tick(cancellation).await {
+                        return;
                     }
                 }
             }
@@ -161,9 +158,8 @@ impl ApplicationService {
             let exporting = cancellation.child_token();
             let unreceived = async {
                 while self.telemetry.exporting() {
-                    tokio::select! {
-                        () = exporting.cancelled() => return,
-                        _ = tick.tick() => {}
+                    if !tick.tick(&exporting).await {
+                        return;
                     }
                 }
                 exporting.cancel();
@@ -197,7 +193,7 @@ impl ApplicationService {
             names: Names::default(),
         };
         let exports = Exports::default();
-        let mut usage_tick = interval(USAGE_INTERVAL);
+        let mut usage_tick = Ticker::new(USAGE_INTERVAL);
         let mut previous = HashMap::new();
         tokio::join!(
             self.discover_containers(&exports, &mut discovery, cancellation),
@@ -221,7 +217,7 @@ impl ApplicationService {
         discovery: &mut Discovery,
         cancellation: &CancellationToken,
     ) {
-        let mut tick = interval(DISCOVERY_INTERVAL);
+        let mut tick = Ticker::new(DISCOVERY_INTERVAL);
         let mut starts = None;
         loop {
             let started = async {
@@ -232,7 +228,7 @@ impl ApplicationService {
             };
             let interval = tokio::select! {
                 () = cancellation.cancelled() => return,
-                _ = tick.tick() => true,
+                () = tick.next() => true,
                 event = started => {
                     match event {
                         // It may have stopped already, with new output.

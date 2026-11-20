@@ -1,6 +1,8 @@
 //! Background observation and webhook delivery, and test notifications.
 //! Neither executes infrastructure mutations.
-use super::{ApplicationError, ApplicationService, notification_message::Notification};
+use super::{
+    ApplicationError, ApplicationService, notification_message::Notification, ticker::Ticker,
+};
 use piqueld_core::{
     Event,
     observability::{
@@ -108,13 +110,8 @@ impl ApplicationService {
         scan_seconds: u64,
         cancellation: CancellationToken,
     ) {
-        let mut tick = tokio::time::interval(Duration::from_secs(15));
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            tokio::select! {
-                () = cancellation.cancelled() => return,
-                _ = tick.tick() => {}
-            }
+        let mut tick = Ticker::new(Duration::from_secs(15));
+        while tick.tick(&cancellation).await {
             let result = async {
                 let readiness = self.readiness(&piqueld_core::access::Scope::All).await;
                 let now = now_ms();
@@ -150,15 +147,11 @@ impl ApplicationService {
     /// the next as soon as one is attempted, and checking again every second
     /// while none is due. Errors are logged and never stop the worker.
     pub async fn deliver_notifications(&self, cancellation: CancellationToken) {
-        let mut tick = tokio::time::interval(Duration::from_secs(1));
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut tick = Ticker::new(Duration::from_secs(1));
         let mut idle = true;
         loop {
-            if idle {
-                tokio::select! {
-                    () = cancellation.cancelled() => return,
-                    _ = tick.tick() => {}
-                }
+            if idle && !tick.tick(&cancellation).await {
+                return;
             }
             let result = tokio::select! {
                 () = cancellation.cancelled() => return,
