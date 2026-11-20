@@ -91,6 +91,10 @@ is supported; `PIQUELD_PLAYWRIGHT_BIN_DIR` can override the directory containing
   regenerating a deployed environment's generated secret, and a refused
   deletion that waits for a refresh.
 - Preservation of unsaved edits while reauthenticating after session revocation.
+- An accessibility scan with axe (`@axe-core/playwright`) of the overview, the
+  application directory, an application's and an environment's every tab,
+  Builds, Accounts, an account's tabs, and the daemon status page. Only serious
+  and critical violations fail it for now.
 
 Passkey tests use Chromium's virtual CTAP2 authenticator through CDP. This exercises
 real browser WebAuthn ceremonies, but does not validate physical authenticators or
