@@ -312,6 +312,44 @@ test('CLI approval survives signing in first, and a typed code is reviewed befor
   } finally { await login.stop(); }
 });
 
+test('revoking a CLI login on the dashboard revokes the tokens it created, unless unchecked', async ({ page, account, cli }) => {
+  void account;
+  /** Logs piquelctl in, approved by the page's session, and creates a token with it. */
+  const loginWithToken = async () => {
+    const login = cli.start(['login']);
+    try {
+      await page.goto(await login.waitForOutput(/Open (\S+)/, 'stderr'));
+      await page.getByRole('button', { name: 'Approve CLI login', exact: true }).click();
+      await expect.poll(() => login.child.exitCode).toBe(0);
+    } finally { await login.stop(); }
+    const created = await cli.run(['token', 'create', 'ci', '--preset', 'read-only']);
+    expect(created.code, created.stderr).toBe(0);
+    return created.stdout.trim();
+  };
+  /** Opens the confirmation for revoking the piquelctl login. */
+  const revoke = async () => {
+    const access = await openAccount(page, 'alice', 'Access');
+    const login = access.getByRole('row').filter({ has: page.getByRole('cell', { name: 'piquelctl', exact: true }) });
+    await login.getByRole('button', { name: 'Revoke', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Revoke credential' });
+    await expect(dialog.getByRole('checkbox', { name: 'Also revoke what it issued' })).toBeChecked();
+    return dialog;
+  };
+
+  const issued = await loginWithToken();
+  let dialog = await revoke();
+  await dialog.getByRole('button', { name: 'Revoke', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(async () => (await cli.run(['whoami'], issued)).code).not.toBe(0);
+
+  const kept = await loginWithToken();
+  dialog = await revoke();
+  await dialog.getByRole('checkbox', { name: 'Also revoke what it issued' }).uncheck();
+  await dialog.getByRole('button', { name: 'Revoke', exact: true }).click();
+  await expect.poll(async () => (await cli.run(['whoami'])).code).not.toBe(0);
+  expect((await cli.run(['whoami'], kept)).code).toBe(0);
+});
+
 test.describe('as the host operator', () => {
   test.use({ processEnv: { PIQUELD_PLAYWRIGHT_HOST_OPERATOR: '1' } });
 
@@ -386,6 +424,7 @@ test('the dashboard creates an API token within its form and its account\'s limi
     { permission: 'apps:read', applications: [blog] }, { permission: 'apps:deploy', applications: [blog] },
   ] });
   await row.getByRole('button', { name: 'Revoke', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Revoke credential' }).getByRole('button', { name: 'Revoke', exact: true }).click();
   await expect(row).toHaveCount(0);
   expect((await cli.run(['whoami'], token)).code).not.toBe(0);
 });

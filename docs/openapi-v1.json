@@ -8866,6 +8866,11 @@
                 ],
                 "type": "string"
               },
+              "cascade": {
+                "default": true,
+                "description": "Also revoke every credential, link and passkey issued through it,\nin any account, even through credentials that have since ended.\nAbsent means `true`.",
+                "type": "boolean"
+              },
               "id": {
                 "description": "Credential identifier.",
                 "type": "string"

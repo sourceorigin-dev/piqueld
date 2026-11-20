@@ -324,11 +324,19 @@ pub(crate) enum TokenCommand {
     /// `--all`.
     ///
     /// Give the ID of a credential from `token list`, or of a host operator
-    /// browser session, from `account list`.
+    /// browser session, from `account list`. Revoking a credential also
+    /// revokes everything issued through it, in any account: the API tokens,
+    /// logins, invitation and enrollment links and passkeys it created, the
+    /// sessions those passkeys signed in, and so on. It reaches them even
+    /// when credentials in between have since ended.
     Revoke {
         /// Credential ID.
         #[arg(required_unless_present = "all")]
         id: Option<String>,
+        /// Revoke only the credential, leaving what was issued through it
+        /// valid.
+        #[arg(long, conflicts_with = "all")]
+        no_cascade: bool,
         /// Revoke every session and API token of an account instead.
         ///
         /// Without `--user`, revokes yours, including the login this command
@@ -398,11 +406,23 @@ impl TokenCommand {
                     .collect::<Vec<_>>();
                 console.emit(&CredentialsReport { credentials, names })
             }
-            Self::Revoke { id: Some(id), .. } => {
+            Self::Revoke {
+                id: Some(id),
+                no_cascade,
+                ..
+            } => {
                 client
-                    .auth_manage(&Manage::RevokeCredential { id: id.clone() })
+                    .auth_manage(&Manage::RevokeCredential {
+                        id: id.clone(),
+                        cascade: !no_cascade,
+                    })
                     .await?;
-                console.info(format_args!("revoked {id}"))
+                let also = if *no_cascade {
+                    ""
+                } else {
+                    " and what it issued"
+                };
+                console.info(format_args!("revoked {id}{also}"))
             }
             Self::Revoke { user, yes, .. } => {
                 let directory = client.auth_directory().await?;

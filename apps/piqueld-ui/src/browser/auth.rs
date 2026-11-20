@@ -3,8 +3,8 @@
 use super::access::{GrantEditor, can, short_summary, summary};
 use super::management::remember_tab;
 use super::ui::{
-    FormModal, Icon, Modal, PageHeader, TabSet, Tone, badge, empty, icon, loading, logo, notice,
-    one_time_secret, row_actions, text_field, when,
+    FormModal, Icon, Modal, PageHeader, TabSet, Tone, badge, checkbox, empty, icon, loading, logo,
+    notice, one_time_secret, row_actions, text_field, when,
 };
 use super::{ClientErrorExt, confirm, reload};
 use crate::application::named_tab;
@@ -1104,6 +1104,80 @@ fn revoke_button(feedback: Feedback, command: impl Fn() -> Manage + 'static) -> 
     .into_any()
 }
 
+/// Confirms a revocation in a dialog with a checked "Also revoke what it
+/// issued" box, checked again each time it opens. Confirming sends
+/// `command(cascade)`.
+#[component]
+fn CascadeDialog(
+    opened: RwSignal<bool>,
+    title: &'static str,
+    /// What happens, e.g. "piquelctl stops working at once."
+    #[prop(into)]
+    message: Signal<String>,
+    /// The confirming button's label, e.g. "Revoke".
+    confirm: &'static str,
+    feedback: Feedback,
+    command: Callback<bool, Manage>,
+) -> impl IntoView {
+    let cascade = RwSignal::new(true);
+    Effect::new(move |_| {
+        if opened.get() {
+            cascade.set(true);
+        }
+    });
+    view! {
+        <Modal title={title} opened={opened}>
+            <p>{message}</p>
+            <div class="stack-sm">
+                {checkbox("Also revoke what it issued", cascade)}
+                <p class="hint">
+                    "API tokens, piquelctl logins, links and passkeys created with it, and the sessions those passkeys signed in, in any account. It reaches them even when credentials in between have ended."
+                </p>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" on:click={move |_| opened.set(false)}>
+                    "Cancel"
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-danger"
+                    on:click={move |_| {
+                        opened.set(false);
+                        feedback.manage(command.run(cascade.get_untracked()));
+                    }}
+                >
+                    {confirm}
+                </button>
+            </div>
+        </Modal>
+    }
+}
+
+/// Ghost "Revoke" button for credential `id`, called `name`, confirming in a
+/// [`CascadeDialog`].
+fn revoke_credential(feedback: Feedback, id: String, name: &str) -> AnyView {
+    let opened = RwSignal::new(false);
+    let message = format!("{name} stops working at once.");
+    let command = Callback::new(move |cascade| Manage::RevokeCredential {
+        id: id.clone(),
+        cascade,
+    });
+    view! {
+        <button type="button" class="btn btn-ghost btn-sm" on:click={move |_| opened.set(true)}>
+            "Revoke"
+        </button>
+        <CascadeDialog
+            opened={opened}
+            title="Revoke credential"
+            message={message}
+            confirm="Revoke"
+            feedback={feedback}
+            command={command}
+        />
+    }
+    .into_any()
+}
+
 /// Live host operator browser sessions, opened with `piquelctl sign-in-link`.
 /// Renders nothing when there are none. A session acts with `admin` on
 /// everything, so only callers holding that may revoke one.
@@ -1127,10 +1201,13 @@ fn OperatorSessions(directory: Directory, feedback: Feedback) -> impl IntoView {
                             }}>
                                 {
                                     let id = id.clone();
+                                    // Host operator sessions issue nothing to
+                                    // cascade to.
                                     revoke_button(
                                         feedback,
                                         move || Manage::RevokeCredential {
                                             id: id.clone(),
+                                            cascade: true,
                                         },
                                     )
                                 }
@@ -1688,7 +1765,7 @@ fn Credentials(
     let rows = credentials
         .into_iter()
         .map(|credential| {
-            let credential_id = credential.id.clone();
+            let revoke = revoke_credential(feedback, credential.id.clone(), &credential.name);
             // What the credential can do now: its grants within the
             // account's current access.
             let access = credential
@@ -1723,12 +1800,7 @@ fn Credentials(
                     </td>
                     <td class="actions">
                         {activity_link(&credential.id)}
-                        {revoke_button(
-                            feedback,
-                            move || Manage::RevokeCredential {
-                                id: credential_id.clone(),
-                            },
-                        )}
+                        {revoke}
                     </td>
                 </tr>
             }

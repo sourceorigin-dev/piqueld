@@ -12,6 +12,7 @@ pub use security::SecurityEvent;
 
 use super::{Actor, Attribution, Store, StoreError, now_secs};
 use access::{Authority, Caller, Holder};
+pub use lineage::Cascade;
 use lineage::Issued;
 use piqueld_core::access::{Denied, GlobalPermission, Grants, Permission, Reauthenticate};
 use piqueld_core::auth::{
@@ -884,14 +885,20 @@ impl Store {
         Ok(Some(user))
     }
 
-    /// Deletes one credential if `actor` may change its owner, or one host
-    /// operator session if `actor` could manage an administrator, as that
-    /// session acts with `admin`. A credential may always revoke itself, even
-    /// a scoped one. Unknown IDs are `NotFound`.
+    /// Deletes one credential if `actor` may change its owner, with what it
+    /// issued as `cascade` says, or one host operator session, which issues
+    /// nothing, if `actor` could manage an administrator, as that session
+    /// acts with `admin`. A credential may always revoke itself, even a
+    /// scoped one. Unknown IDs are `NotFound`.
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn revoke_credential(&self, actor: Actor<'_>, id: &str) -> Result<(), StoreError> {
+    pub async fn revoke_credential(
+        &self,
+        actor: Actor<'_>,
+        id: &str,
+        cascade: Cascade,
+    ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let owner = sqlx::query_scalar!("SELECT user_id FROM auth_credentials WHERE id=?1", id)
             .fetch_optional(&mut *tx)
@@ -902,10 +909,7 @@ impl Store {
             if !own {
                 Self::check_account_on(&mut tx, actor, &owner).await?;
             }
-            sqlx::query!("DELETE FROM auth_credentials WHERE id=?1", id)
-                .execute(&mut *tx)
-                .await
-                .map_err(StoreError::database)?;
+            Self::revoke_on(&mut tx, &[Issued::Credential(id)], cascade).await?;
         } else if Self::operator_session_on(&mut tx, id).await? {
             if let Some(caller) = actor.load(&mut tx).await? {
                 caller

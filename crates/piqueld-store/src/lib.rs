@@ -24,7 +24,7 @@ pub use mutation::{
 mod observability;
 pub use audit::{AuditOrigin, AuditRequest, Author, NewAuditEvent, Recorded};
 pub use auth::access::{Actor, Attribution, Caller, EnvironmentOwner, Visibility};
-pub use auth::{CredentialKind, Lockout, Proof};
+pub use auth::{Cascade, CredentialKind, Lockout, Proof};
 pub use auth::{
     DirectoryView, Invitation, NewCredential, NewInvitation, NewPasskey, PasskeyOwner,
     SecurityEvent,
