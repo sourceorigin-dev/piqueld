@@ -1175,13 +1175,10 @@ async fn device_logins_inherit_their_approvals_passkey_proof() {
     ));
 }
 
-/// `auth.max_token_days` bounds new tokens, and secrets issued before the
-/// `pqd_` prefix still authenticate, including ones that happen to start
-/// with it.
 /// A CLI login confirms itself through a device request its own account
 /// approves in a fresh browser session. That marks the login fresh without
 /// issuing another; other accounts can't see or approve the request, and a
-/// login revoked meanwhile stays revoked.
+/// poll that fails on its way leaves it to the next.
 #[tokio::test]
 async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     let f = Fixture::new().await;
@@ -1221,6 +1218,31 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     f.auth
         .device_approve(code, &alice)
         .expect("the approver may approve the request");
+    // A poll cancelled while the store is busy leaves the request to the
+    // next one.
+    let writer = f.auth.0.store.hold_writer().await;
+    let cancelled = tokio::spawn({
+        let auth = f.auth.clone();
+        let device_code = start.device_code.clone();
+        async move { auth.device_poll(&device_code).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    cancelled.abort();
+    assert!(
+        cancelled
+            .await
+            .expect_err("the poll waits for the store")
+            .is_cancelled()
+    );
+    drop(writer);
+    let key = Auth::hash(&start.device_code);
+    f.auth
+        .0
+        .devices
+        .lock()
+        .get_mut(&key)
+        .expect("the request is still pending")
+        .next_poll = 0;
     let done = f
         .auth
         .device_poll(&start.device_code)
@@ -1230,8 +1252,15 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     assert!(done.token.is_none());
     assert!(f.fresh(&secret).await);
     assert_eq!(credentials().await, before);
+}
 
-    // A login revoked before the poll is not revived.
+/// A CLI login revoked before its confirmation's poll stays revoked, and
+/// only CLI logins confirm through the device flow.
+#[tokio::test]
+async fn device_confirmations_revive_nothing_and_only_serve_cli_logins() {
+    let f = Fixture::new().await;
+    let alice = f.identity("alice", &Grants::admin()).await;
+    let action = SensitiveAction::CreateToken;
     let (_, revoked) = f.stale_login(&alice).await;
     let start = f
         .auth
@@ -1260,6 +1289,7 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
             Reauthenticate::Token
         )))
     ));
+    let (_, browser) = f.stale_session(&alice).await;
     let operator = Identity::operator(HostOperator { uid: 0 }, None);
     for identity in [&browser, &operator] {
         assert!(matches!(
@@ -1269,6 +1299,9 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     }
 }
 
+/// `auth.max_token_days` bounds new tokens, and secrets issued before the
+/// `pqd_` prefix still authenticate, including ones that happen to start
+/// with it.
 #[tokio::test]
 async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
     let f = Fixture::new().await;

@@ -214,12 +214,17 @@ pub(super) struct Device {
     confirms: Option<Confirmation>,
 }
 
-/// What the poll of an approved device request does: confirm the existing
-/// CLI login, or issue a session limited to its grants, from its prepared
-/// secret, retrying an earlier attempt.
+/// What the poll of an approved device request does.
 enum Approved {
-    Confirm(Option<Confirmation>),
-    Issue(Option<Grants>, Prepared, bool),
+    /// Confirms this existing CLI login.
+    Confirm(Confirmation),
+    /// Issues a session limited to `grants`, from its `prepared` secret;
+    /// `retry` when an earlier poll began storing it.
+    Issue {
+        grants: Option<Grants>,
+        prepared: Prepared,
+        retry: bool,
+    },
 }
 
 /// An existing CLI login a device request confirms, for one action.
@@ -229,6 +234,16 @@ struct Confirmation {
     credential_id: String,
     user: User,
     action: SensitiveAction,
+}
+
+impl Confirmation {
+    /// The login and action, as the CLI and the approval page show them.
+    fn shown(&self) -> DeviceConfirmation {
+        DeviceConfirmation {
+            action: self.action,
+            login: self.credential_id.clone(),
+        }
+    }
 }
 
 /// Who approved a device login, and when their passkey last proved them
@@ -479,6 +494,7 @@ impl Auth {
         grants: Option<Grants>,
         confirms: Option<Confirmation>,
     ) -> Result<DeviceStart> {
+        let shown = confirms.as_ref().map(Confirmation::shown);
         let mut devices = self.0.devices.lock();
         devices.retain(|_, device| device.expires > now_secs());
         if devices.len() >= MAX_PENDING {
@@ -523,6 +539,7 @@ impl Auth {
             interval: 5,
             requester: requester.map(|address| address.to_string()),
             grants,
+            confirms: shown,
         })
     }
     /// Finds a live, unapproved request by the code the user typed. Requests
@@ -562,10 +579,7 @@ impl Auth {
             age: u32::try_from(now - device.created).unwrap_or(0),
             expires_in: u32::try_from(device.expires - now).unwrap_or(0),
             grants: device.grants.clone(),
-            confirms: device.confirms.as_ref().map(|confirms| DeviceConfirmation {
-                action: confirms.action,
-                login: confirms.credential_id.clone(),
-            }),
+            confirms: device.confirms.as_ref().map(Confirmation::shown),
         })
     }
     /// Marks a pending device login as approved by the caller's credential,
@@ -641,27 +655,33 @@ impl Auth {
             let Some(approver) = device.approved_by.clone().filter(|_| !device.issuing) else {
                 return Ok(pending("authorization_pending"));
             };
-            if device.confirms.is_some() {
-                // Answered once, like an issued session.
-                (approver, Approved::Confirm(entry.remove().confirms))
-            } else {
-                let retry = device.prepared.is_some();
-                let prepared = match &device.prepared {
-                    Some(prepared) => prepared.clone(),
-                    None => device.prepared.insert(Self::prepare()?).clone(),
-                };
-                device.issuing = true;
-                let grants = device.grants.clone();
-                (approver, Approved::Issue(grants, prepared, retry))
-            }
-        };
-        let (grants, prepared, retry) = match next {
-            Approved::Confirm(confirms) => return self.confirm_login(&approver, confirms).await,
-            Approved::Issue(grants, prepared, retry) => (grants, prepared, retry),
+            let next = match &device.confirms {
+                Some(confirms) => Approved::Confirm(confirms.clone()),
+                None => Approved::Issue {
+                    retry: device.prepared.is_some(),
+                    prepared: match &device.prepared {
+                        Some(prepared) => prepared.clone(),
+                        None => device.prepared.insert(Self::prepare()?).clone(),
+                    },
+                    grants: device.grants.clone(),
+                },
+            };
+            device.issuing = true;
+            (approver, next)
         };
         let issuing = Issuing {
             devices: &self.0.devices,
             key: Some(key),
+        };
+        let (grants, prepared, retry) = match next {
+            Approved::Confirm(confirms) => {
+                return self.confirm_login(&approver, confirms, issuing).await;
+            }
+            Approved::Issue {
+                grants,
+                prepared,
+                retry,
+            } => (grants, prepared, retry),
         };
         let user = if retry {
             let hash = Self::hash(&prepared.token);
@@ -700,24 +720,35 @@ impl Auth {
     /// Marks the CLI login an approved request confirms as signed in when its
     /// approval's passkey proof was, completing the request without a token.
     /// A login revoked meanwhile is unauthorized, and an approval whose proof
-    /// is no longer recent is refused, as when issuing a session.
+    /// is no longer recent is refused, as when issuing a session; both end
+    /// the request. Any other failure, such as a busy store, leaves it to the
+    /// next poll, as `issuing` does when dropped.
     async fn confirm_login(
         &self,
         approval: &Approval,
-        confirms: Option<Confirmation>,
+        confirms: Confirmation,
+        issuing: Issuing<'_>,
     ) -> Result<DeviceToken> {
-        let confirms = confirms.ok_or(AuthError::Unauthorized)?;
         let approver = Caller {
             credential_id: &approval.credential_id,
             user_id: &approval.user_id,
         };
-        let confirmed = self
-            .0
-            .store
-            .confirm_login(approver, &confirms.credential_id, approval.authenticated_at)
-            .await?;
-        if !confirmed {
-            return Err(AuthError::Unauthorized);
+        let confirmed = self.0.store.confirm_login(
+            approver,
+            &confirms.credential_id,
+            approval.authenticated_at,
+        );
+        match confirmed.await {
+            Ok(true) => issuing.finish(),
+            Ok(false) => {
+                issuing.finish();
+                return Err(AuthError::Unauthorized);
+            }
+            Err(error @ StoreError::Denied(_)) => {
+                issuing.finish();
+                return Err(error.into());
+            }
+            Err(error) => return Err(error.into()),
         }
         tracing::info!(
             user_id = %confirms.user.id,

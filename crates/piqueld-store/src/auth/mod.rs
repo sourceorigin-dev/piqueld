@@ -970,12 +970,12 @@ impl Store {
         &self,
         approver: Caller<'_>,
         credential_id: &str,
-        authenticated_at: Option<i64>,
+        authenticated_at: i64,
     ) -> Result<bool, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let authority = approver.load(&mut tx).await?;
         let approval = Proof {
-            authenticated_at,
+            authenticated_at: Some(authenticated_at),
             ..authority.proof
         };
         let now = now_secs();
