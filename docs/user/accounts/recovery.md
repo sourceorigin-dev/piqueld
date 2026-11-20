@@ -106,11 +106,11 @@ Then, signed in as their account or as that administrator:
 
    Removing it also ends the sessions it signed in, and
    [everything issued through them](accounts.md#what-revoking-also-revokes),
-   in turn. If the lost passkey was the account's first, its other passkeys
-   usually descend from it, including a new one added from a signed-in
-   browser, through another passkey's session, or through `piquelctl`. Clear
-   **Also revoke what it issued** in the dialog, or add `--no-cascade`,
-   unless you're sure they don't.
+   in turn. Clear **Also revoke what it issued** in the dialog, or add
+   `--no-cascade`, unless you're sure the new passkey doesn't descend from
+   the lost one. It does if it was added in a browser the lost passkey signed
+   in, or through a link or `piquelctl` login created there. When the lost
+   passkey was the account's first, that's usually every other passkey.
 2. If the passkey may have been stolen and you cleared the box, what a thief
    set up with it stays valid too. Keep the browser session or `piquelctl`
    login the new passkey came from, and remove the rest you don't recognize:
@@ -119,8 +119,9 @@ Then, signed in as their account or as that administrator:
      `piquelctl token list --user bob` and `piquelctl token revoke` and an ID;
    - passkeys under **Passkeys**, with **Remove**, or with
      `piquelctl account passkey remove`;
-   - links under **Pending links**, on the **Accounts** page, with
-     **Revoke**, or with `piquelctl account invitation list` and
+   - links under **Pending links**, on the **Accounts** page (needs
+     `accounts:manage`), with **Revoke**, or with
+     `piquelctl account invitation list` and
      `piquelctl account invitation revoke`;
    - accounts on the **Accounts** page, if theirs could manage accounts.
 

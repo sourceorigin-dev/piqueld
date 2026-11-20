@@ -428,7 +428,7 @@ impl TokenCommand {
                         cascade: cascade.enabled(),
                     })
                     .await?;
-                console.info(format_args!("revoked {id}{}", cascade.suffix()))
+                console.info(format_args!("revoked {id}{}", cascade.suffix(Named::One)))
             }
             Self::Revoke {
                 user, yes, cascade, ..
@@ -438,7 +438,7 @@ impl TokenCommand {
                 let warning = "this also removes the passkeys the account added while signed in, usually all but its first; pass --no-cascade to keep them";
                 let question = format!("Revoke every session and token of {:?}", owner.username);
                 cascade
-                    .confirm(console, *yes, Some(warning), &question)
+                    .confirm(console, *yes, Some(warning), &question, Named::Many)
                     .await?;
                 client
                     .auth_manage(&Manage::RevokeAll {
@@ -449,7 +449,7 @@ impl TokenCommand {
                 console.info(format_args!(
                     "revoked every session and token of {}{}",
                     owner.username,
-                    cascade.suffix()
+                    cascade.suffix(Named::Many)
                 ))
             }
         }
@@ -457,6 +457,32 @@ impl TokenCommand {
 }
 
 impl AccountCommand {
+    /// Deletes the account `target`, by username or ID, once confirmed.
+    async fn delete(
+        client: &Client,
+        console: &mut Console,
+        target: &str,
+        yes: bool,
+        cascade: CascadeArg,
+    ) -> Result<()> {
+        let target = find(&client.auth_directory().await?, target)?.user;
+        let question = format!("Delete account {:?}", target.username);
+        cascade
+            .confirm(console, yes, None, &question, Named::One)
+            .await?;
+        client
+            .auth_manage(&Manage::DeleteUser {
+                user_id: target.id,
+                cascade: cascade.enabled(),
+            })
+            .await?;
+        let deleted = target.username;
+        console.info(format_args!(
+            "deleted {deleted}{}",
+            cascade.suffix(Named::One)
+        ))
+    }
+
     /// Runs one `account` subcommand.
     pub(crate) async fn run(
         &self,
@@ -545,19 +571,7 @@ impl AccountCommand {
                 target,
                 yes,
                 cascade,
-            } => {
-                let target = find(&client.auth_directory().await?, target)?.user;
-                let question = format!("Delete account {:?}", target.username);
-                cascade.confirm(console, *yes, None, &question).await?;
-                client
-                    .auth_manage(&Manage::DeleteUser {
-                        user_id: target.id,
-                        cascade: cascade.enabled(),
-                    })
-                    .await?;
-                let deleted = target.username;
-                console.info(format_args!("deleted {deleted}{}", cascade.suffix()))
-            }
+            } => Self::delete(client, console, target, *yes, *cascade).await,
             Self::Passkey { command } => command.run(client, console).await,
             Self::Invitation { command } => command.run(client, console).await,
         }
@@ -592,7 +606,7 @@ impl PasskeyCommand {
                 let warning = "if this is the account's first passkey, its other passkeys were usually added through it and are removed too; pass --no-cascade to keep them";
                 let question = format!("Remove passkey {id}");
                 cascade
-                    .confirm(console, *yes, Some(warning), &question)
+                    .confirm(console, *yes, Some(warning), &question, Named::One)
                     .await?;
                 client
                     .auth_manage(&Manage::RemovePasskey {
@@ -600,7 +614,10 @@ impl PasskeyCommand {
                         cascade: cascade.enabled(),
                     })
                     .await?;
-                console.info(format_args!("removed passkey {id}{}", cascade.suffix()))
+                console.info(format_args!(
+                    "removed passkey {id}{}",
+                    cascade.suffix(Named::One)
+                ))
             }
         }
     }
@@ -652,10 +669,19 @@ async fn owner(client: &Client, directory: &Directory, user: Option<&str>) -> Re
 // through what they name; `///` on the field is user-facing help.
 #[derive(Clone, Copy, Debug, Args)]
 pub(crate) struct CascadeArg {
-    /// Revoke only what you name, leaving the credentials, links and passkeys
-    /// issued through it valid.
+    /// Revoke only what you name, leaving valid the credentials, links and
+    /// passkeys issued through what you named.
     #[arg(long)]
     no_cascade: bool,
+}
+
+/// How many things a command names, for how [`CascadeArg`] words its cascade.
+#[derive(Clone, Copy, Debug)]
+enum Named {
+    /// One credential, passkey or account: "and what it issued".
+    One,
+    /// Several, like every credential of an account: "and what they issued".
+    Many,
 }
 
 impl CascadeArg {
@@ -664,31 +690,33 @@ impl CascadeArg {
         !self.no_cascade
     }
 
-    /// How a prompt or result line mentions the cascade, as in `revoked <id>
-    /// and what it issued`; empty with `--no-cascade`.
-    const fn suffix(self) -> &'static str {
-        if self.no_cascade {
-            ""
-        } else {
-            " and what it issued"
+    /// How a prompt or result line about what was `named` mentions the
+    /// cascade, as in `revoked <id> and what it issued`; empty with
+    /// `--no-cascade`.
+    const fn suffix(self, named: Named) -> &'static str {
+        match (self.no_cascade, named) {
+            (true, _) => "",
+            (false, Named::One) => " and what it issued",
+            (false, Named::Many) => " and what they issued",
         }
     }
 
-    /// Asks to confirm `question`, given without its question mark, adding
-    /// the cascade. Unless `--yes` skips the prompt, a cascade's `warning`
-    /// comes first.
+    /// Asks to confirm `question` about what was `named`, given without its
+    /// question mark, adding the cascade. Unless `--yes` skips the prompt, a
+    /// cascade's `warning` comes first.
     async fn confirm(
         self,
         console: &mut Console,
         yes: bool,
         warning: Option<&str>,
         question: &str,
+        named: Named,
     ) -> Result<()> {
         if let Some(warning) = warning.filter(|_| self.enabled() && !yes) {
             console.warning(warning)?;
         }
         console
-            .confirm(yes, &format!("{question}{}?", self.suffix()))
+            .confirm(yes, &format!("{question}{}?", self.suffix(named)))
             .await
     }
 }
