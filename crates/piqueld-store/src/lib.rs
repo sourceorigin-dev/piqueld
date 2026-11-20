@@ -630,6 +630,21 @@ enum Durability {
     Unsynced,
 }
 
+impl Durability {
+    /// How long a query waits for a pooled connection before failing with
+    /// `PoolTimedOut`. Only tests and the browser fixture open unsynced
+    /// stores, often on a machine loaded with parallel tests and builds, so
+    /// they wait as long as `SQLx`'s default rather than fail a test for a
+    /// slow machine.
+    const fn acquire_timeout(self) -> Duration {
+        match self {
+            Self::Synced => Duration::from_secs(5),
+            #[cfg(any(test, feature = "testing"))]
+            Self::Unsynced => Duration::from_secs(30),
+        }
+    }
+}
+
 impl Store {
     /// Checks whether the database can serve a read, without changing state.
     /// # Errors
@@ -662,7 +677,8 @@ impl Store {
     /// on the disk to sync a commit: a commit survives the process exiting,
     /// not a power loss. Only for the throwaway stores of tests and the
     /// browser fixture, which would otherwise spend most of their time in
-    /// syncs.
+    /// syncs. Their queries also wait longer for a pooled connection, so a
+    /// loaded machine slows them down rather than failing them.
     /// # Errors
     /// Returns the errors of [`Store::open`].
     #[cfg(any(test, feature = "testing"))]
@@ -690,7 +706,7 @@ impl Store {
         ensure_database_target(path)?;
         let pool = SqlitePoolOptions::new()
             .max_connections(8)
-            .acquire_timeout(Duration::from_secs(5))
+            .acquire_timeout(durability.acquire_timeout())
             .after_release(|connection, _| {
                 Box::pin(async move {
                     // A write dropped after SQLite ran its `BEGIN IMMEDIATE`
