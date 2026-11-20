@@ -152,6 +152,15 @@ pub(crate) struct ReceivesTelemetryArgs {
 pub(crate) struct AddServiceArgs {
     #[command(flatten)]
     target: ServiceTarget,
+    #[command(flatten)]
+    source: NewSource,
+    // Boxed to keep the CLI command enum small.
+    #[command(flatten)]
+    build: Box<GitBuildArgs>,
+}
+// Where a new service's image comes from: exactly one of an image or `--git`.
+#[derive(Debug, Args)]
+struct NewSourceFlags {
     /// Image to run, such as `nginx:stable`. It may reference variables.
     /// Omit it when you pass `--git`.
     #[arg(required_unless_present = "git", conflicts_with = "git")]
@@ -161,10 +170,22 @@ pub(crate) struct AddServiceArgs {
     /// manifest's own repository, at the commit the manifest was read from.
     #[arg(long, value_name = "URL|self")]
     git: Option<BuildRepository>,
-    // Boxed to keep the CLI command enum small.
-    #[command(flatten)]
-    build: Box<GitBuildArgs>,
 }
+/// The image `app service add` runs, or the repository it builds.
+#[derive(Debug)]
+enum NewSource {
+    Image(Template),
+    Git(BuildRepository),
+}
+impl NewSourceFlags {
+    /// The image or repository the flags select.
+    fn choice(self) -> Option<NewSource> {
+        self.image
+            .map(NewSource::Image)
+            .or(self.git.map(NewSource::Git))
+    }
+}
+crate::cli::choice_args!(NewSource, NewSourceFlags, NewSourceFlags::choice);
 #[derive(Debug, Subcommand)]
 pub(crate) enum EnvironmentCommand {
     /// Set an environment variable, keeping the service's others.
@@ -299,21 +320,15 @@ pub(crate) struct HealthTimingArgs {
 impl AddServiceArgs {
     /// The new service: its image or Git source, one replica, and no
     /// optional settings.
-    #[expect(
-        clippy::expect_used,
-        reason = "Clap requires an image or a Git repository."
-    )]
     fn service(&self) -> Result<Service> {
         Ok(Service {
             name: self.target.service.clone(),
-            source: self.git.as_ref().map_or_else(
-                || {
-                    Ok(Source::Image {
-                        image: self.image.clone().expect("Clap requires image or Git"),
-                    })
+            source: match &self.source {
+                NewSource::Image(image) => Source::Image {
+                    image: image.clone(),
                 },
-                |repository| self.build.source(repository),
-            )?,
+                NewSource::Git(repository) => self.build.source(repository)?,
+            },
             replicas: Typed::Literal(1),
             environment: BTreeMap::new(),
             command: Vec::new(),
