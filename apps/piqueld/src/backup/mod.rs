@@ -2,7 +2,8 @@
 //! migrates its database it writes the state it is about to change into
 //! `<data_dir>/backups/pre-<schema>-<ms>`, a directory holding:
 //!
-//! - `piqueld.db`, a consistent snapshot of the database;
+//! - `piqueld.db`, a consistent snapshot of the database that passes its
+//!   integrity check;
 //! - `secrets.key`, when present, proven to decrypt the snapshot's secrets;
 //! - `tailscale/` and `ingress/`, the tailnet node's and the ingress
 //!   gateway's state, as regular files and directories, without the
@@ -17,14 +18,22 @@ mod rotation;
 #[cfg(test)]
 mod tests;
 
-use anyhow::{Context, Result};
-use piqueld_store::{DatabaseFile, SCHEMA_VERSION};
+use anyhow::{Context, Result, bail};
+use piqueld_store::{DatabaseCopy, DatabaseFile, DatabaseIdentity, SCHEMA_VERSION};
 pub use rotation::PreMigration;
+use rustix::fs::{AtFlags, CWD, Dir, FileType, Mode, OFlags};
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsStr,
     fs::{self, File, OpenOptions},
     io,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+    os::{
+        fd::{AsFd, BorrowedFd},
+        unix::{
+            ffi::OsStrExt,
+            fs::{DirBuilderExt, OpenOptionsExt},
+        },
+    },
     path::{Path, PathBuf},
 };
 
@@ -118,6 +127,8 @@ impl Backups {
                 _ => Err(error),
             })
             .with_context(|| format!("create {}", directory.display()))?;
+        // The backups directory's own entry must survive a crash too.
+        sync(&self.data_dir)?;
         // Written under a temporary name, so an unfinished backup never looks
         // like a finished one, and is removed if it fails.
         let staging = tempfile::Builder::new()
@@ -149,8 +160,8 @@ impl Backups {
 
     /// Writes a backup of the data directory into `destination`, an empty
     /// private directory: a snapshot of the database first, then the secret
-    /// key checked against it, the state directories and the manifest, all
-    /// synced to disk.
+    /// key and the state directories, all synced to disk. The manifest is
+    /// written only once the snapshot passes [`verify`].
     async fn stage(&self, destination: &Path) -> Result<Manifest> {
         let database = destination.join(DATABASE);
         let mut live = DatabaseFile::open(&self.data_dir.join(DATABASE))
@@ -165,32 +176,19 @@ impl Backups {
         let staged = destination.to_path_buf();
         let key = tokio::task::spawn_blocking(move || {
             let key = staged.join(SECRET_KEY);
-            let copied = copy_file(&data_dir.join(SECRET_KEY), &key)?;
+            let source = data_dir.join(SECRET_KEY);
+            let copied = copy_file(CWD, &source, &source, &key)?;
+            let control = data_dir.join(INGRESS_CONTROL);
             for tree in TREES {
-                let control = data_dir.join(INGRESS_CONTROL);
-                copy_tree(&data_dir.join(tree), &staged.join(tree), Some(&control))?;
+                let source = data_dir.join(tree);
+                copy_tree(CWD, &source, &source, &staged.join(tree), Some(&control))?;
             }
             Ok::<_, anyhow::Error>(copied.then_some(key))
         })
         .await
         .context("copy the data directory")??;
 
-        let mut snapshot = DatabaseFile::open(&database)
-            .await
-            .context("open the database snapshot")?;
-        let identity = snapshot
-            .identity()
-            .await
-            .context("read the snapshot's schema")?
-            .context("the database has no schema yet")?;
-        snapshot
-            .verify_key(key.as_deref())
-            .await
-            .with_context(|| format!("{SECRET_KEY} does not match the database"))?;
-        snapshot
-            .close()
-            .await
-            .context("close the database snapshot")?;
+        let identity = verify(&database, key.as_deref()).await?;
 
         let manifest = Manifest {
             format: FORMAT,
@@ -210,6 +208,41 @@ impl Backups {
     }
 }
 
+/// A database that failed `PRAGMA integrity_check`, with the problems it
+/// found. VACUUM copies rows without checking their constraints, so a
+/// snapshot can hold what a later migration trips on.
+#[derive(Debug, thiserror::Error)]
+#[error("the database failed its integrity check: {}", .0.join("; "))]
+pub struct Damaged(pub Vec<String>);
+
+/// Checks the database copy at `database` before anything relies on it: its
+/// integrity, its schema, and that the key copied to `key`, or none, is the
+/// one its secrets need. Returns its identity.
+async fn verify(database: &Path, key: Option<&Path>) -> Result<DatabaseIdentity> {
+    let mut copy = DatabaseCopy::open(database)
+        .await
+        .with_context(|| format!("open {}", database.display()))?;
+    let problems = copy
+        .integrity_problems()
+        .await
+        .with_context(|| format!("check {}", database.display()))?;
+    if !problems.is_empty() {
+        bail!(Damaged(problems));
+    }
+    let identity = copy
+        .identity()
+        .await
+        .with_context(|| format!("read the schema of {}", database.display()))?
+        .context("the database has no schema yet")?;
+    copy.verify_key(key)
+        .await
+        .with_context(|| format!("{SECRET_KEY} does not match the database"))?;
+    copy.close()
+        .await
+        .with_context(|| format!("close {}", database.display()))?;
+    Ok(identity)
+}
+
 /// Creates the private file `path`, which must not exist.
 fn create_private(path: &Path) -> Result<File> {
     OpenOptions::new()
@@ -220,48 +253,96 @@ fn create_private(path: &Path) -> Result<File> {
         .with_context(|| format!("create {}", path.display()))
 }
 
-/// Copies the regular file `source` to `target`, private and synced,
-/// without following a symlink. Returns whether `source` existed.
-fn copy_file(source: &Path, target: &Path) -> Result<bool> {
-    let mut from = match OpenOptions::new()
-        .read(true)
-        .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits().cast_signed())
-        .open(source)
-    {
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-        opened => opened.with_context(|| format!("open {}", source.display()))?,
+/// Opens `name`, relative to the directory `at`, read-only and never
+/// through a symlink: a directory when `directory`, else without blocking,
+/// so a FIFO swapped in can't stall the copy.
+fn open_at(at: BorrowedFd<'_>, name: &Path, directory: bool) -> io::Result<File> {
+    let kind = if directory {
+        OFlags::DIRECTORY
+    } else {
+        OFlags::NONBLOCK
     };
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | kind;
+    Ok(File::from(rustix::fs::openat(
+        at,
+        name,
+        flags,
+        Mode::empty(),
+    )?))
+}
+
+/// Copies the regular file `name` in the directory `at`, which messages
+/// call `shown`, to `target`, private and synced. Returns whether it
+/// existed.
+fn copy_file(at: BorrowedFd<'_>, name: &Path, shown: &Path, target: &Path) -> Result<bool> {
+    let mut from = match open_at(at, name, false) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        opened => opened.with_context(|| format!("open {}", shown.display()))?,
+    };
+    let metadata = from
+        .metadata()
+        .with_context(|| format!("inspect {}", shown.display()))?;
+    if !metadata.is_file() {
+        bail!("{} is not a regular file", shown.display());
+    }
     let mut to = create_private(target)?;
     io::copy(&mut from, &mut to)
-        .with_context(|| format!("copy {} to {}", source.display(), target.display()))?;
+        .with_context(|| format!("copy {} to {}", shown.display(), target.display()))?;
     to.sync_all()
         .with_context(|| format!("sync {}", target.display()))?;
     Ok(true)
 }
 
-/// Copies the directory `source` to `target`, private and synced, keeping
-/// only regular files and directories and leaving out `skip`. Entries
-/// removed while it copies, as the gateway may, are left out too.
-fn copy_tree(source: &Path, target: &Path, skip: Option<&Path>) -> Result<()> {
-    let entries = match fs::read_dir(source) {
+/// Copies the directory `name` in the directory `at`, which messages call
+/// `shown`, to `target`, private and synced, keeping only regular files and
+/// directories and leaving out `skip`. It walks open directories, so it
+/// never follows a symlink, even one swapped in while it copies. Entries
+/// removed meanwhile, as the gateway may, are left out.
+fn copy_tree(
+    at: BorrowedFd<'_>,
+    name: &Path,
+    shown: &Path,
+    target: &Path,
+    skip: Option<&Path>,
+) -> Result<()> {
+    let directory = match open_at(at, name, true) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        entries => entries.with_context(|| format!("read {}", source.display()))?,
+        opened => opened.with_context(|| format!("open {}", shown.display()))?,
     };
+    let entries =
+        Dir::read_from(&directory).with_context(|| format!("read {}", shown.display()))?;
     fs::DirBuilder::new()
         .mode(0o700)
         .create(target)
         .with_context(|| format!("create {}", target.display()))?;
     for entry in entries {
-        let entry = entry.with_context(|| format!("read {}", source.display()))?;
-        let (from, to) = (entry.path(), target.join(entry.file_name()));
+        let entry = entry.with_context(|| format!("read {}", shown.display()))?;
+        let name = Path::new(OsStr::from_bytes(entry.file_name().to_bytes()));
+        if name == Path::new(".") || name == Path::new("..") {
+            continue;
+        }
+        let (from, to) = (shown.join(name), target.join(name));
         let kind = match entry.file_type() {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            kind => kind.with_context(|| format!("inspect {}", from.display()))?,
+            // Some filesystems don't say; ask without following a symlink.
+            FileType::Unknown => {
+                match rustix::fs::statat(&directory, name, AtFlags::SYMLINK_NOFOLLOW) {
+                    Err(rustix::io::Errno::NOENT) => continue,
+                    stat => FileType::from_raw_mode(
+                        stat.with_context(|| format!("inspect {}", from.display()))?
+                            .st_mode,
+                    ),
+                }
+            }
+            kind => kind,
         };
-        if kind.is_dir() && skip != Some(from.as_path()) {
-            copy_tree(&from, &to, skip)?;
-        } else if kind.is_file() {
-            copy_file(&from, &to)?;
+        match kind {
+            FileType::Directory if skip != Some(from.as_path()) => {
+                copy_tree(directory.as_fd(), name, &from, &to, skip)?;
+            }
+            FileType::RegularFile => {
+                copy_file(directory.as_fd(), name, &from, &to)?;
+            }
+            _ => {}
         }
     }
     sync(target)

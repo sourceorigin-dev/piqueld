@@ -61,7 +61,55 @@ async fn outdated(data_dir: &Path) -> String {
     write("snapshots/preview.bundle", b"bundle");
     std::os::unix::net::UnixListener::bind(data_dir.join("tailscale/tailscaled.sock"))
         .expect("a socket is created");
+    // A link the gateway could plant, to state that isn't the daemon's.
+    std::os::unix::fs::symlink(
+        data_dir.join("snapshots"),
+        data_dir.join("ingress/data/elsewhere"),
+    )
+    .expect("a symlink is created");
     instance
+}
+
+/// Runs `sql` on the database in `data_dir` without checking constraints,
+/// as damage outside the daemon could leave it.
+async fn tamper(data_dir: &Path, sql: &str) {
+    let options = sqlx::sqlite::SqliteConnectOptions::new().filename(data_dir.join(DATABASE));
+    let mut connection = sqlx::ConnectOptions::connect(&options)
+        .await
+        .expect("the database opens");
+    sqlx::raw_sql(&format!("PRAGMA ignore_check_constraints=ON; {sql}"))
+        .execute(&mut connection)
+        .await
+        .expect("the database changes");
+}
+
+/// The backups' names in `data_dir`, sorted, unfinished ones included.
+fn backup_names(data_dir: &Path) -> Vec<String> {
+    let mut names: Vec<_> = fs::read_dir(data_dir.join(BACKUPS))
+        .expect("the backups directory reads")
+        .map(|entry| {
+            entry
+                .expect("the entry reads")
+                .file_name()
+                .into_string()
+                .expect("UTF-8")
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// An outdated data directory, its backup before migrating, and its
+/// instance ID.
+async fn backed_up() -> (tempfile::TempDir, PathBuf, String) {
+    let data_dir = tempfile::tempdir().expect("a data directory is created");
+    let instance = outdated(data_dir.path()).await;
+    let backup = Backups::new(data_dir.path())
+        .before_migration()
+        .await
+        .expect("the backup is written")
+        .expect("an outdated database is backed up");
+    (data_dir, backup, instance)
 }
 
 /// The relative paths of the files under `root`, sorted.
@@ -88,14 +136,8 @@ fn files(root: &Path) -> Vec<String> {
 /// key in the backup are a matching pair.
 #[tokio::test]
 async fn an_outdated_database_is_backed_up_before_it_migrates() {
-    let data_dir = tempfile::tempdir().expect("a data directory is created");
-    let instance = outdated(data_dir.path()).await;
+    let (data_dir, backup, instance) = backed_up().await;
     let backups = Backups::new(data_dir.path());
-    let backup = backups
-        .before_migration()
-        .await
-        .expect("the backup is written")
-        .expect("an outdated database is backed up");
 
     assert_eq!(
         files(&backup),
@@ -177,4 +219,44 @@ fn prune_keeps_the_newest_backups_with_generated_names() {
         .collect();
     remaining.sort();
     assert_eq!(remaining, ["pre-10-200", "pre-10-300", "pre-manual-1"]);
+}
+
+/// A snapshot that fails its integrity check, here a row VACUUM copied
+/// past its CHECK constraint, is never published, so it can't replace a
+/// backup that restores.
+#[tokio::test]
+async fn a_damaged_database_is_never_backed_up() {
+    let (data_dir, backup, _) = backed_up().await;
+    tamper(
+        data_dir.path(),
+        "UPDATE applications SET desired_json='{not json'",
+    )
+    .await;
+    let error = Backups::new(data_dir.path())
+        .before_migration()
+        .await
+        .expect_err("the damaged snapshot is refused");
+    assert!(error.is::<Damaged>(), "{error:#}");
+    let kept = backup.file_name().expect("the backup has a name");
+    assert_eq!(
+        backup_names(data_dir.path()),
+        [kept.to_str().expect("UTF-8")]
+    );
+}
+
+/// A state directory replaced by a symlink is refused rather than followed.
+#[tokio::test]
+async fn a_symlinked_state_directory_is_not_followed() {
+    let data_dir = tempfile::tempdir().expect("a data directory is created");
+    outdated(data_dir.path()).await;
+    let tailscale = data_dir.path().join("tailscale");
+    fs::remove_dir_all(&tailscale).expect("the tailnet state is removed");
+    std::os::unix::fs::symlink(data_dir.path().join("snapshots"), &tailscale)
+        .expect("a symlink replaces it");
+    let error = Backups::new(data_dir.path())
+        .before_migration()
+        .await
+        .expect_err("the symlink is refused");
+    assert!(format!("{error:#}").contains("tailscale"), "{error:#}");
+    assert_eq!(backup_names(data_dir.path()), Vec::<String>::new());
 }
