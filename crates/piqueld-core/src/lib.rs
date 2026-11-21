@@ -66,5 +66,8 @@ pub use resource::{
     Sha256Digest, Sha256DigestError, TaskDiagnostic, TaskState, compile_application,
     compile_release, image_repository, preview_resolution, valid_logical_name,
 };
-pub use retention::{LocalImages, ReleaseAvailability, RetentionRoot, ServiceImage};
+pub use retention::{
+    BuildHistoryConfig, ImagesConfig, LocalImages, ReleaseAvailability, RetentionConfig,
+    RetentionRoot, ServiceImage,
+};
 pub use toml_diagnostic::{TomlDiagnostic, TomlLocation};

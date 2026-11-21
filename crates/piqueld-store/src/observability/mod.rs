@@ -19,22 +19,26 @@ use destinations::DestinationRow;
 
 use super::{Store, StoreError, now_ms};
 use piqueld_core::observability::{ActionDuration, DaemonStats, DeploymentAnalytics, FailureCount};
+use piqueld_core::{ImagesConfig, RetentionConfig};
 
 impl Store {
-    /// Configures startup-loaded history retention, and how often an
-    /// unchanged health observation is written (see [`Store::record_health`]).
+    /// Configures startup-loaded history retention, from the configuration
+    /// file's `[retention]` and `[images]` tables, and how often an unchanged
+    /// health observation is written again (see [`Store::record_health`]),
+    /// which the daemon sets to its reconciliation scan interval.
     #[must_use]
-    pub fn with_observability(mut self, config: &piqueld_config::DaemonConfig) -> Self {
-        self.daemon_event_days = config.retention.daemon_event_days;
-        self.audit_days = config.retention.audit_days;
-        self.traffic_days = config.retention.traffic_days;
-        self.deployment_retention = super::history::DeploymentRetention::new(config);
-        self.health_refresh_ms = Self::scan_interval_ms(&config.reconciliation);
+    pub fn with_observability(
+        mut self,
+        retention: &RetentionConfig,
+        images: &ImagesConfig,
+        health_refresh: std::time::Duration,
+    ) -> Self {
+        self.daemon_event_days = retention.daemon_event_days;
+        self.audit_days = retention.audit_days;
+        self.traffic_days = retention.traffic_days;
+        self.deployment_retention = super::history::DeploymentRetention::new(retention, images);
+        self.health_refresh_ms = i64::try_from(health_refresh.as_millis()).unwrap_or(i64::MAX);
         self
-    }
-    /// The full scan interval, in milliseconds.
-    pub(super) fn scan_interval_ms(config: &piqueld_config::ReconciliationConfig) -> i64 {
-        i64::try_from(config.scan_interval_seconds.saturating_mul(1000)).unwrap_or(i64::MAX)
     }
     /// Returns a snapshot cached for five seconds to avoid expensive per-request scans.
     /// Combines database counters, database and WAL file sizes, free disk space,

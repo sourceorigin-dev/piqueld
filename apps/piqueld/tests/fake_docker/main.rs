@@ -151,7 +151,11 @@ impl ControllerHarness {
             Store::open_unsynced(&self.database_path)
                 .await
                 .unwrap()
-                .with_observability(config),
+                .with_observability(
+                    &config.retention,
+                    &config.images,
+                    std::time::Duration::from_secs(config.reconciliation.scan_interval_seconds),
+                ),
         );
         self.controller = self.new_controller();
     }

@@ -244,7 +244,11 @@ impl ApplicationService {
             .await
             .context("failed to open control-plane state")?
             .with_build_history(config.build_history.clone())
-            .with_observability(config)
+            .with_observability(
+                &config.retention,
+                &config.images,
+                std::time::Duration::from_secs(config.reconciliation.scan_interval_seconds),
+            )
             .with_previews(config.previews.clone());
         info!(path = %config.server.database_path().display(), "opened control-plane state");
         telemetry.start(store.instance_id());

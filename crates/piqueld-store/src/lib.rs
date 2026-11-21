@@ -556,6 +556,11 @@ pub const DEFAULT_PAGE_SIZE: usize = piqueld_core::api::DEFAULT_PAGE_SIZE as usi
 /// [`piqueld_core::api::MAX_PAGE_SIZE`] as a store page length.
 pub const MAX_PAGE_SIZE: usize = piqueld_core::api::MAX_PAGE_SIZE as usize;
 
+/// How old an unchanged health observation gets before it's written again,
+/// until [`Store::with_observability`] sets the daemon's scan interval: the
+/// default reconciliation scan interval of 60 seconds.
+const DEFAULT_HEALTH_REFRESH_MS: i64 = 60_000;
+
 /// Last observed environment status.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnvironmentStatus {
@@ -590,7 +595,7 @@ pub struct Store {
     /// Stable installation identity, generated when the database is first created.
     instance_id: piqueld_core::InstanceId,
     /// Build output retention and per-build byte cap.
-    build_history: piqueld_config::BuildHistoryConfig,
+    build_history: piqueld_core::BuildHistoryConfig,
 
     /// Secret master key file, stored next to the database as `secrets.key`.
     secret_key_path: std::path::PathBuf,
@@ -775,7 +780,7 @@ impl Store {
         Ok(Self {
             pool,
             instance_id,
-            build_history: piqueld_config::BuildHistoryConfig::default(),
+            build_history: piqueld_core::BuildHistoryConfig::default(),
 
             secret_key_path: path.with_file_name("secrets.key"),
             writers: std::sync::Arc::default(),
@@ -786,9 +791,7 @@ impl Store {
             audit_days: 0,
             traffic_days: 0,
             deployment_retention: history::DeploymentRetention::default(),
-            health_refresh_ms: Self::scan_interval_ms(
-                &piqueld_config::ReconciliationConfig::default(),
-            ),
+            health_refresh_ms: DEFAULT_HEALTH_REFRESH_MS,
             previews: piqueld_core::manifest::PreviewLimits::default(),
             access_changes: tokio::sync::watch::Sender::new(()),
         })
