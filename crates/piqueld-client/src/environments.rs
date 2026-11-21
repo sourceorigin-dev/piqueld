@@ -1,7 +1,8 @@
 //! Environment lifecycle, deployments, status, history, and logs.
 pub use piqueld_core::api::{
-    AcceptedPromotion, CreateEnvironmentRequest, DeploymentOrigin, EnvironmentBranchRequest,
-    EnvironmentDetailView, EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView,
+    AcceptedPromotion, CreateEnvironmentRequest, DeploymentListView, DeploymentOrigin,
+    DeploymentPage, DeploymentSummary, EnvironmentBranchRequest, EnvironmentDetailView,
+    EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView,
     EnvironmentTelemetryRequest, EnvironmentView, PromoteRequest, ReleasePlan, ReleasePromotion,
     RestoreRequest, RouteUrl, RunState, SecretProblem, TelemetryReport, UrlCondition, UrlState,
 };
@@ -282,8 +283,54 @@ impl Client {
         cursor: Option<&str>,
         limit: Option<u16>,
     ) -> Result<Page<DeploymentView>, ClientError> {
+        match self.deployment_page(id, cursor, limit, None).await? {
+            DeploymentPage::Full(page) => Ok(page),
+            DeploymentPage::Summary(_) => Err(ClientError::Decode {
+                source: serde::de::Error::custom("expected deployments with their manifests"),
+            }),
+        }
+    }
+
+    /// Lists an environment's deployments like [`Client::deployments`], as
+    /// summaries without their manifests.
+    /// # Errors
+    /// Returns transport, API, or decoding errors.
+    pub async fn deployment_summaries(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        limit: Option<u16>,
+    ) -> Result<Page<DeploymentSummary>, ClientError> {
+        Ok(
+            match self
+                .deployment_page(id, cursor, limit, Some(DeploymentListView::Summary))
+                .await?
+            {
+                DeploymentPage::Summary(page) => page,
+                // An empty page decodes as whole snapshots.
+                DeploymentPage::Full(page) => Page {
+                    items: page
+                        .items
+                        .into_iter()
+                        .map(DeploymentSummary::from)
+                        .collect(),
+                    next_cursor: page.next_cursor,
+                },
+            },
+        )
+    }
+
+    /// One page of an environment's deployments, in `view`; whole
+    /// snapshots without one.
+    async fn deployment_page(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        limit: Option<u16>,
+        view: Option<DeploymentListView>,
+    ) -> Result<DeploymentPage, ClientError> {
         self.generated
-            .list_deployments(id, cursor, limit.map(u32::from))
+            .list_deployments(id, cursor, limit.map(u32::from), view.as_ref())
             .data()
             .await
     }

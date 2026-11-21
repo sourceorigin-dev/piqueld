@@ -9,7 +9,10 @@ use axum::{
 use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     ApplicationId, EnvironmentId, Operation,
-    api::{AcceptedOperation, DeploymentView, Envelope, Page, ReleaseView},
+    api::{
+        AcceptedOperation, DeploymentListView, DeploymentPage, DeploymentView, Envelope, Page,
+        ReleaseView,
+    },
     manifest::ManifestRevision,
 };
 
@@ -36,6 +39,9 @@ pub(super) struct DeploymentsQuery {
     /// Deployments per page, from 1 to 100; 3 without it.
     #[param(minimum = 1, maximum = 100)]
     limit: Option<u16>,
+    /// `summary` lists each deployment without its manifests; `full`
+    /// without it.
+    view: Option<DeploymentListView>,
 }
 
 impl QueryParams for DeploymentsQuery {
@@ -122,11 +128,12 @@ pub(super) async fn deploy(
 
 /// Lists deployments of an environment, newest first.
 ///
-/// Returns `limit` deployment snapshots per page, three without it; follow
-/// `next_cursor` for older ones.
+/// Returns `limit` deployments per page, three without it; follow
+/// `next_cursor` for older ones. Each is a whole snapshot, with its
+/// manifests, or with `view=summary` what a history row shows of it.
 #[utoipa::path(get,path="/api/v1/environments/{id}/deployments",operation_id="listDeployments",
     params(("id"=String,Path),DeploymentsQuery),
-    responses((status=200,description="Deployment snapshots, newest first",body=Envelope<Page<DeploymentView>>),
+    responses((status=200,description="Deployments, newest first",body=Envelope<DeploymentPage>),
     ApiErrors<400, 404, 500>))]
 pub(super) async fn list(
     State(state): State<ApiState>,
@@ -138,6 +145,7 @@ pub(super) async fn list(
             &EnvironmentId::parse(id)?,
             query.cursor.as_deref(),
             query.limit,
+            query.view.unwrap_or(DeploymentListView::Full),
         )
         .await?))
 }

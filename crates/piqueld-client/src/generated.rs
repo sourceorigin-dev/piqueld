@@ -8846,8 +8846,9 @@ impl Client {
     }
     /*Lists deployments of an environment, newest first
 
-    Returns `limit` deployment snapshots per page, three without it; follow
-    `next_cursor` for older ones.
+    Returns `limit` deployments per page, three without it; follow
+    `next_cursor` for older ones. Each is a whole snapshot, with its
+    manifests, or with `view=summary` what a history row shows of it.
 
     Sends a `GET` request to `/api/v1/environments/{id}/deployments`
 
@@ -8855,16 +8856,17 @@ impl Client {
     - `id`
     - `cursor`: `next_cursor` from a previous page.
     - `limit`: Deployments per page, from 1 to 100; 3 without it.
+    - `view`: `summary` lists each deployment without its manifests; `full`
+    without it.
     */
     pub async fn list_deployments<'a>(
         &'a self,
         id: &'a str,
         cursor: Option<&'a str>,
         limit: Option<u32>,
+        view: Option<&'a piqueld_core::api::DeploymentListView>,
     ) -> Result<
-        ResponseValue<
-            piqueld_core::api::Envelope<piqueld_core::api::Page<piqueld_core::api::DeploymentView>>,
-        >,
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::api::DeploymentPage>>,
         Error<piqueld_core::api::ErrorBody>,
     > {
         let url = format!(
@@ -8887,6 +8889,7 @@ impl Client {
             )
             .query(&progenitor_client::QueryParam::new("cursor", &cursor))
             .query(&progenitor_client::QueryParam::new("limit", &limit))
+            .query(&progenitor_client::QueryParam::new("view", &view))
             .headers(header_map)
             .build()?;
         let info = OperationInfo {

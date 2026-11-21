@@ -2552,6 +2552,14 @@
         ],
         "type": "object"
       },
+      "DeploymentListView": {
+        "description": "How much of each deployment a deployment listing returns.",
+        "enum": [
+          "full",
+          "summary"
+        ],
+        "type": "string"
+      },
       "DeploymentOrigin": {
         "description": "Where a deployment came from.",
         "oneOf": [
@@ -2659,6 +2667,81 @@
             "description": "A snapshot of a local worktree, uploaded to a preview with\n`preview deploy --local`, and built like its branch would be."
           }
         ]
+      },
+      "DeploymentPage": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Page_DeploymentView",
+            "description": "Whole snapshots."
+          },
+          {
+            "$ref": "#/components/schemas/Page_DeploymentSummary",
+            "description": "Summaries. An empty page reads as `Full`."
+          }
+        ],
+        "description": "A page of an environment's deployments, newest first, in the\n[`DeploymentListView`] asked for."
+      },
+      "DeploymentSummary": {
+        "description": "A deployment without its manifests, as a history row shows it.",
+        "properties": {
+          "current_target": {
+            "description": "Whether this is the currently promoted runtime target.",
+            "type": "boolean"
+          },
+          "git_branch": {
+            "description": "The branch its repository manifest was read from (`git.branch`).",
+            "nullable": true,
+            "type": "string"
+          },
+          "git_sha": {
+            "description": "The commit its repository manifest was read from (`git.sha`); absent\nfor a saved manifest.",
+            "nullable": true,
+            "type": "string"
+          },
+          "last_successful": {
+            "description": "Whether this is the most recent deployment to converge successfully.",
+            "type": "boolean"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/Operation",
+            "description": "Execution ID also identifies this deployment."
+          },
+          "origin": {
+            "$ref": "#/components/schemas/DeploymentOrigin",
+            "description": "Where it came from."
+          },
+          "release": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReleaseId"
+                  }
+                ],
+                "description": "The release its prepared target runs; absent until prepared, and for\ndeployments that recorded none."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          },
+          "succeeded_at_ms": {
+            "description": "First successful convergence, retained during later drift repair.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation",
+          "current_target",
+          "last_successful"
+        ],
+        "type": "object"
       },
       "DeploymentView": {
         "description": "Durable deployment snapshot and execution summary.",
@@ -4320,6 +4403,28 @@
         ],
         "type": "object"
       },
+      "Envelope_DeploymentPage": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Page_DeploymentView",
+                "description": "Whole snapshots."
+              },
+              {
+                "$ref": "#/components/schemas/Page_DeploymentSummary",
+                "description": "Summaries. An empty page reads as `Full`."
+              }
+            ],
+            "description": "A page of an environment's deployments, newest first, in the\n[`DeploymentListView`] asked for."
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "Envelope_DeploymentView": {
         "description": "Successful API response envelope.",
         "properties": {
@@ -5530,124 +5635,6 @@
                     "log_bytes",
                     "log_truncated",
                     "log_expired"
-                  ],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "next_cursor": {
-                "description": "Cursor for the next page, when more items are available.",
-                "nullable": true,
-                "type": "string"
-              }
-            },
-            "required": [
-              "items"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "data"
-        ],
-        "type": "object"
-      },
-      "Envelope_Page_DeploymentView": {
-        "description": "Successful API response envelope.",
-        "properties": {
-          "data": {
-            "description": "Cursor-paginated API response.",
-            "properties": {
-              "items": {
-                "description": "Items in this page.",
-                "items": {
-                  "description": "Durable deployment snapshot and execution summary.",
-                  "properties": {
-                    "application": {
-                      "oneOf": [
-                        {
-                          "allOf": [
-                            {
-                              "$ref": "#/components/schemas/NormalizedApplication"
-                            }
-                          ],
-                          "description": "Rendered configuration; absent until a repository-backed manifest is fetched."
-                        },
-                        {
-                          "enum": [
-                            null
-                          ],
-                          "nullable": true,
-                          "type": "string"
-                        }
-                      ]
-                    },
-                    "current_target": {
-                      "description": "Whether this is the currently promoted runtime target.",
-                      "type": "boolean"
-                    },
-                    "last_successful": {
-                      "description": "Whether this is the most recent deployment to converge successfully.",
-                      "type": "boolean"
-                    },
-                    "operation": {
-                      "$ref": "#/components/schemas/Operation",
-                      "description": "Execution ID also identifies this deployment."
-                    },
-                    "origin": {
-                      "$ref": "#/components/schemas/DeploymentOrigin",
-                      "description": "Where it came from: built from its environment's source, a promoted\nor redeployed release, or a local snapshot uploaded to a preview."
-                    },
-                    "release": {
-                      "oneOf": [
-                        {
-                          "allOf": [
-                            {
-                              "$ref": "#/components/schemas/ReleaseId"
-                            }
-                          ],
-                          "description": "The release its prepared target runs; absent until prepared, and for\ndeployments that recorded none."
-                        },
-                        {
-                          "enum": [
-                            null
-                          ],
-                          "nullable": true,
-                          "type": "string"
-                        }
-                      ]
-                    },
-                    "succeeded_at_ms": {
-                      "description": "First successful convergence, retained during later drift repair.",
-                      "format": "int64",
-                      "nullable": true,
-                      "type": "integer"
-                    },
-                    "template": {
-                      "$ref": "#/components/schemas/ApplicationTemplate",
-                      "description": "Manifest captured for this deployment, with references unresolved."
-                    },
-                    "variables": {
-                      "additionalProperties": {
-                        "$ref": "#/components/schemas/VariableValue"
-                      },
-                      "description": "Values its references rendered to, keyed by reference.",
-                      "type": "object"
-                    },
-                    "warnings": {
-                      "description": "Problems found while fetching the manifest that did not stop the\ndeployment, e.g. `manifest_connection_ignored`.",
-                      "items": {
-                        "$ref": "#/components/schemas/DiagnosticView"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "operation",
-                    "template",
-                    "variables",
-                    "current_target",
-                    "last_successful"
                   ],
                   "type": "object"
                 },
@@ -10067,6 +10054,48 @@
         },
         "required": [
           "value"
+        ],
+        "type": "object"
+      },
+      "Page_DeploymentSummary": {
+        "description": "Cursor-paginated API response.",
+        "properties": {
+          "items": {
+            "description": "Items in this page.",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentSummary"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "description": "Cursor for the next page, when more items are available.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "Page_DeploymentView": {
+        "description": "Cursor-paginated API response.",
+        "properties": {
+          "items": {
+            "description": "Items in this page.",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentView"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "description": "Cursor for the next page, when more items are available.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -29428,7 +29457,7 @@
     },
     "/api/v1/environments/{id}/deployments": {
       "get": {
-        "description": "Returns `limit` deployment snapshots per page, three without it; follow\n`next_cursor` for older ones.",
+        "description": "Returns `limit` deployments per page, three without it; follow\n`next_cursor` for older ones. Each is a whole snapshot, with its\nmanifests, or with `view=summary` what a history row shows of it.",
         "operationId": "listDeployments",
         "parameters": [
           {
@@ -29459,6 +29488,15 @@
               "minimum": 1,
               "type": "integer"
             }
+          },
+          {
+            "description": "`summary` lists each deployment without its manifests; `full`\nwithout it.",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/DeploymentListView"
+            }
           }
         ],
         "responses": {
@@ -29466,11 +29504,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_Page_DeploymentView"
+                  "$ref": "#/components/schemas/Envelope_DeploymentPage"
                 }
               }
             },
-            "description": "Deployment snapshots, newest first"
+            "description": "Deployments, newest first"
           },
           "400": {
             "content": {

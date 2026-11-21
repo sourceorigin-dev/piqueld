@@ -1,7 +1,9 @@
 //! Saved configuration and immutable deployment inputs. Saving never creates work.
 use super::{EnvironmentId, NormalizedApplication, Operation, Paging, Store, StoreError, now_ms};
 use piqueld_core::{
-    api::{DeploymentOrigin, DeploymentView, DiagnosticView, Page, SavedApplication},
+    api::{
+        DeploymentOrigin, DeploymentSummary, DeploymentView, DiagnosticView, Page, SavedApplication,
+    },
     manifest::{ApplicationTemplate, Rendering, VariableValue},
 };
 use sqlx::{Sqlite, Transaction};
@@ -17,6 +19,44 @@ struct DeploymentRow {
     succeeded_at_ms: Option<i64>,
     release_id: Option<String>,
     origin_json: String,
+}
+
+/// Sorts after every deployment ID, so a first page seeks
+/// `deployment_environment` as a cursor does.
+const NEWEST: &str = "\u{10FFFF}";
+
+/// `deployments` columns of a [`DeploymentSummary`].
+struct SummaryRow {
+    id: String,
+    succeeded_at_ms: Option<i64>,
+    release_id: Option<String>,
+    origin_json: String,
+    git_sha: Option<String>,
+    git_branch: Option<String>,
+}
+
+impl SummaryRow {
+    /// Decodes the row and reads its operation.
+    async fn summary_on(
+        self,
+        tx: &mut Transaction<'_, Sqlite>,
+        flags: &Flags,
+    ) -> Result<DeploymentSummary, StoreError> {
+        Ok(DeploymentSummary {
+            operation: Store::operation_on(tx, &self.id).await?,
+            origin: serde_json::from_str(&self.origin_json).map_err(StoreError::corrupt)?,
+            release: self
+                .release_id
+                .map(piqueld_core::ReleaseId::parse)
+                .transpose()
+                .map_err(StoreError::corrupt)?,
+            succeeded_at_ms: self.succeeded_at_ms,
+            current_target: flags.current.as_ref() == Some(&self.id),
+            last_successful: flags.successful.as_ref() == Some(&self.id),
+            git_sha: self.git_sha,
+            git_branch: self.git_branch,
+        })
+    }
 }
 
 /// Which of an environment's deployments are its current target and its
@@ -69,7 +109,9 @@ impl DeploymentRow {
             warnings: serde_json::from_str(&self.warnings_json).map_err(StoreError::corrupt)?,
         })
     }
+}
 
+impl DeploymentRow {
     /// Decodes the row into the deployment's whole snapshot.
     async fn view_on(
         self,
@@ -81,21 +123,27 @@ impl DeploymentRow {
             || (None, BTreeMap::new()),
             |rendering| (Some(rendering.application), rendering.values),
         );
+        let summary = SummaryRow {
+            id: self.id,
+            succeeded_at_ms: self.succeeded_at_ms,
+            release_id: self.release_id,
+            origin_json: self.origin_json,
+            git_sha: None,
+            git_branch: None,
+        }
+        .summary_on(tx, flags)
+        .await?;
         Ok(DeploymentView {
-            operation: Store::operation_on(tx, &self.id).await?,
+            operation: summary.operation,
             template: snapshot.template,
             variables,
             application,
             warnings: snapshot.warnings,
-            release: self
-                .release_id
-                .map(piqueld_core::ReleaseId::parse)
-                .transpose()
-                .map_err(StoreError::corrupt)?,
-            origin: serde_json::from_str(&self.origin_json).map_err(StoreError::corrupt)?,
-            succeeded_at_ms: self.succeeded_at_ms,
-            current_target: flags.current.as_ref() == Some(&self.id),
-            last_successful: flags.successful.as_ref() == Some(&self.id),
+            release: summary.release,
+            origin: summary.origin,
+            succeeded_at_ms: summary.succeeded_at_ms,
+            current_target: summary.current_target,
+            last_successful: summary.last_successful,
         })
     }
 }
@@ -375,32 +423,19 @@ impl Store {
     ) -> Result<Page<DeploymentView>, StoreError> {
         self.get(app).await?;
         let paging = Paging::new(limit)?;
-        let before = Paging::cursor(cursor)?;
+        let before = Paging::cursor(cursor)?.unwrap_or(NEWEST);
         let app_id = app.as_str();
         let mut tx = self.snapshot().await?;
-        // Separate queries, so a cursor seeks `deployment_environment`.
-        let mut rows = if let Some(before) = before {
-            sqlx::query_as!(
-                DeploymentRow,
-                r#"SELECT id AS "id!",manifest_json,template_json,variables_json,warnings_json,succeeded_at_ms,release_id,origin_json FROM deployments
-                 WHERE environment_id=?1 AND id<?2 ORDER BY id DESC LIMIT ?3"#,
-                app_id,
-                before,
-                paging.fetch
-            )
-            .fetch_all(&mut *tx)
-            .await
-        } else {
-            sqlx::query_as!(
-                DeploymentRow,
-                r#"SELECT id AS "id!",manifest_json,template_json,variables_json,warnings_json,succeeded_at_ms,release_id,origin_json FROM deployments
-                 WHERE environment_id=?1 ORDER BY id DESC LIMIT ?2"#,
-                app_id,
-                paging.fetch
-            )
-            .fetch_all(&mut *tx)
-            .await
-        }
+        let mut rows = sqlx::query_as!(
+            DeploymentRow,
+            r#"SELECT id AS "id!",manifest_json,template_json,variables_json,warnings_json,succeeded_at_ms,release_id,origin_json FROM deployments
+             WHERE environment_id=?1 AND id<?2 ORDER BY id DESC LIMIT ?3"#,
+            app_id,
+            before,
+            paging.fetch
+        )
+        .fetch_all(&mut *tx)
+        .await
         .map_err(StoreError::database)?;
         let next_cursor = paging.next_cursor(&mut rows, |row| row.id.clone());
         let flags = Flags::read_on(&mut tx, app).await?;
@@ -438,6 +473,44 @@ impl Store {
         let view = row.view_on(&mut tx, &flags).await?;
         tx.commit().await.map_err(StoreError::database)?;
         Ok(view)
+    }
+
+    /// Lists deployments like [`Self::deployments`], as summaries: without
+    /// their manifests, which are never read.
+    /// # Errors
+    /// Returns storage, decoding, absence, or invalid cursor errors.
+    pub async fn deployment_summaries(
+        &self,
+        app: &EnvironmentId,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<Page<DeploymentSummary>, StoreError> {
+        self.get(app).await?;
+        let paging = Paging::new(limit)?;
+        let before = Paging::cursor(cursor)?.unwrap_or(NEWEST);
+        let app_id = app.as_str();
+        let mut tx = self.snapshot().await?;
+        let mut rows = sqlx::query_as!(
+            SummaryRow,
+            r#"SELECT id AS "id!",succeeded_at_ms,release_id,origin_json,
+             variables_json->>'$."git.sha"' AS "git_sha: String",
+             variables_json->>'$."git.branch"' AS "git_branch: String"
+             FROM deployments WHERE environment_id=?1 AND id<?2 ORDER BY id DESC LIMIT ?3"#,
+            app_id,
+            before,
+            paging.fetch
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(StoreError::database)?;
+        let next_cursor = paging.next_cursor(&mut rows, |row| row.id.clone());
+        let flags = Flags::read_on(&mut tx, app).await?;
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            items.push(row.summary_on(&mut tx, &flags).await?);
+        }
+        tx.commit().await.map_err(StoreError::database)?;
+        Ok(Page { items, next_cursor })
     }
 
     /// Lists durable attempt outcomes, including failures followed by successful retries.

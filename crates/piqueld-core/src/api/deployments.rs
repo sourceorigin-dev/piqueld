@@ -3,10 +3,13 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::openapi::schema::{AnyOfBuilder, Schema};
+use utoipa::openapi::{RefOr, schema::RefBuilder};
+use utoipa::{PartialSchema, ToSchema};
 
-use super::{AcceptedOperation, DiagnosticView};
-use crate::manifest::{ApplicationTemplate, VariableValue};
+use super::{AcceptedOperation, DiagnosticView, Page};
+use crate::manifest::{ApplicationTemplate, SystemVariable, VariableValue};
+use crate::names::string_enum;
 use crate::{
     ApplicationId, BuildFingerprint, EnvironmentId, NormalizedApplication, Operation, Release,
     ReleaseId, Sha256Digest,
@@ -52,6 +55,122 @@ impl DeploymentView {
             VariableValue::String(value) => Some(value),
             VariableValue::Boolean(_) | VariableValue::Integer(_) => None,
         }
+    }
+}
+
+string_enum! {
+    #[serde]
+    /// How much of each deployment a deployment listing returns.
+    pub enum DeploymentListView {
+        /// Whole snapshots, with their manifests: [`DeploymentView`]s.
+        Full => "full",
+        /// What a history row shows, without manifests:
+        /// [`DeploymentSummary`]s.
+        Summary => "summary",
+    }
+}
+
+/// A deployment without its manifests, as a history row shows it.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct DeploymentSummary {
+    /// Execution ID also identifies this deployment.
+    pub operation: Operation,
+    /// Where it came from.
+    #[serde(default)]
+    pub origin: DeploymentOrigin,
+    /// The release its prepared target runs; absent until prepared, and for
+    /// deployments that recorded none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release: Option<ReleaseId>,
+    /// First successful convergence, retained during later drift repair.
+    pub succeeded_at_ms: Option<i64>,
+    /// Whether this is the currently promoted runtime target.
+    pub current_target: bool,
+    /// Whether this is the most recent deployment to converge successfully.
+    pub last_successful: bool,
+    /// The commit its repository manifest was read from (`git.sha`); absent
+    /// for a saved manifest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_sha: Option<String>,
+    /// The branch its repository manifest was read from (`git.branch`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
+}
+
+impl From<DeploymentView> for DeploymentSummary {
+    fn from(view: DeploymentView) -> Self {
+        let value = |variable| view.system_value(variable).map(str::to_owned);
+        Self {
+            git_sha: value(SystemVariable::GitSha),
+            git_branch: value(SystemVariable::GitBranch),
+            operation: view.operation,
+            origin: view.origin,
+            release: view.release,
+            succeeded_at_ms: view.succeeded_at_ms,
+            current_target: view.current_target,
+            last_successful: view.last_successful,
+        }
+    }
+}
+
+/// A page of an environment's deployments, newest first, in the
+/// [`DeploymentListView`] asked for.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum DeploymentPage {
+    /// Whole snapshots.
+    Full(Page<DeploymentView>),
+    /// Summaries. An empty page reads as `Full`.
+    Summary(Page<DeploymentSummary>),
+}
+
+impl DeploymentPage {
+    /// The component name of a page of `T`s, as utoipa names generic schemas.
+    fn page_name<T: ToSchema>() -> String {
+        format!("{}_{}", Page::<T>::name(), T::name())
+    }
+
+    /// A reference to the page of `T`s, described as `description`.
+    fn page_ref<T: ToSchema>(description: &str) -> RefOr<Schema> {
+        RefOr::Ref(
+            RefBuilder::new()
+                .ref_location_from_schema_name(Self::page_name::<T>())
+                .description(Some(description))
+                .build(),
+        )
+    }
+
+    /// Registers the page of `T`s, `T` and the schemas they use.
+    fn page_schemas<T: ToSchema>(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        schemas.push((Self::page_name::<T>(), <Page<T> as PartialSchema>::schema()));
+        schemas.push((T::name().into_owned(), T::schema()));
+        <Page<T> as ToSchema>::schemas(schemas);
+        T::schemas(schemas);
+    }
+}
+
+// Written out because the derive documents an untagged enum as `oneOf`, which
+// a whole page fails: it also matches the summary schema, which allows more
+// properties, and an empty page matches both. `anyOf` accepts either.
+impl PartialSchema for DeploymentPage {
+    fn schema() -> RefOr<Schema> {
+        AnyOfBuilder::new()
+            .description(Some(
+                "A page of an environment's deployments, newest first, in the\n\
+                 [`DeploymentListView`] asked for.",
+            ))
+            .item(Self::page_ref::<DeploymentView>("Whole snapshots."))
+            .item(Self::page_ref::<DeploymentSummary>(
+                "Summaries. An empty page reads as `Full`.",
+            ))
+            .into()
+    }
+}
+
+impl ToSchema for DeploymentPage {
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        Self::page_schemas::<DeploymentView>(schemas);
+        Self::page_schemas::<DeploymentSummary>(schemas);
     }
 }
 

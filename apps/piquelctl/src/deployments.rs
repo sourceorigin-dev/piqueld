@@ -306,7 +306,7 @@ impl<T: Args + Target> WaitArgs<T> {
     async fn deployment(&self, client: &Client, environment: &EnvironmentView) -> Result<String> {
         let Some(id) = &self.deployment else {
             let page = client
-                .deployments(environment.id.as_str(), None, Some(1))
+                .deployment_summaries(environment.id.as_str(), None, Some(1))
                 .await?;
             return page
                 .items
