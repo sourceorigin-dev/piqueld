@@ -8,8 +8,10 @@ use piqueld_client::{
     CreatedPreview, DeletedPreview, DeploymentOrigin, DeploymentView, EnvironmentDetailView,
     EnvironmentSource, EnvironmentStatusView, EnvironmentView, LocalSnapshot, MountedSecret,
     Operation, OperationState, Page, PreviewView, ReleaseId, ReleaseView, StoredSecret,
-    TelemetryDestinationStatus, TelemetryReport, Visibility, links::ImportState,
-    observability::Timestamp, sync::short_commit,
+    TelemetryDestinationStatus, TelemetryReport, Visibility,
+    links::ImportState,
+    observability::{Age, Timestamp},
+    sync::short_commit,
 };
 use serde::Serialize;
 use std::io;
@@ -72,10 +74,11 @@ fn preview_branch(preview: &EnvironmentView) -> String {
 }
 
 /// An environment's observed runtime health and how long ago it was
-/// observed, which grows when health scans stop.
+/// observed, which grows when health scans stop; a week on, when.
 ///
 /// ```text
-/// ready (observed 12 s ago)
+/// ready (observed 4 min ago)
+/// ready (observed at 2026-11-12 13:05:00Z)
 /// unknown
 /// ```
 fn runtime_health(status: &EnvironmentStatusView) -> String {
@@ -83,13 +86,12 @@ fn runtime_health(status: &EnvironmentStatusView) -> String {
     let Some(observed) = status.health_observed_at_ms else {
         return health.into();
     };
-    let seconds = crate::support::now_ms().saturating_sub(observed).max(0) / 1000;
-    let age = match seconds {
-        0..120 => format!("{seconds} s"),
-        120..7_200 => format!("{} min", seconds / 60),
-        _ => format!("{} h", seconds / 3_600),
-    };
-    format!("{health} (observed {age} ago)")
+    // A daemon clock ahead of this one still observed it just now.
+    let now = crate::support::now_ms().max(observed);
+    let when = Age::at(observed, now)
+        .label()
+        .unwrap_or_else(|| format!("at {}", Timestamp(observed)));
+    format!("{health} (observed {when})")
 }
 
 /// The visibility ceiling `manifest` gives `environment`'s routes.

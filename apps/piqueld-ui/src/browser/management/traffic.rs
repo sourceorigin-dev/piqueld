@@ -5,11 +5,11 @@ use super::super::UserError;
 use super::super::observability::{Period, Refresh};
 use super::super::ui::{Icon, Tone, empty, icon, loaded, metric, notice};
 use super::editor;
-use crate::traffic::{Count, Measure, scale_top};
+use crate::traffic::{Measure, scale_top};
 use leptos::prelude::*;
 use piqueld_client::Client;
 use piqueld_client::observability::{
-    Bytes, Elapsed, RouteTraffic, TrafficRank, TrafficReport, UtcTime,
+    Bytes, Count, Elapsed, RouteTraffic, TrafficRank, TrafficReport, UtcTime,
 };
 use std::time::Duration;
 

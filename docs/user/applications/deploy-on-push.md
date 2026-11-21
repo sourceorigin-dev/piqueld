@@ -341,7 +341,7 @@ $ piquelctl env show blog production
 production of blog (env-01a16d9202157fe18b0580467224f248)
 
 Intent: ready
-Runtime: ready (observed 2 s ago)
+Runtime: ready (observed just now)
 Source: main
 Sync: following, last synced 44928efc5d3229a7b6a918182df49a32afc18a3e
 Release: rel-01a16d9438b27093811074404283fef8

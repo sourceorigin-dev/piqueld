@@ -21,6 +21,27 @@ fn grants(list: &[(&str, Option<&[&str]>)]) -> Grants {
 
 /// Hidden applications do not leak; visible ones name the missing permission.
 #[test]
+fn grant_descriptions_name_scoped_applications_only() {
+    let grants = grants(&[
+        ("apps:read", None),
+        ("apps:deploy", Some(&["app-blog0000", "app-shop0000"])),
+        ("accounts:manage", None),
+    ]);
+    assert_eq!(
+        grants.describe(|id| id.as_str().to_uppercase()),
+        [
+            "apps:read on every application",
+            "apps:deploy on APP-BLOG0000, APP-SHOP0000",
+            "accounts:manage",
+        ]
+    );
+    assert_eq!(
+        Grants::default().describe(ToString::to_string),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
 fn application_checks_hide_unreadable_applications() {
     let blog = id("app-blog0000");
     let shop = id("app-shop0000");

@@ -15,7 +15,7 @@ use crate::{
 use clap::{Args, Subcommand};
 use piqueld_client::{
     ApplicationId, Client, Page,
-    access::{Grant, Grants, Permission, Preset, Scope},
+    access::{Grants, Permission, Preset, Scope},
     audit::{AuditEvent, AuditFilter, AuditLink, AuditOutcome, AuditVerification},
     auth::{
         Account, CredentialView, Directory, InvitationView, Manage, OperatorSessionView,
@@ -775,31 +775,18 @@ impl Names {
         Self(names.unwrap_or_default())
     }
 
-    /// Renders one grant, e.g. `apps:deploy on blog, shop`.
-    fn describe(&self, grant: &Grant) -> String {
-        match &grant.applications {
-            None if grant.permission.scopable() => {
-                format!("{} on every application", grant.permission)
-            }
-            None => grant.permission.to_string(),
-            Some(ids) => {
-                let names: Vec<_> = ids
-                    .iter()
-                    .map(|id| self.0.get(id.as_str()).map_or(id.as_str(), String::as_str))
-                    .collect();
-                format!("{} on {}", grant.permission, names.join(", "))
-            }
-        }
-    }
-
     /// Writes one indented line per grant, or `no access`.
     fn render(&self, grants: &Grants, out: &mut HumanWriter<'_>) -> io::Result<()> {
-        let list = grants.to_list();
-        if list.is_empty() {
+        let lines = grants.describe(|id| {
+            self.0
+                .get(id.as_str())
+                .map_or_else(|| id.to_string(), Clone::clone)
+        });
+        if lines.is_empty() {
             return out.line("  no access");
         }
-        for grant in &list {
-            out.line(format_args!("  {}", self.describe(grant)))?;
+        for line in &lines {
+            out.line(format_args!("  {line}"))?;
         }
         Ok(())
     }
