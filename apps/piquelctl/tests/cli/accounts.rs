@@ -187,19 +187,16 @@ fn account_changes_resolve_usernames_to_typed_requests() {
         "/api/v1/applications?limit=100" => Reply::json(page(Vec::new(), None)),
         path => panic!("unexpected path {path}"),
     };
-    // `update` syncs the renamed login to disk, which on a busy disk can
-    // outlast the server's `ACCEPT_TIMEOUT`, so it gets a server of its own
-    // and the other changes one started after it.
-    let server = start_server(false, 2, reply);
-    let Endpoint::Tcp(url) = &server.endpoint else {
+    let server = start_server(false, 14, reply);
+    let Endpoint::Tcp(address) = &server.endpoint else {
         panic!("TCP server");
     };
     // Saved logins are keyed by the endpoint without its trailing slash.
-    let url = url.trim_end_matches('/');
+    let url = format!("http://{address}");
     let directory = tempdir().expect("credentials directory");
     let credentials = directory.path().join("credentials.json");
     let login = json!({"username": "bob", "token": "pqd_bob"});
-    let saved = json!({"endpoints": {url: {"selected": "bob-id", "accounts": {"bob-id": login}}}});
+    let saved = json!({"endpoints": {&url: {"selected": "bob-id", "accounts": {"bob-id": login}}}});
     fs::write(&credentials, saved.to_string()).unwrap();
     fs::set_permissions(&credentials, fs::Permissions::from_mode(0o600)).unwrap();
     let mut update = server.command();
@@ -212,11 +209,9 @@ fn account_changes_resolve_usernames_to_typed_requests() {
     assert_json_success(&output);
     let saved: Value = serde_json::from_slice(&fs::read(&credentials).unwrap()).unwrap();
     assert_eq!(
-        saved["endpoints"][url]["accounts"]["bob-id"],
+        saved["endpoints"][&url]["accounts"]["bob-id"],
         json!({"username": "robert", "token": "pqd_bob"})
     );
-    let mut requests = server.finish();
-    let server = start_server(false, 12, reply);
     for arguments in [
         &["account", "delete", "bob", "--yes"][..],
         &["account", "passkey", "rename", "-_key", "laptop"],
@@ -240,8 +235,8 @@ fn account_changes_resolve_usernames_to_typed_requests() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    requests.extend(server.finish());
-    let sent: Vec<Value> = requests
+    let sent: Vec<Value> = server
+        .finish()
         .into_iter()
         .filter(|request| request.path == "/api/v1/auth/manage")
         .map(|request| serde_json::from_slice(&request.body).unwrap())

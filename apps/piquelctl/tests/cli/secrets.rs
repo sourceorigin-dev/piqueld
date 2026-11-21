@@ -29,24 +29,24 @@ fn ctrl_c_ends_a_pending_secret_read_from_stdin() {
     secrets_listed
         .recv_timeout(Duration::from_secs(10))
         .expect("secret metadata requested");
+    // wall-clock: nothing outside piquelctl shows its stdin read started, so
+    // give it time to block in that read before the Ctrl-C.
     thread::sleep(Duration::from_millis(200));
     Command::new("kill")
         .args(["-INT", &child.id().to_string()])
         .status()
         .expect("send SIGINT");
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while child.try_wait().expect("child status").is_none() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "Ctrl-C did not end the stdin read"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    // Waits off the test thread, which holds stdin open meanwhile.
+    let (exited, exit) = mpsc::channel();
+    thread::spawn(move || exited.send(child.wait_with_output()));
+    let output = exit
+        .recv_timeout(Duration::from_secs(5))
+        .expect("Ctrl-C ends the stdin read")
+        .expect("interrupted child");
     drop(stdin);
-    let output = child.wait_with_output().expect("interrupted child");
     assert_eq!(output.status.code(), Some(130));
     assert_eq!(output.stdout, b"");
-    assert_eq!(server.stop().len(), 2, "no secret value was sent");
+    assert_eq!(server.finish().len(), 2, "no secret value was sent");
 }
 
 /// `secret set` that changes the access sends the access it read, so the
@@ -132,7 +132,7 @@ fn secret_values_from_stdin_drop_one_trailing_newline() {
         let _ = stdin.write_all(&input);
         drop(stdin);
         let output = child.wait_with_output().expect("piquelctl output");
-        let requests = server.stop();
+        let requests = server.finish();
         if let Some(stored) = stored {
             assert_eq!(requests.len(), 3);
             assert_eq!(requests[2].body, stored);

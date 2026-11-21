@@ -93,10 +93,11 @@ fn doctor_reports_the_connection_and_exits_6_on_a_failed_check() {
 
 #[test]
 fn doctor_reports_the_connection_when_the_daemon_times_out() {
-    // The checks stay pending until the CLI has given up on them.
+    // The checks stay pending until the CLI has given up on them and the
+    // test drops `release`, or for `READ_TIMEOUT` if the CLI never does.
     let (release, pending) = mpsc::channel::<()>();
     let server = start_server(true, 1, move |_| {
-        let _ = pending.recv_timeout(ACCEPT_TIMEOUT);
+        let _ = pending.recv_timeout(READ_TIMEOUT);
         Reply::json(json!({"checks": []}))
     });
     let output = run_with_timeout(&server, &["doctor"], "500ms");
