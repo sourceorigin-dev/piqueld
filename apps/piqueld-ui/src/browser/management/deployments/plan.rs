@@ -70,7 +70,7 @@ pub(super) fn PromotionPlan(plan: PlanView) -> impl IntoView {
                     <dd>{volumes}</dd>
                 </dl>
                 {secrets}
-                {view! { <ReleaseCard release={release.release} planned=true /> }.into_any()}
+                {view! { <ReleaseCard release={Signal::stored(release.release)} planned=true /> }.into_any()}
             </section>
         }
     });

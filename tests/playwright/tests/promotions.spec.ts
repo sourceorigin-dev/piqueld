@@ -172,6 +172,81 @@ test('promoting shows the plan and promotes exactly what was reviewed', async ({
   expect(plans.at(-1)).toMatchObject({ release: plan.release.release.id });
 });
 
+test('a dashboard refresh keeps an environment row\'s promotion preview open', async ({ page, account }) => {
+  void account;
+  const { app, production, staging } = await createPromotion(page);
+  const plan = await promotionPlan(page, app, staging, []);
+  await page.route(url => url.pathname === `/api/v1/environments/${production}/promote/plan`, async (route: Route) => {
+    await route.fulfill({ json: { data: plan } });
+  });
+  await page.clock.install();
+  await page.goto(`/dashboard/applications/${app}`);
+  await applicationTab(page, 'Environments').click();
+  await page.getByRole('list', { name: 'Environments' }).getByRole('button', { name: 'Promote from staging', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Promotion preview' });
+  await expect(dialog).toBeVisible();
+  // Polls never overlap, so the second listing starts once the first was shown.
+  for (let poll = 0; poll < 2; poll += 1) {
+    const listed = page.waitForRequest(request => new URL(request.url()).pathname === '/api/v1/applications');
+    await page.clock.runFor(16_000);
+    await listed;
+  }
+  await expect(dialog).toBeVisible();
+});
+
+test('refreshing releases updates the shown cards', async ({ page, account }) => {
+  void account;
+  const { app, production } = await createPromotion(page);
+  const shown = await release(page, app);
+  await page.route(url => url.pathname === `/api/v1/applications/${app}/releases`, async (route: Route) => {
+    await route.fulfill({ json: { data: { items: [shown], next_cursor: null } } });
+  });
+  await page.goto(`/dashboard/applications/${app}`);
+  await applicationTab(page, 'Releases').click();
+  const card = page.locator('article.expander');
+  await page.getByRole('button', { name: /^rel-0123456789abcdef0123456789abcdef/ }).click();
+  await expect(card).toContainText('Images present');
+  await expect(card).not.toContainText('Deployed to');
+
+  // Image cleanup and a promotion since show on Refresh.
+  shown.availability = {
+    state: 'unavailable',
+    missing: [{ service: 'web', image: `docker.io/library/nginx@sha256:${'a'.repeat(64)}` }],
+  } as typeof shown.availability;
+  shown.promotions = [{
+    environment_id: production, deployment_id: 'operation-0123456789abcdf0',
+    origin: { type: 'release' }, created_at_ms: Date.now(),
+  }] as typeof shown.promotions;
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(card).toContainText('Images removed');
+  await expect(card).toContainText("Missing for web; the release can't be deployed again.");
+  await expect(card.getByRole('link', { name: 'production', exact: true })).toBeVisible();
+});
+
+test('a ?release= link pages back a few pages at a time, then says the release is older', async ({ page, account }) => {
+  void account;
+  const { app } = await createPromotion(page);
+  const listed = await release(page, app);
+  const pages: (string | null)[] = [];
+  await page.route(url => url.pathname === `/api/v1/applications/${app}/releases`, async (route: Route) => {
+    const cursor = new URL(route.request().url()).searchParams.get('cursor');
+    pages.push(cursor);
+    const index = pages.length;
+    await route.fulfill({ json: { data: {
+      items: [{ ...listed, id: `rel-${String(index).padStart(32, '0')}` }],
+      next_cursor: `page-${index}`,
+    } } });
+  });
+  await page.goto(`/dashboard/applications/${app}?release=rel-missing`);
+  await applicationTab(page, 'Releases').click();
+  await expect(page.getByText("Release rel-missing isn't among the 5 newest releases. Load older releases to keep looking.")).toBeVisible();
+  expect(pages).toHaveLength(5);
+  await page.getByRole('button', { name: 'Load older releases', exact: true }).click();
+  await expect(page.getByText("Release rel-missing isn't among the 10 newest releases. Load older releases to keep looking.")).toBeVisible();
+  expect(pages).toHaveLength(10);
+  expect(pages[5]).toBe('page-5');
+});
+
 test('an environment builds its own source or receives promoted releases, as one choice', async ({ page, account }) => {
   void account;
   const { app, production } = await createUndeclaredPromotion(page);

@@ -3,7 +3,7 @@ use super::super::format::timestamp;
 use super::super::ui::{
     Icon, Tone, badge, empty, expander_summary, icon, load_older, notice, when,
 };
-use super::super::{Alive, ClientErrorExt};
+use super::super::{Alive, ClientErrorExt, live_row};
 use super::deployments::PromoteAction;
 use super::editor;
 use crate::application::ApplicationViewExt;
@@ -15,8 +15,13 @@ use piqueld_client::{
     Client, ReleaseAvailability, ReleaseView, ResolvedSource, ServiceImage, ValidatedSource,
 };
 
+/// Pages one load fetches at most while looking for the `?release=` one, so a
+/// missing or very old release doesn't read the whole history.
+const SEARCH_PAGES: usize = 5;
+
 /// Releases of `application`, loaded when shown and on refresh. Older pages
-/// are appended on request, and until the `?release=` one is shown.
+/// are appended on request, and until the `?release=` one is shown, up to
+/// `SEARCH_PAGES` per load; a notice then says it is older or missing.
 #[component]
 pub(super) fn ReleaseHistory(application: String) -> impl IntoView {
     let releases = RwSignal::new(Vec::<ReleaseView>::new());
@@ -36,7 +41,7 @@ pub(super) fn ReleaseHistory(application: String) -> impl IntoView {
         spawn_local(async move {
             // A refresh replaces the list once its first page arrives.
             let mut replace = next.is_none();
-            loop {
+            for page_number in 1..=SEARCH_PAGES {
                 let result = Client::browser()
                     .releases(&application, next.as_deref())
                     .await;
@@ -58,7 +63,9 @@ pub(super) fn ReleaseHistory(application: String) -> impl IntoView {
                             })
                         });
                         match page.next_cursor {
-                            Some(cursor) if !shown => next = Some(cursor),
+                            Some(cursor) if !shown && page_number < SEARCH_PAGES => {
+                                next = Some(cursor);
+                            }
                             _ => break,
                         }
                     }
@@ -92,13 +99,17 @@ pub(super) fn ReleaseHistory(application: String) -> impl IntoView {
                 </div>
             </div>
             {move || error.get().map(|e| notice(Tone::Bad, e))}
+            {move || missing_release(requested.get_value(), releases, cursor, loading, error)}
             <Show when={move || {
                 !loading.get() && releases.with(Vec::is_empty)
             }}>{empty("No releases yet. Deploying an environment records one.")}</Show>
             <For
                 each={move || releases.get()}
                 key={|release| release.id.clone()}
-                children={|release| view! { <ReleaseCard release={release} /> }}
+                children={move |initial| {
+                    let release = live_row(releases, initial, |release| &release.id);
+                    view! { <ReleaseCard release={release} /> }
+                }}
             />
             {load_older(
                 "Load older releases",
@@ -110,32 +121,62 @@ pub(super) fn ReleaseHistory(application: String) -> impl IntoView {
     }
 }
 
+/// A notice saying where the `requested` release is once a load stopped
+/// without listing it: older than the loaded `releases`, or not one of them.
+fn missing_release(
+    requested: Option<String>,
+    releases: RwSignal<Vec<ReleaseView>>,
+    cursor: RwSignal<Option<String>>,
+    loading: RwSignal<bool>,
+    error: RwSignal<Option<String>>,
+) -> Option<AnyView> {
+    let id = requested?;
+    let listed = releases.with(|items| items.iter().any(|release| release.id.as_str() == id));
+    if listed || loading.get() || error.with(Option::is_some) {
+        return None;
+    }
+    let message = if cursor.with(Option::is_some) {
+        format!(
+            "Release {id} isn't among the {} newest releases. Load older releases to keep looking.",
+            releases.with(Vec::len)
+        )
+    } else {
+        format!("Release {id} isn't one of this application's releases.")
+    };
+    Some(notice(Tone::Warn, message))
+}
+
 /// Expandable release: where its manifest came from, each service's image,
 /// provenance, and build inputs, and the deployments that received it by
 /// promotion or by ID. Offers to deploy it into each promoted environment,
 /// unless it is `planned`: shown in such a deployment's plan, where it starts
-/// expanded. Also starts expanded when it matches `?release=`.
+/// expanded. Also starts expanded when it matches `?release=`. Its image
+/// availability and deployments follow `release`, which a refresh updates;
+/// the rest of a release never changes.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
-pub(super) fn ReleaseCard(release: ReleaseView, #[prop(optional)] planned: bool) -> impl IntoView {
+pub(super) fn ReleaseCard(
+    release: Signal<ReleaseView>,
+    #[prop(optional)] planned: bool,
+) -> impl IntoView {
     let context = editor();
+    let initial = release.get_untracked();
     let selected = leptos_router::hooks::use_query_map()
-        .with(|q| q.get("release").is_some_and(|id| id == release.id.as_str()));
+        .with(|q| q.get("release").is_some_and(|id| id == initial.id.as_str()));
     let opened = RwSignal::new(selected || planned);
-    let id = release.id.to_string();
+    let id = initial.id.to_string();
     // Promoted environments it can be deployed into.
     let targets = move || context.saved.with(ApplicationViewExt::release_targets);
-    let manifest_commit = release.release.commit().map(str::to_owned);
-    let availability = release.availability.as_ref().map(availability);
-    let services = release_services(&release);
-    let promotions = StoredValue::new(release.promotions);
+    let manifest_commit = initial.release.commit().map(str::to_owned);
+    let images = move || release.with(|release| release.availability.as_ref().map(availability));
+    let services = release_services(&initial);
     view! {
         <article class="expander" class:selected={selected}>
             {expander_summary(
                 opened,
                 view! {
                     <strong>
-                        <code>{release.id.to_string()}</code>
+                        <code>{id.clone()}</code>
                     </strong>
                     <span class="tag">
                         {manifest_commit
@@ -145,18 +186,18 @@ pub(super) fn ReleaseCard(release: ReleaseView, #[prop(optional)] planned: bool)
                                 |hash| format!("Commit {}", short_commit(hash)),
                             )}
                     </span>
-                    {availability.clone().map(|(tone, label, _)| badge(tone, label))}
-                    <span class="meta">{when(release.created_at_ms)}</span>
+                    {move || images().map(|(tone, label, _)| badge(tone, label))}
+                    <span class="meta">{when(initial.created_at_ms)}</span>
                 },
             )}
             <div class="expander-body" hidden={move || !opened.get()}>
                 <dl class="kv">
                     <dt>"Release ID"</dt>
                     <dd>
-                        <code>{release.id.to_string()}</code>
+                        <code>{id.clone()}</code>
                     </dd>
                     <dt>"Recorded"</dt>
-                    <dd>{timestamp(release.created_at_ms)}</dd>
+                    <dd>{timestamp(initial.created_at_ms)}</dd>
                     <dt>"Manifest"</dt>
                     <dd>
                         {manifest_commit
@@ -167,44 +208,45 @@ pub(super) fn ReleaseCard(release: ReleaseView, #[prop(optional)] planned: bool)
                     </dd>
                     <dt>"Content hash"</dt>
                     <dd>
-                        <code>{release.content_hash.to_string()}</code>
+                        <code>{initial.content_hash.to_string()}</code>
                     </dd>
-                    {availability
-                        .map(|(_, _, detail)| {
-                            view! {
-                                <dt>"Images"</dt>
-                                <dd>{detail}</dd>
-                            }
-                        })}
+                    {move || {
+                        images()
+                            .map(|(_, _, detail)| {
+                                view! {
+                                    <dt>"Images"</dt>
+                                    <dd>{detail}</dd>
+                                }
+                            })
+                    }}
                 </dl>
                 {services}
                 {(!planned)
                     .then(|| {
                         view! {
                             <div class="btn-group">
-                                {move || {
-                                    targets()
-                                        .into_iter()
-                                        .map(|environment| {
-                                            view! {
-                                                <PromoteAction
-                                                    environment={environment}
-                                                    release={id.clone()}
-                                                />
-                                            }
-                                        })
-                                        .collect_view()
-                                }}
+                                <For
+                                    each={targets}
+                                    key={String::clone}
+                                    children={move |environment| {
+                                        view! {
+                                            <PromoteAction
+                                                environment={environment}
+                                                release={id.clone()}
+                                            />
+                                        }
+                                    }}
+                                />
                             </div>
                         }
                     })}
-                <Show when={move || promotions.with_value(|promotions| !promotions.is_empty())}>
+                <Show when={move || release.with(|release| !release.promotions.is_empty())}>
                     <div class="snapshot-service">
                         <h4>"Deployed to"</h4>
                         <ul class="stack-sm">
                             {move || {
-                                promotions
-                                    .get_value()
+                                release
+                                    .with(|release| release.promotions.clone())
                                     .into_iter()
                                     .map(|promotion| {
                                         let environment = promotion.environment_id.to_string();

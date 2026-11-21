@@ -10,7 +10,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 use piqueld_client::{
-    ApplyApplicationRequest, Client, EnvironmentId, EnvironmentView, ManifestRevision, PlanView,
+    ApplyApplicationRequest, Client, EnvironmentId, ManifestRevision, PlanView,
     access::AppPermission,
 };
 
@@ -52,7 +52,7 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
                             .map(EnvironmentId::as_str)
                             == current.as_deref()
                 })
-                .cloned()
+                .map(|environment| environment.id.to_string())
                 .collect::<Vec<_>>()
         })
     });
@@ -109,7 +109,15 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
             when={move || context.environment.get().is_some()}
             fallback={move || {
                 let environments = Signal::derive(move || {
-                    context.saved.with(|saved| saved.environments.clone())
+                    context
+                        .saved
+                        .with(|saved| {
+                            saved
+                                .environments
+                                .iter()
+                                .map(|environment| environment.id.to_string())
+                                .collect::<Vec<_>>()
+                        })
                 });
                 view! {
                     // Without environments, Deploy leads to creating one.
@@ -410,63 +418,67 @@ fn StopAction() -> impl IntoView {
     }
 }
 
-/// `environment`'s own action: Deploy for one that builds its source, or
-/// Promote for a promoted one (see `PromoteAction`). Either shows its
-/// deployments once accepted, then closes `dialog`. Hidden without
-/// `apps:deploy`.
+/// The `environment` ID's own action: Deploy for one that builds its
+/// source, or Promote for a promoted one (see `PromoteAction`). Either shows
+/// its deployments once accepted, then closes `dialog`. It reads the
+/// environment from the saved view, so a refresh updates it without closing
+/// an open promotion preview. Hidden without `apps:deploy`.
 #[component]
 pub(in crate::browser::management) fn EnvironmentAction(
-    environment: EnvironmentView,
+    environment: String,
     #[prop(optional)] compact: bool,
     #[prop(default = None)] dialog: Option<RwSignal<bool>>,
 ) -> impl IntoView {
     let context = editor();
-    let EnvironmentView {
-        id,
-        name,
-        source,
-        delete_intent: deleting,
-        ..
-    } = environment;
-    let id = id.to_string();
-    if source.promoted_from().is_some() {
-        return view! { <PromoteAction environment={id} compact={compact} dialog={dialog} /> }
-            .into_any();
-    }
+    let id = StoredValue::new(environment);
+    let promoted = Memo::new(move |_| {
+        context.saved.with(|saved| {
+            saved
+                .deployable(&id.get_value())
+                .is_some_and(|environment| environment.source.promoted_from().is_some())
+        })
+    });
     let navigate = StoredValue::new(use_navigate());
-    let label = format!("Deploy to {name}");
-    let id = StoredValue::new(id);
-    view! {
-        <button
-            type="button"
-            class={if compact { "btn btn-sm" } else { "btn btn-primary" }}
-            aria-label={label.clone()}
-            hidden={move || !context.can(AppPermission::Deploy)}
-            disabled={move || context.action_blocked() || deleting}
-            on:click={move |_| {
-                let (id, navigate) = (id.get_value(), navigate.get_value());
-                context
-                    .deploy(
-                        id.clone(),
-                        None,
-                        false,
-                        move || {
-                            context.show_deployments(&id, navigate);
-                            if let Some(dialog) = dialog {
-                                dialog.set(false);
-                            }
-                        },
-                    );
-            }}
-        >
-            {icon(Icon::Rocket)}
-            {if compact { "Deploy".to_owned() } else { label.clone() }}
-        </button>
+    let label = move || format!("Deploy to {}", context.environment_name(&id.get_value()));
+    move || {
+        if promoted.get() {
+            return view! {
+                <PromoteAction environment={id.get_value()} compact={compact} dialog={dialog} />
+            }
+            .into_any();
+        }
+        view! {
+            <button
+                type="button"
+                class={if compact { "btn btn-sm" } else { "btn btn-primary" }}
+                aria-label={label}
+                hidden={move || !context.can(AppPermission::Deploy)}
+                disabled={move || context.action_blocked() || context.deleting(&id.get_value())}
+                on:click={move |_| {
+                    let (id, navigate) = (id.get_value(), navigate.get_value());
+                    context
+                        .deploy(
+                            id.clone(),
+                            None,
+                            false,
+                            move || {
+                                context.show_deployments(&id, navigate);
+                                if let Some(dialog) = dialog {
+                                    dialog.set(false);
+                                }
+                            },
+                        );
+                }}
+            >
+                {icon(Icon::Rocket)}
+                {move || if compact { "Deploy".to_owned() } else { label() }}
+            </button>
+        }
+        .into_any()
     }
-    .into_any()
 }
 
-/// A `label`led button opening a dialog that lists `environments`, each
+/// A `label`led button opening a dialog that lists the `environments` IDs, each
 /// with its own action (see `EnvironmentAction`), so one can be chosen:
 /// "Deploy" over an application's environments, "Promote" over the
 /// environments promoted from the shown one. Closes once an action was
@@ -475,7 +487,7 @@ pub(in crate::browser::management) fn EnvironmentAction(
 fn ChooseEnvironment(
     label: &'static str,
     title: &'static str,
-    environments: Signal<Vec<EnvironmentView>>,
+    environments: Signal<Vec<String>>,
 ) -> impl IntoView {
     let context = editor();
     let opened = RwSignal::new(false);
@@ -492,24 +504,22 @@ fn ChooseEnvironment(
         </button>
         <Modal title={title} opened={opened} busy={context.busy}>
             <ul class="list">
-                {move || {
-                    environments
-                        .get()
-                        .into_iter()
-                        .map(|environment| {
-                            view! {
-                                <li class="list-row">
-                                    <span class="title">{environment.name.to_string()}</span>
-                                    <EnvironmentAction
-                                        environment={environment}
-                                        compact=true
-                                        dialog={Some(opened)}
-                                    />
-                                </li>
-                            }
-                        })
-                        .collect_view()
-                }}
+                <For
+                    each={move || environments.get()}
+                    key={String::clone}
+                    children={move |id| {
+                        let name = {
+                            let id = id.clone();
+                            move || context.environment_name(&id)
+                        };
+                        view! {
+                            <li class="list-row">
+                                <span class="title">{name}</span>
+                                <EnvironmentAction environment={id} compact=true dialog={Some(opened)} />
+                            </li>
+                        }
+                    }}
+                />
             </ul>
         </Modal>
     }
@@ -550,13 +560,6 @@ pub(in crate::browser::management) fn PromoteAction(
             Some(source) => format!("Promote from {}", context.environment_name(source.as_str())),
             None => format!("{verb} to {}", context.environment_name(&target)),
         }
-    };
-    let deleting = move || {
-        context.saved.with(|saved| {
-            saved
-                .deployable(&environment.get_value())
-                .is_none_or(|environment| environment.delete_intent)
-        })
     };
     let inspect = move |_| {
         context.busy.set(true);
@@ -611,7 +614,7 @@ pub(in crate::browser::management) fn PromoteAction(
             class={if compact { "btn btn-sm" } else { "btn btn-primary" }}
             aria-label={label}
             hidden={move || !context.can(AppPermission::Deploy)}
-            disabled={move || context.action_blocked() || deleting()}
+            disabled={move || context.action_blocked() || context.deleting(&environment.get_value())}
             on:click={inspect}
         >
             {icon(Icon::Rocket)}
