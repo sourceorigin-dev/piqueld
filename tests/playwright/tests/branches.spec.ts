@@ -84,14 +84,17 @@ test('Preview plans the saved manifest on the connection branch, and the one las
     data.manifest = structuredClone(data.application.application);
     data.manifest.spec.services[0].name = 'worker';
   });
-  await rewrite(page, `/api/v1/environments/${staging}/deployments`, data => {
-    for (const deployment of data.items) {
-      deployment.warnings = [{ code: 'manifest_connection_ignored', message: 'The fetched manifest names another repository.' }];
-    }
-  });
+  const warn = (deployment: Record<string, unknown>) => {
+    deployment.warnings = [{ code: 'manifest_connection_ignored', message: 'The fetched manifest names another repository.' }];
+  };
+  await rewrite(page, `/api/v1/environments/${staging}/deployments`, data => data.items.forEach(warn));
   const deployed = page.waitForResponse(response => response.request().method() === 'POST' && response.url().includes(`/environments/${staging}/deploy?`));
   await head(page).getByRole('button', { name: 'Deploy', exact: true }).click();
-  expect((await deployed).status()).toBe(202);
+  const response = await deployed;
+  expect(response.status()).toBe(202);
+  // The deployment's page reads it on its own.
+  const { operation_id: id } = (await response.json()).data;
+  await rewrite(page, `/api/v1/environments/${staging}/deployments/${id}`, warn);
   await page.reload();
 
   await expect(preview).toBeEnabled();
