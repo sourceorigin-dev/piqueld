@@ -4070,6 +4070,106 @@
         ],
         "type": "object"
       },
+      "Envelope_DeploymentView": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "description": "Durable deployment snapshot and execution summary.",
+            "properties": {
+              "application": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/NormalizedApplication"
+                      }
+                    ],
+                    "description": "Rendered configuration; absent until a repository-backed manifest is fetched."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              },
+              "current_target": {
+                "description": "Whether this is the currently promoted runtime target.",
+                "type": "boolean"
+              },
+              "last_successful": {
+                "description": "Whether this is the most recent deployment to converge successfully.",
+                "type": "boolean"
+              },
+              "operation": {
+                "$ref": "#/components/schemas/Operation",
+                "description": "Execution ID also identifies this deployment."
+              },
+              "origin": {
+                "$ref": "#/components/schemas/DeploymentOrigin",
+                "description": "Where it came from: built from its environment's source, a promoted\nor redeployed release, or a local snapshot uploaded to a preview."
+              },
+              "release": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/ReleaseId"
+                      }
+                    ],
+                    "description": "The release its prepared target runs; absent until prepared, and for\ndeployments that recorded none."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              },
+              "succeeded_at_ms": {
+                "description": "First successful convergence, retained during later drift repair.",
+                "format": "int64",
+                "nullable": true,
+                "type": "integer"
+              },
+              "template": {
+                "$ref": "#/components/schemas/ApplicationTemplate",
+                "description": "Manifest captured for this deployment, with references unresolved."
+              },
+              "variables": {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/VariableValue"
+                },
+                "description": "Values its references rendered to, keyed by reference.",
+                "type": "object"
+              },
+              "warnings": {
+                "description": "Problems found while fetching the manifest that did not stop the\ndeployment, e.g. `manifest_connection_ignored`.",
+                "items": {
+                  "$ref": "#/components/schemas/DiagnosticView"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "operation",
+              "template",
+              "variables",
+              "current_target",
+              "last_successful"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "Envelope_DestinationTest": {
         "description": "Successful API response envelope.",
         "properties": {
@@ -29164,6 +29264,84 @@
           }
         },
         "summary": "Lists deployments of an environment, newest first.",
+        "x-piqueld-access": "apps:read"
+      }
+    },
+    "/api/v1/environments/{id}/deployments/{deployment}": {
+      "get": {
+        "description": "A deployment of another environment is reported as not found.",
+        "operationId": "getDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "deployment",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DeploymentView"
+                }
+              }
+            },
+            "description": "The deployment"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Reads one deployment of an environment: its whole snapshot.",
         "x-piqueld-access": "apps:read"
       }
     },

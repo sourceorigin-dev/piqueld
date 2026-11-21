@@ -955,16 +955,11 @@ pub(crate) async fn deploy(
     // The outcome matters more than its warnings, so failing to read or
     // print them is ignored.
     if !flags.no_wait
-        && let Ok(deployments) = client
-            .deployments(environment.id.as_str(), None, Some(1))
+        && let Ok(deployment) = client
+            .deployment(environment.id.as_str(), &accepted.operation_id)
             .await
     {
-        let warnings = deployments
-            .items
-            .into_iter()
-            .filter(|deployment| deployment.operation.id == accepted.operation_id)
-            .flat_map(|deployment| deployment.warnings);
-        for warning in warnings {
+        for warning in deployment.warnings {
             let _ = console.warning(format_args!("{}: {}", warning.code, warning.message));
         }
     }

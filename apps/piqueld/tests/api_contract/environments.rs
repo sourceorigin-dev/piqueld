@@ -34,6 +34,20 @@ async fn environment_branches_are_validated_like_preview_branches() {
     }
 }
 
+/// A deployment reads on its own only through its environment.
+#[tokio::test]
+async fn a_deployment_reads_alone_through_its_environment() {
+    let temp = tempfile::tempdir().unwrap();
+    let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
+    let client = server.client();
+    let deployed = client.apply_and_deploy(&new_application()).await.unwrap();
+    let (environment, id) = (&deployed.environment_id, &deployed.operation_id);
+    let one = client.deployment(environment, id).await.unwrap();
+    assert_eq!(&one.operation.id, id);
+    let missing = client.deployment("app-missing", id).await.unwrap_err();
+    assert_eq!(api_error(missing).status, StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn environments_deploy_independently_and_runtime_commands_never_pick_one() {
     use piqueld::api::{ApplicationError, Mutation, MutationResponse};

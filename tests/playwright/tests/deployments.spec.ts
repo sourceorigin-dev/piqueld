@@ -186,7 +186,7 @@ test('a deployment\'s page reads it again once it ran again under its ID', async
   await serveDeployments(page, env, () => ({ items: [{ ...deployment, operation: latest }], next_cursor: null }));
   page.on('request', request => {
     const url = new URL(request.url());
-    if (url.pathname === `/api/v1/environments/${env}/deployments` && url.searchParams.get('limit') === '20') reads += 1;
+    if (url.pathname === `/api/v1/environments/${env}/deployments/${id}`) reads += 1;
   });
   await rewrite(page, `/api/v1/environments/${env}`, detail => { detail.latest_operation = latest; });
   await page.route(url => url.pathname === `/api/v1/operations/${id}/timeline/stream`, (route: Route) => {

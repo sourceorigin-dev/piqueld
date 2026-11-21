@@ -288,6 +288,18 @@ impl Client {
             .await
     }
 
+    /// Reads one deployment of an environment.
+    /// # Errors
+    /// Returns transport, API, or decoding errors; the API's is 404 when the
+    /// environment has no such deployment.
+    pub async fn deployment(
+        &self,
+        id: &str,
+        deployment: &str,
+    ) -> Result<DeploymentView, ClientError> {
+        self.generated.get_deployment(id, deployment).data().await
+    }
+
     /// Lists retained attempt outcomes, 100 per page.
     /// # Errors
     /// Returns transport, API, or decoding errors.

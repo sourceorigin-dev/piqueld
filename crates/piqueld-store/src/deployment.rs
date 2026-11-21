@@ -19,6 +19,29 @@ struct DeploymentRow {
     origin_json: String,
 }
 
+/// Which of an environment's deployments are its current target and its
+/// last successful one.
+struct Flags {
+    current: Option<String>,
+    successful: Option<String>,
+}
+
+impl Flags {
+    /// Reads `environment`'s flags.
+    async fn read_on(
+        tx: &mut Transaction<'_, Sqlite>,
+        environment: &EnvironmentId,
+    ) -> Result<Self, StoreError> {
+        let id = environment.as_str();
+        Ok(Self {
+            current: Store::current_deployment_on(tx, environment)
+                .await?
+                .map(|current| current.id),
+            successful: sqlx::query_scalar!("SELECT id FROM deployments WHERE environment_id=?1 AND succeeded_at_ms IS NOT NULL ORDER BY id DESC LIMIT 1",id).fetch_optional(&mut **tx).await.map_err(StoreError::database)?.flatten(),
+        })
+    }
+}
+
 /// A deployment's captured inputs.
 pub struct Snapshot {
     /// The manifest as captured, with references unresolved.
@@ -44,6 +67,35 @@ impl DeploymentRow {
                 values,
             }),
             warnings: serde_json::from_str(&self.warnings_json).map_err(StoreError::corrupt)?,
+        })
+    }
+
+    /// Decodes the row into the deployment's whole snapshot.
+    async fn view_on(
+        self,
+        tx: &mut Transaction<'_, Sqlite>,
+        flags: &Flags,
+    ) -> Result<DeploymentView, StoreError> {
+        let snapshot = self.snapshot()?;
+        let (application, variables) = snapshot.rendering.map_or_else(
+            || (None, BTreeMap::new()),
+            |rendering| (Some(rendering.application), rendering.values),
+        );
+        Ok(DeploymentView {
+            operation: Store::operation_on(tx, &self.id).await?,
+            template: snapshot.template,
+            variables,
+            application,
+            warnings: snapshot.warnings,
+            release: self
+                .release_id
+                .map(piqueld_core::ReleaseId::parse)
+                .transpose()
+                .map_err(StoreError::corrupt)?,
+            origin: serde_json::from_str(&self.origin_json).map_err(StoreError::corrupt)?,
+            succeeded_at_ms: self.succeeded_at_ms,
+            current_target: flags.current.as_ref() == Some(&self.id),
+            last_successful: flags.successful.as_ref() == Some(&self.id),
         })
     }
 }
@@ -349,36 +401,41 @@ impl Store {
         }
         .map_err(StoreError::database)?;
         let next_cursor = paging.next_cursor(&mut rows, |row| row.id.clone());
-        let current = Self::current_deployment_on(&mut tx, app)
-            .await?
-            .map(|current| current.id);
-        let successful = sqlx::query_scalar!("SELECT id FROM deployments WHERE environment_id=?1 AND succeeded_at_ms IS NOT NULL ORDER BY id DESC LIMIT 1",app_id).fetch_optional(&mut *tx).await.map_err(StoreError::database)?.flatten();
+        let flags = Flags::read_on(&mut tx, app).await?;
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
-            let snapshot = row.snapshot()?;
-            let release = row
-                .release_id
-                .map(|id| piqueld_core::ReleaseId::parse(id).map_err(StoreError::corrupt))
-                .transpose()?;
-            let (application, variables) = snapshot.rendering.map_or_else(
-                || (None, BTreeMap::new()),
-                |rendering| (Some(rendering.application), rendering.values),
-            );
-            items.push(DeploymentView {
-                operation: Self::operation_on(&mut tx, &row.id).await?,
-                template: snapshot.template,
-                variables,
-                application,
-                warnings: snapshot.warnings,
-                release,
-                origin: serde_json::from_str(&row.origin_json).map_err(StoreError::corrupt)?,
-                succeeded_at_ms: row.succeeded_at_ms,
-                current_target: current.as_ref() == Some(&row.id),
-                last_successful: successful.as_ref() == Some(&row.id),
-            });
+            items.push(row.view_on(&mut tx, &flags).await?);
         }
         tx.commit().await.map_err(StoreError::database)?;
         Ok(Page { items, next_cursor })
+    }
+
+    /// Reads deployment `id` of environment `app`.
+    /// # Errors
+    /// Returns storage or decoding errors, and `NotFound` when `app` has no
+    /// such deployment.
+    pub async fn deployment(
+        &self,
+        app: &EnvironmentId,
+        id: &str,
+    ) -> Result<DeploymentView, StoreError> {
+        let app_id = app.as_str();
+        let mut tx = self.snapshot().await?;
+        let row = sqlx::query_as!(
+            DeploymentRow,
+            r#"SELECT id AS "id!",manifest_json,template_json,variables_json,warnings_json,succeeded_at_ms,release_id,origin_json FROM deployments
+             WHERE environment_id=?1 AND id=?2"#,
+            app_id,
+            id
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(StoreError::database)?
+        .ok_or(StoreError::NotFound)?;
+        let flags = Flags::read_on(&mut tx, app).await?;
+        let view = row.view_on(&mut tx, &flags).await?;
+        tx.commit().await.map_err(StoreError::database)?;
+        Ok(view)
     }
 
     /// Lists durable attempt outcomes, including failures followed by successful retries.

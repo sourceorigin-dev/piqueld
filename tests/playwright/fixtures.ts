@@ -220,11 +220,24 @@ export async function deployed(page: Page) {
   return { app, env, deployment };
 }
 
-/** Serves `pages(cursor)` as `environment`'s deployment pages. */
+/** Serves `pages(cursor)` as `environment`'s deployment pages, and each
+ * deployment they list as `/deployments/{id}`. */
 export async function serveDeployments(page: Page, environment: string, pages: (cursor: string | null) => { items: Deployment[]; next_cursor: string | null }) {
-  await page.route(url => url.pathname === `/api/v1/environments/${environment}/deployments`, async (route: Route) => {
+  const list = `/api/v1/environments/${environment}/deployments`;
+  await page.route(url => url.pathname === list, async (route: Route) => {
     const cursor = new URL(route.request().url()).searchParams.get('cursor');
     await route.fulfill({ json: { data: pages(cursor) } });
+  });
+  await page.route(url => /^[^/]+$/.test(url.pathname.slice(list.length + 1)) && url.pathname.startsWith(`${list}/`), async (route: Route) => {
+    const id = new URL(route.request().url()).pathname.slice(list.length + 1);
+    let cursor: string | null = null;
+    do {
+      const shown = pages(cursor);
+      const found = shown.items.find(item => item.operation.id === id);
+      if (found !== undefined) return route.fulfill({ json: { data: found } });
+      cursor = shown.next_cursor;
+    } while (cursor !== null);
+    await route.fulfill({ status: 404, json: { code: 'not_found', message: 'not found', request_id: 'request' } });
   });
 }
 
