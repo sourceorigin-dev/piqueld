@@ -2,7 +2,8 @@
 
 CI runs on GitHub-hosted runners. Jobs group the recipes that compile the same
 code, so each job builds the workspace once, and run in parallel. Pull requests
-run only the jobs whose inputs changed, and drafts only the quick ones: Docker,
+run only the jobs whose inputs changed, as the path filters in
+`.github/filters.yml` list them, and drafts only the quick ones: Docker,
 Playwright, and macOS jobs wait until a pull request is marked ready. Release
 builds take too long to gate a merge, so they run after it, in the
 [release checks](#release-checks).
