@@ -47,7 +47,7 @@ auto_initialize_swarm = true
 # and the image repository it pushes to and this host pulls from. Set both,
 # or neither. Only this host should be able to reach the builder's port.
 # builder = "tcp://build.example.ts.net:1234"
-# repository = "build.example.ts.net:5000/piqueld"
+# repository = "registry.example.ts.net:5000/piqueld"
 # While the build machine is unreachable, a deployment that has to build
 # fails ("fail"), or builds on this host instead ("local").
 # unavailable = "fail"

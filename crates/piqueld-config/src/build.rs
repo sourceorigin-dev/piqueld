@@ -10,7 +10,7 @@ use serde::Deserialize;
 /// ```toml
 /// [build]
 /// builder = "tcp://build.example.ts.net:1234"
-/// repository = "build.example.ts.net:5000/piqueld"
+/// repository = "registry.example.ts.net:5000/piqueld"
 /// unavailable = "fail" # or "local"
 /// ```
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]

@@ -260,13 +260,14 @@ runs. Without it, images build on the host's Docker Engine.
 ```toml
 [build]
 builder = "tcp://build.example.ts.net:1234"
-repository = "build.example.ts.net:5000/piqueld"
+repository = "registry.example.ts.net:5000/piqueld"
 unavailable = "fail"
 ```
 
 Set `builder` and `repository` together, or neither. The host still checks repositories out, so Git
-credentials stay there, and sends each build's files to the build machine,
-which needs:
+credentials stay there, and sends each build's files to the build machine.
+[Building on another machine](../applications/build-machine.md) sets up
+the two pieces the host needs:
 
 - **A BuildKit daemon** listening where `builder` says, as `tcp://host:port`.
   The connection is neither authenticated nor encrypted, so only the host
@@ -274,8 +275,10 @@ which needs:
   traffic, such as a tailnet whose access rules allow nothing else. The
   build's files and arguments travel over it, and the image digest it
   returns is what the host runs.
-- **An image registry** holding the repository `repository` names, as
-  `registry-host[:port]/path` without a tag. BuildKit pushes every image
+- **A build registry** holding the repository `repository` names, as
+  `registry-host[:port]/path` without a tag. It can be on the build machine,
+  on another machine, or any registry that takes pushes and pulls without
+  credentials. BuildKit pushes every image
   there by digest, and the host's Docker Engine pulls it under the same name,
   so only the layers the host lacks travel. Neither sends credentials, so
   anyone who can reach the registry can pull every image, with its build
@@ -288,19 +291,17 @@ which needs:
   pulls again.
 
 Images are built for the platform of the host's Docker Engine, whatever the
-build machine's, which then needs emulation for another architecture.
+build machine's, which then needs
+[emulation](../applications/build-machine.md#on-nixos)
+for another architecture.
 
 The host's `docker` command still needs the Buildx plugin. The daemon keeps
 Buildx's configuration in `<data_dir>/buildx`, which it rewrites at startup,
 so nothing depends on the daemon user's Docker configuration.
 
-The build machine only has to be reachable while a deployment builds.
-Services keep running without it, and so do restores, promotions and
-deployments that [reuse their
-images](../applications/git-builds.md#how-it-builds). Restoring a deployment
-whose image the host no longer has pulls it from the registry again, so that
-restore needs the registry, and the build machine too when it hosts the
-registry.
+The build machine only has to be reachable while a deployment builds; see
+[what works while it is
+off](../applications/build-machine.md#while-the-build-machine-is-off).
 
 Before each build, the host checks that the BuildKit daemon accepts a
 connection, for up to 5 seconds. `unavailable` says what happens when it

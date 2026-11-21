@@ -189,6 +189,62 @@ TLS termination or an external UI directory. Git, SSH, and Docker executables
 are present on the service PATH. Configure SSH credentials and known hosts for
 the service user, not the interactive operator; host home directories are protected.
 
+## Build machine and build registry
+
+Two modules set up the machines a host with a [build
+machine](configuration.md#build-machine) uses, as [building on another
+machine](../applications/build-machine.md) describes; the default module
+includes neither. Import `piqueld-builder` on the build machine, not on the
+host. The build registry can run on the build machine, on the host, on
+another machine, or be any other registry.
+
+`inputs.piqueld.nixosModules.piqueld-builder` runs the build machine's BuildKit
+daemon:
+
+```nix
+services.piqueld-builder = {
+  enable = true;
+  port = 1234; # the default
+  cacheSize = "20GB"; # the default
+  emulatedSystems = [ "aarch64-linux" ]; # none by default
+};
+```
+
+It runs `buildkitd.service` as the `buildkit` user, without root privileges,
+through RootlessKit, with an automatically allocated range of subordinate IDs.
+Build steps get their own network namespace, through slirp4netns, which
+doesn't reach the machine's loopback. Its state and build cache are in
+`/var/lib/buildkit`, and it removes the least recently used cache beyond
+`cacheSize`. `package` selects the BuildKit package. `emulatedSystems` sets
+`boot.binfmt.emulatedSystems`, with static emulators, which work inside build
+containers, unless `boot.binfmt.preferStaticEmulators` is set to `false`.
+
+`inputs.piqueld.nixosModules.piqueld-registry` runs a build registry:
+
+```nix
+services.piqueld-registry = {
+  enable = true;
+  port = 5000; # the default
+  garbageCollectDates = "Sun 04:00"; # the default
+};
+```
+
+It enables `services.dockerRegistry` on loopback, with deletes enabled, so its
+storage and package are that module's options. `docker-registry-collect.service`
+runs at `garbageCollectDates`, or when the machine is next on if it was off
+then: it stops the registry, frees the layers no remaining image uses, and
+starts it again. The module refuses
+`services.dockerRegistry.enableGarbageCollect`, which collects while the
+registry accepts pushes.
+
+Both listen on loopback only. `buildkitd-tailnet.service` and
+`docker-registry-tailnet.service` expose them on the machine's tailnet name
+with Tailscale Serve, BuildKit as TCP and the registry over HTTPS with the
+tailnet's certificate, and remove their Serve entries when they stop. Both
+modules require `services.tailscale.enable`, and open no firewall port.
+
+## Packages
+
 Nix packages and development shells support x86_64 Linux and aarch64 macOS,
 where only the CLI package is available. Configuration and
 package changes require rebuilding NixOS; application state remains under

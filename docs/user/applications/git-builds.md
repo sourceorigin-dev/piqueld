@@ -20,8 +20,8 @@ commit.
   private ones need [an SSH key](#build-from-a-private-repository).
 - The host's `docker` command has the Buildx plugin, which builds the images.
 - You trust the repository. Its Dockerfile's instructions run on the host's
-  Docker engine, or on the [build
-  machine](../reference/configuration.md#build-machine) if the host has one.
+  Docker engine, or on the [build machine](build-machine.md) if the host has
+  one.
 
 ## Build a service from a repository
 

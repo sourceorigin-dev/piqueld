@@ -68,6 +68,7 @@ these checks run after a pull request merges instead of before:
 | Capability | Local recipe | Job |
 | --- | --- | --- |
 | Embedded daemon and CLI release builds | `nix build` | `nix packages` |
+| The build machine and build registry modules, in a VM: a rootless build pushed to the registry, an emulated arm64 build, and garbage collection | `nix build .#checks.x86_64-linux.piqueld-builder` | `nix packages` |
 | Every published crate packaged and built from its package | `publish --dry-run` | `package` |
 | The static release archive, installed and then updated by `install.sh` | `dist` | `install` |
 
