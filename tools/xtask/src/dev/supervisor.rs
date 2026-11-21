@@ -1,6 +1,5 @@
 //! The instance's supervisor: it starts the instance's engine, then builds and
 //! runs the daemon, rebuilding and restarting it whenever the sources change.
-//! The shared tailnet node runs under a supervisor of its own.
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -22,7 +21,7 @@ use rustix::fs::OFlags;
 use rustix::process::{Pid, Signal, getpid, kill_process, test_kill_process};
 use tokio::process::Command;
 
-use super::{DATA_LABEL, Instance, Phase, RUNTIME_LABEL, State, Tailnet, WORKTREE_LABEL};
+use super::{DATA_LABEL, Instance, Phase, RUNTIME_LABEL, State, WORKTREE_LABEL};
 use crate::docker::Engine;
 use crate::process::{Job, Shutdown};
 
@@ -40,9 +39,9 @@ pub(super) enum Holder {
     Unrecorded,
 }
 
-/// A background xtask process, such as an instance's supervisor, found through
-/// the dev.pid it locks while it runs, so a file left behind by a crash never
-/// names an unrelated process that reuses its pid.
+/// An instance's background supervisor, found through the dev.pid it locks
+/// while it runs, so a file left behind by a crash never names an unrelated
+/// process that reuses its pid.
 pub(super) struct Supervisor {
     pid_file: PathBuf,
 }
@@ -195,10 +194,6 @@ impl Instance {
         let result = async {
             // Boxed: the engine's container definition makes this future large.
             Box::pin(self.start_engine()).await?;
-            let tailnet = Tailnet::new()?;
-            if self.config.tailscale.socket.as_deref() == Some(&tailnet.socket()) {
-                tailnet.start().await?;
-            }
             self.supervise(&mut shutdown).await
         }
         .await;

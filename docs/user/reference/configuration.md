@@ -432,13 +432,12 @@ dedicated node.
 
 `socket` makes piqueld use a `tailscaled` that is already logged in instead of
 starting its own, and `https_port` serves the website on another port of the
-node. Several daemons can then share one node, each on its own port, as the
-[development instances](../../dev/development.md#tailnet) do:
+node. Several daemons can then share one node, each on its own port:
 
 ```toml
 [tailscale]
 enabled = true
-socket = "/tmp/piqueld-dev-1000/tailnet/tailscaled.sock"
+socket = "/run/tailscale-shared/tailscaled.sock"
 https_port = 7846         # https://<node>.<tailnet>.ts.net:7846
 ```
 

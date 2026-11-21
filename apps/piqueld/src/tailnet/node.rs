@@ -3,8 +3,8 @@
 //! v2 header, to a loopback listener that the website is served on.
 //!
 //! piqueld normally starts a dedicated `tailscaled`. With `tailscale.socket`,
-//! it shares one that is already logged in, such as the development node that
-//! many `just dev` instances serve from, each on its own port.
+//! it shares one that is already logged in, which several daemons can serve
+//! from, each on its own port.
 
 use super::{Cli, PortUse, ProxyListener};
 use anyhow::{Context, Result, bail, ensure};
