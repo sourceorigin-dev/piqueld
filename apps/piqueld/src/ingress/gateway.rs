@@ -1106,6 +1106,20 @@ impl Ingress {
         journal.finish(result).await
     }
 
+    /// The containers the next log relay reads, starting with a different one
+    /// each relay: a slow engine can use up a relay's time budget on the
+    /// first, and the others must still get their turn. A relay that times
+    /// out has already taken its turn.
+    pub(super) fn relay_order(&self) -> [String; 3] {
+        let mut order = [self.name.clone(), self.node_name(), self.tunnel_name()];
+        let relay = self
+            .relays
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let first = relay % order.len();
+        order.rotate_left(first);
+        order
+    }
+
     /// Forwards Caddy's and `cloudflared`'s log lines emitted since the
     /// previous relay, or since the daemon started, into daemon logs, and the
     /// apps node's at debug level since `tailscaled` is verbose. At most
@@ -1115,11 +1129,12 @@ impl Ingress {
         if !self.enabled {
             return Ok(());
         }
+        let order = self.relay_order();
         let mut since = self.logs_since.lock().await;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs();
-        for name in [self.name.clone(), self.node_name(), self.tunnel_name()] {
+        for name in order {
             if self.named_container(&name).await?.is_none() {
                 continue;
             }

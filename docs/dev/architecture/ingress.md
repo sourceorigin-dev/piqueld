@@ -628,7 +628,8 @@ only the environments whose routes changed, so a steady pass writes nothing. The
 containers' logs are relayed to the daemon's after each gateway pass, normally
 every 10 seconds, starting from the daemon's start, at most 100 lines per container (a warning says when a
 burst had more), each cut to 4096 characters, and the relay may take at most
-5 seconds of the pass. Gateway startup,
+5 seconds of the pass. Each relay starts with the next container, so a slow
+engine that uses up the time on one never starves the others. Gateway startup,
 port and configuration failures leave the daemon available.
 
 Disabling ingress and restarting removes the containers and then their edge

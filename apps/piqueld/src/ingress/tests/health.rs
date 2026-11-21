@@ -185,3 +185,22 @@ async fn a_failure_notifies_while_the_next_pass_is_slow() {
     let deliveries = engine.store.deliveries(None, 100).await.unwrap().items;
     assert_eq!(deliveries.len(), 1);
 }
+
+/// Each log relay starts with the next container, so a slow engine that
+/// uses up the relay's budget on the first never starves the others.
+#[tokio::test]
+async fn log_relays_take_turns_starting_with_each_container() {
+    let engine = Engine::unused().await;
+    let ingress = engine.ingress(true);
+    let first: Vec<String> = (0..4).map(|_| ingress.relay_order()[0].clone()).collect();
+    let gateway = ingress.name.clone();
+    assert_eq!(
+        first,
+        [
+            gateway.clone(),
+            ingress.node_name(),
+            ingress.tunnel_name(),
+            gateway
+        ]
+    );
+}

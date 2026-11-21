@@ -110,6 +110,8 @@ pub struct Ingress {
     /// Unix timestamp (seconds) of the daemon's start, where relaying a
     /// container's logs begins: earlier lines were relayed before a restart.
     logs_from: u64,
+    /// Log relays started, which rotates the container each one reads first.
+    relays: std::sync::atomic::AtomicUsize,
     /// Whether ingress failed at the latest gateway pass, `None` before the
     /// first; [`Self::run_availability`] repeats it until the next pass.
     unavailable: parking_lot::Mutex<Option<bool>>,
@@ -198,6 +200,7 @@ impl Ingress {
             }),
             logs_since: Mutex::default(),
             unavailable: parking_lot::Mutex::new(None),
+            relays: std::sync::atomic::AtomicUsize::new(0),
             logs_from: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_secs(),
