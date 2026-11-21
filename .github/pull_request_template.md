@@ -7,5 +7,6 @@ Keep the pull request to one change; stack dependent ones. -->
 
 ## Checklist
 
-- [ ] The feature works through the manifest, `piquelctl`, and the dashboard.
-- [ ] The documentation and the NixOS module are updated.
+- [ ] The feature reaches each surface in `AGENTS.md` it applies to, with its
+      reverse states.
+- [ ] The documentation is updated.

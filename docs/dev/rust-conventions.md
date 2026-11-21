@@ -15,8 +15,8 @@ the daemon's crates (`piqueld-config`, `piqueld-store`, `piqueld-docker`)
 don't depend on the ones they build alongside. A new dependency between
 crates updates both that page and `tools/xtask/src/boundary.rs`.
 
-A feature reaches every surface it applies to: the manifest, `piquelctl` and
-the dashboard, as `AGENTS.md` says.
+A feature reaches every surface it applies to, from the checklist in
+`AGENTS.md`.
 
 ## Errors
 

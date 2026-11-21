@@ -182,7 +182,7 @@ report:
 3. The bugs: each one's issue, fix PR and state.
 4. The boundary themes, and which ones wait for the area PRs.
 5. Other design issues.
-6. Features missing from one of the three surfaces (`AGENTS.md`), checked
+6. Features missing from one of the surfaces in `AGENTS.md`, checked
    against current `main`.
 
 Number the items `NEW-1`, `NEW-2` and so on, never `#1`, which GitHub links to
