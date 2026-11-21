@@ -259,7 +259,7 @@ The book is then on <http://localhost:8080>. The marketing site builds the same
 way from `deploy/site/Dockerfile`; to look at it without Docker, see
 [`apps/site`](https://github.com/sourceorigin-dev/piqueld/tree/main/apps/site). To build it in a
 [development instance](development.md#docker)'s engine rather than the host's,
-set `DOCKER_HOST` to that engine's socket first.
+pass `-H unix://<that engine's socket>` to each `docker` command.
 
 ## Troubleshooting
 

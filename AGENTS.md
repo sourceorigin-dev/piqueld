@@ -40,7 +40,9 @@ recognise a case the list doesn't name.
   under `/tmp/piqueld-dev-<uid>/` that `just dev status` prints, which no
   `DOCKER_HOST` or `DOCKER_CONTEXT` overrides. `just dev`, `just docker-test`
   and the Playwright recipes use the host engine only for containers and
-  images of their own.
+  images of their own. `just daemon` and `just daemon-embedded` run a piqueld
+  on the engine its configuration names, the host's by default and in
+  `examples/piqueld.toml`: use `just dev`.
 - **Bare `piquelctl`, and `just run`, reach a real piqueld**: the default
   profile with your saved logins, which on the owner's machines is
   production, else the host daemon's socket. Use `just ctl`, which targets
@@ -68,8 +70,8 @@ Read a dependency's real source in `~/.cargo/registry/src`, at the version in
 `Cargo.lock`, rather than trusting memory of a fast-moving crate's API, such as
 Leptos, axum or Progenitor.
 
-If a rule in this file fights the task, say so plainly and get the owner's sign-off
-before breaking it.
+If a rule in this file fights the task, say so plainly and get the owner's
+sign-off before breaking it.
 
 ## Validation
 

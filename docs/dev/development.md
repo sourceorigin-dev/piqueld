@@ -123,7 +123,7 @@ container `piqueld-dev-<instance>`, listening on
 a volume of the same name across restarts. Inspect it with:
 
 ```console
-DOCKER_HOST=unix:///tmp/piqueld-dev-<uid>/<instance>/docker/docker.sock docker service ls
+docker -H unix:///tmp/piqueld-dev-<uid>/<instance>/docker/docker.sock service ls
 ```
 
 Set `docker.socket = "/var/run/docker.sock"` to use the host engine instead;

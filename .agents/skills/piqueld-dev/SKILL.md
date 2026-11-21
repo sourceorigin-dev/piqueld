@@ -12,8 +12,8 @@ description: >
 
 Every worktree has its own instance: configuration (`piqueld.local.toml`),
 data, Unix socket, localhost port, and Docker-in-Docker engine. It never
-touches the host's Docker Engine, where a production piqueld runs, or another
-worktree's instance. `docs/dev/development.md` describes it in full.
+touches the host's Docker Engine, which every worktree shares and which, on
+the server, runs production, or another worktree's instance. `docs/dev/development.md` describes it in full.
 
 ## Start and wait
 

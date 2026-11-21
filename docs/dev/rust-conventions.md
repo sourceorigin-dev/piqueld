@@ -78,7 +78,7 @@ the docs, private items included, with warnings denied.
 ## Deviations
 
 - No `CLAUDE.md` beside `AGENTS.md`: Claude Code reads `AGENTS.md` itself, so
-  a second file would only drift.
+  the file would add nothing.
 - `unwrap_used` is off: the tests still call `unwrap` about 4,400 times. They
   move to `expect("what should have held")` crate by crate (PQD-124); new
   tests use `expect`.
