@@ -21,8 +21,9 @@ daemon its graceful shutdown period before terminating any remaining processes.
 is ready, printing its dashboard URL.
 
 On first use, `just dev` writes the gitignored `piqueld.local.toml`.
-`just dev config` writes it ahead of time (T3 Code's worktree setup script
-does), and `just dev config --force` regenerates it:
+`just dev config` writes it ahead of time
+([`just setup-worktree`](#worktree-setup) does), and
+`just dev config --force` regenerates it:
 
 | Setting | Value |
 | --- | --- |
@@ -143,15 +144,34 @@ Set `docker.socket = "/var/run/docker.sock"` to use the host engine instead;
 | `just dev prune` | Stop and clean the instances of worktrees that no longer exist |
 | `just ctl ARGS` | Run this worktree's `piquelctl` against the instance |
 
-T3 Code runs `just dev config` when it creates a worktree and `just dev stop`
-when its thread settles (see `t3.json`). An instance also stops itself once its
-worktree is removed; `just dev prune` then deletes its engine, volume, and
-directories.
+T3 Code runs [`just setup-worktree`](#worktree-setup) when it creates a
+worktree and `just dev stop` when its thread settles (see `t3.json`). An
+instance also stops itself once its worktree is removed; `just dev prune`
+then deletes its engine, volume, and directories.
 
 `just dev wait` considers sources saved after the current build started as not
 yet built, so it is safe to call right after an edit. It fails with the
 compiler's output when the build fails and with the daemon's error when it
 exits.
+
+## Worktree setup
+
+`just setup-worktree` prepares a new worktree: it runs `just dev config`, then
+`just build`. T3 Code runs it when it creates a worktree. It leaves a marker
+in `target/worktree-setup/`, so an agent starting in the worktree knows
+whether to wait:
+
+| Marker | Meaning |
+| --- | --- |
+| `running` | Setup is running while it holds `lock`, beside the marker; the file holds its PID. If nothing holds the lock, setup was interrupted. |
+| `done` | Setup succeeded. |
+| `failed` | Setup failed. The file holds the last 40 lines of its output. |
+
+`output.log`, beside the marker, keeps the latest run's whole output. Run
+`just setup-worktree` again to retry a failed or interrupted setup, or to
+prepare a worktree T3 Code didn't create. A second run refuses to start while
+one holds the lock, and `flock target/worktree-setup/lock true` waits for it
+to end.
 
 ## Logs
 

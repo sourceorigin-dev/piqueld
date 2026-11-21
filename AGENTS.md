@@ -17,6 +17,13 @@ CI runs, which `docs/dev/validation.md` lists. Run it before handing work back;
 while iterating, run only what you changed, such as `just test -p <crate>` and
 `just lint`. If a step cannot run, report the exact command and why.
 
+T3 Code prepares a new worktree with `just setup-worktree`, which leaves a
+marker in `target/worktree-setup/`. If `running` exists, wait in the
+background with `flock target/worktree-setup/lock true`, which returns once no
+setup runs. Then read `failed` if it exists: it holds the end of the setup's
+output, and `output.log` all of it; fix the cause and run the recipe again. If
+neither `done` nor `failed` exists, run `just setup-worktree` yourself.
+
 ## Testing
 
 The `piqueld-dev` skill in `.agents/skills` (linked from `.claude/skills`)
