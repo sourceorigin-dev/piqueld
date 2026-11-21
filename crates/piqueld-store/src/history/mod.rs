@@ -70,7 +70,7 @@ impl Store {
         );
         let candidates = sqlx::query_scalar!(
             r#"WITH current AS (
-                SELECT MAX(d.id) AS id FROM deployments d JOIN operations o ON o.id=d.id WHERE o.promoted=1 GROUP BY d.environment_id
+                SELECT id FROM (SELECT (SELECT d.id FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=e.id AND o.promoted=1 ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) AS id FROM environments e) WHERE id IS NOT NULL
             ), ranked AS (
                 SELECT d.id,e.kind,o.finished_at_ms,d.succeeded_at_ms IS NOT NULL AS succeeded,
                     ROW_NUMBER() OVER (PARTITION BY d.environment_id ORDER BY d.created_at_ms DESC,d.id DESC) AS rank,

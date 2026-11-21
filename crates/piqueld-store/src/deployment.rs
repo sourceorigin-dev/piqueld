@@ -37,7 +37,7 @@ impl Flags {
             current: Store::current_deployment_on(tx, environment)
                 .await?
                 .map(|current| current.id),
-            successful: sqlx::query_scalar!("SELECT id FROM deployments WHERE environment_id=?1 AND succeeded_at_ms IS NOT NULL ORDER BY id DESC LIMIT 1",id).fetch_optional(&mut **tx).await.map_err(StoreError::database)?.flatten(),
+            successful: sqlx::query_scalar!("SELECT d.id FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND d.succeeded_at_ms IS NOT NULL ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1",id).fetch_optional(&mut **tx).await.map_err(StoreError::database)?.flatten(),
         })
     }
 }
@@ -113,14 +113,16 @@ pub struct CurrentDeployment {
 }
 
 impl Store {
-    /// Reads `environment`'s current deployment, if any.
+    /// Reads `environment`'s current deployment, if any: its newest published
+    /// one by creation time. IDs only order pages of the deployment list,
+    /// because they are monotonic only within one daemon process.
     pub(super) async fn current_deployment_on(
         connection: &mut sqlx::SqliteConnection,
         environment: &EnvironmentId,
     ) -> Result<Option<CurrentDeployment>, StoreError> {
         let id = environment.as_str();
         sqlx::query!(
-            r#"SELECT d.id AS "id!",d.release_id,o.state AS "state!" FROM deployments d JOIN operations o ON o.id=d.id WHERE d.environment_id=?1 AND o.promoted=1 ORDER BY d.id DESC LIMIT 1"#,
+            r#"SELECT d.id AS "id!",d.release_id,o.state AS "state!" FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND o.promoted=1 ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1"#,
             id
         )
         .fetch_optional(connection)
@@ -737,5 +739,67 @@ mod tests {
         );
         let deployments = store.deployments(&id, None, 3).await.unwrap();
         assert!(deployments.items[0].current_target && deployments.items[0].last_successful);
+    }
+
+    /// Deployment IDs are monotonic only within one process, so after a
+    /// restart with the clock behind, a newer deployment can sort below an
+    /// older one: the current and last successful deployments are the
+    /// newest by creation time, not by ID.
+    #[tokio::test]
+    async fn current_deployment_is_the_newest_by_creation_time_not_by_id() {
+        let (_temp, store) = Store::temporary().await;
+        let saved = store
+            .save_template(crate::testing::template("alpha", "[spec]"), true)
+            .await;
+        let id = store.saved_production(&saved).await;
+        let alpha = saved.operation_id.unwrap();
+        // Published and succeeded, as a finished rollout leaves it.
+        sqlx::query("UPDATE operations SET promoted=1,state='succeeded',finished_at_ms=created_at_ms WHERE id=?1")
+            .bind(&alpha)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE deployments SET succeeded_at_ms=created_at_ms WHERE id=?1")
+            .bind(&alpha)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        // An already-published deployment from before the restart: its ID
+        // sorts above alpha's, but it was created a minute earlier.
+        let older = format!("operation-{}", "f".repeat(32));
+        sqlx::query("INSERT INTO operations(id,environment_id,kind,state,generation,promoted,created_at_ms,updated_at_ms,finished_at_ms) SELECT ?1,environment_id,kind,'succeeded',generation,1,created_at_ms-60000,created_at_ms-60000,created_at_ms-60000 FROM operations WHERE id=?2")
+            .bind(&older)
+            .bind(&alpha)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO deployments(id,environment_id,generation,manifest_json,template_json,variables_json,created_at_ms,succeeded_at_ms) SELECT ?1,environment_id,generation,manifest_json,template_json,variables_json,created_at_ms-60000,created_at_ms-60000 FROM deployments WHERE id=?2")
+            .bind(&older)
+            .bind(&alpha)
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let latest = store.latest_operation_for_environment(&id).await.unwrap();
+        assert_eq!(latest.unwrap().id, alpha);
+        assert_eq!(
+            store.current_deployment(&id).await.unwrap().unwrap().id,
+            alpha
+        );
+        // Paging stays in ID order, so the older deployment lists first.
+        let deployments = store.deployments(&id, None, 2).await.unwrap().items;
+        let flags = deployments
+            .iter()
+            .map(|deployment| {
+                (
+                    deployment.operation.id.as_str(),
+                    deployment.current_target,
+                    deployment.last_successful,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            flags,
+            [(older.as_str(), false, false), (alpha.as_str(), true, true)]
+        );
     }
 }
