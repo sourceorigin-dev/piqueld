@@ -1,10 +1,10 @@
 //! Transport-independent layout of the dashboard's operation timelines:
 //! where each step's bars sit on a shared time axis, where a rollout's Swarm
-//! tasks sit on their step's own, and how far the operation has come.
+//! tasks sit on their step's own, and the browser tab's title as the
+//! operation goes.
 
-use piqueld_client::observability::Elapsed;
-use piqueld_client::timeline::{Stage, Step, StepKey, StepState, TaskLane, TaskSpan, Timeline};
-use piqueld_client::{OperationKind, OperationState, TaskState};
+use piqueld_client::timeline::{Progress, Stage, Step, StepKey, StepState, TaskLane, TaskSpan};
+use piqueld_client::{OperationState, TaskState};
 use std::collections::HashMap;
 
 /// Intervals the time axis ticks at, in milliseconds; the first giving at
@@ -478,90 +478,16 @@ impl Lanes {
     }
 }
 
-/// How far an operation has come, for its header and tab title.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Progress {
-    kind: OperationKind,
-    /// Where the operation stands.
-    pub state: OperationState,
-    /// Steps finished.
-    pub done: usize,
-    /// Steps altogether, done and left.
-    pub total: usize,
-    /// The steps running, such as "Build web".
-    pub running: Vec<String>,
-    /// How long it has run, or ran.
-    pub elapsed_ms: u64,
-    /// How much longer it should take, while it runs.
-    pub left_ms: Option<u64>,
-    /// How long it usually takes, while it runs; once it ended, only when
-    /// its run compares with the usual one.
-    pub usual_ms: Option<u64>,
+/// The browser tab's title while showing an operation.
+pub trait TabTitle {
+    /// The title while showing the operation of `subject`: its progress
+    /// while it runs, then its outcome, such as "44% · Deploying blog" or
+    /// "✓ Deployed blog".
+    fn title(&self, subject: &str) -> String;
 }
 
-impl Progress {
-    /// Where `timeline` stands at `now_ms`.
-    #[must_use]
-    pub fn new(timeline: &Timeline, now_ms: i64) -> Self {
-        let operation = &timeline.operation;
-        let started = timeline
-            .steps
-            .iter()
-            .filter_map(|step| step.started_at_ms)
-            .chain(operation.started_at_ms)
-            .min();
-        let end = operation.finished_at_ms.unwrap_or(now_ms);
-        Self {
-            kind: operation.kind,
-            state: operation.state,
-            done: timeline
-                .steps
-                .iter()
-                .filter(|step| step.state.finished())
-                .count(),
-            total: timeline.steps.len(),
-            running: timeline
-                .steps
-                .iter()
-                .filter(|step| step.state.running())
-                .map(|step| step.key.to_string())
-                .collect(),
-            elapsed_ms: started.map_or(0, |started| u64::try_from(end - started).unwrap_or(0)),
-            left_ms: timeline.remaining_ms(now_ms),
-            usual_ms: if timeline.operation.state.terminal() {
-                timeline.comparable_usual_ms()
-            } else {
-                timeline.usual_ms()
-            },
-        }
-    }
-
-    /// Steps done, in percent.
-    #[must_use]
-    pub fn percent(&self) -> usize {
-        (self.done * 100).checked_div(self.total).unwrap_or(0)
-    }
-
-    /// Where the operation stands, in a word: "Deploying" or "Deployed".
-    #[must_use]
-    pub const fn status(&self) -> &'static str {
-        let delete = matches!(self.kind, OperationKind::Delete);
-        match self.state {
-            OperationState::Requested => "Queued",
-            OperationState::Running if delete => "Deleting",
-            OperationState::Running => "Deploying",
-            OperationState::Succeeded if delete => "Deleted",
-            OperationState::Succeeded => "Deployed",
-            OperationState::Failed => "Failed",
-            OperationState::Cancelled => "Cancelled",
-            OperationState::Superseded => "Superseded",
-        }
-    }
-
-    /// The browser tab's title while showing the operation of `subject`:
-    /// its progress while it runs, then its outcome.
-    #[must_use]
-    pub fn title(&self, subject: &str) -> String {
+impl TabTitle for Progress {
+    fn title(&self, subject: &str) -> String {
         let status = self.status();
         match self.state {
             OperationState::Requested | OperationState::Running => {
@@ -573,45 +499,6 @@ impl Progress {
                 format!("{status} · {subject}")
             }
         }
-    }
-
-    /// Steps done of all, such as "4/9".
-    #[must_use]
-    pub fn steps(&self) -> String {
-        format!("{}/{}", self.done, self.total)
-    }
-
-    /// How long a running operation should still take, such as "~48.0 s
-    /// left", or how a finished one compared with its usual duration.
-    #[must_use]
-    pub fn outlook(&self) -> Option<String> {
-        self.against_usual().or_else(|| {
-            let left = self.left_ms.filter(|_| !self.state.terminal())?;
-            Some(format!(
-                "~{} left",
-                Elapsed(std::time::Duration::from_millis(left))
-            ))
-        })
-    }
-
-    /// How a finished operation compared with its usual duration, such as
-    /// "6.0 s faster than usual".
-    fn against_usual(&self) -> Option<String> {
-        let usual = self.usual_ms.filter(|_| self.state.terminal())?;
-        let difference = self.elapsed_ms.abs_diff(usual);
-        Some(if difference < 1_000 {
-            "as long as usual".to_owned()
-        } else {
-            let faster = if self.elapsed_ms < usual {
-                "faster"
-            } else {
-                "slower"
-            };
-            format!(
-                "{} {faster} than usual",
-                Elapsed(std::time::Duration::from_millis(difference))
-            )
-        })
     }
 }
 
@@ -713,28 +600,6 @@ mod tests {
         let plan = Waterfall::new(&[left(Phase::EnsureService, "web", 3)], None);
         assert_eq!(plan.axis, None);
         assert_eq!((plan.rows[0].bar, plan.rows[0].usual), (None, None));
-    }
-
-    #[test]
-    fn progress_tells_the_time_left_then_against_the_usual() {
-        let mut progress = Progress {
-            kind: OperationKind::Apply,
-            state: OperationState::Running,
-            done: 4,
-            total: 9,
-            running: vec!["Build web".into()],
-            elapsed_ms: 30_000,
-            left_ms: Some(48_000),
-            usual_ms: Some(80_000),
-        };
-        assert_eq!(progress.steps(), "4/9");
-        assert_eq!(progress.outlook().as_deref(), Some("~48.0 s left"));
-        progress.state = OperationState::Succeeded;
-        progress.elapsed_ms = 74_000;
-        assert_eq!(
-            progress.outlook().as_deref(),
-            Some("6.0 s faster than usual")
-        );
     }
 
     #[test]

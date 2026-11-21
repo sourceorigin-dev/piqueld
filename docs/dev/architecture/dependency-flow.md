@@ -4,10 +4,10 @@
 identities (`ApplicationId` for the product owning the manifest, `EnvironmentId`
 for the deployable unit that runtime names derive from), pure planning and
 [link](../../user/reference/manifest.md#links) resolution, environment status,
-operation records, how sizes, durations, counts and relative times read for
-people (shared by the CLI and the dashboard), and shared API requests and
-responses. It has no HTTP server, database, Docker, or UI dependency. The
-daemon uses these contracts directly.
+operation records, how sizes, durations, counts, relative times and operation
+progress read for people (shared by the CLI and the dashboard), and shared API
+requests and responses. It has no HTTP server, database, Docker, or UI
+dependency. The daemon uses these contracts directly.
 `piqueld-client` adds HTTP transport and reexports the shared contracts for the
 CLI and dashboard. `piqueld-probe` is the static HTTP health probe, depending
 only on `thiserror`: `piqueld-docker`'s build script embeds its binary, and

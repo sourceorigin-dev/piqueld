@@ -19,9 +19,9 @@ use crate::support::now_ms;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use parking_lot::Mutex;
 use piqueld_client::{
-    OperationKind, OperationState,
+    OperationState,
     observability::Elapsed,
-    timeline::{NewTasks, Step, StepState, Timeline},
+    timeline::{self, NewTasks, Step, StepState, Timeline},
 };
 use std::{collections::HashMap, fmt, io, sync::Arc, time::Duration};
 
@@ -231,38 +231,26 @@ struct View {
 }
 
 impl View {
-    /// Draws the row at `now_ms`: a header with the steps done and the time
-    /// left, then the steps; `frame` turns the spinners.
+    /// Draws the row at `now_ms`: a header with where the operation stands,
+    /// as the dashboard's progress computes it, then the steps; `frame`
+    /// turns the spinners.
     fn draw(&self, out: &mut dyn fmt::Write, now_ms: i64, frame: usize) -> fmt::Result {
         self.paint(out, "36", SPINNER[frame % SPINNER.len()])?;
         let Some(timeline) = &self.timeline else {
             return write!(out, " {}", Escaped(&self.label));
         };
-        let verb = match timeline.operation.kind {
-            OperationKind::Delete => "Deleting",
-            OperationKind::Apply | OperationKind::Refresh => "Deploying",
-        };
-        write!(out, " {verb} {}  ▕", Escaped(&self.label))?;
-        let total = timeline.steps.len();
-        let done = timeline
-            .steps
-            .iter()
-            .filter(|step| step.state.finished())
-            .count();
-        let filled = (done * BAR_CELLS).checked_div(total).unwrap_or(0);
+        let progress = timeline::Progress::new(timeline, now_ms);
+        write!(out, " {} {}  ▕", progress.status(), Escaped(&self.label))?;
+        let filled = progress.filled(BAR_CELLS);
         for cell in 0..BAR_CELLS {
             out.write_char(if cell < filled { '█' } else { '░' })?;
         }
-        write!(out, "▏ {done}/{total}")?;
-        match timeline.operation.started_at_ms {
-            Some(started) => {
-                let until = timeline.operation.finished_at_ms.unwrap_or(now_ms);
-                write!(out, "  {}", Elapsed::from_millis(until - started))?;
-            }
-            None => out.write_str("  queued")?,
+        write!(out, "▏ {}", progress.steps())?;
+        if let Some(elapsed) = progress.elapsed_ms {
+            write!(out, "  {}", Elapsed(Duration::from_millis(elapsed)))?;
         }
-        if let Some(left) = timeline.remaining_ms(now_ms) {
-            write!(out, "  ~{} left", Elapsed(Duration::from_millis(left)))?;
+        if let Some(outlook) = progress.outlook() {
+            write!(out, "  {outlook}")?;
         }
         self.rows(out, timeline, now_ms, frame, MAX_ROWS)?;
         if let Some(waiting) = &self.waiting {
@@ -358,10 +346,9 @@ impl View {
     /// 48.0 s)`. The steps of a failed run are not the usual ones.
     fn total(&self, now_ms: i64) -> Option<String> {
         let timeline = self.timeline.as_ref()?;
-        let operation = &timeline.operation;
-        let took = Elapsed::from_millis(
-            operation.finished_at_ms.unwrap_or(now_ms) - operation.started_at_ms?,
-        );
+        let took = Elapsed(Duration::from_millis(
+            timeline::Progress::new(timeline, now_ms).elapsed_ms?,
+        ));
         Some(match timeline.comparable_usual_ms() {
             Some(usual) => format!("{took} (usual {})", Elapsed(Duration::from_millis(usual))),
             None => took.to_string(),
@@ -577,6 +564,71 @@ mod tests {
             "phase": phase, "resource": "web", "state": state,
         }))
         .unwrap()
+    }
+
+    /// The header a terminal draws at 11 s, and the final line's time, for
+    /// an operation that `started` and `finished`. Its one build step usually
+    /// takes 24 s; it runs from 1 s, until 31 s if the operation finished.
+    fn header(
+        state: &str,
+        started: Option<i64>,
+        finished: Option<i64>,
+    ) -> (String, Option<String>) {
+        let mut step = match (started, finished) {
+            (None, _) => serde_json::json!({ "state": "planned" }),
+            (Some(_), None) => serde_json::json!({ "state": "running", "started_at_ms": 1_000 }),
+            (Some(_), Some(_)) => serde_json::json!({
+                "state": "succeeded", "started_at_ms": 1_000, "finished_at_ms": 31_000,
+            }),
+        };
+        step["phase"] = "building_git".into();
+        step["resource"] = "web".into();
+        step["expected_ms"] = 24_000.into();
+        let timeline = serde_json::from_value(serde_json::json!({
+            "operation": {
+                "id": "op", "environment_id": "env-web-01", "kind": "apply",
+                "generation": 1, "attempt": 1, "state": state,
+                "error_code": null, "error_message": null,
+                "created_at_ms": 0, "updated_at_ms": 0,
+                "started_at_ms": started, "finished_at_ms": finished,
+            },
+            "steps": [step],
+            "cursor": 0,
+        }))
+        .unwrap();
+        let view = View {
+            label: "op".into(),
+            timeline: Some(timeline),
+            waiting: None,
+            color: false,
+        };
+        let mut drawn = String::new();
+        view.draw(&mut drawn, 11_000, 0).unwrap();
+        let header = drawn.lines().next().unwrap().to_owned();
+        (header, view.total(11_000))
+    }
+
+    #[test]
+    fn the_header_shows_progress_as_the_dashboard_computes_it() {
+        assert_eq!(
+            header("requested", None, None),
+            ("⠋ Queued op  ▕░░░░░░░░░░░░▏ 0/1  ~24.0 s left".into(), None)
+        );
+        // The build started a second before the operation did.
+        assert_eq!(
+            header("running", Some(2_000), None),
+            (
+                "⠋ Deploying op  ▕░░░░░░░░░░░░▏ 0/1  10.0 s  ~14.0 s left".into(),
+                Some("10.0 s".into())
+            )
+        );
+        assert_eq!(
+            header("succeeded", Some(2_000), Some(31_000)),
+            (
+                "⠋ Deployed op  ▕████████████▏ 1/1  30.0 s  6.0 s slower than usual".into(),
+                Some("30.0 s (usual 24.0 s)".into())
+            )
+        );
     }
 
     #[test]
