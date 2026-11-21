@@ -160,8 +160,8 @@ manage.
    - Without NixOS, save it as `/etc/piqueld/ts-auth-key`, and
      [pass it to the daemon](#pass-files-to-the-daemon) as `ts-auth-key`.
      Install [Tailscale](https://tailscale.com/download/linux) too: piqueld
-     runs its own `tailscaled`, and needs `tailscale` and `tailscaled` on its
-     `PATH`.
+     runs its own `tailscaled`, and runs `tailscale` to log it in and serve
+     the dashboard on it, so it needs both on its `PATH`.
    - On NixOS, use an agenix or sops-nix secret.
 3. Add to `/etc/piqueld/config.toml`:
 

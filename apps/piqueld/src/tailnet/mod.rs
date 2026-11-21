@@ -2,8 +2,10 @@
 //! tailnet-issued certificate, independently of the host's Tailscale daemon.
 //!
 //! piqueld supervises a dedicated `tailscaled` in userspace-networking mode, or
-//! shares a configured one, and drives it through the `tailscale` CLI, so the
-//! CLI (and `tailscaled`, unless shared) must be on `PATH`.
+//! shares a configured one. It reads the node's state through the `LocalAPI`
+//! (see [`piqueld_config::tailscale`]), and runs the `tailscale` CLI to log the
+//! node in and change its Serve configuration, which the `LocalAPI` can't do
+//! as simply. So the CLI (and `tailscaled`, unless shared) must be on `PATH`.
 
 mod node;
 mod proxy;
@@ -14,119 +16,40 @@ pub use proxy::ProxyListener;
 pub use whois::{LookupTimedOut, TailnetLookup, Whois};
 
 use anyhow::{Context, Result, bail, ensure};
-use serde::Deserialize;
-use std::{
-    collections::BTreeMap,
-    io::ErrorKind,
-    net::{IpAddr, SocketAddr},
-    path::PathBuf,
-    process::Stdio,
-    time::Duration,
-};
+use piqueld_config::tailscale::{LocalApi, PortUse};
+use std::{io::ErrorKind, path::PathBuf, process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     net::TcpStream,
     process::Command,
 };
 
-/// Allows certificate issuance time while bounding non-interactive commands.
+/// Bounds `LocalAPI` reads and non-interactive commands, allowing certificate
+/// issuance time.
 const COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
 /// A live loopback listener accepts at once; this only bounds a stuck one.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// The `tailscale` CLI, pointed at the node's `tailscaled` socket.
-struct Cli {
-    socket: PathBuf,
+/// The node's `tailscaled`: read through its `LocalAPI`, and changed with the
+/// `tailscale` CLI pointed at the same socket.
+struct Tailscaled {
+    api: LocalApi,
 }
 
-/// The fields piqueld reads from a `tailscaled`'s status, which `tailscale
-/// status --json` and the `LocalAPI`'s `/localapi/v0/status` both report.
-#[derive(Deserialize)]
-pub(crate) struct Status {
-    #[serde(rename = "BackendState")]
-    pub(crate) backend_state: String,
-    /// Interactive login URL while the node needs login.
-    #[serde(rename = "AuthURL", default)]
-    pub(crate) auth_url: String,
-    #[serde(rename = "Self")]
-    node: Option<NodeStatus>,
-}
-
-#[derive(Deserialize)]
-struct NodeStatus {
-    #[serde(rename = "DNSName")]
-    dns_name: String,
-    /// `null` until the node has logged in.
-    #[serde(rename = "TailscaleIPs")]
-    addresses: Option<Vec<IpAddr>>,
-}
-
-impl Status {
-    /// Whether the node is logged in and connected.
-    pub(crate) fn running(&self) -> bool {
-        self.backend_state == "Running"
-    }
-
-    /// The node's DNS name, without its trailing dot, once it has one.
-    pub(crate) fn dns_name(&self) -> Option<String> {
-        self.node
-            .as_ref()
-            .map(|node| node.dns_name.trim_end_matches('.').to_owned())
-            .filter(|name| !name.is_empty())
-    }
-
-    /// The node's tailnet addresses, none before it has logged in.
-    pub(crate) fn addresses(&self) -> impl Iterator<Item = IpAddr> {
-        self.node
-            .iter()
-            .flat_map(|node| node.addresses.iter().flatten().copied())
-    }
-}
-
-/// The node's TCP ports in `tailscale serve status --json`, by number.
-#[derive(Default, Deserialize)]
-struct ServeStatus {
-    #[serde(rename = "TCP", default)]
-    tcp: BTreeMap<u16, PortHandler>,
-}
-
-#[derive(Deserialize)]
-struct PortHandler {
-    /// `<host>:<port>` a TCP forward sends connections to.
-    #[serde(rename = "TCPForward")]
-    tcp_forward: Option<String>,
-}
-
-/// How the node serves one TCP port.
-#[derive(Debug, Eq, PartialEq)]
-enum PortUse {
-    Unserved,
-    /// Forwarded to this address, such as another piqueld's listener.
-    Forwarded(SocketAddr),
-    /// Served some other way, such as a web handler, which piqueld can't
-    /// tell is in use.
-    Other,
-}
-
-impl ServeStatus {
-    /// How `port` is served.
-    fn port(&self, port: u16) -> PortUse {
-        match self.tcp.get(&port) {
-            None => PortUse::Unserved,
-            Some(handler) => handler
-                .tcp_forward
-                .as_deref()
-                .and_then(|target| target.parse().ok())
-                .map_or(PortUse::Other, PortUse::Forwarded),
+impl Tailscaled {
+    /// The `tailscaled` listening on `socket`.
+    fn at(socket: PathBuf) -> Self {
+        Self {
+            api: LocalApi::new(socket, COMMAND_TIMEOUT),
         }
     }
 
-    /// Fails unless piqueld may take `port` over: it is unserved, or
-    /// forwards to an address that refuses connections, such as that of a
-    /// daemon that crashed without removing it. Only a refusal shows the
-    /// owner is gone: a timeout may be a live owner that is stuck.
-    async fn check_takeover(&self, port: u16) -> Result<()> {
-        match self.port(port) {
+    /// Fails unless piqueld may take `port`, served as `serving`, over: it
+    /// is unserved, or forwards to an address that refuses connections, such
+    /// as that of a daemon that crashed without removing it. Only a refusal
+    /// shows the owner is gone: a timeout may be a live owner that is stuck.
+    async fn check_takeover(port: u16, serving: PortUse) -> Result<()> {
+        match serving {
             PortUse::Unserved => Ok(()),
             PortUse::Forwarded(target) => {
                 let in_use = format!(
@@ -147,9 +70,12 @@ impl ServeStatus {
             ),
         }
     }
-}
 
-impl Cli {
+    /// How the node serves `port`.
+    async fn serving(&self, port: u16) -> Result<PortUse> {
+        Ok(self.api.serve_config().await?.port(port))
+    }
+
     /// Runs `tailscale <args>` to completion and returns its stdout. Stderr is
     /// logged as it arrives, which is how interactive login URLs from `up`
     /// reach the operator, and is included in the error on failure. Only `up`
@@ -158,7 +84,7 @@ impl Cli {
         let operation = args.first().copied().unwrap_or_default();
         Self::run_command(
             Command::new("tailscale")
-                .arg(format!("--socket={}", self.socket.display()))
+                .arg(format!("--socket={}", self.api.socket().display()))
                 .args(args),
             operation,
         )
@@ -217,25 +143,12 @@ impl Cli {
         Ok(stdout)
     }
 
-    async fn status(&self) -> Result<Status> {
-        serde_json::from_slice(&self.run(&["status", "--json", "--peers=false"]).await?)
-            .context("invalid tailscale status")
-    }
-
-    /// The node's Serve configuration; empty output means nothing is served.
-    async fn serve_status(&self) -> Result<ServeStatus> {
-        let output = self.run(&["serve", "status", "--json"]).await?;
-        if output.trim_ascii().is_empty() {
-            return Ok(ServeStatus::default());
-        }
-        serde_json::from_slice(&output).context("invalid tailscale serve status")
-    }
-
     /// Fetches the certificate for the node's name and returns its expiry.
     /// tailscaled caches it in the node state and renews it before expiry.
     async fn certificate_expiry_ms(&self, dns_name: &str) -> Result<i64> {
         let pem = self
-            .run(&["cert", "--cert-file=-", dns_name])
+            .api
+            .certificate(dns_name)
             .await
             .context("failed to obtain the tailnet HTTPS certificate; enable HTTPS certificates for the tailnet")?;
         let validity = crate::certificate::Validity::of_leaf(&pem)
@@ -247,15 +160,16 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use piqueld_config::tailscale::{FakeLocalApi, ServeConfig};
 
     #[tokio::test(start_paused = true)]
     async fn noninteractive_commands_time_out_but_login_can_wait() {
-        for operation in ["status", "cert", "serve", "up"] {
+        for operation in ["serve", "up"] {
             let mut command = Command::new("sh");
             command.args(["-c", "exec sleep 600"]);
             let result = tokio::time::timeout(
                 COMMAND_TIMEOUT * 2,
-                Cli::run_command(&mut command, operation),
+                Tailscaled::run_command(&mut command, operation),
             )
             .await;
             if operation == "up" {
@@ -270,14 +184,53 @@ mod tests {
         }
     }
 
-    #[test]
-    fn status_reads_login_state_and_node_name() {
-        let status: Status = serde_json::from_str(
-            r#"{"BackendState":"Running","Self":{"DNSName":"piqueld.tail.ts.net."}}"#,
-        )
-        .unwrap();
-        assert!(status.running());
-        assert_eq!(status.dns_name().unwrap(), "piqueld.tail.ts.net");
+    /// The node's certificate expiry comes from the `LocalAPI`'s PEM, and a
+    /// refused certificate explains how to enable them.
+    #[tokio::test]
+    async fn certificate_expiry_is_read_from_the_local_api() {
+        let certificate = {
+            use openssl::{asn1::Asn1Time, hash::MessageDigest, pkey::PKey, rsa::Rsa, x509};
+            let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
+            let mut builder = x509::X509Builder::new().unwrap();
+            builder.set_pubkey(&key).unwrap();
+            builder
+                .set_not_before(&Asn1Time::from_unix(1_700_000_000).unwrap())
+                .unwrap();
+            builder
+                .set_not_after(&Asn1Time::from_unix(1_800_000_000).unwrap())
+                .unwrap();
+            builder.sign(&key, MessageDigest::sha256()).unwrap();
+            String::from_utf8(builder.build().to_pem().unwrap()).unwrap()
+        };
+        let fake = FakeLocalApi::serve(&[
+            (
+                "/localapi/v0/cert/piqueld.tail1234.ts.net?type=cert",
+                200,
+                &certificate,
+            ),
+            (
+                "/localapi/v0/cert/other.tail1234.ts.net?type=cert",
+                500,
+                "invalid domain \"other.tail1234.ts.net\"; must be one of [\"piqueld.tail1234.ts.net\"]\n",
+            ),
+        ]).unwrap();
+        let tailscaled = Tailscaled::at(fake.socket().to_owned());
+        let expiry = tailscaled
+            .certificate_expiry_ms("piqueld.tail1234.ts.net")
+            .await
+            .unwrap();
+        assert_eq!(expiry, 1_800_000_000_000);
+        let refused = tailscaled
+            .certificate_expiry_ms("other.tail1234.ts.net")
+            .await
+            .unwrap_err();
+        let refused = format!("{refused:#}");
+        assert!(
+            refused.starts_with("failed to obtain the tailnet HTTPS certificate"),
+            "{refused}"
+        );
+        assert!(refused.contains("HTTP 500"), "{refused}");
+        assert!(refused.contains("invalid domain"), "{refused}");
     }
 
     /// A port forwarding to a live listener is refused, and one whose
@@ -291,29 +244,36 @@ mod tests {
         let live = listener.local_addr().unwrap();
         // Its daemon is gone: nothing listens there any more.
         let stale = bind().await.unwrap().local_addr().unwrap();
-        let status: ServeStatus = serde_json::from_str(&format!(
+        let config = format!(
             r#"{{"TCP":{{
                 "7001":{{"TCPForward":"{live}","TerminateTLS":"node.ts.net","ProxyProtocol":2}},
                 "7002":{{"TCPForward":"{stale}"}},
                 "443":{{"HTTPS":true}}
             }},"Web":{{}}}}"#
-        ))
-        .unwrap();
-        assert_eq!(status.port(7001), PortUse::Forwarded(live));
-        let refused = status.check_takeover(7001).await.unwrap_err().to_string();
+        );
+        let fake = FakeLocalApi::serve(&[("/localapi/v0/serve-config", 200, &config)]).unwrap();
+        let tailscaled = &Tailscaled::at(fake.socket().to_owned());
+        let check = |port| async move {
+            Tailscaled::check_takeover(port, tailscaled.serving(port).await.unwrap()).await
+        };
+        assert_eq!(
+            tailscaled.serving(7001).await.unwrap(),
+            PortUse::Forwarded(live)
+        );
+        let refused = check(7001).await.unwrap_err().to_string();
         assert!(refused.contains("still accepts connections"), "{refused}");
-        status.check_takeover(7002).await.unwrap();
+        check(7002).await.unwrap();
         // TEST-NET-1 never answers: a timeout or an unreachable network.
-        let unreachable: ServeStatus =
+        let unreachable: ServeConfig =
             serde_json::from_str(r#"{"TCP":{"7004":{"TCPForward":"192.0.2.1:7"}}}"#).unwrap();
-        let refused = unreachable.check_takeover(7004).await.unwrap_err();
+        let refused = Tailscaled::check_takeover(7004, unreachable.port(7004))
+            .await
+            .unwrap_err();
         assert!(
             format!("{refused:#}").contains("192.0.2.1:7"),
             "{refused:#}"
         );
-        status.check_takeover(7003).await.unwrap();
-        status.check_takeover(443).await.unwrap_err();
-        let empty: ServeStatus = serde_json::from_str("{}").unwrap();
-        assert_eq!(empty.port(7001), PortUse::Unserved);
+        check(7003).await.unwrap();
+        check(443).await.unwrap_err();
     }
 }

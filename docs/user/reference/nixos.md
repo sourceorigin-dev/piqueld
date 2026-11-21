@@ -88,9 +88,9 @@ services.piqueld.settings.server = {
 };
 ```
 
-Join the host to your tailnet separately. The module supplies the Tailscale CLI
-and orders piqueld after `tailscaled` for these modes; it does not enable or
-configure Tailscale itself. Ordering does not guarantee connectivity: if
+Join the host to your tailnet separately. The module orders piqueld after
+`tailscaled` for these modes, which piqueld reads through its socket; it does
+not enable or configure Tailscale itself. Ordering does not guarantee connectivity: if
 Tailscale is unavailable at startup, piqueld warns and requires a restart to
 activate remote listening. Ensure your firewall and tailnet policy permit the
 selected port on the Tailscale interface. All callers must authenticate. Configure
@@ -122,8 +122,7 @@ neither), `build.unavailable`, `ingress.enabled`, `ingress.public_addresses`,
 `ingress.acme.directory`,
 `ingress.acme.email`, `ingress.private.enabled`, `ingress.private.hostname`,
 `ingress.private.auth_key_file` (passed as a systemd credential, like the other
-`_file` settings), `ingress.private.dashboard_hostname` (which also puts the
-Tailscale CLI on the service's `PATH`), `ingress.tunnel.enabled`, `ingress.tunnel.credentials_file`
+`_file` settings), `ingress.private.dashboard_hostname`, `ingress.tunnel.enabled`, `ingress.tunnel.credentials_file`
 (also a systemd credential, required while the tunnel is enabled),
 `ingress.webhook_hostname`, `ingress.traffic`, `dns.providers`, all three `reconciliation`
 intervals/timeouts, the `retention` periods, both `build_history` limits,

@@ -499,7 +499,7 @@ The TCP addresses that serve the API and dashboard over plain HTTP, besides the 
 
 - `off`: none, so only the Unix socket serves the API.
 - `localhost`: IPv4 and IPv6 loopback, `127.0.0.1` and `::1`.
-- `tailscale`: the host's Tailscale addresses, read with `tailscale status` at startup. If Tailscale isn't running then, piqueld logs a warning and tries again only after a restart.
+- `tailscale`: the host's Tailscale addresses, read from its `tailscaled` at startup. If Tailscale isn't running then, piqueld logs a warning and tries again only after a restart.
 - `both`: loopback and Tailscale addresses.
 
 ### `server.port`
@@ -538,7 +538,7 @@ A Tailscale auth key for the node's first login. Without one, the daemon logs a 
 
 Type: boolean. Default: `false`.
 
-Join the tailnet as a node and serve the website on its `https_port`. The `tailscale` CLI must be on `PATH`, and so must `tailscaled` unless `socket` is set, since piqueld otherwise starts its own.
+Join the tailnet as a node and serve the website on its `https_port`. The `tailscale` CLI must be on `PATH`, since piqueld runs it to log the node in and change its Serve configuration. So must `tailscaled` unless `socket` is set, since piqueld otherwise starts its own.
 
 ### `tailscale.hostname`
 

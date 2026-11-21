@@ -1,10 +1,9 @@
 //! Identifies who a connection through the tailnet node came from, so the
 //! audit trail can name them and tokens can be bound to them.
-use super::Cli;
-use anyhow::{Context, Result};
+use super::COMMAND_TIMEOUT;
 use async_trait::async_trait;
+use piqueld_config::tailscale::LocalApi;
 use piqueld_core::tailnet::TailnetPeer;
-use serde::Deserialize;
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
@@ -46,16 +45,16 @@ pub trait TailnetLookup: Send + Sync {
     ) -> Result<Option<TailnetPeer>, LookupTimedOut>;
 }
 
-/// [`TailnetLookup`] through the node's `tailscaled`, with `tailscale whois`.
+/// [`TailnetLookup`] through the node's `tailscaled`, asking its `LocalAPI`.
 ///
 /// Identities are cached per address for [`CACHE_FOR`] to describe audited
 /// requests; failed lookups are not cached. Each address is looked up by one
-/// `tailscale` process at a time, and requests that waited for it reuse its
+/// request at a time, and requests that waited for it reuse its
 /// answer, fresh ones too when it started after they asked. A current cached
 /// answer never waits for a lookup, and lookups of different addresses never
 /// wait for each other.
 pub struct Whois {
-    cli: Cli,
+    api: LocalApi,
     peers: parking_lot::Mutex<HashMap<IpAddr, Arc<Slot>>>,
 }
 
@@ -89,54 +88,13 @@ impl Slot {
     }
 }
 
-/// The fields piqueld reads from `tailscale whois --json`.
-#[derive(Deserialize)]
-struct Response {
-    #[serde(rename = "Node")]
-    node: Node,
-    #[serde(rename = "UserProfile")]
-    user: Option<User>,
-}
-
-#[derive(Deserialize)]
-struct Node {
-    /// Fully qualified name, e.g. `laptop.tail1234.ts.net.`.
-    #[serde(rename = "Name")]
-    name: String,
-    /// Absent or null for untagged nodes.
-    #[serde(rename = "Tags", default)]
-    tags: Option<Vec<String>>,
-}
-
-#[derive(Deserialize)]
-struct User {
-    #[serde(rename = "LoginName")]
-    login: String,
-}
-
-impl Response {
-    /// Tagged nodes belong to no user, whatever profile `tailscaled` reports.
-    fn into_peer(self) -> TailnetPeer {
-        let node = self
-            .node
-            .name
-            .split('.')
-            .next()
-            .unwrap_or_default()
-            .to_owned();
-        let tags = self.node.tags.unwrap_or_default();
-        let login = self.user.filter(|_| tags.is_empty()).map(|user| user.login);
-        TailnetPeer { login, node, tags }
-    }
-}
-
 impl Whois {
     /// Looks peers up through the `tailscaled` listening on `socket`, such as
     /// the apps node's.
     #[must_use]
     pub fn at(socket: std::path::PathBuf) -> Self {
         Self {
-            cli: Cli { socket },
+            api: LocalApi::new(socket, COMMAND_TIMEOUT),
             peers: parking_lot::Mutex::default(),
         }
     }
@@ -149,15 +107,6 @@ impl Whois {
             peers.clear();
         }
         Arc::clone(peers.entry(address).or_default())
-    }
-
-    /// Asks `tailscaled` who `address` is.
-    async fn query(&self, address: IpAddr) -> Result<TailnetPeer> {
-        let address = address.to_string();
-        let output = self.cli.run(&["whois", "--json", &address]).await?;
-        let response: Response =
-            serde_json::from_slice(&output).context("invalid tailscale whois output")?;
-        Ok(response.into_peer())
     }
 }
 
@@ -182,7 +131,7 @@ impl TailnetLookup for Whois {
             return Ok(Some(peer));
         }
         let started = Instant::now();
-        match tokio::time::timeout(LOOKUP_TIMEOUT, self.query(address)).await {
+        match tokio::time::timeout(LOOKUP_TIMEOUT, self.api.whois(address)).await {
             Ok(Ok(peer)) => {
                 *slot.answer.lock() = Some(Answer {
                     asked: started,
@@ -195,7 +144,7 @@ impl TailnetLookup for Whois {
                 Ok(None)
             }
             Err(_) => {
-                tracing::warn!(%address, "tailscale whois timed out");
+                tracing::warn!(%address, "tailnet peer lookup timed out");
                 Err(LookupTimedOut)
             }
         }
@@ -229,20 +178,36 @@ mod tests {
         assert_eq!(found.unwrap(), Some(cached));
     }
 
-    #[test]
-    fn whois_reads_users_and_treats_tagged_nodes_as_userless() {
-        let read = |json: &str| serde_json::from_str::<Response>(json).unwrap().into_peer();
-        let laptop = read(
-            r#"{"Node":{"Name":"laptop.tail1234.ts.net.","Tags":null},
-            "UserProfile":{"LoginName":"alice@example.com"}}"#,
-        );
-        assert_eq!(laptop.login.as_deref(), Some("alice@example.com"));
-        assert_eq!(laptop.node, "laptop");
-        let runner = read(
-            r#"{"Node":{"Name":"runner.tail1234.ts.net.","Tags":["tag:ci"]},
-            "UserProfile":{"LoginName":"tagged-devices"}}"#,
-        );
-        assert_eq!(runner.login, None);
-        assert_eq!(runner.tags, ["tag:ci"]);
+    /// A known peer is identified and an unknown one isn't, through the
+    /// `LocalAPI` alone: no `tailscale` process is started.
+    #[tokio::test]
+    async fn peers_are_identified_through_the_local_api() {
+        let fake = piqueld_config::tailscale::FakeLocalApi::serve(&[
+            (
+                "/localapi/v0/whois?addr=100.64.0.1",
+                200,
+                r#"{"Node":{"Name":"laptop.tail1234.ts.net.","Tags":null},
+                "UserProfile":{"LoginName":"alice@example.com"}}"#,
+            ),
+            (
+                "/localapi/v0/whois?addr=100.64.0.9",
+                404,
+                "no match for IP:port\n",
+            ),
+        ])
+        .unwrap();
+        let whois = Whois::at(fake.socket().to_owned());
+        let known = whois
+            .whois(SocketAddr::from(([100, 64, 0, 1], 40_000)), true)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(known.login.as_deref(), Some("alice@example.com"));
+        assert_eq!(known.node, "laptop");
+        let unknown = whois
+            .whois(SocketAddr::from(([100, 64, 0, 9], 40_000)), true)
+            .await
+            .unwrap();
+        assert_eq!(unknown, None);
     }
 }

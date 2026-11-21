@@ -6,10 +6,11 @@
 //! it shares one that is already logged in, which several daemons can serve
 //! from, each on its own port.
 
-use super::{Cli, PortUse, ProxyListener};
+use super::{ProxyListener, Tailscaled};
 use anyhow::{Context, Result, bail, ensure};
 use axum::serve::{ListenerExt, TapIo};
 use piqueld_config::DaemonConfig;
+use piqueld_config::tailscale::PortUse;
 use piqueld_core::api::TailnetStatus;
 use std::{
     net::{Ipv4Addr, SocketAddr},
@@ -73,28 +74,23 @@ impl Node {
         if !config.tailscale.enabled {
             return Ok(None);
         }
-        let (daemon, cli) = match &config.tailscale.socket {
-            Some(socket) => (
-                Daemon::Shared,
-                Cli {
-                    socket: socket.clone(),
-                },
-            ),
+        let (daemon, tailscaled) = match &config.tailscale.socket {
+            Some(socket) => (Daemon::Shared, Tailscaled::at(socket.clone())),
             None => Self::start(config).await?,
         };
 
-        let status = cli.status().await?;
+        let status = tailscaled.api.status().await?;
         ensure!(
             status.running(),
             "the tailscaled at {} is {}; log it in first",
-            cli.socket.display(),
+            tailscaled.api.socket().display(),
             status.backend_state
         );
         let dns_name = status
             .dns_name()
             .context("logged-in tailnet node reported no DNS name")?;
         // Issue the certificate now, so the first visitor does not wait for it.
-        let expires_at_ms = cli.certificate_expiry_ms(&dns_name).await?;
+        let expires_at_ms = tailscaled.certificate_expiry_ms(&dns_name).await?;
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .context("failed to bind the tailnet forwarding listener")?;
@@ -102,21 +98,22 @@ impl Node {
         let https_port = config.tailscale.https_port.get();
         // A dedicated node's entries are its own leftovers, overwritten below.
         if matches!(daemon, Daemon::Shared) {
-            cli.serve_status().await?.check_takeover(https_port).await?;
+            Tailscaled::check_takeover(https_port, tailscaled.serving(https_port).await?).await?;
         }
-        cli.run(&[
-            "serve",
-            "--bg",
-            &format!("--tls-terminated-tcp={https_port}"),
-            "--proxy-protocol=2",
-            &format!("tcp://{address}"),
-        ])
-        .await
-        .context("failed to forward the tailnet node's HTTPS port")?;
+        tailscaled
+            .run(&[
+                "serve",
+                "--bg",
+                &format!("--tls-terminated-tcp={https_port}"),
+                "--proxy-protocol=2",
+                &format!("tcp://{address}"),
+            ])
+            .await
+            .context("failed to forward the tailnet node's HTTPS port")?;
         // `serve` overwrites silently, so another daemon starting at the same
         // time may have replaced the forward since the check.
         ensure!(
-            cli.serve_status().await?.port(https_port) == PortUse::Forwarded(address),
+            tailscaled.serving(https_port).await? == PortUse::Forwarded(address),
             "another process took tailnet HTTPS port {https_port} over while piqueld started; stop it or set another tailscale.https_port"
         );
 
@@ -151,7 +148,7 @@ impl Node {
                     public_url_matches,
                     piqueld_store::now_ms(),
                 )),
-                cli,
+                tailscaled,
                 dns_name,
                 url,
                 https_port,
@@ -165,15 +162,13 @@ impl Node {
 
     /// Starts a dedicated tailscaled with state in the data directory and
     /// logs it in.
-    async fn start(config: &DaemonConfig) -> Result<(Daemon, Cli)> {
+    async fn start(config: &DaemonConfig) -> Result<(Daemon, Tailscaled)> {
         let dir = config.server.tailscale_dir();
         piqueld_config::directories::prepare_data_dir(&dir)
             .await
             .with_context(|| format!("failed to prepare tailnet state {}", dir.display()))?;
-        let cli = Cli {
-            socket: dir.join("tailscaled.sock"),
-        };
-        let mut daemon = Self::spawn(&dir, &cli.socket).await?;
+        let tailscaled = Tailscaled::at(dir.join("tailscaled.sock"));
+        let mut daemon = Self::spawn(&dir, tailscaled.api.socket()).await?;
 
         let hostname = format!("--hostname={}", config.tailscale.hostname);
         let auth_key = config
@@ -187,9 +182,9 @@ impl Node {
         up.extend(auth_key.as_deref());
         tokio::select! {
             exit = daemon.wait() => bail!("tailscaled exited during login: {}", exit?),
-            result = cli.run(&up) => result.context("failed to log the tailnet node in")?,
+            result = tailscaled.run(&up) => result.context("failed to log the tailnet node in")?,
         };
-        Ok((Daemon::Owned(daemon), cli))
+        Ok((Daemon::Owned(daemon), tailscaled))
     }
 
     /// Starts tailscaled with private state and waits for its socket. Its logs
@@ -245,7 +240,9 @@ impl Node {
     /// Identifies peers connecting through this node.
     #[must_use]
     pub fn whois(&self) -> std::sync::Arc<super::Whois> {
-        std::sync::Arc::new(super::Whois::at(self.monitor.cli.socket.clone()))
+        std::sync::Arc::new(super::Whois::at(
+            self.monitor.tailscaled.api.socket().to_owned(),
+        ))
     }
 
     /// The node's `MagicDNS` name, without the trailing dot.
@@ -282,7 +279,7 @@ impl Node {
 
 /// Supervises tailscaled and keeps the reported status current.
 struct Monitor {
-    cli: Cli,
+    tailscaled: Tailscaled,
     dns_name: String,
     url: String,
     https_port: u16,
@@ -318,7 +315,7 @@ impl Monitor {
     /// another daemon has taken over since is left alone.
     async fn remove_port(&self) {
         let result = async {
-            let serving = self.cli.serve_status().await?.port(self.https_port);
+            let serving = self.tailscaled.serving(self.https_port).await?;
             if serving != PortUse::Forwarded(self.address) {
                 tracing::info!(
                     port = self.https_port,
@@ -327,7 +324,10 @@ impl Monitor {
                 return Ok(());
             }
             let port = format!("--tls-terminated-tcp={}", self.https_port);
-            self.cli.run(&["serve", &port, "off"]).await.map(drop)
+            self.tailscaled
+                .run(&["serve", &port, "off"])
+                .await
+                .map(drop)
         }
         .await;
         if let Err(error) = result {
@@ -335,7 +335,7 @@ impl Monitor {
         }
     }
 
-    /// Keep supervision active even while a refresh waits for the CLI.
+    /// Keep supervision active even while a refresh waits for tailscaled.
     async fn supervise(
         mut daemon: Child,
         cancellation: CancellationToken,
@@ -368,14 +368,14 @@ impl Monitor {
     }
 
     async fn refresh(&mut self) {
-        let state = match self.cli.status().await {
+        let state = match self.tailscaled.api.status().await {
             Ok(status) => status.backend_state,
             Err(error) => {
                 tracing::warn!(error = %format!("{error:#}"), "tailnet status refresh failed");
                 "Unknown".into()
             }
         };
-        let certificate_error = match self.cli.certificate_expiry_ms(&self.dns_name).await {
+        let certificate_error = match self.tailscaled.certificate_expiry_ms(&self.dns_name).await {
             Ok(expires_at_ms) => {
                 self.expires_at_ms = expires_at_ms;
                 false

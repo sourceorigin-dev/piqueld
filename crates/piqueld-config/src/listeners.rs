@@ -1,13 +1,16 @@
 //! Startup-only TCP listener selection and Tailscale discovery.
 
 use super::{ListenMode, ServerConfig};
+use crate::tailscale::{HOST_SOCKET, LocalApi, Status};
 use anyhow::{Context, Result, ensure};
-use serde::Deserialize;
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
-use tokio::{net::TcpListener, process::Command};
+use tokio::net::TcpListener;
+
+/// Bounds discovery, so a stuck `tailscaled` can't hold startup up.
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl ServerConfig {
     /// Binds every configured TCP address before the daemon starts serving.
@@ -17,9 +20,8 @@ impl ServerConfig {
     /// Any bind failure aborts startup and releases listeners already bound.
     pub async fn bind_tcp(&self) -> Result<Vec<TcpListener>> {
         let tailscale = if matches!(self.listen_mode, ListenMode::Tailscale | ListenMode::Both) {
-            let mut command = Command::new("tailscale");
-            command.args(["status", "--json", "--peers=false"]);
-            match TailscaleStatus::discover(command).await {
+            let api = LocalApi::new(HOST_SOCKET.into(), DISCOVERY_TIMEOUT);
+            match Status::discover(&api).await {
                 Ok(addresses) => addresses,
                 Err(error) => {
                     tracing::warn!(error = %format!("{error:#}"),
@@ -66,57 +68,29 @@ impl ServerConfig {
     }
 }
 
-/// The subset of `tailscale status --json` needed to find local addresses.
-#[derive(Deserialize)]
-struct TailscaleStatus {
-    #[serde(rename = "BackendState")]
-    backend_state: String,
-    #[serde(rename = "TailscaleIPs", default)]
-    addresses: Vec<IpAddr>,
-}
-
-impl TailscaleStatus {
-    /// Runs the status command with a five-second timeout and parses its output.
-    /// Takes the command as a parameter so tests can substitute a fixture.
-    async fn discover(mut command: Command) -> Result<Vec<IpAddr>> {
-        let output =
-            tokio::time::timeout(Duration::from_secs(5), command.kill_on_drop(true).output())
-                .await
-                .context("Tailscale discovery timed out after 5 seconds")?
-                .context("failed to run tailscale status")?;
-        ensure!(
-            output.status.success(),
-            "tailscale status failed ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-        Self::parse(&output.stdout)
+impl Status {
+    /// Reads the host's Tailscale addresses from its `tailscaled`.
+    async fn discover(api: &LocalApi) -> Result<Vec<IpAddr>> {
+        api.status()
+            .await
+            .context("failed to read the host's Tailscale status")?
+            .listen_addresses()
     }
 
     /// Extracts sorted, deduplicated addresses, requiring a `Running` backend and a
     /// non-empty list in which every address is concrete (not unspecified,
     /// loopback, or multicast).
-    fn parse(output: &[u8]) -> Result<Vec<IpAddr>> {
-        let status: Self =
-            serde_json::from_slice(output).context("invalid tailscale status JSON")?;
-        ensure!(
-            status.backend_state == "Running",
-            "Tailscale is {}",
-            status.backend_state
-        );
-        ensure!(
-            !status.addresses.is_empty(),
-            "Tailscale has no assigned addresses"
-        );
+    fn listen_addresses(&self) -> Result<Vec<IpAddr>> {
+        ensure!(self.running(), "Tailscale is {}", self.backend_state);
+        let mut addresses: Vec<IpAddr> = self.addresses().collect();
+        ensure!(!addresses.is_empty(), "Tailscale has no assigned addresses");
         // Never turn malformed discovery output into a wildcard listener.
         ensure!(
-            status
-                .addresses
+            addresses
                 .iter()
                 .all(|ip| !ip.is_unspecified() && !ip.is_loopback() && !ip.is_multicast()),
             "Tailscale reported an invalid interface address"
         );
-        let mut addresses = status.addresses;
         addresses.sort_unstable();
         addresses.dedup();
         Ok(addresses)
@@ -126,6 +100,7 @@ impl TailscaleStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tailscale::FakeLocalApi;
 
     #[test]
     fn modes_select_only_the_requested_interfaces() {
@@ -166,61 +141,74 @@ mod tests {
         }
     }
 
+    /// The host's status, as `tailscaled` 1.104 reports it with these
+    /// addresses, trimmed.
+    fn status(state: &str, addresses: &str) -> String {
+        format!(
+            r#"{{"BackendState":"{state}","TailscaleIPs":{addresses},
+            "Self":{{"DNSName":"host.tail1234.ts.net.","TailscaleIPs":{addresses}}}}}"#
+        )
+    }
+
     #[test]
     fn discovery_requires_running_state_and_valid_addresses() {
-        let valid = br#"{"BackendState":"Running","TailscaleIPs":["100.100.1.2","fd7a:115c:a1e0::2","100.100.1.2"]}"#;
-        assert_eq!(TailscaleStatus::parse(valid).unwrap().len(), 2);
+        let parse = |json: &str| {
+            serde_json::from_str::<Status>(json)
+                .map_err(anyhow::Error::from)
+                .and_then(|status| status.listen_addresses())
+        };
+        let valid = status(
+            "Running",
+            r#"["100.100.1.2","fd7a:115c:a1e0::2","100.100.1.2"]"#,
+        );
+        assert_eq!(parse(&valid).unwrap().len(), 2);
         for output in [
-            r#"{"BackendState":"Stopped","TailscaleIPs":["100.100.1.2"]}"#,
-            r#"{"BackendState":"NeedsLogin"}"#,
-            r#"{"BackendState":"Running","TailscaleIPs":[]}"#,
-            r#"{"BackendState":"Running","TailscaleIPs":["0.0.0.0"]}"#,
-            r#"{"BackendState":"Running","TailscaleIPs":["::"]}"#,
-            r#"{"BackendState":"Running","TailscaleIPs":["bad"]}"#,
-            "not JSON",
+            status("Stopped", r#"["100.100.1.2"]"#),
+            r#"{"BackendState":"NeedsLogin","Self":null}"#.to_owned(),
+            status("NeedsLogin", "null"),
+            status("Running", "[]"),
+            status("Running", r#"["0.0.0.0"]"#),
+            status("Running", r#"["::"]"#),
+            status("Running", r#"["bad"]"#),
+            "not JSON".to_owned(),
         ] {
-            assert!(
-                TailscaleStatus::parse(output.as_bytes()).is_err(),
-                "accepted {output}"
-            );
+            assert!(parse(&output).is_err(), "accepted {output}");
         }
     }
 
+    /// Discovery reads `tailscaled`'s status, and reports a stopped
+    /// `tailscaled` or a missing socket.
     #[tokio::test]
-    async fn discovery_reads_cli_output_and_reports_failures() {
-        let mut command = Command::new("sh");
-        command.args(["-c", r#"printf '%s' '{"BackendState":"Running","TailscaleIPs":["100.100.1.2","fd7a:115c:a1e0::2"]}'"#]);
-        let addresses = TailscaleStatus::discover(command).await.unwrap();
+    async fn discovery_reads_the_local_api_and_reports_failures() {
+        let running = status("Running", r#"["100.100.1.2","fd7a:115c:a1e0::2"]"#);
+        let fake =
+            FakeLocalApi::serve(&[("/localapi/v0/status?peers=false", 200, &running)]).unwrap();
         assert_eq!(
-            addresses,
+            Status::discover(&fake.api()).await.unwrap(),
             vec![
                 "100.100.1.2".parse::<IpAddr>().unwrap(),
                 "fd7a:115c:a1e0::2".parse().unwrap()
             ]
         );
-        assert!(
-            TailscaleStatus::discover(Command::new("/nonexistent/piqueld-tailscale"))
-                .await
-                .unwrap_err()
-                .to_string()
-                .contains("failed to run")
-        );
-        let mut command = Command::new("sh");
-        command.args(["-c", "echo unavailable >&2; exit 1"]);
-        let error = TailscaleStatus::discover(command)
-            .await
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("unavailable"));
-        assert!(error.contains("exit status"));
+        let stopped = status("Stopped", "[]");
+        let fake =
+            FakeLocalApi::serve(&[("/localapi/v0/status?peers=false", 200, &stopped)]).unwrap();
+        let error = Status::discover(&fake.api()).await.unwrap_err();
+        assert_eq!(error.to_string(), "Tailscale is Stopped");
+        let api = LocalApi::new("/nonexistent/tailscaled.sock".into(), DISCOVERY_TIMEOUT);
+        let error = format!("{:#}", Status::discover(&api).await.unwrap_err());
+        assert!(error.contains("/nonexistent/tailscaled.sock"), "{error}");
     }
 
+    /// A `tailscaled` that accepts but never answers is given up on.
     #[tokio::test(start_paused = true)]
-    async fn discovery_timeout_stops_waiting_for_the_command() {
-        let mut command = Command::new("sh");
-        command.args(["-c", "exec sleep 60"]);
-        let error = TailscaleStatus::discover(command).await.unwrap_err();
-        assert!(error.to_string().contains("timed out"));
+    async fn discovery_timeout_stops_waiting_for_tailscaled() {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("tailscaled.sock");
+        let _stuck = tokio::net::UnixListener::bind(&socket).unwrap();
+        let api = LocalApi::new(socket, DISCOVERY_TIMEOUT);
+        let error = format!("{:#}", Status::discover(&api).await.unwrap_err());
+        assert!(error.contains("timed out after 5s"), "{error}");
     }
 
     #[tokio::test]

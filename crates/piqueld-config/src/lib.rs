@@ -1,6 +1,7 @@
 //! Read-only host configuration for the piqueld daemon: its configuration
-//! file, the DNS provider accounts it names, and the private state and
-//! runtime directories it prepares.
+//! file, the DNS provider accounts it names, the private state and runtime
+//! directories it prepares, and the clients of the local APIs it reads
+//! through socket files, such as `tailscaled`'s.
 
 mod build;
 mod credential;
@@ -8,8 +9,10 @@ pub mod directories;
 pub mod dns;
 mod listeners;
 pub mod runtime_dir;
+pub mod tailscale;
 mod telemetry;
 mod tunnel;
+pub mod unix_http;
 mod view;
 pub use build::BuildConfig;
 use credential::Resolution;
@@ -348,7 +351,8 @@ pub struct InvalidOrigin(pub &'static str);
 #[serde(default, deny_unknown_fields)]
 pub struct TailscaleConfig {
     /// Join the tailnet as a node and serve the website on its `https_port`.
-    /// The `tailscale` CLI must be on `PATH`, and so must `tailscaled`
+    /// The `tailscale` CLI must be on `PATH`, since piqueld runs it to log
+    /// the node in and change its Serve configuration. So must `tailscaled`
     /// unless `socket` is set, since piqueld otherwise starts its own.
     pub enabled: bool,
     /// The node's name, a single DNS label, which becomes
@@ -733,8 +737,8 @@ pub struct ServerConfig {
     ///
     /// - `off`: none, so only the Unix socket serves the API.
     /// - `localhost`: IPv4 and IPv6 loopback, `127.0.0.1` and `::1`.
-    /// - `tailscale`: the host's Tailscale addresses, read with
-    ///   `tailscale status` at startup. If Tailscale isn't running then,
+    /// - `tailscale`: the host's Tailscale addresses, read from its
+    ///   `tailscaled` at startup. If Tailscale isn't running then,
     ///   piqueld logs a warning and tries again only after a restart.
     /// - `both`: loopback and Tailscale addresses.
     pub listen_mode: ListenMode,

@@ -39,8 +39,8 @@ use std::{
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 pub use traffic::Traffic;
+use wire::CaddyApi;
 pub use wire::ResponseError;
-use wire::UnixApi;
 
 /// Version released with piqueld; upgrades deliberately replace the gateway.
 pub const CADDY_IMAGE: &str =
@@ -113,7 +113,7 @@ pub struct Ingress {
     /// Their changes, which only a journal action makes.
     changes: wire::DockerChanges,
     /// Caddy's private admin API socket inside the control mount.
-    caddy: UnixApi,
+    caddy: CaddyApi,
     store: Arc<Store>,
     /// Gateway writer lock serializing configuration and lifecycle changes.
     update: Mutex<()>,
@@ -190,7 +190,7 @@ impl Ingress {
             enabled,
             instance_id: store.instance_id().to_string(),
             name: format!("piqueld-ingress-{}", &suffix[..16]),
-            caddy: UnixApi::new(directory.join("control/admin.sock"), request_timeout),
+            caddy: CaddyApi::new(directory.join("control/admin.sock"), request_timeout),
             directory,
             docker: piqueld_docker::Infrastructure::connect(socket)
                 .context("Docker socket is not UTF-8")?,

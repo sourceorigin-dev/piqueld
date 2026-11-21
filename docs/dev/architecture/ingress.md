@@ -300,11 +300,10 @@ daemon's user, which the gateway runs as: the two below, and
   to it, setting `X-Forwarded-For` to the tailnet client. The daemon's gateway
   router trusts that header on this socket only, for login throttling and the
   audit trail; a request without exactly one valid IP gets 403
-  `untrusted_client`. The daemon identifies each client with `tailscale whois`
-  through the apps node's socket, `<data_dir>/ingress/tailscale/run/tailscaled.sock`,
-  so the `tailscale` CLI must be on its `PATH`. The NixOS module adds it when
-  `dashboard_hostname` is set. The hostname is served only while the private
-  listener is.
+  `untrusted_client`. The daemon identifies each client by asking the apps
+  node's `LocalAPI` (`/localapi/v0/whois`) through its socket,
+  `<data_dir>/ingress/tailscale/run/tailscaled.sock`, so it needs no
+  `tailscale` CLI. The hostname is served only while the private listener is.
 
 The webhook endpoint verifies `X-Hub-Signature-256` (`sha256=<64 hex digits>`,
 HMAC-SHA256 of the body) against the application's secret with OpenSSL's

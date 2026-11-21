@@ -30,7 +30,6 @@ let
     && lib.all (part: part != "" && part != "." && part != "..") (
       lib.splitString "/" (lib.removePrefix parent dir)
     );
-  privateIngress = cfg.settings.ingress.private;
   tunnel = cfg.settings.ingress.tunnel;
   # `_file` settings name host files. systemd copies each into the unit's
   # private $CREDENTIALS_DIRECTORY, so the files may stay root-only, and the
@@ -500,11 +499,10 @@ in
         pkgs.openssh
         pkgs.docker-client
       ]
-      # The tailnet node runs its own tailscaled, unless shared, and drives it
-      # with the CLI, which also identifies the apps node's dashboard clients.
-      ++ lib.optional (
-        usesTailscale || cfg.settings.tailscale.enabled || privateIngress.dashboard_hostname != null
-      ) config.services.tailscale.package;
+      # The tailnet node runs its own tailscaled, unless shared, and the CLI
+      # logs it in and changes its Serve configuration. piqueld reads every
+      # tailscaled's state, and identifies tailnet clients, through its socket.
+      ++ lib.optional cfg.settings.tailscale.enabled config.services.tailscale.package;
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/piqueld --config ${configuration}";
         LoadCredential =
