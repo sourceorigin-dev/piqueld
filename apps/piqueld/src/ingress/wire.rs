@@ -157,6 +157,9 @@ pub(super) struct UnixApi {
     timeout: Duration,
     /// `Host` header of every request.
     host: &'static str,
+    /// Prefixed to every path but `/version`, such as `/v1.48` to pin Docker's
+    /// API version.
+    prefix: &'static str,
 }
 
 impl UnixApi {
@@ -167,7 +170,17 @@ impl UnixApi {
             socket,
             timeout,
             host: "localhost",
+            prefix: "",
         }
+    }
+
+    /// Pins Docker's API `version`, such as `1.48`, so a newer engine keeps
+    /// answering in the shapes piqueld reads. `/version` stays unversioned,
+    /// so an engine too old for it still reports its version instead of
+    /// rejecting the request.
+    pub(super) fn with_docker_api(mut self, version: &'static str) -> Self {
+        self.prefix = version;
+        self
     }
 
     /// Sends `host` instead of `localhost`, as Tailscale's `LocalAPI` requires
@@ -202,7 +215,7 @@ impl UnixApi {
                 .unwrap_or_default();
             let request = Request::builder()
                 .method(method)
-                .uri(path)
+                .uri(self.path(path))
                 .header("Host", self.host)
                 .header("Content-Type", "application/json")
                 .header("Connection", "close")
@@ -218,6 +231,15 @@ impl UnixApi {
         })
         .await
         .context("ingress HTTP request timed out")?
+    }
+
+    /// `path` with the pinned API version, if any.
+    fn path(&self, path: &str) -> String {
+        if self.prefix.is_empty() || path == "/version" {
+            path.to_owned()
+        } else {
+            format!("/v{}{path}", self.prefix)
+        }
     }
 
     /// Requires a successful HTTP status and returns the response's bytes.
@@ -289,6 +311,19 @@ impl UnixApi {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn a_pinned_docker_api_versions_every_path_but_version() {
+        let docker =
+            UnixApi::new("docker.sock".into(), Duration::from_secs(1)).with_docker_api("1.48");
+        assert_eq!(
+            docker.path("/containers/x/json?all=1"),
+            "/v1.48/containers/x/json?all=1"
+        );
+        assert_eq!(docker.path("/version"), "/version");
+        let caddy = UnixApi::new("admin.sock".into(), Duration::from_secs(1));
+        assert_eq!(caddy.path("/load"), "/load");
+    }
 
     #[tokio::test]
     async fn supplied_budget_covers_a_stalled_response_body() {

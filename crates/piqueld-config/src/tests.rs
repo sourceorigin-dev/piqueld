@@ -30,6 +30,8 @@ fn host_paths_and_listener_settings_are_validated() {
         "[server]\nruntime_dir = 'relative/run'",
         "[server]\nruntime_dir = '/'",
         "[server]\ndata_dir = '/run/piqueld'",
+        "[server]\ndata_dir = '/srv/x:/etc'",
+        "[server]\ndata_dir = '/srv/a,b'",
         "[docker]\nsocket = 'relative.sock'",
     ] {
         assert!(
