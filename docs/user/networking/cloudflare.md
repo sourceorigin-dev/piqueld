@@ -243,9 +243,9 @@ To serve public routes on ports 80 and 443 again:
   [trade-offs](#serve-public-routes-through-a-cloudflare-tunnel). Use
   Cloudflare's Advanced Certificate Manager, or keep tunnel hostnames one
   level below the zone.
-- **Switching to or from the tunnel doesn't happen.** If an application's
-  network is broken, piqueld keeps the gateway in its current mode until the
-  network is repaired or that application's routes are removed. Until then,
-  the gateway applies no route changes, so deployments of environments with
-  routes fail with `ingress_unavailable` and are retried. The daemon logs name
-  the application.
+- **An application lost its routes when switching to or from the tunnel.**
+  If an application's network is broken, the new gateway can't reach it, so
+  piqueld withdraws that application's routes and switches anyway. Ingress
+  health reports the application as degraded, its deployments fail with
+  `ingress_unavailable` and are retried, and the daemon logs name it. Repair
+  its network, for example by redeploying it, to restore its routes.

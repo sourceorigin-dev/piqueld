@@ -360,7 +360,10 @@ impl Ingress {
     /// withdrawals. Never attach an unverified network or acknowledge a new route
     /// for an app whose network failed validation. An app whose network
     /// overlaps the tailnet loses all its routes instead, so that network is
-    /// detached rather than retained.
+    /// detached rather than retained. So does every app with a failed network
+    /// while the gateway switches between direct and tunnel mode: the new
+    /// gateway could not attach its network, and the switch goes ahead for
+    /// the other apps.
     pub(super) async fn prepare_routes(
         &self,
         desired: &RoutingTable,
@@ -372,6 +375,8 @@ impl Ingress {
         let mut table = desired.clone();
         let mut networks = BTreeSet::new();
         let mut failures = BTreeMap::new();
+        // Read on the first failure that needs it.
+        let mut switching = None;
         for (id, routes) in &mut table {
             if !Self::proxies(routes) {
                 continue;
@@ -381,18 +386,25 @@ impl Ingress {
                 Ok(()) => {
                     networks.insert(name);
                 }
-                Err(error) if error.is::<TailnetOverlap>() => {
-                    tracing::error!(environment_id=%id, network=%name, error=?error,
-                        "withdrawing the application's routes; other applications can still update");
-                    routes.clear();
-                    failures.insert(id.clone(), format!("{error:#}"));
-                }
                 Err(error) => {
-                    tracing::error!(environment_id=%id, network=%name, error=?error,
-                        "preserving accepted destinations; other applications can still update");
-                    let mut accepted = self.store.applied_routes(id).await?;
-                    accepted.retain(|old| routes.iter().any(|new| new.same_listener(old)));
-                    *routes = accepted;
+                    let overlap = error.is::<TailnetOverlap>();
+                    if !overlap && switching.is_none() {
+                        // An unreadable gateway keeps the routes: `ensure_gateway`
+                        // reads it next, fails and reports why, and never
+                        // switches modes over a retained route.
+                        switching = Some(self.switches_mode().await.unwrap_or(false));
+                    }
+                    if overlap || switching == Some(true) {
+                        tracing::error!(environment_id=%id, network=%name, error=?error,
+                            "withdrawing the application's routes; other applications can still update");
+                        routes.clear();
+                    } else {
+                        tracing::error!(environment_id=%id, network=%name, error=?error,
+                            "preserving accepted destinations; other applications can still update");
+                        let mut accepted = self.store.applied_routes(id).await?;
+                        accepted.retain(|old| routes.iter().any(|new| new.same_listener(old)));
+                        *routes = accepted;
+                    }
                     failures.insert(id.clone(), format!("{error:#}"));
                 }
             }
@@ -736,7 +748,8 @@ impl Ingress {
             };
             // The old container cannot serve the other mode's listeners: it
             // would keep ports 80/443 open in tunnel mode, or lack them in
-            // direct mode.
+            // direct mode. `prepare_routes` withdraws such routes before a
+            // switch, so this only guards against a caller that did not.
             ensure!(
                 Self::publishes_ports(&container) == self.tunnel.is_none(),
                 "cannot switch between direct and tunnel ingress: retained routes for application {id} lack a verified network; repair it or withdraw its routes"
@@ -868,6 +881,16 @@ impl Ingress {
             )
             .await?;
         Ok(())
+    }
+
+    /// Whether the gateway, running or stopped, was built for the other mode
+    /// than this daemon's configuration, so replacing it switches between
+    /// direct and tunnel ingress.
+    async fn switches_mode(&self) -> Result<bool> {
+        Ok(self
+            .container()
+            .await?
+            .is_some_and(|container| Self::publishes_ports(&container) == self.tunnel.is_some()))
     }
 
     /// Whether an inspected gateway publishes host ports, as in direct mode.

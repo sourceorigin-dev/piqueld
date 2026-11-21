@@ -190,13 +190,13 @@ attachments and keeps applying other route changes meanwhile.
 
 Switching between direct and tunnel mode changes the spec, but is not deferred
 like an upgrade, since the old gateway can't serve the other mode's listeners.
-While an application's retained routes lack a verified network, the switch
-fails with `cannot switch between direct and tunnel ingress: retained routes
-for application <id> lack a verified network; repair it or withdraw its
-routes`, and the old gateway keeps serving in the old mode. Until then the
-gateway applies no route changes for any application: every deployment or
-deletion of an environment with routes fails at `Ingress::apply` with the
-retryable `ingress_unavailable`, and private routes report `pending`.
+The new gateway can't attach an unverified network either, so during a switch
+from a running or stopped gateway `prepare_routes` withdraws the routes of
+every application whose network failed, as for a tailnet overlap, and the switch goes ahead. That application
+shows in the degraded health and its `Ingress::apply` fails; the others keep
+deploying. `replace_gateway` still refuses a switch over a retained route
+lacking a verified network, which only a caller skipping `prepare_routes`
+could pass.
 
 Gateway requests don't hold the controller's global Docker mutation lock, so
 deployments without routes proceed while routing waits.
