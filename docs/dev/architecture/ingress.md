@@ -558,9 +558,12 @@ records go on `*.<parent>`.
   record and claim.
 - **Reconciliation.** Every 10 seconds, the loop refreshes stale zones and
   computes the desired records from the applied routes, the mode and the
-  node's addresses, without reading any. When they change, 5 minutes after a
-  complete pass, or 1 minute after an incomplete one, a pass reads each
-  managed hostname's records and repairs drift, one hostname at a time.
+  node's addresses, without reading any. A hostname whose desired records
+  changed is reconciled at once, and every hostname every 5 minutes, which
+  reads its records and repairs drift, one hostname at a time. A hostname
+  that failed is retried on its own after 1 minute, doubling up to 1 hour
+  (kept in memory, so a restart retries at once); just before its records
+  change, only that hostname is planned again.
   Same-type changes are updated in place; leftovers are deleted, then missing
   records created, so a CNAME replacing addresses, or the reverse, is written
   after the old records are gone. A failed provider call leaves the hostname

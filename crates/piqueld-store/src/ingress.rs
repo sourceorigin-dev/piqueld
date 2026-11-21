@@ -12,6 +12,18 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 /// Routes the gateway serves, keyed by owning environment in a stable order.
 pub type RoutingTable = BTreeMap<EnvironmentId, Vec<ValidatedRoute>>;
 
+/// What the routing tables say about one route hostname, which its DNS
+/// records follow.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct HostnameRoutes {
+    /// The visibility of the route the gateway last acknowledged for it.
+    pub applied: Option<piqueld_core::manifest::Visibility>,
+    /// Whether a route in the [`Store::routing_table`] names it.
+    pub desired: bool,
+    /// Whether piqueld manages its DNS records ([`Store::dns_records`]).
+    pub tracked: bool,
+}
+
 /// A DNS-01 challenge TXT record piqueld creates, saved before it exists and
 /// kept until it is deleted.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -458,6 +470,55 @@ impl Store {
             ))
         })
         .collect()
+    }
+
+    /// What the routing tables say about `hostname`, read without loading
+    /// every route: the same as [`Self::applied_table`],
+    /// [`Self::routing_table`] and [`Self::dns_records`] say of it.
+    ///
+    /// # Errors
+    /// Returns a storage error.
+    pub async fn hostname_routes(
+        &self,
+        hostname: &RouteHostname,
+    ) -> Result<HostnameRoutes, StoreError> {
+        let name = hostname.as_str();
+        let applied = sqlx::query_scalar!(
+            r#"SELECT json(r.value) AS "route!: String" FROM environment_routes e JOIN json_each(e.applied_json) r WHERE json_extract(r.value,'$.hostname')=?1 ORDER BY e.environment_id LIMIT 1"#,
+            name
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(StoreError::database)?
+        .map(|route| serde_json::from_str::<ValidatedRoute>(&route))
+        .transpose()
+        .map_err(StoreError::corrupt)?;
+        let desired = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "count!: i64" FROM environment_routes e JOIN json_each(e.desired_json) r WHERE json_extract(r.value,'$.hostname')=?1"#,
+            name
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(StoreError::database)?;
+        let tracked = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM dns_records WHERE hostname=?1) AS "tracked!: bool""#,
+            name
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(StoreError::database)?;
+        // The routing table leaves out routes the installation's own
+        // hostnames cover.
+        let desired = desired > 0
+            && !Self::installation_hostnames(&self.pool)
+                .await?
+                .iter()
+                .any(|domain| hostname.is_within(domain));
+        Ok(HostnameRoutes {
+            applied: applied.map(|route| route.visibility),
+            desired,
+            tracked,
+        })
     }
 
     /// Hostnames whose DNS records piqueld manages, including those of
@@ -940,6 +1001,45 @@ mod tests {
 
         accept(Mutation::deploy(id.clone())).await;
         assert_eq!(&store.served_table().await.unwrap()[&id], routes);
+    }
+
+    /// One hostname's routes read alone agree with the full tables.
+    #[tokio::test]
+    async fn one_hostnames_routes_match_the_tables() {
+        let (_directory, store) = Store::temporary().await;
+        let input = app("one", Some("site.example.com"));
+        let saved = save(&store, input.clone(), false).await.unwrap();
+        let id = store.saved_production(&saved).await;
+        let hostname = RouteHostname::parse("site.example.com").unwrap();
+        assert_eq!(
+            store.hostname_routes(&hostname).await.unwrap(),
+            HostnameRoutes::default()
+        );
+        let routes = &input.spec().routes;
+        store.stage_routes(&id, routes, true, None).await.unwrap();
+        let desired = HostnameRoutes {
+            desired: true,
+            ..HostnameRoutes::default()
+        };
+        assert_eq!(store.hostname_routes(&hostname).await.unwrap(), desired);
+        store
+            .acknowledge_routes(&store.routing_table().await.unwrap())
+            .await
+            .unwrap();
+        store.track_dns_records(&hostname, false).await.unwrap();
+        let applied = HostnameRoutes {
+            applied: Some(routes[0].visibility),
+            desired: true,
+            tracked: true,
+        };
+        assert_eq!(store.hostname_routes(&hostname).await.unwrap(), applied);
+        // The installation's own hostnames are never desired routes.
+        let installation = Hostname::parse("example.com").unwrap();
+        store
+            .reserve_installation_hostnames(std::slice::from_ref(&installation))
+            .await
+            .unwrap();
+        assert!(!store.hostname_routes(&hostname).await.unwrap().desired);
     }
 
     #[tokio::test]
