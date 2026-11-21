@@ -21,14 +21,14 @@ fn completion_retry_preserves_pending_terminal_result() {
 /// tail follows a note of what was dropped between them.
 #[test]
 fn kept_output_is_cut_on_characters() {
-    // 151 bytes of head, 64 for the note and 88 of tail.
+    // A 150-byte head leaves 153 bytes: 64 for the note and 89 of tail.
     let mut kept = Kept::new(303);
     let text = "€".repeat(60);
     assert_eq!(kept.head(text.as_bytes()).len(), 150);
     kept.keep(&text.as_bytes()[150..], LogStream::Stdout);
-    kept.keep("€".repeat(30).as_bytes(), LogStream::Stderr);
+    kept.keep(text.as_bytes(), LogStream::Stderr);
     assert_eq!(kept.head(b"x"), b"");
-    let note = "\npiqueld: … 33 bytes omitted …\n";
+    let note = "\npiqueld: … 123 bytes omitted …\n";
     assert_eq!(
         kept.ending(),
         LogEnding {
@@ -43,23 +43,33 @@ fn kept_output_is_cut_on_characters() {
     assert_eq!(kept.ending(), LogEnding::default());
 }
 
-/// A cap too small for the omission note keeps the end of the output
-/// without it, and still marks the log truncated.
+/// `text` through a log of `cap` bytes: what its head takes, then what it
+/// would end with.
+fn through(cap: usize, text: &str) -> (usize, LogEnding) {
+    let mut kept = Kept::new(cap);
+    let head = kept.head(text.as_bytes()).len();
+    kept.keep(&text.as_bytes()[head..], LogStream::Stdout);
+    (head, kept.ending())
+}
+
+/// Output that fits a small cap is kept whole. Past it, a cap too small for
+/// the omission note keeps the end of the output without it, and still
+/// marks the log truncated.
 #[test]
-fn a_small_cap_keeps_a_tail_without_the_note() {
-    // 64 bytes of head, 32 for the note and 32 of tail.
-    let mut kept = Kept::new(128);
-    let text = ["x".repeat(100), "y".repeat(100)].concat();
-    assert_eq!(kept.head(text.as_bytes()).len(), 64);
-    kept.keep(&text.as_bytes()[64..], LogStream::Stdout);
+fn a_small_cap_keeps_what_fits_and_a_tail_without_the_note() {
+    let ending = |output: &str, truncated| LogEnding {
+        output: vec![(LogStream::Stdout, output.as_bytes().to_vec())],
+        truncated,
+    };
     assert_eq!(
-        kept.ending(),
-        LogEnding {
-            output: vec![(LogStream::Stdout, "y".repeat(32).into_bytes())],
-            truncated: true,
-        }
+        through(128, &"x".repeat(100)),
+        (64, ending(&"x".repeat(36), false))
     );
-    assert_eq!(Kept::new(1).tail_max, 1);
+    // 64 bytes of head leave 64: 32 for the note, which is longer, and 32
+    // of tail.
+    let text = ["x".repeat(100), "y".repeat(100)].concat();
+    assert_eq!(through(128, &text), (64, ending(&"y".repeat(32), true)));
+    assert_eq!(through(1, "abcde"), (0, ending("e", true)));
 }
 
 /// A running build of a new application whose log keeps `cap` bytes.
@@ -158,6 +168,18 @@ async fn database(directory: &std::path::Path) -> sqlx::SqliteConnection {
     use sqlx::Connection as _;
     let url = format!("sqlite:{}", directory.join("db").display());
     sqlx::SqliteConnection::connect(&url).await.unwrap()
+}
+
+/// Output just under the cap is stored whole, and not marked truncated.
+#[tokio::test]
+async fn output_under_the_cap_is_kept_whole() {
+    let directory = tempfile::tempdir().unwrap();
+    let attempt = attempt(directory.path(), 70_000).await;
+    let log = attempt.log.clone();
+    let text = &lines()[..69_999];
+    append(&log, text.as_bytes()).await;
+    attempt.finish(BuildState::Succeeded, None).await.unwrap();
+    assert_eq!(stored(&log).await, (text.to_owned(), false));
 }
 
 /// A finish that fails writes nothing and keeps the end of the output, so

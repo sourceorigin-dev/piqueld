@@ -10,10 +10,11 @@ use std::{collections::VecDeque, sync::Arc};
 /// A bounded persistent output sink usable by any build executor.
 ///
 /// Output fills the first half of the build's byte cap as it arrives. Past
-/// that, only the newest output is kept, in memory, until [`BuildLog::finish`]
-/// writes it after a note of how many bytes it omitted: a long log keeps its
-/// start and its failure, and stops taking the store's writer once its first
-/// half is full.
+/// that, the rest is kept in memory until [`BuildLog::finish`] writes it.
+/// Output that fits the cap is stored whole; of longer output only the newest
+/// is kept, written after a note of how many bytes were omitted: a long log
+/// keeps its start and its failure, and stops taking the store's writer once
+/// its first half is full.
 #[derive(Clone)]
 pub struct BuildLog {
     store: Arc<Store>,
@@ -79,14 +80,17 @@ impl BuildLog {
 
 /// What a [`BuildLog`] keeps of output that is not stored yet.
 struct Kept {
+    /// The build's byte cap.
+    cap: usize,
     /// Bytes still written as they arrive.
     head: usize,
+    /// Bytes written as they arrived.
+    written: usize,
     /// The newest output past the head, oldest first, merged per stream.
     tail: VecDeque<(LogStream, Vec<u8>)>,
     tail_bytes: usize,
-    /// The most bytes the tail keeps.
-    tail_max: usize,
-    /// The most bytes the omission note may take; it is left out when longer.
+    /// The bytes of the cap the omission note takes from the tail once output
+    /// is omitted; the note is left out when longer.
     note_max: usize,
     /// Bytes dropped between the head and the tail.
     omitted: usize,
@@ -101,19 +105,19 @@ impl Kept {
     /// count of omitted bytes.
     const NOTE_BYTES: usize = 64;
 
-    /// Splits a build's byte cap: half for the head, then the omission note,
-    /// then the tail. A small cap keeps at least half of its second half for
-    /// the tail.
+    /// Gives the head half of a build's byte cap, and the tail the rest. Once
+    /// output is omitted, the omission note takes up to [`Self::NOTE_BYTES`]
+    /// of the tail's share, and at most half of it, so a small cap still keeps
+    /// a tail.
     fn new(cap: usize) -> Self {
         let head = cap / 2;
-        let rest = cap - head;
-        let note_max = Self::NOTE_BYTES.min(rest / 2);
         Self {
+            cap,
             head,
+            written: 0,
             tail: VecDeque::new(),
             tail_bytes: 0,
-            tail_max: rest - note_max,
-            note_max,
+            note_max: Self::NOTE_BYTES.min((cap - head) / 2),
             omitted: 0,
             dropped: false,
             closed: false,
@@ -122,16 +126,20 @@ impl Kept {
     /// The start of `bytes` that still fits in the head, cut on a character
     /// boundary. Once some output doesn't fit, the head takes no more.
     fn head<'a>(&mut self, bytes: &'a [u8]) -> &'a [u8] {
-        if bytes.len() <= self.head {
+        let end = if bytes.len() <= self.head {
             self.head -= bytes.len();
-            return bytes;
-        }
-        let end = piqueld_core::api::BuildLogChunk::complete_prefix(&bytes[..self.head]);
-        self.head = 0;
+            bytes.len()
+        } else {
+            let end = piqueld_core::api::BuildLogChunk::complete_prefix(&bytes[..self.head]);
+            self.head = 0;
+            end
+        };
+        self.written += end;
         &bytes[..end]
     }
-    /// Keeps `bytes` in the tail, dropping its oldest output past
-    /// `tail_max`, cut so the tail starts on a character boundary.
+    /// Keeps `bytes` in the tail. While all output fits the cap, it is kept
+    /// whole; past it, the oldest is dropped so the tail and the omission note
+    /// fit, cut so the tail starts on a character boundary.
     fn keep(&mut self, bytes: &[u8], stream: LogStream) {
         if bytes.is_empty() {
             return;
@@ -141,10 +149,15 @@ impl Kept {
             _ => self.tail.push_back((stream, bytes.to_vec())),
         }
         self.tail_bytes += bytes.len();
-        while self.tail_bytes > self.tail_max
+        let room = self.cap - self.written;
+        if self.omitted == 0 && self.tail_bytes <= room {
+            return;
+        }
+        let tail_max = room - self.note_max;
+        while self.tail_bytes > tail_max
             && let Some((_, oldest)) = self.tail.front_mut()
         {
-            let excess = self.tail_bytes - self.tail_max;
+            let excess = self.tail_bytes - tail_max;
             let cut = oldest
                 .iter()
                 .skip(excess)
