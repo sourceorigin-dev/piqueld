@@ -15,8 +15,8 @@ the daemon's crates (`piqueld-config`, `piqueld-store`, `piqueld-docker`)
 don't depend on the ones they build alongside. A new dependency between
 crates updates both that page and `tools/xtask/src/boundary.rs`.
 
-A feature reaches every surface it applies to: the manifest, `piquelctl` and
-the dashboard, as `AGENTS.md` says.
+A feature reaches every surface it applies to, from the checklist in
+`AGENTS.md`.
 
 ## Errors
 
@@ -77,6 +77,8 @@ the docs, private items included, with warnings denied.
 
 ## Deviations
 
+- No `CLAUDE.md` beside `AGENTS.md`: Claude Code reads `AGENTS.md` itself, so
+  the file would add nothing.
 - `unwrap_used` is off: the tests still call `unwrap` about 4,400 times. They
   move to `expect("what should have held")` crate by crate (PQD-124); new
   tests use `expect`.

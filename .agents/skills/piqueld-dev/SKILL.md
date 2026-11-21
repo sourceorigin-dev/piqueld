@@ -11,9 +11,12 @@ description: >
 # Run the development instance
 
 Every worktree has its own instance: configuration (`piqueld.local.toml`),
-data, Unix socket, localhost port, and Docker-in-Docker engine. It never
-touches the host's Docker Engine, where a production piqueld runs, or another
-worktree's instance. `docs/dev/development.md` describes it in full.
+data, Unix socket, localhost port, and Docker-in-Docker engine. Its workloads
+run in that engine, not on the host's Docker Engine, which every worktree
+shares and which, on the server, runs production: the host engine holds only
+the instance's `piqueld-dev-<instance>` container and volume, unless
+`docker.socket` points at it. It never touches another worktree's instance
+either. `docs/dev/development.md` describes it in full.
 
 ## Start and wait
 
@@ -60,8 +63,8 @@ not.
 - **State and logs:** `just dev status` prints the instance's files.
   `output.log` has the latest build and the daemon's fatal errors;
   `daemon.log` has its logs as JSON lines.
-- **Docker:** prefix commands with
-  `DOCKER_HOST=unix://<docker socket from status>`.
+- **Docker:** pass `-H unix://<docker socket from status>` to `docker`, which
+  no `DOCKER_HOST` or `DOCKER_CONTEXT` overrides.
 - When creating a dev instance for a user, make sure to give them the link
   to the dashboard & setup in chat so they can access it without having to
   go to a terminal.
