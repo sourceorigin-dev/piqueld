@@ -42,17 +42,17 @@ use tokio::time::Instant;
 ///
 /// If the Tokio runtime cannot start.
 #[tokio::main]
-#[expect(
-    clippy::expect_used,
-    reason = "The same `Cli` definition validated these matches."
-)]
 pub async fn run() -> ExitCode {
     let matches = match Cli::command().try_get_matches() {
         Ok(matches) => matches,
         Err(error) => return usage_error(&error),
     };
-    let mut cli = Cli::from_arg_matches(&matches)
-        .expect("matches were validated by the same Cli command definition");
+    // Building `Cli` checks the rules clap can't, such as `--interval`
+    // applying only to `poll` (see `cli::parsed_args`).
+    let mut cli = match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        Err(error) => return usage_error(&error.format(&mut invoked(&matches))),
+    };
     let mut console = Console::new(&cli);
     let result = async {
         // Completions and validation are purely local, so they need neither
@@ -123,6 +123,21 @@ pub async fn run() -> ExitCode {
 #[must_use]
 pub fn command() -> clap::Command {
     Cli::command()
+}
+
+/// The command `matches` ran, such as `app repository sync`, built so a
+/// usage error shows that command's usage.
+fn invoked(matches: &clap::ArgMatches) -> clap::Command {
+    let mut command = Cli::command();
+    command.build();
+    let mut matches = matches;
+    while let Some((name, next)) = matches.subcommand() {
+        let Some(subcommand) = command.find_subcommand(name).cloned() else {
+            break;
+        };
+        (command, matches) = (subcommand, next);
+    }
+    command
 }
 
 /// Reports arguments clap rejected, exiting 2. Without `--json` (and for

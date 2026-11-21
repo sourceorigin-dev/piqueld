@@ -43,14 +43,18 @@ impl SyncMode {
         })
     }
 
-    /// The setting, polling every `interval` seconds, by default 300.
-    fn with_interval(self, interval: Option<u32>) -> Result<RepositorySync> {
+    /// The setting, polling every `interval` seconds, by default 300. Only
+    /// `poll` takes an interval: with another mode, the arguments conflict.
+    fn with_interval(
+        self,
+        interval: Option<u32>,
+    ) -> std::result::Result<RepositorySync, clap::Error> {
         match (self, interval) {
             (Self::Poll, interval) => Ok(RepositorySync::Poll {
                 interval_seconds: interval.unwrap_or(RepositorySync::DEFAULT_INTERVAL),
             }),
-            (_, Some(_)) => Err(CliError::new(
-                ErrorKind::Input,
+            (_, Some(_)) => Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
                 "--interval applies only to `poll`",
             )),
             (Self::Off, None) => Ok(RepositorySync::Off),
