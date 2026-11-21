@@ -685,7 +685,7 @@ pub(super) async fn manage(
     ApiJson(input): ApiJson<Manage>,
 ) -> Response {
     // A change records what it changed itself; the background record of a
-    // refused or failed one names what it attempted.
+    // refused, failed or unchanged one names what it attempted.
     let detail = super::access::AuditDetail(input.describe());
     let mut response = match auth.manage(&identity, audited.request(), input).await {
         Ok(managed) => Json(managed).into_response(),

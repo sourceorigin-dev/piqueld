@@ -168,7 +168,8 @@ status 503 and no caller, `audit records missing before this one: N`, counting
 those dropped or whose write failed, so the trail shows the gap. On shutdown the daemon waits up to 10 seconds for pending records and logs any
 it loses. Each record keeps the action
 (method and route template, followed by what a change committed, or, for a
-refused or failed account change, what it attempted, e.g.
+refused or failed account change, or one that changed nothing, what it
+attempted, e.g.
 `POST /api/v1/auth/manage set_grants "<account ID>" (apps:read)`), outcome (`allowed`, `denied`, or `failed`), status,
 account, credential and its kind, whether the credential was limited, the
 network address (and, through the [tailnet node](../../user/reference/configuration.md#tailnet-node),
