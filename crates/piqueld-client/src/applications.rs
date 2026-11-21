@@ -2,8 +2,7 @@
 pub use piqueld_core::api::{
     AcceptedOperation, ApplicationSummary, ApplicationView, ApplyApplicationRequest,
     DeletedApplication, DeploymentView, DiagnosticView, ObservedApplicationView,
-    ObservedServiceView, PlanView, ReleaseView, RenameApplicationRequest, RenamedApplication,
-    RuntimeCoverage, SavedApplication,
+    ObservedServiceView, PlanView, ReleaseView, RuntimeCoverage, SavedApplication,
 };
 
 use crate::{
@@ -235,32 +234,6 @@ impl Client {
             ("application/toml", manifest.to_owned().into()),
         )
         .await
-    }
-
-    /// Renames an idle application without touching its runtime resources.
-    /// # Errors
-    /// Returns transport, API, decoding, name, busy, or generation errors.
-    pub async fn rename_application(
-        &self,
-        id: &str,
-        request: &RenameApplicationRequest,
-    ) -> Result<RenamedApplication, ClientError> {
-        self.rename_application_with_force(id, request, false).await
-    }
-
-    /// Renames with an explicit override of the revision precondition.
-    /// # Errors
-    /// Returns transport, API, decoding, name, or busy errors.
-    pub async fn rename_application_with_force(
-        &self,
-        id: &str,
-        request: &RenameApplicationRequest,
-        force: bool,
-    ) -> Result<RenamedApplication, ClientError> {
-        self.generated
-            .rename_application(id, force.then_some(true), None, request)
-            .data()
-            .await
     }
 
     /// Lists an application's releases newest first, twenty per page.

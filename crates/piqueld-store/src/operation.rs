@@ -304,7 +304,7 @@ impl Store {
         .execute(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        sqlx::query!("DELETE FROM request_receipts WHERE json_extract(response_json,'$.Saved.application_id')=?1 OR json_extract(response_json,'$.Rename.application_id')=?1 OR json_extract(response_json,'$.Deleted.application_id')=?1",id).execute(&mut **tx).await.map_err(StoreError::database)?;
+        sqlx::query!("DELETE FROM request_receipts WHERE json_extract(response_json,'$.Saved.application_id')=?1 OR json_extract(response_json,'$.Deleted.application_id')=?1",id).execute(&mut **tx).await.map_err(StoreError::database)?;
         Ok(())
     }
 

@@ -6,8 +6,9 @@ use axum::{
     body::Bytes,
     http::{HeaderMap, Uri},
 };
+use piqueld_client::edit::{EditOptions, StringValue};
 use piqueld_client::system::{DependencyStatus, ReadinessStatus};
-use piqueld_client::{ApplyOptions, Client, ClientError, RenameApplicationRequest};
+use piqueld_client::{ApplyOptions, Client, ClientError};
 use tokio::{net::TcpListener, sync::mpsc, task::JoinHandle};
 
 struct Request {
@@ -151,9 +152,12 @@ async fn toml_adapter_preserves_headers_and_unsigned_revisions() {
 #[tokio::test]
 async fn generated_json_mutation_encodes_paths_and_decodes_api_errors() {
     let mut server = Server::start(http::StatusCode::CONFLICT, r#"{"code":"generation_conflict","message":"stale revision","details":{"current":7},"request_id":"trace"}"#).await;
-    let body = RenameApplicationRequest {
-        name: "new-name".into(),
+    let body = StringValue {
+        value: "new-name".into(),
+    };
+    let options = EditOptions {
         expected_generation: Some(6),
+        ..EditOptions::default()
     };
     let error = server
         .client
@@ -161,7 +165,7 @@ async fn generated_json_mutation_encodes_paths_and_decodes_api_errors() {
         .with_request_id("command-key")
         .with_bearer("fixture-token")
         .unwrap()
-        .rename_application("a/b ?é", &body)
+        .set_application_name("a/b ?é", &body, &options)
         .await
         .unwrap_err();
     let ClientError::Api { status, error } = error else {
@@ -173,7 +177,10 @@ async fn generated_json_mutation_encodes_paths_and_decodes_api_errors() {
     assert_eq!(error.details["current"], 7);
     assert_eq!(error.request_id, "trace");
     let request = server.requests.recv().await.unwrap();
-    assert_eq!(request.uri, "/api/v1/applications/a%2Fb%20%3F%C3%A9/rename");
+    assert_eq!(
+        request.uri,
+        "/api/v1/applications/a%2Fb%20%3F%C3%A9/name?deploy=false&expected_generation=6"
+    );
     assert_eq!(request.headers["content-type"], "application/json");
     assert_eq!(request.headers["authorization"], "Bearer fixture-token");
     assert_eq!(request.headers["idempotency-key"], "command-key");

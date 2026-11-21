@@ -1,8 +1,8 @@
 //! Environment lifecycle, status, and repair. Deployment, history, logs, and
 //! secrets of an environment live with their own handlers.
-use super::applications::{ForceQuery, GenerationQuery};
+use super::applications::GenerationQuery;
 use super::extract::{IdempotencyKey, Mutator};
-use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, ok, openapi::ApiErrors};
+use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use crate::api::{Mutation, PromotionMutation, Restore, SourceChoice};
 use crate::auth::Identity;
 use axum::{
@@ -23,6 +23,7 @@ use piqueld_core::{
     ApiErrorCode, ApplicationId, EnvironmentId, EnvironmentName, ReleaseId, TrackedBranch,
     ValidationErrors,
 };
+use serde::Deserialize;
 
 /// Adds an environment to an application.
 ///
@@ -520,4 +521,17 @@ pub(super) async fn restore(
             deployment: request.deployment,
         })
         .await
+}
+
+#[derive(Default, Deserialize, utoipa::IntoParams)]
+#[serde(default, deny_unknown_fields)]
+#[into_params(parameter_in = Query)]
+pub(super) struct ForceQuery {
+    /// Explicitly bypass the intent revision precondition. Name availability is always enforced.
+    pub(super) force: bool,
+}
+
+impl QueryParams for ForceQuery {
+    const INVALID_CODE: &'static str = "force_invalid";
+    const INVALID_MESSAGE: &'static str = "force must be true or false";
 }

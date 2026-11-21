@@ -498,6 +498,16 @@ fn at_generation(generation: u64) -> piqueld_client::edit::EditOptions {
     }
 }
 
+/// Renames application `id` to `name` through the name edit, as the CLI and
+/// the dashboard do.
+fn rename(id: &piqueld_core::ApplicationId, name: &str) -> piqueld::api::Mutation {
+    piqueld::api::Mutation::Edit {
+        id: id.clone(),
+        edit: Box::new(piqueld_client::edit::ApplicationEdit::Name(name.into())),
+        deploy: false,
+    }
+}
+
 /// `edit` of the contract manifest's `web` service.
 fn edit_web(edit: piqueld_client::edit::ServiceEdit) -> piqueld_client::edit::ApplicationEdit {
     piqueld_client::edit::ApplicationEdit::Service {

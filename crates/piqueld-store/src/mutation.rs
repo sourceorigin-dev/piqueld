@@ -30,13 +30,6 @@ pub enum Mutation {
         /// Capture a deployment of the only environment after saving.
         deploy: bool,
     },
-    /// Change only the application's user-facing name.
-    Rename {
-        /// Stable application ID.
-        id: ApplicationId,
-        /// Validated new name.
-        name: String,
-    },
     /// Delete an application with all its environments.
     DeleteApplication {
         /// Stable application ID.
@@ -292,8 +285,6 @@ pub enum MutationResponse {
     Saved(piqueld_core::api::SavedApplication),
     /// Accepted runtime operation.
     Operation(piqueld_core::api::AcceptedOperation),
-    /// Completed metadata mutation.
-    Rename(piqueld_core::api::RenamedApplication),
     /// Created or renamed environment.
     Environment(piqueld_core::api::EnvironmentView),
     /// Accepted promotion, with the release it pinned.
@@ -317,7 +308,7 @@ impl MutationResponse {
             Self::Saved(saved) => saved.operation_id.is_some(),
             Self::Preview(preview) => preview.created,
             Self::Operation(_) | Self::Promotion(_) | Self::Deleted(_) => true,
-            Self::Rename(_) | Self::Environment(_) | Self::Synced(_) => false,
+            Self::Environment(_) | Self::Synced(_) => false,
         }
     }
 
@@ -331,7 +322,6 @@ impl MutationResponse {
     pub(crate) fn target(&self) -> (Option<&str>, Option<&str>) {
         match self {
             Self::Saved(saved) => (Some(&saved.application_id), None),
-            Self::Rename(renamed) => (Some(&renamed.application_id), None),
             Self::Deleted(deleted) => (Some(&deleted.application_id), None),
             Self::Operation(operation) => (None, Some(&operation.environment_id)),
             Self::Promotion(promotion) => (None, Some(&promotion.operation.environment_id)),
@@ -351,9 +341,6 @@ impl MutationResponse {
                 [] => format!("generation {}", saved.generation),
                 ids => format!("generation {} {}", saved.generation, operations(ids)),
             },
-            Self::Rename(renamed) => {
-                format!("generation {} name {:?}", renamed.generation, renamed.name)
-            }
             Self::Deleted(deleted) => {
                 let ids: Vec<_> = deleted
                     .operations
@@ -404,7 +391,6 @@ impl Mutation {
             _ if self.deploys_on_push(connection) => &[Write, Deploy],
             Self::Save { .. }
             | Self::Edit { .. }
-            | Self::Rename { .. }
             | Self::CreateEnvironment { .. }
             | Self::RenameEnvironment { .. }
             | Self::SetBranch { .. }
@@ -494,7 +480,6 @@ impl Mutation {
                         && expected_application_id.is_none())
             }
             Self::Edit { .. }
-            | Self::Rename { .. }
             | Self::DeleteApplication { .. }
             | Self::CreateEnvironment { .. }
             | Self::RenameEnvironment { .. }

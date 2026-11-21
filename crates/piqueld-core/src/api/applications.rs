@@ -280,27 +280,6 @@ pub struct ManifestChange {
     pub after: Option<String>,
 }
 
-/// Metadata-only rename, conditioned on the inspected intent revision.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct RenameApplicationRequest {
-    /// New unique application name.
-    pub name: String,
-    /// Current intent revision, required unless explicitly forced.
-    pub expected_generation: Option<u64>,
-}
-
-/// Completed metadata-only rename.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
-pub struct RenamedApplication {
-    /// Unchanged application identity.
-    pub application_id: String,
-    /// Current application name.
-    pub name: String,
-    /// Revision after renaming.
-    pub generation: u64,
-}
-
 /// Summarizes a newly accepted operation for mutation responses.
 impl From<&Operation> for AcceptedOperation {
     fn from(operation: &Operation) -> Self {

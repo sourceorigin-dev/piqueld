@@ -116,11 +116,6 @@
       "rustType": "piqueld_core::api::Envelope<piqueld_core::api::ReadinessStatus>"
     },
     {
-      "schema": "Envelope_RenamedApplication",
-      "name": "EnvelopeRenamedApplication",
-      "rustType": "piqueld_core::api::Envelope<piqueld_core::api::RenamedApplication>"
-    },
-    {
       "schema": "Envelope_SavedApplication",
       "name": "EnvelopeSavedApplication",
       "rustType": "piqueld_core::api::Envelope<piqueld_core::api::SavedApplication>"
@@ -194,11 +189,6 @@
       "schema": "ApplyApplicationRequest",
       "name": "ApplyApplicationRequest",
       "rustType": "piqueld_core::api::ApplyApplicationRequest"
-    },
-    {
-      "schema": "RenameApplicationRequest",
-      "name": "RenameApplicationRequest",
-      "rustType": "piqueld_core::api::RenameApplicationRequest"
     },
     {
       "schema": "EnvironmentRequest",

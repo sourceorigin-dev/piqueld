@@ -343,7 +343,6 @@ fn documented_router() -> OpenApiRouter<ApiState> {
         .routes(granted!(App(Read) => applications::get))
         .routes(granted!(App(Delete) => applications::delete))
         .routes(granted!(App(Read) => applications::manifest_download))
-        .routes(granted!(App(Write) => applications::rename))
         .routes(granted!(App(Write) => environments::create))
         .routes(granted!(App(Read) => environments::get))
         .routes(granted!(App(Delete) => environments::delete))

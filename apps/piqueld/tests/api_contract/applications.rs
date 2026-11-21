@@ -182,14 +182,11 @@ async fn deploy_after_rename_captures_saved_name_and_spec() {
     let api = AcceptanceApi::start(&temp).await;
     let accepted = api.deploy().await;
     api.finish_operation(&accepted.operation_id, None).await;
+    let name = piqueld_client::edit::StringValue {
+        value: "renamed".into(),
+    };
     api.client
-        .rename_application(
-            &accepted.application_id,
-            &piqueld_client::RenameApplicationRequest {
-                name: "renamed".into(),
-                expected_generation: Some(1),
-            },
-        )
+        .set_application_name(&accepted.application_id, &name, &at_generation(1))
         .await
         .unwrap();
     let mut edited = new_application();
@@ -474,10 +471,7 @@ async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
         Mutation::save(manifest.clone(), None, false),
         Mutation::deploy(environment.clone()),
         Mutation::Delete { id: environment },
-        Mutation::Rename {
-            id,
-            name: "renamed".into(),
-        },
+        rename(&id, "renamed"),
     ] {
         assert!(matches!(
             service.accept(Daemon, mutation, None, false, None).await,
