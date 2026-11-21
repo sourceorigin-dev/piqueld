@@ -1,14 +1,16 @@
-//! The build queue: one image build at a time, environments before previews.
+//! The build queue: a set number of image builds at a time, environments
+//! before previews.
 //!
-//! Builds wait in two queues, each first come, first served. When a build
-//! finishes, the oldest waiting environment build goes next, unless
+//! Builds wait in two queues, each first come, first served, while every
+//! slot is taken. When a build finishes, its slot goes to the oldest waiting
+//! environment build, unless
 //! [`ENVIRONMENT_BURST`] environment builds already went ahead of waiting
 //! preview builds: then the oldest preview build goes. So environments go
 //! first, but a steady stream of their builds never starves previews. A
 //! running build is never interrupted, and a cancelled one leaves its queue.
 use parking_lot::Mutex;
 use piqueld_core::EnvironmentKind;
-use std::collections::VecDeque;
+use std::{collections::VecDeque, num::NonZeroU8};
 use tokio::sync::oneshot;
 
 /// Environment builds that may go ahead of waiting preview builds before the
@@ -34,17 +36,20 @@ impl From<&EnvironmentKind> for BuildPriority {
     }
 }
 
-/// Gives one build at a time its turn; see the module documentation.
-#[derive(Default)]
+/// Gives a set number of builds at a time their turn; see the module
+/// documentation.
 pub(crate) struct BuildQueue {
+    /// How many builds may run at once.
+    slots: NonZeroU8,
     state: Mutex<Waiting>,
 }
 
 /// The builds waiting for their turn, each woken through its sender.
 #[derive(Default)]
 struct Waiting {
-    /// Whether a build has the turn.
-    running: bool,
+    /// How many builds have a turn. It only drops below the queue's slots
+    /// while no build waits.
+    running: u8,
     environments: VecDeque<oneshot::Sender<()>>,
     previews: VecDeque<oneshot::Sender<()>>,
     /// Environment builds that went ahead of waiting preview builds since a
@@ -53,6 +58,14 @@ struct Waiting {
 }
 
 impl BuildQueue {
+    /// Creates a queue that runs `slots` builds at a time.
+    pub(crate) fn new(slots: NonZeroU8) -> Self {
+        Self {
+            slots,
+            state: Mutex::default(),
+        }
+    }
+
     /// Waits for a build's turn, which lasts until the returned [`Turn`] is
     /// dropped. Cancelling the wait leaves the queue.
     ///
@@ -65,8 +78,8 @@ impl BuildQueue {
     pub(crate) async fn turn(&self, priority: BuildPriority) -> Turn<'_> {
         let receiver = {
             let mut waiting = self.state.lock();
-            if !waiting.running {
-                waiting.running = true;
+            if waiting.running < self.slots.get() {
+                waiting.running += 1;
                 return Turn(self);
             }
             let (sender, receiver) = oneshot::channel();
@@ -88,7 +101,7 @@ impl BuildQueue {
         Turn(self)
     }
 
-    /// Hands the turn to the next waiting build, or frees it.
+    /// Hands a finished build's slot to the next waiting build, or frees it.
     fn pass(&self) {
         let mut waiting = self.state.lock();
         while let Some(next) = waiting.next() {
@@ -96,7 +109,7 @@ impl BuildQueue {
                 return;
             }
         }
-        waiting.running = false;
+        waiting.running -= 1;
     }
 }
 
@@ -155,7 +168,7 @@ mod tests {
 
     #[tokio::test]
     async fn environment_builds_go_ahead_of_waiting_preview_builds_but_never_interrupt_them() {
-        let queue = BuildQueue::default();
+        let queue = BuildQueue::new(NonZeroU8::MIN);
         let running = queue.turn(Preview).await;
         let mut preview = pin!(queue.turn(Preview));
         let mut environment = pin!(queue.turn(Environment));
@@ -179,8 +192,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn builds_run_up_to_the_slots_at_once() {
+        let queue = BuildQueue::new(NonZeroU8::new(2).unwrap());
+        let first = queue.turn(Preview).await;
+        let second = queue.turn(Environment).await;
+        let mut third = pin!(queue.turn(Environment));
+        assert!(poll!(&mut third).is_pending());
+        drop(first);
+        let third = third.await;
+        drop((second, third));
+        // Both slots are free again.
+        let _first = queue.turn(Preview).await;
+        let _second = queue.turn(Preview).await;
+    }
+
+    #[tokio::test]
     async fn a_stream_of_environment_builds_never_starves_a_waiting_preview_build() {
-        let queue = BuildQueue::default();
+        let queue = BuildQueue::new(NonZeroU8::MIN);
         let mut running = queue.turn(Environment).await;
         let mut preview = pin!(queue.turn(Preview));
         assert!(poll!(&mut preview).is_pending());

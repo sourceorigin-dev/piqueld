@@ -59,6 +59,17 @@
             "null"
           ]
         },
+        "parallel": {
+          "default": 1,
+          "description": "How many images build at once, on this host or the build machine.\nFurther builds wait, environments' before previews', and the wait\ncounts against\n`reconciliation.prepare_timeout_seconds`. Each build takes the CPU,\nmemory and disk of a whole image build.",
+          "format": "int32",
+          "maximum": 255,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "repository": {
           "default": null,
           "description": "The image repository the build machine pushes to and this host pulls\nfrom, as `registry-host[:port]/path`, without a tag. Both reach it\nunder this name, without credentials, and Docker requires HTTPS of a\nregistry on another machine. Anyone who can reach the registry can\npull every image, build arguments included, or push to it, so only\nthis host and the build machine should be able to. Every image goes\nto this one repository, so they share their layers, under a tag\nnaming this installation, by which image cleanup finds it.",

@@ -43,6 +43,8 @@ socket = "/var/run/docker.sock"
 auto_initialize_swarm = true
 
 [build]
+# How many images build at once; further builds wait their turn.
+parallel = 1
 # Build images on another machine instead of this host: its BuildKit daemon,
 # and the image repository it pushes to and this host pulls from. Set both,
 # or neither. Only this host should be able to reach the builder's port.

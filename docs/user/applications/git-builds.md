@@ -339,10 +339,12 @@ prints the earlier part.
   such as the network.
 - **The deployment fails with `preparation_timeout`.** A deployment has
   `reconciliation.prepare_timeout_seconds`, 300 seconds by default, to check
-  out and build its services. The host builds one image at a time, and the
-  time spent waiting for other builds counts too. Raise
+  out and build its services. Images build one at a time unless
+  [`build.parallel`](../reference/configuration-settings.md#buildparallel)
+  says otherwise, and the time spent waiting for other builds counts too.
+  Raise
   [`reconciliation.prepare_timeout_seconds`](../reference/configuration-settings.md#reconciliationprepare_timeout_seconds)
-  in the daemon's configuration.
+  or `build.parallel` in the daemon's configuration.
 - **`piquelctl` times out, but the build goes on.** The command stopped
   waiting, not the deployment, and exited with code 4. Follow the deployment
   on the **Builds** page or with `piquelctl env wait welcome`, or

@@ -138,6 +138,12 @@ Type: string. Optional.
 
 The build machine's `BuildKit` daemon, as `tcp://host:port`. The connection is neither authenticated nor encrypted, so only this host should be able to reach that port, over a network that encrypts its traffic, such as a tailnet whose access rules allow nothing else.
 
+### `build.parallel`
+
+Type: integer from 1 to 255. Default: `1`.
+
+How many images build at once, on this host or the build machine. Further builds wait, environments' before previews', and the wait counts against `reconciliation.prepare_timeout_seconds`. Each build takes the CPU, memory and disk of a whole image build.
+
 ### `build.repository`
 
 Type: string. Optional.

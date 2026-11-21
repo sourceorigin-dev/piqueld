@@ -81,6 +81,7 @@ impl ApplicationService {
             Arc::clone(&sources),
         )
         .with_config(&config.reconciliation)
+        .with_build(&config.build)
         .with_images(&config.images)
         .with_ingress(Arc::clone(&ingress))
         .with_telemetry(telemetry.sockets().cloned());

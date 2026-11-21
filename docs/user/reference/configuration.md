@@ -75,13 +75,14 @@ it restarts each time a service converges, so each link of a
 [startup dependency](manifest.md#startup-dependencies) chain gets
 the full timeout.
 One async controller overlaps pending work. Internal global limits allow two
-image resolutions, one image build, eight observations, and one resource
-mutation request. Timers consume no I/O slot. These limits are not
-configurable. Waiting environment builds go before waiting preview builds,
+image resolutions, eight observations, and one resource mutation request.
+Timers consume no I/O slot. These limits are not configurable.
+[`build.parallel`](configuration-settings.md#buildparallel) image builds run
+at a time, one by default. Waiting environment builds go before waiting preview builds,
 except that a preview build goes next once three environment builds went ahead
 of it, so a steady stream of environment builds cannot starve previews. A
-running build is never interrupted. Waiting for the build counts against the
-preparation timeout.
+running build is never interrupted. Waiting for a build slot counts against
+the preparation timeout.
 
 The data directory is the only persistent daemon state. Back up the database,
 `secrets.key` (see below), and `<data_dir>/ingress/acme` and

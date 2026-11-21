@@ -45,11 +45,15 @@ pub struct Controller<D> {
 }
 
 impl<D> Controller<D> {
-    /// Creates a controller with the default retry policy.
+    /// Creates a controller with the default retry policy, running one image
+    /// build at a time.
     #[must_use]
     pub fn new(docker: Arc<D>, store: Arc<Store>, sources: Arc<crate::git::Sources>) -> Self {
         Self {
-            docker: Arc::new(piqueld_docker::LimitedDocker::new(docker)),
+            docker: Arc::new(piqueld_docker::LimitedDocker::new(
+                docker,
+                std::num::NonZeroU8::MIN,
+            )),
             mutations: Arc::default(),
             prepare_timeout: Duration::from_mins(5),
             store,
@@ -115,6 +119,17 @@ impl<D> Controller<D> {
     pub fn with_config(mut self, config: &piqueld_config::ReconciliationConfig) -> Self {
         self.prepare_timeout = Duration::from_secs(config.prepare_timeout_seconds);
         self.retry.convergence_timeout = Duration::from_secs(config.convergence_timeout_seconds);
+        self
+    }
+
+    /// Runs as many image builds at a time as `config` allows. Call it before
+    /// [`Self::runtime`], which shares the limits.
+    #[must_use]
+    pub fn with_build(mut self, config: &piqueld_config::BuildConfig) -> Self {
+        self.docker = Arc::new(piqueld_docker::LimitedDocker::new(
+            Arc::clone(self.docker.inner()),
+            config.parallel,
+        ));
         self
     }
 

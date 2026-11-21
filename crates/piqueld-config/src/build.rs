@@ -1,7 +1,9 @@
-//! Where images build: this host's Docker Engine, or a build machine.
+//! Where images build, this host's Docker Engine or a build machine, and
+//! how many build at once.
 use super::schema_from_raw;
 use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild, WhenUnavailable};
 use serde::Deserialize;
+use std::num::NonZeroU8;
 
 /// The `[build]` table. Images build on this host's Docker Engine unless it
 /// names a build machine. Its schema is that of its TOML form,
@@ -9,15 +11,27 @@ use serde::Deserialize;
 ///
 /// ```toml
 /// [build]
+/// parallel = 2
 /// builder = "tcp://build.example.ts.net:1234"
 /// repository = "registry.example.ts.net:5000/piqueld"
 /// unavailable = "fail" # or "local"
 /// ```
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(try_from = "RawBuildConfig")]
 pub struct BuildConfig {
+    /// How many images build at once.
+    pub parallel: NonZeroU8,
     /// The build machine images build on, if any.
     pub remote: Option<RemoteBuild>,
+}
+
+impl Default for BuildConfig {
+    fn default() -> Self {
+        Self {
+            parallel: NonZeroU8::MIN,
+            remote: None,
+        }
+    }
 }
 
 /// A build machine that builds this installation's images instead of
@@ -31,6 +45,13 @@ pub struct BuildConfig {
 #[derive(Default, Deserialize, utoipa::ToSchema)]
 #[serde(default, deny_unknown_fields)]
 struct RawBuildConfig {
+    /// How many images build at once, on this host or the build machine.
+    /// Further builds wait, environments' before previews', and the wait
+    /// counts against
+    /// `reconciliation.prepare_timeout_seconds`. Each build takes the CPU,
+    /// memory and disk of a whole image build.
+    #[schema(value_type = Option<u8>, minimum = 1, maximum = 255, default = 1)]
+    parallel: Option<NonZeroU8>,
     /// The build machine's `BuildKit` daemon, as `tcp://host:port`. The
     /// connection is neither authenticated nor encrypted, so only this host
     /// should be able to reach that port, over a network that encrypts its
@@ -71,7 +92,10 @@ impl TryFrom<RawBuildConfig> for BuildConfig {
             (Some(_), None) => return Err("build.builder requires build.repository"),
             (None, Some(_)) => return Err("build.repository requires build.builder"),
         };
-        Ok(Self { remote })
+        Ok(Self {
+            parallel: raw.parallel.unwrap_or(NonZeroU8::MIN),
+            remote,
+        })
     }
 }
 
@@ -83,6 +107,15 @@ mod tests {
 
     fn parse(toml: &str) -> Result<BuildConfig, toml::de::Error> {
         toml::from_str(toml)
+    }
+
+    #[test]
+    fn builds_run_one_at_a_time_unless_parallel_says_otherwise() {
+        assert_eq!(parse("").unwrap().parallel.get(), 1);
+        assert_eq!(parse("parallel = 4").unwrap().parallel.get(), 4);
+        for invalid in ["parallel = 0", "parallel = 256"] {
+            assert!(parse(invalid).is_err(), "{invalid}");
+        }
     }
 
     #[test]

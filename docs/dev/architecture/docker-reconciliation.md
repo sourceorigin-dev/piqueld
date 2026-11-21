@@ -150,8 +150,8 @@ is rejected while deletion is intended.
 One async controller polls pending environment futures and discovery together.
 SQLite calls, Docker observations, image pulls, and convergence timers yield to
 other ready work. Shared limits allow two image resolutions and eight application
-observations; resource mutations hold one global lock, and image builds run one at
-a time, environments before previews. Timers consume no I/O
+observations; resource mutations hold one global lock, and `build.parallel` image builds
+run at a time, one by default, environments before previews. Timers consume no I/O
 slot. New intent cancels obsolete local preparation; dispatched Docker requests
 may finish, but obsolete results cannot authorize subsequent actions. Git and Docker
 CLI commands run in private process groups; cancellation kills their local helper
