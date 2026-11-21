@@ -11,7 +11,8 @@ logic instead of copying it.
 [Module boundaries](architecture/dependency-flow.md) describes each crate and
 what it may depend on, and `just boundary` checks it. Shared contracts live in
 `piqueld-core`, which knows no server, database, Docker or browser framework;
-the daemon's crates (`piqueld-config`, `piqueld-store`, `piqueld-docker`)
+`piqueld-client` knows none of them nor the daemon's crates, outside its tests'
+server; the daemon's crates (`piqueld-config`, `piqueld-store`, `piqueld-docker`)
 don't depend on the ones they build alongside. A new dependency between
 crates updates both that page and `tools/xtask/src/boundary.rs`.
 

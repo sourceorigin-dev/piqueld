@@ -1,7 +1,9 @@
 //! `just boundary`: checks the workspace's dependency boundaries.
 //! `piqueld-core` holds the shared contracts, so it must not depend on the
-//! server, Docker, database, or browser frameworks. The daemon's own crates
-//! build in parallel only while they don't depend on each other.
+//! server, Docker, database, or browser frameworks. `piqueld-client` builds
+//! for wasm32 too, so it must not depend on the daemon or any of those either.
+//! The daemon's own crates build in parallel only while they don't depend on
+//! each other.
 
 use std::process::ExitCode;
 
@@ -11,7 +13,7 @@ use crate::Workspace;
 use crate::process::checked_stdout;
 
 /// A package that must not depend on any of `forbidden`, through the
-/// dependency kinds of `edges`.
+/// dependency kinds of `edges`, on any target.
 struct Boundary {
     package: &'static str,
     /// `cargo tree --edges` kinds.
@@ -21,7 +23,7 @@ struct Boundary {
     reason: &'static str,
 }
 
-const BOUNDARIES: [Boundary; 4] = [
+const BOUNDARIES: [Boundary; 6] = [
     Boundary {
         package: "piqueld-core",
         // The client and dashboard build it, so its build and development
@@ -37,6 +39,31 @@ const BOUNDARIES: [Boundary; 4] = [
             "sqlx-core",
         ],
         reason: "holds the shared contracts, without server, Docker, database, or browser frameworks",
+    },
+    Boundary {
+        package: "piqueld-client",
+        // It builds for wasm32 and is published, so its build and development
+        // dependencies count too; its server framework is checked below.
+        edges: "all",
+        forbidden: &[
+            "bollard",
+            "bollard-stubs",
+            "leptos",
+            "sqlx",
+            "sqlx-core",
+            "piqueld",
+            "piqueld-config",
+            "piqueld-docker",
+            "piqueld-store",
+        ],
+        reason: "is the published client the CLI and dashboard share, without the daemon, Docker, database, or browser frameworks",
+    },
+    Boundary {
+        package: "piqueld-client",
+        // Its native tests serve their requests with axum.
+        edges: "normal,build",
+        forbidden: &["axum", "axum-core"],
+        reason: "is the published client, which builds for wasm32, so only its tests may use a server framework",
     },
     Boundary {
         package: "piqueld-config",
@@ -73,7 +100,14 @@ pub fn check(workspace: &Workspace) -> Result<ExitCode> {
         let output = workspace
             .cargo()
             .args(["tree", "--locked", "--package", boundary.package])
-            .args(["--edges", boundary.edges, "--prefix", "none"])
+            .args([
+                "--edges",
+                boundary.edges,
+                "--target",
+                "all",
+                "--prefix",
+                "none",
+            ])
             .output()
             .context("run cargo tree")?;
         let tree = checked_stdout("cargo tree", output)?;
@@ -86,7 +120,10 @@ pub fn check(workspace: &Workspace) -> Result<ExitCode> {
             })
             .collect();
         if forbidden.is_empty() {
-            println!("{} dependency boundary is intact", boundary.package);
+            println!(
+                "{} dependency boundary is intact ({} dependencies)",
+                boundary.package, boundary.edges
+            );
         } else {
             eprintln!(
                 "{} {}, but depends on:\n{}",
