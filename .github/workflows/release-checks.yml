@@ -1,6 +1,6 @@
 # Release builds of piqueld, checked after merging instead of before.
 #
-#   nix     -> every Nix package
+#   nix     -> every Nix package, and the NixOS modules' VM tests
 #   package -> publish --dry-run
 #   install -> dist, then install.sh
 #
@@ -96,6 +96,10 @@ jobs:
           purge-primary-key: never
       - name: Build Nix packages
         run: nix build -L .#default .#default.cargoArtifacts .#dashboard .#dashboard.cargoArtifacts .#cli .#cli.cargoArtifacts .#daemon
+      # Boots a VM with the build machine and build registry modules,
+      # through the runner's KVM.
+      - name: Test the build machine and build registry modules
+        run: nix build -L .#checks.x86_64-linux.piqueld-builder
 
   # Packages every published crate, with the dashboard the daemon ships, and
   # builds each from its package, as `cargo install` would: everything
