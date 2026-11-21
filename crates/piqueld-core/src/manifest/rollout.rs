@@ -100,8 +100,9 @@ impl ValidatedRollout {
 
     /// Resolves the policy for a service whose mounts have the given read-only
     /// flags. This is the only place the default rule lives: stop-first when
-    /// any mount is writable, so two tasks never share a writable data
-    /// directory (e.g. PostgreSQL), and start-first otherwise.
+    /// any mount is writable, so an update never runs the old and new task
+    /// side by side on a writable volume (e.g. PostgreSQL's), and start-first
+    /// otherwise. Replicas of one service still share it.
     #[must_use]
     pub fn policy(&self, read_only: impl IntoIterator<Item = bool>) -> RolloutPolicy {
         RolloutPolicy {
