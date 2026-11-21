@@ -15,7 +15,6 @@ mod startup;
 mod sync;
 mod system;
 mod telemetry;
-mod ticker;
 mod views;
 mod webhooks;
 

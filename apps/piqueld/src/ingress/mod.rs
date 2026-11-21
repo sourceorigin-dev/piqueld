@@ -13,6 +13,7 @@ mod traffic;
 mod tunnel;
 mod wire;
 
+use crate::ticker::Ticker;
 use anyhow::{Context, Result};
 use certificates::Certificates;
 use futures_util::{StreamExt, stream};
@@ -53,38 +54,20 @@ pub const TAILSCALE_IMAGE: &str = "tailscale/tailscale:v1.102.5@sha256:c507f3a2a
 /// Version of `cloudflared` released with piqueld; upgrades replace it.
 pub const CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared:2026.10.4@sha256:c6c7ae1d5dfdcb094ad344ed68ccffc26635c9c6be80965664c33baf064b0515";
 
+/// How often [`Ingress::run_availability`] repeats the latest availability to
+/// the store, however long gateway passes take.
+const AVAILABILITY_PERIOD: Duration = Duration::from_secs(15);
+/// The longest gap between `ingress_unavailable` observations that still
+/// counts as a continuous failure: a few [`AVAILABILITY_PERIOD`]s.
+const UNAVAILABLE_GAP_MS: i64 = 45_000;
+/// How long relaying Caddy's logs may stretch a gateway pass.
+const LOG_RELAY_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Socket in the control mount that the gateway forwards webhook deliveries to.
 const WEBHOOK_SOCKET: &str = "webhooks.sock";
 /// Socket in the control mount that the gateway forwards the dashboard
 /// hostname to.
 const DASHBOARD_SOCKET: &str = "dashboard.sock";
-
-/// Ticks of a background loop, every period until cancellation; missed
-/// ticks are skipped.
-struct Ticks<'a> {
-    interval: tokio::time::Interval,
-    cancellation: &'a CancellationToken,
-}
-
-impl<'a> Ticks<'a> {
-    /// Ticks every `period`, the first at once.
-    fn every(period: Duration, cancellation: &'a CancellationToken) -> Self {
-        let mut interval = tokio::time::interval(period);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        Self {
-            interval,
-            cancellation,
-        }
-    }
-
-    /// Waits for the next tick: `false` once cancelled.
-    async fn next(&mut self) -> bool {
-        tokio::select! {
-            () = self.cancellation.cancelled() => false,
-            _ = self.interval.tick() => true,
-        }
-    }
-}
 
 /// The daemon's end of the dashboard hostname, which the private listener
 /// forwards to it.
@@ -124,6 +107,14 @@ pub struct Ingress {
     health: RwLock<IngressStatus>,
     /// Unix timestamp (seconds) up to which each container's logs were relayed.
     logs_since: Mutex<BTreeMap<String, u64>>,
+    /// Unix timestamp (seconds) of the daemon's start, where relaying a
+    /// container's logs begins: earlier lines were relayed before a restart.
+    logs_from: u64,
+    /// Log relays started, which rotates the container each one reads first.
+    relays: std::sync::atomic::AtomicUsize,
+    /// Whether ingress failed at the latest gateway pass, `None` before the
+    /// first; [`Self::run_availability`] repeats it until the next pass.
+    unavailable: parking_lot::Mutex<Option<bool>>,
     /// DNS providers and the DNS-01 certificates loaded into Caddy.
     certificates: Certificates,
     /// The apps tailnet node, while `[ingress.private]` is enabled.
@@ -208,6 +199,11 @@ impl Ingress {
                 routes: Vec::new(),
             }),
             logs_since: Mutex::default(),
+            unavailable: parking_lot::Mutex::new(None),
+            relays: std::sync::atomic::AtomicUsize::new(0),
+            logs_from: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs(),
             certificates,
             node: None,
             dashboard: None,
@@ -451,8 +447,29 @@ impl Ingress {
             self.run_gateway(&cancellation),
             self.run_probes(&cancellation),
             self.run_certificates(&cancellation),
-            self.run_records(&cancellation)
+            self.run_records(&cancellation),
+            self.run_availability(&cancellation)
         );
+    }
+
+    /// Every 15 s, repeats the latest gateway pass's availability to the
+    /// store. A failing pass can wait out many 30-second Docker and Caddy
+    /// timeouts, so observing only when passes end would leave gaps that
+    /// restart `ingress_unavailable` instead of letting it notify.
+    async fn run_availability(&self, cancellation: &CancellationToken) {
+        let mut ticks = Ticker::new(AVAILABILITY_PERIOD);
+        while ticks.tick(cancellation).await {
+            self.repeat_availability(now_ms()).await;
+        }
+    }
+
+    /// Records the latest gateway pass's availability again at `now_ms`,
+    /// once a pass has ended.
+    async fn repeat_availability(&self, now_ms: i64) {
+        let latest = *self.unavailable.lock();
+        if let Some(failed) = latest {
+            self.record_availability(failed, now_ms).await;
+        }
     }
 
     /// Hostnames served with DNS-01 certificates instead of Caddy's automatic
@@ -475,8 +492,8 @@ impl Ingress {
     /// Every minute, issues and renews the DNS-01 certificates deployed routes
     /// need. The gateway loop loads new certificates into Caddy.
     async fn run_certificates(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticks::every(Duration::from_mins(1), cancellation);
-        while ticks.next().await {
+        let mut ticks = Ticker::new(Duration::from_mins(1));
+        while ticks.tick(cancellation).await {
             let desired = if self.enabled {
                 match self.store.routing_table().await {
                     Ok(table) => self.dns01_hostnames(&table),
@@ -498,14 +515,18 @@ impl Ingress {
     /// Every 10s, reconciles the gateway (see [`Self::refresh`]) and relays
     /// Caddy logs. Failures are logged and retried on the next tick.
     async fn run_gateway(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticks::every(Duration::from_secs(10), cancellation);
-        while ticks.next().await {
+        let mut ticks = Ticker::new(Duration::from_secs(10));
+        while ticks.tick(cancellation).await {
             let pass = async {
                 if let Err(error) = self.refresh().await {
                     tracing::warn!(?error, "ingress reconciliation failed; will retry");
                 }
-                if let Err(error) = self.relay_logs().await {
-                    tracing::debug!(?error, "could not read Caddy diagnostics");
+                match tokio::time::timeout(LOG_RELAY_TIMEOUT, self.relay_logs()).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        tracing::debug!(?error, "could not read Caddy diagnostics");
+                    }
+                    Err(_) => tracing::debug!("reading Caddy diagnostics timed out"),
                 }
             };
             if cancellation.run_until_cancelled(pass).await.is_none() {
@@ -516,8 +537,8 @@ impl Ingress {
 
     /// Every 15s, refreshes route status by probing HTTPS for acknowledged routes.
     async fn run_probes(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticks::every(Duration::from_secs(15), cancellation);
-        while ticks.next().await {
+        let mut ticks = Ticker::new(Duration::from_secs(15));
+        while ticks.tick(cancellation).await {
             // Slow public DNS/TLS must never delay gateway drift repair or disablement.
             let probes = cancellation.run_until_cancelled(self.probe_routes());
             if probes.await.is_none() {
@@ -651,9 +672,22 @@ impl Ingress {
     /// failures notify administrators, like other daemon dependencies.
     async fn observe_availability(&self, healthy: bool, private: &PrivateIngressStatus) {
         let failed = !(healthy && private.healthy);
+        *self.unavailable.lock() = Some(failed);
+        self.record_availability(failed, now_ms()).await;
+    }
+
+    /// Records whether ingress `failed` at `observed_ms` as the
+    /// `ingress_unavailable` condition.
+    async fn record_availability(&self, failed: bool, observed_ms: i64) {
         if let Err(error) = self
             .store
-            .observe_condition("ingress_unavailable", None, failed, now_ms(), 45_000)
+            .observe_condition(
+                "ingress_unavailable",
+                None,
+                failed,
+                observed_ms,
+                UNAVAILABLE_GAP_MS,
+            )
             .await
         {
             tracing::error!(error=?error, "ingress health observation could not be recorded");
@@ -724,12 +758,14 @@ impl Ingress {
     /// the rest stay pending; when disabled, routes report disabled (or failed while
     /// shutdown is unconfirmed).
     async fn probe_routes(&self) {
-        let (Ok(table), Ok(everything)) = (
+        let (Ok(table), Ok(everything), Ok(applied)) = (
             self.store.served_table().await,
             self.store.routing_table().await,
+            self.store.applied_table().await,
         ) else {
             return;
         };
+        let applied = &applied;
         let Ok(exact) = self.exact_hostnames(&everything).await else {
             return;
         };
@@ -745,8 +781,9 @@ impl Ingress {
         let private = &private;
         let mut probes = stream::iter(routes)
             .map(|(id, route)| async move {
-                let (state, mut message) =
-                    self.route_state(&id, &route, exact, healthy, private).await;
+                let (state, mut message) = self
+                    .route_state(&id, &route, exact, applied, healthy, private)
+                    .await;
                 let dns = self.route_dns(&route.hostname);
                 // Until the route is ready, a DNS conflict or failure explains it.
                 if let Some(problem) = dns.message.filter(|_| state != "ready") {
@@ -794,6 +831,7 @@ impl Ingress {
         id: &EnvironmentId,
         route: &ValidatedRoute,
         exact: &[Hostname],
+        applied: &RoutingTable,
         healthy: bool,
         private: &PrivateIngressStatus,
     ) -> (&'static str, String) {
@@ -821,11 +859,9 @@ impl Ingress {
         }
         // A broken app must not hide verified readiness for unrelated
         // routes. Only probe destinations acknowledged by the gateway.
-        if !self
-            .store
-            .applied_routes(id)
-            .await
-            .is_ok_and(|applied| applied.contains(route))
+        if !applied
+            .get(id)
+            .is_some_and(|applied| applied.contains(route))
         {
             return (
                 "pending",

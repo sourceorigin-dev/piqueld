@@ -426,15 +426,29 @@ impl Store {
         Ok(routes)
     }
 
-    /// Records `table` as each application's applied routes and recomputes their
-    /// hostname reservations.
+    /// Records `table` as each application's applied routes and recomputes the
+    /// hostname reservations of the environments whose routes changed. Returns
+    /// whether any did; when none did, nothing is written.
     /// Called only after this exact table is accepted (or the gateway is stopped).
+    ///
+    /// Acknowledgements are serialized by the store's own lock, from reading
+    /// the applied routes to writing them, so the comparison needs no writer
+    /// lock and a steady pass takes none.
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn acknowledge_routes(&self, table: &RoutingTable) -> Result<(), StoreError> {
+    pub async fn acknowledge_routes(&self, table: &RoutingTable) -> Result<bool, StoreError> {
+        let _acknowledging = self.acknowledgements.lock().await;
+        let applied = self.applied_table().await?;
+        let changed: Vec<_> = table
+            .iter()
+            .filter(|(id, routes)| applied.get(*id) != Some(*routes))
+            .collect();
+        if changed.is_empty() {
+            return Ok(false);
+        }
         let (_writer, mut tx) = self.begin_immediate().await?;
-        for (environment_id, routes) in table {
+        for (environment_id, routes) in &changed {
             let id = environment_id.as_str();
             let json = serde_json::to_string(routes).map_err(StoreError::corrupt)?;
             sqlx::query!(
@@ -446,7 +460,9 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
         }
-        Self::commit_environment_changes(tx, table.keys().map(EnvironmentId::as_str)).await
+        let changed: Vec<&str> = changed.iter().map(|(id, _)| id.as_str()).collect();
+        Self::commit_environment_changes(tx, changed).await?;
+        Ok(true)
     }
 
     /// The routes the gateway last acknowledged, for every environment. DNS
@@ -1040,6 +1056,59 @@ mod tests {
             .await
             .unwrap();
         assert!(!store.hostname_routes(&hostname).await.unwrap().desired);
+    }
+
+    #[tokio::test]
+    async fn only_changed_routes_are_acknowledged() {
+        let (_directory, store) = Store::temporary().await;
+        let input = app("one", Some("site.example.com"));
+        let saved = save(&store, input.clone(), false).await.unwrap();
+        let id = store.saved_production(&saved).await;
+        store
+            .stage_routes(&id, &input.spec().routes, true, None)
+            .await
+            .unwrap();
+        let table = store.routing_table().await.unwrap();
+        assert!(store.acknowledge_routes(&table).await.unwrap());
+        assert!(!store.acknowledge_routes(&table).await.unwrap());
+        assert_eq!(store.applied_table().await.unwrap(), table);
+        store.stage_routes(&id, &[], true, None).await.unwrap();
+        let withdrawn = store.routing_table().await.unwrap();
+        assert!(store.acknowledge_routes(&withdrawn).await.unwrap());
+        assert_eq!(store.applied_table().await.unwrap(), withdrawn);
+    }
+
+    /// Concurrent acknowledgements run one at a time, in order, so the later
+    /// table ends up applied whole: the earlier one can't compare against
+    /// stale routes and leave half of each.
+    #[tokio::test]
+    async fn concurrent_acknowledgements_end_with_the_later_table() {
+        let (_directory, store) = Store::temporary().await;
+        let mut routes = Vec::new();
+        for (name, hostname) in [("one", "one.example.com"), ("two", "two.example.com")] {
+            let input = app(name, Some(hostname));
+            let saved = save(&store, input.clone(), false).await.unwrap();
+            let id = store.saved_production(&saved).await;
+            store.stage_routes(&id, &[], true, None).await.unwrap();
+            routes.push((id, input.spec().routes.clone()));
+        }
+        let [(one, one_routes), (two, two_routes)] = <[_; 2]>::try_from(routes).unwrap();
+        let empty = RoutingTable::from([(one.clone(), vec![]), (two.clone(), vec![])]);
+        assert_eq!(store.applied_table().await.unwrap(), empty);
+        let earlier = RoutingTable::from([(one.clone(), one_routes), (two.clone(), vec![])]);
+        let later = RoutingTable::from([(one, vec![]), (two, two_routes)]);
+
+        // Both queue behind a held acknowledgement, the earlier first: each
+        // is polled until it waits for the lock.
+        let held = store.acknowledgements.lock().await;
+        let mut first = std::pin::pin!(store.acknowledge_routes(&earlier));
+        assert!(futures_util::poll!(first.as_mut()).is_pending());
+        let mut second = std::pin::pin!(store.acknowledge_routes(&later));
+        assert!(futures_util::poll!(second.as_mut()).is_pending());
+        drop(held);
+        let (first, second) = tokio::join!(first, second);
+        assert!(first.unwrap() && second.unwrap());
+        assert_eq!(store.applied_table().await.unwrap(), later);
     }
 
     #[tokio::test]

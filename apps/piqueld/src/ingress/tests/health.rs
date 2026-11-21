@@ -159,3 +159,48 @@ async fn an_unhealthy_apps_node_alone_makes_ingress_unavailable() {
     assert_eq!(health.kind, "dependency_health_changed");
     assert_eq!(health.error_code.as_deref(), Some("ingress_unavailable"));
 }
+
+/// A failure seen when one gateway pass ended keeps being observed while the
+/// next pass hangs on Docker, so a sustained outage notifies even though no
+/// pass ends within the observation gap.
+#[tokio::test]
+async fn a_failure_notifies_while_the_next_pass_is_slow() {
+    use piqueld_core::observability::{DestinationKind, DestinationSettings};
+    let engine = Engine::unused().await;
+    let ingress = engine.ingress(true);
+    let settings = DestinationSettings::new(DestinationKind::Json);
+    (engine.store)
+        .add_destination("test", "https://example.com/hook", settings)
+        .await;
+    let failed_at = now_ms();
+    ingress
+        .observe_availability(true, &PrivateIngressStatus::default())
+        .await;
+    // The next pass takes over two minutes; only the repeats observe.
+    for period in 1..=9 {
+        ingress
+            .repeat_availability(failed_at + period * 15_000)
+            .await;
+    }
+    let deliveries = engine.store.deliveries(None, 100).await.unwrap().items;
+    assert_eq!(deliveries.len(), 1);
+}
+
+/// Each log relay starts with the next container, so a slow engine that
+/// uses up the relay's budget on the first never starves the others.
+#[tokio::test]
+async fn log_relays_take_turns_starting_with_each_container() {
+    let engine = Engine::unused().await;
+    let ingress = engine.ingress(true);
+    let first: Vec<String> = (0..4).map(|_| ingress.relay_order()[0].clone()).collect();
+    let gateway = ingress.name.clone();
+    assert_eq!(
+        first,
+        [
+            gateway.clone(),
+            ingress.node_name(),
+            ingress.tunnel_name(),
+            gateway
+        ]
+    );
+}

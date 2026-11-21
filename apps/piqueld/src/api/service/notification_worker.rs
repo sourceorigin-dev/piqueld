@@ -1,8 +1,7 @@
 //! Background observation and webhook delivery, and test notifications.
 //! Neither executes infrastructure mutations.
-use super::{
-    ApplicationError, ApplicationService, notification_message::Notification, ticker::Ticker,
-};
+use super::{ApplicationError, ApplicationService, notification_message::Notification};
+use crate::ticker::Ticker;
 use piqueld_core::{
     Event,
     observability::{

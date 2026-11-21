@@ -14,6 +14,7 @@ pub mod telemetry;
 
 mod certificate;
 pub mod git;
+mod ticker;
 mod ui_bundle;
 
 use thiserror::Error;
