@@ -15,7 +15,6 @@ use bollard::query_parameters::{
 };
 use futures_util::{StreamExt, TryStreamExt};
 use tokio::net::TcpStream;
-use tokio::time::Instant;
 
 use crate::process::checked_stdout;
 
@@ -239,7 +238,8 @@ impl Engine {
 
     /// Checks `ready` every `interval` for up to 60 seconds, failing as soon
     /// as `container` exits. `what` names what it waits for. On failure it
-    /// prints the container's output.
+    /// prints the container's output. The limit covers every request, so a
+    /// stalled engine or probe can't stretch the wait.
     async fn wait_until<F: Future<Output = bool>>(
         &self,
         container: &str,
@@ -247,18 +247,30 @@ impl Engine {
         interval: Duration,
         mut ready: impl FnMut() -> F,
     ) -> Result<()> {
-        let deadline = Instant::now() + Duration::from_secs(60);
-        while Instant::now() < deadline {
-            if !self.running(container).await? {
-                self.print_logs(container).await;
-                bail!("container {container} exited before {what} was ready");
+        let poll = async {
+            loop {
+                if !self.running(container).await? {
+                    return Ok::<_, anyhow::Error>(false);
+                }
+                if ready().await {
+                    return Ok(true);
+                }
+                tokio::time::sleep(interval).await;
             }
-            if ready().await {
-                return Ok(());
-            }
-            tokio::time::sleep(interval).await;
+        };
+        let failure = match tokio::time::timeout(Duration::from_secs(60), poll).await {
+            Ok(Ok(true)) => return Ok(()),
+            Ok(Ok(false)) => format!("container {container} exited before {what} was ready"),
+            Ok(Err(error)) => return Err(error),
+            Err(_) => format!("{what} in container {container} was not ready within 60 seconds"),
+        };
+        // The engine may be what stalled, so reading the output is bounded too.
+        if tokio::time::timeout(Duration::from_secs(10), self.print_logs(container))
+            .await
+            .is_err()
+        {
+            eprintln!("gave up reading the output of container {container} after 10 seconds");
         }
-        self.print_logs(container).await;
-        bail!("{what} in container {container} was not ready within 60 seconds")
+        bail!("{failure}")
     }
 }
