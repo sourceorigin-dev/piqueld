@@ -196,7 +196,7 @@ impl Store {
             credential: "{}",
         };
         let own = crate::PasskeyOwner::Existing(caller, user);
-        let added = self.add_passkey(own, passkey).await;
+        let added = self.add_passkey(None, own, passkey).await;
         assert!(added.expect("an account adds its own passkey"));
         caller
     }

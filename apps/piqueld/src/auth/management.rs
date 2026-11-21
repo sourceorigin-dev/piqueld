@@ -148,7 +148,11 @@ impl Auth {
     /// Issues the one-time admin recovery link for `operator`. It is valid
     /// for a day, replaces any earlier link, and registers a new account with
     /// `admin` on every application.
-    pub(crate) async fn recover_admin(&self, operator: HostOperator) -> Result<OperatorLink> {
+    pub(crate) async fn recover_admin(
+        &self,
+        operator: HostOperator,
+        request: Option<&AuditRequest>,
+    ) -> Result<OperatorLink> {
         if !self.0.store.auth_initialized().await? {
             return Err(AuthError::SetupPending);
         }
@@ -156,7 +160,7 @@ impl Auth {
         let expires_at = now_secs() + DAY;
         self.0
             .store
-            .create_recovery(&Self::hash(&secret), expires_at, operator)
+            .create_recovery(request, &Self::hash(&secret), expires_at, operator)
             .await?;
         tracing::warn!(uid = operator.uid, "issued an admin recovery link");
         Ok(OperatorLink {

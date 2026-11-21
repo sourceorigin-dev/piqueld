@@ -205,6 +205,7 @@ impl Fixture {
         assert!(
             store
                 .add_passkey(
+                    None,
                     PasskeyOwner::Existing(owner.caller().unwrap(), &owner.account().id),
                     passkey,
                 )
@@ -228,7 +229,12 @@ impl Fixture {
             name: "Key",
             credential: "{}",
         };
-        self.auth.0.store.add_passkey(owner, passkey).await.unwrap()
+        self.auth
+            .0
+            .store
+            .add_passkey(None, owner, passkey)
+            .await
+            .unwrap()
     }
 }
 
@@ -595,7 +601,7 @@ async fn changes_use_the_callers_current_grants() {
     };
     let owner = PasskeyOwner::Existing(alice.caller().unwrap(), &alice.account().id);
     assert!(matches!(
-        f.auth.0.store.add_passkey(owner, passkey).await,
+        f.auth.0.store.add_passkey(None, owner, passkey).await,
         Err(StoreError::CredentialRevoked)
     ));
     // Browser sessions idle past their limit since authenticating are refused too.
@@ -724,7 +730,7 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
     };
     let owner = PasskeyOwner::Existing(ci.caller().unwrap(), &alice.account().id);
     assert!(matches!(
-        f.auth.0.store.add_passkey(owner, passkey).await,
+        f.auth.0.store.add_passkey(None, owner, passkey).await,
         Err(StoreError::Denied(Denied::Scoped))
     ));
     let start = f.auth.device_start(None, None).unwrap();
@@ -909,7 +915,7 @@ async fn adding_a_passkey_needs_a_recent_sign_in() {
         &alice.account().id,
     );
     assert!(matches!(
-        f.auth.0.store.add_passkey(owner, passkey).await,
+        f.auth.0.store.add_passkey(None, owner, passkey).await,
         Err(StoreError::Denied(denied)) if denied == refused
     ));
 }
@@ -2202,13 +2208,13 @@ async fn recovery_links_create_one_administrator_and_raise_security_events() {
     let f = Fixture::new().await;
     let root = HostOperator { uid: 0 };
     assert!(matches!(
-        f.auth.recover_admin(root).await,
+        f.auth.recover_admin(root, None).await,
         Err(AuthError::SetupPending)
     ));
     let admin = f.identity("admin", &Grants::admin()).await;
     let secret = |link: &OperatorLink| link.url.split_once("#invite=").unwrap().1.to_owned();
-    let replaced = secret(&f.auth.recover_admin(root).await.unwrap());
-    let current = secret(&f.auth.recover_admin(root).await.unwrap());
+    let replaced = secret(&f.auth.recover_admin(root, None).await.unwrap());
+    let current = secret(&f.auth.recover_admin(root, None).await.unwrap());
     assert!(f.auth.invitation(&replaced).await.unwrap().is_none());
     assert!(matches!(
         f.auth.invitation(&current).await.unwrap(),
@@ -2244,11 +2250,11 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     let f = Fixture::new().await;
     let operator = HostOperator { uid: 1000 };
     let secret = |link: &OperatorLink| link.url.split_once("#operator=").unwrap().1.to_owned();
-    let expired = secret(&f.auth.sign_in_link(operator).await.unwrap());
+    let expired = secret(&f.auth.sign_in_link(operator, None).await.unwrap());
     f.auth.0.store.expire_operator_sessions().await;
     let unusable = f.auth.operator_sign_in(&expired, None).await;
     assert!(matches!(unusable, Err(AuthError::Unauthorized)));
-    let link = secret(&f.auth.sign_in_link(operator).await.unwrap());
+    let link = secret(&f.auth.sign_in_link(operator, None).await.unwrap());
     let (signed_in, token) = f.auth.operator_sign_in(&link, None).await.unwrap();
     assert_eq!(signed_in, operator);
     let again = f.auth.operator_sign_in(&link, None).await;

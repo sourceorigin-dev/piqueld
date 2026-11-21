@@ -72,6 +72,10 @@ Signing in records the session it opened under the account or host operator
 it signed in, never the session's secret: a passkey sign-in names the
 passkey, and a CLI login names the browser session that approved it.
 Confirming a session with a passkey, and signing out, are recorded too.
+Registering a passkey through setup, an invitation, an enrollment or a
+recovery link records the account it created or enrolled, its grants, the
+passkey and the session it opened. Issuing a recovery or host operator
+sign-in link records the link and its expiry, never its secret.
 
 A notification destination's record names it, how it changed, and the
 categories, applications and previews it now receives, never its URL. A

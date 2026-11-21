@@ -415,12 +415,22 @@ impl Auth {
     /// Issues a one-time link that signs a browser in as `operator`, valid
     /// for ten minutes, and raises a security event. Only its secret's hash
     /// is stored.
-    pub(crate) async fn sign_in_link(&self, operator: HostOperator) -> Result<OperatorLink> {
+    pub(crate) async fn sign_in_link(
+        &self,
+        operator: HostOperator,
+        request: Option<&AuditRequest>,
+    ) -> Result<OperatorLink> {
         let secret = Self::secret()?;
         let expires_at = now_secs() + OPERATOR_LINK_LIFETIME;
         self.0
             .store
-            .create_operator_link(&Self::id(), &Self::hash(&secret), expires_at, operator)
+            .create_operator_link(
+                request,
+                &Self::id(),
+                &Self::hash(&secret),
+                expires_at,
+                operator,
+            )
             .await?;
         tracing::warn!(uid = operator.uid, "issued a host operator sign-in link");
         Ok(OperatorLink {
