@@ -38,16 +38,19 @@ checkout, followed by a hash of its path, so separate clones never share an
 instance. Edit the file freely: `just dev` reads the directories, port, and
 Docker socket from it.
 
-`/tmp/piqueld-dev-<uid>` holds every instance's runtime directory. Before any `just dev` command touches a file in the
-instance's runtime directory, it creates the directory and its parent if
-needed and checks that only you can access them. It refuses to run
-otherwise, such as when another user created the directory first.
+`/tmp/piqueld-dev-<uid>` holds every instance's runtime directory. Before
+any `just dev` command touches a file in the instance's runtime directory, it
+creates the directory and its parent if needed and checks that only you can
+access them. It refuses to run otherwise, such as when another user created
+the directory first.
 
-`just dev` warns about a `runtime_dir` in the shared `/tmp/piqueld-dev`. To
-move it, run `just dev stop`, then `just dev config --force`; `config --force`
-refuses to replace the configuration of a running instance. The next
-`just dev` recreates the instance's engine for the new directories and keeps
-its images, Swarm, and services.
+`just dev` warns about a `runtime_dir` in the shared `/tmp/piqueld-dev`, and
+about a `[tailscale]` section that serves on the shared development node
+older checkouts ran. To replace either, run `just dev stop`, then
+`just dev config --force`; `config --force` refuses to replace the
+configuration of a running instance. The next `just dev` recreates the
+instance's engine for new directories and keeps its images, Swarm, and
+services.
 
 ## Browser
 
@@ -60,8 +63,7 @@ passkeys on it over HTTP. Use the instance's host, not `localhost` or
 `127.0.0.1`: browsers send a host's cookies to all its ports, so on a shared
 host every instance would receive the others' session cookies.
 
-T3 Code's browser preview runs on the machine running the instance, so it
-reaches the port directly.
+T3 Code's browser preview reaches the instance's port without a forward.
 
 ### From another machine
 
@@ -108,9 +110,11 @@ hostname = "piqueld-dev-<instance>"
 ```
 
 The daemon then starts its own `tailscaled`, with its state in the instance's
-data directory, and logs a login URL on its first start. `tailscale` and
-`tailscaled` must be on `PATH`, and the tailnet needs MagicDNS and HTTPS
-certificates.
+data directory. On its first start, it logs a login URL to `daemon.log` and
+waits until you approve the node, so `just dev start` times out until then.
+To log in without approval, set `auth_key_file` to the absolute path of a
+file holding an auth key. `tailscale` and `tailscaled` must be on `PATH`, and
+the tailnet needs MagicDNS and HTTPS certificates.
 
 ## Docker
 

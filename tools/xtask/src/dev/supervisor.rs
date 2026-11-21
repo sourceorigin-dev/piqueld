@@ -39,8 +39,8 @@ pub(super) enum Holder {
     Unrecorded,
 }
 
-/// A background xtask process, such as an instance's supervisor, found through
-/// the dev.pid it locks while it runs, so a file left behind by a crash never
+/// An instance's background supervisor, found through the dev.pid it locks
+/// while it runs, so a file left behind by a crash never
 /// names an unrelated process that reuses its pid.
 pub(super) struct Supervisor {
     pid_file: PathBuf,

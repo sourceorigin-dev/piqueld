@@ -31,8 +31,8 @@ const CONFIG_FILE: &str = "piqueld.local.toml";
 /// Held every user's runtime directories before [`Instance::runtime_root`];
 /// `just dev config --force` moves a configuration that still uses it.
 const LEGACY_RUNTIME_ROOT: &str = "/tmp/piqueld-dev";
-/// The socket, under [`Instance::runtime_root`], of the shared tailnet node
-/// that instances served on before T3 Code's port forwarding replaced it.
+/// The end of the socket path of the shared tailnet node that instances
+/// served on before T3 Code's port forwarding replaced it.
 const LEGACY_TAILNET_SOCKET: &str = "tailnet/tailscaled.sock";
 /// Changes to these rebuild and restart the daemon. It embeds the dashboard and
 /// the migrations at compile time, so they are watched too, as are the build
@@ -214,9 +214,8 @@ impl Instance {
                  {replace}"
             );
         }
-        if self.config.tailscale.socket.as_deref()
-            == Some(&Self::runtime_root()?.join(LEGACY_TAILNET_SOCKET))
-        {
+        let tailscale = self.config.tailscale.socket.as_deref();
+        if tailscale.is_some_and(|socket| socket.ends_with(LEGACY_TAILNET_SOCKET)) {
             eprintln!(
                 "warning: {CONFIG_FILE} serves on the shared tailnet node, which `just dev` \
                  no longer starts; {replace}"
@@ -341,8 +340,8 @@ impl Instance {
 [server]
 data_dir = {data}
 runtime_dir = {runtime}
-# The browser opens public_url, forwarded from another machine as needed;
-# the Unix socket serves the CLI.
+# The browser opens public_url, through a port forward when it runs on
+# another machine; the Unix socket serves the CLI.
 listen_mode = "localhost"
 port = {port}
 # The instance's own host on localhost: browsers send a host's cookies to
