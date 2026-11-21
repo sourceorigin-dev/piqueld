@@ -53,6 +53,22 @@ pub struct EnvironmentView {
     pub updated_at_ms: i64,
 }
 
+/// An environment as the application listing shows it: with its status and
+/// latest operation, so a listing needs no request per environment.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct EnvironmentSummary {
+    /// The environment.
+    #[serde(flatten)]
+    pub environment: EnvironmentView,
+    /// Its last recorded status; absent before one is recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<EnvironmentStatusView>,
+    /// Its newest operation, a deployment unless it is being deleted; absent
+    /// before its first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_operation: Option<Operation>,
+}
+
 crate::names::string_enum! {
     #[serde]
     /// Whether an environment runs its services.

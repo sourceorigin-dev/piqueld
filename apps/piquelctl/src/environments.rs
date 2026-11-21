@@ -426,13 +426,11 @@ impl RollbackArgs {
 /// Lists an application's environments with their status.
 async fn list(cli: &Cli, client: &Client, console: &mut Console, application: &str) -> Result<()> {
     let application = resolve_application(client, application).await?;
-    let statuses = statuses(client, &application.environments).await;
     let rows = rows(
         cli,
         console,
         application.application.metadata().name.as_str(),
-        &application.environments,
-        statuses,
+        statuses(client, &application.environments).await,
     )?;
     console.emit(&rows)
 }
@@ -867,38 +865,40 @@ pub(crate) async fn select(
     Ok((application, selected))
 }
 
+/// An environment and its status: read, not recorded yet, or failed to
+/// read.
+pub(crate) type Listed = (
+    EnvironmentView,
+    std::result::Result<Option<EnvironmentStatusView>, ClientError>,
+);
+
 /// Fetches every environment's status concurrently, in environment order.
-pub(crate) async fn statuses(
-    client: &Client,
-    environments: &[EnvironmentView],
-) -> Vec<std::result::Result<EnvironmentStatusView, ClientError>> {
-    futures_util::future::join_all(
-        environments
-            .iter()
-            .map(|environment| client.environment_status(environment.id.as_str())),
-    )
+pub(crate) async fn statuses(client: &Client, environments: &[EnvironmentView]) -> Vec<Listed> {
+    futures_util::future::join_all(environments.iter().map(async |environment| {
+        let status = client.environment_status(environment.id.as_str()).await;
+        (environment.clone(), status.map(Some))
+    }))
     .await
 }
 
-/// Pairs environments with their fetched statuses, warning with each status
+/// Rows of environments with their statuses, warning with each status
 /// message. A failed status request becomes a warning and an `unavailable`
 /// row instead of hiding the other environments.
 pub(crate) fn rows(
     cli: &Cli,
     console: &mut Console,
     application: &str,
-    environments: &[EnvironmentView],
-    statuses: Vec<std::result::Result<EnvironmentStatusView, ClientError>>,
+    environments: Vec<Listed>,
 ) -> Result<Vec<EnvironmentRow>> {
     let mut rows = Vec::with_capacity(environments.len());
-    for (environment, status) in environments.iter().zip(statuses) {
+    for (environment, status) in environments {
         let label = format!("{application}/{}", environment.name);
         let status = match status {
             Ok(status) => {
-                if let Some(message) = &status.message {
+                if let Some(message) = status.as_ref().and_then(|status| status.message.as_ref()) {
                     console.warning(format_args!("{label}: {message}"))?;
                 }
-                Some(status)
+                status
             }
             Err(error) => {
                 console.warning_report(&ErrorReport::warning(
@@ -910,7 +910,7 @@ pub(crate) fn rows(
             }
         };
         rows.push(EnvironmentRow {
-            environment: environment.clone(),
+            environment,
             status,
         });
     }

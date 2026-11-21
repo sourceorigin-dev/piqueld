@@ -820,7 +820,7 @@ impl ApplicationRow {
     }
 }
 
-/// The newest deployments across applications; each application contributes its latest page.
+/// The newest deployments across applications: each environment's latest.
 #[component]
 fn RecentDeployments() -> impl IntoView {
     let signals = dashboard_context().signals;
@@ -840,20 +840,6 @@ fn RecentDeployments() -> impl IntoView {
                                 "Application list is incomplete; some deployments may be missing.",
                             )
                         })
-                }}
-                {move || {
-                    signals
-                        .applications
-                        .get()
-                        .iter()
-                        .filter_map(|row| {
-                            row.deployment_error
-                                .as_ref()
-                                .map(|error| {
-                                    notice(Tone::Bad, format!("{}: {error}", row.application.name))
-                                })
-                        })
-                        .collect_view()
                 }}
                 <div class="table-wrap">
                     {move || {
@@ -882,8 +868,7 @@ fn RecentDeployments() -> impl IntoView {
                                         <tbody>
                                             {deployments
                                                 .into_iter()
-                                                .map(|(application, deployment)| {
-                                                    let op = &deployment.operation;
+                                                .map(|(application, op)| {
                                                     let href = deployment_href(
                                                         application.id.as_str(),
                                                         op.environment_id.as_str(),
