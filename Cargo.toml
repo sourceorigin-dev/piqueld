@@ -130,6 +130,7 @@ vt100 = "0.16.2"
 
 proptest = "1.6.0"
 prettyplease = "0.2.37"
+proc-macro2 = "1.0.106"
 progenitor = { version = "0.11.0", default-features = false }
 progenitor-client = "0.11.0"
 reqwest = { version = "0.12.12", default-features = false, features = ["json", "stream"] }

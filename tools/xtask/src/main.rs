@@ -1,8 +1,8 @@
 //! Development tasks for the piqueld workspace, run with `cargo xtask`: this
 //! worktree's development instance (`just dev`, see docs/dev/development.md), the
 //! isolated Docker integration tests, the Playwright browser suite, the
-//! crates' dependency boundaries, test coverage, the release binaries,
-//! and releases.
+//! crates' dependency boundaries, tests that wait on the clock, test
+//! coverage, the release binaries, and releases.
 
 mod boundary;
 mod coverage;
@@ -13,6 +13,7 @@ mod docker_test;
 mod playwright;
 mod process;
 mod publish;
+mod test_waits;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -60,6 +61,10 @@ enum Task {
     /// server, Docker, or browser framework, and the daemon's crates don't
     /// depend on the ones they build alongside.
     Boundary,
+    /// Check that tests wait for events, not time: no sleep in test code
+    /// unless the test pauses tokio's clock or a `// wall-clock: <why>`
+    /// comment above it explains a real-world wait.
+    TestWaits,
     /// Measure which code the native workspace tests run, as an HTML report
     /// and a summary per crate.
     #[command(disable_help_flag = true)]
@@ -102,6 +107,7 @@ async fn main() -> Result<ExitCode> {
         } => docker_test::run(&workspace, suite, partition.as_deref(), store).await,
         Task::Playwright { args } => playwright::run(&workspace, &args).await,
         Task::Boundary => boundary::check(&workspace),
+        Task::TestWaits => test_waits::check(&workspace),
         Task::Coverage { args } => coverage::run(&workspace, &args),
         Task::Dist => dist::run(&workspace),
         Task::Publish { args } => publish::run(&workspace, &args),

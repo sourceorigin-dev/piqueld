@@ -33,6 +33,7 @@ by version.
 | Documentation tests | `doc-test` | `rust (test)` |
 | Generated API specification, client, JSON Schemas, and command and settings references freshness | `openapi-check` | `rust (lint)` |
 | Crate dependency boundaries | `boundary` | `rust (lint)` |
+| Tests wait for events, not time (`cargo xtask test-waits`) | `lint` | `rust (lint)` |
 | Published crates on the minimum supported Rust, `rust-version` | `cargo +<rust-version> check` | `msrv` |
 | Browser compilation | `ui-check`, `check-wasm` | `wasm-ui` |
 | Real browser transport tests | `test-wasm` | `wasm-ui` |

@@ -69,6 +69,23 @@ or fewer may stay inline. Tests prove one behaviour each, named for it, and
 assert the outcome; [automated validation](validation.md) lists the suites
 and what each covers.
 
+Write a test at the lowest layer that fails without the change, once: not
+again in a wrapper, at each call site or on each surface. Extend before you
+add: when a test or table covers the behaviour, add a row or an assertion to
+it. A fix to logic, data, state or a protocol comes with a test that fails
+without the fix, written first. A purely visual fix, such as spacing or
+colour, is shown with before and after screenshots in the pull request
+instead, and gets no test.
+
+Tests wait for events, not time: no `thread::sleep` or `tokio::time::sleep`
+to let something happen, no assertions on elapsed time, and no retries. Await
+the channel, notification or state change that marks the milestone, such as
+`Store::wait_until`, `Store::writer_waiting` or a `FakeDocker` counter, and
+move time with `#[tokio::test(start_paused = true)]`. A wait on a real
+subprocess or network peer that has nothing to await says why on the line
+above, `// wall-clock: <why>`. `cargo xtask test-waits` enforces this, and
+`just lint` runs it.
+
 Every item has a doc comment. Public items' `///` comments on the manifest,
 configuration and CLI types are also the generated references, so keep them
 about what the reader can see and do, and put notes for developers in `//`

@@ -14,9 +14,12 @@ bollard.workspace = true
 clap.workspace = true
 futures-util.workspace = true
 piqueld-client.workspace = true
+# Line numbers for `cargo xtask test-waits`'s findings.
+proc-macro2 = { workspace = true, features = ["span-locations"] }
 rustix = { workspace = true, features = ["fs", "process"] }
 serde.workspace = true
 serde_json.workspace = true
+syn = { workspace = true, features = ["visit"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 toml.workspace = true
