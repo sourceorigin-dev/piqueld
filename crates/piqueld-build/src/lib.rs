@@ -26,10 +26,10 @@ pub enum BuildError {
         #[source]
         source: io::Error,
     },
-    /// `OUT_DIR` is not `<target dir>/<profile>/build/<package>-<hash>/out`,
-    /// so the target directory can't be derived from it.
+    /// `OUT_DIR` is not under `<target dir>/<profile>/build`, so the target
+    /// directory can't be derived from it.
     #[error(
-        "the build script's OUT_DIR {} is not <target dir>/<profile>/build/<package>-<hash>/out, so the nested build has no target directory beside it",
+        "the build script's OUT_DIR {} is not under <target dir>/<profile>/build, so the nested build has no target directory beside it",
         .0.display()
     )]
     OutDirLayout(PathBuf),
@@ -198,10 +198,12 @@ impl NestedCargo {
         Ok(self.target_dir.join(target).join(profile))
     }
 
-    /// Derives `<target dir>-<suffix>` from the canonical `OUT_DIR` layout
-    /// `<target>/<profile>/build/<pkg>-<hash>/out`.
+    /// Derives `<target dir>-<suffix>` from the canonical `OUT_DIR`, which is
+    /// `<target>/<profile>/build/<pkg>/<hash>/out` for the pinned Cargo and
+    /// `<target>/<profile>/build/<pkg>-<hash>/out` for older ones: the target
+    /// directory is two levels above the nearest `build` directory, so no
+    /// package that builds nested may be named `build`.
     fn sibling_target_dir(out_dir: &Path, suffix: &str) -> Result<PathBuf, BuildError> {
-        const OUT_TO_TARGET_DEPTH: usize = 4;
         let canonical = out_dir
             .canonicalize()
             .map_err(|source| BuildError::OutDir {
@@ -210,7 +212,8 @@ impl NestedCargo {
             })?;
         let target_dir = canonical
             .ancestors()
-            .nth(OUT_TO_TARGET_DEPTH)
+            .find(|ancestor| ancestor.file_name() == Some("build".as_ref()))
+            .and_then(|build| build.ancestors().nth(2))
             .ok_or_else(|| BuildError::OutDirLayout(canonical.clone()))?;
         if !target_dir.is_dir() {
             return Err(BuildError::MissingTargetDir(target_dir.to_owned()));
@@ -228,23 +231,31 @@ impl NestedCargo {
 mod tests {
     use super::*;
 
-    /// The nested target directory sits beside the outer one, named after it.
+    /// The nested target directory sits beside the outer one, named after it,
+    /// with either `OUT_DIR` layout.
     #[test]
     fn nests_beside_the_outer_target_directory() {
-        let root = tempfile::tempdir().unwrap();
-        let out_dir = root.path().join("target/debug/build/piqueld-0123/out");
-        std::fs::create_dir_all(&out_dir).unwrap();
-        let nested = NestedCargo::sibling_target_dir(&out_dir, "ui").unwrap();
-        assert_eq!(
-            nested,
-            root.path().canonicalize().unwrap().join("target-ui")
-        );
-        // The root has fewer than four ancestors wherever the tests run.
-        let shallow = NestedCargo::sibling_target_dir(Path::new("/"), "ui").unwrap_err();
-        assert!(
-            matches!(shallow, BuildError::OutDirLayout(_)),
-            "{shallow:?}"
-        );
+        for layout in [
+            "target/debug/build/piqueld/0123/out",
+            "target/debug/build/piqueld-0123/out",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let out_dir = root.path().join(layout);
+            std::fs::create_dir_all(&out_dir).unwrap();
+            let nested = NestedCargo::sibling_target_dir(&out_dir, "ui").unwrap();
+            assert_eq!(
+                nested,
+                root.path().canonicalize().unwrap().join("target-ui"),
+                "{layout}"
+            );
+        }
+    }
+
+    /// An `OUT_DIR` with no `build` directory above it has no target directory.
+    #[test]
+    fn rejects_an_out_dir_outside_a_build_directory() {
+        let error = NestedCargo::sibling_target_dir(Path::new("/"), "ui").unwrap_err();
+        assert!(matches!(error, BuildError::OutDirLayout(_)), "{error:?}");
     }
 
     /// What a failing build script prints names the problem and its cause.
