@@ -8,7 +8,7 @@ use super::ui::{
 };
 use super::{Alive, ClientErrorExt, dashboard_context, live_row, operation_events};
 use crate::log_output::LogLine;
-use crate::overview::{BuildList, build_arguments};
+use crate::overview::{BuildList, OutputChunks, build_arguments};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::components::A;
@@ -50,8 +50,9 @@ async fn builds_page(
 }
 
 /// Build list, optionally scoped to one `application`'s environments or to one
-/// `environment`. A 3-second loop refetches the first page on demand or while
-/// any build is running (skipped while the tab is hidden). Once older pages
+/// `environment`. A 3-second loop refetches the first page on demand, while
+/// any build is running, and otherwise every 15 seconds, so builds started
+/// elsewhere appear (skipped while the tab is hidden). Once older pages
 /// have been loaded, refreshed builds are merged by ID instead of replacing the
 /// list so the extra pages are kept. Given `allowed`, whether the caller holds
 /// a permission in a build's environment, a build's output needs `logs:read`
@@ -73,12 +74,13 @@ pub(super) fn BuildHistory(
     let scoped = environment.is_some();
     let scope = StoredValue::new((application, environment));
     spawn_local(async move {
+        let mut elapsed = 0;
         while alive.get() {
             let running = records
                 .with_untracked(|items| items.iter().any(|b| b.state == BuildState::Running));
             if !super::document_hidden()
                 && !loading.get_untracked()
-                && (refresh.get_untracked() || running)
+                && (refresh.get_untracked() || running || elapsed >= 15)
             {
                 refresh.set(false);
                 loading.set(true);
@@ -99,8 +101,10 @@ pub(super) fn BuildHistory(
                     Err(e) => error.set(Some(e.user_message())),
                 }
                 loading.set(false);
+                elapsed = 0;
             }
             gloo_timers::future::TimeoutFuture::new(3000).await;
+            elapsed += 3;
         }
     });
     let older = move || {
@@ -123,7 +127,7 @@ pub(super) fn BuildHistory(
         <section class="stack-sm" aria-label="Build history">
             <div class="toolbar">
                 <p class="hint">
-                    "Running builds refresh automatically while this page is visible."
+                    "Builds refresh every 15 seconds while this page is visible, and every 3 seconds while one runs."
                 </p>
                 <div class="toolbar-end">
                     <button
@@ -380,7 +384,10 @@ fn BuildOutput(record: Signal<BuildRecord>) -> impl IntoView {
                     || older.get_untracked()
                     || (!final_loaded && elapsed >= 30))
             {
-                let replacing = refresh.get_untracked() || !older.get_untracked();
+                // A refresh or filter change replaces the output; the newest
+                // page fetched otherwise keeps the older output loaded.
+                let reload = refresh.get_untracked();
+                let replacing = reload || !older.get_untracked();
                 refresh.set(false);
                 older.set(false);
                 loading.set(true);
@@ -402,8 +409,15 @@ fn BuildOutput(record: Signal<BuildRecord>) -> impl IntoView {
                 }
                 match result {
                     Ok(page) => {
+                        let mut previous_offset = page.previous_offset;
                         if replacing {
-                            chunks.set(page.items);
+                            if reload {
+                                chunks.set(page.items);
+                            } else if chunks.try_update(|chunks| chunks.merge_newest(page.items))
+                                == Some(true)
+                            {
+                                previous_offset = previous.get_untracked();
+                            }
                             final_loaded = build.state != BuildState::Running;
                         } else if !page.items.is_empty() {
                             batch(move || {
@@ -416,7 +430,7 @@ fn BuildOutput(record: Signal<BuildRecord>) -> impl IntoView {
                                 });
                             });
                         }
-                        previous.set(page.previous_offset);
+                        previous.set(previous_offset);
                         expired.set(page.expired);
                         error.set(None);
                     }
