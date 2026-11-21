@@ -339,7 +339,7 @@ impl<D: DockerApi> Controller<D> {
         }
         // Marked last: a truncated log accepts no further notes.
         if truncated {
-            log.truncated().await?;
+            log.truncated().await;
         }
         result
     }

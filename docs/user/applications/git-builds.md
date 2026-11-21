@@ -365,8 +365,11 @@ prints the earlier part.
   [`checkouts.max_bytes`](../reference/configuration-settings.md#checkoutsmax_bytes), 4 GiB
   by default, and hold at most 500,000 files and directories. piqueld doesn't
   fetch Git submodules or Git LFS files.
-- **The build output stops before the end.** piqueld keeps the first 4 MiB of
-  each build's output for 30 days.
+- **The build output skips part of its middle.** piqueld keeps 4 MiB of each
+  build's output for 30 days. Of longer output, it keeps the first 2 MiB and
+  the end. Between them, a note says how many bytes it left out, when the note
+  fits within the limit: a limit of a few hundred bytes leaves it out. The end
+  shows once the build ends.
   [`build_history.log_max_bytes`](../reference/configuration-settings.md#build_historylog_max_bytes)
   and
   [`build_history.log_retention_days`](../reference/configuration-settings.md#build_historylog_retention_days)

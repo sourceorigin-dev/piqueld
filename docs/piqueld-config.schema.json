@@ -88,7 +88,7 @@
       "properties": {
         "log_max_bytes": {
           "default": 4194304,
-          "description": "The most output kept per build, in bytes.",
+          "description": "The most output kept per build, in bytes. Output within it is kept\nwhole. Of longer output, a build keeps the first half and the end,\nwith a note of how many bytes it left out between them when the note\nfits.",
           "format": "int32",
           "maximum": 67108864,
           "minimum": 1,

@@ -646,7 +646,10 @@ pub struct DnsConfig {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct BuildHistoryConfig {
-    /// The most output kept per build, in bytes.
+    /// The most output kept per build, in bytes. Output within it is kept
+    /// whole. Of longer output, a build keeps the first half and the end,
+    /// with a note of how many bytes it left out between them when the note
+    /// fits.
     #[schema(minimum = 1, maximum = 67_108_864)]
     pub log_max_bytes: u32,
     /// Days a build's output is kept after it finishes. The build stays
