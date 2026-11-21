@@ -254,14 +254,22 @@ image = "nginx:1.27"
 }
 
 /// Every property name in the manifest JSON schema survives decode path
-/// redaction, so a new manifest field can't truncate its decode errors.
+/// redaction, so a new manifest field can't truncate its decode errors, and
+/// the key after every map property is redacted, so a new map can't leak its
+/// keys.
 #[test]
 fn decode_paths_keep_every_manifest_field() {
-    fn property_names(schema: &serde_json::Value, names: &mut Vec<String>) {
+    /// Collects each property's name and whether its value is a map.
+    fn property_names(schema: &serde_json::Value, names: &mut Vec<(String, bool)>) {
         match schema {
             serde_json::Value::Object(object) => {
                 if let Some(serde_json::Value::Object(properties)) = object.get("properties") {
-                    names.extend(properties.keys().cloned());
+                    names.extend(properties.iter().map(|(name, property)| {
+                        let map = property
+                            .get("additionalProperties")
+                            .is_some_and(serde_json::Value::is_object);
+                        (name.clone(), map)
+                    }));
                 }
                 for value in object.values() {
                     property_names(value, names);
@@ -280,15 +288,27 @@ fn decode_paths_keep_every_manifest_field() {
         &piqueld_core::manifest::ApplicationManifest::json_schema(),
         &mut names,
     );
-    assert!(names.iter().any(|name| name == "stop_service"));
+    assert!(names.iter().any(|(name, _)| name == "stop_service"));
+    assert!(
+        names
+            .iter()
+            .any(|(name, map)| name == "environment" && *map)
+    );
     let redacted = names
         .iter()
-        .filter(|name| piqueld_core::manifest::safe_decode_path(name) != **name)
+        .filter(|(name, _)| piqueld_core::manifest::safe_decode_path(name) != *name)
         .collect::<std::collections::BTreeSet<_>>();
     assert!(
         redacted.is_empty(),
         "redacted manifest fields: {redacted:?}"
     );
+    let leaking = names
+        .iter()
+        .filter(|(name, map)| {
+            *map && piqueld_core::manifest::safe_decode_path(&format!("{name}.image")) != *name
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(leaking.is_empty(), "maps keeping their keys: {leaking:?}");
 }
 
 #[test]
@@ -310,6 +330,24 @@ stop_service = "yes"
     };
     assert_eq!(error.code, ApiErrorCode::ManifestDecodeFailed);
     assert_eq!(error.path, "spec.jobs[0].stop_service");
+}
+
+/// A map key is redacted from decode errors even when it matches a field name.
+#[test]
+fn decode_errors_redact_map_keys_named_like_fields() {
+    let manifest = format!(
+        r#"{}
+[spec.services.environment]
+image = ["notes"]
+"#,
+        valid_manifest("notes")
+    );
+    let error = parse_toml(&manifest).unwrap_err();
+    let [error] = error.0.as_slice() else {
+        panic!("expected one decode error: {error}");
+    };
+    assert_eq!(error.code, ApiErrorCode::ManifestDecodeFailed);
+    assert_eq!(error.path, "spec.services[0].environment");
 }
 
 #[test]
