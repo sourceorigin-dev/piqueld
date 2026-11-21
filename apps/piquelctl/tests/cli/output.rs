@@ -202,6 +202,7 @@ fn unexpected_responses_include_connection_context_without_extra_probes() {
             content_type: "text/plain",
             body: body.as_bytes().to_vec(),
             drop_connection: false,
+            exec_started: None,
         });
         let output = run_human(&server, &["--quiet", "status"]);
         assert!(!output.status.success());

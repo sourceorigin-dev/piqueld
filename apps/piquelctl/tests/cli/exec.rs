@@ -34,13 +34,10 @@ fn exec_cat(target: &[&str], runs_in: &str, stdin: Stdio, input: &[u8]) -> (Test
 
 #[test]
 fn exec_ends_through_the_supervisor_on_sigterm() {
-    let (upgraded, session_started) = mpsc::channel();
+    let (started, session_started) = mpsc::channel();
     let server = start_server(false, 2, move |request| match request.path.as_str() {
         "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
-        "/api/v1/environments/app-notes-01/exec" => {
-            upgraded.send(()).expect("test is waiting");
-            Reply::upgrade()
-        }
+        "/api/v1/environments/app-notes-01/exec" => Reply::upgrade_signalling(started.clone()),
         path => panic!("unexpected path {path}"),
     });
     // Standard input stays open, so the session never ends on its own.
@@ -53,7 +50,8 @@ fn exec_ends_through_the_supervisor_on_sigterm() {
         .spawn()
         .expect("piquelctl process");
     let stdin = child.stdin.take().expect("child stdin");
-    // The supervisor's handlers are installed before any request is sent.
+    // The supervisor's handlers are installed before any request is sent, and
+    // the exec request was read, so SIGTERM arrives during the session.
     session_started
         .recv_timeout(Duration::from_secs(10))
         .expect("exec requested");
