@@ -19,6 +19,7 @@
   - [Connecting applications](user/applications/links.md)
   - [Running commands in a container](user/applications/commands.md)
   - [Building images from Git](user/applications/git-builds.md)
+    - [Building on another machine](user/applications/build-machine.md)
   - [Deploying on push](user/applications/deploy-on-push.md)
   - [Environments and promotion](user/applications/environments.md)
   - [Restoring a deployment](user/applications/restore.md)

@@ -32,6 +32,10 @@
           imports = [ ./nix/module.nix ];
           services.piqueld.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.combined;
         };
+        # A build machine's BuildKit daemon, and a build registry, on the
+        # same machine or separate ones; not part of `default`.
+        piqueld-builder = ./nix/builder-module.nix;
+        piqueld-registry = ./nix/registry-module.nix;
         piquelctl = { lib, pkgs, ... }: {
           imports = [ ./nix/cli-module.nix ];
           programs.piquelctl.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.cli;
@@ -48,6 +52,16 @@
       };
 
       darwinModules.piquelctl = self.nixosModules.piquelctl;
+
+      # The VM tests of the NixOS modules, which need KVM.
+      checks.x86_64-linux.piqueld-builder = (pkgsFor "x86_64-linux").testers.runNixOSTest (
+        import ./nix/tests/builder.nix {
+          modules = [
+            self.nixosModules.piqueld-builder
+            self.nixosModules.piqueld-registry
+          ];
+        }
+      );
 
       packages = forAllSystems (
         system:
