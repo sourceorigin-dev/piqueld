@@ -4,11 +4,84 @@
 
 use std::{
     env,
-    error::Error,
-    io,
+    error::Error as _,
+    fmt, io,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, ExitStatus},
 };
+
+/// Why a nested build could not run or failed, with the paths, package and
+/// target a person needs to fix it.
+#[derive(thiserror::Error)]
+pub enum BuildError {
+    /// Cargo did not set a variable it gives every build script.
+    #[error("Cargo did not provide {0} to the build script")]
+    MissingVariable(&'static str),
+    /// `OUT_DIR` can't be resolved, such as when it was removed.
+    #[error("failed to resolve the build script's OUT_DIR {}", .out_dir.display())]
+    OutDir {
+        /// `OUT_DIR` as Cargo gave it.
+        out_dir: PathBuf,
+        /// Why it can't be resolved.
+        #[source]
+        source: io::Error,
+    },
+    /// `OUT_DIR` is not `<target dir>/<profile>/build/<package>-<hash>/out`,
+    /// so the target directory can't be derived from it.
+    #[error(
+        "the build script's OUT_DIR {} is not <target dir>/<profile>/build/<package>-<hash>/out, so the nested build has no target directory beside it",
+        .0.display()
+    )]
+    OutDirLayout(PathBuf),
+    /// The target directory derived from `OUT_DIR` does not exist.
+    #[error("the Cargo target directory {}, derived from OUT_DIR, does not exist", .0.display())]
+    MissingTargetDir(PathBuf),
+    /// The nested build's directory has no `Cargo.lock` in or above it.
+    #[error("no Cargo.lock in {} or any directory above it", .0.display())]
+    NoLockfile(PathBuf),
+    /// The nested Cargo could not start.
+    #[error("failed to run cargo to build {package} from {}", .dir.display())]
+    Spawn {
+        /// The package it was to build.
+        package: String,
+        /// The directory it was to run in.
+        dir: PathBuf,
+        /// Why it could not start.
+        #[source]
+        source: io::Error,
+    },
+    /// The nested Cargo ran and failed; `output` is what it printed.
+    #[error(
+        "cargo failed to build {package} for {target} from {} ({status}); is the {target} target installed (`rustup target add {target}`)?\n{output}",
+        .dir.display()
+    )]
+    Failed {
+        /// The package it built.
+        package: String,
+        /// The target triple it built for.
+        target: String,
+        /// The directory it ran in.
+        dir: PathBuf,
+        /// How it exited.
+        status: ExitStatus,
+        /// Its standard output, then its standard error.
+        output: String,
+    },
+}
+
+// A build script's `main` prints the error it returns with `Debug`, so this
+// shows the message and its causes, rather than escaped fields.
+impl fmt::Debug for BuildError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{self}")?;
+        let mut source = self.source();
+        while let Some(cause) = source {
+            write!(formatter, "\ncaused by: {cause}")?;
+            source = cause.source();
+        }
+        Ok(())
+    }
+}
 
 /// A nested build into its own target directory beside the outer one.
 ///
@@ -36,9 +109,8 @@ impl NestedCargo {
     /// # Errors
     /// Cargo gave the build script no `OUT_DIR`, or its target directory
     /// can't be derived from it.
-    pub fn new(suffix: &str) -> Result<Self, Box<dyn Error>> {
-        let out_dir =
-            env::var_os("OUT_DIR").ok_or("Cargo did not provide OUT_DIR to the build script")?;
+    pub fn new(suffix: &str) -> Result<Self, BuildError> {
+        let out_dir = env::var_os("OUT_DIR").ok_or(BuildError::MissingVariable("OUT_DIR"))?;
         Ok(Self {
             target_dir: Self::sibling_target_dir(Path::new(&out_dir), suffix)?,
         })
@@ -63,7 +135,7 @@ impl NestedCargo {
         profile: &str,
         target: &str,
         config: Option<&Path>,
-    ) -> Result<PathBuf, Box<dyn Error>> {
+    ) -> Result<PathBuf, BuildError> {
         const HOST_SETTINGS: [&str; 6] = [
             "RUSTFLAGS",
             "RUSTDOCFLAGS",
@@ -75,7 +147,7 @@ impl NestedCargo {
         let root = dir
             .ancestors()
             .find(|ancestor| ancestor.join("Cargo.lock").is_file())
-            .ok_or_else(|| io::Error::other(format!("no Cargo.lock above {}", dir.display())))?;
+            .ok_or_else(|| BuildError::NoLockfile(dir.to_owned()))?;
         let inputs = [
             dir.to_owned(),
             root.join("Cargo.toml"),
@@ -84,8 +156,7 @@ impl NestedCargo {
         for input in inputs.iter().map(PathBuf::as_path).chain(config) {
             println!("cargo:rerun-if-changed={}", input.display());
         }
-        let cargo =
-            env::var_os("CARGO").ok_or("Cargo did not provide CARGO to the build script")?;
+        let cargo = env::var_os("CARGO").ok_or(BuildError::MissingVariable("CARGO"))?;
         println!(
             "cargo:warning=building embedded {package} (nested target dir: {})",
             self.target_dir.display()
@@ -106,45 +177,88 @@ impl NestedCargo {
                 command.env_remove(key);
             }
         }
-        let output = command.output()?;
+        let output = command.output().map_err(|source| BuildError::Spawn {
+            package: package.to_owned(),
+            dir: dir.to_owned(),
+            source,
+        })?;
         if !output.status.success() {
-            return Err(io::Error::other(format!(
-                "cargo failed to build {package}; is the {target} target installed \
-                 (`rustup target add {target}`)?\n{}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr),
-            ))
-            .into());
+            return Err(BuildError::Failed {
+                package: package.to_owned(),
+                target: target.to_owned(),
+                dir: dir.to_owned(),
+                status: output.status,
+                output: format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr),
+                ),
+            });
         }
         Ok(self.target_dir.join(target).join(profile))
     }
 
     /// Derives `<target dir>-<suffix>` from the canonical `OUT_DIR` layout
     /// `<target>/<profile>/build/<pkg>-<hash>/out`.
-    fn sibling_target_dir(out_dir: &Path, suffix: &str) -> Result<PathBuf, Box<dyn Error>> {
+    fn sibling_target_dir(out_dir: &Path, suffix: &str) -> Result<PathBuf, BuildError> {
         const OUT_TO_TARGET_DEPTH: usize = 4;
-        let target_dir = out_dir
-            .canonicalize()?
+        let canonical = out_dir
+            .canonicalize()
+            .map_err(|source| BuildError::OutDir {
+                out_dir: out_dir.to_owned(),
+                source,
+            })?;
+        let target_dir = canonical
             .ancestors()
             .nth(OUT_TO_TARGET_DEPTH)
-            .ok_or_else(|| io::Error::other("unexpected OUT_DIR depth for target-dir derivation"))?
-            .to_owned();
+            .ok_or_else(|| BuildError::OutDirLayout(canonical.clone()))?;
         if !target_dir.is_dir() {
-            return Err(io::Error::other(format!(
-                "derived Cargo target directory {} does not exist",
-                target_dir.display()
-            ))
-            .into());
+            return Err(BuildError::MissingTargetDir(target_dir.to_owned()));
         }
-        let name = target_dir
+        let mut name = target_dir
             .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| io::Error::other("Cargo target directory name is not valid UTF-8"))?
+            .ok_or_else(|| BuildError::OutDirLayout(canonical.clone()))?
             .to_owned();
-        let parent = target_dir
-            .parent()
-            .ok_or_else(|| io::Error::other("Cargo target directory has no parent"))?
-            .to_owned();
-        Ok(parent.join(format!("{name}-{suffix}")))
+        name.push(format!("-{suffix}"));
+        Ok(target_dir.with_file_name(name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The nested target directory sits beside the outer one, named after it.
+    #[test]
+    fn nests_beside_the_outer_target_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let out_dir = root.path().join("target/debug/build/piqueld-0123/out");
+        std::fs::create_dir_all(&out_dir).unwrap();
+        let nested = NestedCargo::sibling_target_dir(&out_dir, "ui").unwrap();
+        assert_eq!(
+            nested,
+            root.path().canonicalize().unwrap().join("target-ui")
+        );
+        // The root has fewer than four ancestors wherever the tests run.
+        let shallow = NestedCargo::sibling_target_dir(Path::new("/"), "ui").unwrap_err();
+        assert!(
+            matches!(shallow, BuildError::OutDirLayout(_)),
+            "{shallow:?}"
+        );
+    }
+
+    /// What a failing build script prints names the problem and its cause.
+    #[test]
+    fn debug_output_reads_like_the_message_and_its_causes() {
+        let error = BuildError::Spawn {
+            package: "piqueld-probe".into(),
+            dir: "/src/probe".into(),
+            source: io::Error::new(io::ErrorKind::NotFound, "No such file or directory"),
+        };
+        assert_eq!(
+            format!("{error:?}"),
+            "failed to run cargo to build piqueld-probe from /src/probe\n\
+             caused by: No such file or directory"
+        );
     }
 }
