@@ -169,8 +169,9 @@ whether to wait:
 
 `output.log`, beside the marker, keeps the latest run's whole output. Run
 `just setup-worktree` again to retry a failed or interrupted setup, or to
-prepare a worktree T3 Code didn't create; it refuses to start while another
-run is live.
+prepare a worktree T3 Code didn't create. A run holds a lock on
+`target/worktree-setup/lock`, so a second one refuses to start, and
+`flock target/worktree-setup/lock true` waits for it to end.
 
 ## Logs
 

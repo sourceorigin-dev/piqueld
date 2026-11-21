@@ -142,23 +142,27 @@ dev *ARGS:
 
 # T3 Code runs this when it creates a worktree (t3.json). While it works,
 # target/worktree-setup/running holds its PID and output.log its output; it
-# then leaves `done`, or `failed` holding the end of the log. It refuses to
-# start while another run is live. `running` is written before the old markers
-# go and removed after the new one is written, so a reader always finds one.
+# then leaves `done`, or `failed` holding the end of the log. It holds an
+# exclusive lock on target/worktree-setup/lock throughout, so a second run
+# refuses to start, and `flock <lock> true` waits for it. `running` is written
+# before the old markers go and removed after the new one is written, so a
+# reader always finds one.
 # Prepares a new worktree: its development configuration and a workspace build.
 setup-worktree:
     #!/usr/bin/env bash
     set -euo pipefail
     markers=target/worktree-setup
     mkdir -p "$markers"
-    if pid=$(cat "$markers/running" 2>/dev/null) && kill -0 "$pid" 2>/dev/null; then
-        echo "worktree setup is already running as PID $pid" >&2
+    exec 9> "$markers/lock"
+    if ! flock -n 9; then
+        echo "worktree setup is already running as PID $(cat "$markers/running")" >&2
         exit 1
     fi
     echo $$ > "$markers/running"
     rm -f "$markers/done" "$markers/failed"
     status=0
-    { just dev config && just build; } 2>&1 | tee "$markers/output.log" || status=$?
+    # The build doesn't inherit the lock, so the lock ends with this script.
+    { just dev config && just build; } 9>&- 2>&1 | tee "$markers/output.log" || status=$?
     if [ "$status" -eq 0 ]; then
         touch "$markers/done"
     else

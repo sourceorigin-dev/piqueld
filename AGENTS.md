@@ -19,10 +19,11 @@ while iterating, run only what you changed, such as `just test -p <crate>` and
 
 T3 Code prepares a new worktree with `just setup-worktree`, which leaves a
 marker in `target/worktree-setup/`. Read `failed` first if it exists: it holds
-the end of the setup's output. While `running` names a live process
-(`kill -0 <pid>`), wait for it with `tail --pid=<pid> -f /dev/null`. With no
-marker, or a `running` whose process is gone, run `just setup-worktree`
-yourself.
+the end of the setup's output, and `output.log` all of it; fix the cause and
+run the recipe again. While `running` names a live process, wait in the
+background with `flock target/worktree-setup/lock true`, which returns once
+setup ends. With no marker, or a `running` whose process is gone, run
+`just setup-worktree` yourself.
 
 ## Testing
 
