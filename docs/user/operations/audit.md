@@ -62,8 +62,8 @@ notification destinations it discarded.
 An account change's record names what it changed and how it is now: an
 account's new name, its grants, a new token or link with its grants and
 expiry, never its secret. Revoking a credential, removing a passkey or
-deleting an account also says how many credentials, links and passkeys it
-removed, including those they issued unless you chose not to cascade.
+deleting an account also says how many credentials, invitations and passkeys
+it removed, including those they issued unless you chose not to cascade.
 A change that leaves things as they were, such as setting the grants an
 account already has, records no change: its request is recorded like any
 other, as **Allowed**, naming what it asked for.

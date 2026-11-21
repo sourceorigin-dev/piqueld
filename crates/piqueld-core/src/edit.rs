@@ -711,6 +711,8 @@ impl ServiceEdit {
 }
 
 /// Revision protection and deployment policy for a field edit.
+// Reserved for `edit_endpoint!`: the API contract test that classifies
+// write routes for the audit trail recognises typed edits by these options.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in = Query)]
