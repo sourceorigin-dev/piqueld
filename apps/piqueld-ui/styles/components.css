@@ -100,7 +100,7 @@
         gap: 8px;
     }
 
-    /* Status badges */
+    /* Status badges; notices share their tones. */
     .badge {
         display: inline-flex;
         align-items: center;
@@ -131,19 +131,22 @@
         background: currentcolor;
     }
 
-    .badge[data-tone="ok"] {
+    .badge[data-tone="ok"],
+    .notice[data-tone="ok"] {
         background: var(--ok-bg);
         color: var(--ok);
         border-color: var(--ok-line);
     }
 
-    .badge[data-tone="warn"] {
+    .badge[data-tone="warn"],
+    .notice[data-tone="warn"] {
         background: var(--warn-bg);
         color: var(--warn);
         border-color: var(--warn-line);
     }
 
-    .badge[data-tone="bad"] {
+    .badge[data-tone="bad"],
+    .notice[data-tone="bad"] {
         background: var(--bad-bg);
         color: var(--bad);
         border-color: var(--bad-line);
@@ -155,7 +158,8 @@
         border-color: var(--pending-line);
     }
 
-    .badge[data-tone="info"] {
+    .badge[data-tone="info"],
+    .notice[data-tone="info"] {
         background: var(--info-bg);
         color: var(--info);
         border-color: var(--info-line);
@@ -382,10 +386,6 @@
         max-width: 180px;
     }
 
-    .field-tiny {
-        max-width: 130px;
-    }
-
     .btn-group-end {
         justify-content: flex-end;
     }
@@ -402,7 +402,7 @@
         margin-top: 12px;
     }
 
-    /* Notices */
+    /* Notices; their tones are the badges'. */
     .notice {
         display: grid;
         gap: 6px;
@@ -423,30 +423,6 @@
 
     .notice .btn-group {
         margin-top: 4px;
-    }
-
-    .notice[data-tone="ok"] {
-        border-color: var(--ok-line);
-        background: var(--ok-bg);
-        color: var(--ok);
-    }
-
-    .notice[data-tone="warn"] {
-        border-color: var(--warn-line);
-        background: var(--warn-bg);
-        color: var(--warn);
-    }
-
-    .notice[data-tone="bad"] {
-        border-color: var(--bad-line);
-        background: var(--bad-bg);
-        color: var(--bad);
-    }
-
-    .notice[data-tone="info"] {
-        border-color: var(--info-line);
-        background: var(--info-bg);
-        color: var(--info);
     }
 
     .notice strong {
