@@ -3,7 +3,7 @@ use super::{
     ServiceSpec,
 };
 use futures_util::TryStreamExt as _;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Method, Request, StatusCode, body::Bytes, header};
 use hyper_util::rt::TokioIo;
 use std::time::Duration;
@@ -12,7 +12,7 @@ use tokio::net::UnixStream;
 // A valid API request may be 2 MiB; Docker adds service metadata around that
 // specification when it is inspected.
 const MAX_SERVICE_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
-/// Complete budget for one raw service request, from connect to last byte.
+/// Complete budget for one raw Engine request, from connect to last byte.
 const SERVICE_REQUEST_TIMEOUT: Duration = super::DockerTimeout::Request.duration();
 
 /// Bollard's per-request timeout, in seconds. Bollard only bounds a request up
@@ -27,16 +27,31 @@ pub(super) enum WireError {
     Public(DockerError),
     /// A non-success HTTP response, kept raw so callers can match exact
     /// Engine errors (not found, update out of sequence) before sanitizing.
-    Response { status: StatusCode, body: Vec<u8> },
+    Response {
+        /// The request's path, which names resources by ID or name only.
+        path: String,
+        status: StatusCode,
+        body: Vec<u8>,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Docker returned HTTP {status}: {message}")]
+#[error("{path}: Docker returned HTTP {status}: {message}")]
 /// Diagnostic source for an Engine error response, with a control-free,
-/// length-bounded message.
-struct ServiceResponseDiagnostic {
+/// length-bounded message. Diagnostics record only its status; logs show
+/// the whole response.
+pub struct ErrorResponse {
+    path: String,
     status: StatusCode,
     message: String,
+}
+
+impl ErrorResponse {
+    /// The HTTP status Docker answered with.
+    #[must_use]
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
 }
 
 impl From<DockerError> for WireError {
@@ -46,25 +61,50 @@ impl From<DockerError> for WireError {
 }
 
 impl WireError {
-    /// Converts the failure into a [`DockerError`] labelled with `operation`.
-    ///
-    /// Engine response bodies become a [`ServiceResponseDiagnostic`] source
-    /// with control characters stripped and at most 2048 characters kept.
+    /// Converts the failure into a [`DockerError`] labelled with `operation`;
+    /// a response becomes an [`ErrorResponse`] source (see [`Self::response`]).
     pub(super) fn sanitized(self, operation: &'static str) -> DockerError {
+        match self.response() {
+            Ok(response) => DockerError::RequestSource {
+                operation,
+                source: Box::new(response),
+            },
+            Err(error) => error,
+        }
+    }
+
+    /// The Engine's error response, with control characters stripped and at
+    /// most 2048 characters of its body kept, or the public failure.
+    pub(super) fn response(self) -> Result<ErrorResponse, DockerError> {
         match self {
-            Self::Public(error) => error,
-            Self::Response { status, body } => {
-                let message = String::from_utf8_lossy(&body)
+            Self::Public(error) => Err(error),
+            Self::Response { path, status, body } => Ok(ErrorResponse {
+                path,
+                status,
+                message: String::from_utf8_lossy(&body)
                     .chars()
                     .filter(|character| !character.is_control())
                     .take(2_048)
-                    .collect();
-                DockerError::RequestSource {
-                    operation,
-                    source: Box::new(ServiceResponseDiagnostic { status, message }),
-                }
-            }
+                    .collect(),
+            }),
         }
+    }
+
+    /// Whether Docker could not publish a host port because another listener
+    /// holds it, as its container start response says:
+    ///
+    /// ```text
+    /// ... Bind for 0.0.0.0:80 failed: port is already allocated
+    /// ... listen tcp4 0.0.0.0:443: bind: address already in use
+    /// ```
+    pub(super) fn port_in_use(&self) -> bool {
+        let Self::Response { body, .. } = self else {
+            return false;
+        };
+        let body = String::from_utf8_lossy(body);
+        ["port is already allocated", "address already in use"]
+            .iter()
+            .any(|message| body.contains(message))
     }
 
     /// Returns whether Docker answered with HTTP 404.
@@ -166,8 +206,13 @@ impl BollardDocker {
         path: &str,
         body: Vec<u8>,
     ) -> Result<Vec<u8>, WireError> {
-        self.engine_exchange(method, path, body, Self::read_service_response)
-            .await
+        self.engine_exchange(
+            method,
+            path,
+            body,
+            Self::read_response::<MAX_SERVICE_RESPONSE_BYTES>,
+        )
+        .await
     }
 
     /// Lists `T`s with a raw `GET` of `path`, decoding the JSON array as it
@@ -180,7 +225,7 @@ impl BollardDocker {
     ) -> Result<Vec<T>, WireError> {
         self.engine_exchange(Method::GET, path, Vec::new(), async |response| {
             if !response.status().is_success() {
-                return Self::read_service_response(response)
+                return Self::read_response::<MAX_SERVICE_RESPONSE_BYTES>(response)
                     .await
                     .map(|_| Vec::new());
             }
@@ -201,7 +246,8 @@ impl BollardDocker {
     }
 
     /// Performs one raw Engine request with a JSON `body` through Docker's
-    /// Unix socket, for endpoints Bollard lacks or misrepresents.
+    /// Unix socket, for endpoints Bollard lacks or misrepresents, and for
+    /// the containers and networks piqueld runs itself.
     ///
     /// 1. Connect and perform an HTTP/1 handshake on the Unix socket.
     /// 2. Send one `Connection: close` request and pass the response to
@@ -209,7 +255,7 @@ impl BollardDocker {
     ///
     /// All steps share one [`SERVICE_REQUEST_TIMEOUT`] deadline; elapsed
     /// deadlines surface as unavailability.
-    async fn engine_exchange<T>(
+    pub(super) async fn engine_exchange<T>(
         &self,
         method: Method,
         path: &str,
@@ -222,7 +268,7 @@ impl BollardDocker {
             .await
             .map_err(|source| DockerError::unavailable(connect, source))?
             .map_err(|source| DockerError::unavailable(connect, source))?;
-        let open = "open Docker service connection";
+        let open = "open Docker connection";
         // Elapsed deadlines are unavailability, like every other timeout.
         let (mut sender, connection) = tokio::time::timeout_at(
             deadline,
@@ -238,7 +284,7 @@ impl BollardDocker {
         let mut drivers = tokio::task::JoinSet::new();
         drivers.spawn(async move {
             if let Err(source) = connection.await {
-                tracing::debug!(error = ?source, "Docker service connection driver failed");
+                tracing::debug!(error = ?source, "Docker connection driver failed");
             }
         });
         let result = tokio::time::timeout_at(deadline, async {
@@ -251,48 +297,57 @@ impl BollardDocker {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::CONNECTION, "close")
                 .body(Full::new(Bytes::from(body)))
-                .map_err(|source| DockerError::request("build Docker service request", source))?;
+                .map_err(|source| DockerError::request("build Docker request", source))?;
             let response = sender
                 .send_request(request)
                 .await
-                .map_err(|source| DockerError::request("send Docker service request", source))?;
-            read(response).await
+                .map_err(|source| DockerError::request("send Docker request", source))?;
+            // The response names the request's path, which `read` never sees.
+            read(response).await.map_err(|error| match error {
+                WireError::Response { status, body, .. } => WireError::Response {
+                    path: path.to_owned(),
+                    status,
+                    body,
+                },
+                error @ WireError::Public(_) => error,
+            })
         })
         .await;
         drivers.abort_all();
         if let Some(Err(source)) = drivers.join_next().await
             && !source.is_cancelled()
         {
-            return Err(DockerError::request("join Docker service connection", source).into());
+            return Err(DockerError::request("join Docker connection", source).into());
         }
-        result.map_err(|source| DockerError::unavailable("request Docker service", source))?
+        result.map_err(|source| DockerError::unavailable("request Docker", source))?
     }
 
     /// Collects a bounded response while retaining transport failures.
     ///
-    /// Bodies larger than [`MAX_SERVICE_RESPONSE_BYTES`] are rejected, and
-    /// non-success statuses keep their body for exact error matching.
-    async fn read_service_response(
+    /// Bodies larger than `LIMIT` bytes are rejected with a length limit
+    /// cause, and non-success statuses keep their body for exact error
+    /// matching; [`Self::engine_exchange`] adds the path.
+    pub(super) async fn read_response<const LIMIT: usize>(
         response: hyper::Response<hyper::body::Incoming>,
     ) -> Result<Vec<u8>, WireError> {
         let status = response.status();
-        let mut response = response.into_body();
-        let mut body = Vec::new();
-        while let Some(frame) = response.frame().await {
-            let frame = frame
-                .map_err(|source| DockerError::request("read Docker service response", source))?;
-            let Ok(data) = frame.into_data() else {
-                continue;
-            };
-            if body.len().saturating_add(data.len()) > MAX_SERVICE_RESPONSE_BYTES {
-                return Err(DockerError::Request("read Docker service response").into());
-            }
-            body.extend_from_slice(&data);
-        }
+        let body = Limited::new(response.into_body(), LIMIT)
+            .collect()
+            .await
+            .map_err(|source| DockerError::RequestSource {
+                operation: "read Docker response",
+                source,
+            })?
+            .to_bytes()
+            .to_vec();
         if status.is_success() {
             Ok(body)
         } else {
-            Err(WireError::Response { status, body })
+            Err(WireError::Response {
+                path: String::new(),
+                status,
+                body,
+            })
         }
     }
 
@@ -412,7 +467,7 @@ impl BollardDocker {
     /// Returns whether Docker reported the one transient update conflict that
     /// is safe for the caller to retry with a refreshed service version.
     fn update_out_of_sequence(error: &WireError) -> bool {
-        let WireError::Response { status, body } = error else {
+        let WireError::Response { status, body, .. } = error else {
             return false;
         };
         *status == StatusCode::INTERNAL_SERVER_ERROR
@@ -823,20 +878,40 @@ mod tests {
         );
     }
 
+    /// Both of Docker's answers to a start over a taken host port are
+    /// recognized; other failures are not.
+    #[test]
+    fn a_taken_host_port_is_recognized_in_either_wording() {
+        let response = |message: &str| WireError::Response {
+            path: "/containers/gateway/start".into(),
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            body: serde_json::json!({ "message": message })
+                .to_string()
+                .into_bytes(),
+        };
+        assert!(response("driver failed programming external connectivity on endpoint gateway: Bind for 0.0.0.0:80 failed: port is already allocated").port_in_use());
+        assert!(response("failed to listen on TCP socket: listen tcp4 0.0.0.0:443: bind: address already in use").port_in_use());
+        assert!(!response("container gateway is not running").port_in_use());
+        assert!(!WireError::Public(super::DockerError::Request("start container")).port_in_use());
+    }
+
     #[test]
     fn update_retry_requires_the_exact_transient_daemon_response() {
         let transient = WireError::Response {
+            path: "/services/web/update".into(),
             status: StatusCode::INTERNAL_SERVER_ERROR,
             body: br#"{"message":"rpc error: code = Unknown desc = update out of sequence"}"#
                 .to_vec(),
         };
         let different_message = WireError::Response {
+            path: "/services/web/update".into(),
             status: StatusCode::INTERNAL_SERVER_ERROR,
             body:
                 br#"{"message":"rpc error: code = Unknown desc = update out of sequence: other"}"#
                     .to_vec(),
         };
         let different_status = WireError::Response {
+            path: "/services/web/update".into(),
             status: StatusCode::CONFLICT,
             body: br#"{"message":"rpc error: code = Unknown desc = update out of sequence"}"#
                 .to_vec(),

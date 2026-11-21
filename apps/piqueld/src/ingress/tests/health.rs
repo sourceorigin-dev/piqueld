@@ -13,9 +13,9 @@ async fn journaled_requests_commit_intent_and_record_sanitized_failures() {
         .journal(Phase::IngressCreateNetwork, "edge")
         .await
         .unwrap();
-    let result = ingress
-        .docker
-        .send(&journal, Method::POST, "/networks/create", None)
+    let labels = json!({});
+    let result = journal
+        .change(|docker| docker.create_bridge_network("edge", &labels))
         .await;
     journal.finish(result).await.unwrap_err();
 
@@ -34,7 +34,15 @@ async fn journaled_requests_commit_intent_and_record_sanitized_failures() {
             .as_ref()
             .unwrap()
             .causes
-            .contains(&"Ingress API returned HTTP status 500".to_owned())
+            .contains(&"Docker returned HTTP status 500".to_owned())
+    );
+    assert!(
+        failed
+            .diagnostic
+            .as_ref()
+            .unwrap()
+            .causes
+            .contains(&"Docker operation: create network".to_owned())
     );
 }
 

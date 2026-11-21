@@ -11,7 +11,7 @@ impl Ingress {
     pub(crate) async fn docker_check(&self) -> SystemCheck {
         let check =
             |status, message: String| SystemCheck::new(SystemCheckId::Docker, status, message);
-        let version = match self.docker_version().await {
+        let version = match self.docker.version().await.map_err(anyhow::Error::from) {
             Ok(version) => version,
             Err(error) => {
                 return check(
@@ -24,7 +24,7 @@ impl Ingress {
             }
         };
         let found = version.to_string();
-        match (self.enabled, version.supports_ingress()) {
+        match (self.enabled, version.supports_gateway_priority()) {
             (false, _) => check(
                 CheckStatus::Pass,
                 format!("{found}; ingress is disabled, so no minimum applies"),

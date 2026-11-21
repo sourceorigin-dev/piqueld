@@ -203,11 +203,19 @@ impl Scenario {
         );
         let container = tokio::time::timeout(Duration::from_mins(1), async {
             loop {
-                let containers = self.gateway.docker.get("/containers/json").await.unwrap();
-                if let Some(container) = containers.as_array().unwrap().iter().find(|container| {
-                    container["Labels"]["com.docker.swarm.service.name"] == next_name.as_str()
+                let containers = self
+                    .docker
+                    .client()
+                    .unwrap()
+                    .list_containers(None::<bollard::query_parameters::ListContainersOptions>)
+                    .await
+                    .unwrap();
+                if let Some(id) = containers.into_iter().find_map(|container| {
+                    let labels = container.labels?;
+                    let service = labels.get("com.docker.swarm.service.name")?;
+                    (service == next_name.as_str()).then_some(container.id?)
                 }) {
-                    break container["Id"].as_str().unwrap().to_owned();
+                    break id;
                 }
                 assert_eq!(
                     self.body_across_reload("one.example.test").await,
@@ -236,7 +244,7 @@ impl Scenario {
         let health = self
             .gateway
             .docker
-            .inspect(&format!("/containers/{container}/json"))
+            .inspect_container(&container)
             .await
             .unwrap()
             .unwrap();
@@ -249,25 +257,17 @@ impl Scenario {
                 .any(|probe| probe["ExitCode"] == 1),
             "cutover must remain blocked after a real failed health probe"
         );
-        let exec = self
-            .gateway
-            .docker
-            .external(
-                Method::POST,
-                &format!("/containers/{container}/exec"),
-                Some(&json!({"Cmd":["touch","/tmp/ready"]})),
-            )
-            .await
-            .unwrap();
-        self.gateway
-            .docker
-            .external(
-                Method::POST,
-                &format!("/exec/{}/start", exec["Id"].as_str().unwrap()),
-                Some(&json!({"Detach":true})),
-            )
-            .await
-            .unwrap();
+        let client = self.docker.client().unwrap();
+        let exec = bollard::models::ExecConfig {
+            cmd: Some(vec!["touch".into(), "/tmp/ready".into()]),
+            ..Default::default()
+        };
+        let exec = client.create_exec(&container, exec).await.unwrap();
+        let start = bollard::exec::StartExecOptions {
+            detach: true,
+            ..Default::default()
+        };
+        client.start_exec(&exec.id, Some(start)).await.unwrap();
     }
 
     async fn repoint_after_backend_convergence(&self) {

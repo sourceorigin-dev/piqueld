@@ -84,22 +84,10 @@ impl Scenario {
         .await
         .unwrap();
         let previous = format!("{}-previous", self.gateway.name);
-        self.gateway
-            .docker
-            .external(
-                Method::POST,
-                &format!("/containers/{}/stop?t=1", self.gateway.name),
-                None,
-            )
-            .await
-            .unwrap();
-        self.gateway
-            .docker
-            .external(
-                Method::POST,
-                &format!("/containers/{}/rename?name={previous}", self.gateway.name),
-                None,
-            )
+        let docker = self.gateway.external();
+        docker.stop_container(&self.gateway.name, 1).await.unwrap();
+        docker
+            .rename_container(&self.gateway.name, &previous)
             .await
             .unwrap();
         self.gateway.recover_gateway().await.unwrap();
@@ -115,7 +103,7 @@ impl Scenario {
         assert!(
             self.gateway
                 .docker
-                .inspect(&format!("/containers/{previous}/json"))
+                .inspect_container(&previous)
                 .await
                 .unwrap()
                 .is_none()
@@ -127,12 +115,8 @@ impl Scenario {
         let previous = format!("{}-previous", self.gateway.name);
         let replaced = self.gateway.container_id().await;
         self.gateway
-            .docker
-            .external(
-                Method::POST,
-                &format!("/containers/create?name={previous}"),
-                Some(&self.gateway.container_spec()),
-            )
+            .external()
+            .create_container(&previous, &self.gateway.container_spec())
             .await
             .unwrap();
         self.gateway.recover_gateway().await.unwrap();
@@ -140,7 +124,7 @@ impl Scenario {
         assert!(
             self.gateway
                 .docker
-                .inspect(&format!("/containers/{previous}/json"))
+                .inspect_container(&previous)
                 .await
                 .unwrap()
                 .is_none()
@@ -186,12 +170,8 @@ impl Scenario {
         assert_eq!(upgraded.container_id().await, original);
         let network = piqueld_core::DockerNetworkName::for_ingress(&unavailable).to_string();
         self.gateway
-            .docker
-            .external(
-                Method::POST,
-                "/networks/create",
-                Some(&json!({"Name":network,"Driver":"bridge"})),
-            )
+            .external()
+            .create_bridge_network(&network, &json!({}))
             .await
             .unwrap();
         upgraded.synchronize_for(Some(&self.first)).await.unwrap();
@@ -229,8 +209,8 @@ impl Scenario {
         assert_ne!(upgraded.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
         self.gateway
-            .docker
-            .external(Method::DELETE, &format!("/networks/{network}"), None)
+            .external()
+            .remove_network(&network)
             .await
             .unwrap();
         // Restore the controller's specification before testing ordinary reloads.
