@@ -712,7 +712,8 @@ impl ServiceEdit {
 
 /// The table of field endpoints: every HTTP endpoint that submits one
 /// [`ApplicationEdit`], listed once. The daemon builds its handlers, routes
-/// and `OpenAPI` entries from it, so adding a field takes one entry here and
+/// and `OpenAPI` entries from it, and `piqueld-client` its per-field methods
+/// and `Client::edit_application`, so adding a field takes one entry here and
 /// its edit variant.
 ///
 /// `field_endpoints!(callback)` expands to `callback! { entries }`. Each
@@ -730,8 +731,9 @@ impl ServiceEdit {
 ///   none.
 /// - `edit` uses only the path parameters and body bindings, so it reads both
 ///   as an expression, which the daemon builds from a request, and as a
-///   pattern, which a client can match to choose the request. An edit two
-///   entries could match belongs to the first: removals precede the entries
+///   pattern, which the client matches to choose the request. The client's
+///   match is exhaustive, so every edit has an endpoint, and an edit two
+///   entries could match goes to the first: removals precede the entries
 ///   that set the same thing.
 ///
 /// The edit and body types are named unqualified: callers import them from

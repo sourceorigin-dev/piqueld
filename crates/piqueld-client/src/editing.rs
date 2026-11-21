@@ -1,4 +1,6 @@
-//! Thin convenience methods over generated field editing operations.
+//! Field edits: one method per field endpoint, wrapping its generated
+//! operation, and `Client::edit_application`, all built from
+//! `piqueld_core::field_endpoints!`.
 use crate::{Client, ClientError, SavedApplication, client::EnvelopedCall};
 use piqueld_core::{
     edit::{
@@ -12,78 +14,71 @@ use piqueld_core::{
     manifest::{Mount, Service, ServiceFile, Volume},
 };
 
-// The generated client owns paths, encoding, request bodies, and response types.
-// Each invocation wraps one generated field-edit endpoint as a `Client` method taking
-// its path segments, an optional typed body, and `EditOptions` (deploy, revision, force).
-// Like every other wrapper, it sends `force` only when set; the server reads absence as false.
-macro_rules! edit_method {
-    ($name:ident, ($($path:ident),+) $(, $request:ident: $body:ty)?) => {
+// The generated client owns paths, encoding, request bodies, and response
+// types. For each entry of `piqueld_core::field_endpoints!` this builds a
+// `Client` method taking the path parameters, the body if any, and
+// `EditOptions` (deploy, revision, force), and `edit_application`, which
+// matches an edit against every entry's edit to send it through its endpoint.
+// Like every other wrapper, a method sends `force` only when set; the server
+// reads absence as false.
+macro_rules! edit_methods {
+    ($($(#[$doc:meta])* $name:ident: $method:ident $path:literal ($($param:ident = $label:literal),*) $body:tt => { $($edit:tt)* };)*) => {
+        $(edit_methods!(@method $name ($($param),*) $body);)*
+
+        impl Client {
+            /// Sends a typed change through its field endpoint: the first
+            /// entry of `piqueld_core::field_endpoints!` whose edit matches.
+            /// # Errors
+            /// Returns transport, validation, revision, or resource errors.
+            pub async fn edit_application(
+                &self,
+                id: &str,
+                edit: &ApplicationEdit,
+                options: &EditOptions,
+            ) -> Result<SavedApplication, ClientError> {
+                match edit.clone() {
+                    $($($edit)* => edit_methods!(@send self, id, options, $name ($($param),*) $body),)*
+                }
+            }
+        }
+    };
+    // Without a body.
+    (@method $name:ident ($($param:ident),*) []) => {
+        edit_methods!(@method $name ($($param),*) ());
+    };
+    // A `{ "value": ... }` body.
+    (@method $name:ident ($($param:ident),*) [$body:ident { $value:ident }]) => {
+        edit_methods!(@method $name ($($param),*) (request: &$body));
+    };
+    // A boxed whole body, taken unboxed as the generated method does.
+    (@method $name:ident ($($param:ident),*) [$binding:ident: Box<$body:ty>]) => {
+        edit_methods!(@method $name ($($param),*) (request: &$body));
+    };
+    // A whole body.
+    (@method $name:ident ($($param:ident),*) [$binding:ident: $body:ty]) => {
+        edit_methods!(@method $name ($($param),*) (request: &$body));
+    };
+    (@method $name:ident ($($param:ident),*) ($($request:ident: $body:ty)?)) => {
         impl Client {
             #[doc = concat!("Calls the generated `", stringify!($name), "` endpoint.")]
             /// # Errors
             /// Returns transport, validation, revision, or resource errors.
-            pub async fn $name(&self, $($path: &str,)+ $($request: &$body,)? options: &EditOptions) -> Result<SavedApplication, ClientError> {
-                self.generated.$name($($path,)+ Some(options.deploy), options.expected_generation, options.force.then_some(true), None $(, $request)?).data().await
+            pub async fn $name(&self, id: &str, $($param: &str,)* $($request: $body,)? options: &EditOptions) -> Result<SavedApplication, ClientError> {
+                self.generated.$name(id, $($param,)* Some(options.deploy), options.expected_generation, options.force.then_some(true), None $(, $request)?).data().await
             }
         }
     };
+    (@send $client:ident, $id:ident, $options:ident, $name:ident ($($param:ident),*) []) => {
+        $client.$name($id, $(&$param,)* $options).await
+    };
+    (@send $client:ident, $id:ident, $options:ident, $name:ident ($($param:ident),*) [$body:ident { $value:ident }]) => {
+        $client.$name($id, $(&$param,)* &$body { $value }, $options).await
+    };
+    (@send $client:ident, $id:ident, $options:ident, $name:ident ($($param:ident),*) [$binding:ident: $body:ty]) => {
+        $client.$name($id, $(&$param,)* &$binding, $options).await
+    };
 }
-edit_method!(set_application_volumes, (id), request: VolumesValue);
-edit_method!(set_application_routes, (id), request: RoutesValue);
-edit_method!(set_application_jobs, (id), request: JobsValue);
-edit_method!(set_application_exports, (id), request: ExportsValue);
-edit_method!(set_application_imports, (id), request: ImportsValue);
-edit_method!(set_application_generated_secrets, (id), request: GeneratedSecretsValue);
-edit_method!(set_application_name, (id), request: StringValue);
-edit_method!(set_application_variables, (id), request: VariablesValue);
-edit_method!(set_environment_visibility, (id, environment), request: VisibilityValue);
-edit_method!(set_environment_rollback, (id, environment), request: RollbackValue);
-edit_method!(set_manifest_repository, (id), request: RepositoryValue);
-edit_method!(disconnect_manifest_repository, (id));
-edit_method!(set_manifest_repository_url, (id), request: StringValue);
-edit_method!(set_manifest_repository_path, (id), request: StringValue);
-edit_method!(set_manifest_repository_sync, (id), request: RepositorySyncValue);
-edit_method!(add_application_service, (id), request: Service);
-edit_method!(add_application_volume, (id), request: Volume);
-edit_method!(remove_application_service, (id, service));
-edit_method!(remove_application_volume, (id, volume));
-edit_method!(set_service_name, (id, service), request: StringValue);
-edit_method!(set_service_source, (id, service), request: SourceValue);
-edit_method!(set_service_image, (id, service), request: TemplateValue);
-edit_method!(set_service_git_url, (id, service), request: StringValue);
-edit_method!(set_service_git_branch, (id, service), request: StringValue);
-edit_method!(set_service_git_commit, (id, service), request: OptionalStringValue);
-edit_method!(set_service_dockerfile, (id, service), request: TemplateValue);
-edit_method!(set_service_context, (id, service), request: TemplateValue);
-edit_method!(set_service_replicas, (id, service), request: ReplicasValue);
-edit_method!(set_service_environment, (id, service), request: EnvironmentValue);
-edit_method!(set_service_command, (id, service), request: TemplatesValue);
-edit_method!(set_service_arguments, (id, service), request: TemplatesValue);
-edit_method!(set_service_mounts, (id, service), request: MountsValue);
-edit_method!(set_service_secrets, (id, service), request: SecretsValue);
-edit_method!(set_service_files, (id, service), request: FilesValue);
-edit_method!(set_service_depends_on, (id, service), request: StringsValue);
-edit_method!(set_service_rollout, (id, service), request: RolloutValue);
-edit_method!(set_service_receives_telemetry, (id, service), request: BoolValue);
-edit_method!(set_service_healthcheck, (id, service), request: HealthValue);
-edit_method!(set_service_health_port, (id, service), request: ReplicasValue);
-edit_method!(set_service_health_path, (id, service), request: TemplateValue);
-edit_method!(set_service_health_command, (id, service), request: TemplatesValue);
-edit_method!(set_service_health_interval, (id, service), request: SecondsValue);
-edit_method!(set_service_health_timeout, (id, service), request: SecondsValue);
-edit_method!(set_service_health_start_period, (id, service), request: SecondsValue);
-edit_method!(set_service_health_retries, (id, service), request: CountValue);
-edit_method!(set_service_resources, (id, service), request: ResourcesValue);
-edit_method!(set_service_cpu, (id, service), request: CpuValue);
-edit_method!(set_service_memory, (id, service), request: MemoryValue);
-edit_method!(set_service_general, (id, service), request: ServiceGeneral);
-edit_method!(set_service_process, (id, service), request: ServiceProcess);
-edit_method!(set_service_environment_entry, (id, service, key), request: TemplateValue);
-edit_method!(remove_service_environment_entry, (id, service, key));
-edit_method!(set_service_mount, (id, service), request: Mount);
-edit_method!(remove_service_mount, (id, service), request: StringValue);
-edit_method!(set_service_file, (id, service), request: ServiceFile);
-edit_method!(remove_service_file, (id, service), request: StringValue);
+piqueld_core::field_endpoints!(edit_methods);
 
 impl Client {
     /// Creates an empty application, requiring the name to be absent.
@@ -98,216 +93,5 @@ impl Client {
             .create_application(Some(deploy), None, &StringValue { value: name.into() })
             .data()
             .await
-    }
-    /// Sends a typed change through its individual generated endpoint.
-    ///
-    /// Each `ApplicationEdit` variant maps to exactly one field endpoint;
-    /// `Repository(None)` becomes a disconnect, and service edits go through
-    /// `edit_service`.
-    /// # Errors
-    /// Returns transport, validation, revision, or resource errors.
-    pub async fn edit_application(
-        &self,
-        id: &str,
-        edit: &ApplicationEdit,
-        options: &EditOptions,
-    ) -> Result<SavedApplication, ClientError> {
-        macro_rules! send {
-            ($method:ident, $body:ident, $value:expr) => {
-                self.$method(id, &$body { value: $value }, options).await
-            };
-        }
-        match edit {
-            ApplicationEdit::Volumes(value) => {
-                send!(set_application_volumes, VolumesValue, value.clone())
-            }
-            ApplicationEdit::Routes(value) => {
-                send!(set_application_routes, RoutesValue, value.clone())
-            }
-            ApplicationEdit::Jobs(value) => send!(set_application_jobs, JobsValue, value.clone()),
-            ApplicationEdit::Exports(value) => {
-                send!(set_application_exports, ExportsValue, value.clone())
-            }
-            ApplicationEdit::Imports(value) => {
-                send!(set_application_imports, ImportsValue, value.clone())
-            }
-            ApplicationEdit::GeneratedSecrets(value) => send!(
-                set_application_generated_secrets,
-                GeneratedSecretsValue,
-                value.clone()
-            ),
-            ApplicationEdit::Name(value) => send!(set_application_name, StringValue, value.clone()),
-            ApplicationEdit::Repository(None) => {
-                self.disconnect_manifest_repository(id, options).await
-            }
-            ApplicationEdit::Repository(value @ Some(_)) => {
-                send!(set_manifest_repository, RepositoryValue, value.clone())
-            }
-            ApplicationEdit::RepositoryUrl(value) => {
-                send!(set_manifest_repository_url, StringValue, value.clone())
-            }
-            ApplicationEdit::RepositoryPath(value) => {
-                send!(set_manifest_repository_path, StringValue, value.clone())
-            }
-            ApplicationEdit::RepositorySync(value) => {
-                send!(set_manifest_repository_sync, RepositorySyncValue, *value)
-            }
-            ApplicationEdit::AddService(value) => {
-                self.add_application_service(id, value, options).await
-            }
-            ApplicationEdit::AddVolume(value) => {
-                self.add_application_volume(id, value, options).await
-            }
-            ApplicationEdit::RemoveVolume(value) => {
-                self.remove_application_volume(id, value, options).await
-            }
-            ApplicationEdit::RemoveService(name) => {
-                self.remove_application_service(id, name, options).await
-            }
-            ApplicationEdit::Service { name, edit } => {
-                self.edit_service(id, name, edit, options).await
-            }
-            ApplicationEdit::Variables(value) => {
-                send!(set_application_variables, VariablesValue, value.clone())
-            }
-            ApplicationEdit::EnvironmentVisibility {
-                environment,
-                visibility,
-            } => {
-                self.set_environment_visibility(
-                    id,
-                    environment,
-                    &VisibilityValue { value: *visibility },
-                    options,
-                )
-                .await
-            }
-            ApplicationEdit::EnvironmentRollback {
-                environment,
-                rollback,
-            } => {
-                self.set_environment_rollback(
-                    id,
-                    environment,
-                    &RollbackValue { value: *rollback },
-                    options,
-                )
-                .await
-            }
-        }
-    }
-    /// Routes a `ServiceEdit` to the field endpoint of the named service. Environment
-    /// entries map to set or remove depending on whether a value is supplied.
-    #[expect(clippy::too_many_lines, reason = "one flat arm per field endpoint")]
-    async fn edit_service(
-        &self,
-        id: &str,
-        service: &str,
-        edit: &ServiceEdit,
-        options: &EditOptions,
-    ) -> Result<SavedApplication, ClientError> {
-        macro_rules! send {
-            ($method:ident, $body:ident, $value:expr) => {
-                self.$method(id, service, &$body { value: $value }, options)
-                    .await
-            };
-        }
-        match edit {
-            ServiceEdit::Name(value) => send!(set_service_name, StringValue, value.clone()),
-            ServiceEdit::Source(value) => send!(set_service_source, SourceValue, value.clone()),
-            ServiceEdit::Image(value) => send!(set_service_image, TemplateValue, value.clone()),
-            ServiceEdit::GitUrl(value) => send!(set_service_git_url, StringValue, value.clone()),
-            ServiceEdit::GitBranch(value) => {
-                send!(set_service_git_branch, StringValue, value.clone())
-            }
-            ServiceEdit::GitCommit(value) => {
-                send!(set_service_git_commit, OptionalStringValue, value.clone())
-            }
-            ServiceEdit::Dockerfile(value) => {
-                send!(set_service_dockerfile, TemplateValue, value.clone())
-            }
-            ServiceEdit::Context(value) => send!(set_service_context, TemplateValue, value.clone()),
-            ServiceEdit::Replicas(value) => {
-                send!(set_service_replicas, ReplicasValue, value.clone())
-            }
-            ServiceEdit::Environment(value) => {
-                send!(set_service_environment, EnvironmentValue, value.clone())
-            }
-            ServiceEdit::Command(value) => {
-                send!(set_service_command, TemplatesValue, value.clone())
-            }
-            ServiceEdit::Arguments(value) => {
-                send!(set_service_arguments, TemplatesValue, value.clone())
-            }
-            ServiceEdit::Mounts(value) => send!(set_service_mounts, MountsValue, value.clone()),
-            ServiceEdit::Secrets(value) => send!(set_service_secrets, SecretsValue, value.clone()),
-            ServiceEdit::DependsOn(value) => {
-                send!(set_service_depends_on, StringsValue, value.clone())
-            }
-            ServiceEdit::Rollout(value) => send!(set_service_rollout, RolloutValue, value.clone()),
-            ServiceEdit::ReceivesTelemetry(value) => {
-                send!(set_service_receives_telemetry, BoolValue, *value)
-            }
-            ServiceEdit::Healthcheck(value) => {
-                send!(set_service_healthcheck, HealthValue, value.clone())
-            }
-            ServiceEdit::HealthPort(value) => {
-                send!(set_service_health_port, ReplicasValue, value.clone())
-            }
-            ServiceEdit::HealthPath(value) => {
-                send!(set_service_health_path, TemplateValue, value.clone())
-            }
-            ServiceEdit::HealthCommand(value) => {
-                send!(set_service_health_command, TemplatesValue, value.clone())
-            }
-            ServiceEdit::HealthInterval(value) => {
-                send!(set_service_health_interval, SecondsValue, value.clone())
-            }
-            ServiceEdit::HealthTimeout(value) => {
-                send!(set_service_health_timeout, SecondsValue, value.clone())
-            }
-            ServiceEdit::HealthStartPeriod(value) => {
-                send!(set_service_health_start_period, SecondsValue, value.clone())
-            }
-            ServiceEdit::HealthRetries(value) => {
-                send!(set_service_health_retries, CountValue, value.clone())
-            }
-            ServiceEdit::Resources(value) => {
-                send!(set_service_resources, ResourcesValue, value.clone())
-            }
-            ServiceEdit::Cpu(value) => send!(set_service_cpu, CpuValue, value.clone()),
-            ServiceEdit::Memory(value) => send!(set_service_memory, MemoryValue, value.clone()),
-            ServiceEdit::General(value) => {
-                self.set_service_general(id, service, value, options).await
-            }
-            ServiceEdit::Process(value) => {
-                self.set_service_process(id, service, value, options).await
-            }
-            ServiceEdit::EnvironmentEntry((key, Some(value))) => {
-                self.set_service_environment_entry(
-                    id,
-                    service,
-                    key,
-                    &TemplateValue {
-                        value: value.clone(),
-                    },
-                    options,
-                )
-                .await
-            }
-            ServiceEdit::EnvironmentEntry((key, None)) => {
-                self.remove_service_environment_entry(id, service, key, options)
-                    .await
-            }
-            ServiceEdit::Mount(value) => self.set_service_mount(id, service, value, options).await,
-            ServiceEdit::RemoveMount(value) => {
-                send!(remove_service_mount, StringValue, value.clone())
-            }
-            ServiceEdit::Files(value) => send!(set_service_files, FilesValue, value.clone()),
-            ServiceEdit::File(value) => self.set_service_file(id, service, value, options).await,
-            ServiceEdit::RemoveFile(value) => {
-                send!(remove_service_file, StringValue, value.clone())
-            }
-        }
     }
 }
