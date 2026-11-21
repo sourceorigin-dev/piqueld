@@ -51,7 +51,8 @@ the generated files. Both local
 validation and CI compare the committed artifacts without rewriting them. CI
 skips `check` and `build`: the stronger all-target Clippy and the test builds
 cover them. `fmt` and `generate` are editing commands whose results are
-checked above, and `setup-playwright` installs the browser test dependencies.
+checked above. `setup-playwright` installs the browser test dependencies, and
+`setup-worktree` [prepares a new worktree](development.md#worktree-setup).
 `run`, `ctl`, `daemon`, `daemon-embedded`, `dev`, and `docs-serve` launch
 interactive processes and are not finite validation commands. `publish` and
 `release` [release piqueld](releasing.md). `coverage`
