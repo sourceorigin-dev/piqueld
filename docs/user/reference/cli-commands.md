@@ -919,8 +919,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl app service`
@@ -968,8 +968,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -998,8 +998,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1022,8 +1022,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1044,8 +1044,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1086,8 +1086,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1110,8 +1110,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1138,8 +1138,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1160,8 +1160,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1182,8 +1182,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1205,8 +1205,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1227,8 +1227,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1263,8 +1263,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1287,8 +1287,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1311,8 +1311,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1335,8 +1335,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1359,8 +1359,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1382,8 +1382,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1408,8 +1408,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1444,8 +1444,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1467,8 +1467,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1521,8 +1521,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1545,8 +1545,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1592,8 +1592,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1621,8 +1621,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1646,8 +1646,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1668,8 +1668,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1690,8 +1690,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1712,8 +1712,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1734,8 +1734,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1756,8 +1756,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1778,8 +1778,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1800,8 +1800,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1822,8 +1822,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1845,8 +1845,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1897,8 +1897,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1923,8 +1923,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1959,8 +1959,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -1982,8 +1982,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2036,8 +2036,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2060,8 +2060,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2088,8 +2088,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2112,8 +2112,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2133,8 +2133,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2172,8 +2172,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2203,8 +2203,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2224,8 +2224,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2273,8 +2273,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2296,8 +2296,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2348,8 +2348,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2371,8 +2371,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2410,8 +2410,8 @@ Options:
 
 - `--env <ENV>`: Change the variable's value in this environment instead of its default. The environment must exist.
 - `--previews`: Change the variable's value in every preview, `[spec.previews.variables]`, instead of its default.
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2436,8 +2436,8 @@ Options:
 
 - `--env <ENV>`: Change the variable's value in this environment instead of its default. The environment must exist.
 - `--previews`: Change the variable's value in every preview, `[spec.previews.variables]`, instead of its default.
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2478,8 +2478,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2507,8 +2507,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2528,8 +2528,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2549,8 +2549,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2575,8 +2575,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2598,8 +2598,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2764,8 +2764,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2794,8 +2794,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -2946,8 +2946,8 @@ piquelctl app apply [OPTIONS] --file <PATH>
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--file <PATH>`: Manifest file: UTF-8 TOML of at most 2 MiB. Required.
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation; `0` requires that it doesn't exist.
 
@@ -3097,8 +3097,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -3343,8 +3343,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -3370,8 +3370,8 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration.
-- `--no-wait`: Return once the change is saved, or its deployment accepted, without waiting for the deployment to end.
+- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
@@ -3985,7 +3985,7 @@ Arguments:
 
 Options:
 
-- `--branch-gone`: Select the previews whose branch no longer exists. Required. Required.
+- `--branch-gone`: Select the previews whose branch no longer exists. Required.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--no-wait`: Return once the daemon accepts the deletion, without waiting for it to finish.
 
@@ -4013,7 +4013,7 @@ piquelctl build list [OPTIONS]
 Options:
 
 - `--app <APP>`: Only this application and its environments, by name or ID.
-- `--env <ENV>`: Only this environment or preview: with `--app`, an environment by name or ID, or a preview by ID. Alone, it takes only an ID; `event` also finds a deleted environment's events by it.
+- `--env <ENV>`: Only this environment or preview: with `--app`, an environment by name or ID, or a preview by ID. Alone, it takes only an ID.
 - `--cursor <CURSOR>`: Read the page after this cursor, which the previous page printed.
 - `--limit <LIMIT>`: Show at most this many items, from 1 to 100. Default: `50`.
 
@@ -4072,7 +4072,7 @@ Options:
 
 Read one page of the event history, newest first.
 
-Events record what happened to applications, environments and the daemon, such as edits, deployments and failures.
+Events record what happened to applications, environments and the daemon, such as edits, deployments and failures. A deleted environment's events outlive it: find them with `--env` and its ID.
 
 ```text
 piquelctl event [OPTIONS]
@@ -4081,7 +4081,7 @@ piquelctl event [OPTIONS]
 Options:
 
 - `--app <APP>`: Only this application and its environments, by name or ID.
-- `--env <ENV>`: Only this environment or preview: with `--app`, an environment by name or ID, or a preview by ID. Alone, it takes only an ID; `event` also finds a deleted environment's events by it.
+- `--env <ENV>`: Only this environment or preview: with `--app`, an environment by name or ID, or a preview by ID. Alone, it takes only an ID.
 - `--kind <KIND>`: Only show events of this kind, such as `operation_failed`.
 
   The dashboard's Events page lists the kinds recorded so far.

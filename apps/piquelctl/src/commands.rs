@@ -582,8 +582,7 @@ pub(crate) struct HistoryScope {
     #[arg(long, alias = "application", value_name = "APP")]
     app: Option<String>,
     /// Only this environment or preview: with `--app`, an environment by
-    /// name or ID, or a preview by ID. Alone, it takes only an ID; `event`
-    /// also finds a deleted environment's events by it.
+    /// name or ID, or a preview by ID. Alone, it takes only an ID.
     #[arg(long, alias = "environment", value_name = "ENV")]
     env: Option<String>,
 }
