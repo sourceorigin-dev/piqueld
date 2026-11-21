@@ -62,6 +62,37 @@ interactive processes and are not finite validation commands. `publish` and
 measures the tests without checking a minimum; see
 [test coverage](#test-coverage).
 
+## Checking a change
+
+Before handing work back, check what changed rather than the whole workspace:
+
+```console
+just check-changed
+```
+
+It runs the checks the quick CI jobs would run for the change on the current
+branch: every path changed since the merge base with `origin/main`,
+uncommitted and untracked files included. Name another branch to compare
+against it instead, such as `just check-changed origin/release`.
+
+It reads the path filters of CI's `changes` job from `.github/filters.yml`, so
+it starts the jobs CI would start. In the Rust jobs, `lint`, `doc`, `test` and
+`doc-test` run only on the changed crates and the crates depending on them,
+passed as `--package=<crate>` arguments, and `openapi-check` runs only when
+those include `piqueld` or `piquelctl`. A changed path in no crate, such as
+`Cargo.lock`, runs them on the whole workspace. The slow checks, which drafts
+skip too, and those that need tools a machine may lack, the oldest supported
+Rust and a WebDriver, are left to CI: it names those the change needs, with
+the command that runs each. A summary ends the run, with each check passed,
+failed, skipped or left to CI and why, and the run fails if a check failed.
+
+`tools/xtask/src/check_changed/ci.rs` maps the filters to the CI jobs and the
+recipes they run, so change it together with `ci.yml`. A filter added to
+`.github/filters.yml` fails `just check-changed` until it is added there too.
+
+`just validate` builds the whole workspace: run it when a change is
+workspace-wide, or when asked. CI owns the full suite.
+
 ## Release checks
 
 The [release checks workflow](https://github.com/sourceorigin-dev/piqueld/blob/main/.github/workflows/release-checks.yml)

@@ -5,15 +5,14 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::AddAssign;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
 
 use crate::Workspace;
-use crate::process::{checked_stdout, exit_code};
+use crate::process::exit_code;
 
 /// Runs the tests `just test` runs under coverage instrumentation, writes the
 /// HTML report to target/llvm-cov/html, and prints each crate's totals.
@@ -37,8 +36,7 @@ pub fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
     }
     let export: Export =
         workspace.cargo_json(&["llvm-cov", "report", "--json", "--summary-only"])?;
-    let metadata: Metadata =
-        workspace.cargo_json(&["metadata", "--locked", "--no-deps", "--format-version", "1"])?;
+    let metadata = workspace.metadata()?;
 
     let mut crates = BTreeMap::<&str, Summary>::new();
     let mut total = Summary::default();
@@ -46,7 +44,9 @@ pub fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
         for file in &data.files {
             let package = metadata
                 .package_of(&file.filename)
-                .with_context(|| format!("{} is in no workspace crate", file.filename.display()))?;
+                .with_context(|| format!("{} is in no workspace crate", file.filename.display()))?
+                .name
+                .as_str();
             *crates.entry(package).or_default() += file.summary;
             total += file.summary;
         }
@@ -58,45 +58,6 @@ pub fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
     }
     println!("\nHTML report: target/llvm-cov/html/index.html");
     Ok(ExitCode::SUCCESS)
-}
-
-impl Workspace {
-    /// Runs a cargo subcommand that prints JSON and parses its output.
-    fn cargo_json<T: DeserializeOwned>(&self, args: &[&str]) -> Result<T> {
-        let name = format!("cargo {}", args.join(" "));
-        let output = self
-            .cargo()
-            .args(args)
-            .output()
-            .with_context(|| format!("run {name}"))?;
-        serde_json::from_str(&checked_stdout(&name, output)?)
-            .with_context(|| format!("parse {name}"))
-    }
-}
-
-/// `cargo metadata`, reduced to the workspace's crates.
-#[derive(Deserialize)]
-struct Metadata {
-    packages: Vec<Package>,
-}
-
-#[derive(Deserialize)]
-struct Package {
-    name: String,
-    manifest_path: PathBuf,
-}
-
-impl Metadata {
-    /// The crate whose directory holds `file`: the deepest, since a crate's
-    /// directory may contain another's.
-    fn package_of(&self, file: &Path) -> Option<&str> {
-        self.packages
-            .iter()
-            .filter_map(|package| Some((package, package.manifest_path.parent()?)))
-            .filter(|(_, dir)| file.starts_with(dir))
-            .max_by_key(|(_, dir)| dir.components().count())
-            .map(|(package, _)| package.name.as_str())
-    }
 }
 
 /// `llvm-cov export --summary-only`, as `cargo llvm-cov report --json` prints it.
