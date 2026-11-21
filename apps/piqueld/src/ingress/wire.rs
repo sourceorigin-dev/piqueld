@@ -1,19 +1,19 @@
-//! Sends HTTP requests through local socket files to Caddy's private admin
-//! API and the apps tailnet node's `LocalAPI`. The gateway uses these APIs to
-//! load routing configuration and read the node's state; it reaches Docker
-//! through [`piqueld_docker::Infrastructure`]. Each request has a timeout and
-//! an 8 MiB response limit so an unresponsive API cannot leave reconciliation
-//! waiting indefinitely.
+//! Sends HTTP requests through Caddy's private admin socket with [`UnixHttp`],
+//! whose timeout and response limit keep an unresponsive Caddy from leaving
+//! reconciliation waiting indefinitely. The gateway loads its routing
+//! configuration this way. It reaches Docker through
+//! [`piqueld_docker::Infrastructure`], and reads the apps tailnet node through
+//! [`piqueld_config::tailscale::LocalApi`].
 //!
-//! Reads are unrestricted. A mutating request, to any of these APIs or
-//! Docker, can only be sent with an open [`Journaled`] action, which commits
-//! intent before the request is made. Docker changes go through
-//! [`DockerChanges`], whose handle only [`Journaled::change`] lends out.
+//! Reads are unrestricted. A mutating request, to Caddy or Docker, can only
+//! be sent with an open [`Journaled`] action, which commits intent before the
+//! request is made. Docker changes go through [`DockerChanges`], whose handle
+//! only [`Journaled::change`] lends out.
 use crate::operations::OperationError;
 use anyhow::{Context, Result};
-use http_body_util::{BodyExt, Full, Limited};
-use hyper::{Method, Request, StatusCode, body::Bytes};
-use hyper_util::rt::TokioIo;
+use hyper::Method;
+pub use piqueld_config::unix_http::ResponseError;
+use piqueld_config::unix_http::UnixHttp;
 use piqueld_core::Phase;
 use piqueld_core::observability::DiagnosticCode;
 use piqueld_docker::InfrastructureChanges;
@@ -24,34 +24,6 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,
 };
-use tokio::net::UnixStream;
-
-/// A non-success API response. The bounded body is kept for daemon logs;
-/// public diagnostics record only the status.
-#[derive(Debug, thiserror::Error)]
-#[error("{path}: HTTP {status}: {body}")]
-pub struct ResponseError {
-    /// Request path, such as `/config/`.
-    path: String,
-    /// Status returned by Caddy or the `LocalAPI`.
-    pub status: StatusCode,
-    /// Lossy UTF-8 response body, truncated to 2048 characters.
-    body: String,
-}
-
-impl ResponseError {
-    /// Passes successful statuses and wraps any other status with its bounded body.
-    fn check(path: &str, status: StatusCode, body: &[u8]) -> Result<(), Self> {
-        if status.is_success() {
-            return Ok(());
-        }
-        Err(Self {
-            path: path.to_owned(),
-            status,
-            body: String::from_utf8_lossy(body).chars().take(2048).collect(),
-        })
-    }
-}
 
 /// Docker changes to the gateway's containers, networks and images. Its
 /// handle is private to this module: only an open [`Journaled`] action
@@ -194,82 +166,25 @@ impl super::Ingress {
     }
 }
 
-/// Client for one local HTTP API, identified by its Unix socket path.
-/// Opens a fresh connection for each request; constructing it performs no I/O.
-pub(super) struct UnixApi {
-    socket: PathBuf,
-    timeout: Duration,
-    /// `Host` header of every request.
-    host: &'static str,
+/// Client for Caddy's admin API, on its Unix socket, in JSON.
+pub(super) struct CaddyApi {
+    http: UnixHttp,
 }
 
-impl UnixApi {
+impl CaddyApi {
     /// Uses the caller's timeout for the entire request, including connecting
     /// and reading the response. Ingress supplies the global Docker request
     /// timeout, which its Docker requests also use.
     pub(super) fn new(socket: PathBuf, timeout: Duration) -> Self {
         Self {
-            socket,
-            timeout,
-            host: "localhost",
+            http: UnixHttp::new(socket, "localhost", timeout),
         }
-    }
-
-    /// Sends `host` instead of `localhost`, as Tailscale's `LocalAPI` requires
-    /// `local-tailscaled.sock`.
-    pub(super) fn with_host(mut self, host: &'static str) -> Self {
-        self.host = host;
-        self
-    }
-
-    /// Sends optional JSON and returns the HTTP status and raw response bytes.
-    async fn request(
-        &self,
-        method: Method,
-        path: &str,
-        value: Option<&Value>,
-    ) -> Result<(StatusCode, Vec<u8>)> {
-        tokio::time::timeout(self.timeout, async {
-            let stream = UnixStream::connect(&self.socket)
-                .await
-                .with_context(|| format!("connect to {}", self.socket.display()))?;
-            let (mut sender, connection) =
-                hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-            let mut drivers = tokio::task::JoinSet::new();
-            drivers.spawn(async move {
-                if let Err(error) = connection.await {
-                    tracing::debug!(?error, "ingress HTTP connection ended");
-                }
-            });
-            let bytes = value
-                .map(serde_json::to_vec)
-                .transpose()?
-                .unwrap_or_default();
-            let request = Request::builder()
-                .method(method)
-                .uri(path)
-                .header("Host", self.host)
-                .header("Content-Type", "application/json")
-                .header("Connection", "close")
-                .body(Full::new(Bytes::from(bytes)))?;
-            let response = sender.send_request(request).await?;
-            let status = response.status();
-            let bytes = Limited::new(response.into_body(), 8 * 1024 * 1024)
-                .collect()
-                .await
-                .map_err(|error| anyhow::anyhow!("read bounded ingress response: {error}"))?
-                .to_bytes();
-            Ok((status, bytes.to_vec()))
-        })
-        .await
-        .context("ingress HTTP request timed out")?
     }
 
     /// Requires a successful HTTP status and decodes JSON, or returns `Null`
     /// for an empty response.
     async fn json(&self, method: Method, path: &str, value: Option<&Value>) -> Result<Value> {
-        let (status, body) = self.request(method, path, value).await?;
-        ResponseError::check(path, status, &body)?;
+        let body = self.http.checked(method, path, value).await?;
         if body.is_empty() {
             Ok(Value::Null)
         } else {
@@ -302,41 +217,5 @@ impl UnixApi {
         value: Option<&Value>,
     ) -> Result<Value> {
         self.json(method, path, value).await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    #[tokio::test]
-    async fn supplied_budget_covers_a_stalled_response_body() {
-        let directory = tempfile::tempdir().unwrap();
-        let socket = directory.path().join("api.sock");
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-        let mut server = tokio::task::JoinSet::new();
-        server.spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            stream.read_exact(&mut [0; 1]).await.unwrap();
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nx")
-                .await
-                .unwrap();
-            std::future::pending::<()>().await;
-        });
-        let client = UnixApi::new(socket, Duration::from_millis(50));
-        let error = tokio::time::timeout(
-            Duration::from_secs(1),
-            client.request(Method::GET, "/", None),
-        )
-        .await
-        .expect("the supplied 50ms budget must override the usual request budget")
-        .unwrap_err();
-        assert!(
-            error
-                .chain()
-                .any(<dyn std::error::Error>::is::<tokio::time::error::Elapsed>)
-        );
     }
 }

@@ -336,9 +336,10 @@ listen_mode = "tailscale"
 port = 7845
 ```
 
-At startup, piqueld runs `tailscale status --json --peers=false` with a five-second
-timeout. If the command is missing, fails, or reports Tailscale is not running
-or has no addresses, piqueld logs a warning and continues with the remaining
+At startup, piqueld asks the host's `tailscaled` for its addresses, through
+its socket `/var/run/tailscale/tailscaled.sock`, with a five-second timeout. It
+doesn't need the `tailscale` command for this. If `tailscaled` doesn't answer,
+or reports Tailscale is not running or has no addresses, piqueld logs a warning and continues with the remaining
 listeners. It never retries discovery: restart piqueld after bringing Tailscale
 up or changing its addresses. Any actual bind failure aborts startup, including
 a failure on just one address. Direct binding requires Tailscale's normal network
@@ -381,7 +382,10 @@ are managed through the API, CLI and dashboard rather than this file; a
 With `[tailscale]` enabled, piqueld joins the tailnet as its own node and serves
 the website and API over HTTPS on port 443 (`https_port`) of that node. piqueld starts and
 supervises a dedicated `tailscaled` in userspace-networking mode, separate from
-any host Tailscale daemon, so `tailscaled` and `tailscale` must be on `PATH`.
+any host Tailscale daemon, so `tailscaled` must be on `PATH`. piqueld reads the
+node's state through the `tailscaled` socket, and runs `tailscale` to log the
+node in and change its Serve configuration, so `tailscale` must be on `PATH`
+too.
 That `tailscaled` terminates TLS with the tailnet-issued certificate and
 forwards connections to a loopback listener with a PROXY protocol header that
 carries the client's tailnet address. The listener accepts connections only
@@ -412,8 +416,8 @@ auth_key_file = "ts-auth-key" # $CREDENTIALS_DIRECTORY/ts-auth-key
   `server.allowed_hosts`.
 - The node has its own tailnet IP, so it never competes with managed ingress
   for port 443.
-- piqueld asks its `tailscaled` who each peer is (`tailscale whois`, one
-  lookup per address at a time). The [audit trail](../operations/audit.md) records
+- piqueld asks its `tailscaled` who each peer is, through its socket, one
+  lookup per address at a time. The [audit trail](../operations/audit.md) records
   that tailnet user or tag and node, cached for a minute per address. API
   tokens can be [bound to a tailnet identity](../accounts/cli-and-tokens.md#bind-a-token-to-tailnet-devices),
   which is always checked with a fresh lookup.
@@ -442,7 +446,8 @@ https_port = 7846         # https://<node>.<tailnet>.ts.net:7846
 ```
 
 - piqueld only adds its port to the node's Serve configuration, and removes it
-  when it stops. It neither logs the node in nor changes its preferences, so
+  when it stops. It runs `tailscale` to do so, so `tailscale` must be on `PATH`,
+  but `tailscaled` need not be. It neither logs the node in nor changes its preferences, so
   `hostname` is unused and `auth_key_file` is rejected; startup fails unless
   the node is logged in.
 - Startup fails if the port is already in the Serve configuration, such as

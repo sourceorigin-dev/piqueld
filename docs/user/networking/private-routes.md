@@ -323,9 +323,7 @@ daemon's Unix socket.
 The [audit trail](../operations/audit.md) records the tailnet
 user of each request, and
 [tailnet-bound tokens](../accounts/cli-and-tokens.md#bind-a-token-to-tailnet-devices) work
-on this hostname. For both, piqueld needs the `tailscale` command on its
-`PATH`. The NixOS module adds it; on other distributions, install Tailscale on
-the host.
+on this hostname. piqueld asks the apps node who each client is.
 
 ## Troubleshooting
 

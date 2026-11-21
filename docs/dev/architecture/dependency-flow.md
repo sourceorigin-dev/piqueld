@@ -31,15 +31,23 @@ recompiles only the crates it touches and those above them:
 
 | Crate | Modules | Depends on |
 | --- | --- | --- |
-| `piqueld-config` (`crates/piqueld-config`) | `config` (the crate root), `dns`, `directories`, `runtime_dir` | `piqueld-core` |
+| `piqueld-config` (`crates/piqueld-config`) | `config` (the crate root), `dns`, `directories`, `runtime_dir`, `tailscale`, `unix_http` | `piqueld-core` |
 | `piqueld-store` (`crates/piqueld-store`) | `store` (the crate root), `secrets`, and the migrations | `piqueld-core` |
 | `piqueld-docker` (`crates/piqueld-docker`) | `docker` (the crate root), `command`, and the embedded health probe | `piqueld-core`, `piqueld-probe` |
 | `piqueld` (`apps/piqueld`) | every other module, the binary, and the embedded dashboard | all of the above |
 
 `piqueld-config` holds the configuration file, the DNS provider accounts it
 configures, which are also their API clients, and the private state and
-runtime directories. Its `testing` feature adds the in-memory and
-`challtestsrv` DNS providers the daemon's ingress tests use.
+runtime directories. `unix_http` sends HTTP through a socket file: the
+daemon's ingress uses it for Caddy's admin API, and `tailscale` for
+`tailscaled`'s `LocalAPI`. `tailscale` is the one client that reads a
+`tailscaled`'s status, peers, certificate and Serve configuration, for the
+Tailscale listen mode, the daemon's tailnet node and the apps node. The
+daemon still runs the `tailscale` CLI to log its node in and change its Serve
+configuration. Its `testing` feature adds the in-memory and
+`challtestsrv` DNS providers the daemon's ingress tests use, and
+`FakeLocalApi`, a stand-in `tailscaled` that serves recorded `LocalAPI`
+answers.
 
 `piqueld-store` holds the control-plane state, the mutations its acceptance
 commits, and secret encryption. It reads its retention settings as

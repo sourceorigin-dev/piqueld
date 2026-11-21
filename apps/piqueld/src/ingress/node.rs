@@ -18,7 +18,7 @@
 //!
 //! ```text
 //! state/                  node identity and preferences
-//! run/tailscaled.sock     LocalAPI, read for status
+//! run/tailscaled.sock     LocalAPI, read for status and peer identities
 //! config/serve.json       serve configuration, owned by piqueld
 //! config/auth-key         first-login auth key (0600), when configured
 //! ```
@@ -26,10 +26,11 @@
 //! Like the gateway's, changes are daemon-scoped journal actions, and a
 //! container whose spec hash differs is replaced.
 
-use super::{Ingress, TAILSCALE_IMAGE, gateway::TMPFS, wire::UnixApi};
-use crate::tailnet::{ProxyListener, Status};
+use super::{Ingress, TAILSCALE_IMAGE, gateway::TMPFS};
+use crate::tailnet::ProxyListener;
 use anyhow::{Context, Result};
 use piqueld_config::directories::PrivateFile;
+use piqueld_config::tailscale::LocalApi;
 use piqueld_config::{Credential, PrivateIngressConfig};
 use piqueld_core::Phase;
 use piqueld_core::api::PrivateIngressStatus;
@@ -57,7 +58,7 @@ pub(super) struct Node {
     /// Auth key for the first login.
     auth_key: Option<Credential>,
     /// The node's `LocalAPI`, over the socket in its `run` directory.
-    api: UnixApi,
+    api: LocalApi,
     /// Login URL last relayed to daemon logs.
     login_url: parking_lot::Mutex<Option<String>>,
 }
@@ -69,11 +70,10 @@ impl Node {
         config.enabled.then(|| Self {
             hostname: config.hostname.clone(),
             auth_key: config.auth_key.clone(),
-            api: UnixApi::new(
+            api: LocalApi::new(
                 Self::socket(directory),
                 piqueld_docker::DockerTimeout::Request.duration(),
-            )
-            .with_host("local-tailscaled.sock"),
+            ),
             login_url: parking_lot::Mutex::new(None),
         })
     }
@@ -187,13 +187,11 @@ impl Ingress {
     /// The node's login state and tailnet addresses from its `LocalAPI`. Relays
     /// a new login URL to daemon logs once.
     pub(super) async fn node_status(&self, node: &Node) -> Result<PrivateIngressStatus> {
-        let status: Status = serde_json::from_value(
-            node.api
-                .get("/localapi/v0/status")
-                .await
-                .context("read the apps node status")?,
-        )
-        .context("decode the apps node status")?;
+        let status = node
+            .api
+            .status()
+            .await
+            .context("read the apps node status")?;
         let login_url = Some(status.auth_url.clone()).filter(|url| !url.is_empty());
         let mut relayed = node.login_url.lock();
         if login_url.is_some() && *relayed != login_url {
