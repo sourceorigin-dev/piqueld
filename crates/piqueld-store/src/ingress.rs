@@ -431,24 +431,14 @@ impl Store {
     /// whether any did; when none did, nothing is written.
     /// Called only after this exact table is accepted (or the gateway is stopped).
     ///
-    /// Callers serialize acknowledgements, which lets the table be compared
-    /// before the writer lock is taken; see the comment there.
+    /// Acknowledgements are serialized by the store's own lock, from reading
+    /// the applied routes to writing them, so the comparison needs no writer
+    /// lock and a steady pass takes none.
     ///
     /// # Errors
     /// Returns a storage error.
     pub async fn acknowledge_routes(&self, table: &RoutingTable) -> Result<bool, StoreError> {
-        // Invariant: nothing else writes `applied_json` between this read and
-        // the transaction below, since only this method writes it and its
-        // callers are serialized. In the daemon, managed ingress makes every
-        // acknowledgement, holding `Ingress::update` through it: in `apply`,
-        // and in `refresh`, which every gateway pass goes through, the first
-        // at startup included. That is why a steady pass may skip the writer
-        // lock.
-        // The controller acknowledges directly only without managed ingress
-        // (tests and embedders), where operations of different environments
-        // can race; each environment then keeps one acknowledged value, as
-        // if their writes had been ordered, and no DNS records or gateway
-        // loop read the table in between.
+        let _acknowledging = self.acknowledgements.lock().await;
         let applied = self.applied_table().await?;
         let changed: Vec<_> = table
             .iter()
@@ -1086,6 +1076,42 @@ mod tests {
         let withdrawn = store.routing_table().await.unwrap();
         assert!(store.acknowledge_routes(&withdrawn).await.unwrap());
         assert_eq!(store.applied_table().await.unwrap(), withdrawn);
+    }
+
+    /// Concurrent acknowledgements run one at a time, in order, so the later
+    /// table ends up applied whole: the earlier one can't compare against
+    /// stale routes and leave half of each.
+    #[tokio::test]
+    async fn concurrent_acknowledgements_end_with_the_later_table() {
+        let (_directory, store) = Store::temporary().await;
+        let mut routes = Vec::new();
+        for (name, hostname) in [("one", "one.example.com"), ("two", "two.example.com")] {
+            let input = app(name, Some(hostname));
+            let saved = save(&store, input.clone(), false).await.unwrap();
+            let id = store.saved_production(&saved).await;
+            store.stage_routes(&id, &[], true, None).await.unwrap();
+            routes.push((id, input.spec().routes.clone()));
+        }
+        let [(one, one_routes), (two, two_routes)] = <[_; 2]>::try_from(routes).unwrap();
+        let empty = RoutingTable::from([(one.clone(), vec![]), (two.clone(), vec![])]);
+        assert_eq!(store.applied_table().await.unwrap(), empty);
+        let earlier = RoutingTable::from([(one.clone(), one_routes), (two.clone(), vec![])]);
+        let later = RoutingTable::from([(one, vec![]), (two, two_routes)]);
+
+        // Both wait behind a held acknowledgement, the earlier first.
+        let held = store.acknowledgements.lock().await;
+        let acknowledge = |table: RoutingTable| {
+            let store = store.clone();
+            tokio::spawn(async move { store.acknowledge_routes(&table).await.unwrap() })
+        };
+        let first = acknowledge(earlier);
+        tokio::task::yield_now().await;
+        let second = acknowledge(later.clone());
+        tokio::task::yield_now().await;
+        drop(held);
+        assert!(first.await.unwrap());
+        assert!(second.await.unwrap());
+        assert_eq!(store.applied_table().await.unwrap(), later);
     }
 
     #[tokio::test]

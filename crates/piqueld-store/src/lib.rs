@@ -596,6 +596,9 @@ pub struct Store {
     secret_key_path: std::path::PathBuf,
     /// Process-wide writer queue serializing `BEGIN IMMEDIATE` transactions.
     writers: std::sync::Arc<Writers>,
+    /// Serializes route acknowledgements, from reading the applied routes to
+    /// writing them (see [`Store::acknowledge_routes`]).
+    acknowledgements: std::sync::Arc<tokio::sync::Mutex<()>>,
     /// Database file path, used to report on-disk size.
     database_path: std::path::PathBuf,
     /// When this store was opened, used to report daemon uptime.
@@ -779,6 +782,7 @@ impl Store {
 
             secret_key_path: path.with_file_name("secrets.key"),
             writers: std::sync::Arc::default(),
+            acknowledgements: std::sync::Arc::default(),
             database_path: path.to_path_buf(),
             started: std::time::Instant::now(),
             stats_cache: std::sync::Arc::default(),
