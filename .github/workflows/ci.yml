@@ -28,6 +28,8 @@
 # manual runs on main run everything, macOS included.
 # `ci` is the single status to require: it fails if any job failed and passes
 # when the rest succeeded or were skipped.
+# In the merge queue, `fail-fast` cancels the run at the first failed job, so
+# `ci` reports the failure without waiting for the slowest job.
 #
 # Caches are saved from main only, by the nightly run. The small prebuilt
 # dashboard (.github/actions/dashboard) is also saved by pull requests, and on
@@ -386,6 +388,38 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
       - run: nix develop .#docs --command just docs
+
+  # In the merge queue, stops the run at the first failed job, so the queue
+  # drops the entry without waiting for the slowest one: `ci` runs even after
+  # a cancel and reports the failure. The only job with `actions: write`; it
+  # checks out nothing, so no repository code holds that token.
+  fail-fast:
+    name: fail-fast
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel the run when a job fails
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+          JOBS: repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}/jobs?per_page=100
+        # `ci` appears once every job it needs has finished, so the watch
+        # ends there. A failed API call is retried on the next round.
+        run: |
+          while sleep 15; do
+            jobs=$(gh api "$JOBS" --jq '.jobs[] | select(.name != "fail-fast") | "\(.name)\t\(.conclusion)"') || continue
+            if grep -qP '\t(failure|timed_out)$' <<<"$jobs"; then
+              gh run cancel "$RUN"
+              exit
+            fi
+            if grep -qP '^ci\t' <<<"$jobs"; then
+              exit
+            fi
+          done
 
   ci:
     name: ci
