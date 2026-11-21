@@ -4,7 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 
 /// Snapshots the store's database in `directory` into `name` and opens
 /// the copy.
-async fn snapshot(directory: &Path, name: &str) -> DatabaseFile {
+async fn snapshot(directory: &Path, name: &str) -> DatabaseCopy {
     let copy = directory.join(name);
     let mut live = DatabaseFile::open(&directory.join("db"))
         .await
@@ -13,7 +13,7 @@ async fn snapshot(directory: &Path, name: &str) -> DatabaseFile {
         .await
         .expect("the snapshot is written");
     live.close().await.expect("the live database closes");
-    DatabaseFile::open(&copy).await.expect("the snapshot opens")
+    DatabaseCopy::open(&copy).await.expect("the snapshot opens")
 }
 
 /// Whether the table `name` exists in `database`.
@@ -127,4 +127,26 @@ async fn verify_key_accepts_only_the_key_the_snapshot_was_bound_to() {
         failure(&mut bound, Some(&other)).await,
         Some(KeyFailure::AuthenticationFailed)
     ));
+}
+
+/// `VACUUM INTO` copies a row that breaks its CHECK constraint, and the
+/// copy's integrity check finds it, which a read-only connection's skips.
+#[tokio::test]
+async fn integrity_problems_include_rows_that_break_their_constraints() {
+    let (directory, store) = Store::temporary().await;
+    let mut connection = store.pool.acquire().await.expect("a connection opens");
+    sqlx::raw_sql(
+        "CREATE TABLE checked(value TEXT CHECK (json_valid(value)));
+         PRAGMA ignore_check_constraints=ON;
+         INSERT INTO checked VALUES('{not json');
+         PRAGMA ignore_check_constraints=OFF;",
+    )
+    .execute(&mut *connection)
+    .await
+    .expect("the broken row is written");
+    drop(connection);
+
+    let mut copy = snapshot(directory.path(), "copy.db").await;
+    let problems = copy.integrity_problems().await.expect("the check runs");
+    assert_eq!(problems, ["CHECK constraint failed in checked"]);
 }

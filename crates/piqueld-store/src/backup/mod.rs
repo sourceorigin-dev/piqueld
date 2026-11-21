@@ -27,10 +27,16 @@ impl DatabaseFile {
     /// # Errors
     /// Returns a storage error when the file is missing or can't be opened.
     pub async fn open(path: &Path) -> Result<Self, StoreError> {
+        Self::connect(path, true).await
+    }
+
+    /// Opens the existing database at `path`, read-only when `read_only`,
+    /// refusing symlinks and special files.
+    async fn connect(path: &Path, read_only: bool) -> Result<Self, StoreError> {
         ensure_database_target(path)?;
         let options = SqliteConnectOptions::new()
             .filename(path)
-            .read_only(true)
+            .read_only(read_only)
             .busy_timeout(Duration::from_secs(5));
         SqliteConnection::connect_with(&options)
             .await
@@ -83,20 +89,6 @@ impl DatabaseFile {
             .map_err(StoreError::database)
     }
 
-    /// The problems `PRAGMA integrity_check` finds, none for a sound
-    /// database.
-    ///
-    /// # Errors
-    /// Returns a storage error when the check can't run.
-    pub async fn integrity_problems(&mut self) -> Result<Vec<String>, StoreError> {
-        let mut problems: Vec<String> = sqlx::query_scalar("PRAGMA integrity_check")
-            .fetch_all(&mut self.0)
-            .await
-            .map_err(StoreError::database)?;
-        problems.retain(|problem| problem != "ok");
-        Ok(problems)
-    }
-
     /// Checks that the master key at `key`, or no key file (`None`), is the
     /// one this database's secrets need, as the installation's secret key
     /// check does: the key must decrypt the database's verifier or, without
@@ -119,6 +111,60 @@ impl DatabaseFile {
     /// Returns a storage error.
     pub async fn close(self) -> Result<(), StoreError> {
         self.0.close().await.map_err(StoreError::database)
+    }
+}
+
+/// A copy of a database that only this process uses, such as a backup's
+/// snapshot. It opens writable, without creating the file, because SQLite
+/// skips CHECK constraints in `PRAGMA integrity_check` on a read-only
+/// connection, and `VACUUM INTO` copies rows without checking them. Nothing
+/// here writes to it. It reads like a [`DatabaseFile`] otherwise.
+pub struct DatabaseCopy(DatabaseFile);
+
+impl DatabaseCopy {
+    /// Opens the existing copy at `path`, refusing symlinks and special
+    /// files.
+    ///
+    /// # Errors
+    /// Returns a storage error when the file is missing or can't be opened.
+    pub async fn open(path: &Path) -> Result<Self, StoreError> {
+        DatabaseFile::connect(path, false).await.map(Self)
+    }
+
+    /// The problems `PRAGMA integrity_check` finds, none for a sound
+    /// database.
+    ///
+    /// # Errors
+    /// Returns a storage error when the check can't run.
+    pub async fn integrity_problems(&mut self) -> Result<Vec<String>, StoreError> {
+        let mut problems: Vec<String> = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_all(&mut self.0.0)
+            .await
+            .map_err(StoreError::database)?;
+        problems.retain(|problem| problem != "ok");
+        Ok(problems)
+    }
+
+    /// Closes the connection, so the file can be moved or deleted.
+    ///
+    /// # Errors
+    /// Returns a storage error.
+    pub async fn close(self) -> Result<(), StoreError> {
+        self.0.close().await
+    }
+}
+
+impl std::ops::Deref for DatabaseCopy {
+    type Target = DatabaseFile;
+
+    fn deref(&self) -> &DatabaseFile {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for DatabaseCopy {
+    fn deref_mut(&mut self) -> &mut DatabaseFile {
+        &mut self.0
     }
 }
 
