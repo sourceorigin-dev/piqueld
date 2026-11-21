@@ -66,6 +66,8 @@ fn partial_list_failures_preserve_results_and_context_in_all_modes() {
 #[test]
 fn read_request_uses_the_full_command_timeout() {
     let server = start_server(false, 1, |_| {
+        // wall-clock: piquelctl is a real process, whose clock the test can't
+        // pause; the reply comes late in its 1s --timeout.
         thread::sleep(Duration::from_millis(650));
         Reply::json(
             json!({"status": "ok", "daemon_version": "test", "api_version": "v1", "instance_id": "test"}),
@@ -214,7 +216,7 @@ fn unexpected_responses_include_connection_context_without_extra_probes() {
             error.contains("Check that the selected endpoint serves the piqueld API"),
             "{error}"
         );
-        assert_eq!(server.stop().len(), 1);
+        assert_eq!(server.finish().len(), 1);
     }
 }
 

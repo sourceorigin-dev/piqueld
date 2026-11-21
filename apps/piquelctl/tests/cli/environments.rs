@@ -20,7 +20,7 @@ fn runtime_app_commands_never_pick_one_of_several_environments() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains("environment required"), "{stderr}");
         assert!(stderr.contains("production, staging"), "{stderr}");
-        assert_eq!(server.stop().len(), 1, "no mutation was sent");
+        assert_eq!(server.finish().len(), 1, "no mutation was sent");
     }
 }
 
@@ -110,7 +110,7 @@ fn deleting_an_application_with_several_environments_names_every_one() {
     let output = run(&server, &["app", "delete", "app-notes-01", "--yes"]);
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("--environments production,staging"));
-    assert_eq!(server.stop().len(), 1, "no deletion was sent");
+    assert_eq!(server.finish().len(), 1, "no deletion was sent");
 
     let server = start_server(false, 2, move |request| match request.path.as_str() {
         "/api/v1/applications/app-notes-01" => Reply::json(two_environment_view()),
@@ -502,7 +502,7 @@ fn wait_follows_one_deployment_until_it_is_ready() {
         let arguments = [&["env", "wait", "app-notes-01"][..], ready].concat();
         let output = run_with_timeout(&server, &arguments, "10s");
         let result = assert_json_success(&output);
-        server.stop();
+        server.finish();
         assert_eq!(result["deployment_id"], "operation-01");
         assert_eq!(result["outcome"], "succeeded");
         assert_eq!(result["urls"][0]["state"], url_state, "{ready:?}");
@@ -541,7 +541,7 @@ fn wait_reports_the_local_snapshot_a_restore_runs() {
     });
     let output = run_with_timeout(&server, &["env", "wait", "app-notes-01"], "10s");
     let result = assert_json_success(&output);
-    server.stop();
+    server.finish();
     assert_eq!(result["deployment_id"], "operation-01");
     assert_eq!(result["local"], true);
     assert_eq!(result["base"], "b".repeat(40));
@@ -593,7 +593,7 @@ fn wait_never_follows_a_newer_deployment_and_fails_or_times_out_with_its_code() 
                 "routes",
             ],
         );
-        server.stop();
+        server.finish();
         assert_eq!(output.status.code(), Some(code), "{error_code}");
         let error = support::json_error(&output);
         assert_eq!(error["code"], error_code);
@@ -621,7 +621,7 @@ fn wait_needs_the_runtime_observed() {
         ]
         .concat();
         let output = run(&server, &arguments);
-        server.stop();
+        server.finish();
         assert_eq!(output.status.code(), Some(4), "{ready:?}: {output:?}");
         assert_eq!(support::json_error(&output)["code"], "timeout");
     }
@@ -651,7 +651,7 @@ fn deploy_output_carries_the_deployment_fields_agents_need() {
             args.push("--no-wait");
         }
         let result = assert_json_success(&run(&server, &args));
-        server.stop();
+        server.finish();
         for (field, value) in [
             ("application_id", json!("app-notes-01")),
             ("environment_id", json!("app-notes-01")),
@@ -729,7 +729,7 @@ fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
             String::from_utf8_lossy(&output.stderr)
         );
         let status_reads = server
-            .stop()
+            .finish()
             .iter()
             .filter(|request| request.path == "/api/v1/environments/app-notes-01/status")
             .count();

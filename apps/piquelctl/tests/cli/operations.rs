@@ -294,7 +294,7 @@ fn a_retryable_failure_is_waited_on_only_while_it_is_the_latest_operation() {
             &server,
             &["--wait-timeout", "1s", "operation", "operation-01"],
         );
-        server.stop();
+        server.finish();
         assert_eq!(output.status.code(), Some(exit), "{output:?}");
         let error = support::json_error(&output);
         assert_eq!(error["code"], code);

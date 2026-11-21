@@ -50,7 +50,7 @@ fn builds_list_resolves_names_and_sends_its_filters() {
             path => panic!("unexpected path {path}"),
         });
         assert_json_success(&run(&server, &[arguments, &["--cursor", "v1:7"]].concat()));
-        let requests = server.stop();
+        let requests = server.finish();
         let last = requests.last().expect("a builds request");
         assert_eq!(
             last.path,
@@ -81,7 +81,7 @@ fn builds_list_resolves_names_and_sends_its_filters() {
             path => panic!("unexpected path {path}"),
         });
         let output = run(&server, &[&["build", "list"][..], arguments].concat());
-        let requests = server.stop();
+        let requests = server.finish();
         assert_eq!(output.status.code(), Some(2), "{arguments:?}: {output:?}");
         assert!(
             !requests

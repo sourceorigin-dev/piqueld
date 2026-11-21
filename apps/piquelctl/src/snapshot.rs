@@ -773,8 +773,8 @@ impl Git {
 mod tests {
     use super::*;
 
-    /// Runs `script` in `directory` with a fixed Git identity, returning its
-    /// trimmed output.
+    /// Runs `script` in `directory` with a fixed Git identity and date
+    /// (2000-01-01), returning its trimmed output.
     fn sh(directory: &Path, script: &str) -> String {
         let output = std::process::Command::new("sh")
             .args(["-ec", script])
@@ -783,6 +783,8 @@ mod tests {
             .env("GIT_AUTHOR_EMAIL", "test@example.com")
             .env("GIT_COMMITTER_NAME", "Test")
             .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .env("GIT_AUTHOR_DATE", "@946684800 +0000")
+            .env("GIT_COMMITTER_DATE", "@946684800 +0000")
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
@@ -823,17 +825,20 @@ mod tests {
         root.join("work")
     }
 
-    /// The same worktree snapshots to the same commit, so a rerun can replay.
+    /// The same worktree snapshots to the same commit, so a rerun can replay:
+    /// the commit takes `HEAD`'s dates, the fixture's 2000-01-01, not the
+    /// clock's, so a later snapshot matches too.
     #[tokio::test]
     async fn snapshots_of_an_unchanged_worktree_are_the_same_commit() {
         let root = tempfile::tempdir().unwrap();
         let work = fixture(root.path());
         let worktree = Worktree::at(&work).await.unwrap();
-        let first = worktree.snapshot("feat/x", None).await.unwrap().commit;
-        // Commit dates have one-second resolution.
-        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        let first = worktree.snapshot("feat/x", None).await.unwrap();
         let second = worktree.snapshot("feat/x", None).await.unwrap().commit;
-        assert_eq!(first, second);
+        assert_eq!(first.commit, second);
+        let show = ["show", "-s", "--format=%at %ct", &first.commit];
+        let dates = Git::run(&mut first.staged(&show), "read the dates").await;
+        assert_eq!(dates.unwrap(), "946684800 946684800");
     }
 
     #[tokio::test]
