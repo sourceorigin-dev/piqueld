@@ -22,8 +22,9 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
       pkgsFor = system: nixpkgs.legacyPackages.${system}.extend (import rust-overlay);
-      # The toolchain rust-toolchain.toml pins, with its components and
-      # targets, so Nix builds use the same Rust as rustup and CI.
+      # The toolchain rust-toolchain.toml names, with its components and
+      # targets. Its channel is `stable`, which Nix resolves to the stable
+      # Rust of the locked rust-overlay, not today's as rustup does.
       toolchainFor = pkgs: pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
     in
     {
@@ -54,14 +55,19 @@
       darwinModules.piquelctl = self.nixosModules.piquelctl;
 
       # The VM tests of the NixOS modules, which need KVM.
-      checks.x86_64-linux.piqueld-builder = (pkgsFor "x86_64-linux").testers.runNixOSTest (
-        import ./nix/tests/builder.nix {
-          modules = [
-            self.nixosModules.piqueld-builder
-            self.nixosModules.piqueld-registry
-          ];
-        }
-      );
+      checks.x86_64-linux = {
+        piqueld = (pkgsFor "x86_64-linux").testers.runNixOSTest (
+          import ./nix/tests/piqueld.nix { modules = [ self.nixosModules.default ]; }
+        );
+        piqueld-builder = (pkgsFor "x86_64-linux").testers.runNixOSTest (
+          import ./nix/tests/builder.nix {
+            modules = [
+              self.nixosModules.piqueld-builder
+              self.nixosModules.piqueld-registry
+            ];
+          }
+        );
+      };
 
       packages = forAllSystems (
         system:
