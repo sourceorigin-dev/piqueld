@@ -160,7 +160,9 @@ exits.
 ## Worktree setup
 
 `just setup-worktree` prepares a new worktree: it runs `just dev config`, then
-`just build`. T3 Code runs it when it creates a worktree. It leaves a marker
+`just build`. T3 Code runs it when it creates a worktree, often several at
+once, so the build runs at low priority (`nice -n 10`) on half the machine's
+cores unless `CARGO_BUILD_JOBS` is set. It leaves a marker
 in `target/worktree-setup/`, so an agent starting in the worktree knows
 whether to wait:
 

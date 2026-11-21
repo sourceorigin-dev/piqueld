@@ -205,8 +205,11 @@ setup-worktree:
     echo $$ > "$markers/running"
     rm -f "$markers/done" "$markers/failed" "$markers/output.log"
     status=0
+    # T3 Code often creates several worktrees at once: build at low priority on
+    # half the cores, unless CARGO_BUILD_JOBS says otherwise.
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(( ($(getconf _NPROCESSORS_ONLN) + 1) / 2 ))}"
     # Nothing else inherits the lock, so it ends with this script.
-    { just dev config && just build; } 9>&- 2>&1 | tee "$markers/output.log" 9>&- || status=$?
+    { just dev config && nice -n 10 just build; } 9>&- 2>&1 | tee "$markers/output.log" 9>&- || status=$?
     if [ "$status" -eq 0 ]; then
         touch "$markers/done"
     else
