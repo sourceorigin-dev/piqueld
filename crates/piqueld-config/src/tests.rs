@@ -179,7 +179,7 @@ fn tailscale_node_settings_are_validated() {
     assert_eq!(config.public_url(), "http://localhost:7845");
     assert_eq!(config.tailscale.https_port.get(), 443);
     let shared = DaemonConfig::from_toml(
-        "[tailscale]\nsocket = '/tmp/piqueld-dev/tailnet/tailscaled.sock'\nhttps_port = 7846",
+        "[tailscale]\nsocket = '/run/tailscale-shared/tailscaled.sock'\nhttps_port = 7846",
     )
     .unwrap();
     assert_eq!(shared.tailscale.https_port.get(), 7846);

@@ -63,8 +63,6 @@ passkeys on it over HTTP. Use the instance's host, not `localhost` or
 `127.0.0.1`: browsers send a host's cookies to all its ports, so on a shared
 host every instance would receive the others' session cookies.
 
-T3 Code's browser preview reaches the instance's port without a forward.
-
 ### From another machine
 
 When the instance runs on another machine, such as a T3 Code environment over
@@ -111,10 +109,11 @@ hostname = "piqueld-dev-<instance>"
 
 The daemon then starts its own `tailscaled`, with its state in the instance's
 data directory. On its first start, it logs a login URL to `daemon.log` and
-waits until you approve the node, so `just dev start` times out until then.
-To log in without approval, set `auth_key_file` to the absolute path of a
-file holding an auth key. `tailscale` and `tailscaled` must be on `PATH`, and
-the tailnet needs MagicDNS and HTTPS certificates.
+waits until you approve the node, so `just dev start` doesn't report the
+instance ready until then. To log in without approval, set `auth_key_file`
+to the absolute path of a file holding an auth key. `tailscale` and
+`tailscaled` must be on `PATH`, and the tailnet needs MagicDNS and HTTPS
+certificates.
 
 ## Docker
 

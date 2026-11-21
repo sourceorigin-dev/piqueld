@@ -40,8 +40,8 @@ pub(super) enum Holder {
 }
 
 /// An instance's background supervisor, found through the dev.pid it locks
-/// while it runs, so a file left behind by a crash never
-/// names an unrelated process that reuses its pid.
+/// while it runs, so a file left behind by a crash never names an unrelated
+/// process that reuses its pid.
 pub(super) struct Supervisor {
     pid_file: PathBuf,
 }

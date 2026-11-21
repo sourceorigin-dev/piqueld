@@ -214,8 +214,8 @@ impl Instance {
                  {replace}"
             );
         }
-        let tailscale = self.config.tailscale.socket.as_deref();
-        if tailscale.is_some_and(|socket| socket.ends_with(LEGACY_TAILNET_SOCKET)) {
+        let socket = self.config.tailscale.socket.as_deref();
+        if socket.is_some_and(|socket| socket.ends_with(LEGACY_TAILNET_SOCKET)) {
             eprintln!(
                 "warning: {CONFIG_FILE} serves on the shared tailnet node, which `just dev` \
                  no longer starts; {replace}"
