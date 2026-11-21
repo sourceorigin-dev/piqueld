@@ -364,7 +364,11 @@ pub struct CompileError {
 
 impl CompileError {
     /// An error with the stable `code` at `resource`.
-    pub(super) fn new(code: &str, resource: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(super) fn new(
+        code: crate::ApiErrorCode,
+        resource: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             code: code.into(),
             resource: resource.into(),
@@ -380,7 +384,11 @@ impl From<Vec<CompileError>> for crate::ValidationErrors {
         Self(
             errors
                 .into_iter()
-                .map(|error| crate::ValidationError::new(error.code, error.resource, error.message))
+                .map(|error| crate::ValidationError {
+                    code: error.code,
+                    path: error.resource,
+                    message: error.message,
+                })
                 .collect(),
         )
     }

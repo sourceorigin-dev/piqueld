@@ -313,7 +313,7 @@ async fn a_name_is_either_declared_and_generated_or_stored() {
     let conflict = |result: Result<(), StoreError>| match result {
         Err(StoreError::Validation(errors)) => {
             errors.0.len() == 1
-                && errors.0[0].code == codes::SECRET_NAME_CONFLICT
+                && errors.0[0].code == ApiErrorCode::SecretNameConflict
                 && errors.0[0].path == "spec.secrets[0].name"
         }
         _ => false,

@@ -177,7 +177,10 @@ async fn restores_exactly_what_the_deployment_ran() {
             .map(|warning| warning.code.clone())
             .collect::<Vec<_>>()
     };
-    assert_eq!(codes(restored_view), ["preview_replicas_capped"]);
+    assert_eq!(
+        codes(restored_view),
+        [piqueld_core::ApiErrorCode::PreviewReplicasCapped]
+    );
     assert_eq!(codes(restored_view), codes(first_view));
     assert_eq!(restored_view.release, first_view.release);
     assert!(restored_view.release.is_some());

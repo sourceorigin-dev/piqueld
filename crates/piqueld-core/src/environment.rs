@@ -11,8 +11,8 @@ use crate::manifest::{
     ValidationErrors, valid_git_branch, valid_git_commit,
 };
 use crate::{
-    ApplicationName, EnvironmentId, EnvironmentName, GitBranch, NormalizedApplication,
-    PlanDiagnostic, PreviewSlot, PreviewSlug, codes,
+    ApiErrorCode, ApplicationName, EnvironmentId, EnvironmentName, GitBranch,
+    NormalizedApplication, PlanDiagnostic, PreviewSlot, PreviewSlug,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -179,7 +179,7 @@ impl EnvironmentSource {
             }
             (None, None) => Ok(Self::Saved),
             (None, Some(_)) => Err(ValidationError::new(
-                codes::MANIFEST_REPOSITORY_REQUIRED,
+                ApiErrorCode::ManifestRepositoryRequired,
                 "branch",
                 "only environments of a repository-backed application follow a branch; connect a manifest repository first",
             )
@@ -246,7 +246,7 @@ impl TrackedBranch {
         let mut errors = Vec::new();
         if !valid_git_branch(&branch) {
             errors.push(ValidationError::new(
-                codes::GIT_BRANCH_INVALID,
+                ApiErrorCode::GitBranchInvalid,
                 "branch",
                 "branch must be a valid Git branch name",
             ));
@@ -256,7 +256,7 @@ impl TrackedBranch {
             .is_some_and(|commit| !valid_git_commit(commit))
         {
             errors.push(ValidationError::new(
-                codes::GIT_COMMIT_INVALID,
+                ApiErrorCode::GitCommitInvalid,
                 "commit",
                 "commit must be a full lowercase hexadecimal Git hash",
             ));

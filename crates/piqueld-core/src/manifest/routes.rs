@@ -506,8 +506,8 @@ impl ValidatedRoute {
 mod tests {
     use super::{Hostname, RouteTarget, ValidatedRoute};
     use crate::{
-        ApplicationId, EnvironmentId, InstanceId, ResolutionSet, ResolvedSource, ServiceName,
-        api::RouteStatus, compile_application, parse_toml,
+        ApiErrorCode, ApplicationId, EnvironmentId, InstanceId, ResolutionSet, ResolvedSource,
+        ServiceName, api::RouteStatus, compile_application, parse_toml,
     };
 
     fn manifest(routes: &str) -> String {
@@ -613,7 +613,10 @@ mod tests {
         assert!(redirect("https://example.com", "").is_ok());
         let errors = redirect("https://www.example.com", "").unwrap_err();
         assert!(
-            errors.0.iter().any(|e| e.code == "route_redirect_loop"),
+            errors
+                .0
+                .iter()
+                .any(|e| e.code == ApiErrorCode::RouteRedirectLoop),
             "{errors:?}"
         );
     }
@@ -655,41 +658,41 @@ mod tests {
         for (fields, code) in [
             (
                 "service='web'\nport=80\nredirect={to='https://example.com'}",
-                "route_target_invalid",
+                ApiErrorCode::RouteTargetInvalid,
             ),
-            ("", "route_target_invalid"),
-            ("service='web'", "route_target_invalid"),
+            ("", ApiErrorCode::RouteTargetInvalid),
+            ("service='web'", ApiErrorCode::RouteTargetInvalid),
             (
                 "redirect={to='https://example.com',status=200}",
-                "route_redirect_status_invalid",
+                ApiErrorCode::RouteRedirectStatusInvalid,
             ),
             (
                 "redirect={to='https://www.example.com/'}",
-                "route_redirect_loop",
+                ApiErrorCode::RouteRedirectLoop,
             ),
             (
                 "redirect={to='ftp://example.com'}",
-                "route_redirect_invalid",
+                ApiErrorCode::RouteRedirectInvalid,
             ),
             (
                 "redirect={to='https://example.com/?q=1'}",
-                "route_redirect_invalid",
+                ApiErrorCode::RouteRedirectInvalid,
             ),
             (
                 "redirect={to='https://example.com/{http.request.host}'}",
-                "route_redirect_invalid",
+                ApiErrorCode::RouteRedirectInvalid,
             ),
             (
                 "redirect={to='https://user@example.com'}",
-                "route_redirect_invalid",
+                ApiErrorCode::RouteRedirectInvalid,
             ),
             (
                 "redirect={to='https://example.com:0'}",
-                "route_redirect_invalid",
+                ApiErrorCode::RouteRedirectInvalid,
             ),
             (
                 "redirect={to='https://Example.com'}",
-                "route_redirect_invalid",
+                ApiErrorCode::RouteRedirectInvalid,
             ),
         ] {
             let errors = redirect(fields).unwrap_err();

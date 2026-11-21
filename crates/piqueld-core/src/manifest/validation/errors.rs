@@ -1,7 +1,7 @@
 //! Validation errors, each naming the path of the field it rejects.
 
 use super::safe_decode_path;
-use crate::codes;
+use crate::ApiErrorCode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use utoipa::ToSchema;
@@ -20,11 +20,7 @@ pub struct ValidationError {
 impl ValidationError {
     /// An error with the stable `code` at the manifest field `path`.
     #[must_use]
-    pub fn new(
-        code: impl Into<String>,
-        path: impl Into<String>,
-        message: impl Into<String>,
-    ) -> Self {
+    pub fn new(code: ApiErrorCode, path: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             path: path.into(),
@@ -50,7 +46,7 @@ impl ValidationErrors {
     /// Manifests reference secrets by name only, so they are safe to return.
     pub(super) fn decode(path: &str, message: String) -> Self {
         ValidationError::new(
-            codes::MANIFEST_DECODE_FAILED,
+            ApiErrorCode::ManifestDecodeFailed,
             safe_decode_path(path),
             message,
         )

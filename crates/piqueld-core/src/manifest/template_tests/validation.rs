@@ -11,14 +11,17 @@ fn invalid_references_fail_validation_with_their_field_paths() {
     assert_eq!(
         codes_and_paths(&errors),
         [
-            (codes::VARIABLE_UNKNOWN, "spec.routes[0].hostname"),
-            ("route_service_missing", "spec.routes[0].service"),
+            (ApiErrorCode::VariableUnknown, "spec.routes[0].hostname"),
+            (ApiErrorCode::RouteServiceMissing, "spec.routes[0].service"),
             (
-                codes::VARIABLE_RESERVED,
+                ApiErrorCode::VariableReserved,
                 "spec.services[0].environment.GREETING"
             ),
-            (codes::VARIABLE_NOT_ALLOWED, "spec.services[0].name"),
-            (codes::VARIABLE_UNDECLARED, "spec.services[0].source.image"),
+            (ApiErrorCode::VariableNotAllowed, "spec.services[0].name"),
+            (
+                ApiErrorCode::VariableUndeclared,
+                "spec.services[0].source.image"
+            ),
         ]
     );
     // `git.*` needs a repository manifest, and variables reference only system variables.
@@ -28,10 +31,10 @@ fn invalid_references_fail_validation_with_their_field_paths() {
         codes_and_paths(&parse_template_toml(&text).unwrap_err()),
         [
             (
-                codes::VARIABLE_UNAVAILABLE,
+                ApiErrorCode::VariableUnavailable,
                 "spec.services[0].environment.GREETING"
             ),
-            (codes::VARIABLE_NOT_ALLOWED, "spec.variables.tag"),
+            (ApiErrorCode::VariableNotAllowed, "spec.variables.tag"),
         ]
     );
     // Literal parsing rejects any remaining reference.
@@ -40,7 +43,7 @@ fn invalid_references_fail_validation_with_their_field_paths() {
         errors
             .0
             .iter()
-            .all(|error| error.code == codes::VARIABLE_UNRESOLVED),
+            .all(|error| error.code == ApiErrorCode::VariableUnresolved),
         "{errors:?}"
     );
 }
@@ -62,36 +65,40 @@ fn diagnostics_stay_bounded_for_oversized_names_and_repeated_references() {
 #[test]
 fn declarations_validate_names_values_and_only_the_first_bad_reference() {
     for (name, value, code) in [
-        ("1bad", Variable::Integer(1), codes::VARIABLE_NAME_INVALID),
+        (
+            "1bad",
+            Variable::Integer(1),
+            ApiErrorCode::VariableNameInvalid,
+        ),
         (
             "good",
             Variable::String("${{".into()),
-            codes::TEMPLATE_INVALID,
+            ApiErrorCode::TemplateInvalid,
         ),
         (
             "good",
             Variable::String("${{secrets.key}}".into()),
-            codes::VARIABLE_RESERVED,
+            ApiErrorCode::VariableReserved,
         ),
         (
             "good",
             Variable::String("${{other.key}}".into()),
-            codes::VARIABLE_NAMESPACE_UNKNOWN,
+            ApiErrorCode::VariableNamespaceUnknown,
         ),
         (
             "good",
             Variable::String("${{env.region}}".into()),
-            codes::VARIABLE_UNKNOWN,
+            ApiErrorCode::VariableUnknown,
         ),
         (
             "good",
             Variable::String("text ${{vars.first}} ${{vars.second}}".into()),
-            codes::VARIABLE_NOT_ALLOWED,
+            ApiErrorCode::VariableNotAllowed,
         ),
         (
             "good",
             Variable::String("${{git.branch}}${{git.sha}}".into()),
-            codes::VARIABLE_UNAVAILABLE,
+            ApiErrorCode::VariableUnavailable,
         ),
     ] {
         for override_value in [false, true] {
@@ -159,7 +166,7 @@ fn variable_limits_accept_boundaries_and_reject_one_more() {
             assert_eq!(
                 codes_and_paths(&ValidationErrors(errors)),
                 if invalid {
-                    vec![(codes::VARIABLE_COUNT_EXCESSIVE, "spec.variables")]
+                    vec![(ApiErrorCode::VariableCountExcessive, "spec.variables")]
                 } else {
                     vec![]
                 }
@@ -176,7 +183,7 @@ fn variable_limits_accept_boundaries_and_reject_one_more() {
         assert_eq!(
             codes_and_paths(&ValidationErrors(errors)),
             if invalid {
-                vec![(codes::VARIABLE_COUNT_EXCESSIVE, "spec.environments")]
+                vec![(ApiErrorCode::VariableCountExcessive, "spec.environments")]
             } else {
                 vec![]
             }
@@ -194,7 +201,7 @@ fn variable_limits_accept_boundaries_and_reject_one_more() {
         assert_eq!(
             codes_and_paths(&ValidationErrors(errors)),
             if invalid {
-                vec![(codes::VARIABLE_VALUE_EXCESSIVE, "spec.variables.text")]
+                vec![(ApiErrorCode::VariableValueExcessive, "spec.variables.text")]
             } else {
                 vec![]
             }
@@ -233,21 +240,21 @@ fn unicode_diagnostic_keys_truncate_on_byte_boundaries_and_echo_on_characters() 
     assert_eq!(
         codes_and_paths(&errors),
         [
-            (codes::NAME_INVALID, "spec.environments"),
+            (ApiErrorCode::NameInvalid, "spec.environments"),
             (
-                codes::VARIABLE_NAME_INVALID,
+                ApiErrorCode::VariableNameInvalid,
                 format!("spec.environments.{short}.variables.{short}").as_str()
             ),
             (
-                codes::VARIABLE_UNDECLARED,
+                ApiErrorCode::VariableUndeclared,
                 format!("spec.services[0].environment.{short}").as_str()
             ),
             (
-                codes::VARIABLE_UNDECLARED,
+                ApiErrorCode::VariableUndeclared,
                 format!("spec.services[1].source.build.args.{short}").as_str()
             ),
             (
-                codes::VARIABLE_NAME_INVALID,
+                ApiErrorCode::VariableNameInvalid,
                 format!("spec.variables.{short}").as_str()
             ),
         ]
@@ -262,9 +269,9 @@ fn unicode_diagnostic_keys_truncate_on_byte_boundaries_and_echo_on_characters() 
 #[test]
 fn references_check_declarations_and_repository_availability_before_rendering() {
     for (reference, code) in [
-        ("vars.missing", codes::VARIABLE_UNDECLARED),
-        ("git.branch", codes::VARIABLE_UNAVAILABLE),
-        ("git.sha", codes::VARIABLE_UNAVAILABLE),
+        ("vars.missing", ApiErrorCode::VariableUndeclared),
+        ("git.branch", ApiErrorCode::VariableUnavailable),
+        ("git.sha", ApiErrorCode::VariableUnavailable),
     ] {
         let mut manifest = base();
         manifest.spec.services[0].command =
@@ -352,7 +359,7 @@ fn plain_names_paths_and_keys_reject_even_escaped_references() {
             }
             let errors = parse_template_json(&wire.to_string()).unwrap_err();
             assert!(
-                codes_and_paths(&errors).contains(&(codes::VARIABLE_NOT_ALLOWED, path)),
+                codes_and_paths(&errors).contains(&(ApiErrorCode::VariableNotAllowed, path)),
                 "{pointer}: {errors}"
             );
         }
@@ -372,7 +379,7 @@ fn plain_names_paths_and_keys_reject_even_escaped_references() {
             *wire.pointer_mut(pointer).unwrap() = json!({text: "literal"});
             let errors = parse_template_json(&wire.to_string()).unwrap_err();
             assert!(
-                codes_and_paths(&errors).contains(&(codes::VARIABLE_NOT_ALLOWED, path)),
+                codes_and_paths(&errors).contains(&(ApiErrorCode::VariableNotAllowed, path)),
                 "{errors}"
             );
         }
@@ -441,14 +448,14 @@ fn non_template_wire_types_and_headers_reject_references_during_decode_or_valida
             let errors = parse_template_json(&wire.to_string()).unwrap_err();
             assert_eq!(
                 codes_and_paths(&errors),
-                [(codes::MANIFEST_DECODE_FAILED, path)],
+                [(ApiErrorCode::ManifestDecodeFailed, path)],
                 "{pointer}: {errors}"
             );
         }
     }
     for (field, code) in [
-        ("api_version", codes::API_VERSION_UNSUPPORTED),
-        ("kind", codes::KIND_UNSUPPORTED),
+        ("api_version", ApiErrorCode::ApiVersionUnsupported),
+        ("kind", ApiErrorCode::KindUnsupported),
     ] {
         let mut wire = input.clone();
         wire[field] = json!("${{env.name}}");
@@ -471,7 +478,7 @@ fn template_parsers_agree_and_reject_bad_wire_data_and_trailing_json() {
     for text in ["not TOML", "[spec", "api_version = 2"] {
         assert_eq!(
             parse_template_toml(text).unwrap_err().0[0].code,
-            codes::MANIFEST_DECODE_FAILED
+            ApiErrorCode::ManifestDecodeFailed
         );
     }
     for text in [
@@ -484,14 +491,14 @@ fn template_parsers_agree_and_reject_bad_wire_data_and_trailing_json() {
     ] {
         assert_eq!(
             parse_template_json(&text).unwrap_err().0[0].code,
-            codes::MANIFEST_DECODE_FAILED
+            ApiErrorCode::ManifestDecodeFailed
         );
     }
     let mut wire = serde_json::to_value(input).unwrap();
     wire["spec"]["variables"]["tag"] = json!(["not scalar"]);
     assert_eq!(
         codes_and_paths(&parse_template_json(&wire.to_string()).unwrap_err()),
-        [(codes::MANIFEST_DECODE_FAILED, "spec.variables")]
+        [(ApiErrorCode::ManifestDecodeFailed, "spec.variables")]
     );
 }
 
@@ -504,22 +511,22 @@ fn foreign_resource_names_and_declaration_keys_reject_references() {
     for (pointer, code, path) in [
         (
             "/spec/services/0/depends_on/0",
-            codes::SERVICE_DEPENDENCY_MISSING,
+            ApiErrorCode::ServiceDependencyMissing,
             "spec.services[0].depends_on[0]",
         ),
         (
             "/spec/services/0/mounts/0/volume",
-            codes::MOUNT_VOLUME_MISSING,
+            ApiErrorCode::MountVolumeMissing,
             "spec.services[0].mounts[0].volume",
         ),
         (
             "/spec/routes/0/service",
-            "route_service_missing",
+            ApiErrorCode::RouteServiceMissing,
             "spec.routes[0].service",
         ),
         (
             "/spec/jobs/0/service",
-            codes::JOB_SERVICE_MISSING,
+            ApiErrorCode::JobServiceMissing,
             "spec.jobs[0].service",
         ),
     ] {
@@ -539,7 +546,7 @@ fn foreign_resource_names_and_declaration_keys_reject_references() {
         assert_eq!(
             codes_and_paths(&errors),
             [(
-                codes::VARIABLE_NAME_INVALID,
+                ApiErrorCode::VariableNameInvalid,
                 format!("spec.variables.{text}").as_str()
             )]
         );
@@ -547,7 +554,7 @@ fn foreign_resource_names_and_declaration_keys_reject_references() {
         wire["spec"]["environments"] = json!({text: {}});
         assert_eq!(
             codes_and_paths(&parse_template_json(&wire.to_string()).unwrap_err()),
-            [(codes::NAME_INVALID, "spec.environments")]
+            [(ApiErrorCode::NameInvalid, "spec.environments")]
         );
     }
 }
@@ -564,7 +571,10 @@ fn type_error_diagnostics_bound_large_substituted_values() {
     let errors = render(&normalize(manifest), "production").unwrap_err();
     assert_eq!(
         codes_and_paths(&errors),
-        [(codes::VARIABLE_TYPE_INVALID, "spec.services[0].replicas")]
+        [(
+            ApiErrorCode::VariableTypeInvalid,
+            "spec.services[0].replicas"
+        )]
     );
     assert_eq!(
         errors.0[0].message,

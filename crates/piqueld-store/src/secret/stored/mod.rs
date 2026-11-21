@@ -7,13 +7,12 @@ use super::{
 };
 use crate::{Actor, Author};
 use piqueld_core::{
-    ApplicationId, EnvironmentId, ValidationError, ValidationErrors,
+    ApiErrorCode, ApplicationId, EnvironmentId, ValidationError, ValidationErrors,
     access::Permission,
     api::{
         EnvironmentAccess, EnvironmentView, SecretAccess, SecretMetadata, SecretProblem,
         StoredSecret,
     },
-    codes,
     manifest::ApplicationTemplate,
 };
 use sqlx::{Sqlite, SqliteConnection, Transaction};
@@ -354,7 +353,7 @@ impl Store {
             .enumerate()
             .filter(|(_, secret)| names.contains(secret.name.as_str()))
             .map(|(index, secret)| ValidationError {
-                code: codes::SECRET_NAME_CONFLICT.into(),
+                code: ApiErrorCode::SecretNameConflict.into(),
                 path: format!("spec.secrets[{index}].name"),
                 message: format!(
                     "{} is declared as a generated secret and also set in the application's secret store; delete one of them",

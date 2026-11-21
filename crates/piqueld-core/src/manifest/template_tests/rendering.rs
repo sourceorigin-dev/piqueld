@@ -78,7 +78,10 @@ fn whole_references_keep_their_type_and_mixed_text_renders_to_a_string() {
     let errors = render(&typed("\"${{ vars.web_replicas }}\"", "0"), "production").unwrap_err();
     assert_eq!(
         codes_and_paths(&errors),
-        [(codes::REPLICAS_OUT_OF_RANGE, "spec.services[0].replicas")]
+        [(
+            ApiErrorCode::ReplicasOutOfRange,
+            "spec.services[0].replicas"
+        )]
     );
     // Mixed interpolation yields a string, which an enum field may accept.
     let order = manifest("[spec.variables]\nweb_replicas = 1\ntag = \"stable\"\nkind = \"stop\"\n")
@@ -110,7 +113,7 @@ fn variables_without_a_value_fail_only_the_environment_that_needs_them() {
     assert_eq!(
         codes_and_paths(&errors),
         [(
-            codes::VARIABLE_VALUE_MISSING,
+            ApiErrorCode::VariableValueMissing,
             "spec.services[0].source.image"
         )]
     );
@@ -144,7 +147,7 @@ fn rendering_stops_at_its_size_budget() {
     assert_eq!(
         codes_and_paths(&errors),
         [(
-            codes::VARIABLE_VALUE_EXCESSIVE,
+            ApiErrorCode::VariableValueExcessive,
             "spec.services[0].environment.LARGE"
         )]
     );
@@ -212,7 +215,7 @@ fn every_templated_field_reports_its_missing_value_path() {
         };
         assert_eq!(
             codes_and_paths(&errors),
-            [(codes::VARIABLE_VALUE_MISSING, path)]
+            [(ApiErrorCode::VariableValueMissing, path)]
         );
         assert_eq!(
             errors.0[0].message,
@@ -353,7 +356,7 @@ fn contexts_supply_exact_system_values_and_explain_unavailable_ones() {
                 assert_eq!(
                     codes_and_paths(&errors),
                     [(
-                        codes::VARIABLE_UNAVAILABLE,
+                        ApiErrorCode::VariableUnavailable,
                         "spec.services[0].environment.VALUE"
                     )]
                 );
@@ -481,7 +484,7 @@ fn typed_fields_reject_wrong_types_ranges_and_mixed_text() {
         .unwrap_err();
         assert_eq!(
             codes_and_paths(&errors),
-            [(codes::VARIABLE_TYPE_INVALID, path)],
+            [(ApiErrorCode::VariableTypeInvalid, path)],
             "{expression} with {value}"
         );
         assert!(errors.0[0].message.starts_with("renders to "));
@@ -526,12 +529,18 @@ fn rendering_collects_sorted_errors_and_only_the_first_missing_value_per_field()
     assert_eq!(
         codes_and_paths(&errors),
         [
-            (codes::VARIABLE_VALUE_MISSING, "spec.services[0].command[0]"),
             (
-                codes::VARIABLE_VALUE_MISSING,
+                ApiErrorCode::VariableValueMissing,
+                "spec.services[0].command[0]"
+            ),
+            (
+                ApiErrorCode::VariableValueMissing,
                 "spec.services[0].environment.VALUE"
             ),
-            (codes::VARIABLE_VALUE_MISSING, "spec.services[0].replicas"),
+            (
+                ApiErrorCode::VariableValueMissing,
+                "spec.services[0].replicas"
+            ),
         ]
     );
     assert!(errors.0[0].message.starts_with("vars.b "));
@@ -564,11 +573,11 @@ fn raw_rendering_reports_parse_errors_and_variable_declaration_paths() {
         let mut errors = Vec::new();
         spec.render("notes", &saved(), &mut errors);
         let mut expected = vec![
-            (codes::TEMPLATE_INVALID, "spec.services[0].command[0]"),
-            (codes::TEMPLATE_INVALID, "spec.services[0].replicas"),
-            (codes::VARIABLE_UNAVAILABLE, path),
+            (ApiErrorCode::TemplateInvalid, "spec.services[0].command[0]"),
+            (ApiErrorCode::TemplateInvalid, "spec.services[0].replicas"),
+            (ApiErrorCode::VariableUnavailable, path),
         ];
-        expected.sort_by_key(|&(code, path)| (path, code));
+        expected.sort_by_key(|&(code, path)| (path, code.as_str()));
         assert_eq!(codes_and_paths(&ValidationErrors::sorted(errors)), expected);
         assert!(spec.variables.is_empty());
         assert!(spec.environments.is_empty());
@@ -594,7 +603,7 @@ fn text_budget_accepts_exact_limit_and_reports_only_first_overflow() {
             assert_eq!(
                 codes_and_paths(&ValidationErrors(errors)),
                 [(
-                    codes::VARIABLE_VALUE_EXCESSIVE,
+                    ApiErrorCode::VariableValueExcessive,
                     "spec.services[0].environment.B"
                 )]
             );
@@ -607,7 +616,7 @@ fn text_budget_accepts_exact_limit_and_reports_only_first_overflow() {
     assert_eq!(
         codes_and_paths(&ValidationErrors(errors)),
         [(
-            codes::VARIABLE_VALUE_EXCESSIVE,
+            ApiErrorCode::VariableValueExcessive,
             "spec.services[0].command[0]"
         )]
     );
@@ -742,7 +751,7 @@ fn secret_mount_names_select_each_environments_secret_and_resolve_once_rendered(
     );
     assert_eq!(
         codes_and_paths(&render(&template, "staging").unwrap_err()),
-        [(codes::NAME_INVALID, path.as_str())]
+        [(ApiErrorCode::NameInvalid, path.as_str())]
     );
 }
 

@@ -26,6 +26,16 @@ Library crates return explicit `thiserror` errors, with their source kept by
 `map_err(|_| ...)` unless it could hold a secret, and say so in a comment.
 Log an error with `error = %error`, its `Display`, as the daemon does.
 
+Every machine-readable code the API returns is a variant of
+`piqueld_core::ApiErrorCode`: the `code` of an error response, and those of
+validation errors, compilation errors and plan and status diagnostics. Never
+write a code as a string. A new code is a new variant whose doc comment says
+when the API returns it, and an existing variant's string never changes,
+because clients match on it. Wire types keep `code` a `String`, so a client
+still reads a code it doesn't know yet; compare one with
+`ApiErrorCode::parse` or `==`. Operation diagnostics recorded in history have
+their own `DiagnosticCode`.
+
 Production code never panics without saying why: `expect_used`, `panic`,
 `todo`, `unimplemented` and `dbg_macro` are denied outside tests. Return an
 error when the input can be wrong. An invariant the types can't express keeps

@@ -8,13 +8,12 @@ use super::{
     StoredEnvironment, now_ms,
 };
 use piqueld_core::{
-    ApplicationId, EnvironmentId, GitBranch, Preview, PreviewSlot, PreviewSlug,
+    ApiErrorCode, ApplicationId, EnvironmentId, GitBranch, Preview, PreviewSlot, PreviewSlug,
     access::Scope,
     api::{
         ApplicationPreviews, CountedPreview, DeploymentOrigin, DiagnosticView, EnvironmentView,
         LastDeployment, LocalSnapshot, PreviewLimit, PreviewLimitReached, PreviewUsage,
     },
-    codes,
     manifest::PreviewLimits,
 };
 use sqlx::{Sqlite, SqliteConnection, Transaction};
@@ -358,11 +357,12 @@ impl Store {
         Ok(warnings
             .into_iter()
             .filter(|warning| {
-                [
-                    codes::PREVIEW_LIMITS_DEFAULTED,
-                    codes::PREVIEW_REPLICAS_CAPPED,
-                ]
-                .contains(&warning.code.as_str())
+                matches!(
+                    ApiErrorCode::parse(&warning.code),
+                    Some(
+                        ApiErrorCode::PreviewLimitsDefaulted | ApiErrorCode::PreviewReplicasCapped
+                    )
+                )
             })
             .collect())
     }

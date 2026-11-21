@@ -208,7 +208,7 @@ impl Release {
 mod tests {
     use super::*;
     use crate::{
-        ApplicationId, EnvironmentId, InstanceId, ResolutionSet, codes, compile_application,
+        ApiErrorCode, ApplicationId, EnvironmentId, InstanceId, ResolutionSet, compile_application,
         compile_release, manifest::parse_template_toml,
     };
 
@@ -395,7 +395,7 @@ REVISION = "${{{{ git.sha }}}}"
                 .map(|error| (error.code.as_str(), error.resource.as_str()))
                 .collect::<Vec<_>>(),
             [(
-                codes::RELEASE_INCOMPATIBLE,
+                ApiErrorCode::ReleaseIncompatible.as_str(),
                 "web.source.build.args.VITE_ORIGIN"
             )]
         );

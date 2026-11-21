@@ -1,6 +1,6 @@
 //! Shared application and environment projections and bounded runtime diagnostics.
 use piqueld_core::{
-    ObservedApplication,
+    ApiErrorCode, ObservedApplication,
     api::{DiagnosticView, EnvironmentStatusView, ObservedApplicationView, ObservedServiceView},
     resource::{Convergence, ObservedService, TaskDiagnostic, TaskState},
 };
@@ -44,11 +44,10 @@ pub(super) fn observed_view(
                         0,
                         0,
                         Convergence::Failed,
-                        vec![DiagnosticView {
-                            code: "service_missing".into(),
-                            message: "the desired service was not found in the runtime observation"
-                                .into(),
-                        }],
+                        vec![DiagnosticView::new(
+                            ApiErrorCode::ServiceMissing,
+                            "the desired service was not found in the runtime observation",
+                        )],
                     ),
                     None => (None, 0, 0, Convergence::Updating, Vec::new()),
                 };
@@ -101,13 +100,13 @@ fn service_diagnostics(service: &ObservedService) -> Vec<DiagnosticView> {
         Convergence::Degraded | Convergence::Failed
     ) {
         let healthy_replicas = healthy_replicas(service);
-        diagnostics.push(DiagnosticView {
-            code: "service_not_converged".into(),
-            message: format!(
+        diagnostics.push(DiagnosticView::new(
+            ApiErrorCode::ServiceNotConverged,
+            format!(
                 "{} of {} observed replicas are healthy",
                 healthy_replicas, service.replicas
             ),
-        });
+        ));
     }
     diagnostics.extend(
         service
@@ -116,17 +115,17 @@ fn service_diagnostics(service: &ObservedService) -> Vec<DiagnosticView> {
             .filter(|task| task.desired_running)
             .filter_map(|task| task.diagnostic.as_ref())
             .map(|diagnostic| match diagnostic {
-                TaskDiagnostic::Failed { exit_code } => DiagnosticView {
-                    code: "task_failed".into(),
-                    message: exit_code.map_or_else(
+                TaskDiagnostic::Failed { exit_code } => DiagnosticView::new(
+                    ApiErrorCode::TaskFailed,
+                    exit_code.map_or_else(
                         || "a desired task exited unsuccessfully".into(),
                         |code| format!("a desired task exited with status code {code}"),
                     ),
-                },
-                TaskDiagnostic::Rejected => DiagnosticView {
-                    code: "task_rejected".into(),
-                    message: "the runtime rejected a desired task before it started".into(),
-                },
+                ),
+                TaskDiagnostic::Rejected => DiagnosticView::new(
+                    ApiErrorCode::TaskRejected,
+                    "the runtime rejected a desired task before it started",
+                ),
             }),
     );
     diagnostics.truncate(MAX_SERVICE_DIAGNOSTICS);
@@ -143,10 +142,10 @@ pub(super) fn detail_diagnostics(
 ) -> Vec<DiagnosticView> {
     let mut diagnostics = Vec::new();
     if let Some(message) = &status.message {
-        diagnostics.push(DiagnosticView {
-            code: "application_status".into(),
-            message: message.clone(),
-        });
+        diagnostics.push(DiagnosticView::new(
+            ApiErrorCode::ApplicationStatus,
+            message.clone(),
+        ));
     }
     if let Some(operation) = operation
         && let (Some(code), Some(message)) = (&operation.error_code, &operation.error_message)

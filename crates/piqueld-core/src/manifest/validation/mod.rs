@@ -6,7 +6,7 @@ use super::{
     APPLICATION_API_VERSION, APPLICATION_KIND, ApplicationManifest, ApplicationSpec, Job,
     JobVolumeAccess, SecretGenerator, ServiceFile, Source, ValidatedApplication, ValidatedTemplate,
 };
-use crate::{codes, resource::valid_logical_name};
+use crate::{ApiErrorCode, resource::valid_logical_name};
 use std::collections::{BTreeMap, BTreeSet};
 
 // Limits bounding manifest size and validation work. Route, service, and
@@ -202,14 +202,14 @@ impl super::Redirect {
     fn validate(&self, path: &str, errors: &mut Vec<ValidationError>) {
         if let Some(Err(source)) = self.to.as_literal().map(super::RedirectUrl::parse) {
             errors.push(ValidationError::new(
-                codes::ROUTE_REDIRECT_INVALID,
+                ApiErrorCode::RouteRedirectInvalid,
                 format!("{path}.redirect.to"),
                 source.to_string(),
             ));
         }
         if let Err(source) = super::RedirectStatus::try_from(self.status) {
             errors.push(ValidationError::new(
-                codes::ROUTE_REDIRECT_STATUS_INVALID,
+                ApiErrorCode::RouteRedirectStatusInvalid,
                 format!("{path}.redirect.status"),
                 source.to_string(),
             ));
@@ -247,7 +247,7 @@ impl ApplicationManifest {
                 validate_name(name, &path, errors);
                 if !names.insert(name.clone()) {
                     errors.push(ValidationError::new(
-                        codes::ROUTE_NAME_DUPLICATE,
+                        ApiErrorCode::RouteNameDuplicate,
                         &path,
                         "route name is already used in this application",
                     ));
@@ -266,7 +266,7 @@ impl ApplicationManifest {
                 .is_some_and(|hostname| super::RouteHostname::parse(hostname).is_err())
             {
                 errors.push(ValidationError::new(
-                    codes::ROUTE_HOSTNAME_INVALID,
+                    ApiErrorCode::RouteHostnameInvalid,
                     format!("{path}.hostname"),
                     "an exact public ASCII DNS hostname, or `*.` followed by one, is required",
                 ));
@@ -275,7 +275,7 @@ impl ApplicationManifest {
                 && !hostnames.insert(hostname)
             {
                 errors.push(ValidationError::new(
-                    codes::ROUTE_HOSTNAME_DUPLICATE,
+                    ApiErrorCode::RouteHostnameDuplicate,
                     format!("{path}.hostname"),
                     "hostname is already used in this application",
                 ));
@@ -284,14 +284,14 @@ impl ApplicationManifest {
                 (Some(service), Some(port), None) => {
                     if !self.spec.services.iter().any(|s| &s.name == service) {
                         errors.push(ValidationError::new(
-                            codes::ROUTE_SERVICE_MISSING,
+                            ApiErrorCode::RouteServiceMissing,
                             format!("{path}.service"),
                             "route must reference a service in this application",
                         ));
                     }
                     if port == 0 {
                         errors.push(ValidationError::new(
-                            codes::ROUTE_PORT_INVALID,
+                            ApiErrorCode::RoutePortInvalid,
                             format!("{path}.port"),
                             "HTTP backend port must be 1..=65535",
                         ));
@@ -299,7 +299,7 @@ impl ApplicationManifest {
                 }
                 (None, None, Some(redirect)) => redirect.validate(&path, errors),
                 _ => errors.push(ValidationError::new(
-                    codes::ROUTE_TARGET_INVALID,
+                    ApiErrorCode::RouteTargetInvalid,
                     &path,
                     ROUTE_TARGET_MESSAGE,
                 )),
@@ -312,7 +312,7 @@ impl ApplicationManifest {
             ) && redirect_loops(&hostname, &to, &hostnames)
             {
                 errors.push(ValidationError::new(
-                    codes::ROUTE_REDIRECT_LOOP,
+                    ApiErrorCode::RouteRedirectLoop,
                     format!("spec.routes[{index}].redirect.to"),
                     "redirect must target a hostname the route does not serve",
                 ));
@@ -375,13 +375,13 @@ impl ApplicationManifest {
             manifest.sync.validate("spec.manifest.sync", &mut errors);
             if Template::mentions_reference(&manifest.path) {
                 errors.push(ValidationError::new(
-                    codes::VARIABLE_NOT_ALLOWED,
+                    ApiErrorCode::VariableNotAllowed,
                     "spec.manifest.path",
                     "the manifest path cannot reference variables",
                 ));
             } else if !valid_repository_path(&manifest.path) {
                 errors.push(ValidationError::new(
-                    codes::REPOSITORY_PATH_INVALID,
+                    ApiErrorCode::RepositoryPathInvalid,
                     "spec.manifest.path",
                     "manifest path must remain within the repository root",
                 ));
@@ -395,13 +395,13 @@ impl ApplicationManifest {
         unique_names(
             self.spec.services.iter().map(|service| &service.name),
             "spec.services",
-            codes::SERVICE_NAME_DUPLICATE,
+            ApiErrorCode::ServiceNameDuplicate,
             &mut errors,
         );
         let volume_names = unique_names(
             self.spec.volumes.iter().map(|volume| &volume.name),
             "spec.volumes",
-            codes::VOLUME_NAME_DUPLICATE,
+            ApiErrorCode::VolumeNameDuplicate,
             &mut errors,
         );
         for (index, service) in self.spec.services.iter().enumerate() {
@@ -416,7 +416,7 @@ impl ApplicationManifest {
         self.spec.validate_telemetry_receiver(&mut errors);
         if self.spec.inline_file_bytes() > ServiceFile::MAX_TOTAL_BYTES {
             errors.push(ValidationError::new(
-                codes::FILE_TOTAL_EXCESSIVE,
+                ApiErrorCode::FileTotalExcessive,
                 "spec.services",
                 format!(
                     "inline file contents must total at most {} bytes",
@@ -461,14 +461,14 @@ impl ApplicationManifest {
     fn validate_header(&self, errors: &mut Vec<ValidationError>) {
         if self.api_version != APPLICATION_API_VERSION {
             errors.push(ValidationError::new(
-                codes::API_VERSION_UNSUPPORTED,
+                ApiErrorCode::ApiVersionUnsupported,
                 "api_version",
                 "unsupported application API version",
             ));
         }
         if self.kind != APPLICATION_KIND {
             errors.push(ValidationError::new(
-                codes::KIND_UNSUPPORTED,
+                ApiErrorCode::KindUnsupported,
                 "kind",
                 "resource kind must be Application",
             ));
@@ -484,7 +484,7 @@ impl ApplicationSpec {
         let mut within_budget = true;
         if self.routes.len() > MAX_ROUTES {
             errors.push(ValidationError::new(
-                codes::ROUTES_LIMIT,
+                ApiErrorCode::RoutesLimit,
                 "spec.routes",
                 format!("at most {MAX_ROUTES} routes are allowed per application"),
             ));
@@ -492,7 +492,7 @@ impl ApplicationSpec {
         }
         if self.services.len() > MAX_SERVICES {
             errors.push(ValidationError::new(
-                codes::SERVICE_COUNT_EXCESSIVE,
+                ApiErrorCode::ServiceCountExcessive,
                 "spec.services",
                 format!("an application must declare at most {MAX_SERVICES} services"),
             ));
@@ -502,7 +502,7 @@ impl ApplicationSpec {
             for (index, service) in self.services.iter().enumerate() {
                 if service.depends_on.len() > MAX_SERVICES {
                     errors.push(ValidationError::new(
-                        codes::SERVICE_DEPENDENCY_COUNT_EXCESSIVE,
+                        ApiErrorCode::ServiceDependencyCountExcessive,
                         format!("spec.services[{index}].depends_on"),
                         format!("a service must list at most {MAX_SERVICES} dependencies"),
                     ));
@@ -512,7 +512,7 @@ impl ApplicationSpec {
         }
         if self.volumes.len() > MAX_VOLUMES {
             errors.push(ValidationError::new(
-                codes::VOLUME_COUNT_EXCESSIVE,
+                ApiErrorCode::VolumeCountExcessive,
                 "spec.volumes",
                 format!("an application must declare at most {MAX_VOLUMES} volumes"),
             ));
@@ -520,7 +520,7 @@ impl ApplicationSpec {
         }
         if self.secrets.len() > MAX_GENERATED_SECRETS {
             errors.push(ValidationError::new(
-                codes::SECRETS_EXCESSIVE,
+                ApiErrorCode::SecretsExcessive,
                 "spec.secrets",
                 format!("an application must declare at most {MAX_GENERATED_SECRETS} secrets"),
             ));
@@ -528,7 +528,7 @@ impl ApplicationSpec {
         }
         if self.jobs.len() > Job::MAX_PER_APPLICATION {
             errors.push(ValidationError::new(
-                codes::JOB_COUNT_EXCESSIVE,
+                ApiErrorCode::JobCountExcessive,
                 "spec.jobs",
                 format!(
                     "an application must declare at most {} jobs",
@@ -553,13 +553,13 @@ impl ApplicationSpec {
                 let path = format!("spec.services[{index}].depends_on[{dependency_index}]");
                 if !names.contains(dependency.as_str()) {
                     errors.push(ValidationError::new(
-                        codes::SERVICE_DEPENDENCY_MISSING,
+                        ApiErrorCode::ServiceDependencyMissing,
                         &path,
                         "dependency must name a service in this application",
                     ));
                 } else if !listed.insert(dependency) {
                     errors.push(ValidationError::new(
-                        codes::SERVICE_DEPENDENCY_DUPLICATE,
+                        ApiErrorCode::ServiceDependencyDuplicate,
                         &path,
                         "dependency is listed more than once",
                     ));
@@ -574,7 +574,7 @@ impl ApplicationSpec {
         for (index, service) in services.iter().enumerate() {
             if cyclic.contains(service.name.as_str()) {
                 errors.push(ValidationError::new(
-                    codes::SERVICE_DEPENDENCY_CYCLE,
+                    ApiErrorCode::ServiceDependencyCycle,
                     format!("spec.services[{index}].depends_on"),
                     "dependencies must not form or lead into a cycle",
                 ));
@@ -594,7 +594,7 @@ impl ApplicationSpec {
         for (position, (index, service)) in receivers.enumerate() {
             if position > 0 {
                 errors.push(ValidationError::new(
-                    codes::TELEMETRY_RECEIVER_DUPLICATE,
+                    ApiErrorCode::TelemetryReceiverDuplicate,
                     format!("spec.services[{index}].receives_telemetry"),
                     "at most one service of an application may receive telemetry",
                 ));
@@ -605,7 +605,7 @@ impl ApplicationSpec {
                 .is_some_and(|replicas| *replicas > 1)
             {
                 errors.push(ValidationError::new(
-                    codes::TELEMETRY_RECEIVER_REPLICAS,
+                    ApiErrorCode::TelemetryReceiverReplicas,
                     format!("spec.services[{index}].replicas"),
                     "a service receiving telemetry runs at most one replica, since one collector listens on its socket",
                 ));
@@ -621,7 +621,7 @@ impl ApplicationSpec {
         unique_names(
             jobs.iter().map(|job| &job.name),
             "spec.jobs",
-            codes::JOB_NAME_DUPLICATE,
+            ApiErrorCode::JobNameDuplicate,
             errors,
         );
         for (index, job) in jobs.iter().enumerate() {
@@ -630,7 +630,7 @@ impl ApplicationSpec {
             let service = services.iter().find(|service| service.name == job.service);
             if service.is_none() {
                 errors.push(ValidationError::new(
-                    codes::JOB_SERVICE_MISSING,
+                    ApiErrorCode::JobServiceMissing,
                     format!("{base}.service"),
                     "job must reference a service in this application",
                 ));
@@ -641,7 +641,7 @@ impl ApplicationSpec {
                 .filter(|prerequisite| dependencies.contains(prerequisite.service.as_str()))
             {
                 errors.push(ValidationError::new(
-                    codes::JOB_DEPENDENCY_ORDER_INVALID,
+                    ApiErrorCode::JobDependencyOrderInvalid,
                     format!("{base}.service"),
                     format!(
                         "job {} for dependency service {} must run before job {}",
@@ -651,7 +651,7 @@ impl ApplicationSpec {
             }
             if lacks_executable(&job.command) {
                 errors.push(ValidationError::new(
-                    codes::PROCESS_COMMAND_INVALID,
+                    ApiErrorCode::ProcessCommandInvalid,
                     format!("{base}.command"),
                     "a job command must start with a non-empty executable",
                 ));
@@ -659,7 +659,7 @@ impl ApplicationSpec {
             validate_process_arguments(
                 &job.command,
                 &format!("{base}.command"),
-                codes::PROCESS_COMMAND_EXCESSIVE,
+                ApiErrorCode::ProcessCommandExcessive,
                 errors,
             );
             if let Some(service) = service {
@@ -670,7 +670,7 @@ impl ApplicationSpec {
             }
             if !(1..=Job::MAX_TIMEOUT_SECONDS).contains(&job.timeout_seconds) {
                 errors.push(ValidationError::new(
-                    codes::JOB_TIMEOUT_INVALID,
+                    ApiErrorCode::JobTimeoutInvalid,
                     format!("{base}.timeout_seconds"),
                     format!(
                         "job timeout must be between 1 and {} seconds",
@@ -697,7 +697,7 @@ impl ApplicationSpec {
         unique_names(
             secrets.iter().map(|secret| &secret.name),
             "spec.secrets",
-            codes::SECRET_NAME_DUPLICATE,
+            ApiErrorCode::SecretNameDuplicate,
             errors,
         );
         for (index, secret) in secrets.iter().enumerate() {
@@ -706,7 +706,7 @@ impl ApplicationSpec {
             match secret.generate {
                 SecretGenerator::Random { bytes, .. } if !RANDOM_SECRET_BYTES.contains(&bytes) => {
                     errors.push(ValidationError::new(
-                        codes::SECRET_GENERATOR_INVALID,
+                        ApiErrorCode::SecretGeneratorInvalid,
                         format!("{path}.generate.bytes"),
                         format!(
                             "random secrets must use {}-{} bytes",
@@ -717,7 +717,7 @@ impl ApplicationSpec {
                 }
                 SecretGenerator::Rsa { bits } if !RSA_SECRET_BITS.contains(&bits) => {
                     errors.push(ValidationError::new(
-                        codes::SECRET_GENERATOR_INVALID,
+                        ApiErrorCode::SecretGeneratorInvalid,
                         format!("{path}.generate.bits"),
                         "RSA keys must use 2048, 3072, or 4096 bits",
                     ));
@@ -738,10 +738,10 @@ struct VariableMap {
     /// Name piqueld sets itself for ingress, which users cannot declare.
     reserved: Option<&'static str>,
     // Error codes reported for each rule.
-    name_invalid: &'static str,
-    value_invalid: &'static str,
-    count_excessive: &'static str,
-    value_excessive: &'static str,
+    name_invalid: ApiErrorCode,
+    value_invalid: ApiErrorCode,
+    count_excessive: ApiErrorCode,
+    value_excessive: ApiErrorCode,
 }
 
 impl VariableMap {
@@ -750,20 +750,20 @@ impl VariableMap {
         noun: "environment",
         field: "environment",
         reserved: Some(crate::resource::INGRESS_PROXIES_ENV),
-        name_invalid: codes::ENVIRONMENT_NAME_INVALID,
-        value_invalid: codes::ENVIRONMENT_VALUE_INVALID,
-        count_excessive: codes::ENVIRONMENT_COUNT_EXCESSIVE,
-        value_excessive: codes::ENVIRONMENT_VALUE_EXCESSIVE,
+        name_invalid: ApiErrorCode::EnvironmentNameInvalid,
+        value_invalid: ApiErrorCode::EnvironmentValueInvalid,
+        count_excessive: ApiErrorCode::EnvironmentCountExcessive,
+        value_excessive: ApiErrorCode::EnvironmentValueExcessive,
     };
     /// Docker build arguments, validated at `<build>.args`.
     const BUILD_ARGS: Self = Self {
         noun: "build argument",
         field: "args",
         reserved: None,
-        name_invalid: codes::BUILD_ARG_NAME_INVALID,
-        value_invalid: codes::BUILD_ARG_VALUE_INVALID,
-        count_excessive: codes::BUILD_ARG_COUNT_EXCESSIVE,
-        value_excessive: codes::BUILD_ARG_VALUE_EXCESSIVE,
+        name_invalid: ApiErrorCode::BuildArgNameInvalid,
+        value_invalid: ApiErrorCode::BuildArgValueInvalid,
+        count_excessive: ApiErrorCode::BuildArgCountExcessive,
+        value_excessive: ApiErrorCode::BuildArgValueExcessive,
     };
 
     /// Appends errors at `base.field` when `values` has too many entries, a
@@ -788,7 +788,7 @@ impl VariableMap {
             let key_echo = safe_key_echo(key);
             if Template::mentions_reference(key) {
                 errors.push(ValidationError::new(
-                    codes::VARIABLE_NOT_ALLOWED,
+                    ApiErrorCode::VariableNotAllowed,
                     format!("{base}.{field}.name"),
                     format!("{noun} key {key_echo} cannot reference variables"),
                 ));
@@ -852,7 +852,7 @@ fn safe_key_echo(key: &str) -> String {
 fn unique_names<'a>(
     names: impl Iterator<Item = &'a String>,
     path: &str,
-    duplicate_code: &str,
+    duplicate_code: ApiErrorCode,
     errors: &mut Vec<ValidationError>,
 ) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
@@ -872,13 +872,13 @@ fn unique_names<'a>(
 pub(super) fn validate_name(value: &str, path: &str, errors: &mut Vec<ValidationError>) {
     if Template::mentions_reference(value) {
         errors.push(ValidationError::new(
-            codes::VARIABLE_NOT_ALLOWED,
+            ApiErrorCode::VariableNotAllowed,
             path,
             "names cannot reference variables",
         ));
     } else if !valid_logical_name(value) {
         errors.push(ValidationError::new(
-            codes::NAME_INVALID,
+            ApiErrorCode::NameInvalid,
             path,
             "names must be 1-63 lowercase letters, digits, or hyphens, start with a letter, and end with a letter or digit",
         ));
@@ -911,7 +911,7 @@ fn lacks_executable(command: &[Template]) -> bool {
 fn validate_process_arguments(
     values: &[Template],
     path: &str,
-    excessive_code: &str,
+    excessive_code: ApiErrorCode,
     errors: &mut Vec<ValidationError>,
 ) {
     if values.len() > MAX_PROCESS_ELEMENTS {
@@ -927,7 +927,7 @@ fn validate_process_arguments(
         };
         if value.contains('\0') {
             errors.push(ValidationError::new(
-                codes::PROCESS_ARGUMENT_INVALID,
+                ApiErrorCode::ProcessArgumentInvalid,
                 format!("{path}[{index}]"),
                 "container process arguments cannot contain NUL",
             ));

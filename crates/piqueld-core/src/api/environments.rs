@@ -192,6 +192,17 @@ pub struct DiagnosticView {
     pub message: String,
 }
 
+impl DiagnosticView {
+    /// A diagnostic with the stable `code`.
+    #[must_use]
+    pub fn new(code: crate::ApiErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+        }
+    }
+}
+
 /// Keeps a planner warning's code and message, e.g. to record it on a
 /// deployment.
 impl From<PlanDiagnostic> for DiagnosticView {
@@ -283,7 +294,7 @@ impl EnvironmentDetailView {
         !self
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == crate::codes::RUNTIME_UNAVAILABLE)
+            .any(|diagnostic| diagnostic.code == crate::ApiErrorCode::RuntimeUnavailable)
             && self
                 .observed
                 .services

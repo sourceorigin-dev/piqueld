@@ -2,7 +2,7 @@
 
 use crate::operations::OperationError;
 use piqueld_core::{
-    Plan, PlanRequest, codes,
+    ApiErrorCode, Plan, PlanRequest,
     planner::ActionKind,
     resource::{APPLICATION_LABEL, Convergence},
 };
@@ -244,16 +244,16 @@ impl BlockedPlan {
     /// Classifies a blocked `plan`: ownership first, then immutable
     /// configuration, then a failed service update.
     fn of(plan: &Plan) -> Self {
-        let has = |code: &str| {
+        let has = |code: ApiErrorCode| {
             plan.diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.code == code)
         };
-        if has(codes::UNOWNED_NAME_COLLISION) {
+        if has(ApiErrorCode::UnownedNameCollision) {
             Self::OwnershipConflict
-        } else if has(codes::IMMUTABLE_CONFIGURATION_DRIFT) {
+        } else if has(ApiErrorCode::ImmutableConfigurationDrift) {
             Self::ImmutableConfiguration
-        } else if has(codes::SERVICE_UPDATE_FAILED) {
+        } else if has(ApiErrorCode::ServiceUpdateFailed) {
             Self::ServiceUpdateFailed
         } else {
             Self::Unclassified

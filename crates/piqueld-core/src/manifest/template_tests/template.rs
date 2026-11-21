@@ -135,7 +135,7 @@ fn into_literal_reports_each_unresolved_slot_in_path_order() {
     let errors = validated.into_literal().unwrap_err();
     let mut expected: Vec<_> = FIELDS
         .iter()
-        .map(|&(_, path)| (codes::VARIABLE_UNRESOLVED, path))
+        .map(|&(_, path)| (ApiErrorCode::VariableUnresolved, path))
         .collect();
     expected.sort_by_key(|&(_, path)| path);
     assert_eq!(codes_and_paths(&errors), expected);
@@ -232,7 +232,10 @@ fn revision_overrides_validate_and_do_not_change_the_spec_hash() {
         .unwrap_err();
     assert_eq!(
         codes_and_paths(&errors),
-        [("manifest_repository_required", "spec.manifest.repository")]
+        [(
+            ApiErrorCode::ManifestRepositoryRequired,
+            "spec.manifest.repository"
+        )]
     );
 }
 
@@ -248,18 +251,30 @@ fn deserialization_revalidates_and_normalizes_saved_templates() {
     );
     for (pointer, value, diagnostic) in [
         ("/id", json!(""), "application"),
-        ("/api_version", json!("bad"), codes::API_VERSION_UNSUPPORTED),
-        ("/kind", json!("bad"), codes::KIND_UNSUPPORTED),
-        ("/metadata/name", json!("BAD"), codes::NAME_INVALID),
+        (
+            "/api_version",
+            json!("bad"),
+            ApiErrorCode::ApiVersionUnsupported.as_str(),
+        ),
+        (
+            "/kind",
+            json!("bad"),
+            ApiErrorCode::KindUnsupported.as_str(),
+        ),
+        (
+            "/metadata/name",
+            json!("BAD"),
+            ApiErrorCode::NameInvalid.as_str(),
+        ),
         (
             "/spec/services/0/replicas",
             json!(0),
-            codes::REPLICAS_OUT_OF_RANGE,
+            ApiErrorCode::ReplicasOutOfRange.as_str(),
         ),
         (
             "/spec/services/0/replicas",
             json!("${{vars.missing}}"),
-            codes::VARIABLE_UNDECLARED,
+            ApiErrorCode::VariableUndeclared.as_str(),
         ),
     ] {
         let mut invalid = wire.clone();
@@ -358,16 +373,18 @@ fn renders_like_compares_names_read_with_deployment_values() {
 
 #[test]
 fn validation_errors_sort_by_path_then_code_stably() {
-    let error = |path: &str, code: &str, message: &str| ValidationError::new(code, path, message);
+    let error =
+        |path: &str, code: ApiErrorCode, message: &str| ValidationError::new(code, path, message);
+    let (first, last) = (ApiErrorCode::ImageInvalid, ApiErrorCode::NameInvalid);
     let errors = ValidationErrors::sorted(vec![
-        error("z", "a", "last"),
-        error("a", "z", "third"),
-        error("a", "a", "first"),
-        error("a", "a", "second"),
+        error("z", first, "last"),
+        error("a", last, "third"),
+        error("a", first, "first"),
+        error("a", first, "second"),
     ]);
     assert_eq!(
         codes_and_paths(&errors),
-        [("a", "a"), ("a", "a"), ("z", "a"), ("a", "z")]
+        [(first, "a"), (first, "a"), (last, "a"), (first, "z")]
     );
     assert_eq!(errors.0[0].message, "first");
     assert_eq!(errors.0[1].message, "second");
@@ -405,7 +422,10 @@ fn into_literal_preserves_text_escapes_and_rejects_unresolved_typed_escapes() {
         .unwrap_err();
     assert_eq!(
         codes_and_paths(&errors),
-        [(codes::VARIABLE_UNRESOLVED, "spec.services[0].replicas")]
+        [(
+            ApiErrorCode::VariableUnresolved,
+            "spec.services[0].replicas"
+        )]
     );
 }
 
@@ -446,12 +466,12 @@ fn route_names_are_validated_unique_and_stable_across_environments() {
     for (routes, code, path) in [
         (
             route("Web!", "a.piquel.fr"),
-            codes::NAME_INVALID,
+            ApiErrorCode::NameInvalid,
             "spec.routes[0].name",
         ),
         (
             route("${{ vars.tag }}", "a.piquel.fr"),
-            codes::VARIABLE_NOT_ALLOWED,
+            ApiErrorCode::VariableNotAllowed,
             "spec.routes[0].name",
         ),
         (
@@ -460,7 +480,7 @@ fn route_names_are_validated_unique_and_stable_across_environments() {
                 route("web", "a.piquel.fr"),
                 route("web", "b.piquel.fr")
             ),
-            codes::ROUTE_NAME_DUPLICATE,
+            ApiErrorCode::RouteNameDuplicate,
             "spec.routes[1].name",
         ),
     ] {

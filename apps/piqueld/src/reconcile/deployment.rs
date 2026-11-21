@@ -3,7 +3,7 @@ use super::{Controller, DockerApi, Operation, OperationError};
 use crate::git::snapshot::SnapshotSource;
 use piqueld_core::Phase;
 use piqueld_core::{
-    NormalizedApplication,
+    ApiErrorCode, NormalizedApplication,
     api::{DeploymentOrigin, DiagnosticView},
     manifest::{
         ApplicationManifest, ApplicationTemplate, FileCaptureError, GitRevision, RenderContext,
@@ -367,13 +367,13 @@ impl<D: DockerApi> Controller<D> {
             return None;
         }
         tracing::warn!("fetched manifest names another repository connection");
-        Some(DiagnosticView {
-            code: "manifest_connection_ignored".into(),
-            message: format!(
+        Some(DiagnosticView::new(
+            ApiErrorCode::ManifestConnectionIgnored,
+            format!(
                 "The fetched manifest's spec.manifest names {} in {}, which is ignored: this application reads {} from {}. Change the connection with `piquelctl app repository`.",
                 declared.path, declared.repository.url, fetched.path, fetched.repository.url
             ),
-        })
+        ))
     }
 
     /// Reports an invalid repository manifest.

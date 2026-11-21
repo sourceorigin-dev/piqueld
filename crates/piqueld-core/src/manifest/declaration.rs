@@ -12,7 +12,7 @@
 
 use super::{ApplicationSpec, EnvironmentConfig, ValidationError, ValidationErrors};
 use crate::api::EnvironmentView;
-use crate::{EnvironmentName, EnvironmentSource, TrackedBranch, codes};
+use crate::{ApiErrorCode, EnvironmentName, EnvironmentSource, TrackedBranch};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use utoipa::ToSchema;
@@ -126,7 +126,7 @@ impl ApplicationSpec {
                     Err(invalid) => errors.extend(invalid),
                 },
                 Err(source) => errors.push(ValidationError::new(
-                    codes::NAME_INVALID,
+                    ApiErrorCode::NameInvalid,
                     "spec.environments",
                     format!(
                         "[spec.environments.{}]: {source}",
@@ -157,7 +157,7 @@ impl ApplicationSpec {
                         break;
                     }
                     errors.push(ValidationError::new(
-                        codes::PROMOTION_SOURCE_INVALID,
+                        ApiErrorCode::PromotionSourceInvalid,
                         format!("spec.environments.{}.promote_from", chain[chain.len() - 1]),
                         format!(
                             "{from} is not declared: promotion sources are environments of spec.environments"
@@ -169,7 +169,7 @@ impl ApplicationSpec {
                     let mut cycle = chain[start..].to_vec();
                     cycle.push(from);
                     errors.push(ValidationError::new(
-                        codes::PROMOTION_CYCLE,
+                        ApiErrorCode::PromotionCycle,
                         format!("spec.environments.{}.promote_from", chain[chain.len() - 1]),
                         format!(
                             "an environment cannot promote from itself: {}",
@@ -201,21 +201,21 @@ impl ApplicationSpec {
         config: &EnvironmentConfig,
         path: &str,
     ) -> Result<Declaration, Vec<ValidationError>> {
-        let fail = |field: &str, code: &str, message: String| {
+        let fail = |field: &str, code: ApiErrorCode, message: String| {
             ValidationError::new(code, format!("{path}.{field}"), message)
         };
         if let Some(from) = &config.promote_from {
             if config.branch.is_some() || config.commit.is_some() || config.sync.is_some() {
                 return Err(vec![fail(
                     "promote_from",
-                    codes::ENVIRONMENT_SOURCE_CONFLICT,
+                    ApiErrorCode::EnvironmentSourceConflict,
                     "a promoted environment never builds: remove branch, commit and sync".into(),
                 )]);
             }
             let from = EnvironmentName::parse(from.as_str()).map_err(|_| {
                 vec![fail(
                     "promote_from",
-                    codes::PROMOTION_SOURCE_INVALID,
+                    ApiErrorCode::PromotionSourceInvalid,
                     format!(
                         "{} is not an environment name",
                         super::variables::echo(from)
@@ -240,7 +240,7 @@ impl ApplicationSpec {
             .map(|(field, _)| {
                 fail(
                     field,
-                    codes::MANIFEST_REPOSITORY_REQUIRED,
+                    ApiErrorCode::ManifestRepositoryRequired,
                     "only environments of a repository-backed application follow a branch; add spec.manifest first".into(),
                 )
             })
@@ -277,7 +277,10 @@ impl ApplicationSpec {
                     "branch" => config.branch.is_some(),
                     _ => config.commit.is_some(),
                 })
-                .map(|error| fail(&error.path, &error.code, error.message))
+                .map(|error| ValidationError {
+                    path: format!("{path}.{}", error.path),
+                    ..error
+                })
                 .collect::<Vec<_>>()
         })?;
         // Only its own pin: one inherited from `spec.manifest`, or from the
@@ -287,7 +290,7 @@ impl ApplicationSpec {
         if sync && config.commit.is_some() {
             return Err(vec![fail(
                 "sync",
-                codes::ENVIRONMENT_SYNC_PINNED,
+                ApiErrorCode::EnvironmentSyncPinned,
                 "pinned environments never sync: remove commit, or sync".into(),
             )]);
         }
@@ -700,17 +703,17 @@ mod tests {
 
     #[test]
     fn impossible_sources_fail_at_their_field() {
-        let field = |path: &str, code: &str| (path.to_owned(), code.to_owned());
+        let field = |path: &str, code: ApiErrorCode| (path.to_owned(), code.into());
         assert_eq!(
             codes("[spec.environments.staging]\nbranch='main'\nsync=true\n"),
             [
                 field(
                     "spec.environments.staging.branch",
-                    "manifest_repository_required"
+                    ApiErrorCode::ManifestRepositoryRequired
                 ),
                 field(
                     "spec.environments.staging.sync",
-                    "manifest_repository_required"
+                    ApiErrorCode::ManifestRepositoryRequired
                 ),
             ]
         );
@@ -720,7 +723,7 @@ mod tests {
             )),
             [field(
                 "spec.environments.production.promote_from",
-                "environment_source_conflict"
+                ApiErrorCode::EnvironmentSourceConflict
             )]
         );
         assert_eq!(
@@ -730,7 +733,7 @@ mod tests {
             )),
             [field(
                 "spec.environments.staging.sync",
-                "environment_sync_pinned"
+                ApiErrorCode::EnvironmentSyncPinned
             )]
         );
         assert_eq!(
@@ -739,25 +742,31 @@ mod tests {
             )),
             [field(
                 "spec.environments.staging.branch",
-                "git_branch_invalid"
+                ApiErrorCode::GitBranchInvalid
             )]
         );
         assert_eq!(
             codes("[spec.environments.production]\npromote_from='qa'\n"),
             [field(
                 "spec.environments.production.promote_from",
-                "promotion_source_invalid"
+                ApiErrorCode::PromotionSourceInvalid
             )]
         );
         assert_eq!(
             codes(
                 "[spec.environments.a]\npromote_from='b'\n[spec.environments.b]\npromote_from='c'\n[spec.environments.c]\npromote_from='a'\n"
             ),
-            [field("spec.environments.c.promote_from", "promotion_cycle")]
+            [field(
+                "spec.environments.c.promote_from",
+                ApiErrorCode::PromotionCycle
+            )]
         );
         assert_eq!(
             codes("[spec.environments.a]\npromote_from='a'\n"),
-            [field("spec.environments.a.promote_from", "promotion_cycle")]
+            [field(
+                "spec.environments.a.promote_from",
+                ApiErrorCode::PromotionCycle
+            )]
         );
     }
 
