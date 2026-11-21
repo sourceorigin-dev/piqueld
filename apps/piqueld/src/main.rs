@@ -6,6 +6,7 @@ use clap::Parser;
 use piqueld::api::ApplicationService;
 use piqueld::api::http::{self, ApiState, UiAssets, UnixPeer};
 use piqueld::auth::Auth;
+use piqueld::backup::Backups;
 use piqueld::ingress::{DashboardSocket, Ingress};
 use piqueld::tailnet::Node;
 use piqueld::tailnet::TailnetLookup;
@@ -120,7 +121,8 @@ async fn main() -> Result<()> {
 ///
 /// 1. Prepares and locks the data directory, then validates and locks the runtime
 ///    directory and binds every listener, so misconfiguration fails before any
-///    state is opened.
+///    state is opened. Then backs up the data directory if its database needs
+///    migrating ([`Backups::before_migration`]).
 /// 2. Starts the application service and reconciliation controller.
 /// 3. Serves the dashboard/API over TCP and the Unix API socket.
 /// 4. After cancellation, waits up to `SHUTDOWN_DEADLINE` for every task and
@@ -148,6 +150,15 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
     let runtime_dir =
         piqueld_config::runtime_dir::RuntimeDir::acquire(&config.server.runtime_dir).await?;
     let listeners = Listeners::bind(&config, &runtime_dir).await?;
+    // Migrations can't be undone, so state the store is about to migrate is
+    // backed up first, before the tailnet node writes to it.
+    if let Some(backup) = Backups::new(&config.server.data_dir)
+        .before_migration()
+        .await
+        .context("failed to back up the data directory before migrating its database; nothing was migrated")?
+    {
+        info!(backup = %backup.display(), "backed up the data directory before migrating its database");
+    }
     // The node may fill auth.public_url, so it joins before authentication starts.
     let tailnet = Node::join(&mut config).await?;
 
