@@ -217,3 +217,21 @@ impl Scenario {
         self.gateway.synchronize().await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn configuration_validation_runs_without_network_or_ports() {
+    let engine = Engine::unused().await;
+    let ingress = engine.ingress(true);
+    let spec = ingress.container_spec();
+    assert_eq!(spec["HostConfig"]["NetworkMode"], json!(ingress.name));
+    let validation = Ingress::validation_spec(&spec);
+    let host = &validation["HostConfig"];
+    assert_eq!(host["NetworkMode"], "none");
+    assert_eq!(host["PortBindings"], json!({}));
+    assert_eq!(host["RestartPolicy"]["Name"], "no");
+    assert!(validation.get("NetworkingConfig").is_none());
+    assert!(validation.get("ExposedPorts").is_none());
+    // Everything else keeps the gateway's hardening and mounts.
+    assert_eq!(host["CapDrop"], spec["HostConfig"]["CapDrop"]);
+    assert_eq!(host["Binds"], spec["HostConfig"]["Binds"]);
+}

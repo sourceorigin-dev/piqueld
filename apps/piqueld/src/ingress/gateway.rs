@@ -722,7 +722,7 @@ impl Ingress {
     }
 
     /// Runs `caddy validate` on the candidate configuration in a temporary
-    /// container (no published ports, no restart), failing with its last log
+    /// container (see [`Self::validation_spec`]), failing with its last log
     /// lines if validation exits non-zero. The container is removed afterwards.
     async fn validate_replacement(
         &self,
@@ -733,17 +733,9 @@ impl Ingress {
     ) -> Result<()> {
         self.write_configuration("candidate.json", &self.configuration(table).await?)
             .await?;
-        let mut validation = spec.clone();
-        validation["Cmd"] = json!([
-            "caddy",
-            "validate",
-            "--config",
-            "/config/caddy/candidate.json"
-        ]);
-        validation["HostConfig"]["PortBindings"] = json!({});
-        validation["HostConfig"]["RestartPolicy"] = json!({"Name":"no"});
         self.remove_container(journal, name).await?;
-        self.create_container(journal, name, &validation).await?;
+        self.create_container(journal, name, &Self::validation_spec(spec))
+            .await?;
         self.start_named(journal, name).await?;
         let exited = journal.change(|docker| docker.wait_container(name)).await?;
         if exited != Some(0) {
@@ -756,6 +748,32 @@ impl Ingress {
             );
         }
         self.remove_container(journal, name).await
+    }
+
+    /// The gateway `spec` turned into a one-shot `caddy validate` of the
+    /// candidate configuration: no network (validation makes no requests, so
+    /// it never joins the edge network every routed app is on), no published
+    /// ports and no restart.
+    pub(super) fn validation_spec(spec: &Value) -> Value {
+        let mut validation = spec.clone();
+        validation["Cmd"] = json!([
+            "caddy",
+            "validate",
+            "--config",
+            "/config/caddy/candidate.json"
+        ]);
+        let host = &mut validation["HostConfig"];
+        host["NetworkMode"] = json!("none");
+        host["PortBindings"] = json!({});
+        host["RestartPolicy"] = json!({"Name":"no"});
+        if let Some(host) = host.as_object_mut() {
+            host.remove("ExtraHosts");
+        }
+        if let Some(validation) = validation.as_object_mut() {
+            validation.remove("NetworkingConfig");
+            validation.remove("ExposedPorts");
+        }
+        validation
     }
 
     /// Renames a container.
