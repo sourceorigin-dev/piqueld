@@ -327,12 +327,14 @@ impl ApplicationManifest {
     /// # Errors
     /// Returns one decode error naming the rejected input and its location.
     pub fn decode_toml(input: &str) -> Result<Self, ValidationErrors> {
-        serde_path_to_error::deserialize(toml::Deserializer::new(input)).map_err(|error| {
-            ValidationErrors::decode(
-                &error.path().to_string(),
-                crate::TomlDiagnostic::new(input, error.inner()).to_string(),
-            )
-        })
+        let decode = |path: &str, error: &toml::de::Error| {
+            ValidationErrors::decode(path, crate::TomlDiagnostic::new(input, error).to_string())
+        };
+        // A syntax error has no field path, so it names the root, as
+        // serde_path_to_error does.
+        let deserializer = toml::Deserializer::parse(input).map_err(|error| decode(".", &error))?;
+        serde_path_to_error::deserialize(deserializer)
+            .map_err(|error| decode(&error.path().to_string(), error.inner()))
     }
 
     /// Decodes strict JSON without validating it; see [`Self::decode_toml`].
