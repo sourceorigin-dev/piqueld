@@ -140,6 +140,30 @@ daemon-embedded *ARGS:
 dev *ARGS:
     @cargo xtask dev "$@"
 
+# Prepares a new worktree: writes its development instance's configuration and
+# builds the workspace. T3 Code runs it when it creates a worktree (t3.json).
+# target/worktree-setup/running holds its PID while it works; it then leaves
+# `done`, or `failed` holding the end of the output. The final marker is
+# written before `running` is removed, so a reader always finds one.
+setup-worktree:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    markers=target/worktree-setup
+    mkdir -p "$markers"
+    rm -f "$markers/done" "$markers/failed"
+    echo $$ > "$markers/running"
+    log=$(mktemp)
+    trap 'rm -f "$log"' EXIT
+    status=0
+    { just dev config && just build; } 2>&1 | tee "$log" || status=$?
+    if [ "$status" -eq 0 ]; then
+        touch "$markers/done"
+    else
+        tail -n 40 "$log" > "$markers/failed"
+    fi
+    rm "$markers/running"
+    exit "$status"
+
 # piquelctl from this worktree, connected to its development instance.
 [positional-arguments]
 ctl *ARGS:
