@@ -14,8 +14,8 @@ run on main runs every job, macOS included; while it fails, an issue titled
 *Nightly CI fails on main* stays open, as for the
 [release checks](#release-checks). The `ci` job summarizes them: it fails if
 any job failed. In the merge queue, the first failed job cancels the rest of
-the run, so the entry leaves the queue without waiting for the slowest job;
-pull requests and nightly runs finish every job, to show every failure.
+the run, so the entry leaves the queue without waiting for the slowest job.
+Pull requests and nightly runs finish every job, to show every failure.
 
 Rust build caches are scoped to jobs and saved by the nightly run on main;
 pull requests and the merge queue restore them, so after a dependency change
