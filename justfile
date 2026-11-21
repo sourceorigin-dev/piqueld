@@ -155,14 +155,14 @@ setup-worktree:
     mkdir -p "$markers"
     exec 9> "$markers/lock"
     if ! flock -n 9; then
-        echo "worktree setup is already running as PID $(cat "$markers/running")" >&2
+        echo "worktree setup is already running: wait with \`flock $markers/lock true\`" >&2
         exit 1
     fi
     echo $$ > "$markers/running"
     rm -f "$markers/done" "$markers/failed"
     status=0
-    # The build doesn't inherit the lock, so the lock ends with this script.
-    { just dev config && just build; } 9>&- 2>&1 | tee "$markers/output.log" || status=$?
+    # Nothing else inherits the lock, so it ends with this script.
+    { just dev config && just build; } 9>&- 2>&1 | tee "$markers/output.log" 9>&- || status=$?
     if [ "$status" -eq 0 ]; then
         touch "$markers/done"
     else

@@ -163,15 +163,15 @@ whether to wait:
 
 | Marker | Meaning |
 | --- | --- |
-| `running` | Setup is running, as the process whose PID the file holds. If that process is gone, setup was interrupted. |
+| `running` | Setup is running while it holds `lock`, beside the marker; the file holds its PID. If nothing holds the lock, setup was interrupted. |
 | `done` | Setup succeeded. |
 | `failed` | Setup failed. The file holds the last 40 lines of its output. |
 
 `output.log`, beside the marker, keeps the latest run's whole output. Run
 `just setup-worktree` again to retry a failed or interrupted setup, or to
-prepare a worktree T3 Code didn't create. A run holds a lock on
-`target/worktree-setup/lock`, so a second one refuses to start, and
-`flock target/worktree-setup/lock true` waits for it to end.
+prepare a worktree T3 Code didn't create. A second run refuses to start while
+one holds the lock, and `flock target/worktree-setup/lock true` waits for it
+to end.
 
 ## Logs
 
