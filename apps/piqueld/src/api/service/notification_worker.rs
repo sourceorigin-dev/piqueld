@@ -343,21 +343,16 @@ mod tests {
         let worker = tokio::spawn(async move {
             service.deliver_notifications(worker_cancel).await;
         });
-        tokio::time::timeout(Duration::from_secs(8), async {
-            loop {
-                let deliveries = store.deliveries(None, 100).await.unwrap();
-                if deliveries
-                    .items
-                    .first()
-                    .is_some_and(|d| d.state == DeliveryState::Delivered)
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(25)).await;
-            }
-        })
-        .await
-        .unwrap();
+        let delivered = store.wait_until(async || {
+            let deliveries = store.deliveries(None, 100).await.unwrap();
+            deliveries
+                .items
+                .first()
+                .is_some_and(|d| d.state == DeliveryState::Delivered)
+        });
+        tokio::time::timeout(Duration::from_secs(8), delivered)
+            .await
+            .expect("the retry delivers the notification");
         cancel.cancel();
         worker.await.unwrap();
         server.abort();

@@ -1738,6 +1738,18 @@ impl Store {
         self.writers.lock().await
     }
 
+    /// Waits until another writer queues behind the turn the caller holds,
+    /// such as with [`Store::hold_writer`].
+    pub async fn writer_waiting(&self) {
+        // The store owns the sender, so the wait ends only with a writer.
+        let _ = self
+            .writers
+            .waiting
+            .subscribe()
+            .wait_for(|waiting| *waiting > 0)
+            .await;
+    }
+
     /// Makes every credential look unused since `secs` ago.
     ///
     /// # Panics
