@@ -21,14 +21,20 @@ use super::{Store, StoreError, now_ms};
 use piqueld_core::observability::{ActionDuration, DaemonStats, DeploymentAnalytics, FailureCount};
 
 impl Store {
-    /// Configures startup-loaded history retention.
+    /// Configures startup-loaded history retention, and how often an
+    /// unchanged health observation is written (see [`Store::record_health`]).
     #[must_use]
     pub fn with_observability(mut self, config: &piqueld_config::DaemonConfig) -> Self {
         self.daemon_event_days = config.retention.daemon_event_days;
         self.audit_days = config.retention.audit_days;
         self.traffic_days = config.retention.traffic_days;
         self.deployment_retention = super::history::DeploymentRetention::new(config);
+        self.health_refresh_ms = Self::scan_interval_ms(&config.reconciliation);
         self
+    }
+    /// The full scan interval, in milliseconds.
+    pub(super) fn scan_interval_ms(config: &piqueld_config::ReconciliationConfig) -> i64 {
+        i64::try_from(config.scan_interval_seconds.saturating_mul(1000)).unwrap_or(i64::MAX)
     }
     /// Returns a snapshot cached for five seconds to avoid expensive per-request scans.
     /// Combines database counters, database and WAL file sizes, free disk space,
@@ -50,8 +56,8 @@ impl Store {
             "SELECT (SELECT COUNT(*)
             FROM events) AS events,(SELECT COUNT(DISTINCT diagnostic_id)
             FROM events
-            WHERE diagnostic_id IS NOT NULL) AS diagnostics,(SELECT COALESCE(SUM(length(data)),0)
-            FROM build_log_chunks) AS build_bytes,(SELECT COUNT(*)
+            WHERE diagnostic_id IS NOT NULL) AS diagnostics,(SELECT COALESCE(SUM(log_bytes),0)
+            FROM builds) AS build_bytes,(SELECT COUNT(*)
             FROM operations
             WHERE state='running') AS running,(SELECT COUNT(*)
             FROM operations
@@ -179,12 +185,16 @@ impl Store {
         .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::database)?;
+        // Only the outcome's state and times are read, not the whole operation.
         let attempts = sqlx::query!(
-            "SELECT a.deployment_id,a.attempt,a.outcome_json
+            r#"SELECT a.deployment_id,a.attempt,
+            json_extract(a.outcome_json,'$.state') AS "state!: String",
+            json_extract(a.outcome_json,'$.started_at_ms') AS "started_at_ms: i64",
+            json_extract(a.outcome_json,'$.finished_at_ms') AS "finished_at_ms: i64"
             FROM deployment_attempts a JOIN deployments d ON d.id=a.deployment_id
             WHERE (?1 IS NULL OR d.environment_id=?1) AND json_extract(a.outcome_json,'$.finished_at_ms') BETWEEN ?2 AND ?3
             AND (?4 IS NULL OR d.environment_id IN (SELECT e.id FROM environments e JOIN json_each(?4) v ON v.value=e.application_id))
-            ORDER BY a.deployment_id,a.attempt",
+            ORDER BY a.deployment_id,a.attempt"#,
             application,
             since,
             until,
@@ -205,14 +215,13 @@ impl Store {
         let mut outcomes = std::collections::BTreeMap::new();
         let mut durations = Vec::new();
         for row in attempts {
-            let op: piqueld_core::Operation =
-                serde_json::from_str(&row.outcome_json).map_err(StoreError::corrupt)?;
-            result.failed_attempts += i64::from(op.state == piqueld_core::OperationState::Failed);
+            let state: piqueld_core::OperationState = super::decode_name(&row.state)?;
+            result.failed_attempts += i64::from(state == piqueld_core::OperationState::Failed);
             result.retry_attempts += i64::from(row.attempt > 1);
-            if let Some((start, end)) = op.started_at_ms.zip(op.finished_at_ms) {
+            if let Some((start, end)) = row.started_at_ms.zip(row.finished_at_ms) {
                 durations.push(end.saturating_sub(start));
             }
-            outcomes.insert(row.deployment_id, op.state);
+            outcomes.insert(row.deployment_id, state);
         }
         result.deployments = i64::try_from(outcomes.len()).map_err(StoreError::corrupt)?;
         result.succeeded = i64::try_from(

@@ -207,8 +207,9 @@ converged: those of the deployment in progress, else of the active target. A mis
 service makes it `degraded`, and no running service `absent`. A
 [stopped](../../user/reference/api.md#stopped-environments) environment is `stopped` instead of
 `ready` once its services have scaled down. Status reports
-when health was last observed (`health_observed_at_ms`); health scans refresh
-it, so an old time means it is stale.
+when health was last observed (`health_observed_at_ms`). Health scans refresh
+it when health changes or once it is a scan interval old, so it is at most
+about two intervals old, and an older time means it is stale.
 The intent generation and last resolved target generation are exposed separately;
 a resolved generation alone does not assert container convergence.
 

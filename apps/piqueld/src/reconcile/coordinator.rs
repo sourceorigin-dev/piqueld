@@ -749,7 +749,8 @@ impl<D: DockerApi> Controller<D> {
     /// deployment history, finished operations and events beyond their
     /// retention windows. A zero-day window disables pruning. Then removes
     /// the secret versions nothing can mount any more, including those this
-    /// pass's history pruning just released (see `collect_secret_versions`).
+    /// pass's history pruning just released (see `collect_secret_versions`),
+    /// and refreshes the query planner's statistics.
     async fn prune_history(&self, operation_days: u64, event_days: u64) -> Result<(), StoreError> {
         self.store.prune_daemon_events().await?;
         self.store.prune_audit().await?;
@@ -774,7 +775,8 @@ impl<D: DockerApi> Controller<D> {
         if event_days > 0 {
             self.store.prune_events(cutoff(event_days)).await?;
         }
-        self.collect_secret_versions().await
+        self.collect_secret_versions().await?;
+        self.store.optimize().await
     }
 
     /// Removes the Docker secrets of the secret versions nothing can mount

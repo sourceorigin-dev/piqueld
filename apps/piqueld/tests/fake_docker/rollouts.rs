@@ -292,6 +292,35 @@ async fn periodic_recovery_reuses_failed_prepared_target_and_records_health_chan
     );
 }
 
+/// An unchanged observation within a scan interval of the last one takes
+/// no writer turn, and keeps the recorded observation time.
+#[tokio::test]
+async fn unchanged_health_within_a_scan_interval_writes_nothing() {
+    let harness = ControllerHarness::new().await;
+    let operation = harness.create().await;
+    harness.finish(&operation).await;
+    let observed = harness
+        .docker
+        .observe(&operation.environment_id)
+        .await
+        .unwrap();
+    let store = &harness.store;
+    store.record_health(&operation.id, &observed).await.unwrap();
+    let status = store.status(&operation.environment_id).await.unwrap();
+    let mut written = store.written();
+    written.borrow_and_update();
+    store.record_health(&operation.id, &observed).await.unwrap();
+    assert!(!written.has_changed().unwrap());
+    assert_eq!(
+        store
+            .status(&operation.environment_id)
+            .await
+            .unwrap()
+            .health_observed_at_ms,
+        status.health_observed_at_ms
+    );
+}
+
 #[tokio::test]
 async fn health_is_degraded_while_an_expected_service_is_missing() {
     let harness = ControllerHarness::new().await;
