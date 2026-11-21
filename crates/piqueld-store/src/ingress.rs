@@ -1098,19 +1098,16 @@ mod tests {
         let earlier = RoutingTable::from([(one.clone(), one_routes), (two.clone(), vec![])]);
         let later = RoutingTable::from([(one, vec![]), (two, two_routes)]);
 
-        // Both wait behind a held acknowledgement, the earlier first.
+        // Both queue behind a held acknowledgement, the earlier first: each
+        // is polled until it waits for the lock.
         let held = store.acknowledgements.lock().await;
-        let acknowledge = |table: RoutingTable| {
-            let store = store.clone();
-            tokio::spawn(async move { store.acknowledge_routes(&table).await.unwrap() })
-        };
-        let first = acknowledge(earlier);
-        tokio::task::yield_now().await;
-        let second = acknowledge(later.clone());
-        tokio::task::yield_now().await;
+        let mut first = std::pin::pin!(store.acknowledge_routes(&earlier));
+        assert!(futures_util::poll!(first.as_mut()).is_pending());
+        let mut second = std::pin::pin!(store.acknowledge_routes(&later));
+        assert!(futures_util::poll!(second.as_mut()).is_pending());
         drop(held);
-        assert!(first.await.unwrap());
-        assert!(second.await.unwrap());
+        let (first, second) = tokio::join!(first, second);
+        assert!(first.unwrap() && second.unwrap());
         assert_eq!(store.applied_table().await.unwrap(), later);
     }
 
