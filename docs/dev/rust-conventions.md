@@ -85,3 +85,5 @@ the docs, private items included, with warnings denied.
 - `just doc` allows links from public items to private ones
   (`rustdoc::private_intra_doc_links`), since most of the code is internal and
   documented for its developers.
+- Worktree setup: agents wait on `target/worktree-setup/lock` with `flock`,
+  not on the PID in `running`, which a later process may reuse.
