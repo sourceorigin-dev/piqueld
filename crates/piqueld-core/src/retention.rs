@@ -274,13 +274,21 @@ impl Default for BuildHistoryConfig {
 /// Cleanup of the images this installation builds. Cleanup keeps what every
 /// environment and preview runs or is deploying, and removes the rest. It
 /// never removes pulled images, images built by hand, or images other
-/// installations built on the same Docker Engine.
+/// installations built on the same Docker Engine. With a build machine, it
+/// also deletes from the build registry the images this host's builds pushed
+/// that no deployment it keeps there uses.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct ImagesConfig {
     /// How many of each environment's latest successful deployments also
     /// keep their images, so their releases can be deployed again.
     pub keep_deployments: u32,
+    /// How many of each environment's latest successful deployments keep
+    /// their images in the build registry, `build.repository`, and never
+    /// fewer than `keep_deployments`. Cleanup deletes the other images this
+    /// host's builds pushed there, and skips the registry while it can't be
+    /// reached. Without a build machine, it does nothing.
+    pub registry_keep_deployments: u32,
     /// Seconds between cleanups. Cleanup also runs after each operation.
     #[schema(minimum = 1, maximum = 86_400)]
     pub cleanup_interval_seconds: u64,
@@ -289,6 +297,7 @@ impl Default for ImagesConfig {
     fn default() -> Self {
         Self {
             keep_deployments: 3,
+            registry_keep_deployments: 10,
             cleanup_interval_seconds: 3600,
         }
     }
@@ -352,7 +361,7 @@ mod tests {
             [&api, &web]
         );
 
-        // A build pushed to a build machine's registry is pulled again.
+        // A build pushed to the build registry is pulled again.
         let mut pushed = built('b');
         if let ResolvedSource::Git { image_id, .. } = &mut pushed {
             *image_id = pulled('c').repository_digest().unwrap().clone().into();

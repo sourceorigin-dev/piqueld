@@ -30,6 +30,8 @@ hyper-util.workspace = true
 parking_lot.workspace = true
 piqueld-core.workspace = true
 piqueld-probe.workspace = true
+# The build registry, which image cleanup deletes from.
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true

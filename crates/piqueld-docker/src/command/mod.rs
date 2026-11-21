@@ -39,6 +39,15 @@ pub trait OutputLog: Send + Sync {
         bytes: &[u8],
         stream: piqueld_core::api::LogStream,
     ) -> anyhow::Result<()>;
+
+    /// Records that the build machine pushed `image` to the build registry, before
+    /// the engine pulls it, so registry cleanup knows of it even when pulling
+    /// it fails.
+    ///
+    /// # Errors
+    /// The push couldn't be recorded; the build then fails rather than leave
+    /// an image in the registry that nothing would delete.
+    async fn pushed(&self, image: &piqueld_core::RepositoryDigest) -> anyhow::Result<()>;
 }
 
 /// Namespace for running external commands with bounded output capture.

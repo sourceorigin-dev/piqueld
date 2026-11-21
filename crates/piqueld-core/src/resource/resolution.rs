@@ -36,7 +36,7 @@ pub enum ResolvedSource {
         /// Resolved full commit hash.
         commit: String,
         /// The image it was built into: Docker's content-addressed local
-        /// image ID, or its digest in a build machine's registry.
+        /// image ID, or its digest in the build registry.
         image_id: BuiltImage,
     },
 }

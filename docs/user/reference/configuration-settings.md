@@ -251,7 +251,7 @@ The absolute path of the Docker Engine's Unix socket.
 
 ## `[images]` table
 
-Cleanup of the images this installation builds. Cleanup keeps what every environment and preview runs or is deploying, and removes the rest. It never removes pulled images, images built by hand, or images other installations built on the same Docker Engine.
+Cleanup of the images this installation builds. Cleanup keeps what every environment and preview runs or is deploying, and removes the rest. It never removes pulled images, images built by hand, or images other installations built on the same Docker Engine. With a build machine, it also deletes from the build registry the images this host's builds pushed that no deployment it keeps there uses.
 
 ### `images.cleanup_interval_seconds`
 
@@ -264,6 +264,12 @@ Seconds between cleanups. Cleanup also runs after each operation.
 Type: integer. Default: `3`.
 
 How many of each environment's latest successful deployments also keep their images, so their releases can be deployed again.
+
+### `images.registry_keep_deployments`
+
+Type: integer. Default: `10`.
+
+How many of each environment's latest successful deployments keep their images in the build registry, `build.repository`, and never fewer than `keep_deployments`. Cleanup deletes the other images this host's builds pushed there, and skips the registry while it can't be reached. Without a build machine, it does nothing.
 
 ## `[ingress]` table
 

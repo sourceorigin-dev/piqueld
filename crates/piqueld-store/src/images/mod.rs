@@ -1,6 +1,10 @@
-//! Deployments whose images cleanup keeps, by retention root.
+//! Deployments whose images cleanup keeps, by retention root, and the images
+//! a build machine pushed, which registry cleanup deletes.
 use super::{Store, StoreError};
-use piqueld_core::{ImmutableImage, RetentionRoot, resource::ResolvedApplication};
+use piqueld_core::{
+    ImmutableImage, RepositoryDigest, RetentionRoot, build_machine::BuildRepository,
+    resource::ResolvedApplication,
+};
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 
@@ -22,6 +26,62 @@ impl Store {
             }
         }
         Ok(images)
+    }
+
+    /// Records that a build machine pushed `image` for this installation,
+    /// once the build reports it, before the engine pulls it: registry
+    /// cleanup deletes it once no deployment keeps it, whatever happens to
+    /// the build's record.
+    ///
+    /// # Errors
+    /// Returns a storage error.
+    pub async fn record_pushed_image(&self, image: &RepositoryDigest) -> Result<(), StoreError> {
+        let image = image.as_str();
+        self.write(sqlx::query!(
+            "INSERT OR IGNORE INTO pushed_images(image) VALUES (?1)",
+            image
+        ))
+        .await
+        .map_err(StoreError::database)?;
+        Ok(())
+    }
+
+    /// The images a build machine pushed to `repository` for this
+    /// installation that registry cleanup hasn't deleted yet; see
+    /// [`Self::record_pushed_image`].
+    ///
+    /// # Errors
+    /// Returns storage errors, or a decoding error for a corrupt row.
+    pub async fn pushed_images(
+        &self,
+        repository: &BuildRepository,
+    ) -> Result<Vec<RepositoryDigest>, StoreError> {
+        let prefix = format!("{repository}@");
+        sqlx::query_scalar!(
+            "SELECT image FROM pushed_images WHERE substr(image,1,length(?1))=?1 ORDER BY image",
+            prefix
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(StoreError::database)?
+        .into_iter()
+        .map(|image| RepositoryDigest::parse(image).map_err(StoreError::corrupt))
+        .collect()
+    }
+
+    /// Forgets `image` once it is deleted from the build registry.
+    ///
+    /// # Errors
+    /// Returns a storage error.
+    pub async fn forget_pushed_image(&self, image: &RepositoryDigest) -> Result<(), StoreError> {
+        let image = image.as_str();
+        self.write(sqlx::query!(
+            "DELETE FROM pushed_images WHERE image=?1",
+            image
+        ))
+        .await
+        .map_err(StoreError::database)?;
+        Ok(())
     }
 
     /// The prepared targets `root` keeps, across every environment and

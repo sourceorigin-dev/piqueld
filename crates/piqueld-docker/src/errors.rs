@@ -63,6 +63,9 @@ pub enum DockerError {
     /// The build machine could not be reached to build an image.
     #[error(transparent)]
     BuilderUnavailable(#[from] crate::builder::BuilderUnavailable),
+    /// The build registry did not delete an image.
+    #[error(transparent)]
+    Registry(#[from] crate::registry::RegistryError),
     /// A Docker request failed while performing the described operation.
     #[error("Docker request failed while {0}")]
     Request(&'static str),
@@ -107,6 +110,7 @@ impl DockerError {
                 DiagnosticCode::ImageResolutionFailed
             }
             Self::BuilderUnavailable(_) => DiagnosticCode::BuilderUnavailable,
+            Self::Registry(_) => DiagnosticCode::RegistryDeleteFailed,
             Self::NetworkInUse(_)
             | Self::NetworkRemoving(_)
             | Self::PortInUse(_)
