@@ -372,6 +372,11 @@ impl Audited {
         self
     }
 
+    /// The request, outside the audit middleware `None`.
+    pub(super) fn request(&self) -> Option<&AuditRequest> {
+        self.0.as_ref()
+    }
+
     /// `identity` acting through this request.
     pub(super) fn author<'a>(&'a self, identity: &'a Identity) -> Author<'a> {
         Author {

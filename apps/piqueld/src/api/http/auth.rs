@@ -671,11 +671,13 @@ pub(super) async fn directory(
 pub(super) async fn manage(
     Extension(auth): Extension<Auth>,
     Extension(identity): Extension<Identity>,
+    audited: super::access::Audited,
     ApiJson(input): ApiJson<Manage>,
 ) -> Response {
-    // The audit trail records what the action changes, refused or not.
+    // A change records what it changed itself; the background record of a
+    // refused or failed one names what it attempted.
     let detail = super::access::AuditDetail(input.describe());
-    let mut response = match auth.manage(&identity, input).await {
+    let mut response = match auth.manage(&identity, audited.request(), input).await {
         Ok(managed) => Json(managed).into_response(),
         Err(error) => ApiError::from(error).into_response(),
     };

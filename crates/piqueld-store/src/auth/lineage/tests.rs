@@ -22,24 +22,6 @@ async fn ancestry(store: &Store, node: Issued<'_>) -> Vec<String> {
     .unwrap()
 }
 
-/// Seeds the administrator `user`, signed in with the login `user`, which
-/// adds the passkey `<user>-key`. Returns that login.
-async fn admin_with_passkey(store: &Store, user: &'static str) -> Caller<'static> {
-    let Actor::Account(caller) = store.seed_caller(user, &Grants::admin()).await else {
-        unreachable!("seeded an account caller")
-    };
-    let key = format!("{user}-key");
-    let passkey = NewPasskey {
-        id: &key,
-        name: &key,
-        credential: "{}",
-    };
-    let own = PasskeyOwner::Existing(caller, user);
-    let added = store.add_passkey(own, passkey).await;
-    assert!(added.expect("an account adds its own passkey"));
-    caller
-}
-
 /// Invites `user` through `issuer`'s credential and redeems it, giving
 /// `user` the passkey `<user>-key` and the session `<user>-session`.
 async fn invite_and_redeem(store: &Store, issuer: Caller<'_>, user: &str) {
@@ -188,7 +170,7 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
 #[tokio::test]
 async fn revoking_cascades_through_ended_issuers() {
     let (_dir, store) = Store::temporary().await;
-    let alice = admin_with_passkey(&store, "alice").await;
+    let alice = store.admin_with_passkey("alice").await;
     invite_and_redeem(&store, alice, "bob").await;
     let none = Grants::default();
     let mut token = credential("token", CredentialKind::Token);
@@ -233,7 +215,7 @@ async fn revoking_cascades_through_ended_issuers() {
     assert!(live(&store, "alice").await && live(&store, "token").await);
     assert_eq!(passkeys(&store).await, ["alice-key", "bob-key"]);
 
-    admin_with_passkey(&store, "carol").await;
+    store.admin_with_passkey("carol").await;
     let revoke = store.revoke_credential(Actor::Daemon, "alice", Cascade::Yes);
     revoke
         .await
@@ -259,7 +241,7 @@ async fn revoking_cascades_through_ended_issuers() {
 async fn revoking_reaches_accounts_the_actor_could_not_change() {
     let (_dir, store) = Store::temporary().await;
     // An administrator nothing here touches, so no cascade locks out.
-    let erin = admin_with_passkey(&store, "erin").await;
+    let erin = store.admin_with_passkey("erin").await;
     let mut manage = Grants::default();
     let accounts = Permission::Global(GlobalPermission::AccountsManage);
     manage
@@ -295,7 +277,7 @@ async fn revoking_reaches_accounts_the_actor_could_not_change() {
 async fn bulk_revocations_cascade_from_every_root() {
     let (_dir, store) = Store::temporary().await;
     // An administrator nothing here touches, so no cascade locks out.
-    let erin = admin_with_passkey(&store, "erin").await;
+    let erin = store.admin_with_passkey("erin").await;
     let passkey = async |id: &str| passkeys(&store).await.iter().any(|key| key == id);
 
     // Alice's expired login had invited bob.
@@ -365,7 +347,7 @@ async fn bulk_revocations_cascade_from_every_root() {
 /// `<user>-guest`, then removes that passkey alone and logs the session
 /// out, so nothing live of `user` leads to the guest any more.
 async fn ended_issuer(store: &Store, user: &'static str) {
-    admin_with_passkey(store, user).await;
+    store.admin_with_passkey(user).await;
     let alone = store.revoke_credential(Actor::Daemon, user, Cascade::No);
     alone.await.expect("the login is revoked alone");
     let (key, session) = (format!("{user}-key"), format!("{user}-signed-in"));
@@ -392,7 +374,7 @@ async fn ended_issuer(store: &Store, user: &'static str) {
 async fn bulk_revocations_reach_what_ended_credentials_issued() {
     let (_dir, store) = Store::temporary().await;
     // An administrator nothing here touches, so no cascade locks out.
-    admin_with_passkey(&store, "erin").await;
+    store.admin_with_passkey("erin").await;
     ended_issuer(&store, "alice").await;
     ended_issuer(&store, "dave").await;
     store.prune_auth().await.expect("housekeeping runs");

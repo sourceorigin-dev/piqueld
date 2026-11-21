@@ -125,11 +125,12 @@ impl AuditRequest {
 
 /// Who submits a write, and the API request it comes from, if any: changes
 /// a request makes record themselves (see [`AuditRequest`]). An [`Actor`]
-/// alone, like the daemon's own work, records none.
+/// alone, like the daemon's own work, records none. Writes only an account
+/// may make, such as issuing a token, take an `Author<'_, Caller<'_>>`.
 #[derive(Clone, Copy, Debug)]
-pub struct Author<'a> {
+pub struct Author<'a, A = Actor<'a>> {
     /// Who acts, re-read inside the writing transaction.
-    pub actor: Actor<'a>,
+    pub actor: A,
     /// The request it acts through.
     pub request: Option<&'a AuditRequest>,
 }
@@ -143,7 +144,16 @@ impl<'a> From<Actor<'a>> for Author<'a> {
     }
 }
 
-impl<'a> Author<'a> {
+impl<'a> From<crate::Caller<'a>> for Author<'a, crate::Caller<'a>> {
+    fn from(actor: crate::Caller<'a>) -> Self {
+        Self {
+            actor,
+            request: None,
+        }
+    }
+}
+
+impl<'a, A> Author<'a, A> {
     /// Appends to `db` the record of the `change` its request commits there,
     /// if it changed anything: `allowed`, with `status` unless its route
     /// answers another, about `application` and `environment`. Does nothing

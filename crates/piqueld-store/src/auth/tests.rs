@@ -1,5 +1,5 @@
 use super::*;
-use crate::testing::{credential, user};
+use crate::testing::{credential, proved, user};
 use std::time::Duration;
 
 /// Opens a store whose admin `alice` holds the browser session
@@ -241,4 +241,113 @@ async fn confirming_a_login_keeps_its_latest_proof() {
     let owner = owner.expect("credentials are readable");
     let owner = owner.expect("the login is live");
     assert_eq!(owner.proof.authenticated_at, Some(now - 10));
+}
+
+/// Account changes record their safe resulting values in their own
+/// transaction, never a secret or its hash. One that changes nothing records
+/// nothing, and a record that can't be written rolls its change back.
+#[tokio::test]
+async fn account_changes_record_what_they_changed() {
+    let (_dir, store) = Store::temporary().await;
+    let alice = store.admin_with_passkey("alice").await;
+    for account in ["bob", "carol"] {
+        store
+            .seed_auth_user(&user(account), &Grants::default())
+            .await;
+    }
+    let second = proved(credential("second", CredentialKind::Cli));
+    store
+        .insert_credential("alice", &second)
+        .await
+        .expect("alice signs in again");
+    let route = "POST /api/v1/auth/manage";
+    let request = crate::testing::audit_request(route);
+    let (by, issuing) = (
+        Author {
+            actor: Actor::Account(alice),
+            request: Some(&request),
+        },
+        Author {
+            actor: alice,
+            request: Some(&request),
+        },
+    );
+    let mut readers = Grants::default();
+    let read = Permission::App(piqueld_core::access::AppPermission::Read);
+    readers
+        .grant(read, &piqueld_core::access::Scope::All)
+        .expect("apps:read is a valid grant");
+    store.refuse_audit(true).await;
+    let refused = store.set_user_grants(by, "bob", &readers).await;
+    store.refuse_audit(false).await;
+    assert!(refused.is_err());
+    let mut db = store.pool.acquire().await.expect("a connection is free");
+    let kept = Holder::User("bob").grants(&mut db).await;
+    assert_eq!(kept.expect("bob's grants are read"), Grants::default());
+    drop(db);
+    for _ in 0..2 {
+        let profile = store.update_user(by, "bob", "robert", "Robert").await;
+        profile.expect("the profile is updated");
+        let grants = store.set_user_grants(by, "bob", &readers).await;
+        grants.expect("the grants are replaced");
+    }
+    let token = NewCredential {
+        grants: Some(&readers),
+        ..credential("token", CredentialKind::Token)
+    };
+    let through_second = Caller {
+        credential_id: "second",
+        user_id: "alice",
+    };
+    let created = store.create_token(through_second, &token, None).await;
+    created.expect("the token is created");
+    let invitation = NewInvitation {
+        id: "invitation".into(),
+        secret_hash: "invitation-hash".into(),
+        expires_at: 42,
+    };
+    let invited = store.create_invitation(issuing, &invitation, &readers);
+    invited.await.expect("the invitation is created");
+    // Revoking the login revokes the token it issued too.
+    let revoked = store.revoke_credential(by, "second", Cascade::Yes).await;
+    revoked.expect("the login is revoked");
+    let nothing = store.revoke_credentials(by, "bob", Cascade::Yes).await;
+    nothing.expect("bob has nothing to revoke");
+    // Deleting an account removes the links that target it, cascading or not.
+    for (account, cascade) in [("bob", Cascade::Yes), ("carol", Cascade::No)] {
+        let link = NewInvitation {
+            id: format!("{account}-link"),
+            secret_hash: format!("{account}-link"),
+            expires_at: 42,
+        };
+        let enrolled = store.create_enrollment(alice, &link, account).await;
+        enrolled.expect("alice issues an enrollment link");
+        let deleted = store.delete_user(by, account, cascade).await;
+        deleted.expect("the account is deleted");
+    }
+    let actions = store.audit_actions().await;
+    assert_eq!(
+        actions,
+        [
+            format!("{route} account \"bob\" username \"robert\" display name \"Robert\""),
+            format!("{route} account \"bob\" grants (apps:read)"),
+            format!(
+                "{route} invitation \"invitation\" grants (apps:read) expires \
+                1970-01-01T00:00:42.000Z"
+            ),
+            format!(
+                "{route} credential \"second\" of account \"alice\" revoked cascading: \
+                2 credentials, 0 invitations and 0 passkeys"
+            ),
+            format!(
+                "{route} account \"bob\" \"robert\" deleted cascading: \
+                0 credentials, 1 invitation and 0 passkeys"
+            ),
+            format!(
+                "{route} account \"carol\" \"carol\" deleted alone: \
+                0 credentials, 1 invitation and 0 passkeys"
+            ),
+        ]
+    );
+    assert!(!actions.iter().any(|action| action.contains("hash")));
 }

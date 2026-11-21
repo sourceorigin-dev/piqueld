@@ -91,7 +91,7 @@ impl Fixture {
     /// Has `owner` create a token with `create`, returning its secret and
     /// its identity.
     async fn token(&self, owner: &Identity, create: Manage) -> (String, Identity) {
-        let managed = self.auth.manage(owner, create).await.unwrap();
+        let managed = self.auth.manage(owner, None, create).await.unwrap();
         let secret = managed.token.unwrap();
         let identity = self.auth.authenticate(&secret).await.unwrap();
         (secret, identity)
@@ -105,7 +105,7 @@ impl Fixture {
             Manage::CreateEnrollment { .. } => "#enroll=",
             _ => panic!("not a link: {create:?}"),
         };
-        let managed = self.auth.manage(by, create).await.unwrap();
+        let managed = self.auth.manage(by, None, create).await.unwrap();
         let url = managed.invitation_url.unwrap();
         url.split_once(fragment).unwrap().1.to_owned()
     }
@@ -341,6 +341,7 @@ async fn sessions_expire_revoke_and_survive_restart_without_storing_secrets() {
     f.auth
         .manage(
             &admin,
+            None,
             Manage::RevokeAll {
                 user_id: other,
                 cascade: true,
@@ -362,6 +363,7 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
     f.auth
         .manage(
             &bob,
+            None,
             Manage::UpdateUser {
                 user_id: bob.id(),
                 username: "robert".into(),
@@ -400,6 +402,7 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
     let (first, second) = tokio::join!(
         f.auth.manage(
             &alice,
+            None,
             Manage::DeleteUser {
                 user_id: bob.id(),
                 cascade: true
@@ -407,6 +410,7 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
         ),
         f.auth.manage(
             &alice,
+            None,
             Manage::DeleteUser {
                 user_id: alice.id(),
                 cascade: true
@@ -436,16 +440,16 @@ async fn managers_change_only_accounts_and_grants_they_cover() {
         display_name: String::new(),
     };
     assert_eq!(
-        denied(f.auth.manage(&dev, rename(&viewer)).await),
+        denied(f.auth.manage(&dev, None, rename(&viewer)).await),
         Denied::Missing(Permission::Global(GlobalPermission::AccountsManage))
     );
     assert_eq!(
-        denied(f.auth.manage(&lead, rename(&admin)).await),
+        denied(f.auth.manage(&lead, None, rename(&admin)).await),
         Denied::Exceeds
     );
-    f.auth.manage(&lead, rename(&viewer)).await.unwrap();
+    f.auth.manage(&lead, None, rename(&viewer)).await.unwrap();
     f.auth
-        .manage(&lead, set_grants(&viewer, developer()))
+        .manage(&lead, None, set_grants(&viewer, developer()))
         .await
         .unwrap();
     for grants in [Grants::admin(), team_lead()] {
@@ -456,13 +460,17 @@ async fn managers_change_only_accounts_and_grants_they_cover() {
         )
         .unwrap();
         assert_eq!(
-            denied(f.auth.manage(&lead, set_grants(&dev, more.clone())).await),
+            denied(
+                f.auth
+                    .manage(&lead, None, set_grants(&dev, more.clone()))
+                    .await
+            ),
             Denied::Exceeds
         );
         assert_eq!(
             denied(
                 f.auth
-                    .manage(&lead, Manage::CreateInvitation { grants: more })
+                    .manage(&lead, None, Manage::CreateInvitation { grants: more })
                     .await
             ),
             Denied::Exceeds
@@ -508,6 +516,7 @@ async fn invitations_carry_grants_and_enrollment_targets_an_account() {
             f.auth
                 .manage(
                     &bob,
+                    None,
                     Manage::CreateEnrollment {
                         user_id: admin.id(),
                     },
@@ -528,13 +537,13 @@ async fn changes_use_the_callers_current_grants() {
     // Alice authenticated as an administrator, then was demoted.
     let alice = f.identity("alice", &Grants::admin()).await;
     f.auth
-        .manage(&root, set_grants(&alice, developer()))
+        .manage(&root, None, set_grants(&alice, developer()))
         .await
         .unwrap();
     assert_eq!(
         denied(
             f.auth
-                .manage(&alice, set_grants(&alice, Grants::admin()))
+                .manage(&alice, None, set_grants(&alice, Grants::admin()))
                 .await
         ),
         Denied::Exceeds
@@ -544,6 +553,7 @@ async fn changes_use_the_callers_current_grants() {
             f.auth
                 .manage(
                     &alice,
+                    None,
                     Manage::CreateInvitation {
                         grants: developer()
                     }
@@ -555,6 +565,7 @@ async fn changes_use_the_callers_current_grants() {
     f.auth
         .manage(
             &root,
+            None,
             Manage::RevokeAll {
                 user_id: alice.id(),
                 cascade: true,
@@ -566,6 +577,7 @@ async fn changes_use_the_callers_current_grants() {
         f.auth
             .manage(
                 &alice,
+                None,
                 Manage::UpdateUser {
                     user_id: alice.id(),
                     username: "alice".into(),
@@ -598,7 +610,7 @@ async fn changes_use_the_callers_current_grants() {
     f.auth.0.store.age_auth_credentials(DAY).await;
     let late = create_token(developer(), "late", None);
     assert!(matches!(
-        f.auth.manage(&bob, late).await,
+        f.auth.manage(&bob, None, late).await,
         Err(AuthError::Store(StoreError::CredentialRevoked))
     ));
 }
@@ -623,6 +635,7 @@ async fn links_are_revalidated_when_redeemed_and_revoked() {
     f.auth
         .manage(
             &admin,
+            None,
             Manage::CreateEnrollment {
                 user_id: admin.id(),
             },
@@ -640,18 +653,18 @@ async fn links_are_revalidated_when_redeemed_and_revoked() {
     assert_eq!(
         denied(
             f.auth
-                .manage(&lead, Manage::RevokeInvitation { id: admin_link })
+                .manage(&lead, None, Manage::RevokeInvitation { id: admin_link })
                 .await
         ),
         Denied::Exceeds
     );
     // Dev is promoted beyond the lead, then the lead loses accounts:manage.
     f.auth
-        .manage(&admin, set_grants(&dev, Grants::admin()))
+        .manage(&admin, None, set_grants(&dev, Grants::admin()))
         .await
         .unwrap();
     f.auth
-        .manage(&admin, set_grants(&lead, developer()))
+        .manage(&admin, None, set_grants(&lead, developer()))
         .await
         .unwrap();
     let carol = carol();
@@ -672,7 +685,7 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
     let token = |grants| create_token(grants, "ci", Some(30));
     let deploy = Preset::Deploy.grants(&Scope::All);
     assert_eq!(
-        denied(f.auth.manage(&alice, token(Grants::admin())).await),
+        denied(f.auth.manage(&alice, None, token(Grants::admin())).await),
         Denied::Exceeds
     );
     let (secret, ci) = f.token(&alice, token(deploy.clone())).await;
@@ -682,7 +695,7 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
     // The owner's current access limits the token.
     let read_only = Preset::ReadOnly.grants(&Scope::All);
     f.auth
-        .manage(&root, set_grants(&alice, read_only.clone()))
+        .manage(&root, None, set_grants(&alice, read_only.clone()))
         .await
         .unwrap();
     assert_eq!(
@@ -699,7 +712,10 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
             grants: Grants::default(),
         },
     ] {
-        assert_eq!(denied(f.auth.manage(&ci, command).await), Denied::Scoped);
+        assert_eq!(
+            denied(f.auth.manage(&ci, None, command).await),
+            Denied::Scoped
+        );
     }
     let passkey = NewPasskey {
         id: "token-key",
@@ -738,7 +754,10 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
             cascade: true,
         },
     ] {
-        assert_eq!(denied(f.auth.manage(&ci, command).await), Denied::Scoped);
+        assert_eq!(
+            denied(f.auth.manage(&ci, None, command).await),
+            Denied::Scoped
+        );
     }
     f.auth.logout(&ci).await.unwrap();
     assert!(f.auth.authenticate(&secret).await.is_err());
@@ -784,7 +803,7 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
         .token(&alice, create_token(Grants::admin(), "ops", None))
         .await;
     f.auth
-        .manage(&root, set_grants(&alice, developer()))
+        .manage(&root, None, set_grants(&alice, developer()))
         .await
         .unwrap();
     assert_eq!(
@@ -792,6 +811,7 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
             f.auth
                 .manage(
                     &ops,
+                    None,
                     Manage::RevokeAll {
                         user_id: bob.id(),
                         cascade: true
@@ -815,7 +835,10 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
         .unwrap();
     let limited = f.auth.authenticate(&secret).await.unwrap();
     let grant = set_grants(&bob, read_only);
-    assert_eq!(denied(f.auth.manage(&limited, grant).await), Denied::Scoped);
+    assert_eq!(
+        denied(f.auth.manage(&limited, None, grant).await),
+        Denied::Scoped
+    );
     let empty = Grants::default();
     let (secret, credential) =
         Auth::new_credential(CredentialKind::Token, "empty", None, Some(&empty)).unwrap();
@@ -1050,7 +1073,7 @@ async fn minting_and_privileged_grants_need_a_recent_sign_in() {
     };
     let refused = Denied::Reauthenticate(Reauthenticate::Stale);
     for command in minting() {
-        assert_eq!(denied(f.auth.manage(&stale, command).await), refused);
+        assert_eq!(denied(f.auth.manage(&stale, None, command).await), refused);
     }
     let start = f
         .auth
@@ -1063,26 +1086,26 @@ async fn minting_and_privileged_grants_need_a_recent_sign_in() {
     // Narrowing or widening ordinary access needs no passkey.
     let read_only = Preset::ReadOnly.grants(&Scope::All);
     f.auth
-        .manage(&stale, grants(read_only))
+        .manage(&stale, None, grants(read_only))
         .await
         .expect("the account change is allowed");
     f.auth
-        .manage(&stale, grants(developer()))
+        .manage(&stale, None, grants(developer()))
         .await
         .expect("the account change is allowed");
     for command in minting() {
         f.auth
-            .manage(&fresh, command)
+            .manage(&fresh, None, command)
             .await
             .expect("the account change is allowed");
     }
     f.auth
-        .manage(&stale, grants(developer()))
+        .manage(&stale, None, grants(developer()))
         .await
         .expect("the account change is allowed");
     let operator = Identity::operator(HostOperator { uid: 0 }, None);
     f.auth
-        .manage(&operator, grants(Grants::admin()))
+        .manage(&operator, None, grants(Grants::admin()))
         .await
         .expect("the account change is allowed");
 }
@@ -1314,11 +1337,11 @@ async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
     let token = |days| create_token(developer(), "ci", days);
     for days in [None, Some(31)] {
         assert!(matches!(
-            auth.manage(&alice, token(days)).await,
+            auth.manage(&alice, None, token(days)).await,
             Err(AuthError::Invalid(_))
         ));
     }
-    auth.manage(&alice, token(Some(30))).await.unwrap();
+    auth.manage(&alice, None, token(Some(30))).await.unwrap();
     for legacy in ["l".repeat(43), format!("pqd_{}", "A".repeat(39))] {
         let credential = piqueld_store::NewCredential {
             id: Auth::id(),
@@ -1377,6 +1400,7 @@ async fn device_logins_can_request_limited_sessions() {
     f.auth
         .manage(
             &root,
+            None,
             set_grants(&alice, Preset::Deploy.grants(&Scope::All)),
         )
         .await
@@ -1403,6 +1427,7 @@ async fn deleting_an_issuer_invalidates_its_invitations_and_credentials() {
     f.auth
         .manage(
             &bob,
+            None,
             Manage::DeleteUser {
                 user_id: alice.id(),
                 cascade: true,
@@ -1432,7 +1457,7 @@ async fn changes_keep_an_admin_with_a_passkey() {
         set_grants(&alice, developer()),
     ] {
         assert!(matches!(
-            f.auth.manage(&bob, command).await,
+            f.auth.manage(&bob, None, command).await,
             Err(AuthError::Store(StoreError::Lockout(Lockout::LastAdmin)))
         ));
         let directory = f.auth.directory(&alice).await.unwrap();
@@ -1445,6 +1470,7 @@ async fn changes_keep_an_admin_with_a_passkey() {
     f.auth
         .manage(
             &alice,
+            None,
             Manage::DeleteUser {
                 user_id: bob.id(),
                 cascade: true,
@@ -1477,12 +1503,13 @@ async fn concurrent_passkey_and_account_deletions_keep_one_admin() {
         let (first, second) = tokio::join!(
             f.auth.manage(
                 &alice,
+                None,
                 Manage::RemovePasskey {
                     id: alice_key,
                     cascade: true
                 }
             ),
-            f.auth.manage(&alice, second),
+            f.auth.manage(&alice, None, second),
         );
         let error = match (first, second) {
             (Ok(_), Err(error)) | (Err(error), Ok(_)) => error,
@@ -1509,7 +1536,7 @@ async fn revoking_unknown_ids_is_not_found() {
         },
         Manage::RevokeInvitation { id: Auth::id() },
     ] {
-        let result = f.auth.manage(&root, command).await;
+        let result = f.auth.manage(&root, None, command).await;
         assert!(matches!(
             result,
             Err(AuthError::Store(StoreError::NotFound))
@@ -1530,7 +1557,7 @@ async fn logout_never_cascades_and_revocation_does_by_default() {
             days: None,
             tailnet: None,
         };
-        let managed = f.auth.manage(identity, create).await;
+        let managed = f.auth.manage(identity, None, create).await;
         let managed = managed.expect("an administrator creates a token");
         managed.token.expect("a created token is returned once")
     };
@@ -1540,7 +1567,7 @@ async fn logout_never_cascades_and_revocation_does_by_default() {
             .expect("accounts sign in with a credential");
         let id = id.to_owned();
         let revoke = Manage::RevokeCredential { id, cascade };
-        let revoked = f.auth.manage(&root, revoke).await;
+        let revoked = f.auth.manage(&root, None, revoke).await;
         revoked.expect("root may revoke any credential");
     };
     let alice = f.identity("alice", &Grants::admin()).await;
@@ -1626,7 +1653,7 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
         id: credential.id,
         cascade: true,
     };
-    f.auth.manage(&alice, revoke).await.unwrap();
+    f.auth.manage(&alice, None, revoke).await.unwrap();
     assert!(matches!(
         f.auth.device_poll(&code).await,
         Err(AuthError::Unauthorized)
@@ -2219,12 +2246,12 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     f.passkey(&admin).await;
     let bob = f.identity("bob", &developer()).await;
     let demote = set_grants(&bob, Grants::default());
-    f.auth.manage(&identity, demote).await.unwrap();
+    f.auth.manage(&identity, None, demote).await.unwrap();
     assert!(f.reload(&bob).await.grants.is_empty());
     let invite = Manage::CreateInvitation {
         grants: Grants::default(),
     };
-    let refused = f.auth.manage(&identity, invite).await;
+    let refused = f.auth.manage(&identity, None, invite).await;
     assert!(matches!(refused, Err(AuthError::Invalid(_))));
     assert_eq!(
         f.auth
@@ -2267,11 +2294,11 @@ async fn privileged_grants_and_tokens_raise_security_events() {
     let bob = f.identity("bob", &developer()).await;
     for grants in [developer(), Grants::admin()] {
         let change = set_grants(&bob, grants);
-        f.auth.manage(&admin, change).await.unwrap();
+        f.auth.manage(&admin, None, change).await.unwrap();
     }
     for (name, days) in [("ci", Some(30)), ("forever", None)] {
         let token = create_token(developer(), name, days);
-        f.auth.manage(&admin, token).await.unwrap();
+        f.auth.manage(&admin, None, token).await.unwrap();
     }
     assert_eq!(
         security_events(&f.auth).await,
@@ -2309,7 +2336,7 @@ async fn tailnet_bindings_need_the_tailnet_node_or_dashboard_hostname() {
         tailnet: Some(piqueld_core::tailnet::TailnetBinding::parse("tag:ci").unwrap()),
     };
     assert!(matches!(
-        f.auth.manage(&admin, token).await,
+        f.auth.manage(&admin, None, token).await,
         Err(AuthError::Invalid(message)) if message.contains("tailscale.enabled")
     ));
 }

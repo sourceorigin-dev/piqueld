@@ -8,7 +8,7 @@
 use super::{Auth, AuthError, CredentialKind, DAY, Identity, Result, now_secs};
 use piqueld_core::access::GlobalPermission;
 use piqueld_core::auth::{Directory, HostOperator, Manage, Managed, OperatorLink};
-use piqueld_store::{DirectoryView, NewInvitation};
+use piqueld_store::{AuditRequest, Author, DirectoryView, NewInvitation};
 impl Auth {
     /// Lists the accounts `viewer` may see: every account, invitation, and
     /// host operator session with `accounts:manage`, otherwise only its own
@@ -31,16 +31,32 @@ impl Auth {
         }
         Ok(directory)
     }
-    /// Applies one account change on behalf of `actor` and logs it. The store
-    /// refuses changes that would leave no administrator able to sign in.
+    /// Applies one account change on behalf of `actor` and logs it; the store
+    /// records what it changed in the change's transaction, as made through
+    /// `request` (see [`AuditRequest`]). The store refuses changes that would
+    /// leave no administrator able to sign in.
     ///
     /// Invitation and enrollment links expire after a day and return their
     /// dashboard URL; API tokens return their secret once. Both secrets are
     /// only stored hashed. The host operator may make every change except
     /// those creating links or tokens, which need an issuing account.
-    pub(crate) async fn manage(&self, actor: &Identity, command: Manage) -> Result<Managed> {
+    pub(crate) async fn manage(
+        &self,
+        actor: &Identity,
+        request: Option<&AuditRequest>,
+        command: Manage,
+    ) -> Result<Managed> {
         let store = &self.0.store;
-        let by = actor.actor();
+        let by = Author {
+            actor: actor.actor(),
+            request,
+        };
+        let caller = || {
+            Ok::<_, AuthError>(Author {
+                actor: actor.caller()?,
+                request,
+            })
+        };
         let mut result = Managed::default();
         let action = format!("{command:?}");
         match command {
@@ -78,14 +94,14 @@ impl Auth {
             Manage::CreateInvitation { grants } => {
                 let (secret, invitation) = Self::new_invitation()?;
                 store
-                    .create_invitation(actor.caller()?, &invitation, &grants)
+                    .create_invitation(caller()?, &invitation, &grants)
                     .await?;
                 result.invitation_url = Some(self.link("invite", &secret));
             }
             Manage::CreateEnrollment { user_id } => {
                 let (secret, invitation) = Self::new_invitation()?;
                 store
-                    .create_enrollment(actor.caller()?, &invitation, &user_id)
+                    .create_enrollment(caller()?, &invitation, &user_id)
                     .await?;
                 result.invitation_url = Some(self.link("enroll", &secret));
             }
@@ -117,7 +133,7 @@ impl Auth {
                 let (token, credential) =
                     Self::new_credential(CredentialKind::Token, &name, expires, Some(&grants))?;
                 store
-                    .create_token(actor.caller()?, &credential, tailnet.as_ref())
+                    .create_token(caller()?, &credential, tailnet.as_ref())
                     .await?;
                 result.token = Some(token);
             }

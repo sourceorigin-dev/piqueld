@@ -29,17 +29,18 @@ The audit trail records:
 Each record keeps the request and its outcome: **Allowed**, **Denied** or
 **Failed**. It names the account and credential that made it, and where it
 came from: a network address, the Unix socket, or a tailnet user and device.
-Request bodies are never recorded, but a change to an account names what
-changed, such as the grants it set. Records outlive the accounts, credentials
-and applications they name.
+Request bodies are never recorded, but an account change that was refused,
+failed or changed nothing names what it attempted, such as the grants it
+would have set. Records
+outlive the accounts, credentials and applications they name.
 
 Routine reads, such as the dashboard refreshing a page, aren't recorded.
 
-A change to an application, environment, preview, secret, notification
-destination or webhook secret, or a retried notification, is saved together
-with its record, so a change piqueld made always has one. Its record also
-names what the change started, such as the application's new revision and
-the operation deploying it:
+A change to an application, environment, preview, secret, account,
+notification destination or webhook secret, or a retried notification, is
+saved together with its record, so a change piqueld made always has one.
+Its record also names what the change started, such as the application's
+new revision and the operation deploying it:
 
 ```text
 POST /api/v1/environments/{id}/deploy generation 4 operation 0190…
@@ -57,6 +58,15 @@ deletion, and one once its copies are removed and it is deleted. If removing
 them fails, the reservation's record stays, followed by the failed request.
 Recovering the secret key records how many values, webhook secrets and
 notification destinations it discarded.
+
+An account change's record names what it changed and how it is now: an
+account's new name, its grants, a new token or link with its grants and
+expiry, never its secret. Revoking a credential, removing a passkey or
+deleting an account also says how many credentials, links and passkeys it
+removed, including those they issued unless you chose not to cascade.
+A change that leaves things as they were, such as setting the grants an
+account already has, records no change: its request is recorded like any
+other, as **Allowed**, naming what it asked for.
 
 A notification destination's record names it, how it changed, and the
 categories, applications and previews it now receives, never its URL. A

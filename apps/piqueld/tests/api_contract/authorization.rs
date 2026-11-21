@@ -281,17 +281,21 @@ async fn own_audit_trails_reveal_nothing_hidden() {
         .call(&f.deployer, "POST", "/api/v1/auth/manage", create)
         .await;
     assert_eq!(status, 200, "{created}");
-    // The trail records what an account action changed.
+    // The trail records what an account action changed: the token it
+    // created, never its secret.
     let body = f.audit(&f.deployer, "/api/v1/audit", 3).await;
     let deploy = format!("apps:deploy on {}", f.blog);
+    let secret = created["token"].as_str().expect("the token is answered");
     let recorded = body["data"]["items"]
         .as_array()
-        .unwrap()
+        .expect("the trail lists records")
         .iter()
         .any(|event| {
-            let action = event["action"].as_str().unwrap();
-            action.starts_with("POST /api/v1/auth/manage create_token \"ci\" (")
+            let action = event["action"].as_str().expect("records have an action");
+            action.starts_with("POST /api/v1/auth/manage token ")
+                && action.contains(" \"ci\" grants (")
                 && action.contains(&deploy)
+                && !action.contains(secret)
         });
     assert!(recorded, "{body}");
     let token = created["token"].as_str().unwrap();
