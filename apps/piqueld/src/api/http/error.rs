@@ -8,7 +8,7 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
-use piqueld_core::api::ErrorBody;
+use piqueld_core::api::{ApiErrorCode, ErrorBody};
 use piqueld_core::{
     ApplicationIdError, EnvironmentIdError, EnvironmentNameError, GitBranchError, PreviewSlotError,
 };
@@ -22,8 +22,8 @@ use serde_json::{Value, json};
 #[derive(Debug)]
 pub(super) struct ApiError {
     pub(super) status: StatusCode,
-    /// Stable machine-readable error code, e.g. `generation_conflict`.
-    code: &'static str,
+    /// Stable machine-readable error code.
+    code: ApiErrorCode,
     /// Sanitized, user-facing explanation.
     message: String,
     /// Extra structured context; `null` when there is none.
@@ -40,7 +40,7 @@ pub(super) struct ApiError {
 
 impl ApiError {
     /// Creates an error without details, `Allow` header, or diagnostic.
-    pub(super) fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+    pub(super) fn new(status: StatusCode, code: ApiErrorCode, message: impl Into<String>) -> Self {
         Self {
             status,
             code,
@@ -55,8 +55,17 @@ impl ApiError {
     pub(super) fn endpoint_not_found() -> Self {
         Self::new(
             StatusCode::NOT_FOUND,
-            "endpoint_not_found",
+            ApiErrorCode::EndpointNotFound,
             "API endpoint was not found",
+        )
+    }
+
+    /// The 404 for a resource that doesn't exist, or the caller may not see.
+    pub(super) fn not_found() -> Self {
+        Self::new(
+            StatusCode::NOT_FOUND,
+            ApiErrorCode::NotFound,
+            "resource was not found",
         )
     }
 
@@ -93,30 +102,32 @@ impl ApiError {
         match error {
             StoreError::SecretVersionConflict { expected, actual } => Self::new(
                 StatusCode::CONFLICT,
-                "secret_generation_conflict",
+                ApiErrorCode::SecretGenerationConflict,
                 "Secret changed since inspection; read its metadata and retry",
             )
             .details(json!({"expected_generation": expected, "actual_generation": actual})),
             StoreError::SecretUnavailable { names } => Self::new(
                 StatusCode::CONFLICT,
-                "secret_unavailable",
+                ApiErrorCode::SecretUnavailable,
                 "Supply replacement secret values and start a new deployment",
             )
             .details(json!({"names": names})),
-            ref error @ StoreError::SecretMissing { ref names } => {
-                Self::new(StatusCode::CONFLICT, "secret_missing", error.to_string())
-                    .details(json!({"names": names}))
-            }
+            ref error @ StoreError::SecretMissing { ref names } => Self::new(
+                StatusCode::CONFLICT,
+                ApiErrorCode::SecretMissing,
+                error.to_string(),
+            )
+            .details(json!({"names": names})),
             StoreError::SecretKeyUsable => Self::new(
                 StatusCode::CONFLICT,
-                "secret_key_usable",
+                ApiErrorCode::SecretKeyUsable,
                 "The secret master key still works; recovery would discard values needlessly",
             ),
             error @ StoreError::SecretSource(_) => {
                 let diagnostic = crate::operations::OperationError::from(error).diagnostic();
                 let mut error = Self::new(
                     StatusCode::SERVICE_UNAVAILABLE,
-                    "secret_storage_unavailable",
+                    ApiErrorCode::SecretStorageUnavailable,
                     "Secret storage is unavailable",
                 );
                 error.diagnostic = Some(Box::new(diagnostic));
@@ -124,22 +135,22 @@ impl ApiError {
             }
             StoreError::SecretDeleting => Self::new(
                 StatusCode::CONFLICT,
-                "secret_deleting",
+                ApiErrorCode::SecretDeleting,
                 "Secret deletion is in progress; retry deletion to finish cleanup",
             ),
             StoreError::SecretAccessConflict => Self::new(
                 StatusCode::CONFLICT,
-                "secret_access_conflict",
+                ApiErrorCode::SecretAccessConflict,
                 "The secret's access changed since you read it; read it again and retry",
             ),
             StoreError::SecretQuota => Self::new(
                 StatusCode::CONFLICT,
-                "secret_quota_exceeded",
+                ApiErrorCode::SecretQuotaExceeded,
                 "Secret storage quota exceeded (100 secrets, 1000 versions or 100 MiB per environment or application store); delete unused secrets to free space",
             ),
             StoreError::SecretReferenced => Self::new(
                 StatusCode::CONFLICT,
-                "secret_referenced",
+                ApiErrorCode::SecretReferenced,
                 "Secret is still referenced by application configuration or a deployment",
             ),
             ref error @ StoreError::SecretAccessDenied {
@@ -147,7 +158,7 @@ impl ApiError {
                 ref secret,
             } => Self::new(
                 StatusCode::CONFLICT,
-                "secret_access_denied",
+                ApiErrorCode::SecretAccessDenied,
                 error.to_string(),
             )
             .details(json!({"environment": environment, "secret": secret})),
@@ -165,42 +176,42 @@ impl ApiError {
         match error {
             StoreError::EnvironmentRequired { environments } => Self::new(
                 StatusCode::CONFLICT,
-                "environment_required",
+                ApiErrorCode::EnvironmentRequired,
                 "The application does not have exactly one environment; name the environment explicitly",
             )
             .details(json!({"environments": environments})),
             StoreError::ConfirmationRequired { environments } => Self::new(
                 StatusCode::CONFLICT,
-                "environment_confirmation_required",
+                ApiErrorCode::EnvironmentConfirmationRequired,
                 "Deleting this application also deletes all its environments; confirm by naming every one",
             )
             .details(json!({"environments": environments})),
             ref error @ StoreError::EnvironmentConfigured { ref environment } => Self::new(
                 StatusCode::CONFLICT,
-                "environment_configured",
+                ApiErrorCode::EnvironmentConfigured,
                 error.to_string(),
             )
             .details(json!({"environment": environment})),
             ref error @ StoreError::EnvironmentDeclared { ref environment } => Self::new(
                 StatusCode::CONFLICT,
-                piqueld_core::ApiErrorCode::EnvironmentDeclared.as_str(),
+                ApiErrorCode::EnvironmentDeclared,
                 error.to_string(),
             )
             .details(json!({"environment": environment})),
             ref error @ StoreError::EnvironmentUnknown { ref environment } => Self::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                piqueld_core::ApiErrorCode::EnvironmentUnknown.as_str(),
+                ApiErrorCode::EnvironmentUnknown,
                 error.to_string(),
             )
             .details(json!({"environment": environment})),
             ref error @ StoreError::PreviewRequiresRepository => Self::new(
                 StatusCode::CONFLICT,
-                piqueld_core::ApiErrorCode::PreviewRequiresRepository.as_str(),
+                ApiErrorCode::PreviewRequiresRepository,
                 error.to_string(),
             ),
             ref error @ StoreError::PreviewLimitReached(ref reached) => Self::new(
                 StatusCode::CONFLICT,
-                piqueld_core::ApiErrorCode::PreviewLimitReached.as_str(),
+                ApiErrorCode::PreviewLimitReached,
                 error.to_string(),
             )
             .details(json!(reached)),
@@ -215,32 +226,32 @@ impl ApiError {
         let (status, code, details) = match error {
             PromotionError::Promoted { environment } => (
                 StatusCode::CONFLICT,
-                "environment_promoted",
+                ApiErrorCode::EnvironmentPromoted,
                 json!({"environment": environment}),
             ),
             PromotionError::NotPromoted { environment } => (
                 StatusCode::CONFLICT,
-                "environment_not_promoted",
+                ApiErrorCode::EnvironmentNotPromoted,
                 json!({"environment": environment}),
             ),
             PromotionError::Cycle { environments } => (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "promotion_cycle",
+                ApiErrorCode::PromotionCycle,
                 json!({"environments": environments}),
             ),
             PromotionError::SourceInvalid { environment, .. } => (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "promotion_source_invalid",
+                ApiErrorCode::PromotionSourceInvalid,
                 json!({"environment": environment}),
             ),
             PromotionError::InUse { environments } => (
                 StatusCode::CONFLICT,
-                "promotion_source_in_use",
+                ApiErrorCode::PromotionSourceInUse,
                 json!({"environments": environments}),
             ),
             PromotionError::SourceNotReady { environment, .. } => (
                 StatusCode::CONFLICT,
-                "promotion_source_not_ready",
+                ApiErrorCode::PromotionSourceNotReady,
                 json!({"environment": environment}),
             ),
             PromotionError::SourceChanged {
@@ -248,7 +259,7 @@ impl ApiError {
                 deployment,
             } => (
                 StatusCode::CONFLICT,
-                "promotion_source_changed",
+                ApiErrorCode::PromotionSourceChanged,
                 json!({"environment": environment, "deployment": deployment}),
             ),
             PromotionError::Secrets {
@@ -256,7 +267,7 @@ impl ApiError {
                 secrets,
             } => (
                 StatusCode::CONFLICT,
-                "secrets_unavailable",
+                ApiErrorCode::SecretsUnavailable,
                 json!({"environment": environment, "secrets": secrets}),
             ),
         };
@@ -269,14 +280,14 @@ impl ApiError {
     fn from_restore_error(error: &RestoreError) -> Self {
         let (code, details) = match error {
             RestoreError::NotRestorable { deployment, .. } => (
-                "deployment_not_restorable",
+                ApiErrorCode::DeploymentNotRestorable,
                 json!({"deployment": deployment}),
             ),
             RestoreError::SecretsGone {
                 deployment,
                 secrets,
             } => (
-                "restore_secrets_unavailable",
+                ApiErrorCode::RestoreSecretsUnavailable,
                 json!({"deployment": deployment, "secrets": secrets}),
             ),
         };
@@ -291,14 +302,14 @@ impl ApiError {
         match error {
             StoreError::HostnameConflict { hostname } => Self::new(
                 StatusCode::CONFLICT,
-                "hostname_conflict",
+                ApiErrorCode::HostnameConflict,
                 "Hostname is reserved by another environment, another application's wildcard, or this installation",
             )
             .details(json!({"hostname": hostname})),
             ref error @ StoreError::SharedHostnameConflict {
                 ref hostname,
                 ref environment,
-            } => Self::new(StatusCode::CONFLICT, "hostname_conflict", error.to_string())
+            } => Self::new(StatusCode::CONFLICT, ApiErrorCode::HostnameConflict, error.to_string())
                 .details(json!({"hostname": hostname, "environment": environment})),
             other => unreachable!("non-hostname storage error: {other}"),
         }
@@ -336,74 +347,74 @@ impl From<StoreError> for ApiError {
             StoreError::Restore(error) => Self::from_restore_error(&error),
             StoreError::GenerationConflict { expected, actual } => Self::new(
                 StatusCode::CONFLICT,
-                "generation_conflict",
+                ApiErrorCode::GenerationConflict,
                 "Application changed since inspection; run the command again",
             )
             .details(json!({"expected_generation": expected, "actual_generation": actual})),
             StoreError::IdentityConflict => Self::new(
                 StatusCode::CONFLICT,
-                "identity_conflict",
+                ApiErrorCode::IdentityConflict,
                 "Application changed since inspection; run the command again",
             ),
             StoreError::ReplayConflict => Self::new(
                 StatusCode::CONFLICT,
-                "request_id_conflict",
+                ApiErrorCode::RequestIdConflict,
                 "request ID was already used for different input",
             ),
             StoreError::RepositoryManaged => Self::new(
                 StatusCode::CONFLICT,
-                "repository_managed",
+                ApiErrorCode::RepositoryManaged,
                 "Rename a repository-backed application while it is disconnected, then rename it in its repository manifest",
             ),
             StoreError::Busy => Self::new(
                 StatusCode::CONFLICT,
-                "application_busy",
+                ApiErrorCode::ApplicationBusy,
                 "application is busy; wait for its current operation to finish",
             ),
             StoreError::HistoryExpired => Self::new(
                 StatusCode::GONE,
-                "history_expired",
+                ApiErrorCode::HistoryExpired,
                 "Requested event history was pruned; reload history before resuming",
             ),
-            StoreError::NotFound => {
-                Self::new(StatusCode::NOT_FOUND, "not_found", "resource was not found")
-            }
-            StoreError::Lockout(lockout) => {
-                Self::new(StatusCode::CONFLICT, "account_lockout", lockout.message())
-            }
+            StoreError::NotFound => Self::not_found(),
+            StoreError::Lockout(lockout) => Self::new(
+                StatusCode::CONFLICT,
+                ApiErrorCode::AccountLockout,
+                lockout.message(),
+            ),
             StoreError::Destination(error) => error.into(),
             StoreError::Retry(error) => error.into(),
             StoreError::Denied(denied) => denied.into(),
             StoreError::CredentialRevoked => crate::auth::AuthError::Unauthorized.into(),
             StoreError::AlreadyExists => Self::new(
                 StatusCode::CONFLICT,
-                "application_name_collision",
+                ApiErrorCode::ApplicationNameCollision,
                 "application, environment, or preview identity or name already exists",
             ),
             StoreError::IllegalTransition => Self::new(
                 StatusCode::CONFLICT,
-                "application_state_conflict",
+                ApiErrorCode::ApplicationStateConflict,
                 "the requested application transition is not allowed",
             ),
             StoreError::InvalidInput | StoreError::InvalidInputSource(_) => Self::new(
                 StatusCode::BAD_REQUEST,
-                "invalid_request",
+                ApiErrorCode::InvalidRequest,
                 "the request is invalid",
             ),
             StoreError::SchemaMismatch | StoreError::SchemaMismatchSource(_) => Self::new(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "schema_mismatch",
+                ApiErrorCode::SchemaMismatch,
                 "database schema is incompatible",
             ),
             StoreError::Corrupt | StoreError::CorruptSource(_) => Self::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "stored_state_corrupt",
+                ApiErrorCode::StoredStateCorrupt,
                 "stored application state is corrupt",
             ),
             StoreError::Database | StoreError::DatabaseSource(_) | StoreError::PathSource(_) => {
                 Self::new(
                     StatusCode::SERVICE_UNAVAILABLE,
-                    "storage_unavailable",
+                    ApiErrorCode::StorageUnavailable,
                     "control-plane storage is unavailable",
                 )
             }
@@ -416,9 +427,9 @@ impl From<piqueld_store::DestinationError> for ApiError {
     fn from(error: piqueld_store::DestinationError) -> Self {
         use piqueld_store::DestinationError;
         let code = match error {
-            DestinationError::UrlRequired => "destination_url_required",
-            DestinationError::UrlInvalid => "destination_url_invalid",
-            DestinationError::UnknownApplication(_) => "destination_application_unknown",
+            DestinationError::UrlRequired => ApiErrorCode::DestinationUrlRequired,
+            DestinationError::UrlInvalid => ApiErrorCode::DestinationUrlInvalid,
+            DestinationError::UnknownApplication(_) => ApiErrorCode::DestinationApplicationUnknown,
         };
         Self::new(StatusCode::BAD_REQUEST, code, error.to_string())
     }
@@ -429,7 +440,7 @@ impl From<piqueld_store::RetryError> for ApiError {
     fn from(error: piqueld_store::RetryError) -> Self {
         Self::new(
             StatusCode::CONFLICT,
-            "delivery_not_retryable",
+            ApiErrorCode::DeliveryNotRetryable,
             error.to_string(),
         )
     }
@@ -440,9 +451,13 @@ impl From<piqueld_core::edit::EditError> for ApiError {
     fn from(error: piqueld_core::edit::EditError) -> Self {
         use piqueld_core::edit::EditError;
         let (status, code) = match &error {
-            EditError::NotFound { .. } => (StatusCode::NOT_FOUND, "field_resource_not_found"),
-            EditError::AlreadyExists { .. } => (StatusCode::CONFLICT, "field_resource_exists"),
-            EditError::Incompatible(_) => (StatusCode::CONFLICT, "field_incompatible"),
+            EditError::NotFound { .. } => {
+                (StatusCode::NOT_FOUND, ApiErrorCode::FieldResourceNotFound)
+            }
+            EditError::AlreadyExists { .. } => {
+                (StatusCode::CONFLICT, ApiErrorCode::FieldResourceExists)
+            }
+            EditError::Incompatible(_) => (StatusCode::CONFLICT, ApiErrorCode::FieldIncompatible),
         };
         Self::new(status, code, "The field edit could not be applied")
             .details(json!({"reason": error.to_string()}))
@@ -465,27 +480,27 @@ impl From<BoundaryError> for ApiError {
                 | piqueld_docker::DockerError::UnavailableSource { .. },
             ) => Self::new(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "docker_unavailable",
+                ApiErrorCode::DockerUnavailable,
                 "Docker Engine is unavailable",
             ),
             BoundaryError::Runtime(_) => Self::new(
                 StatusCode::BAD_GATEWAY,
-                "runtime_request_failed",
+                ApiErrorCode::RuntimeRequestFailed,
                 "runtime request failed",
             ),
             BoundaryError::GitBuild(_) => Self::new(
                 StatusCode::BAD_GATEWAY,
-                "git_build_failed",
+                ApiErrorCode::GitBuildFailed,
                 "Git source build failed",
             ),
             BoundaryError::Compilation(_) => Self::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "application_compilation_failed",
+                ApiErrorCode::ApplicationCompilationFailed,
                 "application compilation failed",
             ),
             BoundaryError::ImageUnavailable(error) => Self::new(
                 StatusCode::CONFLICT,
-                piqueld_core::ApiErrorCode::ImageUnavailable.as_str(),
+                ApiErrorCode::ImageUnavailable,
                 error.to_string(),
             ),
         };
@@ -498,7 +513,7 @@ impl From<BoundaryError> for ApiError {
 /// a request, answering 400 with `$code` and the message `$message` builds
 /// from the error.
 macro_rules! invalid_input {
-    ($($error:ty => $code:literal, |$value:pat_param| $message:expr;)+) => {$(
+    ($($error:ty => $code:path, |$value:pat_param| $message:expr;)+) => {$(
         impl From<$error> for ApiError {
             fn from(error: $error) -> Self {
                 let $value = error;
@@ -509,12 +524,12 @@ macro_rules! invalid_input {
 }
 
 invalid_input! {
-    ApplicationIdError => "application_id_invalid", |_| "application ID is invalid";
-    EnvironmentIdError => "environment_id_invalid", |_| "environment ID is invalid";
-    EnvironmentNameError => "environment_name_invalid", |_| "environment names must be 1-63 lowercase letters, digits, or hyphens, start with a letter, and end with a letter or digit";
-    GitBranchError => "git_branch_invalid", |error| error.to_string();
-    PreviewSlotError => "preview_slot_invalid", |error| error.to_string();
-    piqueld_core::observability::DestinationNameError => "destination_name_invalid", |error| error.to_string();
+    ApplicationIdError => ApiErrorCode::ApplicationIdInvalid, |_| "application ID is invalid";
+    EnvironmentIdError => ApiErrorCode::EnvironmentIdInvalid, |_| "environment ID is invalid";
+    EnvironmentNameError => ApiErrorCode::EnvironmentNameInvalid, |_| "environment names must be 1-63 lowercase letters, digits, or hyphens, start with a letter, and end with a letter or digit";
+    GitBranchError => ApiErrorCode::GitBranchInvalid, |error| error.to_string();
+    PreviewSlotError => ApiErrorCode::PreviewSlotInvalid, |error| error.to_string();
+    piqueld_core::observability::DestinationNameError => ApiErrorCode::DestinationNameInvalid, |error| error.to_string();
 }
 
 impl From<piqueld_core::ValidationErrors> for ApiError {
@@ -528,13 +543,13 @@ impl From<piqueld_core::ValidationErrors> for ApiError {
         {
             Self::new(
                 StatusCode::BAD_REQUEST,
-                "toml_malformed",
+                ApiErrorCode::TomlMalformed,
                 "request TOML is malformed or does not match the application schema",
             )
         } else {
             Self::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "manifest_validation_failed",
+                ApiErrorCode::ManifestValidationFailed,
                 "application manifest failed validation",
             )
         };
@@ -588,39 +603,39 @@ impl From<ApplicationError> for ApiError {
         match error {
             ApplicationError::PreconditionRequired => Self::new(
                 StatusCode::BAD_REQUEST,
-                "precondition_required",
+                ApiErrorCode::PreconditionRequired,
                 "Supply the inspected revision and application identity, or explicitly set force=true",
             ),
             ApplicationError::InvalidPagination => Self::new(
                 StatusCode::BAD_REQUEST,
-                "pagination_invalid",
+                ApiErrorCode::PaginationInvalid,
                 "pagination parameters are invalid",
             ),
             ApplicationError::InvalidLogQuery => Self::new(
                 StatusCode::BAD_REQUEST,
-                "logs_query_invalid",
+                ApiErrorCode::LogsQueryInvalid,
                 "Tail must be 1–1000 and time window 1–86400 seconds",
             ),
             ApplicationError::InvalidTrafficQuery => Self::new(
                 StatusCode::BAD_REQUEST,
-                "traffic_query_invalid",
+                ApiErrorCode::TrafficQueryInvalid,
                 "The window must start at or after Unix ms 0, end after it starts, and span at most 400 days",
             ),
             ApplicationError::ServiceNotRunning => Self::new(
                 StatusCode::CONFLICT,
-                "service_not_running",
+                ApiErrorCode::ServiceNotRunning,
                 "Service has no running task; deploy it or check its health",
             ),
             ApplicationError::ConfigurationUnavailable => Self::new(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "configuration_unavailable",
+                ApiErrorCode::ConfigurationUnavailable,
                 "Effective host configuration is unavailable",
             ),
             ApplicationError::ManifestSerialization(error) => {
                 tracing::error!(?error, "serialize saved manifest");
                 Self::new(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "manifest_serialization_failed",
+                    ApiErrorCode::ManifestSerializationFailed,
                     "Could not render saved configuration",
                 )
             }
@@ -628,7 +643,7 @@ impl From<ApplicationError> for ApiError {
             ApplicationError::Runtime(error) => error.into(),
             ApplicationError::PlanBlocked(diagnostics) => Self::new(
                 StatusCode::CONFLICT,
-                "plan_blocked",
+                ApiErrorCode::PlanBlocked,
                 "runtime plan contains blocking conflicts",
             )
             .details(json!({"diagnostics":diagnostics})),
@@ -636,7 +651,7 @@ impl From<ApplicationError> for ApiError {
                 tracing::warn!(?error, "manifest repository unavailable");
                 Self::new(
                     StatusCode::BAD_GATEWAY,
-                    "repository_unavailable",
+                    ApiErrorCode::RepositoryUnavailable,
                     format!(
                         "The manifest repository could not be read ({error:#}); no preview was deleted"
                     ),
@@ -645,7 +660,7 @@ impl From<ApplicationError> for ApiError {
             ApplicationError::Snapshot(error) => error.into(),
             ApplicationError::Busy(_) => Self::new(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "server_busy",
+                ApiErrorCode::ServerBusy,
                 "Too many requests like this one are running; try again shortly",
             ),
         }
@@ -660,37 +675,37 @@ impl From<crate::git::snapshot::SnapshotError> for ApiError {
         match error {
             SnapshotError::TooLarge { limit } => Self::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                piqueld_core::ApiErrorCode::SnapshotTooLarge.as_str(),
+                ApiErrorCode::SnapshotTooLarge,
                 format!("{message}; raise [snapshots] max_upload_bytes, or upload against a base the repository has"),
             )
             .details(json!({ "limit": limit })),
             SnapshotError::TreeTooLarge { limit } => Self::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                piqueld_core::ApiErrorCode::SnapshotTooLarge.as_str(),
+                ApiErrorCode::SnapshotTooLarge,
                 format!("{message}; raise [checkouts] max_bytes, or ignore the files the preview doesn't need"),
             )
             .details(json!({ "limit": limit })),
             SnapshotError::Invalid(_) => Self::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                piqueld_core::ApiErrorCode::SnapshotInvalid.as_str(),
+                ApiErrorCode::SnapshotInvalid,
                 message,
             ),
             SnapshotError::BaseUnavailable { prerequisites } => Self::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                piqueld_core::ApiErrorCode::SnapshotBaseUnavailable.as_str(),
+                ApiErrorCode::SnapshotBaseUnavailable,
                 format!("{message}; push the base, or upload a complete bundle"),
             )
             .details(json!({ "prerequisites": prerequisites })),
             SnapshotError::TimedOut => Self::new(
                 StatusCode::REQUEST_TIMEOUT,
-                piqueld_core::ApiErrorCode::SnapshotTimedOut.as_str(),
+                ApiErrorCode::SnapshotTimedOut,
                 message,
             ),
             SnapshotError::Internal(error) => {
                 tracing::error!(?error, "snapshot upload failed");
                 Self::new(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "snapshot_unavailable",
+                    ApiErrorCode::SnapshotUnavailable,
                     message,
                 )
             }

@@ -7,6 +7,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use piqueld_core::ApiErrorCode;
 use std::{net::IpAddr, sync::Arc};
 
 #[derive(Clone)]
@@ -32,7 +33,7 @@ impl BrowserPolicy {
         let denied = || {
             ApiError::new(
                 StatusCode::FORBIDDEN,
-                "browser_access_denied",
+                ApiErrorCode::BrowserAccessDenied,
                 "request authority or browser fetch metadata is not trusted",
             )
         };

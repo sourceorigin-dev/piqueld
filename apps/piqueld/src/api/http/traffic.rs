@@ -1,6 +1,7 @@
 //! The traffic the gateway counted on an environment's routes.
 use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use axum::{extract::State, response::IntoResponse};
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{EnvironmentId, api::Envelope, observability::TrafficReport};
 use piqueld_store::traffic::{DAY_MS, TrafficQuery};
 
@@ -20,7 +21,7 @@ pub(super) struct TrafficParams {
 }
 
 impl QueryParams for TrafficParams {
-    const INVALID_CODE: &'static str = "traffic_query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::TrafficQueryInvalid;
     const INVALID_MESSAGE: &'static str = "Invalid traffic query";
 }
 

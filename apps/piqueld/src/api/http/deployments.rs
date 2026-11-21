@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     ApplicationId, EnvironmentId, Operation,
     api::{AcceptedOperation, DeploymentView, Envelope, Page, ReleaseView},
@@ -21,7 +22,7 @@ pub(super) struct HistoryQuery {
 }
 
 impl QueryParams for HistoryQuery {
-    const INVALID_CODE: &'static str = "pagination_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::PaginationInvalid;
     const INVALID_MESSAGE: &'static str = "invalid pagination parameters";
 }
 
@@ -38,7 +39,7 @@ pub(super) struct DeploymentsQuery {
 }
 
 impl QueryParams for DeploymentsQuery {
-    const INVALID_CODE: &'static str = "pagination_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::PaginationInvalid;
     const INVALID_MESSAGE: &'static str = "invalid pagination parameters";
 }
 
@@ -62,7 +63,7 @@ pub(super) struct DeployQuery {
 }
 
 impl QueryParams for DeployQuery {
-    const INVALID_CODE: &'static str = "query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::QueryInvalid;
     const INVALID_MESSAGE: &'static str = "expected_generation must be an integer, force and rebuild must be true or false, and branch or commit may appear once";
 }
 
@@ -75,7 +76,7 @@ impl DeployQuery {
             (None, Some(commit)) => Ok(Some(ManifestRevision::Commit(commit))),
             (Some(_), Some(_)) => Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "revision_invalid",
+                ApiErrorCode::RevisionInvalid,
                 "select either a branch or a commit",
             )),
         }

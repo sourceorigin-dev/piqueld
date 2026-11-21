@@ -25,6 +25,7 @@ use futures_util::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     EnvironmentId,
     exec::{ExecFrame, ExecInput, ExecOutput, ExecRequest, MAX_MESSAGE_BYTES},
@@ -51,7 +52,7 @@ impl<S: Send + Sync> FromRequestParts<S> for ExecUpgrade {
             .map_err(|_| {
                 ApiError::new(
                     StatusCode::UPGRADE_REQUIRED,
-                    "upgrade_required",
+                    ApiErrorCode::UpgradeRequired,
                     "Open a WebSocket to stream a command",
                 )
             })
@@ -166,7 +167,7 @@ async fn read_request(reader: &mut SplitStream<WebSocket>) -> Result<ExecRequest
                 _ => {
                     return Err(ApiError::new(
                         StatusCode::BAD_REQUEST,
-                        "exec_request_missing",
+                        ApiErrorCode::ExecRequestMissing,
                         "The first exec message must be a JSON ExecRequest",
                     ));
                 }
@@ -178,7 +179,7 @@ async fn read_request(reader: &mut SplitStream<WebSocket>) -> Result<ExecRequest
         .unwrap_or_else(|_| {
             Err(ApiError::new(
                 StatusCode::REQUEST_TIMEOUT,
-                "exec_request_timeout",
+                ApiErrorCode::ExecRequestTimeout,
                 "No ExecRequest arrived within 30 seconds of connecting",
             ))
         })

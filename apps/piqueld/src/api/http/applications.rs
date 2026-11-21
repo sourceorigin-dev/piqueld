@@ -11,6 +11,7 @@ use axum::{
     http::header,
     response::{IntoResponse, Response},
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::api::{
     ApplicationSummary, ApplicationView, ApplyApplicationRequest, DeletedApplication, Envelope,
     Page, PlanView, SavedApplication,
@@ -33,7 +34,7 @@ pub(super) struct ListQuery {
 
 impl QueryParams for ListQuery {
     // The same error as an out-of-range `limit`.
-    const INVALID_CODE: &'static str = "pagination_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::PaginationInvalid;
     const INVALID_MESSAGE: &'static str = "pagination parameters are invalid";
 }
 
@@ -126,7 +127,7 @@ pub(super) struct ApplyQuery {
 }
 
 impl QueryParams for ApplyQuery {
-    const INVALID_CODE: &'static str = "query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::QueryInvalid;
     const INVALID_MESSAGE: &'static str = "force and deploy must be true or false";
 }
 
@@ -145,7 +146,7 @@ pub(super) struct DeleteApplicationQuery {
 }
 
 impl QueryParams for DeleteApplicationQuery {
-    const INVALID_CODE: &'static str = "query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::QueryInvalid;
     const INVALID_MESSAGE: &'static str =
         "expected_generation must be an integer and force must be true or false";
 }
@@ -224,7 +225,7 @@ pub(super) struct PlanQuery {
 }
 
 impl QueryParams for PlanQuery {
-    const INVALID_CODE: &'static str = "query_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::QueryInvalid;
     const INVALID_MESSAGE: &'static str = "environment must appear at most once";
 }
 
@@ -240,7 +241,7 @@ pub(super) struct GenerationQuery {
 }
 
 impl QueryParams for GenerationQuery {
-    const INVALID_CODE: &'static str = "generation_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::GenerationInvalid;
     const INVALID_MESSAGE: &'static str = "invalid expected generation";
 }
 

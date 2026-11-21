@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use piqueld_core::ApiErrorCode;
 use piqueld_core::access::{AppPermission, GlobalPermission};
 use piqueld_core::api::{BuilderCheck, DnsStatus, Envelope, SystemStatus};
 
@@ -72,7 +73,7 @@ pub(super) async fn check_builder(State(state): State<ApiState>) -> Result<Respo
     let check = state.check_builder().await.ok_or_else(|| {
         ApiError::new(
             StatusCode::NOT_FOUND,
-            "builder_not_configured",
+            ApiErrorCode::BuilderNotConfigured,
             "this host has no build machine; it builds images itself",
         )
     })?;

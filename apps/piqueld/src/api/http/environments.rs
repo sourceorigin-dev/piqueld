@@ -56,14 +56,14 @@ pub(super) async fn create(
         (None, Some(_), None) => {
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "revision_invalid",
+                ApiErrorCode::RevisionInvalid,
                 "a pinned commit requires a branch",
             ));
         }
         (_, _, Some(_)) => {
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "source_invalid",
+                ApiErrorCode::SourceInvalid,
                 "a promoted environment follows no branch",
             ));
         }
@@ -305,7 +305,7 @@ fn tracked_branch(branch: String, commit: Option<String>) -> Result<TrackedBranc
             ApiErrorCode::GitCommitInvalid
         };
         let messages: Vec<_> = errors.into_iter().map(|error| error.message).collect();
-        ApiError::new(StatusCode::BAD_REQUEST, code.as_str(), messages.join("; "))
+        ApiError::new(StatusCode::BAD_REQUEST, code, messages.join("; "))
     })
 }
 
@@ -320,14 +320,14 @@ fn selection(request: &PromoteRequest) -> Result<PromotionSelection, ApiError> {
             release: ReleaseId::parse(release.clone()).map_err(|_| {
                 ApiError::new(
                     StatusCode::BAD_REQUEST,
-                    "release_invalid",
+                    ApiErrorCode::ReleaseInvalid,
                     "invalid release ID",
                 )
             })?,
         }),
         (Some(_), Some(_)) => Err(ApiError::new(
             StatusCode::BAD_REQUEST,
-            "promotion_invalid",
+            ApiErrorCode::PromotionInvalid,
             "promote either a source deployment or a release, not both",
         )),
     }
@@ -532,6 +532,6 @@ pub(super) struct ForceQuery {
 }
 
 impl QueryParams for ForceQuery {
-    const INVALID_CODE: &'static str = "force_invalid";
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::ForceInvalid;
     const INVALID_MESSAGE: &'static str = "force must be true or false";
 }

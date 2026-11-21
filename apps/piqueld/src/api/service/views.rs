@@ -223,7 +223,7 @@ mod tests {
         let diagnostics = service_diagnostics(&service);
 
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].code, "task_rejected");
+        assert_eq!(diagnostics[0].code, ApiErrorCode::TaskRejected);
     }
 
     #[test]

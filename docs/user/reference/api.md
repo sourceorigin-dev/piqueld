@@ -29,6 +29,12 @@ Responses use a `data` envelope; lists contain `items` and an opaque
 `next_cursor`. Errors expose a safe message, code, details, and request ID.
 Clients poll for progress.
 
+An error's `code` is a stable string, such as `generation_conflict`. The
+`ApiErrorCode` schema of the [OpenAPI document](../../openapi-v1.json) lists
+every code, which validation errors and plan diagnostics share. A code never
+changes meaning, but new ones are added, so handle a code you don't know by
+its HTTP status.
+
 Request bodies are limited to 2 MiB, and to 64 KiB on the public sign-in
 endpoints (16 KiB for device starts); larger ones fail with `413
 request_body_too_large`. A body that sends nothing for a minute fails with

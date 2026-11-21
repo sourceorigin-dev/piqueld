@@ -4,6 +4,7 @@ use super::access::Audited;
 use super::{ApiError, ApiJson, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
 use crate::auth::Identity;
 use axum::{Extension, extract::State, response::IntoResponse};
+use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     Event,
     access::{AppPermission, Denied, GlobalPermission, Permission},
@@ -286,7 +287,7 @@ pub(super) async fn verify_audit(
 macro_rules! observability_queries {
     ($($query:ty),+) => {$(
         impl QueryParams for $query {
-            const INVALID_CODE: &'static str = "invalid_request";
+            const INVALID_CODE: ApiErrorCode = ApiErrorCode::InvalidRequest;
             const INVALID_MESSAGE: &'static str = "Invalid observability query";
         }
     )+};
