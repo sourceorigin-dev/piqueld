@@ -504,13 +504,17 @@ the daemon, so a compromised gateway can't take over a domain.
   days.
 
 Zones are discovered at the first pass and hourly, which also checks
-credentials. A failed discovery clears the refresh time, so the next caller
-retries: the records loop within 10 seconds when a provider manages records,
-otherwise the certificates loop within a minute. `POST /api/v1/system/dns/refresh`
-discovers at once. Provider requests time out after 30 seconds and never
-follow redirects or proxies. OVH stages changes until `POST
-/domain/zone/<zone>/refresh`, and every OVH call first reads the unauthenticated
-`/auth/time`, to sign with the API's clock.
+credentials. Each provider is discovered on its own schedule: one whose
+discovery failed keeps its old zones and is retried after a minute, doubling
+up to 15 minutes, while the others keep their hourly schedule.
+`POST /api/v1/system/dns/refresh` discovers every provider at once. Provider
+requests time out after 30 seconds, never follow redirects or proxies, and
+fail on a response body over 4 MiB; Cloudflare lists stop with an error after
+100 pages (5,000 zones) or at a page other than the one asked for. OVH stages
+changes until `POST /domain/zone/<zone>/refresh`, and signs every call with
+the API's clock, read from the unauthenticated `/auth/time` once an hour. OVH
+lists the apex's records one type at a time (A, AAAA, CNAME, TXT), since an
+empty `subDomain` filter would list the whole zone.
 
 ## Managed DNS records
 

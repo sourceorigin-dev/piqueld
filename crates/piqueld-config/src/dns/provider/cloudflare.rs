@@ -7,6 +7,9 @@ use serde_json::json;
 
 /// API base URL.
 const API: &str = "https://api.cloudflare.com/client/v4";
+/// Pages followed on a list endpoint: 5,000 zones, or 10,000 records of one
+/// name.
+const MAX_PAGES: u32 = 100;
 
 /// One Cloudflare account, configured as:
 ///
@@ -94,26 +97,30 @@ impl Cloudflare {
         send(request.bearer_auth(self.api_token.expose())).await
     }
 
-    /// Follows every page of a list endpoint; `path` ends with its query.
+    /// Follows every page of a list endpoint, up to [`MAX_PAGES`]; `path`
+    /// ends with its query. A page that is not the one asked for, or empty
+    /// before the last, fails rather than looping.
     async fn list<T: serde::de::DeserializeOwned>(
         &self,
         http: &reqwest::Client,
         path: &str,
     ) -> Result<Vec<T>, ApiError> {
         let mut items = Vec::new();
-        for page in 1.. {
+        for page in 1..=MAX_PAGES {
             let response: Envelope<Vec<T>> = self
                 .call(http.get(format!("{}{path}&page={page}", self.api)))
                 .await?;
+            let empty = response.result.is_empty();
             items.extend(response.result);
-            if response
-                .result_info
-                .is_none_or(|info| info.page >= info.total_pages)
-            {
-                break;
+            match response.result_info {
+                None => return Ok(items),
+                Some(info) if info.page != page => return Err(ApiError::Pagination(page)),
+                Some(info) if info.page >= info.total_pages => return Ok(items),
+                Some(_) if empty => return Err(ApiError::Pagination(page)),
+                Some(_) => {}
             }
         }
-        Ok(items)
+        Err(ApiError::TooLarge("more than 100 pages"))
     }
 }
 
@@ -354,7 +361,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discovery_is_reused_for_an_hour_unless_forced_or_failed() {
+    async fn discovery_is_reused_for_an_hour_and_failures_back_off() {
         const ZONES: &str = "/zones?per_page=50&page=1";
         let working = Recorded::serve(vec![(
             Method::GET,
@@ -364,14 +371,25 @@ mod tests {
         )])
         .await;
         let failing = Recorded::serve(vec![(Method::GET, ZONES, 500, "{}")]).await;
-        let mut dns = crate::dns::Dns::new(vec![provider(working.url.clone()).into()]).unwrap();
+        let mut dns = crate::dns::Dns::new(vec![
+            provider(working.url.clone()).into(),
+            provider(failing.url.clone()).into(),
+        ])
+        .unwrap();
+        let calls = async || {
+            (
+                working.requests().await.len(),
+                failing.requests().await.len(),
+            )
+        };
+        // A failing provider waits out its backoff instead of making every
+        // refresh rediscover every provider.
         dns.refresh().await;
         dns.refresh().await;
-        assert_eq!(working.requests().await.len(), 1);
+        assert_eq!(calls().await, (1, 1));
         dns.discover().await;
-        assert_eq!(working.requests().await.len(), 1);
-        // A failed forced discovery keeps the zones, and the next hourly
-        // refresh retries at once instead of trusting the earlier success.
+        assert_eq!(calls().await, (1, 1));
+        // A failed discovery keeps the zones.
         dns.providers[0] = provider(failing.url.clone()).into();
         dns.discover().await;
         let status = &dns.status().await[0];
@@ -381,8 +399,61 @@ mod tests {
         );
         dns.providers[0] = provider(working.url.clone()).into();
         dns.refresh().await;
-        assert_eq!(working.requests().await.len(), 1);
+        assert_eq!(calls().await, (0, 2));
+        // Once its backoff has elapsed, the next refresh retries it alone.
+        dns.discovered.write().await[0].due = Some(std::time::Instant::now());
+        dns.refresh().await;
+        assert_eq!(calls().await, (1, 0));
         assert!(dns.status().await[0].healthy);
+    }
+
+    #[tokio::test]
+    async fn lists_stop_at_unrequested_pages_and_large_bodies() {
+        let large: &'static str = format!("[{}]", "0,".repeat(2 << 20) + "0").leak();
+        let recorded = Recorded::serve(vec![
+            // A server that ignores `page` answers page 1 again.
+            (Method::GET, "/zones?per_page=50&page=1", 200,
+                r#"{"success":true,"errors":[],"result":[{"id":"z1","name":"piquel.fr"}],"result_info":{"page":1,"per_page":50,"total_pages":2}}"#),
+            (Method::GET, "/zones?per_page=50&page=2", 200,
+                r#"{"success":true,"errors":[],"result":[{"id":"z1","name":"piquel.fr"}],"result_info":{"page":1,"per_page":50,"total_pages":2}}"#),
+            (Method::GET, "/zones/z1/dns_records?name.exact=piquel.fr&per_page=100&page=1", 200, large),
+        ]).await;
+        let provider = provider(recorded.url.clone());
+        let http = reqwest::Client::new();
+        let error = provider.zones(&http).await.unwrap_err();
+        assert!(error.to_string().contains("list zones"), "{error}");
+        assert!(matches!(
+            std::error::Error::source(&error).and_then(|source| source.downcast_ref()),
+            Some(ApiError::Pagination(2))
+        ));
+        let zone = Zone {
+            name: Hostname::parse("piquel.fr").unwrap(),
+            id: "z1".into(),
+        };
+        let error = provider
+            .records(&http, &zone, "piquel.fr")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            std::error::Error::source(&error).and_then(|source| source.downcast_ref()),
+            Some(ApiError::TooLarge(_))
+        ));
+    }
+
+    /// A first page answered as the last one would otherwise pass for the
+    /// whole list, and replace the discovered zones with part of them.
+    #[tokio::test]
+    async fn a_last_page_that_was_not_asked_for_fails() {
+        let recorded = Recorded::serve(vec![(Method::GET, "/zones?per_page=50&page=1", 200,
+            r#"{"success":true,"errors":[],"result":[{"id":"z2","name":"example.com"}],"result_info":{"page":2,"per_page":50,"total_pages":2}}"#)]).await;
+        let error = provider(recorded.url.clone())
+            .zones(&reqwest::Client::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            std::error::Error::source(&error).and_then(|source| source.downcast_ref()),
+            Some(ApiError::Pagination(1))
+        ));
     }
 
     #[tokio::test]

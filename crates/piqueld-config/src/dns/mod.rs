@@ -27,9 +27,48 @@ struct Discovery {
     zones: Vec<Zone>,
     /// The latest discovery failure, cleared by a success.
     error: Option<String>,
+    /// Failed discoveries since the last success, which lengthen the wait
+    /// before the next.
+    failures: u32,
+    /// When [`Dns::refresh`] discovers this provider's zones again; `None`
+    /// until the first discovery.
+    due: Option<Instant>,
 }
 
 impl Discovery {
+    /// Zones are rediscovered this long after a success.
+    const REFRESH: Duration = Duration::from_hours(1);
+    /// The wait after a first failure, doubling with each further one.
+    const RETRY: Duration = Duration::from_mins(1);
+    /// The longest wait after failures.
+    const MAX_RETRY: Duration = Duration::from_mins(15);
+
+    /// Whether [`Dns::refresh`] should discover this provider's zones at `now`.
+    fn is_due(&self, now: Instant) -> bool {
+        self.due.is_none_or(|due| due <= now)
+    }
+
+    /// Records a discovery that ended at `now`. A failure keeps the old
+    /// zones and backs off before the next attempt.
+    fn record(&mut self, result: Result<Vec<Zone>, provider::DnsError>, now: Instant) {
+        match result {
+            Ok(zones) => {
+                *self = Self {
+                    zones,
+                    due: Some(now + Self::REFRESH),
+                    ..Self::default()
+                };
+            }
+            Err(error) => {
+                tracing::warn!(error = format!("{error:#}"), "DNS zone discovery failed");
+                self.error = Some(format!("{:#}", anyhow::Error::from(error)));
+                let wait = Self::RETRY.saturating_mul(1 << self.failures.min(4));
+                self.failures += 1;
+                self.due = Some(now + wait.min(Self::MAX_RETRY));
+            }
+        }
+    }
+
     /// Every provider's zones, from their `discoveries`.
     fn zones(discoveries: &[Self]) -> Zones<'_> {
         Zones(
@@ -48,10 +87,9 @@ pub struct Dns {
     http: reqwest::Client,
     /// One entry per provider, in configuration order.
     discovered: RwLock<Vec<Discovery>>,
-    /// When every provider's zones were last discovered, if ever. Held for a
-    /// whole discovery, so discoveries never overlap and an older one cannot
-    /// overwrite a newer result.
-    refreshed: Mutex<Option<Instant>>,
+    /// Held for a whole discovery, so discoveries never overlap and an older
+    /// one cannot overwrite a newer result.
+    discovering: Mutex<()>,
     /// Addresses of each nameserver queried for propagation and route
     /// hostnames instead of each zone's NS records.
     #[cfg(any(test, feature = "testing"))]
@@ -59,9 +97,6 @@ pub struct Dns {
 }
 
 impl Dns {
-    /// Zones are rediscovered after this long.
-    const REFRESH: Duration = Duration::from_hours(1);
-
     /// Creates the inert integration; zones are discovered by [`Self::refresh`].
     ///
     /// # Errors
@@ -75,7 +110,7 @@ impl Dns {
                 .redirect(reqwest::redirect::Policy::none())
                 .no_proxy()
                 .build()?,
-            refreshed: Mutex::new(None),
+            discovering: Mutex::new(()),
             #[cfg(any(test, feature = "testing"))]
             nameservers: None,
         })
@@ -101,43 +136,32 @@ impl Dns {
         self.providers[index].manage_records
     }
 
-    /// Rediscovers every provider's zones when they are older than an hour, or
-    /// when the previous discovery failed.
+    /// Rediscovers each provider's zones that are older than an hour, or
+    /// whose failed discovery has waited out its backoff: 1 minute, doubling
+    /// up to 15.
     pub async fn refresh(&self) {
-        let mut refreshed = self.refreshed.lock().await;
-        if refreshed.is_some_and(|at| at.elapsed() < Self::REFRESH) {
-            return;
-        }
-        self.discover_locked(&mut refreshed).await;
+        self.discover_where(Discovery::is_due).await;
     }
 
     /// Lists every provider's zones now, which also checks their credentials.
     /// Failures are kept per provider for status, and their old zones stay in
     /// use. Credential files are only read at startup.
     pub async fn discover(&self) {
-        self.discover_locked(&mut *self.refreshed.lock().await)
-            .await;
+        self.discover_where(|_, _| true).await;
     }
 
-    /// Discovers zones while holding `refreshed`. A failure clears it, so the
-    /// next [`Self::refresh`] retries instead of waiting out the hour.
-    async fn discover_locked(&self, refreshed: &mut Option<Instant>) {
-        let mut discovered = Vec::with_capacity(self.providers.len());
-        for config in &self.providers {
-            discovered.push(config.provider.zones(&self.http).await);
+    /// Discovers the zones of the providers `wanted` selects, one at a time.
+    async fn discover_where(&self, wanted: impl Fn(&Discovery, Instant) -> bool) {
+        let _discovering = self.discovering.lock().await;
+        let now = Instant::now();
+        let wanted: Vec<usize> = (self.discovered.read().await.iter().enumerate())
+            .filter(|(_, discovery)| wanted(discovery, now))
+            .map(|(index, _)| index)
+            .collect();
+        for index in wanted {
+            let result = self.providers[index].provider.zones(&self.http).await;
+            self.discovered.write().await[index].record(result, Instant::now());
         }
-        let mut current = self.discovered.write().await;
-        let complete = discovered.iter().all(Result::is_ok);
-        for (discovery, result) in current.iter_mut().zip(discovered) {
-            match result {
-                Ok(zones) => *discovery = Discovery { zones, error: None },
-                Err(error) => {
-                    tracing::warn!(error = format!("{error:#}"), "DNS zone discovery failed");
-                    discovery.error = Some(format!("{:#}", anyhow::Error::from(error)));
-                }
-            }
-        }
-        *refreshed = complete.then(Instant::now);
     }
 
     /// The provider (by index) and zone that own `hostname`.

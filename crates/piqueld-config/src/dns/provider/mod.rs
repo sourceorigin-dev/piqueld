@@ -324,14 +324,31 @@ pub enum ApiError {
     /// The provider cannot store this record.
     #[error("{0}")]
     Unsupported(&'static str),
+    /// The API answered with more than piqueld reads.
+    #[error("response too large: {0}")]
+    TooLarge(&'static str),
+    /// A list endpoint answered with another page than the one asked for,
+    /// or with an empty page before its last.
+    #[error("page {0} of a list was not returned as asked")]
+    Pagination(u32),
 }
+
+/// The largest response body read from a provider: zone and record lists are
+/// far smaller.
+const MAX_BODY: usize = 4 << 20;
 
 /// Sends a request and decodes its JSON response; an empty body decodes as
 /// `null`. Non-success statuses keep a bounded body for diagnostics.
 async fn send<T: DeserializeOwned>(request: reqwest::RequestBuilder) -> Result<T, ApiError> {
-    let response = request.send().await?;
+    let mut response = request.send().await?;
     let status = response.status();
-    let body = response.bytes().await?;
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > MAX_BODY {
+            return Err(ApiError::TooLarge("a body over 4 MiB"));
+        }
+        body.extend_from_slice(&chunk);
+    }
     if !status.is_success() {
         return Err(ApiError::Status {
             status,

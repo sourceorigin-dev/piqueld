@@ -12,7 +12,16 @@ use piqueld_core::manifest::Hostname;
 use reqwest::Method;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use std::fmt::Write as _;
+use std::{
+    fmt::Write as _,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+/// How long the API's clock is trusted before `/auth/time` is read again.
+const CLOCK: Duration = Duration::from_hours(1);
+/// The record types an apex read lists one at a time.
+const APEX_TYPES: [&str; 4] = ["A", "AAAA", "CNAME", "TXT"];
 
 /// An OVH API region.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, utoipa::ToSchema)]
@@ -71,7 +80,22 @@ pub struct Ovh {
     pub consumer_key: Credential,
     /// API base URL; tests point it at recorded responses.
     api: String,
+    clock: Clock,
 }
+
+/// The API's clock: its time when last read, and when that was. Signatures
+/// use it, so local skew cannot invalidate them.
+#[derive(Clone, Debug, Default)]
+struct Clock(Arc<parking_lot::Mutex<Option<(i64, Instant)>>>);
+
+/// A cache, not configuration: every clock is equal.
+impl PartialEq for Clock {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Clock {}
 
 /// An OVH account.
 //
@@ -104,6 +128,7 @@ impl TryFrom<RawOvh> for Ovh {
             )?,
             consumer_key: Credential::read("consumer_key", raw.consumer_key_file)?,
             api: raw.endpoint.url().into(),
+            clock: Clock::default(),
         })
     }
 }
@@ -138,6 +163,23 @@ impl Ovh {
         )
     }
 
+    /// The API's current time, read from `/auth/time` at most once per
+    /// [`CLOCK`] and advanced by the local monotonic clock in between.
+    async fn time(&self, http: &reqwest::Client) -> Result<i64, ApiError> {
+        let cached = *self.clock.0.lock();
+        let (time, read_at) = match cached {
+            Some((time, read_at)) if read_at.elapsed() < CLOCK => (time, read_at),
+            _ => {
+                let time: i64 = send(http.get(format!("{}/auth/time", self.api))).await?;
+                let read = (time, Instant::now());
+                *self.clock.0.lock() = Some(read);
+                read
+            }
+        };
+        let elapsed = i64::try_from(read_at.elapsed().as_secs()).unwrap_or(i64::MAX);
+        Ok(time.saturating_add(elapsed))
+    }
+
     /// Sends a signed request, using the API's clock so local skew cannot
     /// invalidate signatures.
     async fn call<T: DeserializeOwned>(
@@ -147,7 +189,7 @@ impl Ovh {
         path: &str,
         body: Option<&Value>,
     ) -> Result<T, ApiError> {
-        let time: i64 = send(http.get(format!("{}/auth/time", self.api))).await?;
+        let time = self.time(http).await?;
         let url = format!("{}{path}", self.api);
         let body = body.map_or_default(Value::to_string);
         let signature = self.signature(&method, &url, &body, time);
@@ -192,14 +234,23 @@ impl Provider for Ovh {
         name: &str,
     ) -> Result<Vec<Found>, ApiError> {
         let subdomain = zone.relative(name);
-        let ids: Vec<u64> = self
-            .call(
-                http,
-                Method::GET,
-                &format!("/domain/zone/{}/record?subDomain={subdomain}", zone.id),
-                None,
-            )
-            .await?;
+        let list = format!("/domain/zone/{}/record?subDomain={subdomain}", zone.id);
+        // An empty `subDomain` filter may match every record of the zone, so
+        // the apex is listed by type, leaving out types piqueld never reads.
+        let lists = if subdomain.is_empty() {
+            APEX_TYPES
+                .map(|kind| format!("{list}&fieldType={kind}"))
+                .to_vec()
+        } else {
+            vec![list]
+        };
+        let mut ids: Vec<u64> = Vec::new();
+        for list in lists {
+            ids.extend(
+                self.call::<Vec<u64>>(http, Method::GET, &list, None)
+                    .await?,
+            );
+        }
         let mut found = Vec::new();
         for id in ids {
             let record: OvhRecord = self
@@ -210,7 +261,7 @@ impl Provider for Ovh {
                     None,
                 )
                 .await?;
-            // An empty `subDomain` filter may match every record of the zone.
+            // The filter may still let other names through.
             if record.sub_domain != subdomain {
                 continue;
             }
@@ -314,6 +365,7 @@ mod tests {
             application_secret: "as".into(),
             consumer_key: "ck".into(),
             api,
+            clock: Clock::default(),
         }
     }
 
@@ -416,6 +468,68 @@ mod tests {
         assert_eq!(
             signed[5].body,
             json!({"fieldType":"A","subDomain":"www","target":"192.0.2.9","ttl":300})
+        );
+    }
+
+    /// The apex is listed one record type at a time, not as the whole zone,
+    /// and the API's clock is read once for every call.
+    #[tokio::test]
+    async fn apex_records_are_listed_by_type_with_one_clock_read() {
+        let recorded = Recorded::serve(vec![
+            (Method::GET, "/auth/time", 200, "1700000000"),
+            (
+                Method::GET,
+                "/domain/zone/piquel.fr/record?subDomain=&fieldType=A",
+                200,
+                "[1]",
+            ),
+            (
+                Method::GET,
+                "/domain/zone/piquel.fr/record?subDomain=&fieldType=AAAA",
+                200,
+                "[]",
+            ),
+            (
+                Method::GET,
+                "/domain/zone/piquel.fr/record?subDomain=&fieldType=CNAME",
+                200,
+                "[]",
+            ),
+            (
+                Method::GET,
+                "/domain/zone/piquel.fr/record?subDomain=&fieldType=TXT",
+                200,
+                "[2]",
+            ),
+            (
+                Method::GET,
+                "/domain/zone/piquel.fr/record/1",
+                200,
+                r#"{"id":1,"fieldType":"A","subDomain":"","target":"192.0.2.1"}"#,
+            ),
+            (
+                Method::GET,
+                "/domain/zone/piquel.fr/record/2",
+                200,
+                r#"{"id":2,"fieldType":"TXT","subDomain":"www","target":"other"}"#,
+            ),
+        ])
+        .await;
+        let provider = DnsProvider::Ovh(ovh(recorded.url.clone()));
+        let zone = Zone::named(Hostname::parse("piquel.fr").unwrap());
+        let found = provider
+            .records(&reqwest::Client::new(), &zone, "piquel.fr")
+            .await
+            .unwrap();
+        assert_eq!(
+            found.iter().map(|f| f.record.clone()).collect::<Vec<_>>(),
+            [Record::A("192.0.2.1".parse().unwrap())]
+        );
+        let requests = recorded.requests().await;
+        assert_eq!(requests.len(), 7);
+        assert_eq!(
+            requests.iter().filter(|r| r.path == "/auth/time").count(),
+            1
         );
     }
 
