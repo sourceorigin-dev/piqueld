@@ -13,8 +13,8 @@ terms; these are the easiest to mix up:
   `staging`), and the unit piqueld deploys. A **preview** is a short-lived
   environment for a branch or local changes.
 - **Service**: a manifest service, run as one Swarm service per environment.
-  A **job** runs a command to completion before a rollout, as a Swarm job
-  service, and is not a manifest service.
+  A **job**, declared under `spec.jobs`, runs a command to completion before
+  a rollout, as a Swarm job service.
 - **Deployment**: one version deployed to an environment. Its **release** is
   what it ran, down to the images, which promotion reuses. An **operation** is
   the daemon's record of work on an environment (`apply`, `refresh`,
@@ -33,15 +33,18 @@ terms; these are the easiest to mix up:
 This machine runs more than your worktree. Each hazard says why, so you can
 recognise a case the list doesn't name.
 
-- **The host's Docker Engine runs the production piqueld**, which serves
-  piqueld.dev. Never run `docker` against the default socket or context:
-  prefix each command with your instance's
-  `DOCKER_HOST=unix://<docker socket>` from `just dev status`. `just dev`,
-  `just docker-test` and the Playwright recipes use the host engine only for
-  containers of their own.
-- **Bare `piquelctl` reaches the host's daemon**: it defaults to
-  `/run/piqueld/piqueld.sock`, and reads your saved profiles and logins. Use
-  `just ctl`, which targets your instance.
+- **The host's Docker Engine is shared**: it holds every worktree's engine
+  (`piqueld-dev-*`) and other agents' containers, and on the server, the
+  production piqueld that serves piqueld.dev. Never run `docker` against the
+  default socket or context: pass `-H unix://<docker socket>`, the socket
+  under `/tmp/piqueld-dev-<uid>/` that `just dev status` prints, which no
+  `DOCKER_HOST` or `DOCKER_CONTEXT` overrides. `just dev`, `just docker-test`
+  and the Playwright recipes use the host engine only for containers and
+  images of their own.
+- **Bare `piquelctl`, and `just run`, reach a real piqueld**: the default
+  profile with your saved logins, which on the owner's machines is
+  production, else the host daemon's socket. Use `just ctl`, which targets
+  your instance.
 - **`just dev clean` deletes your instance's data, engine and images**, which
   take minutes to rebuild. Run it only when asked.
 - **Staging and production piqueld, tailnet node approvals, and credentials**
@@ -65,7 +68,7 @@ Read a dependency's real source in `~/.cargo/registry/src`, at the version in
 `Cargo.lock`, rather than trusting memory of a fast-moving crate's API, such as
 Leptos, axum or Progenitor.
 
-If a rule here fights the task, say so plainly and get the owner's sign-off
+If a rule in this file fights the task, say so plainly and get the owner's sign-off
 before breaking it.
 
 ## Validation

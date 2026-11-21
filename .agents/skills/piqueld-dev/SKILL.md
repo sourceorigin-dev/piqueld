@@ -60,8 +60,8 @@ not.
 - **State and logs:** `just dev status` prints the instance's files.
   `output.log` has the latest build and the daemon's fatal errors;
   `daemon.log` has its logs as JSON lines.
-- **Docker:** prefix commands with
-  `DOCKER_HOST=unix://<docker socket from status>`.
+- **Docker:** pass `-H unix://<docker socket from status>` to `docker`, which
+  no `DOCKER_HOST` or `DOCKER_CONTEXT` overrides.
 - When creating a dev instance for a user, make sure to give them the link
   to the dashboard & setup in chat so they can access it without having to
   go to a terminal.

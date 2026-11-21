@@ -7,6 +7,5 @@ Keep the pull request to one change; stack dependent ones. -->
 
 ## Checklist
 
-- [ ] The feature reaches each surface in `AGENTS.md` it applies to, with its
-      reverse states.
-- [ ] The documentation is updated.
+- [ ] The feature reaches each surface in `AGENTS.md` it applies to,
+      documentation included, with its reverse states.
