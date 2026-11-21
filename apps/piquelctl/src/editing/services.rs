@@ -154,35 +154,40 @@ pub(crate) struct AddServiceArgs {
     target: ServiceTarget,
     #[command(flatten)]
     source: NewSource,
-    // Boxed to keep the CLI command enum small.
-    #[command(flatten)]
-    build: Box<GitBuildArgs>,
 }
-// Where a new service's image comes from: exactly one of an image or `--git`.
+// Where a new service's image comes from: exactly one of an image or `--git`,
+// with the build settings only alongside `--git`.
 #[derive(Debug, Args)]
 struct NewSourceFlags {
     /// Image to run, such as `nginx:stable`. It may reference variables.
     /// Omit it when you pass `--git`.
-    #[arg(required_unless_present = "git", conflicts_with = "git")]
+    // The image also conflicts with the build settings, the `GitBuildArgs`
+    // group: clap skips their `requires = "git"` once an argument conflicting
+    // with `--git` is present.
+    #[arg(required_unless_present = "git", conflicts_with_all = ["git", "GitBuildArgs"])]
     image: Option<Template>,
     /// Build this Git repository with Docker instead of running an image.
     /// It takes a clone URL, a path on the daemon's host, or `self`: the
     /// manifest's own repository, at the commit the manifest was read from.
     #[arg(long, value_name = "URL|self")]
     git: Option<BuildRepository>,
+    // Boxed to keep the CLI command enum small.
+    #[command(flatten)]
+    build: Box<GitBuildArgs>,
 }
-/// The image `app service add` runs, or the repository it builds.
+/// The image `app service add` runs, or the repository it builds and how.
 #[derive(Debug)]
 enum NewSource {
     Image(Template),
-    Git(BuildRepository),
+    Git(BuildRepository, Box<GitBuildArgs>),
 }
 impl NewSourceFlags {
     /// The image or repository the flags select.
     fn choice(self) -> Option<NewSource> {
-        self.image
+        let Self { image, git, build } = self;
+        image
             .map(NewSource::Image)
-            .or(self.git.map(NewSource::Git))
+            .or_else(|| git.map(|repository| NewSource::Git(repository, build)))
     }
 }
 crate::cli::choice_args!(NewSource, NewSourceFlags, NewSourceFlags::choice);
@@ -327,7 +332,7 @@ impl AddServiceArgs {
                 NewSource::Image(image) => Source::Image {
                     image: image.clone(),
                 },
-                NewSource::Git(repository) => self.build.source(repository)?,
+                NewSource::Git(repository, build) => build.source(repository)?,
             },
             replicas: Typed::Literal(1),
             environment: BTreeMap::new(),

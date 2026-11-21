@@ -521,6 +521,53 @@ fn git_service_creation_does_not_require_a_placeholder_image() {
 }
 
 #[test]
+fn git_build_flags_are_refused_on_an_image_service() {
+    let add = ["app", "service", "add", "app-notes-01", "worker"];
+    for flag in [
+        ["--branch", "release"],
+        ["--commit", "0123456789abcdef0123456789abcdef01234567"],
+        ["--dockerfile", "build/Dockerfile"],
+        ["--context", "build"],
+        ["--build-arg", "ORIGIN=1"],
+        ["--target", "runtime"],
+    ] {
+        let output = support::command()
+            .arg("--json")
+            .args(add)
+            .arg("nginx:stable")
+            .args(flag)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{flag:?}");
+        let error = support::json_error(&output);
+        assert_eq!(error["code"], "usage", "{flag:?}");
+        assert!(
+            error["message"].as_str().unwrap().contains(flag[0]),
+            "{error}"
+        );
+    }
+
+    // The same flag builds the repository given with `--git`.
+    let server = start_server(false, 2, |request| {
+        if request.method == "GET" {
+            return Reply::json(app_view("app-notes-01", "notes"));
+        }
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["source"]["repository"]["branch"], "release");
+        Reply::json(saved())
+    });
+    let git = [
+        "--git",
+        "https://example.com/app.git",
+        "--branch",
+        "release",
+    ];
+    let output = run(&server, &[&add[..], &git, &["--yes"]].concat());
+    assert_json_success(&output);
+    assert_eq!(server.finish().len(), 2);
+}
+
+#[test]
 fn self_git_sources_build_the_manifest_repository() {
     assert_saves_field(
         &[
