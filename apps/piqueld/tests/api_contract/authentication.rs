@@ -177,13 +177,12 @@ async fn refusals<T>(
         outcome: Some(piqueld_core::audit::AuditOutcome::Denied),
         ..Default::default()
     };
-    // Allow for a loaded machine.
-    eventually(
-        Duration::from_secs(10),
-        Duration::from_millis(20),
-        async || check(state.audit_events(&denied, None, 10).await.unwrap().items),
-    )
-    .await
+    let found = written_until(state, async || {
+        check(state.audit_events(&denied, None, 10).await.unwrap().items)
+    });
+    tokio::time::timeout(Duration::from_secs(10), found)
+        .await
+        .ok()
 }
 
 /// Sends `request` to `router` as if from a Unix socket peer running as
@@ -335,34 +334,31 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
 
     // Issuing the link and signing in with it are audited as the operator.
     let operator = Some(HostOperator { uid: operator });
-    eventually(
-        Duration::from_secs(10),
-        Duration::from_millis(20),
-        async || {
-            let page = state
-                .audit_events(&AuditFilter::default(), None, 50)
-                .await
-                .unwrap();
-            let audited = |action: &str, status: u16| {
-                page.items.iter().any(|event| {
-                    event.action.starts_with(action)
-                        && event.status == status
-                        && event.operator == operator
-                })
-            };
-            // Signing in records the session it opened. Refusals before
-            // authentication, like a cross-site request, are audited too.
-            (audited("POST /api/v1/auth/sign-in-link", 200)
-                && audited(
-                    "POST /api/v1/auth/login/operator host operator session ",
-                    200,
-                )
-                && audited("POST /api/v1/auth/sign-in-link", 403))
-            .then_some(())
-        },
-    )
-    .await
-    .expect("the host operator's requests were not audited as the operator");
+    let audited = written_until(&state, async || {
+        let page = state
+            .audit_events(&AuditFilter::default(), None, 50)
+            .await
+            .unwrap();
+        let audited = |action: &str, status: u16| {
+            page.items.iter().any(|event| {
+                event.action.starts_with(action)
+                    && event.status == status
+                    && event.operator == operator
+            })
+        };
+        // Signing in records the session it opened. Refusals before
+        // authentication, like a cross-site request, are audited too.
+        (audited("POST /api/v1/auth/sign-in-link", 200)
+            && audited(
+                "POST /api/v1/auth/login/operator host operator session ",
+                200,
+            )
+            && audited("POST /api/v1/auth/sign-in-link", 403))
+        .then_some(())
+    });
+    tokio::time::timeout(Duration::from_secs(10), audited)
+        .await
+        .expect("the host operator's requests were not audited as the operator");
 }
 
 /// Over the Unix socket, a credential the host operator presents keeps its

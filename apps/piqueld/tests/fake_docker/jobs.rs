@@ -632,9 +632,10 @@ async fn waiting_for_job_runs_to_stop_leaves_docker_mutations_free() {
     tokio::pin!(scan);
     tokio::select! {
         result = &mut scan => panic!("scan finished while job runs were stopping: {result:?}"),
-        waiting = eventually(Duration::from_secs(10), POLL, async || {
-            (harness.docker.job_stop_waits.load(Ordering::SeqCst) > 0).then_some(())
-        }) => waiting.expect("the deployment waits for earlier job runs to stop"),
+        waiting = tokio::time::timeout(
+            Duration::from_secs(10),
+            harness.docker.job_stop_waits.above(0),
+        ) => waiting.expect("the deployment waits for earlier job runs to stop"),
     }
     let runtime = harness.controller.runtime(Arc::default());
     drop(
@@ -695,9 +696,10 @@ async fn a_failed_job_keeps_its_failure_when_its_deployment_is_dropped() {
         result = harness.controller.scan(&shutdown) => {
             panic!("scan finished while the output read was held: {result:?}");
         }
-        reading = eventually(Duration::from_secs(10), POLL, async || {
-            (harness.docker.job_output_reads.load(Ordering::SeqCst) > 0).then_some(())
-        }) => reading.expect("the failed run's output is read"),
+        reading = tokio::time::timeout(
+            Duration::from_secs(10),
+            harness.docker.job_output_reads.above(0),
+        ) => reading.expect("the failed run's output is read"),
     }
     drop(held);
     harness.reopen().await;
@@ -949,14 +951,16 @@ async fn recorded_success_survives_a_crash_before_cleanup() {
     let held = harness.docker.hold_job_cleanup.lock().await;
     // The success is stored before the run is removed; dropping the scan
     // there is a crash.
-    let succeeded = eventually(Duration::from_secs(10), POLL, async || {
-        harness
-            .builds(&operation.environment_id)
-            .await
-            .first()
-            .is_some_and(|run| run.state == piqueld_core::api::BuildState::Succeeded)
-            .then_some(())
-    });
+    let succeeded = tokio::time::timeout(
+        Duration::from_secs(10),
+        harness.store.wait_until(async || {
+            harness
+                .builds(&operation.environment_id)
+                .await
+                .first()
+                .is_some_and(|run| run.state == piqueld_core::api::BuildState::Succeeded)
+        }),
+    );
     let shutdown = CancellationToken::new();
     tokio::select! {
         result = harness.controller.scan(&shutdown) => {

@@ -41,7 +41,6 @@ use piqueld_docker::fake::{
 };
 use piqueld_docker::{DockerApi, DockerError, ImageSource, LocalImage, resolve_image_digest};
 use piqueld_store::Store;
-use poll::eventually;
 use prebuilt::manifest;
 use std::{
     collections::BTreeMap,
@@ -50,9 +49,6 @@ use std::{
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
-
-/// How often tests poll for work the controller finishes in the background.
-const POLL: Duration = Duration::from_millis(10);
 
 /// Labels of the same application that another installation owns.
 fn foreign_labels(application_id: &EnvironmentId) -> BTreeMap<String, String> {
@@ -628,11 +624,13 @@ impl ControllerHarness {
 
     /// Waits until `count` job runs have been started.
     async fn wait_for_job_starts(&self, count: usize) {
-        eventually(Duration::from_secs(10), POLL, async || {
-            (self.docker.job_starts.lock().await.len() >= count).then_some(())
-        })
-        .await
-        .expect("job starts");
+        let started = self
+            .docker
+            .mutations
+            .until(async || self.docker.job_starts.lock().await.len() >= count);
+        tokio::time::timeout(Duration::from_secs(10), started)
+            .await
+            .expect("job starts");
     }
 
     /// Fails a job and its cleanup, leaving the cleanup pending for scans.
@@ -650,16 +648,17 @@ impl ControllerHarness {
     /// Scans once, running `meanwhile` after discovery, while the scan
     /// retries pending job cleanup.
     async fn scan_during_cleanup(&self, meanwhile: impl Future<Output = ()>) {
-        let cleanups = self.docker.job_cleanups.load(Ordering::SeqCst);
+        let cleanups = self.docker.job_cleanups.get();
         let held = self.docker.hold_job_cleanup.lock().await;
         let shutdown = CancellationToken::new();
         let scan = self.controller.scan(&shutdown);
         tokio::pin!(scan);
         tokio::select! {
             result = &mut scan => panic!("scan finished while cleanup was held: {result:?}"),
-            retrying = eventually(Duration::from_secs(10), POLL, async || {
-                (self.docker.job_cleanups.load(Ordering::SeqCst) > cleanups).then_some(())
-            }) => retrying.expect("the scan retries the failed run's cleanup"),
+            retrying = tokio::time::timeout(
+                Duration::from_secs(10),
+                self.docker.job_cleanups.above(cleanups),
+            ) => retrying.expect("the scan retries the failed run's cleanup"),
         }
         meanwhile.await;
         drop(held);

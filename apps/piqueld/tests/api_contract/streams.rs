@@ -530,20 +530,17 @@ async fn exec_notices_a_client_that_left_behind_unread_input() {
         kind: Some("command_finished".into()),
         ..Default::default()
     };
-    let finished = eventually(
-        Duration::from_secs(20),
-        Duration::from_millis(100),
-        async || {
-            let events = state
-                .filtered_events(&filter, &piqueld_store::Visibility::ALL, None, 10)
-                .await
-                .unwrap()
-                .items;
-            (!events.is_empty()).then_some(events)
-        },
-    )
-    .await
-    .expect("the session ends once the client is gone");
+    let finished = written_until(&state, async || {
+        let events = state
+            .filtered_events(&filter, &piqueld_store::Visibility::ALL, None, 10)
+            .await
+            .unwrap()
+            .items;
+        (!events.is_empty()).then_some(events)
+    });
+    let finished = tokio::time::timeout(Duration::from_secs(20), finished)
+        .await
+        .expect("the session ends once the client is gone");
     assert_eq!(
         finished[0].message.as_deref(),
         Some("Command stream in task task-1 failed")
