@@ -2,6 +2,7 @@
 //! so tests and development instances never touch the host's own containers.
 
 use std::fmt::Display;
+use std::net::Ipv4Addr;
 use std::ops::Deref;
 use std::time::Duration;
 
@@ -13,6 +14,8 @@ use bollard::query_parameters::{
     LogsOptionsBuilder, RemoveContainerOptionsBuilder, StartContainerOptions, WaitContainerOptions,
 };
 use futures_util::{StreamExt, TryStreamExt};
+use tokio::net::TcpStream;
+use tokio::time::Instant;
 
 use crate::process::checked_stdout;
 
@@ -205,35 +208,6 @@ impl Engine {
         }
     }
 
-    /// Waits up to `limit` for `text` in a container's output.
-    pub async fn wait_for_output(
-        &self,
-        container: &str,
-        text: &str,
-        limit: Duration,
-    ) -> Result<()> {
-        let options = LogsOptionsBuilder::new()
-            .follow(true)
-            .stdout(true)
-            .stderr(true)
-            .build();
-        let mut logs = self.logs(container, Some(options));
-        let found = tokio::time::timeout(limit, async {
-            while let Some(Ok(output)) = logs.next().await {
-                if output.to_string().contains(text) {
-                    return true;
-                }
-            }
-            false
-        })
-        .await;
-        if found != Ok(true) {
-            self.print_logs(container).await;
-            bail!("the container never printed {text:?}");
-        }
-        Ok(())
-    }
-
     /// Waits up to 60 seconds for the Docker-in-Docker engine in `container`,
     /// then gives its socket to the host user, in their private directory.
     pub async fn wait_for_dind(&self, container: &str) -> Result<()> {
@@ -242,17 +216,49 @@ impl Engine {
              && chown {uid} {DIND_SOCKET_DIR}/docker.sock",
             uid = rustix::process::getuid().as_raw()
         );
-        for _ in 0..60 {
+        self.wait_until(
+            container,
+            "the Docker daemon",
+            Duration::from_secs(1),
+            || async { self.exec(container, &["sh", "-c", &ready]).await.ok() == Some(0) },
+        )
+        .await
+    }
+
+    /// Waits up to 60 seconds for `container`, on the host network, to accept
+    /// connections on `port` on loopback.
+    pub async fn wait_for_port(&self, container: &str, port: u16) -> Result<()> {
+        let what = format!("a listener on port {port}");
+        self.wait_until(container, &what, Duration::from_millis(250), || async {
+            TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .is_ok()
+        })
+        .await
+    }
+
+    /// Checks `ready` every `interval` for up to 60 seconds, failing as soon
+    /// as `container` exits. `what` names what it waits for. On failure it
+    /// prints the container's output.
+    async fn wait_until<F: Future<Output = bool>>(
+        &self,
+        container: &str,
+        what: &str,
+        interval: Duration,
+        mut ready: impl FnMut() -> F,
+    ) -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while Instant::now() < deadline {
             if !self.running(container).await? {
                 self.print_logs(container).await;
-                bail!("the isolated Docker daemon exited before becoming ready");
+                bail!("container {container} exited before {what} was ready");
             }
-            if self.exec(container, &["sh", "-c", &ready]).await.ok() == Some(0) {
+            if ready().await {
                 return Ok(());
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(interval).await;
         }
         self.print_logs(container).await;
-        bail!("the isolated Docker daemon did not become ready within 60 seconds")
+        bail!("{what} in container {container} was not ready within 60 seconds")
     }
 }
