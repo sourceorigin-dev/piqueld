@@ -10,21 +10,27 @@ fn saved_deployment(id: &str) -> Value {
     })
 }
 
+/// Application `id` named `name` as the listing shows it, its environment's
+/// status `state`.
+fn listed(id: &str, name: &str, state: &str) -> Value {
+    let mut summary = app_summary(id, name);
+    summary["environments"][0]["status"] = status(id, state);
+    summary
+}
+
+/// `app list` reads every page, and each environment's status from it.
 #[test]
 fn list_paginates_and_includes_reconciliation_status() {
     // Each page answers only its own cursor.
-    let server = start_server(true, 4, move |request| match request.path.as_str() {
+    let server = start_server(true, 2, move |request| match request.path.as_str() {
         "/api/v1/applications?limit=100" => Reply::json(page(
-            vec![app_summary("app-first-01", "first")],
+            vec![listed("app-first-01", "first", "ready")],
             Some("v1:app-first-01"),
         )),
-        "/api/v1/applications?cursor=v1%3Aapp-first-01&limit=100" => {
-            Reply::json(page(vec![app_summary("app-notes-01", "notes")], None))
-        }
-        "/api/v1/environments/app-first-01/status" => Reply::json(status("app-first-01", "ready")),
-        "/api/v1/environments/app-notes-01/status" => {
-            Reply::json(status("app-notes-01", "degraded"))
-        }
+        "/api/v1/applications?cursor=v1%3Aapp-first-01&limit=100" => Reply::json(page(
+            vec![listed("app-notes-01", "notes", "degraded")],
+            None,
+        )),
         path => panic!("unexpected path {path}"),
     });
     let output = run(&server, &["app", "list"]);

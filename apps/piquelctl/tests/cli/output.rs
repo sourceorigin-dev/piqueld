@@ -2,22 +2,24 @@
 
 use super::*;
 
+/// A status that can't be read leaves the other environments listed, and
+/// warns with its context.
 #[test]
 fn partial_list_failures_preserve_results_and_context_in_all_modes() {
+    let mut application = app_view("app-notes-01", "notes");
+    application["environments"]
+        .as_array_mut()
+        .expect("environments")
+        .push(environment("app-notes-01", "env-staging-01", "staging"));
     for json in [false, true] {
         for quiet in [false, true] {
-            let server = start_server(false, 3, |request| match request.path.as_str() {
-                "/api/v1/applications?limit=100" => Reply::json(page(
-                    vec![
-                        app_summary("app-first-01", "first"),
-                        app_summary("app-notes-01", "notes"),
-                    ],
-                    None,
-                )),
-                "/api/v1/environments/app-first-01/status" => {
-                    Reply::json(status("app-first-01", "ready"))
+            let application = application.clone();
+            let server = start_server(false, 3, move |request| match request.path.as_str() {
+                "/api/v1/applications/app-notes-01" => Reply::json(application.clone()),
+                "/api/v1/environments/app-notes-01/status" => {
+                    Reply::json(status("app-notes-01", "ready"))
                 }
-                "/api/v1/environments/app-notes-01/status" => Reply {
+                "/api/v1/environments/env-staging-01/status" => Reply {
                     content_type: "text/html",
                     body: b"<html>wrong service</html>".to_vec(),
                     ..Reply::json(Value::Null)
@@ -25,35 +27,32 @@ fn partial_list_failures_preserve_results_and_context_in_all_modes() {
                 path => panic!("unexpected path {path}"),
             });
             let args = if quiet {
-                vec!["--quiet", "app", "list"]
+                vec!["--quiet", "app", "show", "app-notes-01"]
             } else {
-                vec!["app", "list"]
+                vec!["app", "show", "app-notes-01"]
             };
             let output = run_with_format(&server, &args, "2s", json);
             assert!(output.status.success());
             if json {
                 let value = assert_json_success(&output);
-                assert_eq!(
-                    value["items"][0]["environments"][0]["status"]["state"],
-                    "ready"
-                );
-                assert!(value["items"][1]["environments"][0]["status"].is_null());
-                assert_eq!(value["items"][1]["application"]["name"], "notes");
+                assert_eq!(value["environments"][0]["status"]["state"], "ready");
+                assert!(value["environments"][1]["status"].is_null());
+                assert_eq!(value["environments"][1]["environment"]["name"], "staging");
             } else if quiet {
                 assert_eq!(output.stdout, b"");
             } else {
                 assert!(
                     String::from_utf8_lossy(&output.stdout)
-                        .contains("notes  production unavailable")
+                        .contains("staging (env-staging-01): unavailable")
                 );
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
             if json {
                 let warning: Value = serde_json::from_str(stderr.trim()).unwrap();
                 let message = warning["warning"]["message"].as_str().unwrap();
-                assert!(message.starts_with("notes/production: status unavailable"));
+                assert!(message.starts_with("notes/staging: status unavailable"));
             } else {
-                assert!(stderr.contains("Warning: notes/production: status unavailable"));
+                assert!(stderr.contains("Warning: notes/staging: status unavailable"));
                 assert!(stderr.contains("Endpoint:"));
                 assert!(stderr.contains("Endpoint source: flag --url"));
                 assert!(stderr.contains("Hint:"));

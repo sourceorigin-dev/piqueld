@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::{EnvironmentView, ReleasePlan};
+use super::{EnvironmentSummary, EnvironmentView, ReleasePlan};
 use crate::manifest::{
     ApplicationManifest, ApplicationTemplate, RolloutOrder, RolloutOrderSource, VariableValue,
 };
@@ -26,8 +26,8 @@ pub struct ApplicationSummary {
     pub created_at_ms: i64,
     /// Last update timestamp in Unix milliseconds.
     pub updated_at_ms: i64,
-    /// Environments in name order.
-    pub environments: Vec<EnvironmentView>,
+    /// Environments in name order, with their status and latest operation.
+    pub environments: Vec<EnvironmentSummary>,
 }
 
 /// Public application state returned by the API.

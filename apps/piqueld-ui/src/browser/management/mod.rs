@@ -978,15 +978,20 @@ fn ApplicationEditor(initial: ApplicationView, page: Page) -> impl IntoView {
                 .find(|row| row.application.id.as_str() == context.id())
                 .map(|row| row.application.clone())
         }) {
+            let environments = application
+                .environments
+                .iter()
+                .map(|listed| listed.environment.clone())
+                .collect::<Vec<_>>();
             // A listing of an older revision, requested before a save that
             // advanced it, would undo the saved change.
             if context.saved.with_untracked(|saved| {
                 application.generation >= saved.generation
-                    && (saved.environments != application.environments
+                    && (saved.environments != environments
                         || saved.delete_intent != application.delete_intent)
             }) {
                 context.saved.update(|saved| {
-                    saved.environments.clone_from(&application.environments);
+                    saved.environments = environments;
                     saved.delete_intent = application.delete_intent;
                 });
             }
