@@ -29,11 +29,12 @@ async fn assert_active_repair(docker: &FakeDocker, id: &EnvironmentId) {
         service.replicas = 9;
         service.convergence = Convergence::Degraded;
     }
-    eventually(Duration::from_secs(3), POLL, async || {
-        (docker.observe(id).await.unwrap().services[0].replicas == 1).then_some(())
-    })
-    .await
-    .expect("active target is repaired while candidate image pull is blocked");
+    let repaired = docker
+        .mutations
+        .until(async || docker.observe(id).await.unwrap().services[0].replicas == 1);
+    tokio::time::timeout(Duration::from_secs(3), repaired)
+        .await
+        .expect("active target is repaired while candidate image pull is blocked");
 }
 
 #[tokio::test]
@@ -401,11 +402,12 @@ async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_dis
         .apply(fast.validate_template().unwrap(), None)
         .await
         .unwrap();
-    eventually(Duration::from_secs(3), POLL, async || {
-        (store.operation(&fast.id).await.unwrap().state == OperationState::Succeeded).then_some(())
-    })
-    .await
-    .expect("unrelated application completes while slow pull is pending");
+    let succeeded = store.wait_until(async || {
+        store.operation(&fast.id).await.unwrap().state == OperationState::Succeeded
+    });
+    tokio::time::timeout(Duration::from_secs(3), succeeded)
+        .await
+        .expect("unrelated application completes while slow pull is pending");
     let pending = store.get(&accepted.environment_id).await.unwrap();
     assert_eq!(pending.application.generation, 2);
     assert_eq!(pending.environment.resolved_generation, Some(1));
@@ -423,15 +425,15 @@ async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_dis
         .delete(&accepted.environment_id, None)
         .await
         .unwrap();
-    eventually(Duration::from_secs(3), POLL, async || {
+    let superseded = store.wait_until(async || {
         matches!(
             store.operation(&deleted.id).await,
             Err(piqueld_store::StoreError::NotFound)
         )
-        .then_some(())
-    })
-    .await
-    .expect("delete supersedes pending preparation without waiting for its pull");
+    });
+    tokio::time::timeout(Duration::from_secs(3), superseded)
+        .await
+        .expect("delete supersedes pending preparation without waiting for its pull");
     assert_eq!(docker.images.maximum.load(Ordering::SeqCst), 2);
     cancellation.cancel();
     controller_task.await.unwrap().unwrap();
@@ -657,17 +659,17 @@ async fn a_service_removed_while_waiting_for_it_fails_the_attempt() {
         .store(true, Ordering::SeqCst);
     let operation = harness.create().await;
     let remove = async {
-        eventually(Duration::from_secs(10), POLL, async || {
-            (harness
+        let waiting = harness.store.wait_until(async || {
+            harness
                 .operation(&operation.id)
                 .await
                 .phase
                 .map(piqueld_core::Phase::as_str)
-                == Some("wait_for_service"))
-            .then_some(())
-        })
-        .await
-        .expect("the deployment waits for its service");
+                == Some("wait_for_service")
+        });
+        tokio::time::timeout(Duration::from_secs(10), waiting)
+            .await
+            .expect("the deployment waits for its service");
         harness.docker.observed.lock().await.services.clear();
     };
     tokio::time::timeout(Duration::from_secs(10), async {

@@ -88,15 +88,15 @@ pub struct FakeDocker {
     /// Blocks removing an operation's own run while held.
     pub hold_job_cleanup: Arc<Mutex<()>>,
     /// Counts removals of an operation's own run, including held ones.
-    pub job_cleanups: Arc<AtomicUsize>,
+    pub job_cleanups: Arc<Counter>,
     /// Blocks reading a run's output while held.
     pub hold_job_output: Arc<Mutex<()>>,
     /// Counts reads of a run's output, including held ones.
-    pub job_output_reads: Arc<AtomicUsize>,
+    pub job_output_reads: Arc<Counter>,
     /// Blocks waiting for removed job runs to stop while held.
     pub hold_job_stop: Arc<Mutex<()>>,
     /// Counts waits for removed job runs to stop, including held ones.
-    pub job_stop_waits: Arc<AtomicUsize>,
+    pub job_stop_waits: Arc<Counter>,
     /// The engine's images; builds and pulls add theirs.
     pub local_images: Arc<Mutex<Vec<LocalImage>>>,
     /// Holds builds once their image exists, until released.
@@ -178,7 +178,9 @@ pub struct Probe {
     /// The most calls that ran at once.
     pub maximum: AtomicUsize,
     /// Every call so far.
-    pub total: AtomicUsize,
+    pub total: Counter,
+    /// Calls that finished, which wake [`Probe::until`].
+    finished: Counter,
 }
 
 /// One call counted by [`Probe::enter`], until dropped.
@@ -187,17 +189,56 @@ struct ProbeGuard<'a>(&'a Probe);
 impl Drop for ProbeGuard<'_> {
     fn drop(&mut self) {
         self.0.active.fetch_sub(1, Ordering::SeqCst);
+        self.0.finished.add();
     }
 }
 
 impl Probe {
     async fn enter(&self) -> ProbeGuard<'_> {
         let guard = ProbeGuard(self);
-        self.total.fetch_add(1, Ordering::SeqCst);
+        self.total.add();
         let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
         self.maximum.fetch_max(active, Ordering::SeqCst);
         tokio::task::yield_now().await;
         guard
+    }
+
+    /// Waits until `ready` holds, checking it again each time a call
+    /// finishes, such as a mutation that repairs a service.
+    pub async fn until(&self, mut ready: impl AsyncFnMut() -> bool) {
+        let mut finished = self.finished.0.subscribe();
+        while !ready().await {
+            // The probe owns the sender, so this ends only with a call.
+            let _ = finished.changed().await;
+        }
+    }
+}
+
+/// A count of calls of one kind, which a test can await, such as calls that
+/// then block on a lock the test holds.
+pub struct Counter(tokio::sync::watch::Sender<usize>);
+
+impl Default for Counter {
+    fn default() -> Self {
+        Self(tokio::sync::watch::Sender::new(0))
+    }
+}
+
+impl Counter {
+    fn add(&self) {
+        self.0.send_modify(|count| *count += 1);
+    }
+
+    /// The calls so far.
+    #[must_use]
+    pub fn get(&self) -> usize {
+        *self.0.borrow()
+    }
+
+    /// Waits until there were more than `count` calls.
+    pub async fn above(&self, count: usize) {
+        // The counter owns the sender, so this ends only with a call.
+        let _ = self.0.subscribe().wait_for(|calls| *calls > count).await;
     }
 }
 
@@ -963,7 +1004,7 @@ impl DockerApi for FakeDocker {
         &self,
         job: &piqueld_core::DesiredJobRun,
     ) -> Result<JobOutput, DockerError> {
-        self.job_output_reads.fetch_add(1, Ordering::SeqCst);
+        self.job_output_reads.add();
         drop(self.hold_job_output.lock().await);
         if self.fail_job_output.load(Ordering::SeqCst) {
             return Err(DockerError::Request("read job output"));
@@ -985,7 +1026,7 @@ impl DockerApi for FakeDocker {
         runs: JobRuns<'_>,
     ) -> Result<(), DockerError> {
         if matches!(runs, JobRuns::Of(_)) {
-            self.job_cleanups.fetch_add(1, Ordering::SeqCst);
+            self.job_cleanups.add();
             let _held = self.hold_job_cleanup.lock().await;
             if self.fail_job_cleanup.load(Ordering::SeqCst) {
                 return Err(DockerError::Request("remove jobs"));
@@ -1009,7 +1050,7 @@ impl DockerApi for FakeDocker {
         _ownership: &BTreeMap<String, String>,
         _runs: JobRuns<'_>,
     ) -> Result<(), DockerError> {
-        self.job_stop_waits.fetch_add(1, Ordering::SeqCst);
+        self.job_stop_waits.add();
         let _held = self.hold_job_stop.lock().await;
         Ok(())
     }

@@ -249,7 +249,7 @@ async fn full_scan_records_one_docker_failure_for_overlapping_observers() {
         harness.operation(&operation.id).await.state,
         OperationState::Succeeded
     );
-    let observed_before = harness.docker.observations.total.load(Ordering::SeqCst);
+    let observed_before = harness.docker.observations.total.get();
     harness
         .docker
         .fail_observations
@@ -287,13 +287,24 @@ async fn full_scan_records_one_docker_failure_for_overlapping_observers() {
             .items
             .len()
     };
-    eventually(Duration::from_secs(5), POLL, async || {
-        (harness.docker.observations.total.load(Ordering::SeqCst) >= observed_before + 2
-            && recorded().await > 0)
-            .then_some(())
-    })
-    .await
-    .expect("health and reconciliation observers finished their failed Docker calls");
+    let failed = async {
+        harness
+            .docker
+            .observations
+            .total
+            .above(observed_before + 1)
+            .await;
+        harness
+            .store
+            .wait_until(async || recorded().await > 0)
+            .await;
+    };
+    tokio::time::timeout(Duration::from_secs(5), failed)
+        .await
+        .expect("health and reconciliation observers finished their failed Docker calls");
+    // wall-clock: nothing outside the controller signals that the second
+    // observer finished its failure without recording it; give it time to
+    // record a duplicate.
     tokio::time::sleep(Duration::from_millis(100)).await;
     cancellation.cancel();
     task.await.unwrap().unwrap();

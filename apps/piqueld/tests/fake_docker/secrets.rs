@@ -214,7 +214,7 @@ impl ControllerHarness {
         );
         tokio::select! {
             result = run => panic!("the controller stopped: {result:?}"),
-            found = eventually(Duration::from_secs(3), POLL, async || done().await.then_some(())) => {
+            found = tokio::time::timeout(Duration::from_secs(3), self.store.wait_until(done)) => {
                 found.expect("the history pass finishes");
             }
         }

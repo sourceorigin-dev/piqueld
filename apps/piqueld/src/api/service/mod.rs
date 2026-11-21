@@ -249,9 +249,10 @@ impl ApplicationService {
         self.store.access_changes()
     }
 
-    /// Notifies after every write to the database, for streams following it.
+    /// Notifies after every write to the database, for streams following it
+    /// and tests awaiting background work.
     #[must_use]
-    pub(crate) fn written(&self) -> tokio::sync::watch::Receiver<()> {
+    pub fn written(&self) -> tokio::sync::watch::Receiver<()> {
         self.store.written()
     }
 
