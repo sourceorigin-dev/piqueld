@@ -213,8 +213,9 @@ async fn request_timeout_is_reported_by_the_client() {
 }
 
 /// A timeline stream outlives the client's request timeout, and ends with
-/// the daemon's reason once access ended.
-#[tokio::test]
+/// the daemon's reason once access ended. Time is paused, so the server's
+/// pause passes the 50ms timeout in order, without waiting.
+#[tokio::test(start_paused = true)]
 async fn timeline_streams_outlive_the_request_timeout() {
     let (listener, client) = listen().await;
     let operation: piqueld_client::Operation = serde_json::from_value(serde_json::json!({

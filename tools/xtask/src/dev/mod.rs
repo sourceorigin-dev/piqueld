@@ -816,19 +816,22 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("crates/piqueld-store/migrations")).unwrap();
         let instance = instance(root.path());
-        let built = SystemTime::now();
-        std::thread::sleep(Duration::from_millis(20));
+        // Builds an hour ahead, and files set to change after them, so the
+        // clock's resolution never makes a change look older than a build.
+        let built = SystemTime::now() + Duration::from_hours(1);
+        let change = |path: &str, modified: SystemTime| {
+            let file = fs::File::create(root.path().join(path)).unwrap();
+            file.set_modified(modified).unwrap();
+        };
         assert!(!instance.sources_changed_since(built));
-        fs::write(
-            root.path()
-                .join("crates/piqueld-store/migrations/0001_new.sql"),
-            "",
-        )
-        .unwrap();
+        change(
+            "crates/piqueld-store/migrations/0001_new.sql",
+            built + Duration::from_secs(1),
+        );
         assert!(instance.sources_changed_since(built));
-        let built = SystemTime::now();
-        std::thread::sleep(Duration::from_millis(20));
-        fs::write(root.path().join(CONFIG_FILE), "").unwrap();
+        let built = built + Duration::from_secs(2);
+        assert!(!instance.sources_changed_since(built));
+        change(CONFIG_FILE, built + Duration::from_secs(1));
         assert!(instance.sources_changed_since(built));
     }
 }

@@ -166,8 +166,12 @@ impl IsolatedDocker {
                 ActionKind::RemoveNetwork { name } => {
                     // The other side may still be leaving the network.
                     let _ = self.docker.remove_network(name, &ownership).await;
+                    // wall-clock: Docker lets the network go on its own and
+                    // signals nothing; plan again from what it then reports.
                     tokio::time::sleep(Duration::from_millis(250)).await;
                 }
+                // wall-clock: the action waits on Docker, which converges on
+                // its own and signals nothing; plan again from what it reports.
                 _ => tokio::time::sleep(Duration::from_millis(250)).await,
             }
         }
@@ -556,6 +560,8 @@ impl SwarmScenario {
         };
         // Stop only once the 8 MiB write is blocked on the unread pipe.
         let disconnect = async {
+            // wall-clock: the write blocks inside Docker's exec stream, which
+            // signals nothing; give it time to fill the pipe.
             tokio::time::sleep(Duration::from_secs(2)).await;
             stop.cancel();
         };
@@ -1445,7 +1451,8 @@ async fn links_reach_only_the_imported_service_until_removed() {
         .iter()
         .any(|observed| observed.name == network.as_str())
     {
-        // Docker reports the exporter's old tasks as attached a while longer.
+        // wall-clock: Docker reports the exporter's old tasks as attached a
+        // while longer, and signals nothing when it lets them go.
         tokio::time::sleep(Duration::from_millis(500)).await;
         engine.converge(&reconcile(&importer), &[]).await;
     }
