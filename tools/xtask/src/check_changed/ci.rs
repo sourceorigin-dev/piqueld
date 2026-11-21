@@ -53,7 +53,7 @@ impl Job {
     /// What starts the job on a pull request.
     pub(super) fn trigger(self) -> Trigger {
         Trigger::AnyOf(match self {
-            Self::Checks => &[Filter::Rust, Filter::Deny],
+            Self::Checks => &[Filter::Rust, Filter::Deny, Filter::Scripts],
             Self::RustLint | Self::RustTest | Self::Msrv => &[Filter::Rust],
             Self::WasmUi => &[Filter::Ui],
             Self::DockerIntegration => &[Filter::Docker],
@@ -66,7 +66,12 @@ impl Job {
     /// The recipes the job runs, in order.
     pub(super) fn recipes(self) -> &'static [Recipe] {
         match self {
-            Self::Checks => &[Recipe::FmtCheck, Recipe::Audit, Recipe::Unused],
+            Self::Checks => &[
+                Recipe::FmtCheck,
+                Recipe::LintCi,
+                Recipe::Audit,
+                Recipe::Unused,
+            ],
             Self::RustLint => &[
                 Recipe::Lint,
                 Recipe::Doc,
@@ -118,6 +123,7 @@ impl fmt::Display for Trigger {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Recipe {
     FmtCheck,
+    LintCi,
     Audit,
     Unused,
     Lint,
@@ -142,6 +148,7 @@ impl Recipe {
     pub(super) fn command(self) -> &'static [&'static str] {
         match self {
             Self::FmtCheck => &["just", "fmt-check"],
+            Self::LintCi => &["just", "lint-ci"],
             Self::Audit => &["just", "audit"],
             Self::Unused => &["just", "unused"],
             Self::Lint => &["just", "lint"],
@@ -186,6 +193,7 @@ impl Recipe {
             // It checks the files generated from these crates.
             Self::OpenapiCheck => Scoping::Only(&["piqueld", "piquelctl"]),
             Self::FmtCheck
+            | Self::LintCi
             | Self::Audit
             | Self::Unused
             | Self::Boundary
@@ -212,6 +220,7 @@ impl Recipe {
             }
             Self::ValidateCli => Some("runs on macOS, which drafts skip too"),
             Self::FmtCheck
+            | Self::LintCi
             | Self::Audit
             | Self::Unused
             | Self::Lint

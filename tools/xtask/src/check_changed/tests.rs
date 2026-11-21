@@ -21,6 +21,7 @@ rust:
   - *crates
   - apps/**
 deny: ['**/Cargo.toml']
+scripts: [apps/site/install.sh]
 ui: [apps/piqueld-ui/**]
 cli: [apps/piquelctl/**]
 docker: [scripts/**]

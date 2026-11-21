@@ -3,7 +3,7 @@
 # Jobs group the `just` validation recipes by what they compile, so each
 # compilation happens once per job instead of once per recipe:
 #
-#   checks             -> fmt-check, audit, unused
+#   checks             -> fmt-check, lint-ci, audit, unused
 #   rust (lint)        -> lint, doc, openapi-check, boundary
 #   rust (test)        -> test, doc-test
 #   msrv               -> the published crates on the Rust their `rust-version` names
@@ -80,6 +80,7 @@ jobs:
     outputs:
       rust: ${{ github.event_name != 'pull_request' || steps.filter.outputs.rust == 'true' }}
       deny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.deny == 'true' }}
+      scripts: ${{ github.event_name != 'pull_request' || steps.filter.outputs.scripts == 'true' }}
       ui: ${{ github.event_name != 'pull_request' || steps.filter.outputs.ui == 'true' }}
       cli: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || (steps.filter.outputs.cli == 'true' && !github.event.pull_request.draft) }}
       docker: ${{ github.event_name != 'pull_request' || (steps.filter.outputs.docker == 'true' && !github.event.pull_request.draft) }}
@@ -102,15 +103,29 @@ jobs:
   checks:
     name: checks
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.deny == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.deny == 'true' || needs.changes.outputs.scripts == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
         with:
-          tool: just,cargo-deny,cargo-machete
+          tool: just,cargo-deny,cargo-machete,shellcheck
+      # install-action has no actionlint, so this checks its release archive
+      # against the SHA-256 pinned here.
+      - name: Install actionlint
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${VERSION}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP"
+          curl --fail --location --silent --show-error --remote-name "https://github.com/rhysd/actionlint/releases/download/v$VERSION/$archive"
+          printf '%s  %s\n' "$SHA256" "$archive" | sha256sum --check --strict -
+          tar -xzf "$archive" actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - run: just fmt-check
+      - run: just lint-ci
       - run: just audit
       - run: just unused
 

@@ -1,7 +1,7 @@
-# Validation formats Rust sources and checks generated artifacts for freshness.
+# Validation checks sources and generated artifacts without modifying them.
 default: validate
 
-validate: fmt lint check test doc doc-test audit unused openapi-check boundary check-wasm test-playwright docs
+validate: fmt-check lint-ci lint check test doc doc-test audit unused openapi-check boundary check-wasm test-playwright docs
 
 build:
     @cargo build --workspace --locked
@@ -26,9 +26,15 @@ daemon *ARGS:
 fmt:
     @cargo fmt --all
 
-# CI checks formatting without modifying sources; local validation uses fmt.
+# Checks formatting without modifying sources; `fmt` applies it.
 fmt-check:
     @cargo fmt --all -- --check
+
+# Lints the GitHub workflows, running shellcheck over their `run` steps, and
+# the shell scripts.
+lint-ci:
+    @actionlint
+    @shellcheck scripts/*.sh apps/site/install.sh
 
 # The native build compiles the browser code out, so the dashboard and client
 # are linted as wasm32 too. Without --no-deps this also lints their workspace

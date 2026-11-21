@@ -45,6 +45,11 @@ deny:
   - *workspace
   - deny.toml
   - '**/Cargo.toml'
+# The workflows, which are in `workspace`, and the shell scripts.
+scripts:
+  - *workspace
+  - scripts/**
+  - apps/site/install.sh
 ui:
   - *crates
   - apps/piqueld-ui/**
