@@ -39,6 +39,8 @@ impl Scenario {
                 .path()
                 .join("ingress/data/caddy/certificates/local/127.0.0.1/127.0.0.1.crt");
             while !tokio::fs::try_exists(&certificate).await.unwrap() {
+                // wall-clock: Caddy, a real process, writes the certificate on its
+                // own and signals nothing; look again until the file exists.
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         })
@@ -94,6 +96,8 @@ impl Scenario {
                     if let Ok(certificate) = served(host).await {
                         break certificate;
                     }
+                    // wall-clock: the ACME challenge runs between Caddy and Pebble, real
+                    // processes that signal nothing; ask again until it is served.
                     tokio::time::sleep(Duration::from_millis(250)).await;
                 }
             })
@@ -106,6 +110,8 @@ impl Scenario {
                     if served(host).await.unwrap() != first {
                         break;
                     }
+                    // wall-clock: Caddy renews on its own one-second ticker and signals
+                    // nothing; ask again until the renewed certificate is served.
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             })

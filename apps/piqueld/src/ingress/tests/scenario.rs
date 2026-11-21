@@ -164,6 +164,15 @@ impl Scenario {
         deploy(&self.store, &self.controller, app).await
     }
 
+    /// Waits until `operation` succeeds, run by a controller alongside.
+    pub(super) async fn succeeded(&self, operation: &str) {
+        self.store
+            .wait_until(async || {
+                self.store.operation(operation).await.unwrap().state == OperationState::Succeeded
+            })
+            .await;
+    }
+
     /// The first application with `manifest`, as its next deployment.
     pub(super) fn first_as(
         &self,
@@ -213,6 +222,8 @@ impl Scenario {
                     error.is_connect() || error.is_timeout(),
                     "{host}: {error:?}"
                 );
+                // wall-clock: Caddy, a real process, issues the certificate on
+                // its own and signals nothing; ask again until it serves it.
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })
