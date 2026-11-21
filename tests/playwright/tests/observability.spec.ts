@@ -42,3 +42,27 @@ test('an event leads to its operation\'s events and to the requests behind them 
   await expect(requests).toHaveCount(1);
   await expect(requests).toContainText('POST /api/v1/environments/{id}/deploy 409');
 });
+
+test('a failed refetch keeps the events shown, marked stale, until one succeeds', async ({ page, account }) => {
+  void account;
+  let failing = false;
+  await page.route(url => url.pathname === '/api/v1/events', route => failing
+    ? route.fulfill({ status: 503, json: { code: 'unavailable', message: 'maintenance window', request_id: 'request' } })
+    : route.fallback());
+  await page.goto('/dashboard/events');
+  const promoted = page.locator('.event').filter({ hasText: 'alice became an administrator' });
+  // The dashboard layout's own stale notice stays hidden.
+  const stale = page.getByText('Showing the last successful view; the latest refresh failed.', { exact: true }).filter({ visible: true });
+  await expect(promoted).toHaveCount(1);
+
+  failing = true;
+  await page.getByRole('button', { name: 'Newest', exact: true }).click();
+  await expect(page.getByRole('main').getByRole('alert').first()).toContainText(/Refresh failed\s*maintenance window/);
+  await expect(stale).toBeVisible();
+  await expect(promoted).toHaveCount(1);
+
+  failing = false;
+  await page.getByRole('button', { name: 'Newest', exact: true }).click();
+  await expect(stale).toHaveCount(0);
+  await expect(promoted).toHaveCount(1);
+});

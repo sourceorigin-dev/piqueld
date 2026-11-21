@@ -52,7 +52,7 @@ redacted_debug!(DevicePoll {} secret { device_code });
 redacted_debug!(DeviceToken { status, user } secret { token });
 
 /// Public account information.
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct User {
     /// Immutable `WebAuthn` user handle.
     pub id: String,
@@ -124,7 +124,7 @@ pub struct Session {
 }
 
 /// An account and its grants.
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Account {
     /// Account information.
     pub user: User,
@@ -202,7 +202,7 @@ pub struct CeremonyFinish {
 }
 
 /// Named enrolled authenticator, excluding its internal credential data.
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PasskeyView {
     /// Credential identifier.
     pub id: String,
@@ -213,7 +213,7 @@ pub struct PasskeyView {
 }
 
 /// Revocable browser session, CLI session, or automation token metadata.
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CredentialView {
     /// Grants this credential is limited to, within its account's current
     /// access; absent when it acts with the account's full access.

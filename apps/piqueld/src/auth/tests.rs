@@ -785,7 +785,7 @@ async fn tokens_see_only_themselves_in_the_directory() {
     let seen = f.auth.directory(&ci).await.unwrap();
     assert_eq!(seen.users.len(), 1);
     assert_eq!(seen.users[0].grants, deploy);
-    assert!(seen.passkeys.is_empty());
+    assert_eq!(seen.passkeys, []);
     let credentials: Vec<_> = seen.credentials.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(credentials, [ci.credential_id().unwrap()]);
     // Her own CLI session still sees her whole account.

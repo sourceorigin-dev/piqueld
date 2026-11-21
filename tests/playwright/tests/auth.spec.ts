@@ -621,3 +621,21 @@ test('editing grants that mix scopes warns, then applies the chosen applications
     { permission: 'apps:deploy', applications: [shop] },
   ]);
 });
+
+test('saving an account\'s profile keeps its grants edit open', async ({ page, account, browser }) => {
+  void account;
+  const link = (await auth<Managed>(page, 'manage', { action: 'create_invitation', grants: [{ permission: 'apps:read' }] })).invitation_url;
+  await signUp(browser, link, 'bob');
+  const bob = await openAccount(page, 'bob');
+  await bob.getByRole('button', { name: 'Edit grants', exact: true }).click();
+  const saveGrants = bob.getByRole('button', { name: 'Save grants', exact: true });
+  await expect(saveGrants).toBeVisible();
+  // Saving refetches the directory, which only the Profile card shows anew.
+  const refetched = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/auth/directory');
+  await bob.getByLabel('Display name', { exact: true }).fill('Bob B.');
+  await bob.getByRole('button', { name: 'Save profile', exact: true }).click();
+  await refetched;
+  await expect(bob.getByLabel('Display name', { exact: true })).toHaveValue('Bob B.');
+  await expect(bob.getByRole('button', { name: 'Save profile', exact: true })).toBeDisabled();
+  await expect(saveGrants).toBeVisible();
+});
