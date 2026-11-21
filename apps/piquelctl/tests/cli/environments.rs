@@ -1,4 +1,4 @@
-//! Environment commands: targeting, promotion, rollback, history and waits.
+//! Environment commands: targeting, promotion, rollback, history, attempts and waits.
 
 use super::*;
 
@@ -527,6 +527,111 @@ fn history_lists_restores_and_restore_names_the_deployment() {
     assert_eq!(report["deployment_id"], "operation-02");
     assert_eq!(report["environment_id"], "app-notes-01");
     let _ = server.finish();
+}
+
+/// `env attempts` lists the latest deployment's attempts newest first, led
+/// by the one running now, though the list shows only [`listed_first`], or
+/// those of `--deployment`; `--cursor` pages them without it; and an
+/// unknown deployment is an input error.
+#[test]
+fn attempts_list_a_deployments_tries_and_page() {
+    let attempt = |number: u64, state: &str| {
+        let mut attempt = operation(state);
+        attempt["attempt"] = json!(number);
+        attempt
+    };
+    let mut live = deployment("running");
+    live["operation"]["attempt"] = json!(3);
+    let mut detail = detail("operation-01", true, "ready");
+    detail["latest_operation"] = live["operation"].clone();
+    let server = start_server(false, usize::MAX, move |request| {
+        match request.path.as_str() {
+            "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
+            // Any page of the list leads with an older deployment.
+            path if path.starts_with("/api/v1/environments/app-notes-01/deployments?") => {
+                Reply::json(page(vec![listed_first()], Some("next")))
+            }
+            "/api/v1/environments/app-notes-01/detail" => Reply::json(detail.clone()),
+            DEPLOYMENT => Reply::json(live.clone()),
+            "/api/v1/environments/app-notes-01/deployments/operation-01/attempts" => {
+                Reply::json(page(vec![attempt(2, "failed")], Some("older")))
+            }
+            "/api/v1/environments/app-notes-01/deployments/operation-01/attempts?cursor=older" => {
+                Reply::json(page(vec![attempt(1, "succeeded")], None))
+            }
+            "/api/v1/environments/app-notes-01/deployments/operation-07" => Reply::status(
+                "404 Not Found",
+                &json!({"code": "not_found", "message": "not found"}),
+            ),
+            path => panic!("unexpected path {path}"),
+        }
+    });
+
+    let output = run_human(&server, &["env", "attempts", "app-notes-01"]);
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in [
+        "Deployment: operation-01",
+        "Attempt  State    Outcome",
+        "3        running",
+        "2        failed   runtime_failed: runtime reconciliation failed",
+        "Next cursor: older",
+    ] {
+        assert!(stdout.contains(line), "{line:?} missing from {stdout}");
+    }
+
+    let listed = |page: &Value| {
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| (item["attempt"].as_u64().unwrap(), item["state"].clone()))
+            .collect::<Vec<_>>()
+    };
+    for named in [&[][..], &["--deployment", "operation-01"]] {
+        let arguments = [&["env", "attempts", "app-notes-01"][..], named].concat();
+        let first = assert_json_success(&run(&server, &arguments));
+        assert_eq!(
+            listed(&first),
+            [(3, json!("running")), (2, json!("failed"))]
+        );
+        assert_eq!(first["next_cursor"], "older");
+    }
+
+    // A later page lists retained outcomes alone.
+    let older = assert_json_success(&run(
+        &server,
+        &[
+            "env",
+            "attempts",
+            "app-notes-01",
+            "--deployment",
+            "operation-01",
+            "--cursor",
+            "older",
+        ],
+    ));
+    assert_eq!(listed(&older), [(1, json!("succeeded"))]);
+    assert_eq!(older["next_cursor"], Value::Null);
+
+    let unknown = run(
+        &server,
+        &[
+            "env",
+            "attempts",
+            "app-notes-01",
+            "--deployment",
+            "operation-07",
+        ],
+    );
+    assert_eq!(unknown.status.code(), Some(2));
+    let error = support::json_error(&unknown);
+    assert_eq!(error["code"], "invalid_input");
+    assert_eq!(
+        error["message"],
+        "deployment \"operation-07\" of production was not found"
+    );
+    server.finish();
 }
 
 /// Where `operation-01`, a deployment of `app-notes-01`, reads alone.

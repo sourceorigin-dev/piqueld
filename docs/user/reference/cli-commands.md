@@ -3190,6 +3190,7 @@ Commands:
 - [`piquelctl env secret`](#piquelctl-env-secret): List, regenerate, or delete an environment's generated secrets.
 - [`piquelctl env logs`](#piquelctl-env-logs): Print the most recent lines of an environment's Docker logs.
 - [`piquelctl env history`](#piquelctl-env-history): List an environment's deployments, newest first: each one's outcome, where it came from, and its release.
+- [`piquelctl env attempts`](#piquelctl-env-attempts): List the attempts of one of an environment's deployments, newest first: each try at rolling it out, how it ended, and when it last changed.
 - [`piquelctl env restore`](#piquelctl-env-restore): Deploy an earlier, succeeded deployment again exactly as it ran: its rendered manifest, images and pinned secret versions. Jobs don't run, and volume contents and migrations stay as they are.
 - [`piquelctl env wait`](#piquelctl-env-wait): Wait until a deployment of an environment is ready.
 - [`piquelctl env url`](#piquelctl-env-url): Print the URLs of an environment's routes, and whether each is ready.
@@ -3665,6 +3666,26 @@ Options:
 - `--cursor <CURSOR>`: Cursor from the previous page.
 - `--limit <LIMIT>`: Show at most this many deployments, from 1 to 100; 3 without it.
 
+## `piquelctl env attempts`
+
+List the attempts of one of an environment's deployments, newest first: each try at rolling it out, how it ended, and when it last changed.
+
+The attempt running now leads until its outcome is recorded. Without `--deployment`, it lists the latest deployment's attempts.
+
+```text
+piquelctl env attempts [OPTIONS] <APPLICATION> [ENVIRONMENT]
+```
+
+Arguments:
+
+- `<APPLICATION>`: Application name or stable ID.
+- `[ENVIRONMENT]`: Environment name or stable ID. You can omit it when the application has exactly one environment.
+
+Options:
+
+- `--deployment <ID>`: ID of the deployment, as `history` lists it. By default, the latest deployment.
+- `--cursor <CURSOR>`: Cursor from the previous page; needs `--deployment`.
+
 ## `piquelctl env restore`
 
 Deploy an earlier, succeeded deployment again exactly as it ran: its rendered manifest, images and pinned secret versions. Jobs don't run, and volume contents and migrations stay as they are.
@@ -3761,6 +3782,7 @@ Commands:
 - [`piquelctl preview show`](#piquelctl-preview-show): Show one preview, its URLs, and the state of its branch.
 - [`piquelctl preview logs`](#piquelctl-preview-logs): Print the most recent lines of a preview's Docker logs.
 - [`piquelctl preview history`](#piquelctl-preview-history): List a preview's deployments, newest first: each one's outcome and where it came from.
+- [`piquelctl preview attempts`](#piquelctl-preview-attempts): List the attempts of one of a preview's deployments, newest first: each try at rolling it out, how it ended, and when it last changed.
 - [`piquelctl preview restore`](#piquelctl-preview-restore): Deploy an earlier, succeeded deployment of a preview again exactly as it ran, without running its jobs.
 - [`piquelctl preview wait`](#piquelctl-preview-wait): Wait until a deployment of a preview is ready.
 - [`piquelctl preview url`](#piquelctl-preview-url): Print the URLs of a preview's routes, and whether each is ready.
@@ -3889,6 +3911,27 @@ Options:
 - `--slot <SLOT>`: The preview's slot. Needed to address a preview with a slot by its branch.
 - `--cursor <CURSOR>`: Cursor from the previous page.
 - `--limit <LIMIT>`: Show at most this many deployments, from 1 to 100; 3 without it.
+
+## `piquelctl preview attempts`
+
+List the attempts of one of a preview's deployments, newest first: each try at rolling it out, how it ended, and when it last changed.
+
+The attempt running now leads until its outcome is recorded. Without `--deployment`, it lists the latest deployment's attempts.
+
+```text
+piquelctl preview attempts [OPTIONS] <APPLICATION> <PREVIEW>
+```
+
+Arguments:
+
+- `<APPLICATION>`: Application name or stable ID.
+- `<PREVIEW>`: Preview ID, slug, or branch, matched in that order.
+
+Options:
+
+- `--slot <SLOT>`: The preview's slot. Needed to address a preview with a slot by its branch.
+- `--deployment <ID>`: ID of the deployment, as `history` lists it. By default, the latest deployment.
+- `--cursor <CURSOR>`: Cursor from the previous page; needs `--deployment`.
 
 ## `piquelctl preview restore`
 

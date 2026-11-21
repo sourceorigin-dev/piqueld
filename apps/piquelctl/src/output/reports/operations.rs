@@ -82,6 +82,30 @@ report!(Page<BuildRecord>, self, out, {
     out.next_cursor(self.next_cursor.as_deref())
 });
 
+/// `attempts` result: one page of a deployment's attempts, newest first. Its
+/// JSON is the page; every attempt's `id` is the deployment's.
+pub(crate) struct AttemptsReport {
+    pub(crate) deployment: String,
+    pub(crate) page: Page<Operation>,
+}
+report!(AttemptsReport as Page<Operation> = page, self, out, {
+    out.label("Deployment", &self.deployment)?;
+    out.table(
+        &self.page.items,
+        "No attempts yet.",
+        ["Attempt", "State", "Outcome", "Updated"],
+        |attempt| {
+            [
+                attempt.attempt.to_string(),
+                attempt.state.to_string(),
+                attempt.failure(),
+                Timestamp(attempt.updated_at_ms).to_string(),
+            ]
+        },
+    )?;
+    out.next_cursor(self.page.next_cursor.as_deref())
+});
+
 /// Name of a deleted secret or notification destination.
 #[derive(Serialize)]
 pub(crate) struct NameDeletionReport<'a> {

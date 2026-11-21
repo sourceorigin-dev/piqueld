@@ -7,7 +7,8 @@ use crate::{
         Wait, finish_operation, resolve_application, wait_for_deletion, wait_for_operation,
     },
     deployments::{
-        HistoryArgs, RestoreArgs, Target, UrlArgs, WaitArgs, latest_deployment, wait_for_accepted,
+        AttemptsArgs, HistoryArgs, RestoreArgs, Target, UrlArgs, WaitArgs, latest_deployment,
+        wait_for_accepted,
     },
     editing::{EditFlags, on_off, visibility},
     error::{CliError, ErrorKind, ErrorReport, Result},
@@ -182,6 +183,12 @@ pub(crate) enum EnvCommand {
     /// List an environment's deployments, newest first: each one's outcome,
     /// where it came from, and its release.
     History(HistoryArgs<EnvironmentArgs>),
+    /// List the attempts of one of an environment's deployments, newest first: each
+    /// try at rolling it out, how it ended, and when it last changed.
+    ///
+    /// The attempt running now leads until its outcome is recorded. Without
+    /// `--deployment`, it lists the latest deployment's attempts.
+    Attempts(AttemptsArgs<EnvironmentArgs>),
     /// Deploy an earlier, succeeded deployment again exactly as it ran: its
     /// rendered manifest, images and pinned secret versions. Jobs don't run,
     /// and volume contents and migrations stay as they are.
@@ -304,6 +311,7 @@ impl EnvCommand {
                 logs(console, client, &target.resolve(client).await?.1, window).await
             }
             Self::History(args) => args.run(console, client).await,
+            Self::Attempts(args) => args.run(console, client).await,
             Self::Restore(args) => args.run(console, client).await,
             Self::Wait(args) => args.run(console, client).await,
             Self::Url(args) => args.run(console, client).await,

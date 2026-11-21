@@ -48,7 +48,20 @@ To follow a deployment's steps in the dashboard:
   operation's events, where each event shows its attempt.
 
 With `piquelctl`, run `piquelctl operation <operation-id>`, which also waits
-for it to finish.
+for it to finish. `piquelctl env attempts <app> <env>` lists each time
+piqueld tried the environment's latest deployment, newest first:
+
+```console
+$ piquelctl env attempts hello production
+Deployment: operation-0f3a9c2e7b1d4856a0c9e2f4b7d1a3c5
+Attempt  State      Outcome                                        Updated
+2        succeeded                                                 2026-11-21 21:14:05Z
+1        failed     runtime_failed: runtime reconciliation failed  2026-11-21 21:12:40Z
+```
+
+Add `--deployment <operation-id>` for an earlier deployment, as
+`piquelctl env history` lists them.
+`piquelctl preview attempts` does the same for a preview.
 
 ## Find out why something failed
 

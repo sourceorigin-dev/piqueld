@@ -135,6 +135,31 @@ impl Operation {
         attempt > self.attempt
             || (attempt == self.attempt && self.state != OperationState::Requested)
     }
+
+    /// The attempts to list for this deployment operation, newest first,
+    /// from `retained`, the outcomes the API keeps, newest first: the
+    /// attempt it is running leads until its outcome is retained. The
+    /// dashboard and `piquelctl env attempts` list attempts this way.
+    #[must_use]
+    pub fn attempts(&self, retained: &[Self]) -> Vec<Self> {
+        let running = self.attempt > 0 && !retained.iter().any(|item| item.attempt == self.attempt);
+        running
+            .then(|| self.clone())
+            .into_iter()
+            .chain(retained.iter().cloned())
+            .collect()
+    }
+
+    /// How the operation failed, as `code: message`, either one alone, or
+    /// empty without a failure; attempt lists show it as the outcome.
+    #[must_use]
+    pub fn failure(&self) -> String {
+        match (&self.error_code, &self.error_message) {
+            (Some(code), Some(message)) => format!("{code}: {message}"),
+            (Some(text), None) | (None, Some(text)) => text.clone(),
+            (None, None) => String::new(),
+        }
+    }
 }
 
 string_enum! {
@@ -247,5 +272,86 @@ string_enum! {
         IngressCertificateDelete => "ingress_certificate_delete",
         /// Delete a leftover ACME challenge record.
         IngressCertificateChallengeDelete => "ingress_certificate_challenge_delete",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Attempt `attempt` of one deployment, in `state`.
+    fn attempt(attempt: u64, state: OperationState) -> Operation {
+        Operation {
+            id: "operation-1".into(),
+            environment_id: EnvironmentId::parse("env-web-01").unwrap(),
+            kind: OperationKind::Apply,
+            generation: 1,
+            attempt,
+            consecutive_failures: 0,
+            state,
+            phase: None,
+            resource: None,
+            error_code: None,
+            error_message: None,
+            created_at_ms: 0,
+            updated_at_ms: 0,
+            started_at_ms: None,
+            finished_at_ms: None,
+        }
+    }
+
+    /// The listed attempts' numbers and states.
+    fn listed(attempts: &[Operation]) -> Vec<(u64, OperationState)> {
+        attempts
+            .iter()
+            .map(|item| (item.attempt, item.state))
+            .collect()
+    }
+
+    #[test]
+    fn the_running_attempt_leads_until_its_outcome_is_retained() {
+        let retained = [
+            attempt(2, OperationState::Failed),
+            attempt(1, OperationState::Failed),
+        ];
+        let running = attempt(3, OperationState::Running);
+        assert_eq!(
+            listed(&running.attempts(&retained)),
+            [
+                (3, OperationState::Running),
+                (2, OperationState::Failed),
+                (1, OperationState::Failed)
+            ]
+        );
+        // A retained outcome is listed once, and nothing ran before the
+        // first attempt.
+        let ended = [attempt(3, OperationState::Failed)];
+        assert_eq!(
+            listed(&running.attempts(&ended)),
+            [(3, OperationState::Failed)]
+        );
+        assert_eq!(
+            listed(&attempt(0, OperationState::Requested).attempts(&[])),
+            []
+        );
+    }
+
+    #[test]
+    fn a_failure_reads_as_its_code_and_message() {
+        let failed = |code: Option<&str>, message: Option<&str>| Operation {
+            error_code: code.map(str::to_owned),
+            error_message: message.map(str::to_owned),
+            ..attempt(1, OperationState::Failed)
+        };
+        assert_eq!(
+            failed(Some("runtime_failed"), Some("it crashed")).failure(),
+            "runtime_failed: it crashed"
+        );
+        assert_eq!(
+            failed(Some("runtime_failed"), None).failure(),
+            "runtime_failed"
+        );
+        assert_eq!(failed(None, Some("it crashed")).failure(), "it crashed");
+        assert_eq!(failed(None, None).failure(), "");
     }
 }
