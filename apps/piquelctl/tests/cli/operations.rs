@@ -155,6 +155,7 @@ fn non_terminal_progress_prints_a_rollouts_new_tasks_and_downtime() {
     let server = start_server(true, 1, move |_| Reply::timelines(&timelines));
     let output = run_human(&server, &["operation", "operation-01"]);
     server.finish();
+    assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
         "operation-01: running\n\
@@ -353,41 +354,37 @@ fn timeout_and_ctrl_c_end_only_the_local_wait() {
         let _ = timeout_server.finish();
     }
 
-    let interrupt_server = start_server(false, usize::MAX, move |request| {
+    let (received, request_read) = mpsc::channel();
+    let (release, child_exited) = mpsc::channel::<()>();
+    let interrupt_server = start_server(false, 1, move |request| {
         assert_eq!(request.path, TIMELINE_STREAM);
-        // Keep the request pending when SIGINT arrives, rather than only
-        // testing interruption during the sleep between completed requests.
-        thread::sleep(Duration::from_millis(300));
+        received.send(()).expect("test is waiting");
+        // Keep the request pending until the child exits, or fail the test
+        // through its exit code if SIGINT never ends it.
+        let _ = child_exited.recv_timeout(Duration::from_secs(10));
         Reply::dropped()
     });
-    let mut output = None;
-    for _ in 0..3 {
-        // Rebuild the command each attempt; `Command::args` accumulates, so
-        // reusing one command would append duplicate arguments.
-        let child = interrupt_server
-            .command()
-            .args(["--timeout", "5s", "operation", "operation-01"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("piquelctl child");
-        thread::sleep(Duration::from_millis(150));
-        Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .expect("send SIGINT");
-        let attempt = child.wait_with_output().expect("interrupted child");
-        // A signal death before the handler was installed is a startup race;
-        // retry instead of failing the test.
-        if attempt.status.code() == Some(130) {
-            output = Some(attempt);
-            break;
-        }
-    }
-    let output = output.expect("interrupted run reported an exit code");
-    assert_eq!(output.status.code(), Some(130));
+    let child = interrupt_server
+        .command()
+        .args(["--timeout", "5s", "operation", "operation-01"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("piquelctl child");
+    // The handlers are installed before any request is sent, and the request
+    // was read, so SIGINT interrupts a pending request.
+    request_read
+        .recv_timeout(Duration::from_secs(10))
+        .expect("timeline requested");
+    Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("send SIGINT");
+    let output = child.wait_with_output().expect("interrupted child");
+    let _ = release.send(());
+    let _ = interrupt_server.finish();
+    assert_eq!(output.status.code(), Some(130), "{output:?}");
     assert_eq!(output.stdout, b"");
     assert!(String::from_utf8_lossy(&output.stderr).contains("was not cancelled"));
-    let _ = interrupt_server.stop();
 }

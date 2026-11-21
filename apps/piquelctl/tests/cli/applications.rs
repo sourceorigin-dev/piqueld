@@ -12,19 +12,14 @@ fn saved_deployment(id: &str) -> Value {
 
 #[test]
 fn list_paginates_and_includes_reconciliation_status() {
-    let mut page_number = 0;
+    // Each page answers only its own cursor.
     let server = start_server(true, 4, move |request| match request.path.as_str() {
-        "/api/v1/applications?limit=100"
-        | "/api/v1/applications?cursor=v1%3Aapp-first-01&limit=100" => {
-            page_number += 1;
-            if page_number == 1 {
-                Reply::json(page(
-                    vec![app_summary("app-first-01", "first")],
-                    Some("v1:app-first-01"),
-                ))
-            } else {
-                Reply::json(page(vec![app_summary("app-notes-01", "notes")], None))
-            }
+        "/api/v1/applications?limit=100" => Reply::json(page(
+            vec![app_summary("app-first-01", "first")],
+            Some("v1:app-first-01"),
+        )),
+        "/api/v1/applications?cursor=v1%3Aapp-first-01&limit=100" => {
+            Reply::json(page(vec![app_summary("app-notes-01", "notes")], None))
         }
         "/api/v1/environments/app-first-01/status" => Reply::json(status("app-first-01", "ready")),
         "/api/v1/environments/app-notes-01/status" => {
@@ -47,20 +42,22 @@ fn list_paginates_and_includes_reconciliation_status() {
 fn repeated_pagination_cursor_is_rejected() {
     let mut page_number = 0;
     let server = start_server(false, 2, move |request| {
-        assert!(matches!(
-            request.path.as_str(),
-            "/api/v1/applications?limit=100"
-                | "/api/v1/applications?cursor=v1%3Aapp-first-01&limit=100"
-        ));
         page_number += 1;
-        Reply::json(page(
-            if page_number == 1 {
-                vec![app_summary("app-first-01", "first")]
-            } else {
-                Vec::new()
-            },
-            Some("v1:app-first-01"),
-        ))
+        // The second page is requested with the first page's cursor, which
+        // it returns again.
+        let (path, items) = if page_number == 1 {
+            (
+                "/api/v1/applications?limit=100",
+                vec![app_summary("app-first-01", "first")],
+            )
+        } else {
+            (
+                "/api/v1/applications?cursor=v1%3Aapp-first-01&limit=100",
+                Vec::new(),
+            )
+        };
+        assert_eq!(request.path, path);
+        Reply::json(page(items, Some("v1:app-first-01")))
     });
 
     let output = run(&server, &["app", "list"]);
@@ -156,9 +153,11 @@ fn apply_deploy_retries_a_dropped_request_with_the_same_identity() {
 fn noninteractive_apply_stops_after_inspection() {
     let directory = tempdir().expect("manifest directory");
     let manifest = write_manifest(&directory);
-    let server = start_server(false, 1, move |request| match request.path.as_str() {
-        "/api/v1/applications?name=notes" => Reply::json(page(Vec::new(), None)),
-        path => panic!("mutation must not be sent; got {path}"),
+    let server = start_server(false, usize::MAX, move |request| {
+        match request.path.as_str() {
+            "/api/v1/applications?name=notes" => Reply::json(page(Vec::new(), None)),
+            path => panic!("mutation must not be sent; got {path}"),
+        }
     });
     let output = run(
         &server,
@@ -173,7 +172,7 @@ fn noninteractive_apply_stops_after_inspection() {
     assert!(!output.status.success());
     assert_eq!(output.stdout, b"");
     assert!(String::from_utf8_lossy(&output.stderr).contains("confirmation"));
-    let _ = server.finish();
+    assert_eq!(server.stop().len(), 1);
 }
 
 #[test]
@@ -560,7 +559,7 @@ fn apply_defaults_to_saving_without_preview_or_operation_polling() {
 fn apply_protects_the_inspected_identity_and_revision_with_confirmation_skipped() {
     let directory = tempdir().unwrap();
     let manifest = write_manifest(&directory);
-    let server = start_server(false, 2, move |request| {
+    let server = start_server(false, usize::MAX, move |request| {
         if request.path == "/api/v1/applications?name=notes" {
             let mut app = app_summary("app-notes-01", "notes");
             app["generation"] = json!(7);
@@ -604,7 +603,7 @@ fn apply_protects_the_inspected_identity_and_revision_with_confirmation_skipped(
         "application conflicts are not connection failures: {error}"
     );
     assert_eq!(
-        server.finish().len(),
+        server.stop().len(),
         2,
         "generation conflicts must not retry"
     );
@@ -670,10 +669,9 @@ fn force_does_not_skip_confirmation_and_explicit_force_is_sent_to_the_endpoint()
         }
         let requests = server.finish();
         if yes {
-            assert_eq!(
-                requests[1].headers.get("idempotency-key"),
-                requests[2].headers.get("idempotency-key")
-            );
+            let key = requests[1].headers.get("idempotency-key");
+            assert!(key.is_some(), "the forced mutation has an idempotency key");
+            assert_eq!(key, requests[2].headers.get("idempotency-key"));
         }
     }
 }

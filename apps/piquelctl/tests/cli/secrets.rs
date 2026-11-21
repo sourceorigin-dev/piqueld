@@ -5,13 +5,15 @@ use super::*;
 #[test]
 fn ctrl_c_ends_a_pending_secret_read_from_stdin() {
     let (listed, secrets_listed) = mpsc::channel();
-    let server = start_server(false, 2, move |request| match request.path.as_str() {
-        "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
-        "/api/v1/applications/app-notes-01/secrets" => {
-            listed.send(()).expect("test is waiting");
-            Reply::json(json!([]))
+    let server = start_server(false, usize::MAX, move |request| {
+        match request.path.as_str() {
+            "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
+            "/api/v1/applications/app-notes-01/secrets" => {
+                listed.send(()).expect("test is waiting");
+                Reply::json(json!([]))
+            }
+            path => panic!("unexpected path {path}"),
         }
-        path => panic!("unexpected path {path}"),
     });
     let mut child = server
         .command()
@@ -44,7 +46,7 @@ fn ctrl_c_ends_a_pending_secret_read_from_stdin() {
     let output = child.wait_with_output().expect("interrupted child");
     assert_eq!(output.status.code(), Some(130));
     assert_eq!(output.stdout, b"");
-    assert_eq!(server.finish().len(), 2, "no secret value was sent");
+    assert_eq!(server.stop().len(), 2, "no secret value was sent");
 }
 
 /// `secret set` that changes the access sends the access it read, so the
@@ -104,8 +106,7 @@ fn secret_values_from_stdin_drop_one_trailing_newline() {
     for (input, stored) in cases {
         let refusal =
             json!({"code": "conflict", "message": "stop here", "request_id": "request-01"});
-        let expected = 2 + usize::from(stored.is_some());
-        let server = start_server(false, expected, move |request| {
+        let server = start_server(false, usize::MAX, move |request| {
             match request.path.split('?').next().unwrap() {
                 "/api/v1/applications/app-notes-01" => {
                     Reply::json(app_view("app-notes-01", "notes"))
@@ -131,8 +132,9 @@ fn secret_values_from_stdin_drop_one_trailing_newline() {
         let _ = stdin.write_all(&input);
         drop(stdin);
         let output = child.wait_with_output().expect("piquelctl output");
-        let requests = server.finish();
+        let requests = server.stop();
         if let Some(stored) = stored {
+            assert_eq!(requests.len(), 3);
             assert_eq!(requests[2].body, stored);
         } else {
             assert_eq!(output.status.code(), Some(2));
