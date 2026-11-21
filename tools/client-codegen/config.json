@@ -431,6 +431,16 @@
       "rustType": "piqueld_core::edit::RolloutValue"
     },
     {
+      "schema": "ServiceSecurity",
+      "name": "ServiceSecurity",
+      "rustType": "piqueld_core::manifest::ServiceSecurity"
+    },
+    {
+      "schema": "SecurityValue",
+      "name": "SecurityValue",
+      "rustType": "piqueld_core::edit::SecurityValue"
+    },
+    {
       "schema": "Rollback",
       "name": "Rollback",
       "rustType": "piqueld_core::manifest::Rollback"

@@ -4,7 +4,8 @@
 //! parse either a literal or a reference when saved.
 use piqueld_client::{
     Build, FileMode, FileSource, GitRepository, HealthCheck, ManifestRepository, Mount,
-    ResourceLimits, Rollout, Service, ServiceFile, Source, SourceRepository, Template, Typed,
+    ResourceLimits, Rollout, Service, ServiceFile, ServiceSecurity, Source, SourceRepository,
+    Template, Typed,
 };
 
 /// Independently saved service settings.
@@ -28,12 +29,14 @@ pub enum Section {
     Rollout,
     /// Whether the service receives the daemon's telemetry.
     Telemetry,
+    /// Container user, read-only root, capabilities and privileges.
+    Security,
     /// CPU and memory limits.
     Resources,
 }
 impl Section {
     /// All form groups in display order.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::General,
         Self::Environment,
         Self::Process,
@@ -43,6 +46,7 @@ impl Section {
         Self::Dependencies,
         Self::Rollout,
         Self::Telemetry,
+        Self::Security,
         Self::Resources,
     ];
     /// Human-readable form heading.
@@ -58,6 +62,7 @@ impl Section {
             Self::Dependencies => "Startup dependencies",
             Self::Rollout => "Rollout",
             Self::Telemetry => "Telemetry",
+            Self::Security => "Security",
             Self::Resources => "Resource limits",
         }
     }
@@ -184,10 +189,48 @@ pub struct ServiceForm {
     pub monitor: String,
     /// Whether the service receives the daemon's telemetry.
     pub receives_telemetry: bool,
+    /// Security settings, with the user as typed.
+    pub security: SecurityForm,
     /// Optional CPU limit in millicores.
     pub cpu: String,
     /// Optional memory limit in bytes.
     pub memory: String,
+}
+/// A service's security settings, with the user as typed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SecurityForm {
+    /// Numeric `uid[:gid]` the containers run as, or empty for the image's.
+    pub user: String,
+    /// The other settings, whose own user stays unset.
+    pub settings: ServiceSecurity,
+}
+impl From<ServiceSecurity> for SecurityForm {
+    fn from(settings: ServiceSecurity) -> Self {
+        Self {
+            user: settings
+                .user
+                .map_or_else(String::new, |user| user.to_string()),
+            settings: ServiceSecurity {
+                user: None,
+                ..settings
+            },
+        }
+    }
+}
+impl SecurityForm {
+    /// The settings with the typed user, which must be numeric.
+    fn settings(&self) -> Result<ServiceSecurity, String> {
+        let user = match self.user.trim() {
+            "" => None,
+            user => Some(user.parse().map_err(
+                |_| "User must be a numeric user ID, or user:group IDs such as 1000:1000, each at most 2147483647.",
+            )?),
+        };
+        Ok(ServiceSecurity {
+            user,
+            ..self.settings
+        })
+    }
 }
 /// One read-only file, with its mode as typed.
 #[derive(Clone, Debug, PartialEq)]
@@ -276,6 +319,7 @@ impl From<&Service> for ServiceForm {
                 .map_or_else(|| "derived".into(), ToString::to_string),
             monitor: optional_text(service.rollout.monitor_seconds.as_ref()),
             receives_telemetry: service.receives_telemetry,
+            security: SecurityForm::from(service.security),
             cpu: optional_text(
                 service
                     .resources
@@ -510,6 +554,7 @@ impl ServiceForm {
             Section::Dependencies => take!(depends_on),
             Section::Rollout => take!(rollout_order, monitor),
             Section::Telemetry => take!(receives_telemetry),
+            Section::Security => take!(security),
             Section::Resources => take!(cpu, memory),
         }
         form
@@ -546,6 +591,7 @@ impl ServiceForm {
             Section::Dependencies => service.depends_on.clone_from(&self.depends_on),
             Section::Rollout => service.rollout = self.rollout()?,
             Section::Telemetry => service.receives_telemetry = self.receives_telemetry,
+            Section::Security => service.security = self.security.settings()?,
             Section::Resources => {
                 let cpu = optional(
                     &self.cpu,
@@ -589,7 +635,7 @@ mod tests {
             resources: None,
             depends_on: Vec::new(),
             rollout: Rollout::default(),
-            security: piqueld_client::ServiceSecurity::default(),
+            security: ServiceSecurity::default(),
             receives_telemetry: false,
         }
     }
@@ -700,5 +746,25 @@ mod tests {
         assert!(draft.patch(Section::General, &mut saved).is_err());
         draft.environment = vec![("A".into(), "one".into()), ("A".into(), "two".into())];
         assert!(draft.patch(Section::Environment, &mut saved).is_err());
+    }
+    #[test]
+    fn security_saves_a_numeric_user_with_its_flags() {
+        let mut saved = service();
+        let mut draft = ServiceForm::from(&saved);
+        draft.security.user = "1000:1000".into();
+        draft.security.settings.read_only_root = true;
+        draft.patch(Section::Security, &mut saved).unwrap();
+        assert_eq!(ServiceForm::from(&saved).security, draft.security);
+        for invalid in ["nginx", "2147483648", "1000:2147483648"] {
+            draft.security.user = invalid.into();
+            assert!(
+                draft.patch(Section::Security, &mut saved).is_err(),
+                "{invalid}"
+            );
+        }
+        draft.security.user.clear();
+        draft.patch(Section::Security, &mut saved).unwrap();
+        assert_eq!(saved.security.user, None);
+        assert!(saved.security.read_only_root);
     }
 }

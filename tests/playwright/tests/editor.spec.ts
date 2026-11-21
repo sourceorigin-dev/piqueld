@@ -118,6 +118,28 @@ test('mounts an inline file whose content is kept verbatim', async ({ page, acco
   await expect(page.getByLabel('Content', { exact: true })).toHaveValue('target: ${{ vars.missing }} {{ .x }}');
 });
 
+test('hardens a service with a numeric user and the security flags', async ({ page, account }) => {
+  void account;
+  await createApplication(page);
+  await addService(page, 'web', 'nginx:1.27');
+  await page.locator('a.list-row', { hasText: 'web' }).click();
+  await serviceTab(page, 'Security').click();
+  const user = page.getByLabel('User (uid or uid:gid)', { exact: true });
+  await user.fill('nginx');
+  await visible(page, 'Save changes').click();
+  await expect(page.getByText('User must be a numeric user ID', { exact: false })).toBeVisible();
+  await user.fill('101:101');
+  await page.getByLabel('Read-only root filesystem, with a writable /tmp in memory', { exact: true }).check();
+  await page.getByLabel('Block new privileges, such as through sudo', { exact: true }).check();
+  await save(page);
+  await page.reload();
+  await serviceTab(page, 'Security').click();
+  await expect(user).toHaveValue('101:101');
+  await expect(page.getByLabel('Read-only root filesystem, with a writable /tmp in memory', { exact: true })).toBeChecked();
+  await expect(page.getByLabel('Drop every Linux capability', { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel('Block new privileges, such as through sudo', { exact: true })).toBeChecked();
+});
+
 test('saves volumes and routes, previews the plan, and records a deployment', async ({ page, account }) => {
   void account;
   await createApplication(page);

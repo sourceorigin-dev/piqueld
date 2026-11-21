@@ -2,7 +2,8 @@
 use crate::manifest::{
     ApplicationManifest, Build, Export, GitRepository, HealthCheck, Import, Job, Mount,
     RepositoryManifest, ResourceLimits, Rollback, Rollout, Route, SecretDeclaration, SecretMount,
-    Service, ServiceFile, Source, SourceRepository, Template, Typed, Variable, Visibility, Volume,
+    Service, ServiceFile, ServiceSecurity, Source, SourceRepository, Template, Typed, Variable,
+    Visibility, Volume,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -40,6 +41,7 @@ value_request! {
     HealthValue: Option<HealthCheck>;
     ResourcesValue: Option<ResourceLimits>;
     RolloutValue: Rollout;
+    SecurityValue: ServiceSecurity;
     BoolValue: bool;
     EnvironmentValue: BTreeMap<String, Template>;
     MountsValue: Vec<Mount>;
@@ -322,6 +324,8 @@ pub enum ServiceEdit {
     Rollout(Rollout),
     /// Whether the service receives the daemon's telemetry.
     ReceivesTelemetry(bool),
+    /// Replace the security settings; omitted fields are off.
+    Security(ServiceSecurity),
 }
 
 /// A declaration identified by a key within its list: services and volumes
@@ -617,6 +621,7 @@ impl ServiceEdit {
             Self::DependsOn(value) => service.depends_on = value,
             Self::Rollout(value) => service.rollout = value,
             Self::ReceivesTelemetry(value) => service.receives_telemetry = value,
+            Self::Security(value) => service.security = value,
         }
         Ok(())
     }
@@ -816,6 +821,7 @@ macro_rules! field_endpoints {
             set_service_depends_on: put "/api/v1/applications/{id}/services/{service}/depends-on" (service = "service") [StringsValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::DependsOn(value) } };
             set_service_rollout: put "/api/v1/applications/{id}/services/{service}/rollout" (service = "service") [RolloutValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Rollout(value) } };
             set_service_receives_telemetry: put "/api/v1/applications/{id}/services/{service}/receives-telemetry" (service = "service") [BoolValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::ReceivesTelemetry(value) } };
+            set_service_security: put "/api/v1/applications/{id}/services/{service}/security" (service = "service") [SecurityValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Security(value) } };
             set_service_healthcheck: put "/api/v1/applications/{id}/services/{service}/healthcheck" (service = "service") [HealthValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::Healthcheck(value) } };
             set_service_health_port: put "/api/v1/applications/{id}/services/{service}/healthcheck/port" (service = "service") [ReplicasValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthPort(value) } };
             set_service_health_path: put "/api/v1/applications/{id}/services/{service}/healthcheck/path" (service = "service") [TemplateValue { value }] => { ApplicationEdit::Service { name: service, edit: ServiceEdit::HealthPath(value) } };

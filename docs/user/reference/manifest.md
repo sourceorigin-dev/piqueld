@@ -1161,7 +1161,15 @@ back.
 
 ## Security
 
-Each service can harden its containers. Every setting is off by default:
+Each service can harden its containers. Every setting is off by default.
+In the dashboard, set them on the service's **Security** tab. With
+`piquelctl`, pass the flags of the settings to turn on; the others turn off:
+
+```console
+piquelctl app service security notes web --user 1000:1000 --read-only-root --drop-capabilities --no-new-privileges
+```
+
+In the manifest:
 
 ```toml
 [[spec.services]]
