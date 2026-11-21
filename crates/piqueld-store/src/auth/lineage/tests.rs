@@ -101,7 +101,7 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
     let signed_in = proved(credential("signed-in", CredentialKind::Browser));
     let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
     store
-        .sign_in_with_passkey("bob-key", "bob", stored, &signed_in)
+        .sign_in_with_passkey(None, "bob-key", "bob", stored, &signed_in)
         .await
         .unwrap()
         .unwrap();
@@ -305,7 +305,7 @@ async fn bulk_revocations_cascade_from_every_root() {
         let (key, session) = (format!("{user}-key"), format!("{user}-signed-in"));
         let signed_in = proved(credential(&session, CredentialKind::Browser));
         let sign_in = store
-            .sign_in_with_passkey(&key, user, stored, &signed_in)
+            .sign_in_with_passkey(None, &key, user, stored, &signed_in)
             .await;
         let sign_in = sign_in.expect("the passkey signs in");
         sign_in.expect("the passkey belongs to its user");
@@ -353,7 +353,7 @@ async fn ended_issuer(store: &Store, user: &'static str) {
     let (key, session) = (format!("{user}-key"), format!("{user}-signed-in"));
     let signed_in = proved(credential(&session, CredentialKind::Browser));
     let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
-    let sign_in = store.sign_in_with_passkey(&key, user, stored, &signed_in);
+    let sign_in = store.sign_in_with_passkey(None, &key, user, stored, &signed_in);
     let sign_in = sign_in.await.expect("the passkey signs in");
     sign_in.expect("the passkey is its user's");
     let by_session = Caller {

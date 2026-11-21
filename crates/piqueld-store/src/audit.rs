@@ -62,6 +62,62 @@ pub struct AuditOrigin {
     pub operator: Option<HostOperator>,
 }
 
+/// The account or host operator an audit record names as acting.
+#[derive(Clone, Copy, Debug)]
+pub enum AuditPrincipal<'a> {
+    /// An account, by ID and username.
+    Account {
+        /// The account's ID.
+        id: &'a str,
+        /// Its username when recorded.
+        username: &'a str,
+    },
+    /// The host operator.
+    Operator(HostOperator),
+}
+
+impl<'a> From<&'a piqueld_core::auth::Principal> for AuditPrincipal<'a> {
+    fn from(principal: &'a piqueld_core::auth::Principal) -> Self {
+        match principal {
+            piqueld_core::auth::Principal::User(user) => Self::Account {
+                id: &user.id,
+                username: &user.username,
+            },
+            piqueld_core::auth::Principal::Operator(operator) => Self::Operator(*operator),
+        }
+    }
+}
+
+impl AuditOrigin {
+    /// This origin, naming `who` as acting.
+    #[must_use]
+    pub fn acting(self, who: AuditPrincipal<'_>) -> Self {
+        let (user_id, username, operator) = match who {
+            AuditPrincipal::Account { id, username } => (Some(id), Some(username), None),
+            AuditPrincipal::Operator(operator) => (None, None, Some(operator)),
+        };
+        Self {
+            user_id: user_id.map(str::to_owned),
+            username: username.map(str::to_owned),
+            operator,
+            ..self
+        }
+    }
+
+    /// This origin for a request that signed `who` in: it names who signed
+    /// in, and no credential, since any the request carried belonged to
+    /// whoever was signed in before.
+    #[must_use]
+    pub fn signed_in(self, who: AuditPrincipal<'_>) -> Self {
+        Self {
+            credential_id: None,
+            credential_kind: None,
+            scoped: None,
+            ..self.acting(who)
+        }
+    }
+}
+
 /// An API request whose changes record themselves: each change it commits
 /// appends its own `allowed` record in the change's transaction (see
 /// [`Store::append_audit_on`]), so a committed change always has one. Its
@@ -127,6 +183,9 @@ impl AuditRequest {
 /// a request makes record themselves (see [`AuditRequest`]). An [`Actor`]
 /// alone, like the daemon's own work, records none. Writes only an account
 /// may make, such as issuing a token, take an `Author<'_, Caller<'_>>`.
+/// Public requests, which no verified caller makes, take an
+/// `Author<'_, ()>`: their writes, such as a sign-in, name who they signed
+/// in through [`Author::commit_signed_in`].
 #[derive(Clone, Copy, Debug)]
 pub struct Author<'a, A = Actor<'a>> {
     /// Who acts, re-read inside the writing transaction.
@@ -166,6 +225,19 @@ impl<'a, A> Author<'a, A> {
         db: &mut SqliteConnection,
         status: u16,
         change: Option<&str>,
+        target: (Option<&str>, Option<&str>),
+    ) -> Result<Appended<'a>, StoreError> {
+        self.record_as_on(db, None, status, change, target).await
+    }
+
+    /// [`Self::record_on`], naming `signed_in` as acting, when given,
+    /// instead of the request's caller (see [`AuditOrigin::signed_in`]).
+    async fn record_as_on(
+        self,
+        db: &mut SqliteConnection,
+        signed_in: Option<AuditPrincipal<'_>>,
+        status: u16,
+        change: Option<&str>,
         (application, environment): (Option<&str>, Option<&str>),
     ) -> Result<Appended<'a>, StoreError> {
         let (Some(request), Some(change)) = (self.request, change) else {
@@ -173,6 +245,9 @@ impl<'a, A> Author<'a, A> {
         };
         let status = request.status.unwrap_or(status);
         let mut event = request.event(AuditOutcome::Allowed, status, Some(change));
+        if let Some(who) = signed_in {
+            event.origin = event.origin.signed_in(who);
+        }
         event.application_id = application.map(str::to_owned);
         event.environment_id = environment.map(str::to_owned);
         Store::append_audit_on(db, &event, now_ms()).await?;
@@ -192,9 +267,26 @@ impl<'a, A> Author<'a, A> {
         target: (Option<&str>, Option<&str>),
     ) -> Result<(), StoreError> {
         let appended = self.record_on(&mut tx, status, change, target).await?;
-        tx.commit().await.map_err(StoreError::database)?;
-        appended.committed();
-        Ok(())
+        appended.commit(tx).await
+    }
+
+    /// Ends a write transaction in which its request signed `who` in, such
+    /// as a passkey sign-in: appends the record of `change` naming `who`
+    /// (see [`AuditOrigin::signed_in`]), with status 200, commits `tx`, then
+    /// notes the record.
+    /// # Errors
+    /// Returns storage errors, which roll the change back too.
+    pub(crate) async fn commit_signed_in(
+        self,
+        mut tx: sqlx::Transaction<'_, sqlx::Sqlite>,
+        who: AuditPrincipal<'_>,
+        change: &str,
+    ) -> Result<(), StoreError> {
+        let (signed_in, target) = (Some(who), (None, None));
+        let appended = self
+            .record_as_on(&mut tx, signed_in, 200, Some(change), target)
+            .await?;
+        appended.commit(tx).await
     }
 }
 
@@ -211,6 +303,13 @@ impl Appended<'_> {
         if let Some(recorded) = self.0 {
             recorded.set();
         }
+    }
+
+    /// Commits `tx`, then notes the record.
+    async fn commit(self, tx: sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<(), StoreError> {
+        tx.commit().await.map_err(StoreError::database)?;
+        self.committed();
+        Ok(())
     }
 }
 

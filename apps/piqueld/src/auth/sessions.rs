@@ -6,7 +6,9 @@ use piqueld_core::auth::{
     DeviceConfirmation, DeviceRequest, DeviceStart, DeviceToken, HostOperator, OperatorLink,
     Principal, SensitiveAction, Session, User,
 };
-use piqueld_store::{Actor, Caller, Cascade, NewCredential, Proof, StoreError};
+use piqueld_store::{
+    Actor, AuditRequest, Author, Caller, Cascade, NewCredential, Proof, StoreError,
+};
 use std::collections::{HashMap, hash_map::Entry};
 
 /// Why the host operator can't do what only an account does.
@@ -392,12 +394,17 @@ impl Auth {
     /// request; the host operator over the Unix socket has none. One revoked
     /// since the request authenticated counts as signed out. Logging out
     /// never revokes what the credential issued.
-    pub(crate) async fn logout(&self, identity: &Identity) -> Result<()> {
+    pub(crate) async fn logout(
+        &self,
+        identity: &Identity,
+        request: Option<&AuditRequest>,
+    ) -> Result<()> {
         if let Some(id) = identity.credential_id() {
-            let revoke = self
-                .0
-                .store
-                .revoke_credential(identity.actor(), id, Cascade::No);
+            let author = Author {
+                actor: identity.actor(),
+                request,
+            };
+            let revoke = self.0.store.revoke_credential(author, id, Cascade::No);
             match revoke.await {
                 Ok(()) | Err(StoreError::NotFound) => {}
                 Err(error) => return Err(error.into()),
@@ -424,13 +431,22 @@ impl Auth {
     /// Redeems a host operator sign-in link, returning the operator and the
     /// secret of its new browser session. Used, expired, and unknown links
     /// are unauthorized.
-    pub(crate) async fn operator_sign_in(&self, secret: &str) -> Result<(HostOperator, String)> {
+    pub(crate) async fn operator_sign_in(
+        &self,
+        secret: &str,
+        request: Option<&AuditRequest>,
+    ) -> Result<(HostOperator, String)> {
         let token = format!("{}{}", super::CREDENTIAL_PREFIX, Self::secret()?);
         let expires_at = now_secs() + OPERATOR_SESSION_LIFETIME;
         let (_, operator) = self
             .0
             .store
-            .redeem_operator_link(&Self::hash(secret), &Self::hash(&token), expires_at)
+            .redeem_operator_link(
+                request,
+                &Self::hash(secret),
+                &Self::hash(&token),
+                expires_at,
+            )
             .await?
             .ok_or(AuthError::Unauthorized)?;
         tracing::info!(
@@ -630,7 +646,11 @@ impl Auth {
     /// Otherwise it cannot tell a session never stored from one revoked since,
     /// so it refuses the login (401) rather than resurrect a revoked one; the
     /// CLI then signs in again.
-    pub(crate) async fn device_poll(&self, code: &str) -> Result<DeviceToken> {
+    pub(crate) async fn device_poll(
+        &self,
+        code: &str,
+        request: Option<&AuditRequest>,
+    ) -> Result<DeviceToken> {
         let pending = |status: &str| DeviceToken {
             status: status.into(),
             token: None,
@@ -675,7 +695,9 @@ impl Auth {
         };
         let (grants, prepared, retry) = match next {
             Approved::Confirm(confirms) => {
-                return self.confirm_login(&approver, confirms, issuing).await;
+                return self
+                    .confirm_login(&approver, confirms, issuing, request)
+                    .await;
             }
             Approved::Issue {
                 grants,
@@ -698,7 +720,11 @@ impl Auth {
                 user_id: &approver.user_id,
             };
             let credential = prepared.credential(grants.as_ref(), &approver);
-            let issued = self.0.store.issue_for_credential_owner(caller, &credential);
+            let author = Author {
+                actor: caller,
+                request,
+            };
+            let issued = self.0.store.issue_for_credential_owner(author, &credential);
             match issued.await {
                 Ok(user) => user.ok_or(AuthError::Unauthorized)?,
                 // Refused for good, e.g. an approval older than its passkey
@@ -728,10 +754,14 @@ impl Auth {
         approval: &Approval,
         confirms: Confirmation,
         issuing: Issuing<'_>,
+        request: Option<&AuditRequest>,
     ) -> Result<DeviceToken> {
-        let approver = Caller {
-            credential_id: &approval.credential_id,
-            user_id: &approval.user_id,
+        let approver = Author {
+            actor: Caller {
+                credential_id: &approval.credential_id,
+                user_id: &approval.user_id,
+            },
+            request,
         };
         let confirmed = self.0.store.confirm_login(
             approver,

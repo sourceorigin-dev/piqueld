@@ -462,36 +462,30 @@ impl Audit {
     fn request(
         &self,
         identity: Option<&Identity>,
-        signed_in: Option<Principal>,
+        signed_in: Option<&Principal>,
         tailnet: Option<String>,
     ) -> AuditRequest {
-        // A sign-in names who it signed in; any credential the request also
-        // carried belongs to whoever was signed in before.
-        let credential = identity.filter(|_| signed_in.is_none());
-        let who = signed_in.or_else(|| identity.map(Identity::principal));
-        let (user, operator) = match who {
-            Some(Principal::User(user)) => (Some(user), None),
-            Some(Principal::Operator(operator)) => (None, Some(operator)),
-            None => (None, None),
+        let mut origin = AuditOrigin {
+            peer: self.peer.map(|peer| peer.to_string()),
+            tailnet,
+            request_id: self.request_id.clone(),
+            ..AuditOrigin::default()
         };
+        if let Some(identity) = identity {
+            origin = AuditOrigin {
+                credential_id: identity.credential_id().map(str::to_owned),
+                credential_kind: identity.kind().map(piqueld_store::CredentialKind::as_str),
+                scoped: Some(identity.scoped),
+                ..origin.acting((&identity.principal()).into())
+            };
+        }
+        if let Some(who) = signed_in {
+            origin = origin.signed_in(who.into());
+        }
         AuditRequest {
             route: format!("{} {}", self.method, self.route),
             status: None,
-            origin: AuditOrigin {
-                user_id: user.as_ref().map(|user| user.id.clone()),
-                username: user.map(|user| user.username),
-                credential_id: credential
-                    .and_then(Identity::credential_id)
-                    .map(str::to_owned),
-                credential_kind: credential
-                    .and_then(Identity::kind)
-                    .map(piqueld_store::CredentialKind::as_str),
-                scoped: credential.map(|identity| identity.scoped),
-                peer: self.peer.map(|peer| peer.to_string()),
-                tailnet,
-                request_id: self.request_id.clone(),
-                operator,
-            },
+            origin,
             recorded: self.recorded.clone(),
         }
     }
@@ -560,7 +554,7 @@ impl Audit {
         let detail = detail.map(|AuditDetail(detail)| -> String {
             detail.chars().take(AuditDetail::LIMIT).collect()
         });
-        let request = self.request(identity.as_ref(), signed_in, tailnet);
+        let request = self.request(identity.as_ref(), signed_in.as_ref(), tailnet);
         let mut event = request.event(outcome, status.as_u16(), detail.as_deref());
         event.application_id = self.owner_id(PathOwner::Application);
         event.environment_id = self.owner_id(PathOwner::Environment);

@@ -68,6 +68,11 @@ A change that leaves things as they were, such as setting the grants an
 account already has, records no change: its request is recorded like any
 other, as **Allowed**, naming what it asked for.
 
+Signing in records the session it opened under the account or host operator
+it signed in, never the session's secret: a passkey sign-in names the
+passkey, and a CLI login names the browser session that approved it.
+Confirming a session with a passkey, and signing out, are recorded too.
+
 A notification destination's record names it, how it changed, and the
 categories, applications and previews it now receives, never its URL. A
 webhook secret's record never holds the secret.

@@ -1,4 +1,5 @@
 //! Authentication HTTP boundary shared by both daemon transports.
+use super::access::Audited;
 use super::{ApiError, ApiJson, openapi::ApiErrors};
 use crate::auth::{Auth, AuthCookie, AuthError, Identity};
 use crate::tailnet::{LookupTimedOut, TailnetLookup};
@@ -509,9 +510,12 @@ pub(super) async fn sign_in_link(
 #[utoipa::path(post,path="/api/v1/auth/login/operator",operation_id="authOperatorSignIn",request_body=OperatorSignIn,responses((status=200,body=Session),ApiErrors<401>))]
 pub(super) async fn operator_sign_in(
     Extension(auth): Extension<Auth>,
+    audited: Audited,
     ApiJson(input): ApiJson<OperatorSignIn>,
 ) -> Result<Response, ApiError> {
-    let (operator, token) = auth.operator_sign_in(&input.secret).await?;
+    let (operator, token) = auth
+        .operator_sign_in(&input.secret, audited.request())
+        .await?;
     let session = Identity::operator(operator, None).session();
     let age = crate::auth::OPERATOR_SESSION_LIFETIME;
     Ok(signed_in(
@@ -593,10 +597,12 @@ pub(super) async fn login_start(Extension(auth): Extension<Auth>) -> Result<Resp
 #[utoipa::path(post,path="/api/v1/auth/login/finish",operation_id="authLoginFinish",request_body=CeremonyFinish,responses((status=200,body=User)))]
 pub(super) async fn login_finish(
     Extension(auth): Extension<Auth>,
+    audited: Audited,
     headers: HeaderMap,
     ApiJson(input): ApiJson<CeremonyFinish>,
 ) -> Result<Response, ApiError> {
-    let (user, token) = auth.login_finish(input, binding(&auth, &headers)?).await?;
+    let binding = binding(&auth, &headers)?;
+    let (user, token) = auth.login_finish(input, binding, audited.request()).await?;
     Ok(session_response(&auth, user, Some(token)))
 }
 /// Starts confirming the browser session with a passkey.
@@ -627,10 +633,12 @@ pub(super) async fn reauthenticate_start(
 pub(super) async fn reauthenticate_finish(
     Extension(auth): Extension<Auth>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
     headers: HeaderMap,
     ApiJson(input): ApiJson<CeremonyFinish>,
 ) -> Result<Json<Managed>, ApiError> {
-    auth.reauthenticate_finish(input, binding(&auth, &headers)?, &identity)
+    let binding = binding(&auth, &headers)?;
+    auth.reauthenticate_finish(input, binding, &identity, audited.request())
         .await?;
     Ok(Json(Managed::default()))
 }
@@ -641,8 +649,9 @@ pub(super) async fn reauthenticate_finish(
 pub(super) async fn logout(
     Extension(auth): Extension<Auth>,
     Extension(identity): Extension<Identity>,
+    audited: Audited,
 ) -> Result<Response, ApiError> {
-    auth.logout(&identity).await?;
+    auth.logout(&identity, audited.request()).await?;
     let mut response = Json(Managed::default()).into_response();
     set_cookie(&mut response, &auth, AuthCookie::Session, "", 0);
     Ok(response)
@@ -671,7 +680,7 @@ pub(super) async fn directory(
 pub(super) async fn manage(
     Extension(auth): Extension<Auth>,
     Extension(identity): Extension<Identity>,
-    audited: super::access::Audited,
+    audited: Audited,
     ApiJson(input): ApiJson<Manage>,
 ) -> Response {
     // A change records what it changed itself; the background record of a
@@ -778,9 +787,12 @@ pub(super) fn device_start_route<S: Clone + Send + Sync + 'static>(
 #[utoipa::path(post,path="/api/v1/auth/device/poll",operation_id="authDevicePoll",request_body=DevicePoll,responses((status=200,body=DeviceToken),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn device_poll(
     Extension(auth): Extension<Auth>,
+    audited: Audited,
     ApiJson(input): ApiJson<DevicePoll>,
 ) -> Result<Response, ApiError> {
-    let token = auth.device_poll(&input.device_code).await?;
+    let token = auth
+        .device_poll(&input.device_code, audited.request())
+        .await?;
     let signed_in = token
         .user
         .clone()

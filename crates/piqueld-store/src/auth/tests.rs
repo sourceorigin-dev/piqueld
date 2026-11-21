@@ -165,7 +165,7 @@ async fn writes_check_the_stored_proof_and_exempt_the_host_operator() {
         .await
         .unwrap();
     let (session, _) = store
-        .redeem_operator_link("link", "session", expires_at)
+        .redeem_operator_link(None, "link", "session", expires_at)
         .await
         .unwrap()
         .unwrap();
@@ -232,11 +232,20 @@ async fn confirming_a_login_keeps_its_latest_proof() {
     let inserted = store.insert_credential("alice", &laptop).await;
     inserted.expect("the store keeps the login");
     let now = now_secs();
-    // The newer confirmation finishes first.
-    for proved in [now - 10, now - 50] {
-        let confirmed = store.confirm_login(alice, "laptop", proved).await;
+    // The newer confirmation finishes first; the older one, and a repeat,
+    // change nothing and record nothing.
+    let route = "POST /api/v1/auth/device/poll";
+    for (proved, recorded) in [(now - 10, true), (now - 50, false), (now - 10, false)] {
+        let request = crate::testing::audit_request(route);
+        let author = Author {
+            actor: alice,
+            request: Some(&request),
+        };
+        let confirmed = store.confirm_login(author, "laptop", proved).await;
         assert!(confirmed.expect("alice may confirm her own login"));
+        assert_eq!(request.recorded.get(), recorded);
     }
+    assert_eq!(store.audit_actions().await.len(), 1);
     let owner = store.credential_owner("laptop").await;
     let owner = owner.expect("credentials are readable");
     let owner = owner.expect("the login is live");
@@ -350,4 +359,91 @@ async fn account_changes_record_what_they_changed() {
         ]
     );
     assert!(!actions.iter().any(|action| action.contains("hash")));
+}
+
+/// Sign-ins and the sessions they open record themselves under who signed
+/// in, without the request's credential, and never a secret: a passkey
+/// sign-in, a CLI login an approval issues or confirms, and a host operator
+/// sign-in. A step-up keeps its request's caller. A sign-in whose record
+/// can't be written opens no session.
+#[tokio::test]
+async fn sign_ins_record_who_they_signed_in() {
+    let (_dir, store) = Store::temporary().await;
+    let alice = store.admin_with_passkey("alice").await;
+    let route = "POST /api/v1/auth/login/finish";
+    // A request made with alice's login, which a sign-in doesn't name.
+    let mut request = crate::testing::audit_request(route);
+    request.origin.username = Some("alice".into());
+    request.origin.credential_id = Some("alice".into());
+    let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
+    let browser = proved(credential("browser", CredentialKind::Browser));
+    let sign_in =
+        || store.sign_in_with_passkey(Some(&request), "alice-key", "alice", stored, &browser);
+    store.refuse_audit(true).await;
+    assert!(sign_in().await.is_err());
+    store.refuse_audit(false).await;
+    let opened = store.credential_owner("browser").await;
+    assert!(opened.expect("credentials are read").is_none());
+    let signed_in = sign_in().await.expect("alice signs in");
+    signed_in.expect("the passkey is alice's");
+    let by = Author {
+        actor: alice,
+        request: Some(&request),
+    };
+    let confirmed = store.confirm_with_passkey(by, "alice-key", stored, now_secs());
+    assert!(confirmed.await.expect("the step-up is stored"));
+    // Approved a minute ago, so confirming it now changes its proof.
+    let cli = NewCredential {
+        authenticated_at: Some(now_secs() - 60),
+        ..credential("cli", CredentialKind::Cli)
+    };
+    let issued = store.issue_for_credential_owner(by, &cli).await;
+    issued
+        .expect("the login is issued")
+        .expect("alice is signed in");
+    let login = store.confirm_login(by, "cli", now_secs()).await;
+    assert!(login.expect("the login is confirmed"));
+    let operator = HostOperator { uid: 1000 };
+    let expires_at = now_secs() + 3600;
+    let link = store.create_operator_link("operator", "link", expires_at, operator);
+    link.await.expect("the link is issued");
+    let redeemed = store.redeem_operator_link(Some(&request), "link", "session", expires_at);
+    redeemed
+        .await
+        .expect("the link is read")
+        .expect("the link is live");
+    let rows = "SELECT action,username,credential_id,operator_uid FROM audit_events ORDER BY id";
+    let rows = sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<i64>)>(rows)
+        .fetch_all(&store.pool)
+        .await
+        .expect("the trail is read");
+    let alice = |action: String| (action, Some("alice".into()), None, None);
+    assert_eq!(
+        rows,
+        [
+            alice(format!(
+                "{route} browser \"browser\" \"browser\" grants of its account expires never \
+                tailnet none with passkey \"alice-key\""
+            )),
+            (
+                format!("{route} credential \"alice\" confirmed with passkey \"alice-key\""),
+                Some("alice".into()),
+                Some("alice".into()),
+                None,
+            ),
+            alice(format!(
+                "{route} cli \"cli\" \"cli\" grants of its account expires never tailnet none \
+                approved by \"alice\""
+            )),
+            alice(format!(
+                "{route} cli \"cli\" confirmed, approved by \"alice\""
+            )),
+            (
+                format!("{route} host operator session \"operator\" signed in"),
+                None,
+                None,
+                Some(1000),
+            ),
+        ]
+    );
 }
