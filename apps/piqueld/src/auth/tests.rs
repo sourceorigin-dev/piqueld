@@ -1258,7 +1258,7 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
         let device_code = start.device_code.clone();
         async move { auth.device_poll(&device_code, None).await }
     });
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    f.auth.0.store.writer_waiting().await;
     cancelled.abort();
     assert!(
         cancelled
@@ -1622,7 +1622,7 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
             let code = start.device_code.clone();
             async move { auth.device_poll(&code, None).await }
         });
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        f.auth.0.store.writer_waiting().await;
         // Other logins proceed; the pending logins are not locked meanwhile,
         // and a concurrent poll waits.
         f.auth.device_start(None, None).unwrap();

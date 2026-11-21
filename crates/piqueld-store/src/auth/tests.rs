@@ -71,6 +71,9 @@ async fn refreshes_waiting_for_writers_respect_idle_expiry() {
         let store = store.clone();
         async move { store.touch_credential("credential").await }
     });
+    store.writer_waiting().await;
+    // wall-clock: refreshes judge expiry by the system clock, which paused
+    // tokio time doesn't move, so a real second passes while it waits.
     tokio::time::sleep(Duration::from_secs(1)).await;
     tx.rollback().await.unwrap();
     drop(writer);
