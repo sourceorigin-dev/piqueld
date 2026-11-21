@@ -140,28 +140,32 @@ daemon-embedded *ARGS:
 dev *ARGS:
     @cargo xtask dev "$@"
 
-# Prepares a new worktree: writes its development instance's configuration and
-# builds the workspace. T3 Code runs it when it creates a worktree (t3.json).
-# target/worktree-setup/running holds its PID while it works; it then leaves
-# `done`, or `failed` holding the end of the output. The final marker is
-# written before `running` is removed, so a reader always finds one.
+# T3 Code runs this when it creates a worktree (t3.json). While it works,
+# target/worktree-setup/running holds its PID and output.log its output; it
+# then leaves `done`, or `failed` holding the end of the log. It refuses to
+# start while another run is live. `running` is written before the old markers
+# go and removed after the new one is written, so a reader always finds one.
+# Prepares a new worktree: its development configuration and a workspace build.
 setup-worktree:
     #!/usr/bin/env bash
     set -euo pipefail
     markers=target/worktree-setup
     mkdir -p "$markers"
-    rm -f "$markers/done" "$markers/failed"
+    if pid=$(cat "$markers/running" 2>/dev/null) && kill -0 "$pid" 2>/dev/null; then
+        echo "worktree setup is already running as PID $pid" >&2
+        exit 1
+    fi
     echo $$ > "$markers/running"
-    log=$(mktemp)
-    trap 'rm -f "$log"' EXIT
+    rm -f "$markers/done" "$markers/failed"
     status=0
-    { just dev config && just build; } 2>&1 | tee "$log" || status=$?
+    { just dev config && just build; } 2>&1 | tee "$markers/output.log" || status=$?
     if [ "$status" -eq 0 ]; then
         touch "$markers/done"
     else
-        tail -n 40 "$log" > "$markers/failed"
+        tail -n 40 "$markers/output.log" > "$markers/failed.tmp"
+        mv "$markers/failed.tmp" "$markers/failed"
     fi
-    rm "$markers/running"
+    rm -f "$markers/running"
     exit "$status"
 
 # piquelctl from this worktree, connected to its development instance.

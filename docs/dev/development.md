@@ -22,7 +22,8 @@ is ready, printing its dashboard URL.
 
 On first use, `just dev` writes the gitignored `piqueld.local.toml`.
 `just dev config` writes it ahead of time
-([`just setup-worktree`](#worktree-setup) does), and `just dev config --force` regenerates it:
+([`just setup-worktree`](#worktree-setup) does), and
+`just dev config --force` regenerates it:
 
 | Setting | Value |
 | --- | --- |
@@ -144,9 +145,9 @@ Set `docker.socket = "/var/run/docker.sock"` to use the host engine instead;
 | `just ctl ARGS` | Run this worktree's `piquelctl` against the instance |
 
 T3 Code runs [`just setup-worktree`](#worktree-setup) when it creates a
-worktree and `just dev stop` when its thread settles (see `t3.json`). An instance also stops itself once its
-worktree is removed; `just dev prune` then deletes its engine, volume, and
-directories.
+worktree and `just dev stop` when its thread settles (see `t3.json`). An
+instance also stops itself once its worktree is removed; `just dev prune`
+then deletes its engine, volume, and directories.
 
 `just dev wait` considers sources saved after the current build started as not
 yet built, so it is safe to call right after an edit. It fails with the
@@ -166,8 +167,10 @@ whether to wait:
 | `done` | Setup succeeded. |
 | `failed` | Setup failed. The file holds the last 40 lines of its output. |
 
-Run `just setup-worktree` again to retry a failed or interrupted setup, or to
-prepare a worktree T3 Code didn't create.
+`output.log`, beside the marker, keeps the latest run's whole output. Run
+`just setup-worktree` again to retry a failed or interrupted setup, or to
+prepare a worktree T3 Code didn't create; it refuses to start while another
+run is live.
 
 ## Logs
 
