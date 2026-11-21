@@ -6,17 +6,17 @@ use crate::browser::ui::{
     Icon, Tone, empty, icon, load_older, loading, notice, operation_badge, when,
 };
 use crate::browser::{Alive, ClientErrorExt, document_hidden, live_row};
-use crate::deployments::{DeploymentList, DeploymentSummary};
+use crate::deployments::{DeploymentFacts, DeploymentList};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::components::A;
-use piqueld_client::{Client, DeploymentView, Page};
+use piqueld_client::{Client, DeploymentSummary, Page};
 
 /// The deployments shown for one environment: its first page, polled, and
 /// older pages appended on request.
 #[derive(Clone, Copy)]
 struct History {
-    items: RwSignal<Vec<DeploymentView>>,
+    items: RwSignal<Vec<DeploymentSummary>>,
     /// Cursor of the next older page.
     cursor: RwSignal<Option<String>>,
     /// Whether an older page was appended, so polls merge instead of replacing.
@@ -43,7 +43,7 @@ impl History {
     /// Applies a freshly polled first page. Before any older page is loaded,
     /// the page simply replaces the list and cursor; afterwards it is merged
     /// into the older pages (see `DeploymentList::merge_newest`).
-    fn merge(self, page: Page<DeploymentView>) {
+    fn merge(self, page: Page<DeploymentSummary>) {
         self.items.update(|items| {
             if self.paginated.get_untracked() {
                 items.merge_newest(page.items);
@@ -66,7 +66,7 @@ impl History {
                 let shown = context.tabs.selected.get_untracked() == "Deployments";
                 if shown && !self.loading.get_untracked() && !document_hidden() {
                     let result = Client::browser()
-                        .deployments(&environment, None, Some(PAGE))
+                        .deployment_summaries(&environment, None, Some(PAGE))
                         .await;
                     if !active.get() {
                         break;
@@ -98,7 +98,7 @@ impl History {
         self.loading.set(true);
         spawn_local(async move {
             match Client::browser()
-                .deployments(&environment, next.as_deref(), Some(PAGE))
+                .deployment_summaries(&environment, next.as_deref(), Some(PAGE))
                 .await
             {
                 Ok(page) => {
@@ -181,13 +181,13 @@ pub(in crate::browser::management) fn DeploymentHistory() -> impl IntoView {
 /// configuration revision and commit it deploys, and how long it ran, or
 /// while the page follows it running, its progress.
 #[component]
-fn DeploymentRow(deployment: Signal<DeploymentView>) -> impl IntoView {
+fn DeploymentRow(deployment: Signal<DeploymentSummary>) -> impl IntoView {
     let context = editor();
     let running = expect_context::<RunningDeployment>();
     let id = deployment.with_untracked(|deployment| deployment.operation.id.clone());
     let href = context.deployment_href(&context.environment_id(), &id);
     let live = Signal::derive(move || running.running(Some(&id)));
-    let tag = move |shown: fn(&DeploymentView) -> bool, label: &'static str| {
+    let tag = move |shown: fn(&DeploymentSummary) -> bool, label: &'static str| {
         move || {
             deployment
                 .with(shown)
@@ -198,7 +198,7 @@ fn DeploymentRow(deployment: Signal<DeploymentView>) -> impl IntoView {
         <li class="list-row list-row-link deployment-row">
             {move || operation_badge(deployment.get().operation.state)} <span class="title">
                 <A href={href}>{move || context.deployment_title(&deployment.get().origin)}</A>
-                <small>{move || deployment.with(DeploymentSummary::commit)}</small>
+                <small>{move || deployment.with(DeploymentFacts::commit)}</small>
             </span>
             <span class="tag">
                 {move || format!("Revision {}", deployment.get().operation.generation)}

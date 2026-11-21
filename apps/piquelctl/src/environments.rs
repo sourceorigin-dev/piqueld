@@ -1074,7 +1074,7 @@ struct Baseline {
 impl Baseline {
     /// The latest deployment's operation of environment `id`, if any.
     async fn latest(client: &Client, id: &str) -> Result<Option<Self>> {
-        let deployments = client.deployments(id, None, Some(1)).await?;
+        let deployments = client.deployment_summaries(id, None, Some(1)).await?;
         Ok(deployments.items.into_iter().next().map(|deployment| Self {
             terminal: deployment.operation.state.terminal(),
             attempt: deployment.operation.attempt,
