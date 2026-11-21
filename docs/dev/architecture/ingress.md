@@ -625,8 +625,8 @@ failing pass can wait out many 30-second Docker and Caddy timeouts, and
 observations more than 45 seconds apart would restart the failure instead of
 letting it notify. Each pass acknowledges the routes it applied, but writes
 only the environments whose routes changed, so a steady pass writes nothing. The
-containers' logs are relayed to the daemon's every 10 seconds, starting from
-the daemon's start, at most 100 lines per container (a warning says when a
+containers' logs are relayed to the daemon's after each gateway pass, normally
+every 10 seconds, starting from the daemon's start, at most 100 lines per container (a warning says when a
 burst had more), each cut to 4096 characters, and the relay may take at most
 5 seconds of the pass. Gateway startup,
 port and configuration failures leave the daemon available.
