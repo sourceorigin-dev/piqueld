@@ -259,35 +259,65 @@ image = "nginx:1.27"
 /// keys.
 #[test]
 fn decode_paths_keep_every_manifest_field() {
+    /// Whether `schema` is a map, following references into `root` and
+    /// through `allOf`, `oneOf` and `anyOf`, so a map behind a named type
+    /// counts too.
+    fn is_map(schema: &serde_json::Value, root: &serde_json::Value) -> bool {
+        if schema
+            .get("additionalProperties")
+            .is_some_and(serde_json::Value::is_object)
+        {
+            return true;
+        }
+        if let Some(reference) = schema.get("$ref").and_then(serde_json::Value::as_str) {
+            return reference
+                .strip_prefix('#')
+                .and_then(|pointer| root.pointer(pointer))
+                .is_some_and(|target| is_map(target, root));
+        }
+        ["allOf", "oneOf", "anyOf"].iter().any(|key| {
+            schema
+                .get(key)
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|schemas| schemas.iter().any(|schema| is_map(schema, root)))
+        })
+    }
     /// Collects each property's name and whether its value is a map.
-    fn property_names(schema: &serde_json::Value, names: &mut Vec<(String, bool)>) {
+    fn property_names(
+        schema: &serde_json::Value,
+        root: &serde_json::Value,
+        names: &mut Vec<(String, bool)>,
+    ) {
         match schema {
             serde_json::Value::Object(object) => {
                 if let Some(serde_json::Value::Object(properties)) = object.get("properties") {
-                    names.extend(properties.iter().map(|(name, property)| {
-                        let map = property
-                            .get("additionalProperties")
-                            .is_some_and(serde_json::Value::is_object);
-                        (name.clone(), map)
-                    }));
+                    names.extend(
+                        properties
+                            .iter()
+                            .map(|(name, property)| (name.clone(), is_map(property, root))),
+                    );
                 }
                 for value in object.values() {
-                    property_names(value, names);
+                    property_names(value, root, names);
                 }
             }
             serde_json::Value::Array(items) => {
                 for item in items {
-                    property_names(item, names);
+                    property_names(item, root, names);
                 }
             }
             _ => {}
         }
     }
+    // A map behind a reference, as a map newtype's schema is, counts.
+    let definitions = serde_json::json!({"defs": {"Map": {"additionalProperties": {}}}});
+    assert!(is_map(
+        &serde_json::json!({"$ref": "#/defs/Map"}),
+        &definitions
+    ));
+    let schema = piqueld_core::manifest::ApplicationManifest::json_schema();
     let mut names = Vec::new();
-    property_names(
-        &piqueld_core::manifest::ApplicationManifest::json_schema(),
-        &mut names,
-    );
+    property_names(&schema, &schema, &mut names);
     assert!(names.iter().any(|(name, _)| name == "stop_service"));
     assert!(
         names
