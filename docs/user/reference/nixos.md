@@ -61,6 +61,16 @@ Set `services.piqueld.checkConfig = false;` when the package cannot run on the
 build machine, such as when cross-compiling.
 
 `dataDir` defaults to `/var/lib/piqueld`, with mode `0700`, holding `piqueld.db`.
+The daemon keeps the backups it takes before an upgrade in its `backups`
+directory. To [roll back](../operations/backups.md#roll-back), run
+`piqueld restore` as the `piqueld` user with `--data-dir`, which doesn't read
+the configuration. The module doesn't put `piqueld` on the `PATH`; use the
+running unit's binary:
+
+```console
+piqueld=$(systemctl cat piqueld | grep -o '/nix/store/[^ ]*/bin/piqueld' | head -n 1)
+sudo -u piqueld "$piqueld" restore --data-dir /var/lib/piqueld <backup>
+```
 `runtimeDir` defaults to `/run/piqueld`, prepared by systemd with mode `0750`.
 The socket is `/run/piqueld/piqueld.sock`, owned by `piqueld:piqueld` with mode
 `0660`. After logging in again to refresh group membership, users can connect

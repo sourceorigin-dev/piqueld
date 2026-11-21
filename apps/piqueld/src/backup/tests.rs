@@ -70,7 +70,8 @@ async fn outdated(data_dir: &Path) -> String {
     instance
 }
 
-/// Runs `sql` on the database in `data_dir` without checking constraints,
+/// Runs `sql` on the database in `data_dir`, or a backup, without checking
+/// constraints,
 /// as damage outside the daemon could leave it.
 async fn tamper(data_dir: &Path, sql: &str) {
     let options = sqlx::sqlite::SqliteConnectOptions::new().filename(data_dir.join(DATABASE));
@@ -259,4 +260,156 @@ async fn a_symlinked_state_directory_is_not_followed() {
         .expect_err("the symlink is refused");
     assert!(format!("{error:#}").contains("tailscale"), "{error:#}");
     assert_eq!(backup_names(data_dir.path()), Vec::<String>::new());
+}
+
+/// A backup checks out without touching the data directory, then restores
+/// into a missing one as a database and key that match, with the tailnet
+/// and ingress state.
+#[tokio::test]
+async fn a_backup_restores_into_an_empty_data_directory() {
+    let (source, backup, instance) = backed_up().await;
+    let target = tempfile::tempdir().expect("a directory is created");
+    let data_dir = target.path().join("data");
+    let backups = Backups::new(&data_dir);
+    backups
+        .restore(&backup, true)
+        .await
+        .expect("the backup checks out");
+    assert!(!data_dir.exists(), "checking touches nothing");
+
+    let manifest = backups
+        .restore(&backup, false)
+        .await
+        .expect("the backup restores");
+    assert_eq!(manifest.instance_id, instance);
+    assert_eq!(
+        files(&data_dir),
+        [
+            "ingress/data/caddy/certificates/cert.pem",
+            DATABASE,
+            SECRET_KEY,
+            "tailscale/tailscaled.state",
+        ]
+    );
+    assert_eq!(
+        fs::read(data_dir.join(SECRET_KEY)).expect("the restored key reads"),
+        fs::read(source.path().join(SECRET_KEY)).expect("the original key reads")
+    );
+    backups
+        .ensure_restore_complete()
+        .expect("the restore finished");
+}
+
+/// Restores `backup` into a new data directory, expecting a refusal that
+/// leaves the directory empty.
+async fn refused(backup: &Path) -> anyhow::Error {
+    let target = tempfile::tempdir().expect("a directory is created");
+    let data_dir = target.path().join("data");
+    let error = Backups::new(&data_dir)
+        .restore(backup, false)
+        .await
+        .expect_err("the restore is refused");
+    let left = fs::read_dir(&data_dir).map_or(0, Iterator::count);
+    assert_eq!(left, 0, "a refused restore leaves nothing: {error:#}");
+    error
+}
+
+/// Restore refuses a newer schema, an entry no backup holds, a key that
+/// doesn't decrypt the database's secrets, a damaged database, and a data
+/// directory in use.
+#[tokio::test]
+async fn restore_refuses_backups_it_cannot_trust() {
+    let (source, backup, _) = backed_up().await;
+
+    let extra = backup.join("extra");
+    fs::write(&extra, b"").expect("an extra file is written");
+    let error = refused(&backup).await;
+    assert!(
+        matches!(error.downcast_ref(), Some(Refusal::UnexpectedEntry(name)) if name == "extra"),
+        "{error:#}"
+    );
+    fs::remove_file(&extra).expect("the extra file is removed");
+
+    let key = backup.join(SECRET_KEY);
+    let original = fs::read(&key).expect("the key reads");
+    fs::write(&key, [7; 32]).expect("another key is written");
+    let error = refused(&backup).await;
+    assert!(
+        error.chain().any(|cause| matches!(
+            cause.downcast_ref(),
+            Some(piqueld_store::StoreError::SecretSource(_))
+        )),
+        "{error:#}"
+    );
+    fs::write(&key, original).expect("the original key is written back");
+
+    let path = backup.join(MANIFEST);
+    let manifest = fs::read(&path).expect("the manifest reads");
+    let mut newer: Manifest = serde_json::from_slice(&manifest).expect("the manifest parses");
+    newer.schema_version = SCHEMA_VERSION + 1;
+    fs::write(
+        &path,
+        serde_json::to_vec(&newer).expect("the manifest serializes"),
+    )
+    .expect("the manifest is written");
+    let error = refused(&backup).await;
+    assert!(
+        matches!(error.downcast_ref(), Some(Refusal::NewerSchema(_))),
+        "{error:#}"
+    );
+    fs::write(&path, manifest).expect("the original manifest is written back");
+
+    tamper(&backup, "UPDATE applications SET desired_json='{not json'").await;
+    let error = refused(&backup).await;
+    assert!(error.is::<Damaged>(), "{error:#}");
+
+    fs::set_permissions(source.path(), fs::Permissions::from_mode(0o700))
+        .expect("the data directory is private");
+    let error = Backups::new(source.path())
+        .restore(&backup, false)
+        .await
+        .expect_err("a data directory in use is refused");
+    assert!(
+        matches!(error.downcast_ref(), Some(Refusal::NotEmpty(_))),
+        "{error:#}"
+    );
+}
+
+/// The daemon refuses a data directory holding an unfinished restore.
+#[test]
+fn an_unfinished_restore_blocks_startup() {
+    let data_dir = tempfile::tempdir().expect("a data directory is created");
+    let backups = Backups::new(data_dir.path());
+    backups
+        .ensure_restore_complete()
+        .expect("nothing is unfinished");
+    fs::create_dir(data_dir.path().join(".restore-abc")).expect("a staging directory is created");
+    let error = backups
+        .ensure_restore_complete()
+        .expect_err("the unfinished restore is refused");
+    assert!(
+        matches!(error.downcast_ref(), Some(Refusal::Unfinished(..))),
+        "{error:#}"
+    );
+}
+
+/// A publish that fails part way, here on a directory no rename replaces,
+/// moves back what it moved and ends the restore, so it can run again.
+#[test]
+fn a_failed_publish_moves_back_what_it_moved() {
+    let data_dir = tempfile::tempdir().expect("a data directory is created");
+    let staging = tempfile::Builder::new()
+        .prefix(restore::STAGING)
+        .tempdir_in(data_dir.path())
+        .expect("a staging directory is created");
+    fs::write(staging.path().join("a"), b"restored").expect("a file is staged");
+    fs::create_dir(staging.path().join("b")).expect("a directory is staged");
+    fs::create_dir(data_dir.path().join("b")).expect("a directory is in the way");
+    fs::write(data_dir.path().join("b/kept"), b"").expect("it isn't empty");
+
+    let error = Backups::new(data_dir.path())
+        .publish(staging)
+        .expect_err("the publish fails");
+    assert!(error.downcast_ref::<Refusal>().is_none(), "{error:#}");
+    assert_eq!(files(data_dir.path()), ["b/kept"]);
 }

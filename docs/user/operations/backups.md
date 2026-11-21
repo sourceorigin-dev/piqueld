@@ -163,23 +163,41 @@ replace your own backup.
    sudo docker stop $(sudo docker ps --quiet --filter label=io.piqueld.ingress=true --filter label=io.piqueld.instance=$instance)
    ```
 
-3. Move the data directory aside:
+3. Move the data directory aside, and create an empty one for the daemon's
+   user:
 
    ```console
    sudo mv /var/lib/piqueld /var/lib/piqueld.upgraded
+   sudo install -d -o piqueld -g piqueld -m 0700 /var/lib/piqueld
    ```
 
-4. Restore the backup in its place. Don't copy the upgraded database's `-wal`
-   and `-shm` files into it.
+4. Find the backup the daemon took before the upgrade. Its name holds the
+   database's version before the upgrade:
 
    ```console
-   sudo cp -a /safe/location/piqueld-backup /var/lib/piqueld
+   sudo ls /var/lib/piqueld.upgraded/backups
    ```
 
-5. Give the daemon's user every restored file. On a new host, its user ID may
-   differ from the backup's.
+5. Restore it, as the daemon's user:
 
    ```console
+   sudo -u piqueld piqueld restore --data-dir /var/lib/piqueld /var/lib/piqueld.upgraded/backups/pre-<schema>-<time>
+   ```
+
+   Use the upgraded version's `piqueld`: the previous one may not have this
+   command. On NixOS, `piqueld` isn't on the `PATH`; [use the unit's
+   binary](../reference/nixos.md). It first checks the backup: the database's integrity, that the
+   database is the one the backup describes, and that `secrets.key` decrypts
+   its secrets. It restores nothing if a check fails. Add `--check` to run
+   the checks only.
+
+   To restore a backup you [took yourself](#back-up) instead, copy it in
+   place, without the upgraded database's `-wal` and `-shm` files, then give
+   the daemon's user every restored file. On a new host, its user ID may
+   differ from the backup's:
+
+   ```console
+   sudo cp -a /safe/location/piqueld-backup/. /var/lib/piqueld/
    sudo chown -R piqueld:piqueld /var/lib/piqueld
    ```
 
@@ -214,6 +232,12 @@ database, and repairs the difference, as it repairs any drift.
   backup again.
 - **The previous version refuses to start after an upgrade.** The new version
   updated the database, which older versions refuse. [Roll back](#roll-back)
-  to the backup you took before upgrading.
+  to the backup taken before upgrading.
+- **The daemon doesn't start after an upgrade, and its log says it failed to
+  back up the data directory.** It hasn't updated anything. Fix the cause the
+  log names, such as a full disk, then start it again.
+- **The daemon refuses to start because of an unfinished restore.** A
+  `piqueld restore` was interrupted, or failed and couldn't undo what it had
+  restored. Empty the data directory, then restore again.
 - **The daemon can't write to a restored database.** Its files must belong to
   the daemon's user: run `sudo chown -R piqueld:piqueld /var/lib/piqueld`.

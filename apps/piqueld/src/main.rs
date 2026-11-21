@@ -70,6 +70,27 @@ enum Command {
         #[arg(long, value_name = "PATH")]
         config: PathBuf,
     },
+    /// Restore a backup of the data directory into an empty data directory,
+    /// then exit.
+    ///
+    /// Run it as the daemon's user while the daemon is stopped. It first
+    /// checks the backup: the database's integrity, that the database is the
+    /// one the backup describes, and that `secrets.key` decrypts its secrets.
+    /// It restores nothing if a check fails. The daemon updates the restored
+    /// database when it next starts.
+    Restore {
+        /// The backup, such as `/var/lib/piqueld/backups/pre-<schema>-<time>`.
+        #[arg(value_name = "BACKUP")]
+        backup: PathBuf,
+        /// Restore into this data directory instead of the configuration's
+        /// `server.data_dir`. The configuration isn't read then.
+        #[arg(long, value_name = "PATH")]
+        data_dir: Option<PathBuf>,
+        /// Only check the backup, in a temporary directory, and restore
+        /// nothing.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 impl Args {
@@ -100,6 +121,32 @@ async fn main() -> Result<()> {
             println!("configuration {} is valid", config.display());
             Ok(())
         }
+        Some(Command::Restore {
+            backup,
+            data_dir,
+            check,
+        }) => {
+            let data_dir = match data_dir {
+                Some(data_dir) => data_dir.clone(),
+                None => load_config(args.config.as_deref())?.server.data_dir,
+            };
+            let manifest = Backups::new(&data_dir)
+                .restore(backup, *check)
+                .await
+                .with_context(|| format!("failed to restore {}", backup.display()))?;
+            let what = format!(
+                "{} (schema {}, instance {})",
+                backup.display(),
+                manifest.schema_version,
+                manifest.instance_id
+            );
+            if *check {
+                println!("backup {what} is valid");
+            } else {
+                println!("restored backup {what} into {}", data_dir.display());
+            }
+            Ok(())
+        }
         None => {
             let config = load_config(args.config.as_deref())?;
             let telemetry =
@@ -121,8 +168,9 @@ async fn main() -> Result<()> {
 ///
 /// 1. Prepares and locks the data directory, then validates and locks the runtime
 ///    directory and binds every listener, so misconfiguration fails before any
-///    state is opened. Then backs up the data directory if its database needs
-///    migrating ([`Backups::before_migration`]).
+///    state is opened. Then refuses a data directory an unfinished restore
+///    left, and backs it up if its database needs migrating
+///    ([`Backups::before_migration`]).
 /// 2. Starts the application service and reconciliation controller.
 /// 3. Serves the dashboard/API over TCP and the Unix API socket.
 /// 4. After cancellation, waits up to `SHUTDOWN_DEADLINE` for every task and
@@ -150,13 +198,13 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
     let runtime_dir =
         piqueld_config::runtime_dir::RuntimeDir::acquire(&config.server.runtime_dir).await?;
     let listeners = Listeners::bind(&config, &runtime_dir).await?;
+    let backups = Backups::new(&config.server.data_dir);
+    backups.ensure_restore_complete()?;
     // Migrations can't be undone, so state the store is about to migrate is
     // backed up first, before the tailnet node writes to it.
-    if let Some(backup) = Backups::new(&config.server.data_dir)
-        .before_migration()
-        .await
-        .context("failed to back up the data directory before migrating its database; nothing was migrated")?
-    {
+    if let Some(backup) = backups.before_migration().await.context(
+        "failed to back up the data directory before migrating its database; nothing was migrated",
+    )? {
         info!(backup = %backup.display(), "backed up the data directory before migrating its database");
     }
     // The node may fill auth.public_url, so it joins before authentication starts.
