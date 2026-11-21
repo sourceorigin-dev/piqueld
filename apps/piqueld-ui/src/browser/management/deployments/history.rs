@@ -73,7 +73,9 @@ impl History {
                     }
                     match result {
                         Ok(page) => {
-                            if let (Some(newest), Some(running)) = (page.items.first(), running) {
+                            if let (Some(newest), Some(running)) =
+                                (DeploymentSummary::newest(&page.items), running)
+                            {
                                 running.saw(&newest.operation);
                             }
                             self.merge(page);

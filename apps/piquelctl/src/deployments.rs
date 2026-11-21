@@ -9,14 +9,14 @@ use crate::{
         Console,
         reports::{AcceptedDeploymentReport, Named, OperationOutcomeReport},
     },
-    support::{join_or, retry_transport},
+    support::{PAGE_SIZE, join_or, retry_transport},
 };
 use clap::{Args, ValueEnum};
 use piqueld_client::{
     AcceptedOperation, ApplicationId, ApplicationView, Client, ClientError, DeploymentOrigin,
-    DeploymentView, EnvironmentDetailView, EnvironmentId, EnvironmentName, EnvironmentView,
-    LocalSnapshot, Operation, OperationKind, OperationState, ReleaseId, RouteUrl, SystemVariable,
-    UrlState,
+    DeploymentSummary, DeploymentView, EnvironmentDetailView, EnvironmentId, EnvironmentName,
+    EnvironmentView, LocalSnapshot, Operation, OperationKind, OperationState, ReleaseId, RouteUrl,
+    SystemVariable, UrlState,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -302,17 +302,15 @@ impl<T: Args + Target> WaitArgs<T> {
     }
 
     /// The deployment to wait for: `--deployment`, checked to be one of
-    /// `environment`'s, or its latest one.
+    /// `environment`'s, or the newest one its first page lists (see
+    /// `DeploymentSummary::newest`).
     async fn deployment(&self, client: &Client, environment: &EnvironmentView) -> Result<String> {
         let Some(id) = &self.deployment else {
             let page = client
-                .deployment_summaries(environment.id.as_str(), None, Some(1))
+                .deployment_summaries(environment.id.as_str(), None, Some(PAGE_SIZE))
                 .await?;
-            return page
-                .items
-                .into_iter()
-                .next()
-                .map(|deployment| deployment.operation.id)
+            return DeploymentSummary::newest(&page.items)
+                .map(|deployment| deployment.operation.id.clone())
                 .ok_or_else(|| {
                     CliError::new(
                         ErrorKind::Input,

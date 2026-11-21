@@ -35,6 +35,13 @@ pub trait DeploymentFacts {
         let started = operation.started_at_ms.unwrap_or(operation.created_at_ms);
         u64::try_from(operation.finished_at_ms? - started).ok()
     }
+
+    /// Whether `listed` holds a deployment created after it (see
+    /// `DeploymentSummary::newest`), whatever their order.
+    fn superseded_in(&self, listed: &[DeploymentSummary]) -> bool {
+        DeploymentSummary::newest(listed)
+            .is_some_and(|newest| newest.operation.recency() > self.operation().recency())
+    }
 }
 
 impl DeploymentFacts for DeploymentView {
@@ -292,6 +299,22 @@ mod tests {
         built.operation.finished_at_ms = Some(39_000);
         assert_eq!(built.commit().as_deref(), Some("main @ 0123456789ab"));
         assert_eq!(built.duration_ms(), Some(38_000));
+    }
+
+    /// After a restart with the clock behind, the current deployment can
+    /// list below an older one with a higher ID: that one isn't newer, so
+    /// Restore isn't offered on the current deployment.
+    #[test]
+    fn only_a_deployment_created_later_supersedes_one() {
+        let mut current = deployment("operation-1", true, true);
+        current.operation.created_at_ms = 2_000;
+        let mut older = summary("operation-9", false, false);
+        older.operation.created_at_ms = 1_000;
+        let listed = vec![older, current.clone().into()];
+        assert!(!current.superseded_in(&listed));
+        let mut failed = summary("operation-0", false, false);
+        failed.operation.created_at_ms = 3_000;
+        assert!(current.superseded_in(&[listed, vec![failed]].concat()));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! One deployment's page: its progress and timeline, details, snapshot and
 //! attempts, and Restore.
+use super::PAGE;
 use super::snapshot::DeploymentSnapshot;
 use crate::application::DEPLOYMENT_TABS;
 use crate::browser::format::timestamp;
@@ -45,21 +46,16 @@ impl ShownDeployment {
         let alive = Alive::new();
         spawn_local(async move {
             let client = Client::browser();
-            let (deployment, newest) = futures_util::join!(
+            let (deployment, listed) = futures_util::join!(
                 client.deployment(&environment, &operation),
-                client.deployment_summaries(&environment, None, Some(1)),
+                client.deployment_summaries(&environment, None, Some(PAGE)),
             );
             if !alive.get() {
                 return;
             }
-            match deployment.and_then(|deployment| Ok((deployment, newest?))) {
-                Ok((deployment, newest)) => {
-                    self.newer.set(
-                        newest
-                            .items
-                            .first()
-                            .is_some_and(|newest| newest.operation.id != operation),
-                    );
+            match deployment.and_then(|deployment| Ok((deployment, listed?))) {
+                Ok((deployment, listed)) => {
+                    self.newer.set(deployment.superseded_in(&listed.items));
                     self.deployment.set(Some(deployment));
                     self.error.set(None);
                 }

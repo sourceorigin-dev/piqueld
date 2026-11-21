@@ -15,7 +15,8 @@ use crate::browser::ui::key_values;
 use leptos::prelude::*;
 use std::fmt::Display;
 
-/// Deployments the history asks for per page.
+/// Deployments the history asks for per page, and a deployment's page reads
+/// to tell whether a newer one is listed.
 const PAGE: u16 = 20;
 
 /// Definition list of the values of `${{ vars.<name> }}` references.

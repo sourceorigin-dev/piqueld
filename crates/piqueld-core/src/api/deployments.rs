@@ -113,6 +113,17 @@ impl From<DeploymentView> for DeploymentSummary {
     }
 }
 
+impl DeploymentSummary {
+    /// The newest of `deployments` by [`Operation::recency`], which need not
+    /// be the first one a page lists.
+    #[must_use]
+    pub fn newest(deployments: &[Self]) -> Option<&Self> {
+        deployments
+            .iter()
+            .max_by(|a, b| a.operation.recency().cmp(&b.operation.recency()))
+    }
+}
+
 /// A page of an environment's deployments, newest first, in the
 /// [`DeploymentListView`] asked for.
 #[derive(Clone, Debug, Deserialize, Serialize)]
