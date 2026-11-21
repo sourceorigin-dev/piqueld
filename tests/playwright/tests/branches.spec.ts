@@ -88,13 +88,13 @@ test('Preview plans the saved manifest on the connection branch, and the one las
     deployment.warnings = [{ code: 'manifest_connection_ignored', message: 'The fetched manifest names another repository.' }];
   };
   await rewrite(page, `/api/v1/environments/${staging}/deployments`, data => data.items.forEach(warn));
+  // The deployment's page reads it on its own. Matching every deployment's
+  // path saves reading its ID from the deploy response, whose body Chromium
+  // may already have discarded.
+  await rewrite(page, new RegExp(`^/api/v1/environments/${staging}/deployments/[^/]+$`), warn);
   const deployed = page.waitForResponse(response => response.request().method() === 'POST' && response.url().includes(`/environments/${staging}/deploy?`));
   await head(page).getByRole('button', { name: 'Deploy', exact: true }).click();
-  const response = await deployed;
-  expect(response.status()).toBe(202);
-  // The deployment's page reads it on its own.
-  const { operation_id: id } = (await response.json()).data;
-  await rewrite(page, `/api/v1/environments/${staging}/deployments/${id}`, warn);
+  expect((await deployed).status()).toBe(202);
   await page.reload();
 
   await expect(preview).toBeEnabled();

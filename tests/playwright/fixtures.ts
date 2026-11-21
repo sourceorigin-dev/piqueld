@@ -249,9 +249,11 @@ export function confirmNext(page: Page, text?: string) {
   });
 }
 
-/** Rewrites the JSON `data` of GET responses whose path is exactly `path`. */
-export async function rewrite(page: Page, path: string, edit: (data: Record<string, any>) => void) {
-  await page.route(url => url.pathname === path, async (route: Route) => {
+/** Rewrites the JSON `data` of GET responses whose path equals `path`, or
+ * matches it when `path` is a RegExp. */
+export async function rewrite(page: Page, path: string | RegExp, edit: (data: Record<string, any>) => void) {
+  const matches = (pathname: string) => typeof path === 'string' ? pathname === path : path.test(pathname);
+  await page.route(url => matches(url.pathname), async (route: Route) => {
     if (route.request().method() !== 'GET') return route.continue();
     const response = await route.fetch();
     const body = await response.json();
