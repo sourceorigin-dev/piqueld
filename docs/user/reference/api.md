@@ -693,8 +693,9 @@ owned by this environment and daemon instance. Optional `service` filters by
 logical service name; optional `stream=stdout|stderr` filters before limiting
 results (omit it for both, including merged terminal output). `tail` defaults to 200 (1–1000) and `since_seconds` to 3600
 (1–86400). Records include timestamp, service, task ID, stream and message.
-Snapshots are capped at 1 MiB of collected text and 256 tasks, with `truncated`
-indicating a partial result. Docker retains the source logs; removed containers
+Snapshots read the 256 newest tasks, running ones first, and keep each task's
+newest output within an equal share of 1 MiB of collected text (at least
+64 KiB), with `truncated` indicating a partial result. Docker retains the source logs; removed containers
 have no available history. No output is stored by piqueld.
 
 `GET /api/v1/environments/{id}/exec` opens a WebSocket that runs a one-off
