@@ -19,8 +19,14 @@ use tokio::net::TcpStream;
 use crate::process::checked_stdout;
 
 /// The pinned Docker-in-Docker image; `PIQUELD_DIND_IMAGE` overrides it.
-const DIND_IMAGE: &str =
-    "docker:29.6.2-dind@sha256:bfec1f5159c63a81ca6fdedbd81404d2c0e16378ed0feec3bb3fbf3998847659";
+/// Pulled from [`REGISTRY_MIRROR`] alone; the digest still verifies it.
+const DIND_IMAGE: &str = "mirror.gcr.io/library/docker:29.6.2-dind@sha256:bfec1f5159c63a81ca6fdedbd81404d2c0e16378ed0feec3bb3fbf3998847659";
+
+/// Google's public mirror of Docker Hub. CI runners share their addresses, so
+/// their anonymous Docker Hub pulls run into its rate limit; the mirror needs
+/// no credentials. Docker-in-Docker engines pull through it, and from Docker
+/// Hub when it lacks an image.
+const REGISTRY_MIRROR: &str = "https://mirror.gcr.io";
 
 /// Where a Docker-in-Docker engine listens inside its container, onto which
 /// [`Engine::dind_container`] bind-mounts a private host directory.
@@ -81,8 +87,9 @@ impl Engine {
     }
 
     /// A privileged Docker-in-Docker container from `image`, whose engine
-    /// listens in `socket_dir`, a private host directory, as `docker.sock`.
-    /// `binds` mounts more host paths or volumes.
+    /// listens in `socket_dir`, a private host directory, as `docker.sock`,
+    /// and pulls through [`REGISTRY_MIRROR`]. `binds` mounts more host paths
+    /// or volumes.
     pub fn dind_container(
         image: String,
         socket_dir: impl Display,
@@ -93,6 +100,7 @@ impl Engine {
             cmd: Some(vec![
                 "dockerd".to_owned(),
                 format!("--host=unix://{DIND_SOCKET_DIR}/docker.sock"),
+                format!("--registry-mirror={REGISTRY_MIRROR}"),
             ]),
             env: Some(vec!["DOCKER_TLS_CERTDIR=".to_owned()]),
             host_config: Some(HostConfig {
