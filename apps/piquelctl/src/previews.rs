@@ -124,7 +124,10 @@ pub(crate) struct DeployArgs {
     /// Application name or stable ID.
     application: String,
     /// Preview ID, slug, or branch. Omit it with `--local`.
-    #[arg(required_unless_present = "local", conflicts_with = "local")]
+    // The preview also conflicts with the `--local` options, the
+    // `SnapshotArgs` group: clap skips their `requires = "local"` once an
+    // argument conflicting with `--local` is present.
+    #[arg(required_unless_present = "local", conflicts_with_all = ["local", "SnapshotArgs"])]
     preview: Option<String>,
     /// The preview's slot. Give it to address a preview with a slot by its
     /// branch, or to choose the preview `--local` deploys to.

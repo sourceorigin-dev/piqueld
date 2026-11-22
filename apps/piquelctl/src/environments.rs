@@ -456,7 +456,10 @@ pub(crate) struct CreateArgs {
     /// Make the environment promoted: it never builds, and only receives
     /// releases promoted from this environment of the application, given by
     /// name or stable ID, with `env promote`.
-    #[arg(long, value_name = "ENV", conflicts_with = "branch")]
+    // It also conflicts with `--commit`: clap skips `--commit`'s
+    // `requires = "branch"` once an argument conflicting with `--branch` is
+    // present.
+    #[arg(long, value_name = "ENV", conflicts_with_all = ["branch", "commit"])]
     promote_from: Option<String>,
     #[command(flatten)]
     change: ChangeFlags,
