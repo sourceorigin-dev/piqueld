@@ -13,8 +13,7 @@ pub use stored::SecretPrecondition;
 use super::{
     Attribution, EnvironmentId, NormalizedApplication, Operation, Store, StoreError, new_id, now_ms,
 };
-use crate::secrets::{Envelope, Generate, SecretCipher, SecretOwner};
-use anyhow::Context;
+use crate::secrets::{Envelope, Generate, SecretCipher, SecretError, SecretOwner};
 use piqueld_core::EventKind;
 use piqueld_core::{
     ApplicationId,
@@ -309,9 +308,12 @@ impl Store {
         let generator = secret.generate.clone();
         let mut value = tokio::task::spawn_blocking(move || generator.generate())
             .await
-            .map_err(anyhow::Error::from)
+            .map_err(SecretError::Task)
             .and_then(|value| value)
-            .with_context(|| format!("generate secret {}", secret.name))
+            .map_err(|source| SecretError::Generating {
+                name: secret.name.clone(),
+                source: Box::new(source),
+            })
             .map_err(StoreError::SecretSource)?;
         Ok(std::mem::take(&mut *value))
     }

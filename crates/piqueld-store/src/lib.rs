@@ -110,7 +110,7 @@ pub enum StoreError {
     Validation(#[from] piqueld_core::ValidationErrors),
     /// Secret ciphertext or its master key could not be used.
     #[error("secret storage is unavailable")]
-    SecretSource(#[source] anyhow::Error),
+    SecretSource(#[source] secrets::SecretError),
     /// Required values were discarded during lost-key recovery.
     #[error(
         "secret values unavailable: {names}; supply replacement values and start a new deployment"
