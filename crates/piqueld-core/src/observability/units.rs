@@ -44,7 +44,7 @@ impl fmt::Display for Bytes {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         const UNITS: [&str; 4] = ["KiB", "MiB", "GiB", "TiB"];
         // The largest unit it reaches once rounded, of 2^(10 × power) bytes:
-        // the one whose previous unit rounds to 1024.0, so 1023.95 KiB
+        // the one whose previous unit rounds to 1024.0 or more, so 1023.95 KiB
         // reads as 1.0 MiB.
         match (1..=UNITS.len())
             .rev()
