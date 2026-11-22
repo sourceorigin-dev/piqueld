@@ -81,19 +81,24 @@ impl Artifacts {
     /// artifact's path also belongs in the repository's `.gitattributes`, so
     /// GitHub collapses its diffs.
     ///
+    /// Returns what it did to each artifact, for the caller to print.
+    ///
     /// # Errors
     /// If a file cannot be read or written, or in check mode if any is stale
     /// or missing.
     pub fn sync<'a>(
         &self,
         artifacts: impl IntoIterator<Item = (&'a str, String)>,
-    ) -> Result<(), ArtifactError> {
+    ) -> Result<SyncReport, ArtifactError> {
+        let mut report = Vec::new();
         let mut stale = Vec::new();
         for (relative, contents) in artifacts {
             let path = self.root.join(relative);
             if self.check {
                 match fs::read_to_string(&path) {
-                    Ok(existing) if existing == contents => println!("{relative} is up to date"),
+                    Ok(existing) if existing == contents => {
+                        report.push(format!("{relative} is up to date"));
+                    }
                     Ok(_) => stale.push(relative.to_owned()),
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {
                         stale.push(relative.to_owned());
@@ -103,14 +108,24 @@ impl Artifacts {
             } else {
                 fs::write(&path, contents)
                     .map_err(|source| ArtifactError::Write { path, source })?;
-                println!("wrote {relative}");
+                report.push(format!("wrote {relative}"));
             }
         }
         if stale.is_empty() {
-            Ok(())
+            Ok(SyncReport(report))
         } else {
             Err(ArtifactError::Stale(stale))
         }
+    }
+}
+
+/// What [`Artifacts::sync`] did, one line per artifact.
+#[derive(Debug)]
+pub struct SyncReport(Vec<String>);
+
+impl std::fmt::Display for SyncReport {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0.join("\n"))
     }
 }
 

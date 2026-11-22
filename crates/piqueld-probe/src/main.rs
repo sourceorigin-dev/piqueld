@@ -5,6 +5,10 @@
 use piqueld_probe::HttpProbe;
 use std::{error::Error, process::ExitCode};
 
+#[expect(
+    clippy::print_stdout,
+    reason = "Docker keeps the line the probe prints in the container's health log"
+)]
 fn main() -> ExitCode {
     let result = HttpProbe::parse(std::env::args().skip(1))
         .map_err(Box::<dyn Error>::from)

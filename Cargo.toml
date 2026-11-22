@@ -166,6 +166,9 @@ let_underscore_must_use = "warn"
 map_err_ignore = "warn"
 assertions_on_result_states = "warn"
 dbg_macro = "warn"
+# Library crates return text or log; binaries, examples and tests print.
+print_stdout = "warn"
+print_stderr = "warn"
 # Every exception names its lint with `#[expect]` and says why.
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"

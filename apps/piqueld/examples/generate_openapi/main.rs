@@ -4,6 +4,10 @@
 //! rendered from those schemas. `piquelctl`'s `cli_reference` example renders
 //! the command reference; it depends on the client this generates, so it runs
 //! as a separate step.
+#![expect(
+    clippy::print_stdout,
+    reason = "an example is a command-line program that reports on stdout"
+)]
 
 mod settings_reference;
 
@@ -88,7 +92,7 @@ impl Generator {
         let config_settings = SettingsPage::CONFIG.render(&config_schema)?;
         let config_schema = format!("{}\n", serde_json::to_string_pretty(&config_schema)?);
 
-        self.artifacts.sync([
+        let report = self.artifacts.sync([
             ("docs/openapi-v1.json", document),
             ("docs/application-manifest.schema.json", manifest_schema),
             ("docs/piqueld-config.schema.json", config_schema),
@@ -100,6 +104,7 @@ impl Generator {
             (SettingsPage::MANIFEST.path, manifest_settings),
             (SettingsPage::CONFIG.path, config_settings),
         ])?;
+        println!("{report}");
         Ok(())
     }
 

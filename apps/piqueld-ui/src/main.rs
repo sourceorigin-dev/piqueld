@@ -8,6 +8,7 @@ fn main() {
 
 /// Native builds only print the version; the dashboard runs in `wasm32`.
 #[cfg(not(target_arch = "wasm32"))]
+#[expect(clippy::print_stdout, reason = "a native run only reports its version")]
 fn main() {
     println!(
         "piqueld-ui {} (build for wasm32-unknown-unknown to run)",
