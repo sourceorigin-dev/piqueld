@@ -148,8 +148,20 @@ impl Scenario {
     /// Removes the Pebble containers and network.
     async fn stop_pebble(&self) {
         let docker = self.gateway.external();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "cleanup of a container or network that may not exist"
+        )]
         let _ = docker.remove_container("pebble").await;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "cleanup of a container or network that may not exist"
+        )]
         let _ = docker.remove_container("challtestsrv").await;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "cleanup of a container or network that may not exist"
+        )]
         let _ = docker.remove_network("pebble").await;
     }
 

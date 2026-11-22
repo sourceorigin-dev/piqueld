@@ -952,8 +952,8 @@ proptest! {
 
     #[test]
     fn parsing_arbitrary_text_never_panics(input in "\\PC*") {
-        let _ = parse_toml(&input);
-        let _ = parse_json(&input);
+        drop(parse_toml(&input));
+        drop(parse_json(&input));
     }
 }
 
@@ -1010,7 +1010,7 @@ fn image_repository_rejects_invalid_internal_bytes() {
 proptest! {
     #[test]
     fn image_parser_terminates_for_arbitrary_repository_contents(input in "\\PC{0,128}") {
-        let _ = piqueld_core::ImageReference::parse(format!("a{input}a"));
+        drop(piqueld_core::ImageReference::parse(format!("a{input}a")));
     }
 }
 

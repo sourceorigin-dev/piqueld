@@ -112,6 +112,10 @@ impl Scenario {
     /// one. A panicking step relays the gateway's logs first.
     pub(super) async fn run(step: impl AsyncFnOnce(&Self), cleanup: impl AsyncFnOnce(&Self)) {
         use futures_util::FutureExt;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "an earlier test in this process may have installed the subscriber"
+        )]
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let scenario = Box::pin(Self::new()).await;
         let result = Box::pin(std::panic::AssertUnwindSafe(step(&scenario)).catch_unwind()).await;

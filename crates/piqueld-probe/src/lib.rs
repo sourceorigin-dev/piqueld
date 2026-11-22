@@ -272,7 +272,7 @@ mod tests {
             }
             // Split writes exercise reading the status line in pieces.
             for chunk in response.chunks(5) {
-                let _ = stream.write_all(chunk);
+                stream.write_all(chunk).unwrap();
             }
         });
         port

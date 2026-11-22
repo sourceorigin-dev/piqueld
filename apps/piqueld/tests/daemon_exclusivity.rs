@@ -153,6 +153,10 @@ fn await_listening(daemon: &mut Child) {
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             if line.contains("HTTP API listening") && line.contains("piqueld.sock") {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the test may have stopped waiting"
+                )]
                 let _ = listening.send(());
             }
         }
@@ -210,6 +214,10 @@ fn the_api_serves_without_docker_and_stops_on_sigterm() {
     let (exited, exit) = mpsc::channel();
     std::thread::spawn(move || exited.send(daemon.wait()));
     let Ok(status) = exit.recv_timeout(Duration::from_secs(30)) else {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the daemon may exit meanwhile, and the test fails either way"
+        )]
         let _ = rustix::process::kill_process(pid, rustix::process::Signal::KILL);
         panic!("the daemon did not stop on SIGTERM");
     };

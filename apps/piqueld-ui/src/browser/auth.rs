@@ -207,6 +207,10 @@ impl StepUp {
             .try_update_value(std::mem::take)
             .unwrap_or_default()
         {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver is gone once the prompt was dismissed"
+            )]
             let _ = sender.send(confirmed);
         }
     }
@@ -215,6 +219,10 @@ impl StepUp {
 /// Performs a full page navigation to `path`.
 fn navigate(path: &str) {
     if let Some(window) = web_sys::window() {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "best effort: a failing browser call leaves the page as it is"
+        )]
         let _ = window.location().set_href(path);
     }
 }
@@ -227,6 +235,10 @@ impl Invite {
         let window = web_sys::window()?;
         let invite = Self::parse(&window.location().hash().ok()?)?;
         if let (Ok(history), Ok(path)) = (window.history(), window.location().pathname()) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "best effort: a failing browser call leaves the page as it is"
+            )]
             let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&path));
         }
         Some(invite)

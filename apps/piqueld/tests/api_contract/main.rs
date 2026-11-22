@@ -815,6 +815,10 @@ impl Server {
             .await
             .expect("handshake");
         tokio::spawn(async move {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the connection ends when the test is done with it"
+            )]
             let _ = connection.with_upgrades().await;
         });
         Received::read(sender.send_request(request).await.expect("response")).await

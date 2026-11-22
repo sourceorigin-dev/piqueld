@@ -614,6 +614,10 @@ pub(super) fn Modal(
                     ".modal-body input:not([type=checkbox]), .modal-body select, .modal-body textarea",
                 ) && let Some(field) = field.dyn_ref::<web_sys::HtmlElement>()
                 {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "focusing is best effort"
+                    )]
                     let _ = field.focus();
                 }
             } else {
@@ -789,6 +793,7 @@ impl TabSet {
             if let Some(button) = document().get_element_by_id(&self.tab_id(offered[next]))
                 && let Some(button) = button.dyn_ref::<web_sys::HtmlElement>()
             {
+                #[expect(clippy::let_underscore_must_use, reason = "focusing is best effort")]
                 let _ = button.focus();
             }
         };

@@ -1741,7 +1741,10 @@ impl Store {
     /// Waits until another writer queues behind the turn the caller holds,
     /// such as with [`Store::hold_writer`].
     pub async fn writer_waiting(&self) {
-        // The store owns the sender, so the wait ends only with a writer.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the store owns the sender, so the wait ends only with a writer"
+        )]
         let _ = self
             .writers
             .waiting

@@ -129,6 +129,10 @@ impl Output {
         if matches!(self.backend, Backend::Hidden) {
             return;
         }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "best effort: a progress line that cannot be written has nowhere to be reported"
+        )]
         let _ = self.suspend(|| -> io::Result<()> {
             let mut writer = self.writer.lock();
             write(writer.as_mut())?;

@@ -268,6 +268,10 @@ async fn main() -> anyhow::Result<()> {
     let (shutdown, stopped) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
         let result = std::io::Read::read_to_end(&mut std::io::stdin(), &mut Vec::new());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver is gone once the fixture is already shutting down"
+        )]
         let _ = shutdown.send(result);
     });
     let result = tokio::select! {

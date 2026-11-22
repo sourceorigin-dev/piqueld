@@ -277,6 +277,10 @@ impl FakeLocalApi {
                     "HTTP/1.1 {status} Fake\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
                 );
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the fake LocalAPI peer may have hung up"
+                )]
                 let _ = stream.write_all(response.as_bytes()).await;
             }
         });

@@ -215,7 +215,10 @@ impl Probe {
     pub async fn until(&self, mut ready: impl AsyncFnMut() -> bool) {
         let mut finished = self.finished.0.subscribe();
         while !ready().await {
-            // The probe owns the sender, so this ends only with a call.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the probe owns the sender, so this ends only with a call"
+            )]
             let _ = finished.changed().await;
         }
     }
@@ -244,7 +247,10 @@ impl Counter {
 
     /// Waits until there were more than `count` calls.
     pub async fn above(&self, count: usize) {
-        // The counter owns the sender, so this ends only with a call.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the counter owns the sender, so this ends only with a call"
+        )]
         let _ = self.0.subscribe().wait_for(|calls| *calls > count).await;
     }
 }

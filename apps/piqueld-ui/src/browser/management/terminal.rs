@@ -130,6 +130,10 @@ impl Session {
     /// Queues one input message for an interactive command.
     fn send(&self, frame: ExecInput) {
         if self.interactive {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver is gone once the session ended"
+            )]
             let _ = self.input.unbounded_send(frame);
         }
     }
@@ -350,6 +354,7 @@ impl Console {
             .flatten()
             .is_some_and(|selection| !selection.is_collapsed());
         if let (false, Some(keyboard)) = (selecting, self.keyboard.get_untracked()) {
+            #[expect(clippy::let_underscore_must_use, reason = "focusing is best effort")]
             let _ = keyboard.focus();
         }
     }

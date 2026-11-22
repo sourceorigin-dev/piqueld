@@ -197,6 +197,10 @@ impl Console {
     /// Final failure/context on stderr. Best effort because it cannot report its
     /// own write failure; the caller preserves the original command exit code.
     pub(crate) fn error(&mut self, report: &impl DiagnosticReport) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "best effort: the failure would be reported on the stream that just failed"
+        )]
         let _ = self.diagnostic(report);
     }
 

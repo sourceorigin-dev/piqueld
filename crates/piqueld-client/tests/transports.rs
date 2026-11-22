@@ -45,8 +45,9 @@ async fn listen() -> (TcpListener, Client) {
 async fn serve_raw(listener: TcpListener, response: Vec<u8>) {
     let (mut socket, _) = listener.accept().await.unwrap();
     let mut buffer = [0u8; 2048];
-    let _ = socket.read(&mut buffer).await;
-    let _ = socket.write_all(&response).await;
+    let read = socket.read(&mut buffer).await.unwrap();
+    assert_ne!(read, 0, "the client sent no request");
+    socket.write_all(&response).await.unwrap();
 }
 
 fn raw_response(status_line: &str, content_type: &str, body: &str) -> Vec<u8> {
@@ -187,9 +188,10 @@ async fn requests_use_origin_form_with_an_explicit_host_header() {
         let (mut socket, head) = accept_head(listener).await;
         wire_tx.send(head).await.unwrap();
         let body = r#"{"data":{"status":"running","api_version":"v1","daemon_version":"0.1.0","instance_id":"i"}}"#;
-        let _ = socket
+        socket
             .write_all(&raw_response("HTTP/1.1 200 OK", "application/json", body))
-            .await;
+            .await
+            .unwrap();
     });
     let response = client.system_status().await.unwrap();
     server.await.unwrap();
@@ -292,7 +294,8 @@ async fn oversized_response_bodies_are_rejected() {
     let server = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut buffer = [0u8; 2048];
-        let _ = socket.read(&mut buffer).await;
+        let read = socket.read(&mut buffer).await.unwrap();
+        assert_ne!(read, 0, "the client sent no request");
         let head = format!(
             "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {total}\r\n\r\n"
         );
@@ -423,13 +426,14 @@ async fn application_queries_are_percent_encoded() {
             .unwrap_or_default()
             .to_owned();
         target_tx.send(target).await.unwrap();
-        let _ = socket
+        socket
             .write_all(&raw_response(
                 "HTTP/1.1 200 OK",
                 "application/json",
                 r#"{"data":{"items":[],"next_cursor":null}}"#,
             ))
-            .await;
+            .await
+            .unwrap();
     });
     let page = client
         .applications_with(&ListApplicationsOptions {

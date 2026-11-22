@@ -707,6 +707,10 @@ fn confirm(message: &str) -> bool {
 /// Reloads the current page.
 fn reload() {
     if let Some(window) = browser_window() {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "best effort: a failing browser call leaves the page as it is"
+        )]
         let _ = window.location().reload();
     }
 }

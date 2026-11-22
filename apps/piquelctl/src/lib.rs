@@ -161,6 +161,10 @@ fn usage_error(error: &clap::Error) -> ExitCode {
         .trim_start_matches("error: ");
     let error = CliError::usage(message);
     let mut stderr = std::io::stderr().lock();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a failure to write to stderr cannot be reported there"
+    )]
     let _ = output::Event::Error(error.body()).write(&mut stderr);
     ExitCode::from(error.exit_code())
 }

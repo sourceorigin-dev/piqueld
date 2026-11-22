@@ -217,6 +217,10 @@ impl TerminalMode {
 
 impl Drop for TerminalMode {
     fn drop(&mut self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "`drop` cannot report that the terminal could not be restored"
+        )]
         let _ = tcsetattr(io::stdin(), OptionalActions::Now, &self.0);
     }
 }

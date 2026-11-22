@@ -765,11 +765,7 @@ impl Mutation {
             .map_err(|_| error)?
             .get_random_values_with_u8_array(&mut bytes)
             .map_err(|_| error)?;
-        let id = bytes.iter().fold(String::new(), |mut hex, byte| {
-            use std::fmt::Write as _;
-            let _ = write!(hex, "{byte:02x}");
-            hex
-        });
+        let id = hex::encode(bytes);
         Ok(Self(Client::browser().with_request_id(id)))
     }
 

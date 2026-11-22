@@ -269,6 +269,10 @@ impl Client {
             && let Some(window) = web_sys::window()
             && let Ok(event) = web_sys::Event::new(Self::AUTHENTICATION_REQUIRED_EVENT)
         {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a notification nobody listens for"
+            )]
             let _ = window.dispatch_event(&event);
         }
         #[cfg(not(target_arch = "wasm32"))]

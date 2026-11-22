@@ -123,6 +123,10 @@ impl Sockets {
             }
         }
         // Fails, keeping it, while a mounted directory remains.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "it fails, keeping the directory, while a mounted directory remains"
+        )]
         let _ = std::fs::remove_dir(&environment);
     }
 

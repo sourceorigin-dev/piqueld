@@ -973,6 +973,10 @@ pub(crate) async fn deploy(
             .await
     {
         for warning in deployment.warnings {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a warning that cannot be written has nowhere to be reported"
+            )]
             let _ = console.warning(format_args!("{}: {}", warning.code, warning.message));
         }
     }

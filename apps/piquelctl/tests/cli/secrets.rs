@@ -129,6 +129,10 @@ fn secret_values_from_stdin_drop_one_trailing_newline() {
             .expect("piquelctl child");
         let mut stdin = child.stdin.take().expect("child stdin");
         // The CLI may refuse before reading everything.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the CLI may refuse before reading everything"
+        )]
         let _ = stdin.write_all(&input);
         drop(stdin);
         let output = child.wait_with_output().expect("piquelctl output");

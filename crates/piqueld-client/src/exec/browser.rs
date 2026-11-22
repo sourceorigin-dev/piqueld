@@ -36,6 +36,10 @@ impl Drop for Connection {
         self.socket.set_onopen(None);
         self.socket.set_onmessage(None);
         self.socket.set_onclose(None);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "closing is best effort: the socket may already be closed"
+        )]
         let _ = self.socket.close();
     }
 }
@@ -69,6 +73,10 @@ pub(super) async fn open(
     let opened = Closure::<dyn FnMut(Event)>::new({
         let sender = sender.clone();
         move |_| {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the receiver is gone once the session is dropped, so nobody is waiting for events"
+            )]
             let _ = sender.unbounded_send(SocketEvent::Open);
         }
     });
@@ -78,11 +86,19 @@ pub(super) async fn open(
         move |event: MessageEvent| {
             if let Ok(data) = event.data().dyn_into::<js_sys::ArrayBuffer>() {
                 let data = js_sys::Uint8Array::new(&data).to_vec();
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver is gone once the session is dropped, so nobody is waiting for events"
+                )]
                 let _ = sender.unbounded_send(SocketEvent::Message(data));
             }
         }
     });
     let closed = Closure::<dyn FnMut(CloseEvent)>::new(move |event| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver is gone once the session is dropped, so nobody is waiting for events"
+        )]
         let _ = sender.unbounded_send(SocketEvent::Closed(event));
     });
     socket.set_onopen(Some(opened.as_ref().unchecked_ref()));

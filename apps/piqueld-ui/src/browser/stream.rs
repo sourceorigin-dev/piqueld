@@ -37,6 +37,10 @@ impl EventStream {
                     message(name, &event.data().as_string().unwrap_or_default());
                 });
                 // Only fails for a listener that is not a function.
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "best effort: a failing browser call leaves the page as it is"
+                )]
                 let _ = source.add_event_listener_with_callback(
                     name.as_str(),
                     listener.as_ref().unchecked_ref(),
@@ -66,6 +70,10 @@ impl Drop for EventStream {
     fn drop(&mut self) {
         self.source.set_onerror(None);
         for (name, listener) in &self.listeners {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "best effort: a failing browser call leaves the page as it is"
+            )]
             let _ = self.source.remove_event_listener_with_callback(
                 name.as_str(),
                 listener.as_ref().unchecked_ref(),

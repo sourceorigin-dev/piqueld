@@ -392,6 +392,10 @@ impl Telemetry {
         if let Some(started) = hub.started.get() {
             // The reader's final collection waits for its thread.
             let meter = started.meter.clone();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "shutdown is best effort and the daemon is stopping"
+            )]
             let _ = tokio::task::spawn_blocking(move || meter.shutdown()).await;
         }
         let mut workers = Vec::new();

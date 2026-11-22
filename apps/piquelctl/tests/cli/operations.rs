@@ -361,6 +361,10 @@ fn timeout_and_ctrl_c_end_only_the_local_wait() {
         received.send(()).expect("test is waiting");
         // Keep the request pending until the child exits, or fail the test
         // through its exit code if SIGINT never ends it.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a timeout is reported through the child's exit code"
+        )]
         let _ = child_exited.recv_timeout(Duration::from_secs(10));
         Reply::dropped()
     });
@@ -382,8 +386,12 @@ fn timeout_and_ctrl_c_end_only_the_local_wait() {
         .status()
         .expect("send SIGINT");
     let output = child.wait_with_output().expect("interrupted child");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the server may already have finished"
+    )]
     let _ = release.send(());
-    let _ = interrupt_server.finish();
+    let _requests = interrupt_server.finish();
     assert_eq!(output.status.code(), Some(130), "{output:?}");
     assert_eq!(output.stdout, b"");
     assert!(String::from_utf8_lossy(&output.stderr).contains("was not cancelled"));

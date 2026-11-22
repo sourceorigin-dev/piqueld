@@ -171,6 +171,10 @@ impl TestServer {
             "{FINISH} {} HTTP/1.1\r\n\r\n",
             self.directory.path().display()
         );
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the server may already have finished"
+        )]
         let _ = match &self.endpoint {
             Endpoint::Tcp(address) => TcpStream::connect(address)
                 .and_then(|mut stream| stream.write_all(request.as_bytes())),
@@ -356,6 +360,10 @@ fn echo_exec<S: Read + Write>(stream: S, started: Option<mpsc::Sender<()>>) {
             .send(Message::binary(frame.encode()))
             .expect("exec output");
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the client may have closed first"
+    )]
     let _ = socket.close(None);
 }
 

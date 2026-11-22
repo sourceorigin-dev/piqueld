@@ -75,6 +75,10 @@ impl TimelineProgress {
                 let draw = move |state: &ProgressState, out: &mut dyn fmt::Write| {
                     let frame = usize::try_from(state.elapsed().as_millis() / 100).unwrap_or(0);
                     // A failed write only cuts this frame short.
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "a failed write only cuts this frame short"
+                    )]
                     let _ = drawn.lock().draw(out, now_ms(), frame);
                 };
                 bar.set_style(
@@ -174,6 +178,10 @@ impl TimelineProgress {
             let mut rows = String::new();
             if let (Backend::Terminal(_), Some(timeline)) = (&self.output.backend, &view.timeline) {
                 // Writing to a `String` cannot fail.
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "writing to a `String` cannot fail"
+                )]
                 let _ = view.rows(&mut rows, timeline, now_ms, 0, usize::MAX);
             }
             (view.label.clone(), view.total(now_ms), rows)

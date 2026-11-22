@@ -37,6 +37,10 @@ impl HistoryGuard {
             {
                 event.stop_immediate_propagation();
                 if let Ok(history) = window().history() {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "best effort: a failing browser call leaves the page as it is"
+                    )]
                     let _ = history.push_state_with_url(&location.state, "", Some(&location.url));
                 }
             }
@@ -132,6 +136,10 @@ pub(super) fn guard_navigation(dirty: RwSignal<BTreeSet<String>>) {
         let listener = StoredValue::new_local((document, callback));
         on_cleanup(move || {
             listener.with_value(|(document, callback)| {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "best effort: a failing browser call leaves the page as it is"
+                )]
                 let _ = document.remove_event_listener_with_callback_and_bool(
                     "click",
                     callback.as_ref().unchecked_ref(),

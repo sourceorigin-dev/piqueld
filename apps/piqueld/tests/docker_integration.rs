@@ -165,6 +165,10 @@ impl IsolatedDocker {
                 }
                 ActionKind::RemoveNetwork { name } => {
                     // The other side may still be leaving the network.
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the other side may still be leaving the network"
+                    )]
                     let _ = self.docker.remove_network(name, &ownership).await;
                     // wall-clock: Docker lets the network go on its own and
                     // signals nothing; plan again from what it then reports.
