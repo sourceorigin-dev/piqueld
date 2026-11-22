@@ -209,8 +209,8 @@ mod tests {
         path: &str,
         signature: Option<&str>,
         body: Vec<u8>,
-    ) -> axum::http::StatusCode {
-        let mut request = axum::http::Request::post(path).header("x-github-event", "push");
+    ) -> http::StatusCode {
+        let mut request = http::Request::post(path).header("x-github-event", "push");
         if let Some(signature) = signature {
             request = request.header("x-hub-signature-256", signature);
         }
@@ -242,26 +242,26 @@ mod tests {
         let wrong = sign(b"another secret", &body);
         assert_eq!(
             deliver(&router, &path, Some(&wrong), body.clone()).await,
-            axum::http::StatusCode::UNAUTHORIZED
+            http::StatusCode::UNAUTHORIZED
         );
         assert_eq!(
             deliver(&router, &path, None, body.clone()).await,
-            axum::http::StatusCode::UNAUTHORIZED
+            http::StatusCode::UNAUTHORIZED
         );
         let unknown = format!("{WEBHOOK_PATH}app-unknown-01");
         assert_eq!(
             deliver(&router, &unknown, Some(&valid), body.clone()).await,
-            axum::http::StatusCode::UNAUTHORIZED
+            http::StatusCode::UNAUTHORIZED
         );
         let oversized = vec![b' '; WEBHOOK_BODY_LIMIT + 1];
         let signed = sign(secret.as_bytes(), &oversized);
         assert_eq!(
             deliver(&router, &path, Some(&signed), oversized).await,
-            axum::http::StatusCode::PAYLOAD_TOO_LARGE
+            http::StatusCode::PAYLOAD_TOO_LARGE
         );
         assert_eq!(
             deliver(&router, "/api/v1/applications", Some(&valid), body.clone()).await,
-            axum::http::StatusCode::NOT_FOUND
+            http::StatusCode::NOT_FOUND
         );
         // Webhook repositories are listed once at startup, then never polled:
         // refused deliveries list nothing.
@@ -283,7 +283,7 @@ mod tests {
         *lister.heads.lock() = Some(vec![("main", NEW)]);
         assert_eq!(
             deliver(&router, &path, Some(&valid), body).await,
-            axum::http::StatusCode::NO_CONTENT
+            http::StatusCode::NO_CONTENT
         );
         fixture
             .service

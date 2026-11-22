@@ -1336,15 +1336,12 @@ impl Store {
         clippy::expect_used,
         reason = "A test fixture fails the test by panicking."
     )]
-    pub async fn production(
-        &self,
-        application: &piqueld_core::ApplicationId,
-    ) -> piqueld_core::EnvironmentId {
+    pub async fn production(&self, application: &ApplicationId) -> EnvironmentId {
         self.environments(application)
             .await
             .unwrap()
             .into_iter()
-            .find(|environment| environment.name == piqueld_core::EnvironmentName::default_name())
+            .find(|environment| environment.name == EnvironmentName::default_name())
             .expect("a production environment")
             .id
     }

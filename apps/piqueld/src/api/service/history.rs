@@ -190,7 +190,7 @@ impl ApplicationService {
         self.store.deployment_snapshot(deployment).await?;
         Ok(self
             .store
-            .deployment_attempts(deployment, cursor, piqueld_store::MAX_PAGE_SIZE)
+            .deployment_attempts(deployment, cursor, MAX_PAGE_SIZE)
             .await?)
     }
 

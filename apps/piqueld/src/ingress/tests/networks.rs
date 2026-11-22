@@ -17,7 +17,7 @@ async fn disabled_ingress_removes_its_own_edge_network() {
             let network = json!({"Id":"edge-id","Labels":{
                 "io.piqueld.managed":"true","io.piqueld.instance":owner,"io.piqueld.ingress":"true"
             }});
-            axum::Router::new().fallback(move |method: Method, uri: axum::http::Uri| {
+            axum::Router::new().fallback(move |method: Method, uri: http::Uri| {
                 let (deleted, network) = (Arc::clone(&deleted), network.clone());
                 async move {
                     match (method, uri.path()) {

@@ -5,8 +5,8 @@ use super::*;
 impl Scenario {
     async fn reject_invalid_replacement_configuration(
         &self,
-        table: &piqueld_store::ingress::RoutingTable,
-        networks: &std::collections::BTreeSet<String>,
+        table: &RoutingTable,
+        networks: &BTreeSet<String>,
     ) {
         let mut invalid = self.ingress(true);
         invalid.issuer = Some(json!({"module":"not-a-real-issuer"}));
@@ -29,11 +29,7 @@ impl Scenario {
         // A retained route still works on the old attachment, but a replacement
         // cannot inherit it unless its network passed validation.
         self.gateway
-            .replace_gateway(
-                &table,
-                &std::collections::BTreeSet::new(),
-                &self.gateway.container_spec(),
-            )
+            .replace_gateway(&table, &BTreeSet::new(), &self.gateway.container_spec())
             .await
             .unwrap();
         assert_eq!(self.gateway.container_id().await, original);
@@ -189,7 +185,7 @@ impl Scenario {
         upgraded.synchronize_for(Some(&self.first)).await.unwrap();
         assert_eq!(
             self.store.applied_routes(&self.first).await.unwrap(),
-            [] as [piqueld_core::manifest::ValidatedRoute; 0]
+            [] as [ValidatedRoute; 0]
         );
         assert_eq!(self.plain("one.example.test", "").await.status(), 404);
         // Healthy applications can also restore/add routes while this app is broken.

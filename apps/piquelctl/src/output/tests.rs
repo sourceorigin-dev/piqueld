@@ -520,7 +520,7 @@ fn status_and_dns_refresh_list_images_dns_providers_certificate_failures_and_pre
         ..Default::default()
     };
     console
-        .emit(&crate::output::reports::StatusReport {
+        .emit(&reports::StatusReport {
             status: &status,
             transport: "unix",
             ingress: Some(&ingress),

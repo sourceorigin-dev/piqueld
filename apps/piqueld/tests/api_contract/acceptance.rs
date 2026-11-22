@@ -310,7 +310,7 @@ async fn preview_resolves_images_again_and_redacts_manifest_and_runtime_configur
             .plan
             .actions
             .iter()
-            .any(|action| matches!(action.kind, piqueld_core::ActionKind::ResolveImage { .. }))
+            .any(|action| matches!(action.kind, ActionKind::ResolveImage { .. }))
     );
     let json = serde_json::to_string(&preview).unwrap();
     for secret in [

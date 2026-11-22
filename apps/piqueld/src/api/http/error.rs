@@ -551,7 +551,7 @@ impl From<piqueld_core::ValidationErrors> for ApiError {
     fn from(piqueld_core::ValidationErrors(errors): piqueld_core::ValidationErrors) -> Self {
         let error = if errors
             .iter()
-            .all(|error| error.code == piqueld_core::ApiErrorCode::ManifestDecodeFailed)
+            .all(|error| error.code == ApiErrorCode::ManifestDecodeFailed)
         {
             Self::new(
                 StatusCode::BAD_REQUEST,

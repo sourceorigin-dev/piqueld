@@ -69,7 +69,7 @@ impl SyncMode {
     reason = "The parser accepts only `public` and `private`, both valid visibilities."
 )]
 pub(crate) fn visibility() -> impl TypedValueParser<Value = Visibility> {
-    clap::builder::PossibleValuesParser::new(["public", "private"]).map(|value| {
+    PossibleValuesParser::new(["public", "private"]).map(|value| {
         value.parse().expect(
             "PossibleValuesParser accepts only public and private, both valid Visibility values",
         )
@@ -78,7 +78,7 @@ pub(crate) fn visibility() -> impl TypedValueParser<Value = Visibility> {
 
 /// Parses `on` or `off`, listing both in help and completions.
 pub(crate) fn on_off() -> impl TypedValueParser<Value = bool> {
-    clap::builder::PossibleValuesParser::new(["on", "off"]).map(|value| value == "on")
+    PossibleValuesParser::new(["on", "off"]).map(|value| value == "on")
 }
 
 /// Parses a `KEY=VALUE` flag such as `--build-arg` at its first `=`, so values

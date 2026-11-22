@@ -151,7 +151,7 @@ fn into_literal_reports_each_unresolved_slot_in_path_order() {
 fn template_export_round_trips_overrides_escapes_and_identity() {
     let original = template(VARIABLES);
     let id = ApplicationId::parse("app-renamed-02").unwrap();
-    let name = crate::ApplicationName::parse("renamed").unwrap();
+    let name = ApplicationName::parse("renamed").unwrap();
     let changed = original.clone().with_id(id.clone()).with_name(name.clone());
     assert_eq!(changed.id(), &id);
     assert_eq!(&changed.metadata().name, &name);
@@ -361,7 +361,7 @@ fn renders_like_compares_names_read_with_deployment_values() {
         let target = environment("production");
         let renamed = template
             .clone()
-            .with_name(crate::ApplicationName::parse("renamed").unwrap());
+            .with_name(ApplicationName::parse("renamed").unwrap());
         template.renders_like(&target, &renamed, &target)
     };
     assert!(renamed("${{ deployment.id }}-${{ git.sha }}.example.com"));

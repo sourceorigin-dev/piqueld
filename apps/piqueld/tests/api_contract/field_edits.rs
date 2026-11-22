@@ -110,7 +110,7 @@ async fn route_field_edits_follow_service_renames_and_removals() {
             .to_manifest()
             .spec
             .routes,
-        [] as [piqueld_client::Route; 0]
+        [] as [Route; 0]
     );
 }
 
@@ -125,7 +125,7 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
         name: name.into(),
         service: service.into(),
         command: vec!["notes".into(), name.into()],
-        environment: std::collections::BTreeMap::new(),
+        environment: BTreeMap::new(),
         secrets: Vec::new(),
         run: JobRun::BeforeRollout,
         timeout_seconds: 60,
@@ -159,7 +159,7 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
         .unwrap_err();
     assert!(
         matches!(&error, ClientError::Api { status, error }
-            if *status == http::StatusCode::UNPROCESSABLE_ENTITY
+            if *status == StatusCode::UNPROCESSABLE_ENTITY
                 && error.details.to_string().contains("job_service_missing")),
         "{error:?}"
     );
@@ -282,7 +282,7 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
         .await
         .unwrap_err();
     assert!(
-        matches!(error, ClientError::Api { status, error } if status == http::StatusCode::UNPROCESSABLE_ENTITY && !error.details.is_null())
+        matches!(error, ClientError::Api { status, error } if status == StatusCode::UNPROCESSABLE_ENTITY && !error.details.is_null())
     );
     assert_eq!(api.client.application(id).await.unwrap().generation, 1);
     let repository = ApplicationEdit::Repository(Some(RepositoryManifest {
@@ -391,7 +391,7 @@ async fn field_edit_source_endpoints_preserve_other_git_settings() {
         build: Build::Docker {
             dockerfile: "Dockerfile".into(),
             context: ".".into(),
-            args: std::collections::BTreeMap::from([("ORIGIN".into(), "https://a".into())]),
+            args: BTreeMap::from([("ORIGIN".into(), "https://a".into())]),
             target: Some("runtime".into()),
         },
     };
@@ -445,7 +445,7 @@ async fn field_edit_source_endpoints_preserve_other_git_settings() {
         Build::Docker {
             dockerfile: "build/Dockerfile".into(),
             context: "build".into(),
-            args: std::collections::BTreeMap::from([("ORIGIN".into(), "https://a".into())]),
+            args: BTreeMap::from([("ORIGIN".into(), "https://a".into())]),
             target: Some("runtime".into()),
         }
     );
@@ -607,7 +607,7 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
         .await
         .unwrap_err();
     assert!(
-        matches!(error, ClientError::Api { status, .. } if status == http::StatusCode::UNPROCESSABLE_ENTITY)
+        matches!(error, ClientError::Api { status, .. } if status == StatusCode::UNPROCESSABLE_ENTITY)
     );
     assert_eq!(
         api.client.application(id).await.unwrap().generation,
@@ -620,7 +620,7 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
             .await
             .spec
             .volumes,
-        [] as [piqueld_core::Volume; 0]
+        [] as [Volume; 0]
     );
     api.edit_service_field(
         id,

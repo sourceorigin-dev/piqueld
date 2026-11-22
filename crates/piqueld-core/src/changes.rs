@@ -412,7 +412,7 @@ image="example:1"
                     name: (*name).into(),
                     service: "web".into(),
                     command: vec![(*command).into()],
-                    environment: std::collections::BTreeMap::new(),
+                    environment: BTreeMap::new(),
                     secrets: Vec::new(),
                     run: crate::manifest::JobRun::BeforeRollout,
                     timeout_seconds: 300,

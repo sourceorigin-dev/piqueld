@@ -147,6 +147,7 @@ syn = { version = "2.0.106", features = ["full"] }
 unsafe_code = "warn"
 missing_docs = "warn"
 unreachable_pub = "warn"
+unused_qualifications = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

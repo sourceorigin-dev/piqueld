@@ -668,7 +668,7 @@ impl SwarmScenario {
             )
             .await;
         }
-        let instance = piqueld_core::InstanceId::parse(instance.clone()).unwrap();
+        let instance = InstanceId::parse(instance.clone()).unwrap();
         self.engine
             .docker
             .prune_health_probes(&instance)

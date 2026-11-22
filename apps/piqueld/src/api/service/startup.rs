@@ -246,7 +246,7 @@ impl ApplicationService {
             .with_observability(
                 &config.retention,
                 &config.images,
-                std::time::Duration::from_secs(config.reconciliation.scan_interval_seconds),
+                Duration::from_secs(config.reconciliation.scan_interval_seconds),
             )
             .with_previews(config.previews.clone());
         info!(path = %config.server.database_path().display(), "opened control-plane state");

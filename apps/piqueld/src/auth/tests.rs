@@ -140,7 +140,7 @@ impl Fixture {
     async fn stale(
         &self,
         identity: &Identity,
-        (secret, credential): (String, piqueld_store::NewCredential<'static>),
+        (secret, credential): (String, NewCredential<'static>),
     ) -> (String, Identity) {
         self.auth
             .0
@@ -380,7 +380,7 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
         .unwrap();
     assert_eq!(f.reload(&bob).await.user.username, "robert");
     // Passkeys are only added to one's own account, even by administrators.
-    let input = |user_id: &str| piqueld_core::auth::RegistrationStart {
+    let input = |user_id: &str| RegistrationStart {
         invitation: None,
         user_id: Some(user_id.into()),
         username: String::new(),
@@ -1355,7 +1355,7 @@ async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
     }
     auth.manage(&alice, None, token(Some(30))).await.unwrap();
     for legacy in ["l".repeat(43), format!("pqd_{}", "A".repeat(39))] {
-        let credential = piqueld_store::NewCredential {
+        let credential = NewCredential {
             id: Auth::id(),
             secret_hash: Auth::hash(&legacy),
             kind: CredentialKind::Token,
@@ -1612,7 +1612,7 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
     async fn committed_then_cancelled(
         f: &Fixture,
         alice: &Identity,
-    ) -> (String, piqueld_store::NewCredential<'static>, String) {
+    ) -> (String, NewCredential<'static>, String) {
         let start = f.auth.device_start(None, None).unwrap();
         f.auth.device_approve(&start.user_code, alice).unwrap();
         let key = Auth::hash(&start.device_code);
@@ -1932,11 +1932,11 @@ async fn middleware_authenticates_api_and_enforces_cookie_csrf() {
 }
 
 /// Stands in for route authorization (`access::enforce`): signed-in callers only.
-async fn signed_in(identity: Option<axum::Extension<Identity>>) -> axum::http::StatusCode {
+async fn signed_in(identity: Option<axum::Extension<Identity>>) -> http::StatusCode {
     if identity.is_some() {
-        axum::http::StatusCode::OK
+        http::StatusCode::OK
     } else {
-        axum::http::StatusCode::UNAUTHORIZED
+        http::StatusCode::UNAUTHORIZED
     }
 }
 
@@ -2262,7 +2262,7 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     // Unusable links are turned away without waiting for the writer.
     let writer = f.auth.0.store.hold_writer().await;
     let guess = f.auth.operator_sign_in(&link, None);
-    let guess = tokio::time::timeout(std::time::Duration::from_secs(1), guess).await;
+    let guess = tokio::time::timeout(Duration::from_secs(1), guess).await;
     assert!(matches!(guess, Ok(Err(AuthError::Unauthorized))));
     drop(writer);
     let identity = f.auth.authenticate(&token).await.unwrap();

@@ -88,7 +88,7 @@ pub struct UnixPeer {
 impl UnixPeer {
     /// The host operator behind a request: a Unix socket peer that is root
     /// or the daemon's own user. Members of the socket's group are not.
-    fn host_operator(extensions: &axum::http::Extensions) -> Option<HostOperator> {
+    fn host_operator(extensions: &http::Extensions) -> Option<HostOperator> {
         extensions.get::<UnixSocket>()?;
         let axum::extract::ConnectInfo(peer) =
             extensions.get::<axum::extract::ConnectInfo<Self>>()?;

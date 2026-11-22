@@ -262,10 +262,7 @@ fn previews_list_jobs_after_their_dependencies_and_warn_about_stopped_services()
             .iter()
             .map(|diagnostic| (diagnostic.code.as_str(), diagnostic.resource.as_str()))
             .collect::<Vec<_>>(),
-        [(
-            piqueld_core::ApiErrorCode::JobStopsServices.as_str(),
-            "migrate"
-        )]
+        [(ApiErrorCode::JobStopsServices.as_str(), "migrate")]
     );
 
     // Unresolved sources leave only resolution actions, which jobs follow.
@@ -298,7 +295,7 @@ fn previews_list_jobs_after_their_dependencies_and_warn_about_stopped_services()
             .map(|diagnostic| (diagnostic.code.as_str(), diagnostic.message.as_str()))
             .collect::<Vec<_>>(),
         [(
-            piqueld_core::ApiErrorCode::JobStopsServices.as_str(),
+            ApiErrorCode::JobStopsServices.as_str(),
             "job migrate stops web before it runs, until the rollout"
         )]
     );

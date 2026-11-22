@@ -259,7 +259,7 @@ impl<D: DockerApi> Controller<D> {
     ) -> Result<(), OperationError>
     where
         F: FnMut() -> Fut,
-        Fut: std::future::Future<Output = Result<(), DockerError>>,
+        Fut: Future<Output = Result<(), DockerError>>,
     {
         let attempts = self.retry.attempts.max(1);
         let started = tokio::time::Instant::now();

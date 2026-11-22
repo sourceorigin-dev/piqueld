@@ -52,7 +52,7 @@ async fn deletes_by_digest_and_reports_why_the_registry_kept_an_image() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let piqueld = registry(port, "piqueld");
-    let digest = piqueld_core::Sha256Digest::parse(format!("sha256:{}", "a".repeat(64))).unwrap();
+    let digest = Sha256Digest::parse(format!("sha256:{}", "a".repeat(64))).unwrap();
     let image = piqueld.repository.image(&digest);
     let unknown = Some(("MANIFEST_UNKNOWN", "manifest unknown"));
     let disabled = Some(("UNSUPPORTED", "The operation is unsupported."));

@@ -198,7 +198,7 @@ impl ApplicationService {
     async fn next_promotion_manifest(
         &self,
         source: &EnvironmentId,
-    ) -> Result<Option<piqueld_core::manifest::ApplicationTemplate>, StoreError> {
+    ) -> Result<Option<ApplicationTemplate>, StoreError> {
         let Some(release) = self.store.current_release(source).await? else {
             return Ok(None);
         };
@@ -239,7 +239,7 @@ impl ApplicationService {
     /// `expected_id` match it.
     fn check_plan(
         grants: &Grants,
-        current: Option<&piqueld_store::StoredApplication>,
+        current: Option<&StoredApplication>,
         expected: Option<u64>,
         expected_id: Option<String>,
     ) -> Result<(), ApplicationError> {
@@ -476,7 +476,7 @@ impl ApplicationService {
         app: &NormalizedApplication,
         environment: &EnvironmentId,
         current: Option<&StoredEnvironment>,
-    ) -> Result<piqueld_core::Plan, ApplicationError> {
+    ) -> Result<Plan, ApplicationError> {
         let observed = if let Some(current) = current {
             self.store
                 .check_secret_access(&current.environment, app)

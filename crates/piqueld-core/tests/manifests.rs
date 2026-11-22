@@ -968,8 +968,7 @@ fn normalized_deserialization_revalidates_and_canonicalizes_configuration() {
     let mut earlier = later.clone();
     earlier["name"] = "a-first".into();
     wire["spec"]["services"] = serde_json::json!([later, earlier]);
-    let decoded: piqueld_core::NormalizedApplication =
-        serde_json::from_value(wire.clone()).unwrap();
+    let decoded: NormalizedApplication = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded.spec().services[0].name.as_str(), "a-first");
     assert_eq!(decoded.spec().services[1].name.as_str(), "z-last");
     assert_eq!(decoded.id(), original.id());
@@ -983,12 +982,12 @@ fn normalized_deserialization_revalidates_and_canonicalizes_configuration() {
     for pointer in ["/metadata/name", "/spec/services/0/name"] {
         let mut malformed = wire.clone();
         *malformed.pointer_mut(pointer).unwrap() = "INVALID".into();
-        assert!(serde_json::from_value::<piqueld_core::NormalizedApplication>(malformed).is_err());
+        assert!(serde_json::from_value::<NormalizedApplication>(malformed).is_err());
     }
     wire["spec"]["services"][0]["mounts"] = serde_json::json!([
         {"volume": "undeclared", "target": "/data", "read_only": false}
     ]);
-    let error = serde_json::from_value::<piqueld_core::NormalizedApplication>(wire).unwrap_err();
+    let error = serde_json::from_value::<NormalizedApplication>(wire).unwrap_err();
     assert!(error.to_string().contains("mount"), "{error}");
 }
 
@@ -1125,7 +1124,7 @@ fn manifest_json_schema_is_self_contained() {
     let schema = piqueld_core::manifest::ApplicationManifest::json_schema();
     let mut found = Vec::new();
     references(&schema, &mut found);
-    assert_ne!(found, [] as [std::string::String; 0]);
+    assert_ne!(found, [] as [String; 0]);
     for reference in found {
         let name = reference
             .strip_prefix("#/definitions/")

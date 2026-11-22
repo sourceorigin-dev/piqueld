@@ -758,7 +758,7 @@ fn secret_mount_names_select_each_environments_secret_and_resolve_once_rendered(
 /// A preview of `feat/login` of the `notes` application.
 fn preview() -> RenderTarget {
     RenderTarget::Preview(crate::PreviewSlug::derive(
-        &crate::ApplicationName::parse("notes").unwrap(),
+        &ApplicationName::parse("notes").unwrap(),
         &crate::GitBranch::parse("feat/login").unwrap(),
         None,
     ))
@@ -862,7 +862,7 @@ fn piqueld_dev_previews_serve_private_hostnames_apart_from_production() {
         .unwrap()
         .normalize(id());
     let preview = RenderTarget::Preview(crate::PreviewSlug::derive(
-        &crate::ApplicationName::parse("piqueld-dev").unwrap(),
+        &ApplicationName::parse("piqueld-dev").unwrap(),
         &crate::GitBranch::parse("feat/landing").unwrap(),
         None,
     ));

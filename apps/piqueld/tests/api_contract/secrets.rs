@@ -514,13 +514,13 @@ async fn deploys_and_previews_fail_when_an_environment_may_not_mount_a_stored_se
             name: "stripe-prod".into(),
             target: "/run/secrets/stripe".into(),
         });
-    let request = piqueld_client::ApplyApplicationRequest {
+    let request = ApplyApplicationRequest {
         manifest,
         expected_generation: Some(saved.generation),
         expected_application_id: Some(saved.application_id.clone()),
     };
     let saved = client.apply_application(&request).await.unwrap();
-    let request = piqueld_client::ApplyApplicationRequest {
+    let request = ApplyApplicationRequest {
         expected_generation: None,
         ..request
     };

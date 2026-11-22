@@ -205,7 +205,7 @@ impl Store {
             .len()
             .min(usize::try_from(remaining).map_err(StoreError::invalid_input)?);
         if count < bytes.len() {
-            count = piqueld_core::api::BuildLogChunk::complete_prefix(&bytes[..count]);
+            count = BuildLogChunk::complete_prefix(&bytes[..count]);
         }
         // Each chunk is bounded regardless of which executor records output.
         let mut offset = row.log_bytes;
@@ -213,7 +213,7 @@ impl Store {
         while !remaining.is_empty() {
             let mut end = remaining.len().min(4096);
             if end < remaining.len() {
-                end = piqueld_core::api::BuildLogChunk::complete_prefix(&remaining[..end]);
+                end = BuildLogChunk::complete_prefix(&remaining[..end]);
             }
             let chunk = &remaining[..end];
             sqlx::query!(

@@ -624,7 +624,7 @@ pub(crate) async fn logout(cli: &Cli, client: &Client, console: &mut Console) ->
     };
     let revoked = match client.auth_logout().await {
         Ok(_) => true,
-        Err(piqueld_client::ClientError::Api {
+        Err(ClientError::Api {
             status: http::StatusCode::UNAUTHORIZED,
             ..
         }) => false,

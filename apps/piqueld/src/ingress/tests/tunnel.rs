@@ -270,7 +270,7 @@ async fn kept_beside_a_direct_gateway(
                 "HostConfig":{"PortBindings":{"443/tcp":[{"HostIp":"","HostPort":"443"}]}}
             }),
         );
-        axum::Router::new().fallback(move |uri: axum::http::Uri| async move {
+        axum::Router::new().fallback(move |uri: http::Uri| async move {
             if uri.path().contains("/networks/") {
                 hyper::StatusCode::NOT_FOUND.into_response()
             } else {
@@ -328,9 +328,9 @@ async fn disabled_ingress_stops_containers_even_if_the_credentials_remain() {
     let inspected = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let engine = Engine::serving(|_| {
         let inspected = Arc::clone(&inspected);
-        axum::Router::new().fallback(move |uri: axum::http::Uri| async move {
+        axum::Router::new().fallback(move |uri: http::Uri| async move {
             inspected.lock().push(uri.path().to_owned());
-            axum::http::StatusCode::NOT_FOUND
+            http::StatusCode::NOT_FOUND
         })
     })
     .await;
@@ -362,13 +362,13 @@ impl Scenario {
     /// Switches the scenario's gateway to tunnel mode and back.
     async fn tunnel_mode(&self) {
         let echo = self
-            .deploy(super::application(
+            .deploy(application(
                 "echo",
                 "echo.example.test",
                 "{http.request.header.X-Forwarded-For} {http.request.header.X-Forwarded-Proto} {http.request.header.X-Forwarded-Host}",
             ))
             .await;
-        let mut admin = super::application("admin", "admin.example.test", "admin").to_manifest();
+        let mut admin = application("admin", "admin.example.test", "admin").to_manifest();
         admin.spec.routes[0].visibility = Visibility::Private;
         let admin = admin
             .validate()

@@ -364,7 +364,7 @@ impl Scenario {
             panic!("unexpected backend response: {body}");
         };
         let peer: std::net::Ipv4Addr = peer.parse().unwrap();
-        forwarded.parse::<std::net::IpAddr>().unwrap();
+        forwarded.parse::<IpAddr>().unwrap();
         assert_ne!(
             forwarded, "203.0.113.9",
             "client-supplied header reached the backend"
@@ -425,7 +425,7 @@ impl Scenario {
         self.counting.cancel();
         let counter = self.counter.lock().await.take().unwrap();
         counter.await.unwrap();
-        let now = piqueld_store::now_ms();
+        let now = now_ms();
         let report = self
             .store
             .traffic(
@@ -484,7 +484,7 @@ impl Scenario {
         deploy(&self.store, &controller, self.first_as(changed)).await;
         assert_eq!(
             self.store.routing_table().await.unwrap()[&self.first],
-            [] as [piqueld_core::manifest::ValidatedRoute; 0]
+            [] as [ValidatedRoute; 0]
         );
         assert_eq!(
             self.docker.observe(&self.first).await.unwrap().services[0]

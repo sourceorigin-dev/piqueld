@@ -12,7 +12,7 @@ async fn each_listener_serves_only_its_own_routes() {
             .unwrap()
             .iter()
             .filter_map(|route| route["match"][0]["host"][0].as_str().map(str::to_owned))
-            .collect::<std::collections::BTreeSet<_>>()
+            .collect::<BTreeSet<_>>()
     };
     let edge = edge();
     let configuration = ingress.build_configuration(
@@ -101,7 +101,7 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
         .await
         .unwrap();
     let ingress = ingress.with_webhooks(Some(hooks));
-    let table: piqueld_store::ingress::RoutingTable = [
+    let table: RoutingTable = [
         (
             "env-deeper",
             routes(Visibility::Public, "api.eu.example.com"),
@@ -174,7 +174,7 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
     assert!(ingress.dns01_hostnames(&table).contains(&wildcard));
     // Through a tunnel, Cloudflare terminates its TLS.
     let (_engine, tunneled) = private_ingress().await;
-    let tunneled = tunneled.with_tunnel(&super::tunnel::tunnel("c2VjcmV0"));
+    let tunneled = tunneled.with_tunnel(&tunnel::tunnel("c2VjcmV0"));
     assert!(!tunneled.dns01_hostnames(&table).contains(&wildcard));
 }
 
@@ -205,7 +205,7 @@ async fn the_apps_node_forwards_to_the_private_listener_without_privileges() {
     );
     // A replaced auth key replaces the container, which reads it again.
     let hash = |key: &str| {
-        let config = piqueld_config::PrivateIngressConfig {
+        let config = PrivateIngressConfig {
             enabled: true,
             auth_key: Some(key.into()),
             ..Default::default()
@@ -335,7 +335,7 @@ async fn the_dashboard_hostname_is_a_private_host_forwarded_to_the_daemon() {
     use std::os::unix::fs::PermissionsExt;
     let dashboard = Hostname::parse("dashboard.example.com").unwrap();
     let (engine, ingress) = private_ingress().await;
-    let ingress = ingress.with_private(&piqueld_config::PrivateIngressConfig {
+    let ingress = ingress.with_private(&PrivateIngressConfig {
         dashboard_hostname: Some(dashboard.clone()),
         ..private_config()
     });

@@ -46,7 +46,7 @@ async fn deploy(store: &Store, environment: &EnvironmentId, outcomes: &[Outcome]
             Outcome::Failed { old } => ("failed", old, false, false),
             Outcome::Succeeded { old, promoted } => ("succeeded", old, true, promoted),
         };
-        let finished = if old { 0 } else { crate::now_ms() };
+        let finished = if old { 0 } else { now_ms() };
         sqlx::query("UPDATE operations SET state=?1,finished_at_ms=?2,promoted=?3 WHERE id=?4")
             .bind(state)
             .bind(finished)
@@ -296,7 +296,7 @@ async fn deployment_analytics_over_pruned_history_are_incomplete() {
     .await;
     let incomplete = async || {
         store
-            .deployment_analytics(None, &crate::Visibility::ALL, 0, crate::now_ms())
+            .deployment_analytics(None, &crate::Visibility::ALL, 0, now_ms())
             .await
             .unwrap()
             .incomplete

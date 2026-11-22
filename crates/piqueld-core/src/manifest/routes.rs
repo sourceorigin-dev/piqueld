@@ -289,7 +289,7 @@ impl utoipa::PartialSchema for RedirectStatus {
     }
 }
 
-impl utoipa::ToSchema for RedirectStatus {}
+impl ToSchema for RedirectStatus {}
 
 impl From<RedirectStatus> for u16 {
     fn from(status: RedirectStatus) -> Self {

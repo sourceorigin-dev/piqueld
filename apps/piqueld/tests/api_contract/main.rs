@@ -277,7 +277,7 @@ impl RuntimeBoundary for FakeRuntime {
         &self,
         environment: &piqueld_core::EnvironmentId,
         application: &NormalizedApplication,
-        _reusable: &piqueld_core::ResolutionSet,
+        _reusable: &ResolutionSet,
     ) -> Result<piqueld_core::ResolvedApplication, BoundaryError> {
         self.resolve(environment, application)
             .map_err(BoundaryError::Compilation)
@@ -290,7 +290,7 @@ impl RuntimeBoundary for FakeRuntime {
 
     async fn reuse_images(
         &self,
-        _: &BTreeMap<piqueld_core::ServiceName, piqueld_core::ResolvedSource>,
+        _: &BTreeMap<piqueld_core::ServiceName, ResolvedSource>,
     ) -> Result<piqueld::reconcile::ImagesInUse, BoundaryError> {
         Err(piqueld_docker::DockerError::Unavailable("list images").into())
     }
@@ -933,7 +933,7 @@ impl AcceptanceApi {
         &self,
         id: &str,
         edit: piqueld_client::edit::ApplicationEdit,
-    ) -> piqueld_core::manifest::ApplicationManifest {
+    ) -> ApplicationManifest {
         let generation = self.client.application(id).await.unwrap().generation;
         self.client
             .edit_application(id, &edit, &at_generation(generation))
@@ -1128,10 +1128,7 @@ impl GrantFixture {
 /// returned generation includes the bump from creating `staging`.
 async fn two_environments(
     service: &ApiState,
-) -> (
-    piqueld_core::api::SavedApplication,
-    piqueld_core::api::EnvironmentView,
-) {
+) -> (SavedApplication, piqueld_core::api::EnvironmentView) {
     use piqueld::api::{ApplicationError, Mutation, MutationResponse};
     use piqueld_store::StoreError;
     let mut saved = save(service, manifest()).await;

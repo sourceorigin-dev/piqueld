@@ -961,10 +961,7 @@ impl DockerApi for FakeDocker {
         Ok(())
     }
 
-    async fn ensure_service(
-        &self,
-        desired: &piqueld_core::resource::DesiredService,
-    ) -> Result<(), DockerError> {
+    async fn ensure_service(&self, desired: &DesiredService) -> Result<(), DockerError> {
         let _probe = self.mutations.enter().await;
         let mut observed = self.observed.lock().await;
         let existing = observed

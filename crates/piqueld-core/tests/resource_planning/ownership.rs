@@ -17,7 +17,7 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
     let id = EnvironmentId::parse("app-notes-01").unwrap();
     let instance = instance();
     let network = DesiredNetwork {
-        name: piqueld_core::DockerNetworkName::parse(piqueld_core::docker_resource_name(
+        name: DockerNetworkName::parse(piqueld_core::docker_resource_name(
             &id,
             piqueld_core::ResourceKind::Network,
             None,
@@ -36,7 +36,7 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
 
     // An off-canonical name is rejected.
     let mut renamed = network.clone();
-    renamed.name = piqueld_core::DockerNetworkName::parse(format!("{}x", renamed.name)).unwrap();
+    renamed.name = DockerNetworkName::parse(format!("{}x", renamed.name)).unwrap();
     assert!(!renamed.has_valid_identity());
 
     let volume = DesiredVolume {
@@ -79,7 +79,7 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
         receives_telemetry: false,
         telemetry: None,
         networks: vec![
-            piqueld_core::DockerNetworkName::parse(piqueld_core::docker_resource_name(
+            DockerNetworkName::parse(piqueld_core::docker_resource_name(
                 &id,
                 piqueld_core::ResourceKind::Network,
                 None,

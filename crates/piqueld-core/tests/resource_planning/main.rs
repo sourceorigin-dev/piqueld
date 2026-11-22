@@ -52,7 +52,7 @@ fn resolutions() -> ResolutionSet {
     }
 }
 
-fn observed(desired: &piqueld_core::resource::ResolvedApplication) -> ObservedApplication {
+fn observed(desired: &ResolvedApplication) -> ObservedApplication {
     ObservedApplication {
         networks: desired
             .networks
@@ -117,11 +117,8 @@ fn digest() -> String {
     format!("sha256:{}", "a".repeat(64))
 }
 
-fn labels_for(
-    instance: &InstanceId,
-    application: &EnvironmentId,
-) -> std::collections::BTreeMap<String, String> {
-    std::collections::BTreeMap::from([
+fn labels_for(instance: &InstanceId, application: &EnvironmentId) -> BTreeMap<String, String> {
+    BTreeMap::from([
         ("io.piqueld.managed".into(), "true".into()),
         ("io.piqueld.instance".into(), instance.to_string()),
         ("io.piqueld.application".into(), application.to_string()),

@@ -262,7 +262,7 @@ impl BollardDocker {
         application: &EnvironmentId,
         networks: &NetworkSnapshot,
         node_id: &str,
-    ) -> Result<Vec<piqueld_core::ObservedService>, DockerError> {
+    ) -> Result<Vec<ObservedService>, DockerError> {
         let (raw_services, service_names) = self.inspect_application_services(application).await?;
         let all_tasks = if service_names.is_empty() {
             // Empty name filters rely on undocumented daemon behavior and
@@ -492,7 +492,7 @@ impl DockerApi for BollardDocker {
         &self,
         name: &str,
         value: &[u8],
-        ownership: &std::collections::BTreeMap<String, String>,
+        ownership: &BTreeMap<String, String>,
     ) -> Result<(), DockerError> {
         DockerTimeout::Request
             .run(
@@ -504,7 +504,7 @@ impl DockerApi for BollardDocker {
     async fn remove_secrets(
         &self,
         names: &[String],
-        ownership: &std::collections::BTreeMap<String, String>,
+        ownership: &BTreeMap<String, String>,
     ) -> Result<(), DockerError> {
         DockerTimeout::Request
             .run(
@@ -516,7 +516,7 @@ impl DockerApi for BollardDocker {
     async fn remove_unused_secrets(
         &self,
         names: &[String],
-        ownership: &std::collections::BTreeMap<String, String>,
+        ownership: &BTreeMap<String, String>,
     ) -> Result<Vec<String>, DockerError> {
         DockerTimeout::Request
             .run(
@@ -694,7 +694,7 @@ impl DockerApi for BollardDocker {
     async fn pushed_images(
         &self,
         owner: &piqueld_core::InstanceId,
-    ) -> Result<std::collections::BTreeSet<piqueld_core::RepositoryDigest>, DockerError> {
+    ) -> Result<BTreeSet<piqueld_core::RepositoryDigest>, DockerError> {
         Ok(self.build_registry()?.pushed_images(owner).await?)
     }
 

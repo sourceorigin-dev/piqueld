@@ -500,14 +500,12 @@ async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
 
     let promoted = Mutation::CreateEnvironment {
         application: application.clone(),
-        name: piqueld_core::EnvironmentName::parse("production-2").unwrap(),
-        source: Some(crate::SourceChoice::PromoteFrom(preview.id.clone())),
+        name: EnvironmentName::parse("production-2").unwrap(),
+        source: Some(SourceChoice::PromoteFrom(preview.id.clone())),
     };
     assert!(matches!(
         accept(promoted).await,
-        Err(StoreError::Promotion(
-            crate::PromotionError::SourceInvalid { .. }
-        ))
+        Err(StoreError::Promotion(PromotionError::SourceInvalid { .. }))
     ));
 
     prepared(&created.operation.operation_id).await;
@@ -580,7 +578,7 @@ async fn repeated_preview_requests_change_and_record_nothing() {
     let application = save(&store, false).await;
     let route = "POST /api/v1/applications/{id}/previews";
     let accept = async |mutation: PreviewMutation| {
-        let request = crate::testing::audit_request(route);
+        let request = testing::audit_request(route);
         let author = Author {
             actor: Daemon,
             request: Some(&request),

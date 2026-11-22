@@ -484,9 +484,9 @@ mod tests {
         let stalled = futures_util::stream::pending::<Result<Bytes, std::io::Error>>();
         let body = tower_http::timeout::TimeoutBody::new(
             Duration::from_millis(10),
-            axum::body::Body::from_stream(stalled),
+            Body::from_stream(stalled),
         );
-        let request = Request::new(axum::body::Body::new(body));
+        let request = Request::new(Body::new(body));
         let error = request_body(Bytes::from_request(request, &()).await).unwrap_err();
         assert_eq!(error.status, StatusCode::REQUEST_TIMEOUT);
         assert_eq!(error.body().code, ApiErrorCode::RequestBodyTimeout);

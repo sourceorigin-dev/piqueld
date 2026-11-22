@@ -781,7 +781,7 @@ async fn bootstrap_can_pin_manifest_revision_independently_from_git_build_revisi
     let build_commit = build_repository.commit(&[]);
     let mut fetched = repository.manifest();
     fetched.spec.services[0].source = piqueld_core::Source::Git {
-        repository: piqueld_core::manifest::SourceRepository::Git(GitRepository {
+        repository: SourceRepository::Git(GitRepository {
             url: build_repository.path().display().to_string(),
             branch: "main".into(),
             commit: Some(build_commit.clone()),

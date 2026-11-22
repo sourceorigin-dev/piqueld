@@ -355,7 +355,7 @@ pub trait DockerApi: Send + Sync + 'static {
     async fn build_image(
         &self,
         build: &ImageBuild<'_>,
-        log: Option<&dyn crate::command::OutputLog>,
+        log: Option<&dyn command::OutputLog>,
     ) -> Result<piqueld_core::BuiltImage, DockerError>;
     /// Provisions an immutable secret with the expected application ownership.
     async fn ensure_secret(
@@ -482,7 +482,7 @@ pub trait DockerApi: Send + Sync + 'static {
     async fn pushed_images(
         &self,
         owner: &InstanceId,
-    ) -> Result<std::collections::BTreeSet<piqueld_core::RepositoryDigest>, DockerError>;
+    ) -> Result<BTreeSet<piqueld_core::RepositoryDigest>, DockerError>;
     /// Deletes `image`, which the build machine pushed, from the build registry by
     /// digest. An image the registry doesn't have counts as deleted.
     async fn delete_pushed_image(
