@@ -3,8 +3,8 @@
 use super::{Auth, AuthError, CredentialKind, DAY, MAX_PENDING, Result, now_secs};
 use piqueld_core::access::{Denied, Grants, Reauthenticate};
 use piqueld_core::auth::{
-    DeviceConfirmation, DeviceRequest, DeviceStart, DeviceToken, HostOperator, OperatorLink,
-    Principal, SensitiveAction, Session, User,
+    DeviceConfirmation, DeviceLoginStatus, DeviceRequest, DeviceStart, DeviceToken, HostOperator,
+    OperatorLink, Principal, SensitiveAction, Session, User,
 };
 use piqueld_store::{
     Actor, AuditRequest, Author, Caller, Cascade, NewCredential, Proof, StoreError,
@@ -661,7 +661,7 @@ impl Auth {
         code: &str,
         request: Option<&AuditRequest>,
     ) -> Result<DeviceToken> {
-        let pending = |status: &str| DeviceToken {
+        let pending = |status: DeviceLoginStatus| DeviceToken {
             status: status.into(),
             token: None,
             user: None,
@@ -679,11 +679,11 @@ impl Auth {
                 return Err(AuthError::Unauthorized);
             }
             if device.next_poll > now {
-                return Ok(pending("slow_down"));
+                return Ok(pending(DeviceLoginStatus::SlowDown));
             }
             device.next_poll = now + 5;
             let Some(approver) = device.approved_by.clone().filter(|_| !device.issuing) else {
-                return Ok(pending("authorization_pending"));
+                return Ok(pending(DeviceLoginStatus::AuthorizationPending));
             };
             let next = match &device.confirms {
                 Some(confirms) => Approved::Confirm(confirms.clone()),
@@ -748,7 +748,7 @@ impl Auth {
         };
         issuing.finish();
         Ok(DeviceToken {
-            status: "complete".into(),
+            status: DeviceLoginStatus::Complete.into(),
             token: Some(prepared.token),
             user: Some(user),
         })
@@ -796,7 +796,7 @@ impl Auth {
             "confirmed CLI login with passkey"
         );
         Ok(DeviceToken {
-            status: "complete".into(),
+            status: DeviceLoginStatus::Complete.into(),
             token: None,
             user: Some(confirms.user),
         })

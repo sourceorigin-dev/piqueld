@@ -40,3 +40,20 @@ fn revocations_cascade_unless_asked_not_to() {
         Manage::RevokeCredential { cascade: true, .. }
     ));
 }
+
+/// Each device login status is sent as its own string and read back as
+/// itself, and no two share one.
+#[test]
+fn device_login_statuses_serialize_to_distinct_strings() {
+    for status in DeviceLoginStatus::ALL {
+        let value = status.as_str();
+        assert_eq!(serde_json::to_value(status).unwrap(), value);
+        assert_eq!(
+            serde_json::from_value::<DeviceLoginStatus>(value.into()).unwrap(),
+            status
+        );
+        assert_eq!(DeviceLoginStatus::parse(value), Some(status));
+    }
+    let values = DeviceLoginStatus::ALL.map(DeviceLoginStatus::as_str);
+    assert_eq!(std::collections::BTreeSet::from(values).len(), values.len());
+}
