@@ -101,8 +101,6 @@ the docs, private items included, with warnings denied.
 - `unwrap_used` is off: the tests still call `unwrap` about 4,400 times. They
   move to `expect("what should have held")` crate by crate (PQD-124); new
   tests use `expect`.
-- Most unit tests are inline `mod tests { ... }` blocks longer than 30 lines.
-  Move a block to a sibling `tests.rs` when you change it.
 - `just doc` allows links from public items to private ones
   (`rustdoc::private_intra_doc_links`), since most of the code is internal and
   documented for its developers.
