@@ -49,7 +49,7 @@
     },
     "BuildConfig": {
       "additionalProperties": false,
-      "description": "How many images build at once, and where: on this host's Docker Engine,\nor on a build machine instead. piqueld still checks repositories out here, and sends each build\nto the machine's `BuildKit` daemon, which pushes the image to a registry\nthis host's Docker Engine pulls it from. Set `builder` and `repository`\ntogether, or neither: without them, images build on this host's Docker\nEngine.",
+      "description": "How many images build at once, and where.\n\nA build machine builds this installation's images instead of this host.\npiqueld still checks repositories out here, and sends each build to the\nmachine's `BuildKit` daemon, which pushes the image to a registry\nthis host's Docker Engine pulls it from. Set `builder` and `repository`\ntogether, or neither: without them, images build on this host's Docker\nEngine.",
       "properties": {
         "builder": {
           "default": null,
@@ -724,7 +724,7 @@
     },
     "build": {
       "$ref": "#/definitions/BuildConfig",
-      "description": "A build machine that builds images instead of this host."
+      "description": "Where images build, and how many at once."
     },
     "build_history": {
       "$ref": "#/definitions/BuildHistoryConfig",

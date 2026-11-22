@@ -208,7 +208,7 @@ pub struct ImageBuild<'a> {
     pub args: &'a BTreeMap<String, String>,
     /// Optional multi-stage target.
     pub target: Option<&'a str>,
-    /// The queue it waits in for the one build that runs at a time.
+    /// The queue it waits in while every build slot is taken.
     pub priority: BuildPriority,
 }
 

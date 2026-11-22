@@ -32,7 +32,7 @@ The website's origin and API token lifetimes.
 
 Type: table. Optional.
 
-A build machine that builds images instead of this host.
+Where images build, and how many at once.
 
 ### `build_history`
 
@@ -130,7 +130,9 @@ The website's canonical origin, such as `https://piqueld.example.com`. Passkeys 
 
 ## `[build]` table
 
-How many images build at once, and where: on this host's Docker Engine, or on a build machine instead. piqueld still checks repositories out here, and sends each build to the machine's `BuildKit` daemon, which pushes the image to a registry this host's Docker Engine pulls it from. Set `builder` and `repository` together, or neither: without them, images build on this host's Docker Engine.
+How many images build at once, and where.
+
+A build machine builds this installation's images instead of this host. piqueld still checks repositories out here, and sends each build to the machine's `BuildKit` daemon, which pushes the image to a registry this host's Docker Engine pulls it from. Set `builder` and `repository` together, or neither: without them, images build on this host's Docker Engine.
 
 ### `build.builder`
 

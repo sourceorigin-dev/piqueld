@@ -1,6 +1,6 @@
 use super::{BuildPriority::*, *};
 use futures_util::poll;
-use std::pin::pin;
+use std::{pin::pin, task::Poll};
 
 #[tokio::test]
 async fn environment_builds_go_ahead_of_waiting_preview_builds_but_never_interrupt_them() {
@@ -35,13 +35,17 @@ async fn builds_run_up_to_the_slots_at_once() {
     let mut third = pin!(queue.turn(Environment));
     assert!(poll!(&mut third).is_pending());
     drop(first);
-    let third = third.await;
+    let Poll::Ready(third) = poll!(&mut third) else {
+        panic!("the freed slot goes to the waiting build");
+    };
     drop((second, third));
-    // Both slots are free again.
+    // Both slots are free again: both turns are held at once.
     let mut first = pin!(queue.turn(Preview));
     let mut second = pin!(queue.turn(Preview));
-    assert!(poll!(&mut first).is_ready());
-    assert!(poll!(&mut second).is_ready());
+    let (Poll::Ready(_first), Poll::Ready(_second)) = (poll!(&mut first), poll!(&mut second))
+    else {
+        panic!("both slots are free");
+    };
 }
 
 #[tokio::test]

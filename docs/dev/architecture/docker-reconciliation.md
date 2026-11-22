@@ -151,9 +151,10 @@ One async controller polls pending environment futures and discovery together.
 SQLite calls, Docker observations, image pulls, and convergence timers yield to
 other ready work. Shared limits allow two image resolutions and eight application
 observations; resource mutations hold one global lock, and image builds run
-one at a time unless `build.parallel` raises it, environments before previews.
-Timers consume no I/O slot. New intent cancels obsolete local preparation; dispatched Docker requests
-may finish, but obsolete results cannot authorize subsequent actions. Git and Docker
+one at a time unless `build.parallel` allows more, environments before
+previews. Timers consume no I/O slot. New intent cancels obsolete local
+preparation; dispatched Docker requests may finish, but obsolete results
+cannot authorize subsequent actions. Git and Docker
 CLI commands run in private process groups; cancellation kills their local helper
 processes too. Git ignores the host-wide `/etc/gitconfig` but reads the daemon
 user's own configuration and credentials. Preparation timeouts fail with

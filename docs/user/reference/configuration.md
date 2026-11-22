@@ -78,7 +78,7 @@ One async controller overlaps pending work. Internal global limits allow two
 image resolutions, eight observations, and one resource mutation request.
 Timers consume no I/O slot. These limits are not configurable. Image builds
 run one at a time unless
-[`build.parallel`](configuration-settings.md#buildparallel) raises it.
+[`build.parallel`](configuration-settings.md#buildparallel) allows more.
 Waiting environment builds go before waiting preview builds,
 except that a preview build goes next once three environment builds went ahead
 of it, so a steady stream of environment builds cannot starve previews. A

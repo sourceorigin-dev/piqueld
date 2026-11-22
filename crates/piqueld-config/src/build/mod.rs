@@ -39,9 +39,11 @@ impl Default for BuildConfig {
     }
 }
 
-/// How many images build at once, and where: on this host's Docker Engine,
-/// or on a build machine instead. piqueld still checks repositories out here, and sends each build
-/// to the machine's `BuildKit` daemon, which pushes the image to a registry
+/// How many images build at once, and where.
+///
+/// A build machine builds this installation's images instead of this host.
+/// piqueld still checks repositories out here, and sends each build to the
+/// machine's `BuildKit` daemon, which pushes the image to a registry
 /// this host's Docker Engine pulls it from. Set `builder` and `repository`
 /// together, or neither: without them, images build on this host's Docker
 /// Engine.

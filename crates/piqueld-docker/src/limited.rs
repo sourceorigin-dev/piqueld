@@ -40,7 +40,8 @@ impl<D> LimitedDocker<D> {
     }
 
     /// Wraps the same implementation in new limits that run `builds` builds
-    /// at a time. Permits held under these limits don't count against them.
+    /// at a time. Permits still held on `self` don't count against the new
+    /// limits, so call it before sharing the client.
     #[must_use]
     pub fn with_builds(&self, builds: NonZeroU8) -> Self {
         Self::new(Arc::clone(&self.inner), builds)
