@@ -1,6 +1,5 @@
 //! One deployment's page: its progress and timeline, details, snapshot and
 //! attempts, and Restore.
-use super::PAGE;
 use super::snapshot::DeploymentSnapshot;
 use crate::application::DEPLOYMENT_TABS;
 use crate::browser::format::timestamp;
@@ -25,9 +24,6 @@ use piqueld_client::{
 #[derive(Clone, Copy)]
 struct ShownDeployment {
     deployment: RwSignal<Option<DeploymentView>>,
-    /// Whether a newer deployment is listed: one that failed before
-    /// replacing the current target leaves Restore offered on it.
-    newer: RwSignal<bool>,
     error: RwSignal<Option<String>>,
 }
 
@@ -35,27 +31,21 @@ impl ShownDeployment {
     fn new() -> Self {
         Self {
             deployment: RwSignal::new(None),
-            newer: RwSignal::new(false),
             error: RwSignal::new(None),
         }
     }
 
-    /// Reads deployment `operation` of `environment`, and whether a newer
-    /// deployment is listed. Abandoned when the calling owner is cleaned up.
+    /// Reads deployment `operation` of `environment`. Abandoned when the
+    /// calling owner is cleaned up.
     fn load(self, environment: String, operation: String) {
         let alive = Alive::new();
         spawn_local(async move {
-            let client = Client::browser();
-            let (deployment, listed) = futures_util::join!(
-                client.deployment(&environment, &operation),
-                client.deployment_summaries(&environment, None, Some(PAGE)),
-            );
+            let deployment = Client::browser().deployment(&environment, &operation).await;
             if !alive.get() {
                 return;
             }
-            match deployment.and_then(|deployment| Ok((deployment, listed?))) {
-                Ok((deployment, listed)) => {
-                    self.newer.set(deployment.superseded_in(&listed.items));
+            match deployment {
+                Ok(deployment) => {
                     self.deployment.set(Some(deployment));
                     self.error.set(None);
                 }
@@ -165,7 +155,7 @@ pub(in crate::browser::management) fn DeploymentPage(operation: String) -> impl 
                 {move || progress.with(|p| p.as_ref().map(status_pill))}
             </div>
             <div class="page-actions">
-                <RestoreDeployment deployment={deployment} newer={shown.newer} />
+                <RestoreDeployment deployment={deployment} />
             </div>
         </header>
         <EditorFeedback />
@@ -219,14 +209,13 @@ fn DeploymentSections(deployment: Signal<DeploymentView>) -> impl IntoView {
 }
 
 /// Restore, offered on a deployment the caller may restore that succeeded
-/// and is not the current target, unless a `newer` deployment failed to
-/// replace it. Opens the restoring deployment's page once accepted.
+/// and is not the current target, or is but a newer deployment, the
+/// environment's latest, failed to replace it. Opens the restoring
+/// deployment's page once accepted.
 #[component]
-fn RestoreDeployment(
-    deployment: Signal<Option<DeploymentView>>,
-    newer: RwSignal<bool>,
-) -> impl IntoView {
+fn RestoreDeployment(deployment: Signal<Option<DeploymentView>>) -> impl IntoView {
     let context = editor();
+    let detail = context.signals().detail;
     let navigate = use_navigate();
     move || {
         let id = deployment.with(|deployment| {
@@ -234,7 +223,14 @@ fn RestoreDeployment(
                 .as_ref()
                 .filter(|deployment| {
                     deployment.succeeded_at_ms.is_some()
-                        && (!deployment.current_target || newer.get())
+                        && (!deployment.current_target
+                            || detail.with(|detail| {
+                                deployment.superseded_by(
+                                    detail
+                                        .as_ref()
+                                        .and_then(|detail| detail.latest_operation.as_ref()),
+                                )
+                            }))
                 })
                 .map(|deployment| deployment.operation.id.clone())
         })?;

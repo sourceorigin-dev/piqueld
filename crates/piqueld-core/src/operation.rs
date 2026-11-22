@@ -135,16 +135,6 @@ impl Operation {
         attempt > self.attempt
             || (attempt == self.attempt && self.state != OperationState::Requested)
     }
-
-    /// How recent it is, as the store orders an environment's operations to
-    /// pick its latest: by creation time, then ID. IDs alone order only the
-    /// pages of a list, because they are monotonic within one daemon process:
-    /// after a restart with the clock behind, an older operation can have the
-    /// higher ID.
-    #[must_use]
-    pub fn recency(&self) -> (i64, &str) {
-        (self.created_at_ms, &self.id)
-    }
 }
 
 string_enum! {

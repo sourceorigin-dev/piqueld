@@ -9,14 +9,14 @@ use crate::{
         Console,
         reports::{AcceptedDeploymentReport, Named, OperationOutcomeReport},
     },
-    support::{PAGE_SIZE, join_or, retry_transport},
+    support::{join_or, retry_transport},
 };
 use clap::{Args, ValueEnum};
 use piqueld_client::{
     AcceptedOperation, ApplicationId, ApplicationView, Client, ClientError, DeploymentOrigin,
-    DeploymentSummary, DeploymentView, EnvironmentDetailView, EnvironmentId, EnvironmentName,
-    EnvironmentView, LocalSnapshot, Operation, OperationKind, OperationState, ReleaseId, RouteUrl,
-    SystemVariable, UrlState,
+    DeploymentView, EnvironmentDetailView, EnvironmentId, EnvironmentName, EnvironmentView,
+    LocalSnapshot, Operation, OperationKind, OperationState, ReleaseId, RouteUrl, SystemVariable,
+    UrlState,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -174,6 +174,20 @@ async fn find_deployment(
         })
 }
 
+/// `environment`'s latest deployment, if any: its latest operation unless
+/// that deletes it. The daemon picks it by creation time, so it need not be
+/// the first row of the deployment list, which pages by ID: after a restart
+/// with the clock behind, an older deployment can have the higher ID.
+pub(crate) async fn latest_deployment(
+    client: &Client,
+    environment: &EnvironmentView,
+) -> Result<Option<Operation>> {
+    let detail = client.environment_detail(environment.id.as_str()).await?;
+    Ok(detail
+        .latest_operation
+        .filter(|operation| operation.kind != OperationKind::Delete))
+}
+
 /// Emits an accepted deployment as is with `no_wait`, otherwise waits for it
 /// and emits how it ended.
 pub(crate) async fn wait_for_accepted(
@@ -302,15 +316,12 @@ impl<T: Args + Target> WaitArgs<T> {
     }
 
     /// The deployment to wait for: `--deployment`, checked to be one of
-    /// `environment`'s, or the newest one its first page lists (see
-    /// `DeploymentSummary::newest`).
+    /// `environment`'s, or its latest one.
     async fn deployment(&self, client: &Client, environment: &EnvironmentView) -> Result<String> {
         let Some(id) = &self.deployment else {
-            let page = client
-                .deployment_summaries(environment.id.as_str(), None, Some(PAGE_SIZE))
-                .await?;
-            return DeploymentSummary::newest(&page.items)
-                .map(|deployment| deployment.operation.id.clone())
+            return latest_deployment(client, environment)
+                .await?
+                .map(|operation| operation.id)
                 .ok_or_else(|| {
                     CliError::new(
                         ErrorKind::Input,

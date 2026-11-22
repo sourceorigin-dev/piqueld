@@ -3,8 +3,9 @@
 //! attempt lists, promotion confirmation, and preview creation.
 
 use piqueld_client::{
-    CreatePreviewRequest, DeploymentOrigin, DeploymentSummary, DeploymentView, Operation, Page,
-    PlanView, PromoteRequest, ReleaseAvailability, SystemVariable, sync::short_commit,
+    CreatePreviewRequest, DeploymentOrigin, DeploymentSummary, DeploymentView, Operation,
+    OperationKind, Page, PlanView, PromoteRequest, ReleaseAvailability, SystemVariable,
+    sync::short_commit,
 };
 
 /// What a deployment's row in its environment's history, and its page, say
@@ -36,11 +37,16 @@ pub trait DeploymentFacts {
         u64::try_from(operation.finished_at_ms? - started).ok()
     }
 
-    /// Whether `listed` holds a deployment created after it (see
-    /// `DeploymentSummary::newest`), whatever their order.
-    fn superseded_in(&self, listed: &[DeploymentSummary]) -> bool {
-        DeploymentSummary::newest(listed)
-            .is_some_and(|newest| newest.operation.recency() > self.operation().recency())
+    /// Whether `latest`, its environment's latest operation, is a newer
+    /// deployment. The daemon picks the latest by creation time: the
+    /// deployment list, paged by ID, can list an older deployment first.
+    fn superseded_by(&self, latest: Option<&Operation>) -> bool {
+        let operation = self.operation();
+        latest.is_some_and(|latest| {
+            latest.kind != OperationKind::Delete
+                && latest.environment_id == operation.environment_id
+                && latest.id != operation.id
+        })
     }
 }
 
@@ -301,20 +307,25 @@ mod tests {
         assert_eq!(built.duration_ms(), Some(38_000));
     }
 
-    /// After a restart with the clock behind, the current deployment can
-    /// list below an older one with a higher ID: that one isn't newer, so
-    /// Restore isn't offered on the current deployment.
+    /// Only another deployment, the environment's latest, supersedes one: not
+    /// the deployment itself, a deletion, or another environment's operation.
     #[test]
-    fn only_a_deployment_created_later_supersedes_one() {
-        let mut current = deployment("operation-1", true, true);
-        current.operation.created_at_ms = 2_000;
-        let mut older = summary("operation-9", false, false);
-        older.operation.created_at_ms = 1_000;
-        let listed = vec![older, current.clone().into()];
-        assert!(!current.superseded_in(&listed));
-        let mut failed = summary("operation-0", false, false);
-        failed.operation.created_at_ms = 3_000;
-        assert!(current.superseded_in(&[listed, vec![failed]].concat()));
+    fn only_the_latest_deployment_of_its_environment_supersedes_one() {
+        let current = deployment("operation-1", true, true);
+        assert!(!current.superseded_by(None));
+        assert!(!current.superseded_by(Some(&current.operation)));
+        let failed = operation("operation-0", 1, OperationState::Failed);
+        assert!(current.superseded_by(Some(&failed)));
+        let deletion = Operation {
+            kind: OperationKind::Delete,
+            ..failed.clone()
+        };
+        assert!(!current.superseded_by(Some(&deletion)));
+        let elsewhere = Operation {
+            environment_id: "env-fedcba9876543210fedcba9876543210".parse().unwrap(),
+            ..failed
+        };
+        assert!(!current.superseded_by(Some(&elsewhere)));
     }
 
     #[test]

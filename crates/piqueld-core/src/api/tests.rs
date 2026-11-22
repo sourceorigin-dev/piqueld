@@ -1,6 +1,6 @@
 use super::{
-    ApplicationView, BuildLogChunk, DeploymentPage, DeploymentSummary, EnvironmentAccess,
-    EnvironmentView, LogRecord, MountedSecret, SecretAccess, SecretMetadata, StoredSecret,
+    ApplicationView, BuildLogChunk, DeploymentPage, EnvironmentAccess, EnvironmentView, LogRecord,
+    MountedSecret, SecretAccess, SecretMetadata, StoredSecret,
 };
 
 use crate::{ApplicationId, EnvironmentId, EnvironmentName, EnvironmentSource};
@@ -138,38 +138,4 @@ fn deployment_pages_are_documented_as_any_of() {
         .expect("schema JSON");
     assert!(schema.get("oneOf").is_none());
     assert_eq!(schema["anyOf"].as_array().map(Vec::len), Some(2));
-}
-
-/// Deployment `id`'s summary, created at `created_at_ms`.
-fn summary(id: &str, created_at_ms: i64) -> DeploymentSummary {
-    serde_json::from_value(serde_json::json!({
-        "operation": {
-            "id": id, "environment_id": "app-notes-01", "kind": "apply",
-            "generation": 1, "attempt": 1, "state": "succeeded",
-            "created_at_ms": created_at_ms, "updated_at_ms": created_at_ms,
-        },
-        "succeeded_at_ms": created_at_ms,
-        "current_target": false,
-        "last_successful": false,
-    }))
-    .expect("deployment summary")
-}
-
-/// After a restart with the clock behind, an older deployment can have the
-/// higher ID and list first: the newest is the latest created, and of two
-/// created in the same millisecond, the higher ID.
-#[test]
-fn the_newest_deployment_is_the_latest_created_not_the_first_listed() {
-    let newest = |listed: &[DeploymentSummary]| {
-        DeploymentSummary::newest(listed).map(|newest| newest.operation.id.clone())
-    };
-    let skewed = [
-        summary("operation-f", 1),
-        summary("operation-a", 3),
-        summary("operation-b", 2),
-    ];
-    assert_eq!(newest(&skewed).as_deref(), Some("operation-a"));
-    let tied = [summary("operation-a", 3), summary("operation-b", 3)];
-    assert_eq!(newest(&tied).as_deref(), Some("operation-b"));
-    assert_eq!(newest(&[]), None);
 }

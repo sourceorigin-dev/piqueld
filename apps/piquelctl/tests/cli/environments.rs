@@ -547,7 +547,9 @@ fn deployment(state: &str) -> Value {
 }
 
 /// A deployment of `app-notes-01` created before `operation-01` but listed
-/// above it: after a restart with the clock behind, it has the higher ID.
+/// first, as the only row of a full page: after a restart with the clock
+/// behind, older deployments can have higher IDs, so the newest one can be
+/// off the first page.
 fn listed_first() -> Value {
     let mut older = deployment("succeeded");
     older["operation"]["id"] = json!("operation-09");
@@ -557,22 +559,23 @@ fn listed_first() -> Value {
 }
 
 /// Serves `env wait` for `app-notes-01`: its latest deployment is
-/// `operation-01`, listed below [`listed_first`], whose timeline streams as
-/// each of `states` in turn, and its detail as each of `details` in turn
-/// (the last one repeats).
+/// `operation-01`, which its detail names as the wait starts though the
+/// list shows only [`listed_first`], whose timeline streams as each of
+/// `states` in turn, and its detail then as each of `details` in turn (the
+/// last one repeats).
 fn wait_server(states: Vec<&'static str>, details: Vec<Value>) -> TestServer {
     let state = *states.last().unwrap();
     let timelines: Vec<_> = states
         .into_iter()
         .map(|state| timeline(&operation(state), &json!([])))
         .collect();
-    let mut details = details.into_iter();
+    let mut details = std::iter::once(detail("operation-01", false, "pending")).chain(details);
     let mut current = None;
     start_server(false, usize::MAX, move |request| {
         match request.path.split('?').next().unwrap() {
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
             "/api/v1/environments/app-notes-01/deployments" => {
-                Reply::json(page(vec![listed_first(), deployment(state)], None))
+                Reply::json(page(vec![listed_first()], Some("next")))
             }
             DEPLOYMENT => Reply::json(deployment(state)),
             TIMELINE_STREAM => Reply::timelines(&timelines),
@@ -781,8 +784,8 @@ fn deploy_output_carries_the_deployment_fields_agents_need() {
 /// `env stop` waits until the runtime reports its services stopped, fails
 /// when the deployment it ran again failed, even before its first poll, and
 /// ends when the environment is started meanwhile. A failed deployment it
-/// left as is, the latest though listed below [`listed_first`], doesn't fail
-/// the wait.
+/// left as is, the latest though the list shows only [`listed_first`],
+/// doesn't fail the wait.
 #[test]
 fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
     // (state before the stop, attempt and state after, run state, runtime
@@ -814,7 +817,12 @@ fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
                     Reply::json(app_view("app-notes-01", "notes"))
                 }
                 "/api/v1/environments/app-notes-01/deployments" => {
-                    Reply::json(page(vec![listed_first(), deployment(before)], None))
+                    Reply::json(page(vec![listed_first()], Some("next")))
+                }
+                "/api/v1/environments/app-notes-01/detail" => {
+                    let mut detail = detail("operation-01", true, "ready");
+                    detail["latest_operation"] = operation(before);
+                    Reply::json(detail)
                 }
                 "/api/v1/environments/app-notes-01/stop" => {
                     Reply::accepted(accepted("app-notes-01"))

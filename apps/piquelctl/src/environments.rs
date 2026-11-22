@@ -6,20 +6,22 @@ use crate::{
     commands::{
         Wait, finish_operation, resolve_application, wait_for_deletion, wait_for_operation,
     },
-    deployments::{HistoryArgs, RestoreArgs, Target, UrlArgs, WaitArgs, wait_for_accepted},
+    deployments::{
+        HistoryArgs, RestoreArgs, Target, UrlArgs, WaitArgs, latest_deployment, wait_for_accepted,
+    },
     editing::{EditFlags, on_off, visibility},
     error::{CliError, ErrorKind, ErrorReport, Result},
     output::{
         Console, TaskOutcome,
         reports::{DeletionReport, EnvironmentRow, EnvironmentShowReport, Named, PromotionReport},
     },
-    support::{PAGE_SIZE, join_or, retry_transport},
+    support::{join_or, retry_transport},
 };
 use clap::{Args, Subcommand, ValueEnum};
 use piqueld_client::{
-    ApplicationView, Client, ClientError, CreateEnvironmentRequest, DeploymentSummary,
-    EnvironmentBranchRequest, EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView,
-    EnvironmentView, Operation, PromoteRequest, Rollback, Visibility, edit::ApplicationEdit,
+    ApplicationView, Client, ClientError, CreateEnvironmentRequest, EnvironmentBranchRequest,
+    EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView, EnvironmentView,
+    Operation, PromoteRequest, Rollback, Visibility, edit::ApplicationEdit,
 };
 
 // `env` subcommands; `///` on variants and fields is user-facing help.
@@ -1044,7 +1046,7 @@ impl Lifecycle {
             .await?;
         let (id, expected) = (environment.id.as_str(), flags.expected_generation);
         let before = match self {
-            Self::Stop if !flags.no_wait => Baseline::latest(client, id).await?,
+            Self::Stop if !flags.no_wait => Baseline::latest(client, environment).await?,
             _ => None,
         };
         let accepted = retry_transport(|| async move {
@@ -1075,19 +1077,16 @@ struct Baseline {
 }
 
 impl Baseline {
-    /// The latest deployment's operation of environment `id`, if any: the
-    /// newest one its first page lists (see `DeploymentSummary::newest`).
-    async fn latest(client: &Client, id: &str) -> Result<Option<Self>> {
-        let deployments = client
-            .deployment_summaries(id, None, Some(PAGE_SIZE))
-            .await?;
-        Ok(
-            DeploymentSummary::newest(&deployments.items).map(|deployment| Self {
-                terminal: deployment.operation.state.terminal(),
-                attempt: deployment.operation.attempt,
-                operation: deployment.operation.id.clone(),
-            }),
-        )
+    /// The operation of `environment`'s latest deployment, if any (see
+    /// `latest_deployment`).
+    async fn latest(client: &Client, environment: &EnvironmentView) -> Result<Option<Self>> {
+        Ok(latest_deployment(client, environment)
+            .await?
+            .map(|operation| Self {
+                terminal: operation.state.terminal(),
+                attempt: operation.attempt,
+                operation: operation.id,
+            }))
     }
 
     /// Whether `operation`'s outcome is news since this one: another
