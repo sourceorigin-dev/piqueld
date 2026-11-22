@@ -197,7 +197,8 @@ fn desired_names_are_checked_while_engine_observations_remain_permissive() {
         compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
     let mut wire = serde_json::to_value(&desired).unwrap();
     wire["services"][0]["name"] = "Foreign_Service".into();
-    assert!(serde_json::from_value::<piqueld_core::ResolvedApplication>(wire).is_err());
+    serde_json::from_value::<piqueld_core::ResolvedApplication>(wire)
+        .expect_err("`serde_json::from_value` should be rejected");
 
     let mut snapshot = serde_json::to_value(observed(&desired)).unwrap();
     snapshot["services"][0]["name"] = "Foreign_Service".into();

@@ -218,7 +218,10 @@ async fn list_quarantines_corrupt_rows_and_get_stays_fail_closed() {
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].id(), &healthy_environment);
     assert_eq!(page.next_cursor, None);
-    assert!(store.get(&corrupt_environment).await.is_err());
+    store
+        .get(&corrupt_environment)
+        .await
+        .expect_err("`get` should be rejected");
 
     // A corrupt row inside a full page must not suppress the pagination
     // cursor: quarantined rows still consume page slots, so the surviving
@@ -275,8 +278,14 @@ async fn deployment_history_survives_pruning_and_events_have_independent_retenti
     let environment = first.environment_id.clone();
     let second = store.request_deploy(&environment, Some(1)).await.unwrap();
     store.prune_finished_operations(i64::MAX).await.unwrap();
-    assert!(store.operation(&first.id).await.is_ok());
-    assert!(store.operation(&second.id).await.is_ok());
+    store
+        .operation(&first.id)
+        .await
+        .expect("`operation` should succeed");
+    store
+        .operation(&second.id)
+        .await
+        .expect("`operation` should succeed");
     assert!(store.prepared_target(&first.id).await.unwrap().is_some());
     assert!(store.prepared_target(&second.id).await.unwrap().is_none());
     let events = store.events(Some(&environment), None, 100).await.unwrap();
@@ -296,8 +305,11 @@ async fn deployment_history_survives_pruning_and_events_have_independent_retenti
             .items
             .is_empty()
     );
-    assert!(store.get(&environment).await.is_ok());
-    assert!(store.operation(&second.id).await.is_ok());
+    store.get(&environment).await.expect("`get` should succeed");
+    store
+        .operation(&second.id)
+        .await
+        .expect("`operation` should succeed");
 }
 
 #[tokio::test]

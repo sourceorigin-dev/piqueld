@@ -329,11 +329,9 @@ impl Scenario {
         self.deploy(deployed).await;
         // A forged Host gets a 404, and its SNI no certificate.
         assert_eq!(self.plain("admin.example.test", "").await.status(), 404);
-        assert!(
-            self.untrusted("admin.example.test", self.tls_port)
-                .await
-                .is_err()
-        );
+        self.untrusted("admin.example.test", self.tls_port)
+            .await
+            .expect_err("`self.untrusted` should fail the handshake: no certificate");
         id
     }
 
@@ -485,11 +483,9 @@ impl Scenario {
         .expect("the exact route gets its own certificate");
 
         // Two labels deep: no certificate, and plain HTTP gets a 404.
-        assert!(
-            self.untrusted("a.b.tenants.example.test", self.tls_port)
-                .await
-                .is_err()
-        );
+        self.untrusted("a.b.tenants.example.test", self.tls_port)
+            .await
+            .expect_err("`self.untrusted` should fail the handshake: no certificate");
         assert_eq!(
             self.plain("alice.tenants.example.test", "").await.status(),
             308

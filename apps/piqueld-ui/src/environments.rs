@@ -462,8 +462,14 @@ mod tests {
             building("main", &format!(" {COMMIT}\n")).branch.tracked(),
             Ok(branch("main", Some(COMMIT)))
         );
-        assert!(building("main", "abc").branch.tracked().is_err());
-        assert!(building("", "").branch.tracked().is_err());
+        building("main", "abc")
+            .branch
+            .tracked()
+            .expect_err("`tracked` should be rejected");
+        building("", "")
+            .branch
+            .tracked()
+            .expect_err("`tracked` should be rejected");
     }
 
     #[test]

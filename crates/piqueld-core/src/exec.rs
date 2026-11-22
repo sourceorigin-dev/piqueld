@@ -267,9 +267,11 @@ mod tests {
 
     #[test]
     fn commands_must_name_a_program() {
-        assert!(ExecCommand::parse(Vec::new()).is_err());
-        assert!(ExecCommand::parse(vec![String::new()]).is_err());
-        assert!(serde_json::from_str::<ExecRequest>(r#"{"service":"web","command":[]}"#).is_err());
+        ExecCommand::parse(Vec::new()).expect_err("`ExecCommand::parse` should be rejected");
+        ExecCommand::parse(vec![String::new()])
+            .expect_err("`ExecCommand::parse` should be rejected");
+        serde_json::from_str::<ExecRequest>(r#"{"service":"web","command":[]}"#)
+            .expect_err("`serde_json::from_str` should be rejected");
         let request: ExecRequest =
             serde_json::from_str(r#"{"service":"web","command":["sh","-c",""]}"#).unwrap();
         assert_eq!(request.command.as_slice(), ["sh", "-c", ""]);

@@ -575,7 +575,7 @@ impl SwarmScenario {
         )
         .await
         .expect("a stop ends the session");
-        assert!(stopped.is_err());
+        stopped.expect_err("`stopped` should be rejected");
     }
 
     async fn add_http_service(&self) -> DesiredService {

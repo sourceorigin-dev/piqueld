@@ -66,12 +66,10 @@ async fn generations_deploy_reconcile_and_event_pagination_share_the_http_contra
         .await
         .unwrap();
     assert_eq!(deletion.generation, 3);
-    assert!(
-        client
-            .deploy_environment(&first.environment_id, 3, None, false)
-            .await
-            .is_err()
-    );
+    client
+        .deploy_environment(&first.environment_id, 3, None, false)
+        .await
+        .expect_err("`` should be rejected");
     let repeated = client
         .delete_application_with_generation(&first.application_id, Some(deletion.generation))
         .await
@@ -248,7 +246,10 @@ async fn receipt_failure_rolls_back_acceptance_and_expired_keys_are_reusable() {
     execute(&database, "CREATE TRIGGER reject_receipt BEFORE INSERT ON request_receipts BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END").await;
     let keyed = api.client.clone().with_request_id("atomic-command");
     let request = new_application();
-    assert!(keyed.apply_and_deploy(&request).await.is_err());
+    keyed
+        .apply_and_deploy(&request)
+        .await
+        .expect_err("`apply_and_deploy` should be rejected");
     assert_eq!(
         api.store.list(None, 50).await.unwrap().items,
         [] as [StoredEnvironment; 0]
@@ -405,12 +406,10 @@ async fn mutations_require_preconditions_but_reconcile_uses_current_intent() {
         .await
         .unwrap();
     assert_eq!(reconciled.operation_id, deletion.operations[0].operation_id);
-    assert!(
-        api.client
-            .deploy_environment(&accepted.environment_id, 2, None, false)
-            .await
-            .is_err()
-    );
+    api.client
+        .deploy_environment(&accepted.environment_id, 2, None, false)
+        .await
+        .expect_err("`` should be rejected");
 }
 
 /// Stopping needs a deployment and lasts until the environment is started,

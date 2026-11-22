@@ -286,12 +286,10 @@ async fn rotation_preserves_retry_pins_and_secret_values_never_enter_snapshots()
         .put_stored_secret(Daemon, app.id(), "token", 1, b"second-value".to_vec(), None)
         .await
         .unwrap();
-    assert!(
-        store
-            .put_stored_secret(Daemon, app.id(), "token", 1, b"stale".to_vec(), None)
-            .await
-            .is_err()
-    );
+    store
+        .put_stored_secret(Daemon, app.id(), "token", 1, b"stale".to_vec(), None)
+        .await
+        .expect_err("`` should be rejected");
     assert_eq!(
         store
             .secret_plaintext(&env, &pins["token"])
@@ -306,15 +304,13 @@ async fn rotation_preserves_retry_pins_and_secret_values_never_enter_snapshots()
             .await,
         Err(StoreError::SecretReferenced)
     ));
-    assert!(
-        store
-            .secret_plaintext(
-                &EnvironmentId::parse("app-another").unwrap(),
-                &pins["token"]
-            )
-            .await
-            .is_err()
-    );
+    store
+        .secret_plaintext(
+            &EnvironmentId::parse("app-another").unwrap(),
+            &pins["token"],
+        )
+        .await
+        .expect_err("`` should be rejected");
     drop(store);
     let store = Store::open_unsynced(&path).await.unwrap();
     assert_eq!(
@@ -348,12 +344,10 @@ async fn rotation_preserves_retry_pins_and_secret_values_never_enter_snapshots()
         2,
         "metadata reads do not require the key"
     );
-    assert!(
-        store
-            .put_stored_secret(Daemon, app.id(), "token", 2, b"replacement".to_vec(), None)
-            .await
-            .is_err()
-    );
+    store
+        .put_stored_secret(Daemon, app.id(), "token", 2, b"replacement".to_vec(), None)
+        .await
+        .expect_err("`` should be rejected");
     assert!(!directory.path().join("secrets.key").exists());
 }
 

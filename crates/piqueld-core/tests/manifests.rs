@@ -655,7 +655,8 @@ fn security_settings_are_hashed_and_validated() {
     );
     assert!(settings.read_only_root && settings.drop_capabilities && settings.no_new_privileges);
     assert_ne!(hardened.spec_hash(), plain.spec_hash());
-    assert!(parse_toml(&manifest("").replace("1000:1000", "app")).is_err());
+    parse_toml(&manifest("").replace("1000:1000", "app"))
+        .expect_err("a user that is not numeric should be rejected");
     assert_errors(
         &manifest("").replace(
             "name = \"web\"",
@@ -982,7 +983,8 @@ fn normalized_deserialization_revalidates_and_canonicalizes_configuration() {
     for pointer in ["/metadata/name", "/spec/services/0/name"] {
         let mut malformed = wire.clone();
         *malformed.pointer_mut(pointer).unwrap() = "INVALID".into();
-        assert!(serde_json::from_value::<NormalizedApplication>(malformed).is_err());
+        serde_json::from_value::<NormalizedApplication>(malformed)
+            .expect_err("`serde_json::from_value` should be rejected");
     }
     wire["spec"]["services"][0]["mounts"] = serde_json::json!([
         {"volume": "undeclared", "target": "/data", "read_only": false}

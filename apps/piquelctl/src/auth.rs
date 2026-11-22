@@ -688,7 +688,7 @@ mod tests {
             let error = Credentials::read_at(&path).err().expect("refused");
             assert!(error.to_string().ends_with(problem), "{error}");
         }
-        assert!(Credentials::read_at(&real).is_ok());
+        Credentials::read_at(&real).expect("`Credentials::read_at` should succeed");
     }
 
     #[test]

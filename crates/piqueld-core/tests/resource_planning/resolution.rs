@@ -95,5 +95,6 @@ fn wire_decoding_enforces_domain_guards() {
         "requested": "nginx:1",
         "digest_reference": "docker.io/library/nginx:1",
     });
-    assert!(serde_json::from_value::<ResolvedSource>(bad).is_err());
+    serde_json::from_value::<ResolvedSource>(bad)
+        .expect_err("`serde_json::from_value` should be rejected");
 }

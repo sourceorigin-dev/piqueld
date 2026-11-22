@@ -97,7 +97,11 @@ async fn application_deletion_journals_secret_cleanup_failures() {
     assert!(events.iter().any(|event| event.kind == "action_failed"
         && event.phase.map(piqueld_core::Phase::as_str) == Some("remove_secrets")
         && event.error_code.as_deref() == Some("docker_request_failed")));
-    assert!(harness.store.get(&first.environment_id).await.is_ok());
+    harness
+        .store
+        .get(&first.environment_id)
+        .await
+        .expect("`get` should succeed");
 }
 
 /// A mounted secret nobody stored fails the deployment as `secret_missing`,

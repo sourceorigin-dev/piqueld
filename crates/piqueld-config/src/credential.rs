@@ -311,7 +311,7 @@ mod tests {
         std::fs::write(file.path(), " \n").unwrap();
         for path in [file.path().to_path_buf(), file.path().join("missing")] {
             let file = CredentialFile::resolve(path, None).unwrap();
-            assert!(Credential::read("headers", file).is_err());
+            Credential::read("headers", file).expect_err("`Credential::read` should be rejected");
         }
         let inline = Credential::from("secret");
         assert_eq!(format!("{inline} {inline:?}"), "inline Credential(inline)");

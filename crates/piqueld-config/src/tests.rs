@@ -332,7 +332,7 @@ fn checks_locate_credential_files_without_reading_them() {
          [ingress.tunnel]\nenabled = true\ncredentials_file = 'cloudflared-tunnel'\n\
          [[dns.providers]]\nkind = 'cloudflare'\napi_token_file = '/missing/token'";
     check(credentials).unwrap();
-    assert!(DaemonConfig::load(&path).is_err());
+    DaemonConfig::load(&path).expect_err("`DaemonConfig::load` should be rejected");
     // Everything else is validated as at startup.
     for invalid in [
         "[server]\nport = 0",
@@ -369,7 +369,7 @@ fn public_urls_are_https_origins_or_localhost() {
         "http://localhost:7845",
         "http://worktree-1a2b3c4d.localhost:7846",
     ] {
-        assert!(AuthConfig::validate_origin(origin).is_ok());
+        AuthConfig::validate_origin(origin).expect("`AuthConfig::validate_origin` should succeed");
     }
     for origin in [
         "http://piqueld.example",
@@ -379,6 +379,7 @@ fn public_urls_are_https_origins_or_localhost() {
         "https://example.com/path",
         "https://example.com?query",
     ] {
-        assert!(AuthConfig::validate_origin(origin).is_err());
+        AuthConfig::validate_origin(origin)
+            .expect_err("`AuthConfig::validate_origin` should be rejected");
     }
 }

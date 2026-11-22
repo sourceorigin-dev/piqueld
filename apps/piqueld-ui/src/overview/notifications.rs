@@ -250,7 +250,7 @@ mod tests {
         draft
             .categories
             .remove(&NotificationCategory::BuildFailures);
-        assert!(draft.request().is_ok());
+        draft.request().expect("`request` should succeed");
     }
 
     #[test]

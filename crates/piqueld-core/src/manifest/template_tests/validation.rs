@@ -138,7 +138,9 @@ fn declarations_validate_names_values_and_only_the_first_bad_reference() {
     ] {
         manifest.spec.variables.insert(name.into(), value);
     }
-    assert!(manifest.validate_template().is_ok());
+    manifest
+        .validate_template()
+        .expect("`validate_template` should succeed");
 }
 
 #[test]
@@ -298,7 +300,9 @@ fn references_check_declarations_and_repository_availability_before_rendering() 
         },
     );
     manifest.spec.services[0].command = vec!["${{vars.only}}".into()];
-    assert!(manifest.validate_template().is_ok());
+    manifest
+        .validate_template()
+        .expect("`validate_template` should succeed");
 }
 
 #[test]

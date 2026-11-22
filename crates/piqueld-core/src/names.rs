@@ -366,12 +366,16 @@ mod tests {
             "a".repeat(64),
         ] {
             let wire = serde_json::to_string(&value).unwrap();
-            assert!(ApplicationName::parse(&value).is_err());
-            assert!(ServiceName::parse(&value).is_err());
-            assert!(VolumeName::parse(&value).is_err());
-            assert!(serde_json::from_str::<ApplicationName>(&wire).is_err());
-            assert!(serde_json::from_str::<ServiceName>(&wire).is_err());
-            assert!(serde_json::from_str::<VolumeName>(&wire).is_err());
+            ApplicationName::parse(&value)
+                .expect_err("`ApplicationName::parse` should be rejected");
+            ServiceName::parse(&value).expect_err("`ServiceName::parse` should be rejected");
+            VolumeName::parse(&value).expect_err("`VolumeName::parse` should be rejected");
+            serde_json::from_str::<ApplicationName>(&wire)
+                .expect_err("`serde_json::from_str` should be rejected");
+            serde_json::from_str::<ServiceName>(&wire)
+                .expect_err("`serde_json::from_str` should be rejected");
+            serde_json::from_str::<VolumeName>(&wire)
+                .expect_err("`serde_json::from_str` should be rejected");
         }
     }
 

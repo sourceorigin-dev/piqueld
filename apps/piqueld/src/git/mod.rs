@@ -938,10 +938,19 @@ mod tests {
             checkouts.checkout(&source, None).await.unwrap().commit,
             first
         );
-        assert!(checkout.path("../Dockerfile").await.is_err());
-        assert!(checkout.path("missing").await.is_err());
+        checkout
+            .path("../Dockerfile")
+            .await
+            .expect_err("`path` should be rejected");
+        checkout
+            .path("missing")
+            .await
+            .expect_err("`path` should be rejected");
         std::os::unix::fs::symlink(repository.path(), checkout.root().join("escape")).unwrap();
-        assert!(checkout.path("escape/Dockerfile").await.is_err());
+        checkout
+            .path("escape/Dockerfile")
+            .await
+            .expect_err("`path` should be rejected");
         assert_eq!(
             tokio::fs::read_to_string(checkout.path("./Dockerfile").await.unwrap())
                 .await

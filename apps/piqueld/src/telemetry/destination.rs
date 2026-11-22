@@ -634,7 +634,9 @@ mod tests {
         let directory = root.path().join("d".repeat(120));
         std::fs::create_dir(&directory).unwrap();
         let socket = directory.join("otlp.sock");
-        assert!(tokio::net::UnixStream::connect(&socket).await.is_err());
+        tokio::net::UnixStream::connect(&socket)
+            .await
+            .expect_err("`tokio::net::UnixStream::connect` should be rejected");
         let held = std::fs::File::open(&directory).unwrap();
         let short = format!(
             "/proc/self/fd/{}/otlp.sock",
@@ -652,15 +654,21 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let socket = directory.path().join("otlp.sock");
         drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
-        assert!(connect_unix(&socket, None).await.is_err());
+        connect_unix(&socket, None)
+            .await
+            .expect_err("`connect_unix` should be rejected");
         let stale = StaleSocket::default();
-        assert!(connect_unix(&socket, Some(&stale)).await.is_err());
+        connect_unix(&socket, Some(&stale))
+            .await
+            .expect_err("`connect_unix` should be rejected");
         assert!(socket.exists(), "a single refusal keeps it");
         // As if the first refusal were `AFTER` ago.
         if let Some((_, since)) = stale.0.lock().as_mut() {
             *since = since.checked_sub(StaleSocket::AFTER).unwrap();
         }
-        assert!(connect_unix(&socket, Some(&stale)).await.is_err());
+        connect_unix(&socket, Some(&stale))
+            .await
+            .expect_err("`connect_unix` should be rejected");
         assert!(!socket.exists());
     }
 }

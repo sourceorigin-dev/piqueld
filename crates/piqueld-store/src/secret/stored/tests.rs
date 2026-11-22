@@ -603,9 +603,11 @@ async fn requested_secret_changes_commit_with_their_audit_record() {
     };
     put(0, None).await.expect("the first upload is stored");
     store.refuse_audit(true).await;
-    assert!(put(1, Some(&staging_only)).await.is_err());
+    put(1, Some(&staging_only))
+        .await
+        .expect_err("`put` should be rejected");
     let access = store.set_secret_access(author, &application, "stripe-dev", &staging_only, None);
-    assert!(access.await.is_err());
+    access.await.expect_err("`access` should be rejected");
     store.refuse_audit(false).await;
     let [kept] = store
         .stored_secrets(&application)
@@ -625,7 +627,9 @@ async fn requested_secret_changes_commit_with_their_audit_record() {
     // A regeneration whose record can't be written keeps the last version.
     store.refuse_audit(true).await;
     let regenerated = store.regenerate_secret(author, &staging, "session", 1);
-    assert!(regenerated.await.is_err());
+    regenerated
+        .await
+        .expect_err("`regenerated` should be rejected");
     store.refuse_audit(false).await;
     let [session] = store
         .secrets(&staging)

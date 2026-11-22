@@ -412,7 +412,7 @@ mod tests {
         assert_eq!(distinct.len(), alike.len());
         for slug in &alike {
             assert!(slug.as_str().starts_with("notes-feat-login-"), "{slug}");
-            assert!(EnvironmentName::parse(slug.as_str()).is_ok());
+            EnvironmentName::parse(slug.as_str()).expect("`EnvironmentName::parse` should succeed");
         }
     }
 

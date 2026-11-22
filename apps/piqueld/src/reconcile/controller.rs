@@ -915,11 +915,15 @@ mod tests {
         let deletion = service.delete_secret(daemon, environment, "token", 1);
         tokio::pin!(deletion);
         let wait = std::time::Duration::from_millis(200);
-        assert!(tokio::time::timeout(wait, &mut deletion).await.is_err());
+        tokio::time::timeout(wait, &mut deletion)
+            .await
+            .expect_err("`tokio::time::timeout` should be rejected");
         assert!(!deleting().await);
         drop(guard);
         // Docker never answers, so deletion stops at removing the versions.
-        assert!(tokio::time::timeout(wait, &mut deletion).await.is_err());
+        tokio::time::timeout(wait, &mut deletion)
+            .await
+            .expect_err("`tokio::time::timeout` should be rejected");
         assert!(deleting().await);
     }
 
@@ -961,11 +965,9 @@ mod tests {
         let cancellation = CancellationToken::new();
         let cleanup = controller.run_operation(&operation, &cancellation);
         tokio::pin!(cleanup);
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_millis(100), &mut cleanup)
-                .await
-                .is_err()
-        );
+        tokio::time::timeout(std::time::Duration::from_millis(100), &mut cleanup)
+            .await
+            .expect_err("`tokio::time::timeout` should be rejected");
         store.finish_action(&repair, None).await.unwrap();
         drop(guard);
         tokio::time::timeout(std::time::Duration::from_secs(1), cleanup)

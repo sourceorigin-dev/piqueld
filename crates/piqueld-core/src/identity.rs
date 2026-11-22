@@ -182,8 +182,11 @@ mod tests {
             EnvironmentId::parse("UPPERCASE").unwrap_err(),
             EnvironmentIdError
         );
-        assert!(serde_json::from_str::<EnvironmentId>(r#""01jz8r7b4w-test""#).is_ok());
-        assert!(serde_json::from_str::<EnvironmentId>(r#""--------""#).is_err());
-        assert!(serde_json::from_str::<EnvironmentId>(r#""UPPERCASE""#).is_err());
+        serde_json::from_str::<EnvironmentId>(r#""01jz8r7b4w-test""#)
+            .expect("`serde_json::from_str` should succeed");
+        serde_json::from_str::<EnvironmentId>(r#""--------""#)
+            .expect_err("`serde_json::from_str` should be rejected");
+        serde_json::from_str::<EnvironmentId>(r#""UPPERCASE""#)
+            .expect_err("`serde_json::from_str` should be rejected");
     }
 }

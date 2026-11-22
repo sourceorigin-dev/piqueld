@@ -1151,7 +1151,8 @@ mod tests {
             applications: vec!["app-blog0000".into()],
         };
         assert!(!args.is_empty());
-        assert!(args.grants_by_id().is_err());
+        args.grants_by_id()
+            .expect_err("`grants_by_id` should be rejected");
     }
 
     /// The audit filter and the saved login it reads with are chosen

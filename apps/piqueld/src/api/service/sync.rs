@@ -521,7 +521,12 @@ pub(crate) mod tests {
             assert_eq!(fixture.synced(unchanged).await, []);
         }
         // A gone branch keeps its preview.
-        assert!(fixture.service.store.get(&gone).await.is_ok());
+        fixture
+            .service
+            .store
+            .get(&gone)
+            .await
+            .expect("`get` should succeed");
 
         // Nothing is listed again before the interval elapses, counted from
         // when the pass ended.

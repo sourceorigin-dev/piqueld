@@ -203,7 +203,8 @@ fn template_wire_and_comparisons_preserve_the_raw_spelling() {
         serde_json::from_value::<Template>(json!(raw)).unwrap(),
         template
     );
-    assert!(serde_json::from_value::<Template>(json!(1)).is_err());
+    serde_json::from_value::<Template>(json!(1))
+        .expect_err("`serde_json::from_value` should be rejected");
     assert_eq!(Template::default().as_literal().as_deref(), Some(""));
     for (text, mentions) in [
         (raw, true),
@@ -222,7 +223,9 @@ fn typed_parsing_and_slots_preserve_types_and_failed_assignments() {
     assert_eq!(number.literal(), Some(&7));
     assert_eq!(number.to_string(), "7");
     assert_eq!("7".parse::<Typed<u16>>().unwrap(), number);
-    assert!("bad".parse::<Typed<u16>>().is_err());
+    "bad"
+        .parse::<Typed<u16>>()
+        .expect_err("`parse` should be rejected");
     assert!(Slot::Typed(&mut number).template().is_none());
     for raw in ["${{ vars.n }}", "$${{vars.n}}", "${{"] {
         let mut typed: Typed<u16> = raw.parse().unwrap();
@@ -252,7 +255,8 @@ fn typed_parsing_and_slots_preserve_types_and_failed_assignments() {
         json!([]),
         json!({}),
     ] {
-        assert!(serde_json::from_value::<Typed<u16>>(value).is_err());
+        serde_json::from_value::<Typed<u16>>(value)
+            .expect_err("`serde_json::from_value` should be rejected");
     }
     let mut text = Template::from("hello");
     assert_eq!(Slot::Text(&mut text).template().unwrap().as_str(), "hello");
@@ -273,7 +277,8 @@ fn variable_values_round_trip_native_types_and_interpolate_as_text() {
         assert_eq!(value.to_string(), display);
     }
     for value in [Value::Null, json!(1.2), json!([]), json!({})] {
-        assert!(serde_json::from_value::<VariableValue>(value).is_err());
+        serde_json::from_value::<VariableValue>(value)
+            .expect_err("`serde_json::from_value` should be rejected");
     }
 }
 

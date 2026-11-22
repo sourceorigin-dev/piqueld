@@ -550,14 +550,14 @@ mod tests {
                 "{host}"
             );
         }
-        assert!(parse_toml(&manifest(&route.replace("port=3000", "port=0"))).is_err());
-        assert!(
-            parse_toml(&manifest(
-                &route.replace("service='web'", "service='database'")
-            ))
-            .is_err()
-        );
-        assert!(parse_toml(&manifest(&format!("{route}\n{route}"))).is_err());
+        parse_toml(&manifest(&route.replace("port=3000", "port=0")))
+            .expect_err("`parse_toml` should be rejected");
+        parse_toml(&manifest(
+            &route.replace("service='web'", "service='database'"),
+        ))
+        .expect_err("`parse_toml` should reject a route to an unknown service");
+        parse_toml(&manifest(&format!("{route}\n{route}")))
+            .expect_err("`parse_toml` should be rejected");
         let without = parse_toml(&manifest(""))
             .unwrap()
             .normalize(app.id().clone());
@@ -586,7 +586,7 @@ mod tests {
             app
         );
         // Wildcards are never exact hostnames.
-        assert!(Hostname::parse("*.example.com").is_err());
+        Hostname::parse("*.example.com").expect_err("`Hostname::parse` should be rejected");
         // Probes skip names exact routes claim, and fit the longest parent.
         let claimed = [host("a.tenants.example.com")];
         assert_eq!(
@@ -609,8 +609,8 @@ mod tests {
             )))
         };
         let www = "[[spec.routes]]\nhostname='www.example.com'\nservice='web'\nport=3000";
-        assert!(redirect("https://www.example.com", www).is_ok());
-        assert!(redirect("https://example.com", "").is_ok());
+        redirect("https://www.example.com", www).expect("`redirect` should succeed");
+        redirect("https://example.com", "").expect("`redirect` should succeed");
         let errors = redirect("https://www.example.com", "").unwrap_err();
         assert!(
             errors

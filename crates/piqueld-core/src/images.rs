@@ -183,15 +183,17 @@ mod tests {
     #[test]
     fn mutable_references_cannot_be_decoded_as_runtime_images() {
         for value in ["alpine:latest", "ghcr.io/example/app:v1"] {
-            assert!(ImageReference::parse(value).is_ok());
+            ImageReference::parse(value).expect("`ImageReference::parse` should succeed");
             let wire = serde_json::to_string(value).unwrap();
-            assert!(serde_json::from_str::<RepositoryDigest>(&wire).is_err());
-            assert!(serde_json::from_str::<ImmutableImage>(&wire).is_err());
+            serde_json::from_str::<RepositoryDigest>(&wire)
+                .expect_err("`serde_json::from_str` should be rejected");
+            serde_json::from_str::<ImmutableImage>(&wire)
+                .expect_err("`serde_json::from_str` should be rejected");
         }
         let digest = format!("sha256:{}", "a".repeat(64));
         let repository = format!("alpine@{digest}");
-        assert!(RepositoryDigest::parse(&repository).is_ok());
-        assert!(ImmutableImage::parse(&repository).is_ok());
+        RepositoryDigest::parse(&repository).expect("`RepositoryDigest::parse` should succeed");
+        ImmutableImage::parse(&repository).expect("`ImmutableImage::parse` should succeed");
         // A built image is stored as either, and reads back as what it was.
         for (value, pushed) in [(&digest, false), (&repository, true)] {
             let image: BuiltImage = serde_json::from_value(value.as_str().into()).unwrap();
@@ -199,9 +201,9 @@ mod tests {
             assert_eq!(image, BuiltImage::parse(value.as_str()).unwrap());
             assert_eq!(serde_json::to_value(&image).unwrap(), value.as_str());
         }
-        assert!(BuiltImage::parse("alpine:latest").is_err());
-        assert!(ImmutableImage::parse(&digest).is_ok());
-        assert!(RepositoryDigest::parse(&digest).is_err());
+        BuiltImage::parse("alpine:latest").expect_err("`BuiltImage::parse` should be rejected");
+        ImmutableImage::parse(&digest).expect("`ImmutableImage::parse` should succeed");
+        RepositoryDigest::parse(&digest).expect_err("`RepositoryDigest::parse` should be rejected");
         assert_eq!(
             RepositoryDigest::parse(&repository)
                 .unwrap()
@@ -209,6 +211,7 @@ mod tests {
                 .as_str(),
             digest
         );
-        assert!(ImmutableImage::parse(format!("alpine@sha256:{}", "A".repeat(64))).is_err());
+        ImmutableImage::parse(format!("alpine@sha256:{}", "A".repeat(64)))
+            .expect_err("`ImmutableImage::parse` should be rejected");
     }
 }

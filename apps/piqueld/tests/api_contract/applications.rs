@@ -163,12 +163,10 @@ async fn saved_configuration_preview_and_deployment_are_separate_even_offline() 
             .len(),
         0
     );
-    assert!(
-        api.client
-            .deploy_environment(&production, 1, None, false)
-            .await
-            .is_err()
-    );
+    api.client
+        .deploy_environment(&production, 1, None, false)
+        .await
+        .expect_err("`` should be rejected");
     api.runtime.set_unavailable(false);
     request.expected_generation = Some(saved.generation);
     let preview = api.client.plan_application(&request, None).await.unwrap();

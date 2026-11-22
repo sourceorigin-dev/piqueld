@@ -32,11 +32,9 @@ async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation
         .unwrap();
     let refresh = store.touch_credential("credential");
     tokio::pin!(refresh);
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), &mut refresh)
-            .await
-            .is_err()
-    );
+    tokio::time::timeout(Duration::from_millis(100), &mut refresh)
+        .await
+        .expect_err("`tokio::time::timeout` should be rejected");
     tx.rollback().await.unwrap();
     // The queued refresh holds no pool connection while it waits.
     let mut connections = Vec::new();
@@ -383,7 +381,7 @@ async fn sign_ins_record_who_they_signed_in() {
     let sign_in =
         || store.sign_in_with_passkey(Some(&request), "alice-key", "alice", stored, &browser);
     store.refuse_audit(true).await;
-    assert!(sign_in().await.is_err());
+    sign_in().await.expect_err("`sign_in` should be rejected");
     store.refuse_audit(false).await;
     let opened = store.credential_owner("browser").await;
     assert!(opened.expect("credentials are read").is_none());
@@ -482,7 +480,7 @@ async fn registrations_record_what_they_did() {
             passkey("a-key"),
         )
     };
-    assert!(setup().await.is_err());
+    setup().await.expect_err("`setup` should be rejected");
     store.refuse_audit(false).await;
     assert!(!store.auth_initialized().await.expect("setup state is read"));
     assert!(setup().await.expect("alice sets up"));
