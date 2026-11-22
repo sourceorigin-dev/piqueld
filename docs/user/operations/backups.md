@@ -185,8 +185,7 @@ replace your own backup.
    ```
 
    Use the upgraded version's `piqueld`: the previous one may not have this
-   command. On NixOS, `piqueld` isn't on the `PATH`; [use the unit's
-   binary](../reference/nixos.md). It first checks the backup: the database's integrity, that the
+   command. It first checks the backup: the database's integrity, that the
    database is the one the backup describes, and that `secrets.key` decrypts
    its secrets. It restores nothing if a check fails. Add `--check` to run
    the checks only.

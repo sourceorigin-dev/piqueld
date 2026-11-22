@@ -486,6 +486,8 @@ in
         message = "services.piqueld.settings.dns.providers: cloudflare needs only api_token_file; ovh needs only endpoint, application_key_file, application_secret_file and consumer_key_file";
       }
     ];
+    # One-shot commands, such as `piqueld restore`, run outside the unit.
+    environment.systemPackages = [ cfg.package ];
     users.groups.piqueld = { };
     # Declared here too, so the unit's group exists while a host runs its
     # Docker Engine some other way.
