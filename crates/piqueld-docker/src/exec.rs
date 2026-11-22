@@ -119,6 +119,10 @@ impl BollardDocker {
     /// Input failures only close standard input: a command may exit before
     /// reading all of it. A stop or failed output delivery means the client
     /// is gone, and streaming stops with an error.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the only failure is that the receiver is gone"
+    )]
     pub(super) async fn run_task_exec(&self, exec: &Exec, io: ExecIo) -> Result<i64, DockerError> {
         let StartExecResults::Attached {
             mut output,

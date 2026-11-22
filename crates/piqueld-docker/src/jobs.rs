@@ -94,6 +94,10 @@ impl BollardDocker {
     /// lock covers this and every service write, so with
     /// [`Self::check_volumes_free`] a service never shares a volume with an
     /// exclusive run.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the only failure is a deadline before the epoch, which the message names"
+    )]
     pub(super) async fn create_job(&self, job: &DesiredJobRun) -> Result<(), DockerError> {
         if !job.has_valid_identity() {
             return Err(DockerError::OwnershipConflict);

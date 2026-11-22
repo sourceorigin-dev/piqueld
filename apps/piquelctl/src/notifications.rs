@@ -250,8 +250,14 @@ impl SetArgs {
                 "the destination URL must be at most 8192 bytes",
             ));
         }
-        let url = String::from_utf8(url).map_err(|_| {
-            CliError::new(ErrorKind::Input, "the destination URL must be UTF-8 text")
+        let url = String::from_utf8(url).map_err(|error| {
+            CliError::new(
+                ErrorKind::Input,
+                format!(
+                    "the destination URL must be UTF-8 text: {}",
+                    error.utf8_error()
+                ),
+            )
         })?;
         Ok(Some(url.trim().to_owned()))
     }

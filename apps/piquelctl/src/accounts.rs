@@ -259,10 +259,10 @@ impl GrantArgs {
             .applications
             .iter()
             .map(|id| {
-                ApplicationId::parse(id.as_str()).map_err(|_| {
+                ApplicationId::parse(id.as_str()).map_err(|error| {
                     CliError::new(
                         ErrorKind::Input,
-                        format!("--app {id:?} must be an application ID when signing in"),
+                        format!("--app {id:?} must be an application ID when signing in: {error}"),
                     )
                 })
             })

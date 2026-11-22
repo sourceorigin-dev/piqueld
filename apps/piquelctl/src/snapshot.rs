@@ -101,10 +101,12 @@ impl Worktree {
             "find the Git worktree",
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
             CliError::new(
                 ErrorKind::Input,
-                "--local snapshots the Git worktree of the current directory, but there is none",
+                format!(
+                    "--local snapshots the Git worktree of the current directory, but there is none: {error}"
+                ),
             )
         })?;
         let mut paths = output.lines().map(PathBuf::from);
@@ -145,10 +147,10 @@ impl Worktree {
             "read HEAD",
         )
         .await
-        .map_err(|_| {
+        .map_err(|error| {
             CliError::new(
                 ErrorKind::Input,
-                "HEAD has no commit yet; commit once first",
+                format!("HEAD has no commit yet; commit once first: {error}"),
             )
         })?;
         let files = self

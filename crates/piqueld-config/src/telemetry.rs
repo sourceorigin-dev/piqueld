@@ -189,6 +189,10 @@ impl Headers {
     /// # Errors
     /// Every non-blank line must be an ASCII `name: value` pair; binary
     /// (`-bin`) metadata is not supported.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the error reports the line, and the invalid key itself is not echoed"
+    )]
     pub fn parse(source: &str) -> Result<Self, HeadersError> {
         let mut map = MetadataMap::new();
         for (index, line) in source.lines().enumerate() {

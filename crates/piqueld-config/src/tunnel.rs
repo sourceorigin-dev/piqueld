@@ -72,8 +72,10 @@ impl TunnelCredentials {
         };
         let fields: Fields = serde_json::from_str(contents)
             .map_err(|error| TunnelConfigError::Decode { path, error })?;
-        let id =
-            Uuid::parse_str(&fields.id).map_err(|_| TunnelConfigError::Id { id: fields.id })?;
+        let id = Uuid::parse_str(&fields.id).map_err(|error| TunnelConfigError::Id {
+            id: fields.id,
+            error,
+        })?;
         Ok(Self { id, file })
     }
 }
@@ -133,6 +135,9 @@ pub enum TunnelConfigError {
     Id {
         /// The configured ID, which is not secret.
         id: String,
+        /// Why it is not a UUID.
+        #[source]
+        error: uuid::Error,
     },
 }
 

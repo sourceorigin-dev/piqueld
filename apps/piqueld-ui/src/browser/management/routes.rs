@@ -58,6 +58,10 @@ impl RouteDraft {
     }
 
     /// The route input, or a message when a number does not parse.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     fn route(self) -> Result<Route, &'static str> {
         let name = Some(self.name).filter(|name| !name.is_empty());
         let route = if self.redirect {

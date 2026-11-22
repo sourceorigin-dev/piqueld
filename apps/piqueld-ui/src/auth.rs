@@ -191,6 +191,10 @@ impl TokenForm {
     ///
     /// Describes the first invalid field: the lifetime, then the tailnet
     /// binding.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     pub fn command(self, grants: Grants) -> Result<Manage, &'static str> {
         let days = if self.days.is_empty() {
             None

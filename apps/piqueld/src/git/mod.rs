@@ -427,6 +427,10 @@ impl Checkouts {
     /// Checks the disk a checkout in `directory` takes against `disk`, its
     /// reservation, which an estimate may fall short of: it is topped up
     /// without waiting, or the checkout is refused.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the only failure is no free permit, which `TreeTooLarge` names"
+    )]
     async fn settle(
         &self,
         directory: &Path,

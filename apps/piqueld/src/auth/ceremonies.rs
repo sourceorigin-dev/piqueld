@@ -174,6 +174,10 @@ impl Auth {
     /// account adding a passkey to itself gets no token. A link that can no
     /// longer be redeemed, e.g. used concurrently, is invalid; a caller signed
     /// out since the start is unauthorized.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "a decode error can quote the passkey response, and the answer to a bad assertion is deliberately uniform"
+    )]
     pub(crate) async fn registration_finish(
         &self,
         input: CeremonyFinish,
@@ -263,6 +267,10 @@ impl Auth {
     }
     /// Verifies a login assertion against the stored passkey identified by the
     /// response's user handle and credential ID, then opens a browser session.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "a decode error can quote the passkey response, and the answer to a bad assertion is deliberately uniform"
+    )]
     pub(crate) async fn login_finish(
         &self,
         input: CeremonyFinish,
@@ -373,6 +381,10 @@ impl Auth {
     }
     /// Verifies the assertion started by [`Self::reauthenticate_start`] and
     /// marks the same browser session fresh. It issues no new session.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "a decode error can quote the passkey response, and the answer to a bad assertion is deliberately uniform"
+    )]
     pub(crate) async fn reauthenticate_finish(
         &self,
         input: CeremonyFinish,

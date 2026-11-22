@@ -219,6 +219,10 @@ impl From<ServiceSecurity> for SecurityForm {
 }
 impl SecurityForm {
     /// The settings with the typed user, which must be numeric.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     fn settings(&self) -> Result<ServiceSecurity, String> {
         let user = match self.user.trim() {
             "" => None,
@@ -266,6 +270,10 @@ impl FileForm {
     /// The declared file.
     /// # Errors
     /// Returns an actionable error for a mode that is not octal permissions.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     fn file(&self) -> Result<ServiceFile, String> {
         Ok(ServiceFile {
             target: self.target.clone(),
@@ -400,6 +408,10 @@ fn templates(values: &[String]) -> Vec<Template> {
 
 /// Parses an optional typed field: empty text is `None`, `${{ }}` text a
 /// reference, anything else a literal; `error` explains the expected literal.
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the form states what to enter, which a parse error cannot improve on"
+)]
 fn optional<T: std::str::FromStr>(value: &str, error: &str) -> Result<Option<Typed<T>>, String> {
     let value = value.trim();
     if value.is_empty() {
@@ -458,6 +470,10 @@ impl ServiceForm {
     }
 
     /// Parses the selected health check kind and its numeric fields.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     fn healthcheck(&self) -> Result<Option<HealthCheck>, String> {
         let number = |value: &str, error: &'static str| value.parse().map_err(|_| error);
         let interval_seconds = number(
@@ -564,6 +580,10 @@ impl ServiceForm {
     /// # Errors
     /// Returns actionable errors for malformed numeric fields or duplicate
     /// environment or build argument keys.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     pub fn patch(&self, section: Section, service: &mut Service) -> Result<(), String> {
         match section {
             Section::General => {

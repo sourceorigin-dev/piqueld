@@ -42,7 +42,10 @@ impl BrowserPolicy {
         if hosts.next().is_some() {
             return Err(denied());
         }
-        let authority: Authority = host.ok_or_else(denied)?.parse().map_err(|_| denied())?;
+        let authority: Authority = host.ok_or_else(denied)?.parse().map_err(|error| {
+            tracing::debug!(%error, "request authority is not valid");
+            denied()
+        })?;
         let host = authority.host();
         if !Self::valid_authority(&authority) {
             return Err(denied());

@@ -122,6 +122,10 @@ impl<D> ApplicationRuntime<D> {
 
 #[async_trait]
 impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "`Elapsed` carries nothing the timeout variant does not already say"
+    )]
     async fn logs(
         &self,
         id: &EnvironmentId,

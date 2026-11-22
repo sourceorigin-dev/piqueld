@@ -683,6 +683,10 @@ impl Grants {
     ///
     /// # Errors
     /// Returns why the change is refused.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the first denial is the one reported"
+    )]
     pub fn require_change(
         &self,
         required: &[AppPermission],

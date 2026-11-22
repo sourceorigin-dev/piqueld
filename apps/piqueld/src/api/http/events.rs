@@ -153,7 +153,8 @@ pub(super) async fn stream(
         .get("last-event-id")
         .map(|v| v.to_str().map(str::to_owned))
         .transpose()
-        .map_err(|_| {
+        .map_err(|error| {
+            tracing::debug!(%error, "Last-Event-ID is not visible ASCII");
             ApiError::new(
                 StatusCode::BAD_REQUEST,
                 ApiErrorCode::InvalidRequest,

@@ -125,6 +125,10 @@ impl BuiltImage {
     ///
     /// # Errors
     /// Rejects anything else, such as a tag.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the error type is a fixed marker whose message already says what was rejected"
+    )]
     pub fn parse(value: impl Into<String>) -> Result<Self, ImmutableImageError> {
         let value = value.into();
         match Sha256Digest::parse(value.as_str()) {

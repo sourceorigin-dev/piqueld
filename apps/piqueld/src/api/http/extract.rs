@@ -219,6 +219,10 @@ pub(super) struct ApiPath<T>(pub(super) T);
 impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for ApiPath<T> {
     type Rejection = ApiError;
 
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the rejection quotes the request's own values, which stay out of logs and responses"
+    )]
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         Path::<T>::from_request_parts(parts, state)
             .await
@@ -249,6 +253,10 @@ pub(super) struct ApiQuery<T>(pub(super) T);
 impl<S: Send + Sync, T: QueryParams> FromRequestParts<S> for ApiQuery<T> {
     type Rejection = ApiError;
 
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the rejection quotes the request's own values, which stay out of logs and responses"
+    )]
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         Query::<T>::from_request_parts(parts, state)
             .await
@@ -321,7 +329,8 @@ impl ManifestUpload {
             Some(value)
                 if value.eq_ignore_ascii_case(TOML) || value.eq_ignore_ascii_case("text/toml") =>
             {
-                let text = std::str::from_utf8(body).map_err(|_| {
+                let text = std::str::from_utf8(body).map_err(|error| {
+                    tracing::debug!(%error, "request TOML is not UTF-8");
                     ApiError::new(
                         StatusCode::BAD_REQUEST,
                         ApiErrorCode::TomlMalformed,
@@ -431,7 +440,10 @@ pub(super) fn decode_json<T: DeserializeOwned>(body: &[u8]) -> Result<T, ApiErro
         tracing::debug!(%path, "request JSON was rejected");
         malformed()
     })?;
-    deserializer.end().map_err(|_| malformed())?;
+    deserializer.end().map_err(|error| {
+        tracing::debug!(%error, "request JSON has trailing content");
+        malformed()
+    })?;
     Ok(value)
 }
 
@@ -449,10 +461,10 @@ pub(super) fn optional_header(headers: &HeaderMap, name: &str) -> Result<Option<
         invalid("mutation headers must occur once")
     })?
     .map(|value| {
-        value
-            .to_str()
-            .map(str::to_owned)
-            .map_err(|_| invalid("invalid mutation header"))
+        value.to_str().map(str::to_owned).map_err(|error| {
+            tracing::debug!(%error, "mutation header is not visible ASCII");
+            invalid("invalid mutation header")
+        })
     })
     .transpose()
 }

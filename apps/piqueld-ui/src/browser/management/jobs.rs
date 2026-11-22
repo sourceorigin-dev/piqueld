@@ -45,6 +45,10 @@ impl JobDraft {
 
     /// The job input, or a message when an environment key repeats or the
     /// timeout does not parse.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     fn job(self) -> Result<Job, String> {
         Ok(Job {
             name: self.name,

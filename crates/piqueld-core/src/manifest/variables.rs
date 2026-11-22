@@ -583,6 +583,10 @@ impl<T: Expected> TypedSlot for Typed<T> {
         }
     }
 
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the message names the expected type, which the decode error cannot improve on"
+    )]
     fn set(&mut self, value: serde_json::Value) -> Result<(), &'static str> {
         *self = Self::Literal(serde_json::from_value(value).map_err(|_| T::EXPECTED)?);
         Ok(())

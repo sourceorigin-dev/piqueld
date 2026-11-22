@@ -201,6 +201,10 @@ impl ExecFrame for ExecOutput {
         }
     }
 
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the error type is a fixed marker whose message already says what was rejected"
+    )]
     fn decode(message: &[u8]) -> Result<Self, ExecFrameError> {
         let (&tag, payload) = message.split_first().ok_or(ExecFrameError::Malformed)?;
         Ok(match tag {

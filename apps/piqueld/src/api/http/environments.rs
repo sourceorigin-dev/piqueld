@@ -317,7 +317,8 @@ fn selection(request: &PromoteRequest) -> Result<PromotionSelection, ApiError> {
             deployment: deployment.clone(),
         }),
         (None, Some(release)) => Ok(PromotionSelection::Release {
-            release: ReleaseId::parse(release.clone()).map_err(|_| {
+            release: ReleaseId::parse(release.clone()).map_err(|error| {
+                tracing::debug!(%error, "promotion release ID is invalid");
                 ApiError::new(
                     StatusCode::BAD_REQUEST,
                     ApiErrorCode::ReleaseInvalid,

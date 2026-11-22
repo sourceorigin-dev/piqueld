@@ -147,6 +147,10 @@ pub struct FileModeError;
 impl FromStr for FileMode {
     type Err = FileModeError;
 
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the error type is a fixed marker whose message already says what was rejected"
+    )]
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let digits = if text.len() == 4 {
             text.strip_prefix('0').ok_or(FileModeError)?

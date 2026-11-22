@@ -391,6 +391,10 @@ impl<D: DockerApi> Controller<D> {
     /// Publishes `operation`'s prepared target, then stages the routes of
     /// `request`'s target, ready once `plan`'s resources are, within
     /// `deadline`.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "`Elapsed` carries nothing the timeout variant does not already say"
+    )]
     async fn publish(
         &self,
         operation: &Operation,
@@ -418,6 +422,10 @@ impl<D: DockerApi> Controller<D> {
     }
 
     /// Public exposure must be withdrawn within the deletion's convergence budget.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "`Elapsed` carries nothing the timeout variant does not already say"
+    )]
     async fn withdraw_routes(
         &self,
         operation: &Operation,
@@ -434,6 +442,10 @@ impl<D: DockerApi> Controller<D> {
     /// Builds the plan request for an operation: a deletion request, or a
     /// reconcile request toward a freshly prepared target. Preparation is bounded
     /// by `prepare_timeout` and aborts on cancellation.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "`Elapsed` carries nothing the timeout variant does not already say"
+    )]
     async fn operation_request(
         &self,
         operation: &Operation,

@@ -288,6 +288,10 @@ impl<D: DockerApi> Controller<D> {
 
     /// Reads the regular file at `relative` in `checkout` as UTF-8 text of at
     /// most [`ServiceFile::MAX_BYTES`].
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the error owns the file's bytes, which can be a secret"
+    )]
     async fn read_file(
         checkout: &crate::git::Checkout,
         relative: &str,
