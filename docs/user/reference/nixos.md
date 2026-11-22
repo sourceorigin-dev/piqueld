@@ -74,10 +74,15 @@ Only the existing `piqueld.service` is needed; no proxy or socket unit is requir
 Custom `runtimeDir` values must be dedicated directories below `/run`. Configure
 CLI profiles or `--socket` explicitly when overriding this default.
 The module enables Docker and grants the service user Docker access, which is
-host-administrative authority. The service starts after Docker but does not
+host-administrative authority. To run Docker some other way, set
+`virtualisation.docker.enable = false;` and point `settings.docker.socket` at
+a socket the `piqueld` user can reach. The service starts after Docker but does not
 require it: a Docker failure or restart leaves piqueld serving, and it resumes
-deploying once Docker is back. No firewall ports are opened. TCP is disabled by
-default. Use `settings.server.listen_mode = "localhost";` for local HTTP,
+deploying once Docker is back. The module opens no firewall port, and
+`networking.firewall` doesn't govern the HTTPS gateway's ports 80 and 443,
+which Docker publishes through its own iptables rules: see
+[enabling the gateway](../networking/routes.md#enable-the-gateway). TCP is
+disabled by default. Use `settings.server.listen_mode = "localhost";` for local HTTP,
 or configure Tailscale explicitly:
 
 ```nix

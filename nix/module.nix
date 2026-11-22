@@ -487,13 +487,18 @@ in
       }
     ];
     users.groups.piqueld = { };
+    # Declared here too, so the unit's group exists while a host runs its
+    # Docker Engine some other way.
+    users.groups.docker = { };
     users.users.piqueld = {
       isSystemUser = true;
       group = "piqueld";
       extraGroups = [ "docker" ];
       home = cfg.dataDir;
     };
-    virtualisation.docker.enable = true;
+    # A default, so a host can run its Docker Engine some other way and point
+    # settings.docker.socket at it.
+    virtualisation.docker.enable = lib.mkDefault true;
     # apps/piqueld/piqueld.service is this unit for hosts without NixOS;
     # keep the two in step.
     systemd.services.piqueld = {

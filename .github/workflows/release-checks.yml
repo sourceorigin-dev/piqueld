@@ -96,8 +96,9 @@ jobs:
           purge-primary-key: never
       - name: Build Nix packages
         run: nix build -L .#default .#default.cargoArtifacts .#dashboard .#dashboard.cargoArtifacts .#cli .#cli.cargoArtifacts .#daemon
-      # Boots a VM with the build machine and build registry modules,
-      # through the runner's KVM.
+      # Boot VMs with the NixOS modules, through the runner's KVM.
+      - name: Test the piqueld and piquelctl modules
+        run: nix build -L .#checks.x86_64-linux.piqueld
       - name: Test the build machine and build registry modules
         run: nix build -L .#checks.x86_64-linux.piqueld-builder
 

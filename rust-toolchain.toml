@@ -1,5 +1,6 @@
 [toolchain]
-# Pinned, so rustup, CI, and the Nix packages build with the same Rust.
+# The latest stable Rust for rustup and CI; Nix builds the stable of its
+# locked rust-overlay. Cargo.toml's rust-version is the oldest supported.
 channel = "stable"
 # llvm-tools: the llvm-cov and llvm-profdata `just coverage` reads profiles with.
 components = [ "rustfmt", "clippy", "llvm-tools" ]
