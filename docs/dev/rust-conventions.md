@@ -59,6 +59,10 @@ its `expect`, whose message says what holds, under an
 it, such as `reason = "The placeholder IDs are valid constants."`. Tests may
 panic; integration test crates say so once, in an `#![expect]` at their root.
 
+Library crates never print: `print_stdout` and `print_stderr` are denied outside
+tests. A library returns the text or logs it with `tracing`; binaries and
+examples print, under an `#![expect]` or `#[expect]` that says so.
+
 ## Lint exceptions
 
 Never `#[allow]`: an exception is `#[expect(lint, reason = "...")]`, which
