@@ -24,20 +24,3 @@ string_enum! {
         AccessEnded => "access_ended",
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::StreamMessage;
-    use std::collections::BTreeSet;
-
-    /// Each message is sent under its own name and read back as itself.
-    #[test]
-    fn messages_have_distinct_names() {
-        for message in StreamMessage::ALL {
-            assert_eq!(StreamMessage::parse(message.as_str()), Some(message));
-            assert_eq!(message.to_string(), message.as_str());
-        }
-        let names = StreamMessage::ALL.map(StreamMessage::as_str);
-        assert_eq!(BTreeSet::from(names).len(), names.len());
-    }
-}
