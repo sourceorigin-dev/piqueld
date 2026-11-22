@@ -34,8 +34,6 @@ use utoipa::ToSchema;
 
 pub use crate::urls::{RouteUrl, UrlCondition, UrlState};
 
-/// Versioned prefix used by all API endpoints.
-pub const API_PREFIX: &str = "/api/v1";
 /// Page size of a paginated listing that requests none, except the
 /// application list, which defaults to [`MAX_PAGE_SIZE`].
 pub const DEFAULT_PAGE_SIZE: u16 = 50;

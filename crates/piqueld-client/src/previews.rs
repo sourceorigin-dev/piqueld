@@ -8,7 +8,7 @@ pub use piqueld_core::api::{
 pub use piqueld_core::manifest::PreviewLimits;
 pub use piqueld_core::{EnvironmentKind, Preview, PreviewSlot, PreviewSlug};
 
-use crate::{AcceptedOperation, Client, ClientError, client::EnvelopedCall};
+use crate::{AcceptedOperation, Client, ClientError, client::EnvelopedCall, paths};
 
 impl Client {
     /// Lists an application's previews with their branch states.
@@ -70,10 +70,7 @@ impl Client {
         let mut query = vec![("branch", branch.to_owned())];
         query.extend(slot.map(|slot| ("slot", slot.to_owned())));
         self.send(
-            &format!(
-                "/api/v1/applications/{}/previews/local",
-                progenitor_client::encode_path(application)
-            ),
+            &paths::deploy_local_preview(application),
             &query,
             &[("Content-Length", length.to_string())],
             ("application/octet-stream", bundle.into()),

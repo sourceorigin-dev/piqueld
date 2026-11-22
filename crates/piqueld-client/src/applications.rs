@@ -8,6 +8,7 @@ pub use piqueld_core::api::{
 use crate::{
     Client, ClientError, Page,
     client::{EnvelopedCall, GeneratedCall, check_page_limit, collect_byte_stream},
+    paths,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -202,7 +203,7 @@ impl Client {
             headers.push(("X-Expected-Application-Id", expected_id.to_owned()));
         }
         self.send(
-            "/api/v1/applications/apply",
+            &paths::apply_application(),
             &query,
             &headers,
             ("application/toml", manifest.to_owned().into()),
@@ -228,7 +229,7 @@ impl Client {
         let query =
             environment.map_or_default(|environment| vec![("environment", environment.to_owned())]);
         self.send(
-            "/api/v1/applications/plan",
+            &paths::plan_application(),
             &query,
             &headers,
             ("application/toml", manifest.to_owned().into()),

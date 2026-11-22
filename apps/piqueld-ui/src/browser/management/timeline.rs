@@ -23,9 +23,7 @@ use leptos::task::spawn_local;
 use leptos_router::components::A;
 use piqueld_client::observability::Elapsed;
 use piqueld_client::timeline::{Progress, Step, StepKey, StepState, Timeline};
-use piqueld_client::{
-    API_PREFIX, BuildRecord, Client, Event, Operation, Phase, access::AppPermission,
-};
+use piqueld_client::{BuildRecord, Client, Event, Operation, Phase, access::AppPermission, paths};
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -130,10 +128,7 @@ impl LiveTimeline {
     /// Opens the stream, which sends the whole timeline at once, then again
     /// on every change.
     fn connect(self) {
-        let url = format!(
-            "{API_PREFIX}/operations/{}/timeline/stream",
-            self.operation.get_value()
-        );
+        let url = paths::stream_operation_timeline(&self.operation.get_value());
         let stream = EventStream::open(
             &url,
             &["timeline", "access_ended"],
@@ -1228,7 +1223,7 @@ fn EventFeed(operation: String, live: Memo<bool>, attempt: Memo<u64>) -> impl In
             let _ = settled.try_set_value(true);
         });
     };
-    let url = format!("{API_PREFIX}/events/stream?operation_id={operation}");
+    let url = format!("{}?operation_id={operation}", paths::stream_events());
     let history = operation_events(&operation);
     // The newest event received, which a reopened stream resumes after.
     let last = StoredValue::new(0_i64);

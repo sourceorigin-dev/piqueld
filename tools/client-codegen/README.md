@@ -4,11 +4,16 @@ The daemon's `generate_openapi` example produces the OpenAPI 3.0 document at
 `docs/openapi-v1.json`, then passes a client-specific copy directly to
 Progenitor 0.11. It writes the resulting operations to
 `crates/piqueld-client/src/generated.rs`, and the application manifest's JSON
-Schema to `docs/application-manifest.schema.json`. All three artifacts are
-prepared before any checked-in file is updated.
+Schema to `docs/application-manifest.schema.json`. From the complete document
+it also writes `crates/piqueld-client/src/paths.rs`: one function per
+operation, named like its client method, that builds the operation's path with
+its path parameters percent-encoded. The client's hand-written requests and
+the dashboard's links and event streams, which the browser opens itself, take
+their paths from it. All the artifacts are prepared before any checked-in file
+is updated.
 
 Run `just generate` after changing API metadata, shared wire contracts, or the
-manifest. Run `just openapi-check` to compare all three artifacts without
+manifest. Run `just openapi-check` to compare all the artifacts without
 modifying them. The generator is an example, and its dependencies are
 development dependencies, so daemon builds do not compile it and the published
 crate does not depend on it. Generation needs only the Rust toolchain; it does
