@@ -96,10 +96,6 @@ piqueld-config = { workspace = true, features = ["testing"] }
 hickory-resolver.workspace = true
 # Store fixtures for the unit tests.
 piqueld-store = { workspace = true, features = ["testing"] }
-http.workspace = true
-http-body-util.workspace = true
-hyper.workspace = true
-hyper-util.workspace = true
 # Drives exec WebSockets frame by frame.
 tokio-tungstenite.workspace = true
 # The `generate_openapi` example, which `just generate` runs.

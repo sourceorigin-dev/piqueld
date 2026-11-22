@@ -73,6 +73,9 @@ opentelemetry-proto = { version = "0.33.1", default-features = false, features =
 opentelemetry-appender-tracing = { version = "0.33.1", default-features = false }
 tracing-opentelemetry = { version = "0.34.0", default-features = false }
 tonic = { version = "0.14.6", default-features = false, features = ["channel", "tls-ring", "tls-webpki-roots"] }
+# Exact, so a change to how passkeys are verified only arrives through a
+# deliberate, reviewed bump: piqueld uses this low-level crate directly,
+# without the checks webauthn-rs adds on top.
 webauthn-rs-core = "=0.5.5"
 bytes = "1.10.1"
 bollard = "0.19.1"
