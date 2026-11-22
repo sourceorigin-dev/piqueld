@@ -6,6 +6,7 @@ use super::{
     deletion::SecretDeletion, now_ms,
 };
 use crate::{Actor, Author};
+use piqueld_core::EventKind;
 use piqueld_core::{
     ApiErrorCode, ApplicationId, EnvironmentId, ValidationError, ValidationErrors,
     access::Permission,
@@ -227,7 +228,8 @@ impl Store {
         }
         let (scope, by) = (SecretScope::Application(application), actor.attribution());
         let message = format!("Stored secret version {generation}");
-        Self::secret_event_on(&mut tx, scope, ("secret_saved", &message, name), by, now).await?;
+        let event = (EventKind::SecretSaved, message.as_str(), name);
+        Self::secret_event_on(&mut tx, scope, event, by, now).await?;
         let secret = Self::stored_secret_on(&mut tx, application, name).await?;
         let target = (Some(application.as_str()), None);
         author
@@ -267,7 +269,7 @@ impl Store {
         let description = Self::write_access_on(&mut tx, application, name, access).await?;
         let (scope, by) = (SecretScope::Application(application), actor.attribution());
         let message = format!("Allowed {description} to mount the secret");
-        let event = ("secret_access_changed", message.as_str(), name);
+        let event = (EventKind::SecretAccessChanged, message.as_str(), name);
         Self::secret_event_on(&mut tx, scope, event, by, now_ms()).await?;
         let secret = Self::stored_secret_on(&mut tx, application, name).await?;
         let change = format!("secret {name:?} access {description}");
@@ -529,7 +531,7 @@ impl Store {
         let mut change = None;
         if deleted > 0 {
             let scope = SecretScope::Application(application);
-            let event = ("secret_deleted", Self::SECRET_DELETED, name);
+            let event = (EventKind::SecretDeleted, Self::SECRET_DELETED, name);
             let by = author.actor.attribution();
             Self::secret_event_on(&mut tx, scope, event, by, now_ms()).await?;
             change = Some(Self::deletion_change(name, deletion_id, "completed"));

@@ -1,5 +1,6 @@
 //! One-off commands in running service tasks, recorded in environment history.
 use super::{Actor, ApplicationError, ApplicationService};
+use piqueld_core::EventKind;
 use piqueld_core::{
     ApplicationId, EnvironmentId, ServiceName, access::AppPermission, auth::HostOperator,
     exec::ExecRequest,
@@ -89,7 +90,7 @@ impl ExecSession {
     /// including a disconnected client.
     pub async fn run(self, io: ExecIo) -> Result<i64, ApplicationError> {
         self.record(
-            "command_started",
+            EventKind::CommandStarted,
             &format!("{} started a command in task {}", self.who, self.exec.task),
         )
         .await?;
@@ -103,7 +104,7 @@ impl ExecSession {
             Ok(code) => format!("Command in task {} exited with code {code}", self.exec.task),
             Err(_) => format!("Command stream in task {} failed", self.exec.task),
         };
-        if let Err(error) = self.record("command_finished", &message).await {
+        if let Err(error) = self.record(EventKind::CommandFinished, &message).await {
             tracing::error!(?error, task = %self.exec.task, "could not record command completion");
         }
         Ok(result?)
@@ -111,7 +112,7 @@ impl ExecSession {
 
     /// Records `kind` with `message` in the environment's history, attributed
     /// to whoever started the command.
-    async fn record(&self, kind: &str, message: &str) -> Result<(), ApplicationError> {
+    async fn record(&self, kind: EventKind, message: &str) -> Result<(), ApplicationError> {
         Ok(self
             .owner
             .store

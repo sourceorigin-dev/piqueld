@@ -1,6 +1,7 @@
 //! Stopped environments, whose services run no replicas and whose routes
 //! the gateway doesn't serve, until they are started or deployed again.
 use super::{Store, StoreError, acceptance::Accepted};
+use piqueld_core::EventKind;
 use piqueld_core::{EnvironmentId, Operation};
 use sqlx::{Sqlite, Transaction};
 
@@ -119,14 +120,14 @@ impl Store {
             .map_err(StoreError::database)?;
         let (kind, message) = if stopped {
             (
-                "environment_stopped",
+                EventKind::EnvironmentStopped,
                 format!(
                     "environment {name} is stopped: its services scale to zero and its routes are withdrawn"
                 ),
             )
         } else {
             (
-                "environment_started",
+                EventKind::EnvironmentStarted,
                 format!("environment {name} is started"),
             )
         };

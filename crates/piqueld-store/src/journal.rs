@@ -1,7 +1,7 @@
 //! Persist intent before a runtime request and record its observed outcome afterward.
 use super::{Attribution, EnvironmentId, Store, StoreError, new_id, now_ms};
 use piqueld_core::observability::{Diagnostic, DiagnosticCode, EventScope};
-use piqueld_core::{EventDetail, Phase};
+use piqueld_core::{EventDetail, EventKind, Phase};
 use sqlx::{Sqlite, Transaction};
 
 /// Handle to one journaled runtime request, recorded in `active_actions` until
@@ -68,14 +68,14 @@ enum Step<'a> {
 }
 impl Step<'_> {
     /// The event's kind.
-    fn kind(&self) -> &'static str {
+    fn kind(&self) -> EventKind {
         match self {
-            Self::Started => "action_started",
-            Self::Requested { .. } => "action_requested",
-            Self::Retry { .. } => "action_retry",
-            Self::Progressed(_) => "action_progressed",
-            Self::Finished(None) => "action_succeeded",
-            Self::Finished(Some(_)) => "action_failed",
+            Self::Started => EventKind::ActionStarted,
+            Self::Requested { .. } => EventKind::ActionRequested,
+            Self::Retry { .. } => EventKind::ActionRetry,
+            Self::Progressed(_) => EventKind::ActionProgressed,
+            Self::Finished(None) => EventKind::ActionSucceeded,
+            Self::Finished(Some(_)) => EventKind::ActionFailed,
         }
     }
 }
@@ -329,7 +329,7 @@ impl Store {
         action: &JournalAction,
         step: Step<'_>,
     ) -> Result<(), StoreError> {
-        let (kind, finished) = (step.kind(), matches!(step, Step::Finished(_)));
+        let (kind, finished) = (step.kind().as_str(), matches!(step, Step::Finished(_)));
         let (retry, diagnostic, message, detail) = match step {
             Step::Started => (None, None, None, None),
             Step::Requested { retry } => (Some(retry), None, None, None),
@@ -413,11 +413,12 @@ impl Store {
     pub async fn interrupt_actions(&self, operation: Option<&str>) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let now = now_ms();
+        let event_kind = EventKind::ActionOutcomeUnknown.as_str();
         sqlx::query!(
             "INSERT INTO events(application_id,environment_id,operation_id,generation,attempt,kind,message,phase,
             resource,created_at_ms,scope,action_id,retry,actor_user_id,actor_credential_id,actor_operator_uid,actor_system)
             SELECT (SELECT application_id FROM environments WHERE id=active_actions.environment_id),
-            environment_id,operation_id,generation,attempt,'action_outcome_unknown',
+            environment_id,operation_id,generation,attempt,?3,
             'Execution was interrupted before its result was committed; reconciliation will inspect current runtime state',
             phase,resource,?1,CASE WHEN environment_id IS NULL THEN 'daemon' ELSE 'application' END,
             id,retry,actor_user_id,actor_credential_id,actor_operator_uid,actor_system
@@ -425,6 +426,7 @@ impl Store {
             WHERE ?2 IS NULL OR operation_id=?2",
             now,
             operation,
+            event_kind,
         )
         .execute(&mut *tx)
         .await

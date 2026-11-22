@@ -35,7 +35,7 @@ pub mod urls;
 pub use api::ApiErrorCode;
 pub use docker_names::{DockerConfigName, DockerNetworkName, DockerServiceName, DockerVolumeName};
 pub use environment::{EnvironmentKind, EnvironmentSource, Preview, PromotedFrom, TrackedBranch};
-pub use event::{Event, EventActor, EventDetail};
+pub use event::{Event, EventActor, EventDetail, EventKind};
 pub use identity::{
     ApplicationId, ApplicationIdError, EnvironmentId, EnvironmentIdError, ReleaseId,
     ReleaseIdError, ResourceKind, docker_resource_name, docker_resource_readable_prefix,

@@ -5,7 +5,7 @@ use crate::{
     now_ms,
 };
 use piqueld_core::{
-    Event, EventActor, EventDetail, Operation,
+    Event, EventActor, EventDetail, EventKind, Operation,
     api::Page,
     observability::{Diagnostic, EventFilter, EventScope},
     sync::SystemActor,
@@ -25,10 +25,11 @@ impl Store {
     pub async fn operation_event(
         tx: &mut Transaction<'_, Sqlite>,
         id: &str,
-        kind: &str,
+        kind: EventKind,
         message: Option<&str>,
         now: i64,
     ) -> Result<(), StoreError> {
+        let kind = kind.as_str();
         let operation = Self::operation_on(tx, id).await?;
         let diagnostic = if let Some(code) = &operation.error_code {
             let attempt = i64::try_from(operation.attempt).map_err(StoreError::corrupt)?;
@@ -106,11 +107,12 @@ impl Store {
             .map_err(StoreError::corrupt)?;
         let phase = coverage.phase().as_str();
         let now = now_ms();
+        let event_kind = EventKind::PlanRecorded.as_str();
         self.write(sqlx::query!(
             "INSERT INTO events(application_id,environment_id,operation_id,generation,attempt,kind,
             phase,resource,created_at_ms,detail_json,actor_user_id,actor_credential_id,
             actor_operator_uid,actor_system)
-            SELECT e.application_id,o.environment_id,o.id,o.generation,o.attempt,'plan_recorded',?1,?2,
+            SELECT e.application_id,o.environment_id,o.id,o.generation,o.attempt,?6,?1,?2,
             ?3,?4,o.actor_user_id,o.actor_credential_id,o.actor_operator_uid,o.actor_system
             FROM operations o LEFT JOIN environments e ON e.id=o.environment_id
             WHERE o.id=?5",
@@ -119,6 +121,7 @@ impl Store {
             now,
             detail,
             id,
+            event_kind,
         ))
         .await
         .map_err(StoreError::database)?;
@@ -132,11 +135,13 @@ impl Store {
     /// Returns storage errors.
     pub async fn routed(&self, operation: &Operation) -> Result<bool, StoreError> {
         let attempt = i64::try_from(operation.attempt).map_err(StoreError::corrupt)?;
+        let event_kind = EventKind::ActionStarted.as_str();
         sqlx::query_scalar!(
             r#"SELECT EXISTS(SELECT 1 FROM events WHERE operation_id=?1 AND attempt=?2
-            AND phase='routing' AND kind='action_started') AS "routed!: bool""#,
+            AND phase='routing' AND kind=?3) AS "routed!: bool""#,
             operation.id,
             attempt,
+            event_kind,
         )
         .fetch_one(&self.pool)
         .await
@@ -314,10 +319,11 @@ impl Store {
         let json = serde_json::to_string(&diagnostic).map_err(StoreError::corrupt)?;
         let now = now_ms();
         let operator = actor.operator_uid();
+        let event_kind = EventKind::Diagnostic.as_str();
         self.write(sqlx::query!(
             "INSERT INTO events(scope,application_id,environment_id,kind,message,error_code,diagnostic_id,
             diagnostic_json,request_id,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid)
-            SELECT ?1,(SELECT application_id FROM environments WHERE id=?2),?2,'diagnostic',?3,?4,?5,?6,?7,?8,?9,?10,?11
+            SELECT ?1,(SELECT application_id FROM environments WHERE id=?2),?2,?12,?3,?4,?5,?6,?7,?8,?9,?10,?11
             WHERE ?1='daemon' OR EXISTS(SELECT 1
             FROM environments
             WHERE id=?2)",
@@ -332,6 +338,7 @@ impl Store {
             actor.user_id,
             actor.credential_id,
             operator,
+            event_kind,
         ))
         .await
         .map_err(StoreError::database)?;
@@ -346,10 +353,11 @@ impl Store {
     pub async fn environment_event_on(
         tx: &mut Transaction<'_, Sqlite>,
         id: &str,
-        kind: &str,
+        kind: EventKind,
         message: &str,
         now: i64,
     ) -> Result<(), StoreError> {
+        let kind = kind.as_str();
         sqlx::query!(
             "INSERT INTO events(application_id,environment_id,kind,message,created_at_ms) VALUES((SELECT application_id FROM environments WHERE id=?1),?1,?2,?3,?4)",
             id,
@@ -374,11 +382,12 @@ impl Store {
         actor: crate::Attribution<'_>,
         application: &ApplicationId,
         environment: &EnvironmentId,
-        kind: &str,
+        kind: EventKind,
         message: &str,
         resource: &str,
     ) -> Result<(), StoreError> {
         let (application, environment) = (application.as_str(), environment.as_str());
+        let kind = kind.as_str();
         let now = now_ms();
         let operator = actor.operator_uid();
         self.write(sqlx::query!(
@@ -407,8 +416,10 @@ impl Store {
     /// Returns storage errors.
     pub async fn record_daemon_started(&self, version: &str) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
+        let kind = EventKind::DaemonStarted.as_str();
         let previous = sqlx::query_scalar!(
-            "SELECT resource FROM events WHERE kind='daemon_started' ORDER BY id DESC LIMIT 1"
+            "SELECT resource FROM events WHERE kind=?1 ORDER BY id DESC LIMIT 1",
+            kind,
         )
         .fetch_optional(&mut *tx)
         .await
@@ -423,10 +434,11 @@ impl Store {
         let now = now_ms();
         sqlx::query!(
             "INSERT INTO events(scope,kind,message,resource,created_at_ms)
-            VALUES('daemon','daemon_started',?1,?2,?3)",
+            VALUES('daemon',?4,?1,?2,?3)",
             message,
             version,
             now,
+            kind,
         )
         .execute(&mut *tx)
         .await
@@ -763,7 +775,7 @@ mod tests {
                     crate::Attribution::default(),
                     application,
                     &deleted,
-                    "command_finished",
+                    EventKind::CommandFinished,
                     "done",
                     "web",
                 )

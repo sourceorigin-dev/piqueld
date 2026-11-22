@@ -10,6 +10,7 @@ use super::{
     StoredEnvironment, StoredEnvironmentRow, now_ms,
 };
 use crate::SourceChoice;
+use piqueld_core::EventKind;
 use piqueld_core::{
     EnvironmentKind, EnvironmentName, EnvironmentSource, PromotedFrom, TrackedBranch,
     manifest::RenderTarget,
@@ -56,7 +57,7 @@ impl Store {
         .map_err(StoreError::constraint)?;
         Self::write_status(tx, id, ApplicationState::NotDeployed, now).await?;
         let message = format!("created environment {name}");
-        Self::environment_event_on(tx, id, "environment_created", &message, now).await
+        Self::environment_event_on(tx, id, EventKind::EnvironmentCreated, &message, now).await
     }
 
     /// The `branch`, `pinned_commit`, and `promoted_from` columns of `source`.
@@ -166,7 +167,7 @@ impl Store {
         .await
         .map_err(StoreError::constraint)?;
         let message = format!("renamed environment {old} to {name}");
-        Self::environment_event_on(tx, id, "environment_renamed", &message, now).await?;
+        Self::environment_event_on(tx, id, EventKind::EnvironmentRenamed, &message, now).await?;
         Self::bump_generation_on(
             tx,
             &environment.environment.application_id,
@@ -312,7 +313,8 @@ impl Store {
             Self::describe_source_on(tx, &source).await?,
             Self::describe_source_on(tx, previous).await?,
         );
-        Self::environment_event_on(tx, id, "environment_source_changed", &message, now).await?;
+        Self::environment_event_on(tx, id, EventKind::EnvironmentSourceChanged, &message, now)
+            .await?;
         Ok(SourceWrite::Changed { deploying })
     }
 
@@ -522,7 +524,7 @@ impl Store {
             now,
         )
         .await?;
-        Self::operation_event(&mut tx, &operation.id, "target_resolved", None, now).await?;
+        Self::operation_event(&mut tx, &operation.id, EventKind::TargetResolved, None, now).await?;
         Self::commit_environment_changes(tx, [operation.environment_id.as_str()]).await?;
         Ok(resolved.clone())
     }
@@ -549,8 +551,14 @@ impl Store {
         .map_err(StoreError::database)?
         .rows_affected();
         if promoted == 1 {
-            Self::operation_event(&mut tx, &operation.id, "target_promoted", None, now_ms())
-                .await?;
+            Self::operation_event(
+                &mut tx,
+                &operation.id,
+                EventKind::TargetPromoted,
+                None,
+                now_ms(),
+            )
+            .await?;
         }
         Self::commit_environment_changes(tx, [environment_id]).await
     }

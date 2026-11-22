@@ -5,6 +5,7 @@ use super::acceptance::Accepted;
 use super::{Author, Store, StoreError, StoredEnvironment, now_ms};
 use crate::secrets::{Envelope, Generate, SecretCipher, SecretOwner};
 use crate::{ListedHead, MutationResponse, SyncOutcome};
+use piqueld_core::EventKind;
 use piqueld_core::{
     ApplicationId, EnvironmentId,
     access::{AppPermission, Permission},
@@ -173,7 +174,14 @@ impl Store {
         )
         .await?;
         let message = format!("branch {branch} moved to {head}");
-        Self::operation_event(tx, &operation.id, "branch_synced", Some(&message), now).await?;
+        Self::operation_event(
+            tx,
+            &operation.id,
+            EventKind::BranchSynced,
+            Some(&message),
+            now,
+        )
+        .await?;
         Self::record_synced_on(tx, id, Some(head), now).await?;
         Ok(SyncOutcome::Deployed(AcceptedOperation::from(&operation)))
     }
@@ -325,7 +333,8 @@ impl Store {
         } else {
             format!("pushes no longer deploy environment {name}")
         };
-        Self::environment_event_on(tx, row, "environment_sync_changed", &message, now).await?;
+        Self::environment_event_on(tx, row, EventKind::EnvironmentSyncChanged, &message, now)
+            .await?;
         Ok(true)
     }
 
@@ -438,13 +447,15 @@ impl Store {
         .map_err(StoreError::database)?;
         let by = actor.attribution();
         let operator = by.operator_uid();
+        let event_kind = EventKind::WebhookSecretGenerated.as_str();
         sqlx::query!(
-            "INSERT INTO events(application_id,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid) VALUES(?1,'webhook_secret_generated','Generated a new webhook secret; the previous one no longer verifies',?2,?3,?4,?5)",
+            "INSERT INTO events(application_id,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid) VALUES(?1,?6,'Generated a new webhook secret; the previous one no longer verifies',?2,?3,?4,?5)",
             id,
             now,
             by.user_id,
             by.credential_id,
-            operator
+            operator,
+            event_kind,
         )
         .execute(&mut *tx)
         .await

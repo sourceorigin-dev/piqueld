@@ -1,6 +1,7 @@
 //! Environments granted the daemon's telemetry, which their receiving
 //! service gets from every application.
 use super::{Store, StoreError, acceptance::Accepted};
+use piqueld_core::EventKind;
 use piqueld_core::api::DiagnosticView;
 use piqueld_core::{EnvironmentId, PlanDiagnostic, ResolvedApplication, ServiceName};
 use sqlx::{Sqlite, Transaction};
@@ -105,8 +106,14 @@ impl Store {
             } else {
                 format!("environment {name} no longer receives telemetry")
             };
-            Self::environment_event_on(tx, row, "environment_telemetry_changed", &message, now)
-                .await?;
+            Self::environment_event_on(
+                tx,
+                row,
+                EventKind::EnvironmentTelemetryChanged,
+                &message,
+                now,
+            )
+            .await?;
         }
         Ok(Self::environment_accepted(tx, id).await?.changing(changed))
     }

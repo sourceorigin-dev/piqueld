@@ -3,6 +3,7 @@
 use super::{
     ApplicationState, EnvironmentId, EnvironmentStatus, Store, StoreError, decode_name, now_ms,
 };
+use piqueld_core::EventKind;
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 impl Store {
@@ -57,8 +58,14 @@ impl Store {
         let changed = sqlx::query!("UPDATE environment_status SET state=?1,message=?2,updated_at_ms=?3 WHERE (state!=?1 OR message IS NOT ?2) AND environment_id=(SELECT environment_id FROM operations WHERE id=?4) AND ?4=(SELECT latest.id FROM operations latest WHERE latest.environment_id=environment_status.environment_id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1)",state,message,now,operation_id)
             .execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
         if changed == 1 {
-            Self::operation_event(&mut tx, operation_id, "status_changed", Some(state), now)
-                .await?;
+            Self::operation_event(
+                &mut tx,
+                operation_id,
+                EventKind::StatusChanged,
+                Some(state),
+                now,
+            )
+            .await?;
         }
         let current=sqlx::query_scalar!("SELECT id FROM operations WHERE environment_id=(SELECT environment_id FROM operations WHERE id=?1) ORDER BY created_at_ms DESC,id DESC LIMIT 1",operation_id).fetch_optional(&mut *tx).await.map_err(StoreError::database)?.flatten();
         tx.commit().await.map_err(StoreError::database)?;
@@ -158,7 +165,8 @@ impl Store {
         let changed=sqlx::query!("UPDATE environment_status SET runtime_health=?1 WHERE runtime_health IS NOT ?1 AND environment_id=(SELECT environment_id FROM operations WHERE id=?2) AND ?2=(SELECT latest.id FROM operations latest WHERE latest.environment_id=environment_status.environment_id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1)",health,operation_id).execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
         sqlx::query!("UPDATE environment_status SET health_observed_at_ms=?1 WHERE environment_id=(SELECT environment_id FROM operations WHERE id=?2) AND ?2=(SELECT id FROM operations WHERE environment_id=environment_status.environment_id ORDER BY created_at_ms DESC,id DESC LIMIT 1)",now,operation_id).execute(&mut *tx).await.map_err(StoreError::database)?;
         if changed == 1 {
-            sqlx::query!("INSERT INTO events(application_id,environment_id,operation_id,generation,kind,message,created_at_ms) SELECT (SELECT application_id FROM environments WHERE id=operations.environment_id),environment_id,id,generation,'health_changed',?1,?2 FROM operations WHERE id=?3",health,now,operation_id).execute(&mut *tx).await.map_err(StoreError::database)?;
+            let event_kind = EventKind::HealthChanged.as_str();
+            sqlx::query!("INSERT INTO events(application_id,environment_id,operation_id,generation,kind,message,created_at_ms) SELECT (SELECT application_id FROM environments WHERE id=operations.environment_id),environment_id,id,generation,?4,?1,?2 FROM operations WHERE id=?3",health,now,operation_id,event_kind).execute(&mut *tx).await.map_err(StoreError::database)?;
         }
         tx.commit().await.map_err(StoreError::database)
     }

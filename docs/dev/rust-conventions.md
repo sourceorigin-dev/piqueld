@@ -36,6 +36,14 @@ still reads a code it doesn't know yet; compare one with
 `ApiErrorCode::parse` or `==`. Operation diagnostics recorded in history have
 their own `DiagnosticCode`.
 
+Other strings that cross crates are named the same way, as a `string_enum!`
+in `piqueld-core`: the kind of each history event is an `EventKind`. Record
+and compare one through its variant, never its string, including in SQL, where
+it is bound as a parameter, unless a partial index on that kind serves the
+query: SQLite only uses one for a literal. `Event.kind` stays a `String`, since history holds
+kinds older daemons recorded and a client may read kinds a newer daemon adds;
+compare it with `Event::known_kind` or `==`.
+
 Production code never panics without saying why: `expect_used`, `panic`,
 `todo`, `unimplemented` and `dbg_macro` are denied outside tests. Return an
 error when the input can be wrong. An invariant the types can't express keeps

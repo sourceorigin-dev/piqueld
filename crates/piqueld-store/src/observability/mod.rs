@@ -16,6 +16,7 @@ pub use notifications::RetryError;
 /// disabled, changed or deleted.
 pub const DESTINATION_CHANGED: &str = "The destination was disabled, changed or deleted";
 use destinations::DestinationRow;
+use piqueld_core::EventKind;
 
 use super::{Store, StoreError, now_ms};
 use piqueld_core::observability::{ActionDuration, DaemonStats, DeploymentAnalytics, FailureCount};
@@ -268,15 +269,17 @@ impl Store {
     ) -> Result<(), StoreError> {
         let since = result.since_ms;
         let until = result.until_ms;
+        let event_kind = EventKind::ActionRetry.as_str();
         result.action_retries = sqlx::query_scalar!(
             "SELECT COUNT(*)
             FROM events
-            WHERE kind='action_retry' AND (?1 IS NULL OR environment_id=?1) AND created_at_ms BETWEEN ?2 AND ?3 AND ((scope='application' AND (?4 IS NULL OR application_id IN (SELECT value FROM json_each(?4)))) OR (scope='daemon' AND ?5))",
+            WHERE kind=?6 AND (?1 IS NULL OR environment_id=?1) AND created_at_ms BETWEEN ?2 AND ?3 AND ((scope='application' AND (?4 IS NULL OR application_id IN (SELECT value FROM json_each(?4)))) OR (scope='daemon' AND ?5))",
             application,
             since,
             until,
             applications,
             daemon,
+            event_kind,
         )
         .fetch_one(&mut **tx)
         .await

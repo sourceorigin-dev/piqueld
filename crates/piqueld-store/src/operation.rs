@@ -4,6 +4,7 @@ use super::{
     ApplicationState, EnvironmentId, Operation, OperationKind, OperationState, Store, StoreError,
     decode_name, new_id, now_ms,
 };
+use piqueld_core::EventKind;
 use piqueld_core::observability::{DeploymentFailure, DiagnosticCode};
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
@@ -161,12 +162,12 @@ impl Store {
         }
         if from != to {
             let kind = match to {
-                OperationState::Requested => "reconciliation_requested",
-                OperationState::Running => "operation_started",
-                OperationState::Succeeded => "operation_succeeded",
-                OperationState::Failed => "operation_failed",
-                OperationState::Cancelled => "operation_cancelled",
-                OperationState::Superseded => "operation_superseded",
+                OperationState::Requested => EventKind::ReconciliationRequested,
+                OperationState::Running => EventKind::OperationStarted,
+                OperationState::Succeeded => EventKind::OperationSucceeded,
+                OperationState::Failed => EventKind::OperationFailed,
+                OperationState::Cancelled => EventKind::OperationCancelled,
+                OperationState::Superseded => EventKind::OperationSuperseded,
             };
             Self::operation_event(tx, id, kind, message, now).await?;
         }
@@ -197,7 +198,7 @@ impl Store {
         Self::operation_event(
             &mut tx,
             &operation.id,
-            "operation_failed",
+            EventKind::OperationFailed,
             Some(message),
             now,
         )
@@ -223,7 +224,14 @@ impl Store {
             return Err(StoreError::IllegalTransition);
         }
         // Recorded while the operation still exists; it goes with its environment.
-        Self::operation_event(&mut tx, &operation.id, "operation_succeeded", None, now).await?;
+        Self::operation_event(
+            &mut tx,
+            &operation.id,
+            EventKind::OperationSucceeded,
+            None,
+            now,
+        )
+        .await?;
         let app_id = operation.environment_id.as_str();
         sqlx::query!(
             "DELETE FROM notification_conditions WHERE environment_id=?1",
@@ -352,7 +360,14 @@ impl Store {
             ApplicationState::Pending
         };
         Self::write_status(tx, operation.environment_id.as_str(), state, now).await?;
-        Self::operation_event(tx, &operation.id, "reconciliation_requested", None, now).await?;
+        Self::operation_event(
+            tx,
+            &operation.id,
+            EventKind::ReconciliationRequested,
+            None,
+            now,
+        )
+        .await?;
         let operation = Self::operation_on(tx, &operation.id).await?;
         Ok((operation, true))
     }
@@ -363,7 +378,7 @@ impl Store {
     /// Returns a storage error.
     pub async fn mutation_event(&self, id: &str) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        Self::operation_event(&mut tx, id, "resource_mutated", None, now_ms()).await?;
+        Self::operation_event(&mut tx, id, EventKind::ResourceMutated, None, now_ms()).await?;
         tx.commit().await.map_err(StoreError::database)
     }
 
@@ -392,7 +407,8 @@ impl Store {
     pub async fn recover_interrupted(&self) -> Result<u64, StoreError> {
         let now = now_ms();
         let (_writer, mut tx) = self.begin_immediate().await?;
-        sqlx::query!("INSERT INTO events(application_id,environment_id,operation_id,generation,attempt,kind,message,error_code,phase,resource,created_at_ms) SELECT (SELECT application_id FROM environments WHERE id=o.environment_id),o.environment_id,o.id,o.generation,o.attempt,'operation_interrupted','daemon restarted during execution',o.error_code,p.phase,p.resource,?1 FROM operations o JOIN operation_progress p ON p.operation_id=o.id WHERE o.state='running'",now).execute(&mut *tx).await.map_err(StoreError::database)?;
+        let event_kind = EventKind::OperationInterrupted.as_str();
+        sqlx::query!("INSERT INTO events(application_id,environment_id,operation_id,generation,attempt,kind,message,error_code,phase,resource,created_at_ms) SELECT (SELECT application_id FROM environments WHERE id=o.environment_id),o.environment_id,o.id,o.generation,o.attempt,?2,'daemon restarted during execution',o.error_code,p.phase,p.resource,?1 FROM operations o JOIN operation_progress p ON p.operation_id=o.id WHERE o.state='running'",now,event_kind).execute(&mut *tx).await.map_err(StoreError::database)?;
         let interrupted =
             sqlx::query_scalar!(r#"SELECT id AS "id!" FROM operations WHERE state='running'"#)
                 .fetch_all(&mut *tx)
@@ -484,7 +500,8 @@ impl Store {
         now: i64,
     ) -> Result<Operation, StoreError> {
         let app_id = app.as_str();
-        sqlx::query!("INSERT INTO events(application_id,environment_id,operation_id,generation,attempt,kind,message,error_code,phase,resource,created_at_ms) SELECT (SELECT application_id FROM environments WHERE id=?2),o.environment_id,o.id,o.generation,o.attempt,'operation_superseded','superseded by newer intent',o.error_code,p.phase,p.resource,?1 FROM operations o JOIN operation_progress p ON p.operation_id=o.id WHERE o.environment_id=?2 AND o.state IN ('requested','running')",now,app_id).execute(&mut **tx).await.map_err(StoreError::database)?;
+        let event_kind = EventKind::OperationSuperseded.as_str();
+        sqlx::query!("INSERT INTO events(application_id,environment_id,operation_id,generation,attempt,kind,message,error_code,phase,resource,created_at_ms) SELECT (SELECT application_id FROM environments WHERE id=?2),o.environment_id,o.id,o.generation,o.attempt,?3,'superseded by newer intent',o.error_code,p.phase,p.resource,?1 FROM operations o JOIN operation_progress p ON p.operation_id=o.id WHERE o.environment_id=?2 AND o.state IN ('requested','running')",now,app_id,event_kind).execute(&mut **tx).await.map_err(StoreError::database)?;
         let superseded=sqlx::query_scalar!(r#"UPDATE operations SET state='superseded',error_code=NULL,error_message=NULL,finished_at_ms=?1,updated_at_ms=?1 WHERE environment_id=?2 AND state IN ('requested','running') RETURNING id AS "id!""#,now,app_id)
             .fetch_all(&mut **tx).await.map_err(StoreError::database)?;
         for previous in superseded {
@@ -495,9 +512,9 @@ impl Store {
         sqlx::query!("INSERT INTO operations(id,environment_id,generation,kind,state,created_at_ms,updated_at_ms) SELECT ?1,e.id,a.generation,?3,'requested',MAX(?4,(SELECT COALESCE(MAX(o.created_at_ms)+1,?4) FROM operations o WHERE o.environment_id=e.id)),?4 FROM environments e JOIN applications a ON a.id=e.application_id WHERE e.id=?2",id,app_id,name,now)
             .execute(&mut **tx).await.map_err(StoreError::database)?;
         let event = match kind {
-            OperationKind::Apply => "application_applied",
-            OperationKind::Refresh => "refresh_requested",
-            OperationKind::Delete => "deletion_requested",
+            OperationKind::Apply => EventKind::ApplicationApplied,
+            OperationKind::Refresh => EventKind::RefreshRequested,
+            OperationKind::Delete => EventKind::DeletionRequested,
         };
         Self::operation_event(tx, &id, event, None, now).await?;
         if kind != OperationKind::Delete {

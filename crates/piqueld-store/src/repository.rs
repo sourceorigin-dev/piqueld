@@ -11,6 +11,7 @@
 //! records the one it fetched: a deployment of the branch `spec.manifest`
 //! names deploys the saved manifest while the two are the same.
 use super::{Operation, Store, StoreError, now_ms};
+use piqueld_core::EventKind;
 use piqueld_core::{
     EnvironmentKind,
     api::{DeploymentOrigin, DiagnosticView},
@@ -156,7 +157,14 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         let now = now_ms();
-        Self::operation_event(&mut tx, &operation.id, "manifest_fetched", commit, now).await?;
+        Self::operation_event(
+            &mut tx,
+            &operation.id,
+            EventKind::ManifestFetched,
+            commit,
+            now,
+        )
+        .await?;
         if let Some(head) = branch_head {
             Self::record_branch_head_on(&mut tx, &operation.environment_id, head, now).await?;
         }
@@ -254,7 +262,8 @@ impl Store {
             .await?;
         }
         if changed > 0 {
-            Self::operation_event(tx, &operation.id, "application_applied", None, now).await?;
+            Self::operation_event(tx, &operation.id, EventKind::ApplicationApplied, None, now)
+                .await?;
         }
         Ok(())
     }
