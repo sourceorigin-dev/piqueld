@@ -11,7 +11,7 @@ use std::path::Path;
 
 /// One embedded dashboard file: its bundle name relative to `/dashboard/`,
 /// plus its bytes.
-pub type EmbeddedFile = (&'static str, &'static [u8]);
+pub(super) type EmbeddedFile = (&'static str, &'static [u8]);
 
 /// The complete set of dashboard files compiled into the daemon binary.
 pub type EmbeddedBundle = [EmbeddedFile];

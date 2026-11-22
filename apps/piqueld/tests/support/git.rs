@@ -4,13 +4,13 @@ use super::repository::Repository;
 
 /// A repository whose `Dockerfile` builds a long-running Alpine image and
 /// whose `Failfile` fails to build, with the Git source building the former.
-pub struct GitBuildFixture {
+pub(crate) struct GitBuildFixture {
     _repository: Repository,
     pub source: piqueld_core::Source,
 }
 
 impl GitBuildFixture {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let repository = Repository::new();
         repository.commit(&[
             (
@@ -36,7 +36,7 @@ impl GitBuildFixture {
     }
 
     /// [`Self::source`], building the `Failfile` instead.
-    pub fn failing_source(&self) -> piqueld_core::Source {
+    pub(crate) fn failing_source(&self) -> piqueld_core::Source {
         let mut source = self.source.clone();
         let piqueld_core::Source::Git { build, .. } = &mut source else {
             panic!("the fixture builds from Git")
@@ -48,7 +48,7 @@ impl GitBuildFixture {
 }
 
 /// Builds the repository root's `Dockerfile`, without arguments or a target.
-pub fn dockerfile_build() -> piqueld_core::manifest::Build {
+pub(crate) fn dockerfile_build() -> piqueld_core::manifest::Build {
     piqueld_core::manifest::Build::Docker {
         dockerfile: "Dockerfile".into(),
         context: ".".into(),

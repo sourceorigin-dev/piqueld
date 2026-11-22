@@ -102,7 +102,7 @@ const BOUNDARIES: [Boundary; 6] = [
     },
 ];
 
-pub fn check(workspace: &Workspace) -> Result<ExitCode> {
+pub(crate) fn check(workspace: &Workspace) -> Result<ExitCode> {
     let mut crossed = false;
     for boundary in &BOUNDARIES {
         let output = workspace

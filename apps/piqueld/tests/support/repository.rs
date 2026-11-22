@@ -4,13 +4,13 @@ use std::path::Path;
 
 /// A Git repository in a temporary directory of its own, committing as a
 /// fixed test identity.
-pub struct Repository {
+pub(crate) struct Repository {
     directory: tempfile::TempDir,
 }
 
 impl Repository {
     /// An empty repository on `main`.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let repository = Self::empty();
         repository.git(&["init", "--initial-branch=main"]);
         repository
@@ -22,12 +22,12 @@ impl Repository {
         }
     }
 
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         self.directory.path()
     }
 
     /// Runs `git` with `args` in the repository and returns its trimmed output.
-    pub fn git(&self, args: &[&str]) -> String {
+    pub(crate) fn git(&self, args: &[&str]) -> String {
         let output = std::process::Command::new("git")
             .current_dir(self.path())
             .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
@@ -47,7 +47,7 @@ impl Repository {
 
     /// Writes `files` and commits everything, even nothing, returning the
     /// commit.
-    pub fn commit(&self, files: &[(&str, &[u8])]) -> String {
+    pub(crate) fn commit(&self, files: &[(&str, &[u8])]) -> String {
         for (name, contents) in files {
             std::fs::write(self.path().join(name), contents).expect("fixture file is written");
         }
@@ -57,14 +57,14 @@ impl Repository {
     }
 
     /// A clone of this repository, like a developer's working copy.
-    pub fn working_copy(&self) -> Self {
+    pub(crate) fn working_copy(&self) -> Self {
         let clone = Self::empty();
         clone.git(&["clone", "-q", &self.path().display().to_string(), "."]);
         clone
     }
 
     /// A bundle of `branch`, without `excluded` and its history when given.
-    pub fn bundle(&self, branch: &str, excluded: Option<&str>) -> Vec<u8> {
+    pub(crate) fn bundle(&self, branch: &str, excluded: Option<&str>) -> Vec<u8> {
         let path = self.path().join(".git/fixture.bundle");
         let path_argument = path.display().to_string();
         let reference = format!("refs/heads/{branch}");

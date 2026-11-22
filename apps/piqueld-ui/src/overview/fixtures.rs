@@ -5,7 +5,7 @@ use serde_json::json;
 
 /// An environment named `name`, `stopped` or running, with `status`, if one
 /// was recorded.
-pub fn environment(
+pub(super) fn environment(
     name: &str,
     stopped: bool,
     status: Option<(ApplicationState, Option<&str>)>,
@@ -37,7 +37,7 @@ pub fn environment(
 
 /// Application `id` with `environments`, and one latest deployment per
 /// `(operation ID, requested at)`.
-pub fn application(
+pub(super) fn application(
     id: &str,
     environments: Vec<EnvironmentRow>,
     deployments: &[(&str, i64)],

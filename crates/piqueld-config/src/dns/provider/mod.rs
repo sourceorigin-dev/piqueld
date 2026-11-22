@@ -496,7 +496,7 @@ pub(crate) mod tests {
     use tokio::sync::Mutex;
 
     /// One request received by [`Recorded`].
-    pub struct Request {
+    pub(crate) struct Request {
         pub method: Method,
         /// Path with its query.
         pub path: String,
@@ -506,7 +506,7 @@ pub(crate) mod tests {
     }
 
     impl Request {
-        pub fn header(&self, name: &str) -> Option<&str> {
+        pub(crate) fn header(&self, name: &str) -> Option<&str> {
             self.headers.get(name).and_then(|value| value.to_str().ok())
         }
     }
@@ -517,14 +517,14 @@ pub(crate) mod tests {
 
     /// A local HTTP server replaying recorded provider responses by method and
     /// path, and recording what it received.
-    pub struct Recorded {
+    pub(crate) struct Recorded {
         pub url: String,
         requests: Arc<Mutex<Vec<Request>>>,
         _server: tokio::task::JoinHandle<()>,
     }
 
     impl Recorded {
-        pub async fn serve(responses: Responses) -> Self {
+        pub(crate) async fn serve(responses: Responses) -> Self {
             let requests = Arc::new(Mutex::new(Vec::new()));
             let state = (Arc::new(responses), Arc::clone(&requests));
             let app = axum::Router::new().fallback(
@@ -565,7 +565,7 @@ pub(crate) mod tests {
         }
 
         /// Requests received so far, in order.
-        pub async fn requests(&self) -> Vec<Request> {
+        pub(crate) async fn requests(&self) -> Vec<Request> {
             std::mem::take(&mut *self.requests.lock().await)
         }
     }

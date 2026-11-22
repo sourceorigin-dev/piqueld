@@ -11,7 +11,7 @@ use std::os::unix::fs::DirBuilderExt as _;
 use std::path::{Path, PathBuf};
 
 /// The socket a receiver's collector listens on, inside its directory.
-pub const SOCKET: &str = "otlp.sock";
+pub(super) const SOCKET: &str = "otlp.sock";
 
 /// Where every receiver's directory lives.
 #[derive(Clone, Debug)]

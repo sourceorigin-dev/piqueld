@@ -10,7 +10,7 @@ use piqueld_store::{Store, StoreError};
 use std::sync::Arc;
 
 /// An [`ApplicationService`] with shorthands for the daemon's own mutations.
-pub struct TestApplications {
+pub(crate) struct TestApplications {
     service: ApplicationService,
     store: Arc<Store>,
 }
@@ -24,7 +24,7 @@ impl std::ops::Deref for TestApplications {
 }
 
 impl TestApplications {
-    pub fn new(
+    pub(crate) fn new(
         store: Arc<Store>,
         runtime: Arc<dyn RuntimeBoundary>,
         sources: Arc<Sources>,
@@ -36,7 +36,7 @@ impl TestApplications {
     }
 
     // Controller scenarios explicitly save and deploy in one acceptance.
-    pub async fn apply(
+    pub(crate) async fn apply(
         &self,
         manifest: ValidatedTemplate,
         expected_generation: Option<u64>,
@@ -48,7 +48,7 @@ impl TestApplications {
         self.service.operation(&operation_id).await
     }
 
-    pub async fn save(
+    pub(crate) async fn save(
         &self,
         manifest: ValidatedTemplate,
         expected_generation: Option<u64>,
@@ -77,7 +77,7 @@ impl TestApplications {
         Ok(saved)
     }
 
-    pub async fn deploy(
+    pub(crate) async fn deploy(
         &self,
         id: &EnvironmentId,
         expected_generation: Option<u64>,
@@ -87,7 +87,7 @@ impl TestApplications {
     }
 
     /// Deletes the application of environment `id`, its only environment.
-    pub async fn delete(
+    pub(crate) async fn delete(
         &self,
         id: &EnvironmentId,
         expected_generation: Option<u64>,
@@ -105,7 +105,7 @@ impl TestApplications {
         self.service.operation(&operation.operation_id).await
     }
 
-    pub async fn reconcile(
+    pub(crate) async fn reconcile(
         &self,
         id: &EnvironmentId,
         expected_generation: Option<u64>,
@@ -115,12 +115,12 @@ impl TestApplications {
     }
 
     /// Stops environment `id`, returning its latest operation.
-    pub async fn stop(&self, id: &EnvironmentId) -> Result<Operation, ApplicationError> {
+    pub(crate) async fn stop(&self, id: &EnvironmentId) -> Result<Operation, ApplicationError> {
         self.submit(Mutation::Stop { id: id.clone() }, None).await
     }
 
     /// Accepts `mutation` and returns the operation it requested.
-    pub async fn submit(
+    pub(crate) async fn submit(
         &self,
         mutation: Mutation,
         expected_generation: Option<u64>,

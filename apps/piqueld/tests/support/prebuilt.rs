@@ -8,10 +8,10 @@ use piqueld_core::resource::{
 use piqueld_core::{ApplicationId, EnvironmentId, InstanceId, NormalizedApplication};
 
 /// The image every fixture service runs.
-pub const IMAGE: &str = "ghcr.io/example/notes:1.4.0";
+pub(crate) const IMAGE: &str = "ghcr.io/example/notes:1.4.0";
 
 /// The fixture manifest, as written.
-pub fn manifest() -> ApplicationManifest {
+pub(crate) fn manifest() -> ApplicationManifest {
     toml::from_str(include_str!(
         "../../../../crates/piqueld-core/tests/fixtures/manifests/prebuilt.toml"
     ))
@@ -19,7 +19,7 @@ pub fn manifest() -> ApplicationManifest {
 }
 
 /// The fixture saved as application `id`.
-pub fn application(id: &str) -> NormalizedApplication {
+pub(crate) fn application(id: &str) -> NormalizedApplication {
     manifest()
         .validate()
         .expect("fixture is valid")
@@ -27,7 +27,7 @@ pub fn application(id: &str) -> NormalizedApplication {
 }
 
 /// Resolves every service of `application` to [`IMAGE`], pinned to `a`s.
-pub fn resolutions(application: &NormalizedApplication) -> ResolutionSet {
+pub(crate) fn resolutions(application: &NormalizedApplication) -> ResolutionSet {
     let pinned = format!("ghcr.io/example/notes@sha256:{}", "a".repeat(64));
     let source = ResolvedSource::parse_image(IMAGE, pinned).expect("fixture digest is valid");
     ResolutionSet {
@@ -43,7 +43,7 @@ pub fn resolutions(application: &NormalizedApplication) -> ResolutionSet {
 
 /// The runtime target of `application`'s environment `environment`, owned by
 /// installation `instance`, with [`resolutions`].
-pub fn resolve(
+pub(crate) fn resolve(
     application: &NormalizedApplication,
     environment: &EnvironmentId,
     instance: &InstanceId,
@@ -59,7 +59,7 @@ pub fn resolve(
 
 /// [`resolve`] for whichever environment of `application` it is given, as
 /// `Store::save_application` imports a prepared target.
-pub fn resolver<'a>(
+pub(crate) fn resolver<'a>(
     application: &'a NormalizedApplication,
     instance: &'a InstanceId,
 ) -> impl Fn(&EnvironmentId) -> ResolvedApplication + Sync + 'a {

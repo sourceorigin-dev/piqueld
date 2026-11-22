@@ -17,7 +17,7 @@ use crate::process::exit_code;
 /// Runs the tests `just test` runs under coverage instrumentation, writes the
 /// HTML report to target/llvm-cov/html, and prints each crate's totals.
 /// `args` go on to `cargo nextest run`.
-pub fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
+pub(crate) fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
     let status = workspace
         .cargo()
         .args([

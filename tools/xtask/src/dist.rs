@@ -96,7 +96,7 @@ impl Archive {
 
 /// Builds the binaries for [`TARGET`], with the embedded dashboard, then
 /// writes their [`Archive`].
-pub fn run(workspace: &Workspace) -> Result<ExitCode> {
+pub(crate) fn run(workspace: &Workspace) -> Result<ExitCode> {
     let status = workspace
         .cargo()
         .args(["build", "--release", "--locked", "--target", TARGET])

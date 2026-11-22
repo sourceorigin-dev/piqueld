@@ -16,6 +16,10 @@ pub mod timeline;
 pub mod traffic;
 
 #[cfg(target_arch = "wasm32")]
+#[expect(
+    unreachable_pub,
+    reason = "Leptos's #[component] generates public builder methods on each component's props struct"
+)]
 mod browser;
 
 /// Mounts the dashboard into the current document.
