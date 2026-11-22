@@ -121,7 +121,10 @@ certificates.
 Each instance runs a private Docker-in-Docker engine in the privileged
 container `piqueld-dev-<instance>`, listening on
 `<runtime_dir>/docker/docker.sock`. Its images, Swarm, and services persist in
-a volume of the same name across restarts. Inspect it with:
+a volume of the same name across restarts. Like the
+[Docker test suites'](validation.md#docker-test-suites) engines, it pulls
+Docker Hub images through `mirror.gcr.io`, whose tags can lag Docker Hub's.
+Inspect it with:
 
 ```console
 docker -H unix:///tmp/piqueld-dev-<uid>/<instance>/docker/docker.sock service ls

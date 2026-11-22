@@ -138,7 +138,7 @@ a real engine: a throwaway Docker-in-Docker daemon, never the host's. It
 pulls Docker Hub images through Google's mirror, `mirror.gcr.io`, sparing the
 anonymous Docker Hub rate limit that the CI runners' shared addresses hit, and
 from Docker Hub when the mirror lacks one. Its own image comes from the mirror
-alone. Pinned digests verify each either way.
+alone. Images pinned by digest are still verified.
 
 - `ingress` is the daemon library's `ingress_caddy` tests, against Caddy and
   an ACME test server in the engine.
