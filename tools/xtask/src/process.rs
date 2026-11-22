@@ -5,6 +5,7 @@ use std::process::{ExitCode, ExitStatus, Output};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
+use rustix::io::Errno;
 use rustix::process::{Pid, Signal, kill_process_group};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -82,7 +83,10 @@ impl Job {
 
     /// Signals the group, which may already be gone.
     fn signal(&self, signal: Signal) {
-        kill_process_group(self.group, signal).ok();
+        match kill_process_group(self.group, signal) {
+            Ok(()) | Err(Errno::SRCH) => {}
+            Err(error) => eprintln!("[xtask] could not signal the process group: {error}"),
+        }
     }
 
     /// Copies the job's piped stderr to ours and, without color codes, to
@@ -97,8 +101,16 @@ impl Job {
                 .await
                 .is_ok_and(|n| n > 0)
             {
+                // Our own stderr may be closed, which leaves nowhere to report
+                // that; the log's failure is reported there.
+                #[expect(
+                    clippy::unused_result_ok,
+                    reason = "a closed stderr has nowhere to report its own failure"
+                )]
                 std::io::stderr().write_all(&line).ok();
-                log.write_all(&strip_color(&line)).ok();
+                if let Err(error) = log.write_all(&strip_color(&line)) {
+                    eprintln!("[xtask] could not write the job's log: {error}");
+                }
                 line.clear();
             }
         });

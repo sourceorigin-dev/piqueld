@@ -197,7 +197,9 @@ impl Instance {
             self.supervise(&mut shutdown).await
         }
         .await;
-        fs::remove_file(self.file("state.json")).ok();
+        if let Err(error) = fs::remove_file(self.file("state.json")) {
+            eprintln!("[dev] could not remove state.json: {error}");
+        }
         result
     }
 
