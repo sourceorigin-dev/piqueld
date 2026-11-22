@@ -6,6 +6,7 @@ use axum::response::{
     sse::{Event as ServerEvent, KeepAlive},
 };
 use futures_util::Stream;
+use piqueld_core::api::StreamMessage;
 use std::{convert::Infallible, time::Duration};
 use tokio::{sync::watch, time::Instant};
 
@@ -31,14 +32,22 @@ pub(super) trait Follow: Send + 'static {
     }
 }
 
-/// `message` named `kind` with `data` as JSON, or a `stream_error` message
+/// A new message named `name`.
+pub(super) fn named(name: StreamMessage) -> ServerEvent {
+    ServerEvent::default().event(name.as_str())
+}
+
+/// `message` named `name` with `data` as JSON, or a `stream_error` message
 /// when `data` does not serialize.
-pub(super) fn json(message: ServerEvent, kind: &str, data: impl serde::Serialize) -> ServerEvent {
-    message.event(kind).json_data(data).unwrap_or_else(|_| {
-        ServerEvent::default()
-            .event("stream_error")
-            .data("serialization failed")
-    })
+pub(super) fn json(
+    message: ServerEvent,
+    name: StreamMessage,
+    data: impl serde::Serialize,
+) -> ServerEvent {
+    message
+        .event(name.as_str())
+        .json_data(data)
+        .unwrap_or_else(|_| named(StreamMessage::StreamError).data("serialization failed"))
 }
 
 impl Ended {
@@ -49,7 +58,7 @@ impl Ended {
         let Self::Refused(error) = self else {
             return None;
         };
-        let message = || ServerEvent::default().event("access_ended");
+        let message = || named(StreamMessage::AccessEnded);
         Some(
             message()
                 .json_data(error.body())

@@ -16,7 +16,7 @@ use axum::{
 };
 use piqueld_core::Operation;
 use piqueld_core::access::{AppPermission, Grants};
-use piqueld_core::api::Envelope;
+use piqueld_core::api::{Envelope, StreamMessage};
 use piqueld_core::timeline::Timeline;
 
 /// Requires `grants` to read operation `id`'s environment, returning the
@@ -158,7 +158,7 @@ impl Follow for FollowTimeline {
                 self.sent = true;
                 return Some(live::json(
                     ServerEvent::default(),
-                    "timeline",
+                    StreamMessage::Timeline,
                     &self.timeline,
                 ));
             }
@@ -166,8 +166,7 @@ impl Follow for FollowTimeline {
             let Ok(changed) = self.state.advance_timeline(&mut self.timeline).await else {
                 self.done = true;
                 return Some(
-                    ServerEvent::default()
-                        .event("stream_error")
+                    live::named(StreamMessage::StreamError)
                         .data("Reload the timeline before reconnecting"),
                 );
             };

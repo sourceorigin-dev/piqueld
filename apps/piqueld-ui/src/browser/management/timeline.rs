@@ -23,7 +23,9 @@ use leptos::task::spawn_local;
 use leptos_router::components::A;
 use piqueld_client::observability::Elapsed;
 use piqueld_client::timeline::{Progress, Step, StepKey, StepState, Timeline};
-use piqueld_client::{BuildRecord, Client, Event, Operation, Phase, access::AppPermission, paths};
+use piqueld_client::{
+    BuildRecord, Client, Event, Operation, Phase, StreamMessage, access::AppPermission, paths,
+};
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -131,9 +133,9 @@ impl LiveTimeline {
         let url = paths::stream_operation_timeline(&self.operation.get_value());
         let stream = EventStream::open(
             &url,
-            &["timeline", "access_ended"],
-            move |kind, data| {
-                if kind == "access_ended" {
+            &[StreamMessage::Timeline, StreamMessage::AccessEnded],
+            move |name, data| {
+                if name == StreamMessage::AccessEnded {
                     self.error
                         .set(Some("You can no longer read this operation.".into()));
                     self.stop();
@@ -1234,7 +1236,7 @@ fn EventFeed(operation: String, live: Memo<bool>, attempt: Memo<u64>) -> impl In
         };
         stream.set_value(EventStream::open(
             &url,
-            &["event"],
+            &[StreamMessage::Event],
             move |_, data| {
                 let Ok(event) = serde_json::from_str::<Event>(data) else {
                     return;

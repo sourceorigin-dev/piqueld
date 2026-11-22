@@ -12,6 +12,7 @@ mod ingress;
 mod logs;
 mod previews;
 mod secrets;
+mod streams;
 mod system;
 mod telemetry;
 #[cfg(test)]
@@ -26,6 +27,7 @@ pub use ingress::*;
 pub use logs::*;
 pub use previews::*;
 pub use secrets::*;
+pub use streams::*;
 pub use system::*;
 pub use telemetry::*;
 
