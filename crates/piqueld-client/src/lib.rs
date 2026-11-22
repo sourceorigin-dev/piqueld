@@ -41,8 +41,9 @@ pub mod openapi;
 pub mod operations;
 /// Each operation's path, for what the client does not send itself: the
 /// dashboard's links and event streams, and the client's hand-written
-/// requests. Functions are named like the client's methods and percent-encode
-/// path parameters as they do.
+/// requests. Functions are named after the API's operation IDs, as the
+/// generated client's methods are, and percent-encode path parameters as
+/// those methods do.
 pub mod paths;
 /// Preview lifecycle and branch state contracts.
 pub mod previews;

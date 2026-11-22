@@ -6,8 +6,8 @@ Progenitor 0.11. It writes the resulting operations to
 `crates/piqueld-client/src/generated.rs`, and the application manifest's JSON
 Schema to `docs/application-manifest.schema.json`. From the complete document
 it also writes `crates/piqueld-client/src/paths.rs`: one function per
-operation, named like its client method, that builds the operation's path with
-its path parameters percent-encoded. The client's hand-written requests and
+operation, named after its operation ID as the generated client's methods are,
+that builds the operation's path with its path parameters percent-encoded. The client's hand-written requests and
 the dashboard's links and event streams, which the browser opens itself, take
 their paths from it. All the artifacts are prepared before any checked-in file
 is updated.

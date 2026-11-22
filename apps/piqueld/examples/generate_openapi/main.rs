@@ -8,12 +8,13 @@
 mod settings_reference;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
+use heck::ToSnakeCase;
 use piqueld::api::http::openapi_document;
 use piqueld_config::DaemonConfig;
 use piqueld_core::manifest::ApplicationManifest;
 use piqueld_generated::Artifacts;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use settings_reference::SettingsPage;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -77,7 +78,7 @@ impl Generator {
             .context("read Progenitor configuration")?,
         )
         .context("parse Progenitor configuration")?;
-        let operation_paths = Self::generate_paths(&document)?;
+        let operation_paths = Self::generate_paths(paths)?;
         let client = self.generate_client(document.clone(), &config)?;
         let document = format!("{}\n", serde_json::to_string_pretty(&document)?);
         let manifest_schema = ApplicationManifest::json_schema();
@@ -164,16 +165,13 @@ impl Generator {
         ))
     }
 
-    /// Generates the source of `piqueld_client::paths`: one function per
-    /// operation, named like its client method, that builds the operation's
-    /// path with its path parameters percent-encoded as the client encodes
-    /// them. It reads the complete document, so it also covers the operations
+    /// Generates the source of `piqueld_client::paths` from the document's
+    /// `paths`: one function per operation, named after its operation ID as
+    /// the generated client's methods are, that builds the operation's path
+    /// with its path parameters percent-encoded as the client encodes them.
+    /// It reads the complete document, so it also covers the operations
     /// Progenitor's copy drops, such as the exec WebSocket.
-    fn generate_paths(document: &Value) -> Result<String> {
-        let paths = document
-            .get("paths")
-            .and_then(Value::as_object)
-            .context("OpenAPI document has no paths object")?;
+    fn generate_paths(paths: &Map<String, Value>) -> Result<String> {
         let mut functions = BTreeMap::new();
         for (path, item) in paths {
             let operations = item
@@ -187,16 +185,8 @@ impl Generator {
                     .get("operationId")
                     .and_then(Value::as_str)
                     .with_context(|| format!("{method} {path} has no operation ID"))?;
-                // Progenitor's method names: the operation ID in snake case.
-                let name: String = id
-                    .chars()
-                    .flat_map(|c| {
-                        c.is_ascii_uppercase()
-                            .then_some('_')
-                            .into_iter()
-                            .chain([c.to_ascii_lowercase()])
-                    })
-                    .collect();
+                // Progenitor names its methods with heck's snake case too.
+                let name = id.to_snake_case();
                 let mut template = String::new();
                 let mut parameters = Vec::new();
                 let mut arguments = String::new();
