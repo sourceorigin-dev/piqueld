@@ -2,7 +2,6 @@
 //! container and the Rust fixture and test runner on the host.
 
 use std::process::ExitCode;
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 use bollard::models::{ContainerCreateBody, HostConfig};
@@ -58,9 +57,7 @@ pub async fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
         .await
         .context("start the browser; `just setup-playwright` pulls its image")?;
     let result = async {
-        engine
-            .wait_for_output(&container, "Listening on", Duration::from_secs(10))
-            .await?;
+        engine.wait_for_port(&container, port).await?;
         let status = Job::spawn(
             Command::new("pnpm")
                 .args(["exec", "playwright", "test"])

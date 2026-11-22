@@ -2,6 +2,7 @@
 //! so tests and development instances never touch the host's own containers.
 
 use std::fmt::Display;
+use std::net::Ipv4Addr;
 use std::ops::Deref;
 use std::time::Duration;
 
@@ -13,12 +14,19 @@ use bollard::query_parameters::{
     LogsOptionsBuilder, RemoveContainerOptionsBuilder, StartContainerOptions, WaitContainerOptions,
 };
 use futures_util::{StreamExt, TryStreamExt};
+use tokio::net::TcpStream;
 
 use crate::process::checked_stdout;
 
 /// The pinned Docker-in-Docker image; `PIQUELD_DIND_IMAGE` overrides it.
-const DIND_IMAGE: &str =
-    "docker:29.6.2-dind@sha256:bfec1f5159c63a81ca6fdedbd81404d2c0e16378ed0feec3bb3fbf3998847659";
+/// Pulled from [`REGISTRY_MIRROR`] alone; the digest still verifies it.
+const DIND_IMAGE: &str = "mirror.gcr.io/library/docker:29.6.2-dind@sha256:bfec1f5159c63a81ca6fdedbd81404d2c0e16378ed0feec3bb3fbf3998847659";
+
+/// Google's public mirror of Docker Hub. CI runners share their addresses, so
+/// their anonymous Docker Hub pulls run into its rate limit; the mirror needs
+/// no credentials. Docker-in-Docker engines pull through it, and from Docker
+/// Hub when it lacks an image.
+const REGISTRY_MIRROR: &str = "https://mirror.gcr.io";
 
 /// Where a Docker-in-Docker engine listens inside its container, onto which
 /// [`Engine::dind_container`] bind-mounts a private host directory.
@@ -79,8 +87,9 @@ impl Engine {
     }
 
     /// A privileged Docker-in-Docker container from `image`, whose engine
-    /// listens in `socket_dir`, a private host directory, as `docker.sock`.
-    /// `binds` mounts more host paths or volumes.
+    /// listens in `socket_dir`, a private host directory, as `docker.sock`,
+    /// and pulls through [`REGISTRY_MIRROR`]. `binds` mounts more host paths
+    /// or volumes.
     pub fn dind_container(
         image: String,
         socket_dir: impl Display,
@@ -91,6 +100,7 @@ impl Engine {
             cmd: Some(vec![
                 "dockerd".to_owned(),
                 format!("--host=unix://{DIND_SOCKET_DIR}/docker.sock"),
+                format!("--registry-mirror={REGISTRY_MIRROR}"),
             ]),
             env: Some(vec!["DOCKER_TLS_CERTDIR=".to_owned()]),
             host_config: Some(HostConfig {
@@ -205,35 +215,6 @@ impl Engine {
         }
     }
 
-    /// Waits up to `limit` for `text` in a container's output.
-    pub async fn wait_for_output(
-        &self,
-        container: &str,
-        text: &str,
-        limit: Duration,
-    ) -> Result<()> {
-        let options = LogsOptionsBuilder::new()
-            .follow(true)
-            .stdout(true)
-            .stderr(true)
-            .build();
-        let mut logs = self.logs(container, Some(options));
-        let found = tokio::time::timeout(limit, async {
-            while let Some(Ok(output)) = logs.next().await {
-                if output.to_string().contains(text) {
-                    return true;
-                }
-            }
-            false
-        })
-        .await;
-        if found != Ok(true) {
-            self.print_logs(container).await;
-            bail!("the container never printed {text:?}");
-        }
-        Ok(())
-    }
-
     /// Waits up to 60 seconds for the Docker-in-Docker engine in `container`,
     /// then gives its socket to the host user, in their private directory.
     pub async fn wait_for_dind(&self, container: &str) -> Result<()> {
@@ -242,17 +223,62 @@ impl Engine {
              && chown {uid} {DIND_SOCKET_DIR}/docker.sock",
             uid = rustix::process::getuid().as_raw()
         );
-        for _ in 0..60 {
-            if !self.running(container).await? {
-                self.print_logs(container).await;
-                bail!("the isolated Docker daemon exited before becoming ready");
+        self.wait_until(
+            container,
+            "the Docker daemon",
+            Duration::from_secs(1),
+            || async { self.exec(container, &["sh", "-c", &ready]).await.ok() == Some(0) },
+        )
+        .await
+    }
+
+    /// Waits up to 60 seconds for `container`, on the host network, to accept
+    /// connections on `port` on loopback.
+    pub async fn wait_for_port(&self, container: &str, port: u16) -> Result<()> {
+        let what = format!("a listener on port {port}");
+        self.wait_until(container, &what, Duration::from_millis(250), || async {
+            TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .is_ok()
+        })
+        .await
+    }
+
+    /// Checks `ready` every `interval` for up to 60 seconds, failing as soon
+    /// as `container` exits. `what` names what it waits for. On failure it
+    /// prints the container's output. The limit covers every request, so a
+    /// stalled engine or probe can't stretch the wait.
+    async fn wait_until<F: Future<Output = bool>>(
+        &self,
+        container: &str,
+        what: &str,
+        interval: Duration,
+        mut ready: impl FnMut() -> F,
+    ) -> Result<()> {
+        let poll = async {
+            loop {
+                if !self.running(container).await? {
+                    return Ok::<_, anyhow::Error>(false);
+                }
+                if ready().await {
+                    return Ok(true);
+                }
+                tokio::time::sleep(interval).await;
             }
-            if self.exec(container, &["sh", "-c", &ready]).await.ok() == Some(0) {
-                return Ok(());
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+        };
+        let failure = match tokio::time::timeout(Duration::from_secs(60), poll).await {
+            Ok(Ok(true)) => return Ok(()),
+            Ok(Ok(false)) => format!("container {container} exited before {what} was ready"),
+            Ok(Err(error)) => return Err(error),
+            Err(_) => format!("{what} in container {container} was not ready within 60 seconds"),
+        };
+        // The engine may be what stalled, so reading the output is bounded too.
+        if tokio::time::timeout(Duration::from_secs(10), self.print_logs(container))
+            .await
+            .is_err()
+        {
+            eprintln!("gave up reading the output of container {container} after 10 seconds");
         }
-        self.print_logs(container).await;
-        bail!("the isolated Docker daemon did not become ready within 60 seconds")
+        bail!("{failure}")
     }
 }
