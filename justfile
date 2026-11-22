@@ -207,7 +207,7 @@ setup-worktree:
     status=0
     # T3 Code often creates several worktrees at once: build at low priority on
     # half the cores, unless CARGO_BUILD_JOBS says otherwise.
-    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(( ($(getconf _NPROCESSORS_ONLN) + 1) / 2 ))}"
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(( ($(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1) + 1) / 2 ))}"
     # Nothing else inherits the lock, so it ends with this script.
     { just dev config && nice -n 10 just build; } 9>&- 2>&1 | tee "$markers/output.log" 9>&- || status=$?
     if [ "$status" -eq 0 ]; then
