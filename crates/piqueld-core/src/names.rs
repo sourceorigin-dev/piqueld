@@ -193,7 +193,7 @@ pub(crate) use string_enum;
 // daemon adds or old rows hold, be built from and compared with a
 // `string_enum!`'s values: `event.kind == EventKind::OperationFailed`.
 macro_rules! compared_as_string {
-    ($($name:ident),+ $(,)?) => {$(
+    ($name:ident) => {
         impl From<$name> for String {
             fn from(value: $name) -> Self {
                 value.as_str().to_owned()
@@ -211,7 +211,7 @@ macro_rules! compared_as_string {
                 self == value.as_str()
             }
         }
-    )+};
+    };
 }
 pub(crate) use compared_as_string;
 

@@ -867,4 +867,105 @@ mod tests {
             }
         }
     }
+
+    /// The schema can't name an `EventKind`, so each kind its indexes,
+    /// triggers and views spell out (`security_denial_bursts`, the
+    /// `operation_progress` view) must parse as one: a kind it misspells, or
+    /// that a variant stops writing, would leave it matching nothing.
+    #[tokio::test]
+    async fn kinds_the_schema_spells_out_are_event_kinds() {
+        let (_temp, store) = Store::temporary().await;
+        let objects: Vec<(String, String)> =
+            sqlx::query_as("SELECT tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL")
+                .fetch_all(&store.pool)
+                .await
+                .unwrap();
+        let mut kinds = Vec::new();
+        for (table, sql) in &objects {
+            kinds.extend(event_kinds_in(table, sql));
+        }
+        assert!(!kinds.is_empty(), "the schema spells out event kinds");
+        for kind in kinds {
+            assert!(EventKind::parse(&kind).is_some(), "{kind}");
+        }
+    }
+
+    /// The kinds `sql`, a schema object on `table`, compares an events row's
+    /// `kind` with: `kind = '…'` or `kind IN ('…', …)`, on `events` itself or
+    /// an alias of it, such as `failed.kind` after `FROM events failed`.
+    fn event_kinds_in(table: &str, sql: &str) -> Vec<String> {
+        let tokens = sql_tokens(sql);
+        let token = |index: usize| tokens.get(index).map_or("", String::as_str);
+        // Bare `kind` is the events row's only in an object on `events`.
+        let mut rows = vec![if table == "events" { "" } else { "events" }.to_owned()];
+        for (index, name) in tokens.iter().enumerate() {
+            let alias = token(index + 1);
+            let keyword = ["as", "where", "on", "set", "join", "left", "order", "limit"];
+            if name.eq_ignore_ascii_case("events")
+                && alias.starts_with(|c: char| c.is_ascii_alphabetic())
+                && !keyword.iter().any(|word| alias.eq_ignore_ascii_case(word))
+            {
+                rows.push(alias.to_owned());
+            }
+        }
+        let mut kinds = Vec::new();
+        for index in 0..tokens.len() {
+            let qualifier = if index >= 2 && token(index - 1) == "." {
+                token(index - 2)
+            } else {
+                ""
+            };
+            if token(index) != "kind" || !rows.iter().any(|row| row == qualifier) {
+                continue;
+            }
+            let literals = match token(index + 1).to_ascii_lowercase().as_str() {
+                "=" => index + 2..index + 3,
+                "in" => {
+                    index + 3
+                        ..(index + 3..tokens.len())
+                            .find(|&i| token(i) == ")")
+                            .unwrap_or(index + 3)
+                }
+                _ => continue,
+            };
+            kinds.extend(
+                tokens[literals]
+                    .iter()
+                    .filter_map(|literal| literal.strip_prefix('\''))
+                    .map(|literal| literal.trim_end_matches('\'').to_owned()),
+            );
+        }
+        kinds
+    }
+
+    /// `sql` split into identifiers, quoted strings (quotes kept) and single
+    /// punctuation characters.
+    fn sql_tokens(sql: &str) -> Vec<String> {
+        let mut tokens = Vec::new();
+        let mut chars = sql.chars().peekable();
+        while let Some(first) = chars.next() {
+            if first.is_whitespace() {
+                continue;
+            }
+            let mut token = first.to_string();
+            if first == '\'' {
+                for next in chars.by_ref() {
+                    token.push(next);
+                    if next == '\'' {
+                        break;
+                    }
+                }
+            } else if first.is_ascii_alphanumeric() || first == '_' {
+                while let Some(&next) = chars.peek() {
+                    if !(next.is_ascii_alphanumeric() || next == '_') {
+                        break;
+                    }
+                    token.push(next);
+                    chars.next();
+                }
+            }
+            tokens.push(token);
+        }
+        tokens
+    }
 }

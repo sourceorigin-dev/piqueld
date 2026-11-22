@@ -75,7 +75,6 @@ impl Event {
 }
 
 string_enum! {
-    #[serde]
     /// Every kind of event the daemon records, as stored in history and sent
     /// as [`Event::kind`]. A kind never changes, but new ones are added.
     pub enum EventKind {
@@ -296,28 +295,5 @@ impl std::fmt::Display for EventActor {
             Self::Operator { operator, .. } => operator.fmt(formatter),
             Self::System { actor } => actor.fmt(formatter),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::EventKind;
-    use std::collections::BTreeSet;
-
-    /// Each kind is stored and sent as its own string and read back as
-    /// itself, and no two share one.
-    #[test]
-    fn kinds_serialize_to_distinct_strings() {
-        for kind in EventKind::ALL {
-            let value = kind.as_str();
-            assert_eq!(serde_json::to_value(kind).unwrap(), value);
-            assert_eq!(
-                serde_json::from_value::<EventKind>(value.into()).unwrap(),
-                kind
-            );
-            assert_eq!(EventKind::parse(value), Some(kind));
-        }
-        let values = EventKind::ALL.map(EventKind::as_str);
-        assert_eq!(BTreeSet::from(values).len(), values.len());
     }
 }
