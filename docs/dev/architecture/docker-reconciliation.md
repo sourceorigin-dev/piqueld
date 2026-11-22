@@ -388,6 +388,39 @@ and its prepared target are saved, so cleanup cannot remove the images in
 between.
 `app releases` shows whether each release's images are present.
 
+With a build machine, a build pushes its image to the registry in
+`build.repository` under a new tag, `<instance ID>.<UUIDv7>`, without a
+provenance attestation, so its digest is the image's own manifest; the
+engine pulls it by that digest. The tag is how cleanup finds the images this
+installation pushed, whatever happens to its build records, which go with
+their environment and deployment history. Being unique, a tag never moves to
+another image, and builds label images with their installation, so two
+installations never share a digest. Before taking the lock, each cleanup pass
+lists the repository's tags (`GET /v2/<path>/tags/list`, following the
+`Link` header's `next` pages), keeps this installation's, and looks each new
+one up for its digest (`HEAD /v2/<path>/manifests/<tag>`); the daemon
+remembers each tag's digest, and that an image it deleted is gone. An image
+pushed meanwhile isn't listed, and one whose deployment finished meanwhile is
+kept by the retention roots read under the lock. While the registry can't be
+listed, the pass skips it without journaling anything. Under the lock, the
+pass reads the retention roots again with `images.registry_keep_deployments`
+(never fewer than `images.keep_deployments`), and deletes each listed image
+whose digest none keeps and the engine no longer has, since build reuse
+deploys only what the engine has. Comparing digests alone keeps the images
+deployments refer to under an earlier name of the same registry. Each
+deletion is a journaled `delete_registry_image` daemon action, a
+`DELETE /v2/<path>/manifests/<digest>` that counts the registry's
+`MANIFEST_UNKNOWN` as deleted, and removes the image's tags with it. A
+failure that is the whole registry's, because it stops answering, refuses
+this client, doesn't allow deletes or a proxy in front of it fails, ends the
+pass, as does the third failure in a row of single images, such as a
+registry whose storage answers 500 to every deletion, so deleting delays
+operations by at most three more requests; any other failure only skips that
+image, which the next pass finds again by its tag. The registry is reached
+over HTTPS, trusting public certificate authorities, such as the tailnet's,
+or plain HTTP on the host's loopback, as Docker does, without credentials.
+The registry's own garbage collection frees the deleted images' layers.
+
 ## Link networks
 
 A [link](../../user/reference/manifest.md#links) is an overlay network the importing

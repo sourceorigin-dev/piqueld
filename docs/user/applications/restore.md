@@ -216,8 +216,11 @@ It runs the release of the deployment it restored.
   names the service and image. piqueld keeps the images of each environment's
   last three successful deployments, and of a preview's current one:
   [`images.keep_deployments`](../reference/configuration-settings.md#imageskeep_deployments),
-  in the daemon's configuration, changes that number. An image piqueld built
-  is never built again for a restore.
+  in the daemon's configuration, changes that number. With a build machine,
+  the build registry keeps the images of each environment's last
+  [`images.registry_keep_deployments`](../reference/configuration-settings.md#imagesregistry_keep_deployments)
+  successful deployments, 10 by default, which piqueld pulls again. An image
+  piqueld built is never built again for a restore.
 - **Restoring fails with `restore_secrets_unavailable`.** A secret version
   the deployment used was deleted since, or discarded by
   [key recovery](secrets-and-variables.md#if-the-secret-key-is-lost). The

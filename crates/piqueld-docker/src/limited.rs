@@ -190,6 +190,21 @@ impl<D: DockerApi> DockerApi for LimitedDocker<D> {
     ) -> Result<(), DockerError> {
         self.inner.remove_image(instance, id).await
     }
+    fn build_repository(&self) -> Option<&piqueld_core::build_machine::BuildRepository> {
+        self.inner.build_repository()
+    }
+    async fn pushed_images(
+        &self,
+        owner: &piqueld_core::InstanceId,
+    ) -> Result<std::collections::BTreeSet<piqueld_core::RepositoryDigest>, DockerError> {
+        self.inner.pushed_images(owner).await
+    }
+    async fn delete_pushed_image(
+        &self,
+        image: &piqueld_core::RepositoryDigest,
+    ) -> Result<(), DockerError> {
+        self.inner.delete_pushed_image(image).await
+    }
     async fn prune_health_probes(
         &self,
         instance: &piqueld_core::InstanceId,

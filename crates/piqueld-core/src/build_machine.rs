@@ -93,6 +93,33 @@ impl TryFrom<String> for BuildRepository {
 }
 
 impl BuildRepository {
+    /// The registry holding it, as `host[:port]`.
+    #[must_use]
+    pub fn registry(&self) -> &str {
+        self.split().0
+    }
+
+    /// Its path on the registry, such as `piqueld`.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        self.split().1
+    }
+
+    /// The registry and the path: a validated repository names its registry.
+    fn split(&self) -> (&str, &str) {
+        self.0.split_once('/').unwrap_or(("", &self.0))
+    }
+
+    /// The digest of `image`, if it is in this repository.
+    #[must_use]
+    pub fn digest_of(&self, image: &RepositoryDigest) -> Option<Sha256Digest> {
+        let digest = image
+            .as_str()
+            .strip_prefix(self.0.as_str())?
+            .strip_prefix('@')?;
+        Sha256Digest::parse(digest).ok()
+    }
+
     /// The image this repository holds under `digest`.
     ///
     /// # Panics
@@ -156,6 +183,20 @@ mod tests {
             repository.image(&digest).as_str(),
             format!("build.example.ts.net:5000/piqueld@{digest}")
         );
+        assert_eq!(repository.registry(), "build.example.ts.net:5000");
+        assert_eq!(repository.path(), "piqueld");
+        assert_eq!(
+            repository.digest_of(&repository.image(&digest)),
+            Some(digest.clone())
+        );
+        // The same digest in another repository, or one this one prefixes.
+        for other in [
+            "build.example.ts.net:5000/other",
+            "build.example.ts.net:5000/piqueld/sub",
+        ] {
+            let other = BuildRepository::try_from(other.to_owned()).unwrap();
+            assert_eq!(repository.digest_of(&other.image(&digest)), None);
+        }
         // Docker Hub's, a tag, and upper case.
         for invalid in [
             "piqueld",

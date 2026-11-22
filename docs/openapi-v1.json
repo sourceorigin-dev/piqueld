@@ -1826,7 +1826,7 @@
           },
           {
             "$ref": "#/components/schemas/RepositoryDigest",
-            "description": "An image a build machine pushed to its registry, which Docker pulls\nit from, again if it goes missing."
+            "description": "An image a build machine pushed to the build registry, which Docker\npulls it from, again if it goes missing."
           }
         ]
       },
@@ -8766,6 +8766,25 @@
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "registry": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RegistryImageStatus"
+                  }
+                ],
+                "description": "The images this host's builds pushed to the build registry,\nas of the last cleanup; absent without a build machine, and before\ncleanup first ran."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
           }
         },
         "required": [
@@ -10222,6 +10241,7 @@
           "observation",
           "ensure_swarm",
           "remove_image",
+          "delete_registry_image",
           "ingress_create_network",
           "ingress_remove_network",
           "ingress_start_gateway",
@@ -10977,6 +10997,38 @@
         ],
         "type": "object"
       },
+      "RegistryImageStatus": {
+        "description": "The images this host's builds pushed to the build registry,\nwhich cleanup deletes once no deployment it keeps there uses them.",
+        "properties": {
+          "deleted_images": {
+            "description": "Images cleanup deleted from the registry since the daemon started.\nThe registry's garbage collection frees their layers.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failure": {
+            "description": "Why the last cleanup didn't delete every image no deployment keeps:\nthe registry didn't answer, or refused a deletion. Absent when it\ndeleted them all.",
+            "nullable": true,
+            "type": "string"
+          },
+          "images": {
+            "description": "Pushed images still in the registry as of the last cleanup that\nlisted it; absent before one did.",
+            "format": "int32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "repository": {
+            "description": "The repository they are in, as `build.repository` names it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "deleted_images"
+        ],
+        "type": "object"
+      },
       "Release": {
         "additionalProperties": false,
         "description": "The immutable output of one preparation in a tracking environment: its\nmanifest, and each service's source provenance and prepared image. It\nbelongs to the application, and preparations with the same\n[`Self::content_hash`] share it.",
@@ -11393,7 +11445,7 @@
               },
               "image_id": {
                 "$ref": "#/components/schemas/BuiltImage",
-                "description": "The image it was built into: Docker's content-addressed local\nimage ID, or its digest in a build machine's registry."
+                "description": "The image it was built into: Docker's content-addressed local\nimage ID, or its digest in the build registry."
               },
               "requested": {
                 "$ref": "#/components/schemas/ValidatedSource",

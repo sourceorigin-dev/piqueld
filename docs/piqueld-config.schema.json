@@ -61,7 +61,7 @@
         },
         "repository": {
           "default": null,
-          "description": "The image repository the build machine pushes to and this host pulls\nfrom, as `registry-host[:port]/path`, without a tag. Both reach it\nunder this name, without credentials, and Docker requires HTTPS of a\nregistry on another machine. Anyone who can reach the registry can\npull every image, build arguments included, or push to it, so only\nthis host and the build machine should be able to. Every image goes\nto this one repository, by digest, so they share their layers.",
+          "description": "The image repository the build machine pushes to and this host pulls\nfrom, as `registry-host[:port]/path`, without a tag. Both reach it\nunder this name, without credentials, and Docker requires HTTPS of a\nregistry on another machine. Anyone who can reach the registry can\npull every image, build arguments included, or push to it, so only\nthis host and the build machine should be able to. Every image goes\nto this one repository, so they share their layers, under a tag\nnaming this installation, by which image cleanup finds it.",
           "type": [
             "string",
             "null"
@@ -244,7 +244,7 @@
     },
     "ImagesConfig": {
       "additionalProperties": false,
-      "description": "Cleanup of the images this installation builds. Cleanup keeps what every\nenvironment and preview runs or is deploying, and removes the rest. It\nnever removes pulled images, images built by hand, or images other\ninstallations built on the same Docker Engine.",
+      "description": "Cleanup of the images this installation builds. Cleanup keeps what every\nenvironment and preview runs or is deploying, and removes the rest. It\nnever removes pulled images, images built by hand, or images other\ninstallations built on the same Docker Engine. With a build machine, it\nalso deletes from the build registry the images this host's builds pushed\nthat no deployment it keeps there uses.",
       "properties": {
         "cleanup_interval_seconds": {
           "default": 3600,
@@ -257,6 +257,13 @@
         "keep_deployments": {
           "default": 3,
           "description": "How many of each environment's latest successful deployments also\nkeep their images, so their releases can be deployed again.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "registry_keep_deployments": {
+          "default": 10,
+          "description": "How many of each environment's latest successful deployments keep\ntheir images in the build registry, `build.repository`, and never\nfewer than `keep_deployments`. Cleanup deletes the other images this\nhost's builds pushed there, and skips the registry while it can't be\nreached. Without a build machine, it does nothing.",
           "format": "int32",
           "minimum": 0,
           "type": "integer"

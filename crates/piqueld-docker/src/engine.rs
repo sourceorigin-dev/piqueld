@@ -148,6 +148,20 @@ impl BollardDocker {
         self.builder.as_ref()
     }
 
+    /// The registry the build machine pushes to.
+    ///
+    /// # Errors
+    /// [`DockerError::Validation`] when images build on this host, which
+    /// pushes none.
+    pub(super) fn build_registry(&self) -> Result<&super::BuildRegistry, DockerError> {
+        self.builder
+            .as_ref()
+            .map(|builder| builder.registry())
+            .ok_or(DockerError::Validation(
+                "reach a build registry without a build machine",
+            ))
+    }
+
     /// The typed Bollard client, created on first use. Bollard refuses a
     /// socket that does not exist, so until Docker creates it, every call
     /// fails as unavailable and the next one tries again.

@@ -78,7 +78,9 @@ each affected environment's history.
 
 Image cleanup journals each removal as a daemon-scoped `remove_image` action
 whose resource is the image ID, so its `action_succeeded` events list the
-removed images and `action_failed` the ones it had to keep.
+removed images and `action_failed` the ones it had to keep. With a build
+machine, each deletion from the build registry is a `delete_registry_image` action
+whose resource is the image's repository digest.
 
 Commands run with `app exec`, `preview exec` or the dashboard's **Terminal** tab record `command_started`, naming the account and
 task, and `command_finished` with its exit code, or that its stream failed

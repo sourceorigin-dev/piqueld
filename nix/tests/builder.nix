@@ -62,11 +62,16 @@ in
               " --metadata-file /tmp/metadata.json"
           )
 
-      def build(context, platform):
-          """Builds `context` for `platform` on BuildKit, pushes it by digest as
-          piqueld does, and returns its digest."""
-          buildctl(context, platform, f"type=image,name={address}:5000/piqueld,push=true,push-by-digest=true,registry.insecure=true")
+      def build(context, platform, tag):
+          """Builds `context` for `platform` on BuildKit, pushes it under `tag`
+          as piqueld does, and returns its digest."""
+          buildctl(context, platform, f"type=image,name={address}:5000/piqueld:{tag},push=true,registry.insecure=true")
           return json.loads(machine.succeed("cat /tmp/metadata.json"))["containerimage.digest"]
+
+      def tags():
+          """The repository's tags, as piqueld's cleanup lists them."""
+          listing = json.loads(machine.succeed("curl -fsS http://127.0.0.1:5000/v2/piqueld/tags/list"))
+          return listing["tags"] or []
 
       def arch(context, platform):
           """The machine its RUN step ran on, from the cache of its build."""
@@ -88,19 +93,22 @@ in
           machine.succeed("test \"$(ps -o user= -C buildkitd)\" = buildkit")
           machine.succeed("grep -q '^buildkit:' /etc/subuid")
 
-      with subtest("A build runs its steps and pushes the image by digest"):
-          digest = build("${native}", "linux/amd64")
+      with subtest("A build runs its steps and pushes the image under its tag"):
+          digest = build("${native}", "linux/amd64", "instance-1.native")
           machine.succeed(f"curl -fsS {accept} http://127.0.0.1:5000/v2/piqueld/manifests/{digest}")
+          assert "instance-1.native" in tags(), tags()
 
       with subtest("An arm64 build runs its steps under emulation"):
-          build("${arm64}", "linux/arm64")
+          build("${arm64}", "linux/arm64", "instance-1.arm64")
           assert arch("${arm64}", "linux/arm64") == "aarch64"
           assert arch("${native}", "linux/amd64") == "x86_64"
 
-      with subtest("Deleted images' layers are freed, and the registry starts again"):
+      with subtest("Deleted images' tags go, their layers are freed, and the registry starts again"):
           blobs = "find /var/lib/docker-registry/docker/registry/v2/blobs -name data | wc -l"
           before = int(machine.succeed(blobs))
           machine.succeed(f"curl -fsS -X DELETE http://127.0.0.1:5000/v2/piqueld/manifests/{digest}")
+          # Deleting by digest removes the tag, which cleanup relies on.
+          assert tags() == ["instance-1.arm64"], tags()
           # A registry started during collection, such as by a switch, stops
           # it first.
           machine.succeed("systemctl show -p Conflicts docker-registry-collect.service | grep -F docker-registry.service")

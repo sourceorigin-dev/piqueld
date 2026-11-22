@@ -99,6 +99,9 @@ pub enum OperationError {
     /// The build machine could not be reached to build an image.
     #[error("the build machine is unreachable")]
     BuilderUnavailable,
+    /// Image cleanup could not delete an image from the build registry.
+    #[error("the build registry did not delete an image")]
+    RegistryDeleteFailed,
     /// A Docker request failed while performing the described operation.
     #[error("Docker request failed while {0}")]
     DockerRequestFailed(&'static str),
@@ -174,6 +177,7 @@ impl OperationError {
             Self::ImageUnavailable { .. } => DiagnosticCode::ImageUnavailable,
             Self::GitBuildFailed(_) => DiagnosticCode::GitBuildFailed,
             Self::BuilderUnavailable => DiagnosticCode::BuilderUnavailable,
+            Self::RegistryDeleteFailed => DiagnosticCode::RegistryDeleteFailed,
             Self::Cancelled => DiagnosticCode::Cancelled,
             Self::Superseded => DiagnosticCode::Superseded,
             Self::OwnershipConflict => DiagnosticCode::OwnershipConflict,
@@ -252,6 +256,7 @@ impl OperationError {
                 Self::DockerRequestFailed("start a container on a host port in use")
             }
             DockerError::BuilderUnavailable(_) => Self::BuilderUnavailable,
+            DockerError::Registry(_) => Self::RegistryDeleteFailed,
             DockerError::Request(operation) | DockerError::RequestSource { operation, .. } => {
                 Self::DockerRequestFailed(operation)
             }

@@ -73,6 +73,30 @@ impl ImageReference {
     }
 }
 
+impl RepositoryDigest {
+    /// Its SHA-256 digest, after `@`, which names the same image whatever the
+    /// repository's name.
+    ///
+    /// ```text
+    /// "registry.example.ts.net:5000/piqueld@sha256:abc…" -> "sha256:abc…"
+    /// ```
+    ///
+    /// # Panics
+    /// Never: a repository digest is validated to end in one.
+    #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "A repository digest is validated to end in `@` and a SHA-256 digest."
+    )]
+    pub fn digest(&self) -> Sha256Digest {
+        let (_, digest) = self
+            .as_str()
+            .rsplit_once('@')
+            .expect("a repository digest names its digest after `@`");
+        Sha256Digest::parse(digest).expect("a repository digest ends in a SHA-256 digest")
+    }
+}
+
 impl From<RepositoryDigest> for ImmutableImage {
     fn from(value: RepositoryDigest) -> Self {
         Self(value.into())
@@ -91,8 +115,8 @@ pub enum BuiltImage {
     /// An image only the local engine has, under Docker's content-addressed
     /// image ID. Rebuilding it may produce another one.
     Local(Sha256Digest),
-    /// An image a build machine pushed to its registry, which Docker pulls
-    /// it from, again if it goes missing.
+    /// An image a build machine pushed to the build registry, which Docker
+    /// pulls it from, again if it goes missing.
     Pushed(RepositoryDigest),
 }
 
@@ -174,6 +198,13 @@ mod tests {
         assert!(BuiltImage::parse("alpine:latest").is_err());
         assert!(ImmutableImage::parse(&digest).is_ok());
         assert!(RepositoryDigest::parse(&digest).is_err());
+        assert_eq!(
+            RepositoryDigest::parse(&repository)
+                .unwrap()
+                .digest()
+                .as_str(),
+            digest
+        );
         assert!(ImmutableImage::parse(format!("alpine@sha256:{}", "A".repeat(64))).is_err());
     }
 }

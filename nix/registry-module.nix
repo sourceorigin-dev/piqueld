@@ -1,8 +1,9 @@
 # A build registry for piqueld (see docs/user/applications/build-machine.md):
 # the registry a build machine pushes a piqueld host's images to and the host
 # pulls them from, on any machine, such as an always-on one while the build
-# machine is off at times. Deletes are enabled, so images no deployment needs
-# can be deleted, and garbage collection frees their layers.
+# machine is off at times. Deletes are enabled, so piqueld's image cleanup can
+# delete the images no deployment keeps, and garbage collection frees their
+# layers.
 #
 # It takes no credentials. It listens on loopback, and Tailscale Serve exposes
 # it on the machine's tailnet name, over HTTPS with the tailnet's certificate,
@@ -62,9 +63,8 @@ in
     # localhost:4318, logging an error each time none answers.
     systemd.services.docker-registry.environment.OTEL_TRACES_EXPORTER = lib.mkDefault "none";
 
-    # Frees the layers no remaining image refers to. piqueld pushes images
-    # by digest, without tags, so `--delete-untagged` would delete every
-    # image: plain collection only frees what deleted images used. A push
+    # Frees the layers no remaining image refers to: plain collection frees
+    # only what deleted images used, and leaves untagged ones. A push
     # during collection could lose layers, so the two conflict: starting
     # collection stops the registry, and anything that starts the registry
     # meanwhile, such as a system switch, stops collection first. The

@@ -595,9 +595,10 @@ impl DockerApi for BollardDocker {
             let builder = self.reachable_builder(log).await?;
             let mut command = if let Some(remote) = builder {
                 let mut command = remote.docker();
-                command
-                    .args(["buildx", "build"])
-                    .args(remote.options(&self.platform().await?));
+                command.args(["buildx", "build"]).args(remote.options(
+                    &self.platform().await?,
+                    &crate::BuildRegistry::new_tag(build.owner),
+                ));
                 command
             } else {
                 let mut command = tokio::process::Command::new("docker");
@@ -638,7 +639,7 @@ impl DockerApi for BollardDocker {
                 return Ok(digest.into());
             };
             // The build machine pushed it: the engine has to pull it.
-            let image = remote.repository.image(&digest);
+            let image = remote.registry.repository.image(&digest);
             let pulled = self
                 .resolve_image(image.as_str())
                 .await
@@ -684,6 +685,25 @@ impl DockerApi for BollardDocker {
             .await
     }
 
+    fn build_repository(&self) -> Option<&piqueld_core::build_machine::BuildRepository> {
+        self.builder
+            .as_ref()
+            .map(|builder| &builder.registry().repository)
+    }
+
+    async fn pushed_images(
+        &self,
+        owner: &piqueld_core::InstanceId,
+    ) -> Result<std::collections::BTreeSet<piqueld_core::RepositoryDigest>, DockerError> {
+        Ok(self.build_registry()?.pushed_images(owner).await?)
+    }
+
+    async fn delete_pushed_image(
+        &self,
+        image: &piqueld_core::RepositoryDigest,
+    ) -> Result<(), DockerError> {
+        Ok(self.build_registry()?.delete(image).await?)
+    }
     async fn prune_health_probes(
         &self,
         instance: &piqueld_core::InstanceId,

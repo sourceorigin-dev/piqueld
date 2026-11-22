@@ -96,6 +96,7 @@ impl Phase {
             Self::Observation => "Observe",
             Self::EnsureSwarm => "Ensure Swarm",
             Self::RemoveImage => "Remove image",
+            Self::DeleteRegistryImage => "Delete registry image",
             Self::IngressCreateNetwork => "Create ingress network",
             Self::IngressRemoveNetwork => "Remove ingress network",
             Self::IngressStartGateway => "Start gateway",
@@ -142,6 +143,7 @@ impl Phase {
             | Self::Observation => Stage::Rollout,
             Self::EnsureSwarm
             | Self::RemoveImage
+            | Self::DeleteRegistryImage
             | Self::IngressCreateNetwork
             | Self::IngressRemoveNetwork
             | Self::IngressStartGateway

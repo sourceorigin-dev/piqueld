@@ -128,7 +128,7 @@ neither), `build.unavailable`, `ingress.enabled`, `ingress.public_addresses`,
 intervals/timeouts, the `retention` periods, both `build_history` limits,
 the five [`previews`](configuration.md#previews) limits,
 [`snapshots.max_upload_bytes`](configuration.md#local-snapshots),
-[`checkouts.max_bytes`](configuration.md#git-checkouts), both `images` settings,
+[`checkouts.max_bytes`](configuration.md#git-checkouts), the three `images` settings,
 `telemetry.endpoint`, `telemetry.headers_file` (a systemd credential),
 and `telemetry.containers`, with the daemon's defaults. Reconciliation
 values must be 1–86400 seconds; retention values are nonnegative days, or a

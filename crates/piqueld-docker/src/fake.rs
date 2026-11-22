@@ -104,6 +104,13 @@ pub struct FakeDocker {
     /// Pushes builds to this repository by digest, as a build machine does,
     /// instead of keeping them local only.
     pub build_repository: Option<piqueld_core::build_machine::BuildRepository>,
+    /// The images builds pushed to `build_repository`'s registry, by tag.
+    pub pushed_images: Arc<Mutex<BTreeMap<String, piqueld_core::RepositoryDigest>>>,
+    /// Makes the registry unreachable.
+    pub registry_unreachable: Arc<AtomicBool>,
+    /// The HTTP status the registry refuses to delete each of these images
+    /// with.
+    pub refused_deletes: Arc<Mutex<BTreeMap<piqueld_core::RepositoryDigest, u16>>>,
 }
 
 /// A Docker secret's value and the labels of the environment that owns it.
@@ -300,6 +307,25 @@ impl FakeDocker {
     /// Arms the registry to re-point the tag after each remaining pull.
     pub async fn arm_tag_flips(&self, flips: usize) {
         self.registry.lock().await.flips_remaining = flips;
+    }
+
+    /// Fails as the registry client does while `registry_unreachable` is
+    /// set, or without a build repository.
+    fn reach_registry(&self) -> Result<(), DockerError> {
+        let repository = self
+            .build_repository
+            .as_ref()
+            .ok_or(DockerError::Validation(
+                "reach a build registry without a build machine",
+            ))?;
+        if self.registry_unreachable.load(Ordering::SeqCst) {
+            return Err(crate::RegistryError::Unreachable {
+                registry: repository.registry().to_owned(),
+                source: Box::new(std::io::Error::from(std::io::ErrorKind::ConnectionRefused)),
+            }
+            .into());
+        }
+        Ok(())
     }
 
     /// Adds `image`, or merges its repository digests into the image with
@@ -570,8 +596,9 @@ impl DockerApi for FakeDocker {
         Ok(SwarmState::Ready)
     }
 
-    /// Builds image `b`s, unless the Dockerfile says `build-fails`. Build
-    /// output is not recorded.
+    /// Builds image `b`s, unless the Dockerfile says `build-fails`, and
+    /// pushes it under a new tag with a build repository. Build output is not
+    /// recorded.
     async fn build_image(
         &self,
         build: &ImageBuild<'_>,
@@ -618,6 +645,12 @@ impl DockerApi for FakeDocker {
             used: false,
         })
         .await;
+        if let Some(pushed) = &pushed {
+            self.pushed_images
+                .lock()
+                .await
+                .insert(crate::BuildRegistry::new_tag(build.owner), pushed.clone());
+        }
         if let Some(gate) = &self.build_gate {
             gate.pass().await;
         }
@@ -702,6 +735,61 @@ impl DockerApi for FakeDocker {
         Ok(self.local_images.lock().await.clone())
     }
 
+    fn build_repository(&self) -> Option<&piqueld_core::build_machine::BuildRepository> {
+        self.build_repository.as_ref()
+    }
+
+    /// The images of `owner`'s tags, as the real registry client finds them.
+    async fn pushed_images(
+        &self,
+        owner: &InstanceId,
+    ) -> Result<BTreeSet<piqueld_core::RepositoryDigest>, DockerError> {
+        self.reach_registry()?;
+        let prefix = format!("{owner}.");
+        Ok(self
+            .pushed_images
+            .lock()
+            .await
+            .iter()
+            .filter(|(tag, _)| tag.starts_with(&prefix))
+            .map(|(_, image)| image.clone())
+            .collect())
+    }
+
+    /// Deletes `image` and every tag naming it, as the registry does; one of
+    /// another repository is refused, as by the real registry client.
+    async fn delete_pushed_image(
+        &self,
+        image: &piqueld_core::RepositoryDigest,
+    ) -> Result<(), DockerError> {
+        self.reach_registry()?;
+        if self
+            .build_repository
+            .as_ref()
+            .and_then(|repository| repository.digest_of(image))
+            .is_none()
+        {
+            return Err(crate::RegistryError::NotPushed(image.clone()).into());
+        }
+        if let Some(&status) = self.refused_deletes.lock().await.get(image) {
+            return Err(crate::RegistryError::Refused {
+                image: image.clone(),
+                status: reqwest::StatusCode::from_u16(status).map_err(|source| {
+                    DockerError::RequestSource {
+                        operation: "refuse with a valid HTTP status",
+                        source: source.into(),
+                    }
+                })?,
+                message: String::new(),
+            }
+            .into());
+        }
+        self.pushed_images
+            .lock()
+            .await
+            .retain(|_, pushed| pushed != image);
+        Ok(())
+    }
     async fn prune_health_probes(&self, _instance: &InstanceId) -> Result<(), DockerError> {
         Ok(())
     }
