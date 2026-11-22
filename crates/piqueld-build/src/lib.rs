@@ -200,9 +200,11 @@ impl NestedCargo {
 
     /// Derives `<target dir>-<suffix>` from the canonical `OUT_DIR`, which is
     /// `<target>/<profile>/build/<pkg>/<hash>/out` for the pinned Cargo and
-    /// `<target>/<profile>/build/<pkg>-<hash>/out` for older ones: the target
-    /// directory is two levels above the nearest `build` directory, so no
-    /// package that builds nested may be named `build`.
+    /// `<target>/<profile>/build/<pkg>-<hash>/out` for older ones, with a
+    /// `<triple>/` before `<profile>` when building for a `--target`: the
+    /// directory two levels above the nearest `build` directory is the target
+    /// directory, or `<target>/<triple>`, so no package that builds nested may
+    /// be named `build`.
     fn sibling_target_dir(out_dir: &Path, suffix: &str) -> Result<PathBuf, BuildError> {
         let canonical = out_dir
             .canonicalize()
