@@ -561,7 +561,7 @@ written to stderr, so stdout remains valid JSON.
 | `notification retry` | None |
 | `build list` | `{ "items": [BuildRecord], "next_cursor": string or null }` |
 | `build logs` | `BuildLogPage` |
-| `app create` / `app rename` / field edits | `SavedApplication`; `--deploy` uses the same output as `app apply --deploy` |
+| `app create` / `app rename` / field edits, such as `env rollback`, `env visibility` and `app repository connect\|disconnect\|url\|path\|sync\|reset` | `SavedApplication`; `--deploy` uses the same output as `app apply --deploy` |
 | `app manifest` | Saved TOML as a JSON string |
 | `app releases` | `{ "items": [ReleaseView], "next_cursor": string or null }` |
 | `app apply` | `SavedApplication` with null `operation_id` and empty `operation_ids` |
