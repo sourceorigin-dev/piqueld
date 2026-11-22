@@ -573,7 +573,6 @@ pub struct DeviceRequest {
 }
 
 string_enum! {
-    #[serde]
     /// Where a device login stands, as a poll reports it in
     /// [`DeviceToken::status`].
     pub enum DeviceLoginStatus {
@@ -595,8 +594,10 @@ compared_as_string!(DeviceLoginStatus);
 pub struct DeviceToken {
     /// `authorization_pending`, `slow_down`, or `complete`.
     //
-    // A `DeviceLoginStatus`, kept a string so a CLI reads statuses a newer
-    // daemon adds; compare it with `DeviceLoginStatus::parse` or `==`.
+    // A `DeviceLoginStatus`, kept a string so a response with a status this
+    // build doesn't know still decodes, and `piquelctl` stops with
+    // "unexpected device login response". Compare it with
+    // `DeviceLoginStatus::parse` or `==`.
     pub status: String,
     /// Issued CLI credential; absent when the request confirmed an existing
     /// login instead.
