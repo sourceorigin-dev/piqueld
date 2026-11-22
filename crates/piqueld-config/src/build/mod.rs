@@ -1,7 +1,9 @@
-//! Where images build: this host's Docker Engine, or a build machine.
+//! Where images build, this host's Docker Engine or a build machine, and
+//! how many build at once.
 use super::schema_from_raw;
 use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild, WhenUnavailable};
 use serde::Deserialize;
+use std::num::NonZeroU8;
 
 /// The `[build]` table. Images build on this host's Docker Engine unless it
 /// names a build machine. Its schema is that of its TOML form,
@@ -9,20 +11,39 @@ use serde::Deserialize;
 ///
 /// ```toml
 /// [build]
+/// parallel = 2
 /// builder = "tcp://build.example.ts.net:1234"
 /// repository = "registry.example.ts.net:5000/piqueld"
 /// unavailable = "fail" # or "local"
 /// ```
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(try_from = "RawBuildConfig")]
 pub struct BuildConfig {
+    /// How many images build at once.
+    pub parallel: NonZeroU8,
     /// The build machine images build on, if any.
     pub remote: Option<RemoteBuild>,
 }
 
-/// A build machine that builds this installation's images instead of
-/// this host. piqueld still checks repositories out here, and sends each build
-/// to the machine's `BuildKit` daemon, which pushes the image to a registry
+impl BuildConfig {
+    /// How many images build at once unless `parallel` says otherwise.
+    const DEFAULT_PARALLEL: NonZeroU8 = NonZeroU8::MIN;
+}
+
+impl Default for BuildConfig {
+    fn default() -> Self {
+        Self {
+            parallel: Self::DEFAULT_PARALLEL,
+            remote: None,
+        }
+    }
+}
+
+/// How many images build at once, and where.
+///
+/// A build machine builds this installation's images instead of this host.
+/// piqueld still checks repositories out here, and sends each build to the
+/// machine's `BuildKit` daemon, which pushes the image to a registry
 /// this host's Docker Engine pulls it from. Set `builder` and `repository`
 /// together, or neither: without them, images build on this host's Docker
 /// Engine.
@@ -31,6 +52,13 @@ pub struct BuildConfig {
 #[derive(Default, Deserialize, utoipa::ToSchema)]
 #[serde(default, deny_unknown_fields)]
 struct RawBuildConfig {
+    /// How many images build at once, on this host or the build machine.
+    /// Further builds wait, environments' before previews', and the wait
+    /// counts against `reconciliation.prepare_timeout_seconds`. Each build
+    /// at once needs its own CPU, memory and disk, so raise it only as far
+    /// as the builder can take.
+    #[schema(value_type = Option<u8>, minimum = 1, maximum = 255, default = 1)]
+    parallel: Option<NonZeroU8>,
     /// The build machine's `BuildKit` daemon, as `tcp://host:port`. The
     /// connection is neither authenticated nor encrypted, so only this host
     /// should be able to reach that port, over a network that encrypts its
@@ -71,48 +99,14 @@ impl TryFrom<RawBuildConfig> for BuildConfig {
             (Some(_), None) => return Err("build.builder requires build.repository"),
             (None, Some(_)) => return Err("build.repository requires build.builder"),
         };
-        Ok(Self { remote })
+        Ok(Self {
+            parallel: raw.parallel.unwrap_or(Self::DEFAULT_PARALLEL),
+            remote,
+        })
     }
 }
 
 schema_from_raw!(BuildConfig => RawBuildConfig);
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(toml: &str) -> Result<BuildConfig, toml::de::Error> {
-        toml::from_str(toml)
-    }
-
-    #[test]
-    fn a_build_machine_needs_its_builder_and_its_repository() {
-        assert_eq!(parse("").unwrap(), BuildConfig::default());
-        let remote = parse(
-            "builder = 'tcp://build.example.ts.net:1234'\n\
-             repository = 'build.example.ts.net:5000/piqueld'",
-        )
-        .unwrap()
-        .remote
-        .unwrap();
-        assert_eq!(
-            remote.builder.to_string(),
-            "tcp://build.example.ts.net:1234"
-        );
-        assert_eq!(
-            remote.repository.to_string(),
-            "build.example.ts.net:5000/piqueld"
-        );
-        for invalid in [
-            "builder = 'tcp://build.example.ts.net:1234'",
-            "repository = 'build.example.ts.net:5000/piqueld'",
-            // The policy without a build machine.
-            "unavailable = 'local'",
-            // An invalid builder, and an invalid repository.
-            "builder = 'tcp://build.example.ts.net'\nrepository = 'registry.example/piqueld'",
-            "builder = 'tcp://build.example:1234'\nrepository = 'piqueld'",
-        ] {
-            assert!(parse(invalid).is_err(), "{invalid}");
-        }
-    }
-}
+mod tests;

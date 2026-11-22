@@ -193,6 +193,11 @@ in
             default = true;
             description = "Initialize an inactive Docker Engine as a single-node Swarm.";
           };
+          build.parallel = lib.mkOption {
+            type = lib.types.ints.between 1 255;
+            default = 1;
+            description = "How many images build at once, on this host or the build machine. Further builds wait, environments' before previews', and the wait counts against reconciliation.prepare_timeout_seconds.";
+          };
           build.builder = lib.mkOption {
             type = lib.types.nullOr (lib.types.strMatching "tcp://.+:[0-9]+");
             default = null;

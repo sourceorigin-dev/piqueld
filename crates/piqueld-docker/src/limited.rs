@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use piqueld_core::{
     DesiredNetwork, DesiredService, DesiredVolume, EnvironmentId, ObservedApplication,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, num::NonZeroU8, sync::Arc};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 /// A [`DockerApi`] wrapper that bounds process-wide concurrent Docker work.
@@ -21,7 +21,7 @@ pub struct LimitedDocker<D> {
     inner: Arc<D>,
     /// Concurrent image resolutions (pulls).
     images: Semaphore,
-    /// One image build at a time, environments before previews.
+    /// Image builds, environments before previews.
     builds: BuildQueue,
     /// Concurrent observations, log reads, and container telemetry's
     /// discovery and usage polls.
@@ -29,14 +29,22 @@ pub struct LimitedDocker<D> {
 }
 impl<D> LimitedDocker<D> {
     /// Wraps `inner` with 2 image and 8 observation permits, and a queue
-    /// running one build at a time.
-    pub fn new(inner: Arc<D>) -> Self {
+    /// running `builds` builds at a time.
+    pub fn new(inner: Arc<D>, builds: NonZeroU8) -> Self {
         Self {
             inner,
             images: Semaphore::new(2),
-            builds: BuildQueue::default(),
+            builds: BuildQueue::new(builds),
             observations: Semaphore::new(8),
         }
+    }
+
+    /// Wraps the same implementation in new limits that run `builds` builds
+    /// at a time. Permits still held on `self` don't count against the new
+    /// limits, so call it before sharing the client.
+    #[must_use]
+    pub fn with_builds(&self, builds: NonZeroU8) -> Self {
+        Self::new(Arc::clone(&self.inner), builds)
     }
 
     /// Waits for an observation permit, held until the returned guard drops.
@@ -301,9 +309,10 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let socket = directory.path().join("docker.sock");
         let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
-        let docker = LimitedDocker::new(Arc::new(
-            super::super::BollardDocker::connect(&socket).unwrap(),
-        ));
+        let docker = LimitedDocker::new(
+            Arc::new(super::super::BollardDocker::connect(&socket).unwrap()),
+            NonZeroU8::MIN,
+        );
         let permits = docker.observations.acquire_many(8).await.unwrap();
         let started = tokio::time::Instant::now();
         let error = docker

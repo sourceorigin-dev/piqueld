@@ -49,13 +49,24 @@
     },
     "BuildConfig": {
       "additionalProperties": false,
-      "description": "A build machine that builds this installation's images instead of\nthis host. piqueld still checks repositories out here, and sends each build\nto the machine's `BuildKit` daemon, which pushes the image to a registry\nthis host's Docker Engine pulls it from. Set `builder` and `repository`\ntogether, or neither: without them, images build on this host's Docker\nEngine.",
+      "description": "How many images build at once, and where.\n\nA build machine builds this installation's images instead of this host.\npiqueld still checks repositories out here, and sends each build to the\nmachine's `BuildKit` daemon, which pushes the image to a registry\nthis host's Docker Engine pulls it from. Set `builder` and `repository`\ntogether, or neither: without them, images build on this host's Docker\nEngine.",
       "properties": {
         "builder": {
           "default": null,
           "description": "The build machine's `BuildKit` daemon, as `tcp://host:port`. The\nconnection is neither authenticated nor encrypted, so only this host\nshould be able to reach that port, over a network that encrypts its\ntraffic, such as a tailnet whose access rules allow nothing else.",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "parallel": {
+          "default": 1,
+          "description": "How many images build at once, on this host or the build machine.\nFurther builds wait, environments' before previews', and the wait\ncounts against `reconciliation.prepare_timeout_seconds`. Each build\nat once needs its own CPU, memory and disk, so raise it only as far\nas the builder can take.",
+          "format": "int32",
+          "maximum": 255,
+          "minimum": 1,
+          "type": [
+            "integer",
             "null"
           ]
         },
@@ -713,7 +724,7 @@
     },
     "build": {
       "$ref": "#/definitions/BuildConfig",
-      "description": "A build machine that builds images instead of this host."
+      "description": "Where images build, and how many at once."
     },
     "build_history": {
       "$ref": "#/definitions/BuildHistoryConfig",

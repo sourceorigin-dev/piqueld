@@ -93,9 +93,10 @@ impl DaemonConfig {
         ])
     }
 
-    /// Builds the `Builds` group: the build machine, or this host.
+    /// Builds the `Builds` group: the build machine, or this host, and how
+    /// many images build at once.
     fn build_view(&self) -> Group {
-        match &self.build.remote {
+        let mut view = match &self.build.remote {
             Some(remote) => group([
                 ("Builder", remote.builder.to_string()),
                 ("Image repository", remote.repository.to_string()),
@@ -113,7 +114,9 @@ impl DaemonConfig {
                 ),
             ]),
             None => group([("Builder", "This host's Docker Engine".into())]),
-        }
+        };
+        view.insert("Parallel builds".into(), self.build.parallel.to_string());
+        view
     }
 
     /// Builds the `Reconciliation` group.

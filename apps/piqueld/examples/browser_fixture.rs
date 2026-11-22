@@ -179,7 +179,7 @@ impl Backend {
             .insert(MISSING_IMAGE.to_owned());
         let controller =
             Controller::new(Arc::new(docker), Arc::clone(&store), Arc::clone(&sources))
-                .with_config(&config.reconciliation);
+                .with_config(&config);
         let wake = Arc::new(tokio::sync::Notify::new());
         let state = ApiState::new(store, controller.runtime(Arc::clone(&wake)), sources)?
             .with_image_status(controller.image_status())

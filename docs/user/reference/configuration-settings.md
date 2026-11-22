@@ -32,7 +32,7 @@ The website's origin and API token lifetimes.
 
 Type: table. Optional.
 
-A build machine that builds images instead of this host.
+Where images build, and how many at once.
 
 ### `build_history`
 
@@ -130,13 +130,21 @@ The website's canonical origin, such as `https://piqueld.example.com`. Passkeys 
 
 ## `[build]` table
 
-A build machine that builds this installation's images instead of this host. piqueld still checks repositories out here, and sends each build to the machine's `BuildKit` daemon, which pushes the image to a registry this host's Docker Engine pulls it from. Set `builder` and `repository` together, or neither: without them, images build on this host's Docker Engine.
+How many images build at once, and where.
+
+A build machine builds this installation's images instead of this host. piqueld still checks repositories out here, and sends each build to the machine's `BuildKit` daemon, which pushes the image to a registry this host's Docker Engine pulls it from. Set `builder` and `repository` together, or neither: without them, images build on this host's Docker Engine.
 
 ### `build.builder`
 
 Type: string. Optional.
 
 The build machine's `BuildKit` daemon, as `tcp://host:port`. The connection is neither authenticated nor encrypted, so only this host should be able to reach that port, over a network that encrypts its traffic, such as a tailnet whose access rules allow nothing else.
+
+### `build.parallel`
+
+Type: integer from 1 to 255. Default: `1`.
+
+How many images build at once, on this host or the build machine. Further builds wait, environments' before previews', and the wait counts against `reconciliation.prepare_timeout_seconds`. Each build at once needs its own CPU, memory and disk, so raise it only as far as the builder can take.
 
 ### `build.repository`
 

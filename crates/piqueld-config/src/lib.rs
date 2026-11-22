@@ -82,7 +82,7 @@ pub struct DaemonConfig {
     /// The Docker Engine piqueld manages.
     #[serde(default)]
     pub docker: DockerConfig,
-    /// A build machine that builds images instead of this host.
+    /// Where images build, and how many at once.
     #[serde(default)]
     pub build: BuildConfig,
     /// The managed HTTP gateway that serves applications' routes.
