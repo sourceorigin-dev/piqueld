@@ -291,8 +291,11 @@ To install piqueld without the script, do what it does yourself, on the host:
    ```
 
    systemd creates the data directory, `/var/lib/piqueld`, and the runtime
-   directory holding the API socket, `/run/piqueld`. The daemon also needs
-   `git`, `ssh` and `docker` on its `PATH`, which includes `/usr/bin`.
+   directory holding the API socket, `/run/piqueld`. The daemon runs `git`,
+   `ssh` and `docker`, and `tailscale` and `tailscaled` for its own tailnet
+   node, by name from its `PATH`. The unit keeps systemd's default `PATH`,
+   which includes `/usr/bin`. Keep every directory on it writable only by
+   root: anyone who can add a file to one can run commands as the daemon.
 
 5. Start the daemon, and have it start at boot:
 
@@ -417,6 +420,11 @@ Next, [create your account](first-account.md).
   `systemctl status piqueld`, and read its logs with `journalctl -u piqueld`.
   Without `sudo`, you need to be in the `piqueld` group, and logged in again
   since you were added.
+- **Builds or `tailscaled` keep running after the daemon stopped.** systemd
+  stops every process the daemon started along with it. A daemon started
+  outside systemd and killed with `SIGKILL` can't: stop its leftover `git`,
+  `docker buildx` and `tailscaled` processes yourself before you start it
+  again.
 - **Docker isn't ready.** piqueld keeps serving while Docker is down, and
   starts deploying once it's back. **System status**, on the dashboard's
   **Overview**, shows whether it reaches Docker and whether the engine is a
