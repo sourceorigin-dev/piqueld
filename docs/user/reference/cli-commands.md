@@ -919,7 +919,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `-y, --yes`: Skip the confirmation prompt.
 
@@ -968,7 +968,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -998,7 +998,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1022,7 +1022,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1044,7 +1044,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1086,7 +1086,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1110,7 +1110,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1138,7 +1138,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1160,7 +1160,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1182,7 +1182,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1205,7 +1205,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1227,7 +1227,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1263,7 +1263,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1287,7 +1287,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1311,7 +1311,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1335,7 +1335,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1359,7 +1359,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1382,7 +1382,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1408,7 +1408,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1444,7 +1444,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1467,7 +1467,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1521,7 +1521,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1545,7 +1545,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1592,7 +1592,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1621,7 +1621,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1646,7 +1646,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1668,7 +1668,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1690,7 +1690,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1712,7 +1712,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1734,7 +1734,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1756,7 +1756,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1778,7 +1778,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1800,7 +1800,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1822,7 +1822,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1845,7 +1845,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1897,7 +1897,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1923,7 +1923,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1959,7 +1959,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -1982,7 +1982,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2036,7 +2036,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2060,7 +2060,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2088,7 +2088,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2112,7 +2112,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2133,7 +2133,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2172,7 +2172,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2203,7 +2203,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2224,7 +2224,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2273,7 +2273,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2296,7 +2296,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2348,7 +2348,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2371,7 +2371,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2410,7 +2410,7 @@ Options:
 
 - `--env <ENV>`: Change the variable's value in this environment instead of its default. The environment must exist.
 - `--previews`: Change the variable's value in every preview, `[spec.previews.variables]`, instead of its default.
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2436,7 +2436,7 @@ Options:
 
 - `--env <ENV>`: Change the variable's value in this environment instead of its default. The environment must exist.
 - `--previews`: Change the variable's value in every preview, `[spec.previews.variables]`, instead of its default.
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2478,7 +2478,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2507,7 +2507,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2528,7 +2528,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2549,7 +2549,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2575,7 +2575,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2598,7 +2598,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2764,7 +2764,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2794,7 +2794,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -2946,7 +2946,7 @@ piquelctl app apply [OPTIONS] --file <PATH>
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--file <PATH>`: Manifest file: UTF-8 TOML of at most 2 MiB. Required.
 - `--expected-generation <GENERATION>`: Fail unless the application is at this generation; `0` requires that it doesn't exist.
@@ -3097,7 +3097,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -3343,7 +3343,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
@@ -3370,7 +3370,7 @@ Arguments:
 
 Options:
 
-- `--deploy`: Also deploy the saved configuration to each environment that isn't promoted from another.
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
 - `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.

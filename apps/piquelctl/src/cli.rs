@@ -717,8 +717,8 @@ pub(crate) struct ApplyArgs {
 // Shared `--deploy` / `--no-wait` flags for commands that save configuration.
 #[derive(Debug, Args)]
 pub(crate) struct DeploymentArgs {
-    /// Also deploy the saved configuration to each environment that isn't
-    /// promoted from another.
+    /// Also deploy the saved configuration to each declared environment that
+    /// isn't promoted from another.
     #[arg(long)]
     pub(crate) deploy: bool,
     /// Return once the change is saved, or its deployments accepted, without
