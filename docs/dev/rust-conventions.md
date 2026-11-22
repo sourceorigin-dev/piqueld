@@ -83,8 +83,8 @@ helpers with no owner. Limits and timeouts are named constants.
 ## Modules, tests and docs
 
 A module with children is `foo/mod.rs` (`self_named_module_files`). Unit tests
-live in `#[cfg(test)] mod tests;` with a sibling `tests.rs`; a block of 30 lines
-or fewer may stay inline. Tests prove one behaviour each, named for it, and
+live in `#[cfg(test)] mod tests;` with a sibling `tests.rs` once the block is
+more than 30% of its file; a smaller one may stay inline. Tests prove one behaviour each, named for it, and
 assert the outcome; [automated validation](validation.md) lists the suites
 and what each covers.
 
