@@ -46,12 +46,14 @@ The gateway also counts each route's requests, so you can
    enabled = true
    ```
 
-2. Open TCP ports 80 and 443 in the server's firewall. The NixOS module
-   doesn't open them:
-
-   ```nix
-   networking.firewall.allowedTCPPorts = [ 80 443 ];
-   ```
+2. Make sure nothing in front of the server, such as a cloud provider's
+   firewall, blocks TCP ports 80 and 443. The gateway publishes them through
+   Docker, whose own iptables rules accept them whatever the host's firewall,
+   such as NixOS's `networking.firewall`, allows. To restrict who reaches
+   them, add rules to Docker's `DOCKER-USER` chain, on NixOS from
+   `networking.firewall.extraCommands`, or filter in front of the server.
+   With a [Cloudflare Tunnel](cloudflare.md#serve-public-routes-through-a-cloudflare-tunnel),
+   the gateway publishes neither port.
 
 3. Rebuild the system, or restart the daemon with
    `sudo systemctl restart piqueld`. piqueld reads its `[ingress]` settings
