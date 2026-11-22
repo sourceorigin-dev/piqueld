@@ -197,7 +197,7 @@ impl Store {
     /// must leave an administrator able to sign in. Returns that login.
     pub(super) async fn admin_with_passkey(&self, user: &'static str) -> Caller<'static> {
         let Actor::Account(caller) = self.seed_caller(user, &Grants::admin()).await else {
-            unreachable!("seeded an account caller")
+            panic!("seeded an account caller")
         };
         let key = format!("{user}-key");
         let passkey = crate::NewPasskey {

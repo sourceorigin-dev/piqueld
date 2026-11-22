@@ -88,7 +88,7 @@ fn git_resolution_retains_commit_and_local_image_and_rejects_mismatched_inputs()
         ..
     } = &mut changed.spec.services[0].source
     else {
-        unreachable!()
+        panic!("the service builds from Git")
     };
     repository.commit = Some("c".repeat(40));
     let changed = changed.validate().unwrap().normalize(app.id().clone());
@@ -114,7 +114,7 @@ fn self_sources_build_from_the_manifest_revision() {
     };
     let service_repository = |app: &piqueld_core::NormalizedApplication| {
         let Source::Git { repository, .. } = &app.spec().services[0].source else {
-            unreachable!()
+            panic!("the service builds from Git")
         };
         repository.clone()
     };

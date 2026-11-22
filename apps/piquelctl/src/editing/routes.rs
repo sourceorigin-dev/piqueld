@@ -137,6 +137,10 @@ impl RouteCommand {
             )
         };
         match self {
+            #[expect(
+                clippy::unreachable,
+                reason = "`run` returns the listing before this match, which only edits"
+            )]
             Self::List { .. } => unreachable!("listing returned above"),
             Self::Add(args) => routes.push(
                 Route::service(

@@ -427,7 +427,7 @@ fn generated_secret_commands_edit_the_loaded_declarations_and_save_the_whole_lis
             "--yes",
         ],
     ] {
-        let server = start_server(false, 0, |_| unreachable!("rejected before connecting"));
+        let server = start_server(false, 0, |_| panic!("rejected before connecting"));
         assert_eq!(run(&server, arguments).status.code(), Some(2));
         server.finish();
     }

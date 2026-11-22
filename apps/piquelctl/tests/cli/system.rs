@@ -38,7 +38,7 @@ fn resources_and_settings_show_the_daemon_measurements_and_host_settings() {
             "Docker": {"Socket": "/run/docker.sock"},
             "Server": {"HTTP listen mode": "unix", "HTTP port": "7845"}
         }})),
-        path => unreachable!("unexpected request to {path}"),
+        path => panic!("unexpected request to {path}"),
     });
     let output = run_human(&server, &["resources"]);
     assert!(output.status.success(), "{output:?}");
@@ -228,7 +228,7 @@ fn analytics_reads_one_environment_over_a_relative_window() {
     );
     assert_eq!(server.finish().len(), 2);
 
-    let server = start_server(false, 0, |_| unreachable!("an invalid window is not sent"));
+    let server = start_server(false, 0, |_| panic!("an invalid window is not sent"));
     let output = run(&server, &["analytics", "--since", "1d", "--until", "7d"]);
     assert_eq!(output.status.code(), Some(2));
     assert!(server.finish().is_empty());

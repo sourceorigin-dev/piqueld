@@ -73,7 +73,7 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
     let (_dir, store) = Store::temporary().await;
     let alice = store.seed_caller("alice", &Grants::admin()).await;
     let Actor::Account(alice) = alice else {
-        unreachable!("seeded an account caller")
+        panic!("seeded an account caller")
     };
     let invitation = NewInvitation {
         id: "invitation".into(),

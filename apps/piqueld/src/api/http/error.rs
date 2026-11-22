@@ -162,6 +162,10 @@ impl ApiError {
                 error.to_string(),
             )
             .details(json!({"environment": environment, "secret": secret})),
+            #[expect(
+                clippy::unreachable,
+                reason = "`From<StoreError>` sends this function only the variants matched above"
+            )]
             other => unreachable!("non-secret storage error: {other}"),
         }
     }
@@ -215,6 +219,10 @@ impl ApiError {
                 error.to_string(),
             )
             .details(json!(reached)),
+            #[expect(
+                clippy::unreachable,
+                reason = "`From<StoreError>` sends this function only the variants matched above"
+            )]
             other => unreachable!("non-environment storage error: {other}"),
         }
     }
@@ -311,6 +319,10 @@ impl ApiError {
                 ref environment,
             } => Self::new(StatusCode::CONFLICT, ApiErrorCode::HostnameConflict, error.to_string())
                 .details(json!({"hostname": hostname, "environment": environment})),
+            #[expect(
+                clippy::unreachable,
+                reason = "`From<StoreError>` sends this function only the variants matched above"
+            )]
             other => unreachable!("non-hostname storage error: {other}"),
         }
     }

@@ -569,7 +569,7 @@ impl Scenario {
     /// attempt waits for the backoff.
     async fn dns01_failure(&self, ingress: &Ingress, now: i64) {
         let DnsProvider::Challtestsrv(provider) = ingress.certificates.dns.provider(0) else {
-            unreachable!()
+            panic!("the test configures the Challtestsrv DNS provider")
         };
         let http = ingress.certificates.dns.http();
         provider
