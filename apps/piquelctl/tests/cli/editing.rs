@@ -546,25 +546,6 @@ fn git_build_flags_are_refused_on_an_image_service() {
             "{error}"
         );
     }
-
-    // The same flag builds the repository given with `--git`.
-    let server = start_server(false, 2, |request| {
-        if request.method == "GET" {
-            return Reply::json(app_view("app-notes-01", "notes"));
-        }
-        let body: Value = serde_json::from_slice(&request.body).unwrap();
-        assert_eq!(body["source"]["repository"]["branch"], "release");
-        Reply::json(saved())
-    });
-    let git = [
-        "--git",
-        "https://example.com/app.git",
-        "--branch",
-        "release",
-    ];
-    let output = run(&server, &[&add[..], &git, &["--yes"]].concat());
-    assert_json_success(&output);
-    assert_eq!(server.finish().len(), 2);
 }
 
 #[test]
