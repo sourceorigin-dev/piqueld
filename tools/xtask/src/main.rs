@@ -1,15 +1,17 @@
 //! Development tasks for the piqueld workspace, run with `cargo xtask`: this
 //! worktree's development instance (`just dev`, see docs/dev/development.md), the
 //! isolated Docker integration tests, the Playwright browser suite, the
-//! crates' dependency boundaries, test coverage, the release binaries,
-//! and releases.
+//! crates' dependency boundaries, CI's quick checks for what changed, test
+//! coverage, the release binaries, and releases.
 
 mod boundary;
+mod check_changed;
 mod coverage;
 mod dev;
 mod dist;
 mod docker;
 mod docker_test;
+mod metadata;
 mod playwright;
 mod process;
 mod publish;
@@ -19,6 +21,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use serde::de::DeserializeOwned;
 
 #[derive(Parser)]
 #[command(about = "Development tasks for the piqueld workspace")]
@@ -60,6 +63,14 @@ enum Task {
     /// server, Docker, or browser framework, and the daemon's crates don't
     /// depend on the ones they build alongside.
     Boundary,
+    /// Run CI's quick checks for only what changed since the merge base with
+    /// `base`, counting uncommitted and untracked files, and name the slow
+    /// ones the change needs.
+    CheckChanged {
+        /// The branch the change merges into.
+        #[arg(default_value = "origin/main")]
+        base: String,
+    },
     /// Measure which code the native workspace tests run, as an HTML report
     /// and a summary per crate.
     #[command(disable_help_flag = true)]
@@ -102,6 +113,7 @@ async fn main() -> Result<ExitCode> {
         } => docker_test::run(&workspace, suite, partition.as_deref(), store).await,
         Task::Playwright { args } => playwright::run(&workspace, &args).await,
         Task::Boundary => boundary::check(&workspace),
+        Task::CheckChanged { base } => check_changed::run(&workspace, &base),
         Task::Coverage { args } => coverage::run(&workspace, &args),
         Task::Dist => dist::run(&workspace),
         Task::Publish { args } => publish::run(&workspace, &args),
@@ -124,12 +136,18 @@ impl Workspace {
         &self.root
     }
 
-    /// Cargo, run from the workspace root without the package variables
-    /// `cargo run` gave this xtask. Build scripts such as ring's track
-    /// `CARGO_MANIFEST_DIR`, so passing xtask's on would make every nested
-    /// build, and the next ordinary one, recompile them and their dependents.
+    /// Cargo, run from the workspace root; see [`Self::command`].
     fn cargo(&self) -> std::process::Command {
-        let mut command = std::process::Command::new("cargo");
+        self.command("cargo")
+    }
+
+    /// `program`, run from the workspace root without the package variables
+    /// `cargo run` gave this xtask. Build scripts such as ring's track
+    /// `CARGO_MANIFEST_DIR`, so passing xtask's on to cargo, directly or
+    /// through `just`, would make every nested build, and the next ordinary
+    /// one, recompile them and their dependents.
+    fn command(&self, program: &str) -> std::process::Command {
+        let mut command = std::process::Command::new(program);
         command.current_dir(&self.root);
         for (key, _) in std::env::vars_os() {
             if key.to_str().is_some_and(|key| {
@@ -147,6 +165,18 @@ impl Workspace {
             }
         }
         command
+    }
+
+    /// Runs a cargo subcommand that prints JSON and parses its output.
+    fn cargo_json<T: DeserializeOwned>(&self, args: &[&str]) -> Result<T> {
+        let name = format!("cargo {}", args.join(" "));
+        let output = self
+            .cargo()
+            .args(args)
+            .output()
+            .with_context(|| format!("run {name}"))?;
+        serde_json::from_str(&process::checked_stdout(&name, output)?)
+            .with_context(|| format!("parse {name}"))
     }
 
     /// The daemon's package ID, such as `path+file:///…/apps/piqueld#0.1.0`.

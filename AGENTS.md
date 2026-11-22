@@ -75,10 +75,16 @@ sign-off before breaking it.
 
 ## Validation
 
-`just validate` (or `just` alone) formats the code and runs every local check
-CI runs, which `docs/dev/validation.md` lists. Run it before handing work back;
-while iterating, run only what you changed, such as `just test -p <crate>` and
-`just lint`. If a step cannot run, report the exact command and why.
+Run `just check-changed` before handing work back. It runs CI's quick checks
+for only what changed since the merge base with `origin/main`, uncommitted and
+untracked files included, deciding from the filters CI uses, and names the
+slow checks it leaves to CI. While iterating, run only the changed crate's
+checks, such as `just test --package <crate>` and
+`just lint --package <crate>`. `just validate` (or `just` alone) formats the
+code and runs every local check CI runs, which `docs/dev/validation.md` lists,
+on the whole workspace: run it when a change is workspace-wide or when asked.
+CI owns the full suite. If a step cannot run, report the exact command and
+why.
 
 T3 Code prepares a new worktree with `just setup-worktree`, which leaves a
 marker in `target/worktree-setup/`. If `running` exists, wait in the

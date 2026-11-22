@@ -36,13 +36,39 @@ fmt-check:
 # across crates, so a crate can compile there only because another crate
 # enables a feature it needs: linting each crate alone catches that.
 # Clippy with warnings denied: the workspace, wasm32, and each crate alone.
-lint:
+# `--package <crate>` arguments (or `-p <crate>`) narrow it to those crates:
+# the workspace pass lints them together, each is linted alone, and the
+# wasm32 pass runs only if they include the dashboard or the client.
+lint *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-    cargo clippy --locked --target wasm32-unknown-unknown --package piqueld-ui --package piqueld-client -- -D warnings
-    for manifest in apps/*/Cargo.toml crates/*/Cargo.toml tools/*/Cargo.toml; do
-        cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+    packages=() wasm=false
+    set -- {{ARGS}}
+    while (( $# > 0 )); do
+        case $1 in
+            --package=*) packages+=("${1#--package=}") ;;
+            --package | -p) packages+=("${2:?$1 needs a crate}"); shift ;;
+            *) echo "lint takes only --package <crate> arguments, not $1" >&2; exit 2 ;;
+        esac
+        shift
+    done
+    if (( ${#packages[@]} == 0 )); then
+        together=(--workspace) alone=() wasm=true
+        for manifest in apps/*/Cargo.toml crates/*/Cargo.toml tools/*/Cargo.toml; do
+            alone+=("--manifest-path=$manifest")
+        done
+    else
+        together=("${packages[@]/#/--package=}") alone=("${together[@]}")
+        for package in "${packages[@]}"; do
+            case $package in piqueld-ui | piqueld-client) wasm=true ;; esac
+        done
+    fi
+    cargo clippy --locked "${together[@]}" --all-targets --all-features -- -D warnings
+    if $wasm; then
+        cargo clippy --locked --target wasm32-unknown-unknown --package piqueld-ui --package piqueld-client -- -D warnings
+    fi
+    for crate in "${alone[@]}"; do
+        cargo clippy --locked "$crate" --all-targets -- -D warnings
     done
 
 check:
@@ -60,12 +86,14 @@ test-wasm:
     @WASM_BINDGEN_TEST_ONLY_WEB=1 CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --locked --package piqueld-client --lib --target wasm32-unknown-unknown
 
 # All features, like lint: the daemon tests run against the real embedded
-# bundle, and lint, test, and doc-test share one build.
-test:
-    @cargo nextest run --locked --workspace --all-features
+# bundle, and lint, test, and doc-test share one build. ARGS go on to nextest,
+# such as `--package piquelctl`, in place of `--workspace`.
+test *ARGS='--workspace':
+    @cargo nextest run --locked --all-features {{ARGS}}
 
-doc-test:
-    @cargo test --locked --doc --workspace --all-features
+# ARGS, such as `--package piqueld-core`, replace `--workspace`.
+doc-test *ARGS='--workspace':
+    @cargo test --locked --doc --all-features {{ARGS}}
 
 # Runs `test` under coverage instrumentation, writes an HTML report to
 # target/llvm-cov/html, and prints each crate's totals. ARGS go on to nextest.
@@ -84,9 +112,10 @@ unused:
 
 # Private items are documented, since most of the code is internal and its docs
 # link to it.
-# Rustdoc warnings, such as broken intra-doc links, fail the build.
-doc:
-    @RUSTDOCFLAGS='-D warnings -A rustdoc::private_intra_doc_links' cargo doc --locked --workspace --no-deps --all-features --document-private-items
+# Rustdoc warnings, such as broken intra-doc links, fail the build. ARGS, such
+# as `--package piqueld-core`, replace `--workspace`.
+doc *ARGS='--workspace':
+    @RUSTDOCFLAGS='-D warnings -A rustdoc::private_intra_doc_links' cargo doc --locked --no-deps --all-features --document-private-items {{ARGS}}
 
 # Check generated artifacts against freshly generated endpoint, manifest,
 # configuration, and command-line metadata.
@@ -96,6 +125,15 @@ openapi-check:
 
 boundary:
     @cargo xtask boundary
+
+# Reads CI's path filters in .github/filters.yml, runs the Rust checks on the
+# changed crates and those depending on them, and names the slow checks it
+# leaves to CI; see docs/dev/validation.md.
+# CI's quick checks for what changed since the merge base with origin/main, or
+# the branch given, counting uncommitted and untracked files.
+[positional-arguments]
+check-changed *ARGS:
+    @cargo xtask check-changed "$@"
 
 # Publishes the crates to crates.io, with the prebuilt dashboard the published
 # daemon embeds; see docs/dev/releasing.md. ARGS go on to `cargo publish`,
