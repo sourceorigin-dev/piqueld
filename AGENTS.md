@@ -75,12 +75,12 @@ sign-off before breaking it.
 
 ## Validation
 
-Run `just check-changed` before handing work back. It runs CI's quick checks
+Run `just check-changed` (or `just` alone) before handing work back. It runs CI's quick checks
 for only what changed since the merge base with `origin/main`, uncommitted and
 untracked files included, deciding from the filters CI uses, and names the
 slow checks it leaves to CI. While iterating, run only the changed crate's
 checks, such as `just test --package <crate>` and
-`just lint --package <crate>`. `just validate` (or `just` alone) runs every
+`just lint --package <crate>`. `just validate` runs every
 local check CI runs, which `docs/dev/validation.md` lists, on the whole
 workspace without modifying files (`just fmt` formats the code): run it when
 a change is workspace-wide or when asked. CI owns the full suite. If a step cannot run, report the exact command and

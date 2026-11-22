@@ -1,6 +1,8 @@
-# Validation checks sources and generated artifacts without modifying them.
-default: validate
+# CI's quick checks for only what changed, which is what matters most while
+# working; `validate` runs everything.
+default: check-changed
 
+# Validation checks sources and generated artifacts without modifying them.
 validate: fmt-check lint-ci lint check test doc doc-test audit unused openapi-check boundary check-wasm test-playwright docs
 
 build:
