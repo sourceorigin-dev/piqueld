@@ -106,14 +106,15 @@ between separate store, API, and client operation models.
 `just boundary` (`cargo xtask boundary`) checks each crate's dependencies on
 every target, wasm32 included. `piqueld-core` depends on no server, Docker,
 database, or browser framework (`axum`, `bollard`, `sqlx`, `leptos`), including
-through build and development dependencies. `piqueld-client` depends on none of
-the daemon's crates (`piqueld`, `piqueld-config`, `piqueld-store`,
-`piqueld-docker`) and no Docker, database, or browser framework, including
-through build and development dependencies, and on no server framework outside
-its native tests, which serve their requests with `axum`. It also checks that
-the daemon's crates don't depend on those they build alongside:
-`piqueld-config` depends on no Docker, database, or browser framework, nor on
-the daemon or its store; `piqueld-store` on no server, Docker, or browser
-framework, nor on the daemon or its configuration, even in its tests; and
-`piqueld-docker` on no server, database, or browser framework, nor on the
-daemon, its configuration, or its store.
+through build and development dependencies. `piqueld-client` depends on no
+workspace crate but `piqueld-core` and `piqueld-probe`, so neither on the
+daemon's crates nor on the CLI, dashboard or tooling, and on no Docker,
+database, or browser framework, again including through build and development
+dependencies. Only its native tests may use a server framework: they serve
+their requests with `axum`. It also checks that the daemon's crates don't
+depend on those they build alongside: `piqueld-config` depends on no Docker,
+database, or browser framework, nor on the daemon or its store;
+`piqueld-store` on no server, Docker, or browser framework, nor on the daemon
+or its configuration, even in its tests; and `piqueld-docker` on no server,
+database, or browser framework, nor on the daemon, its configuration, or its
+store.

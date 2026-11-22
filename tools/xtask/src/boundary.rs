@@ -1,7 +1,9 @@
 //! `just boundary`: checks the workspace's dependency boundaries.
 //! `piqueld-core` holds the shared contracts, so it must not depend on the
 //! server, Docker, database, or browser frameworks. `piqueld-client` builds
-//! for wasm32 too, so it must not depend on the daemon or any of those either.
+//! for wasm32 too, so it must not depend on any other workspace crate but
+//! `piqueld-core` and `piqueld-probe`, nor on those frameworks, except for the
+//! server framework its native tests use.
 //! The daemon's own crates build in parallel only while they don't depend on
 //! each other.
 
@@ -51,12 +53,18 @@ const BOUNDARIES: [Boundary; 6] = [
             "leptos",
             "sqlx",
             "sqlx-core",
+            // Every workspace crate but `piqueld-core` and `piqueld-probe`.
+            "piquelctl",
             "piqueld",
+            "piqueld-build",
             "piqueld-config",
             "piqueld-docker",
+            "piqueld-generated",
             "piqueld-store",
+            "piqueld-ui",
+            "xtask",
         ],
-        reason: "is the published client the CLI and dashboard share, without the daemon, Docker, database, or browser frameworks",
+        reason: "is the published client the CLI and dashboard share, without the other workspace crates or Docker, database, or browser frameworks",
     },
     Boundary {
         package: "piqueld-client",
