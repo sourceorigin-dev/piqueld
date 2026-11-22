@@ -39,9 +39,11 @@ impl<D> LimitedDocker<D> {
         }
     }
 
-    /// The wrapped implementation, which bypasses the limits.
-    pub fn inner(&self) -> &Arc<D> {
-        &self.inner
+    /// Wraps the same implementation in new limits that run `builds` builds
+    /// at a time. Permits held under these limits don't count against them.
+    #[must_use]
+    pub fn with_builds(&self, builds: NonZeroU8) -> Self {
+        Self::new(Arc::clone(&self.inner), builds)
     }
 
     /// Waits for an observation permit, held until the returned guard drops.

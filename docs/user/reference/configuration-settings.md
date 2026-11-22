@@ -130,7 +130,7 @@ The website's canonical origin, such as `https://piqueld.example.com`. Passkeys 
 
 ## `[build]` table
 
-A build machine that builds this installation's images instead of this host. piqueld still checks repositories out here, and sends each build to the machine's `BuildKit` daemon, which pushes the image to a registry this host's Docker Engine pulls it from. Set `builder` and `repository` together, or neither: without them, images build on this host's Docker Engine.
+How many images build at once, and where: on this host's Docker Engine, or on a build machine instead. piqueld still checks repositories out here, and sends each build to the machine's `BuildKit` daemon, which pushes the image to a registry this host's Docker Engine pulls it from. Set `builder` and `repository` together, or neither: without them, images build on this host's Docker Engine.
 
 ### `build.builder`
 
@@ -142,7 +142,7 @@ The build machine's `BuildKit` daemon, as `tcp://host:port`. The connection is n
 
 Type: integer from 1 to 255. Default: `1`.
 
-How many images build at once, on this host or the build machine. Further builds wait, environments' before previews', and the wait counts against `reconciliation.prepare_timeout_seconds`. Each build takes the CPU, memory and disk of a whole image build.
+How many images build at once, on this host or the build machine. Further builds wait, environments' before previews', and the wait counts against `reconciliation.prepare_timeout_seconds`. Each build at once needs its own CPU, memory and disk, so raise it only as far as the builder can take.
 
 ### `build.repository`
 

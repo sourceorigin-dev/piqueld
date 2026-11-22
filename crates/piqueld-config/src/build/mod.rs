@@ -25,17 +25,22 @@ pub struct BuildConfig {
     pub remote: Option<RemoteBuild>,
 }
 
+impl BuildConfig {
+    /// How many images build at once unless `parallel` says otherwise.
+    const DEFAULT_PARALLEL: NonZeroU8 = NonZeroU8::MIN;
+}
+
 impl Default for BuildConfig {
     fn default() -> Self {
         Self {
-            parallel: NonZeroU8::MIN,
+            parallel: Self::DEFAULT_PARALLEL,
             remote: None,
         }
     }
 }
 
-/// A build machine that builds this installation's images instead of
-/// this host. piqueld still checks repositories out here, and sends each build
+/// How many images build at once, and where: on this host's Docker Engine,
+/// or on a build machine instead. piqueld still checks repositories out here, and sends each build
 /// to the machine's `BuildKit` daemon, which pushes the image to a registry
 /// this host's Docker Engine pulls it from. Set `builder` and `repository`
 /// together, or neither: without them, images build on this host's Docker
@@ -47,9 +52,9 @@ impl Default for BuildConfig {
 struct RawBuildConfig {
     /// How many images build at once, on this host or the build machine.
     /// Further builds wait, environments' before previews', and the wait
-    /// counts against
-    /// `reconciliation.prepare_timeout_seconds`. Each build takes the CPU,
-    /// memory and disk of a whole image build.
+    /// counts against `reconciliation.prepare_timeout_seconds`. Each build
+    /// at once needs its own CPU, memory and disk, so raise it only as far
+    /// as the builder can take.
     #[schema(value_type = Option<u8>, minimum = 1, maximum = 255, default = 1)]
     parallel: Option<NonZeroU8>,
     /// The build machine's `BuildKit` daemon, as `tcp://host:port`. The
@@ -93,7 +98,7 @@ impl TryFrom<RawBuildConfig> for BuildConfig {
             (None, Some(_)) => return Err("build.repository requires build.builder"),
         };
         Ok(Self {
-            parallel: raw.parallel.unwrap_or(NonZeroU8::MIN),
+            parallel: raw.parallel.unwrap_or(Self::DEFAULT_PARALLEL),
             remote,
         })
     }
@@ -102,50 +107,4 @@ impl TryFrom<RawBuildConfig> for BuildConfig {
 schema_from_raw!(BuildConfig => RawBuildConfig);
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(toml: &str) -> Result<BuildConfig, toml::de::Error> {
-        toml::from_str(toml)
-    }
-
-    #[test]
-    fn builds_run_one_at_a_time_unless_parallel_says_otherwise() {
-        assert_eq!(parse("").unwrap().parallel.get(), 1);
-        assert_eq!(parse("parallel = 4").unwrap().parallel.get(), 4);
-        for invalid in ["parallel = 0", "parallel = 256"] {
-            assert!(parse(invalid).is_err(), "{invalid}");
-        }
-    }
-
-    #[test]
-    fn a_build_machine_needs_its_builder_and_its_repository() {
-        assert_eq!(parse("").unwrap(), BuildConfig::default());
-        let remote = parse(
-            "builder = 'tcp://build.example.ts.net:1234'\n\
-             repository = 'build.example.ts.net:5000/piqueld'",
-        )
-        .unwrap()
-        .remote
-        .unwrap();
-        assert_eq!(
-            remote.builder.to_string(),
-            "tcp://build.example.ts.net:1234"
-        );
-        assert_eq!(
-            remote.repository.to_string(),
-            "build.example.ts.net:5000/piqueld"
-        );
-        for invalid in [
-            "builder = 'tcp://build.example.ts.net:1234'",
-            "repository = 'build.example.ts.net:5000/piqueld'",
-            // The policy without a build machine.
-            "unavailable = 'local'",
-            // An invalid builder, and an invalid repository.
-            "builder = 'tcp://build.example.ts.net'\nrepository = 'registry.example/piqueld'",
-            "builder = 'tcp://build.example:1234'\nrepository = 'piqueld'",
-        ] {
-            assert!(parse(invalid).is_err(), "{invalid}");
-        }
-    }
-}
+mod tests;

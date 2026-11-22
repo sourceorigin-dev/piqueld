@@ -49,7 +49,7 @@
     },
     "BuildConfig": {
       "additionalProperties": false,
-      "description": "A build machine that builds this installation's images instead of\nthis host. piqueld still checks repositories out here, and sends each build\nto the machine's `BuildKit` daemon, which pushes the image to a registry\nthis host's Docker Engine pulls it from. Set `builder` and `repository`\ntogether, or neither: without them, images build on this host's Docker\nEngine.",
+      "description": "How many images build at once, and where: on this host's Docker Engine,\nor on a build machine instead. piqueld still checks repositories out here, and sends each build\nto the machine's `BuildKit` daemon, which pushes the image to a registry\nthis host's Docker Engine pulls it from. Set `builder` and `repository`\ntogether, or neither: without them, images build on this host's Docker\nEngine.",
       "properties": {
         "builder": {
           "default": null,
@@ -61,7 +61,7 @@
         },
         "parallel": {
           "default": 1,
-          "description": "How many images build at once, on this host or the build machine.\nFurther builds wait, environments' before previews', and the wait\ncounts against\n`reconciliation.prepare_timeout_seconds`. Each build takes the CPU,\nmemory and disk of a whole image build.",
+          "description": "How many images build at once, on this host or the build machine.\nFurther builds wait, environments' before previews', and the wait\ncounts against `reconciliation.prepare_timeout_seconds`. Each build\nat once needs its own CPU, memory and disk, so raise it only as far\nas the builder can take.",
           "format": "int32",
           "maximum": 255,
           "minimum": 1,

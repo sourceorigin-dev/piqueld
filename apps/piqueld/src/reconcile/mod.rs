@@ -114,29 +114,17 @@ impl<D> Controller<D> {
         Ok(sockets.project(linked, granted))
     }
 
-    /// Applies the daemon's validated reconciliation timing configuration.
+    /// Applies the daemon's validated configuration: reconciliation timing,
+    /// how many images build at once, and image retention. Call it before
+    /// [`Self::runtime`], which shares the build limit.
     #[must_use]
-    pub fn with_config(mut self, config: &piqueld_config::ReconciliationConfig) -> Self {
-        self.prepare_timeout = Duration::from_secs(config.prepare_timeout_seconds);
-        self.retry.convergence_timeout = Duration::from_secs(config.convergence_timeout_seconds);
-        self
-    }
-
-    /// Runs as many image builds at a time as `config` allows. Call it before
-    /// [`Self::runtime`], which shares the limits.
-    #[must_use]
-    pub fn with_build(mut self, config: &piqueld_config::BuildConfig) -> Self {
-        self.docker = Arc::new(piqueld_docker::LimitedDocker::new(
-            Arc::clone(self.docker.inner()),
-            config.parallel,
-        ));
-        self
-    }
-
-    /// Applies the daemon's image retention configuration.
-    #[must_use]
-    pub fn with_images(mut self, config: &piqueld_config::ImagesConfig) -> Self {
-        self.images = images::ImageRetention::new(config);
+    pub fn with_config(mut self, config: &piqueld_config::DaemonConfig) -> Self {
+        let reconciliation = &config.reconciliation;
+        self.prepare_timeout = Duration::from_secs(reconciliation.prepare_timeout_seconds);
+        self.retry.convergence_timeout =
+            Duration::from_secs(reconciliation.convergence_timeout_seconds);
+        self.docker = Arc::new(self.docker.with_builds(config.build.parallel));
+        self.images = images::ImageRetention::new(&config.images);
         self
     }
 
