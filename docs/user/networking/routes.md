@@ -50,8 +50,8 @@ The gateway also counts each route's requests, so you can
    firewall, blocks TCP ports 80 and 443. The gateway publishes them through
    Docker, whose own iptables rules accept them whatever the host's firewall,
    such as NixOS's `networking.firewall`, allows. To restrict who reaches
-   them, add rules to Docker's `DOCKER-USER` chain, on NixOS from
-   `networking.firewall.extraCommands`, or filter in front of the server.
+   them, filter in front of the server, or add rules to Docker's
+   [`DOCKER-USER` chain](https://docs.docker.com/engine/network/firewall-iptables/#add-iptables-policies-before-dockers-rules).
    With a [Cloudflare Tunnel](cloudflare.md#serve-public-routes-through-a-cloudflare-tunnel),
    the gateway publishes neither port.
 
