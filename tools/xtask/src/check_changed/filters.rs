@@ -19,6 +19,7 @@ pub(super) enum Filter {
     Daemon,
     Rust,
     Deny,
+    Scripts,
     Ui,
     Cli,
     Docker,
@@ -26,12 +27,13 @@ pub(super) enum Filter {
 }
 
 impl Filter {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Workspace,
         Self::Crates,
         Self::Daemon,
         Self::Rust,
         Self::Deny,
+        Self::Scripts,
         Self::Ui,
         Self::Cli,
         Self::Docker,
@@ -46,6 +48,7 @@ impl Filter {
             Self::Daemon => "daemon",
             Self::Rust => "rust",
             Self::Deny => "deny",
+            Self::Scripts => "scripts",
             Self::Ui => "ui",
             Self::Cli => "cli",
             Self::Docker => "docker",

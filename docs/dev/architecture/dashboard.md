@@ -35,9 +35,7 @@ lives in crate-root modules (`application`, `deployments`, `editor`,
 `environments`, `overview`, `secrets`, `state`, `terminal`, and others) that
 compile natively, so their unit tests run with `cargo nextest`.
 Styles are plain CSS: a base reset adapted from Tailwind's preflight, theme
-tokens, shell layout, and component rules, in `apps/piqueld-ui/styles/`. To
-format view macros as well as Rust, run `leptosfmt` from `apps/piqueld-ui` (it
-reads the local `leptosfmt.toml`), followed by `cargo fmt --all`.
+tokens, shell layout, and component rules, in `apps/piqueld-ui/styles/`.
 
 The logo's mark is `apps/piqueld-ui/assets/favicon.svg`, with `favicon.png` as
 its 512-pixel raster. The dashboard inlines the SVG next to its name and serves

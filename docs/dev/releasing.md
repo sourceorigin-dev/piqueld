@@ -179,7 +179,18 @@ piquelctl --version
 
 docs.rs builds the new `piqueld-client` documentation within a few minutes.
 
-The GitHub release lists the archive and `SHA256SUMS`. On a disposable Linux
+The GitHub release lists the archive and `SHA256SUMS`. The release workflow
+also attests their build provenance, so anyone can check, on their own
+machine, that `release.yml` built a downloaded archive from the release's tag:
+
+```console
+gh release download v<version> -R sourceorigin-dev/piqueld -p 'piqueld-<version>-x86_64-linux.tar.gz'
+gh attestation verify piqueld-<version>-x86_64-linux.tar.gz --repo sourceorigin-dev/piqueld \
+  --signer-workflow sourceorigin-dev/piqueld/.github/workflows/release.yml \
+  --source-ref refs/tags/v<version>
+```
+
+On a disposable Linux
 host with systemd and Docker Engine, the install script installs the new
 version. On a host that already runs piqueld, it replaces the service's unit
 and restarts the daemon, so keep your changes to the unit in a drop-in:

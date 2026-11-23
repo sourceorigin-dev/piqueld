@@ -26,6 +26,7 @@ by version.
 | Capability | Local recipe | CI job |
 | --- | --- | --- |
 | Rust formatting | `fmt-check` | `checks` |
+| Workflows, with shellcheck over their `run` steps, and shell scripts | `lint-ci` | `checks` |
 | Dependency policy and advisories | `audit` | `checks` |
 | Unused dependencies | `unused` | `checks` |
 | All-target, all-feature compilation and Clippy, plus wasm32 Clippy of the dashboard, client, and core, and Clippy of each crate alone | `lint` | `rust (lint)` |
@@ -50,7 +51,7 @@ per version of its sources, instead of compiling it each time; see
 sources, so the merge queue and pull requests find it.
 
 `just` runs the default validation set (`validate`), including a single check of
-the generated files. Both local
+the generated files, and never modifies a file. Both local
 validation and CI compare the committed artifacts without rewriting them. CI
 skips `check` and `build`: the stronger all-target Clippy and the test builds
 cover them. `fmt` and `generate` are editing commands whose results are

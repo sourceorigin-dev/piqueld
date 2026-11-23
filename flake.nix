@@ -301,6 +301,9 @@
                 cargo-llvm-cov
                 cargo-nextest
                 curl
+                # `just lint-ci`.
+                actionlint
+                shellcheck
                 pkg-config
                 openssl
               ]
