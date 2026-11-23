@@ -6,8 +6,6 @@
     reason = "Integration tests and their helpers fail the test by panicking."
 )]
 
-#[path = "../support/poll.rs"]
-mod poll;
 #[path = "../support/repository.rs"]
 mod repository;
 #[path = "../support/sqlite.rs"]
@@ -36,7 +34,6 @@ use piqueld_core::{
     resource::{ResolvedSource, image_repository},
 };
 use piqueld_store::{Store, StoredEnvironment};
-use poll::eventually;
 use repository::Repository;
 use std::{
     collections::BTreeMap,
@@ -374,6 +371,18 @@ async fn state_with(temp: &TempDir, max_upload_bytes: Option<std::num::NonZeroU6
         config.snapshots.max_upload_bytes = limit;
     }
     contract_state(temp, Arc::new(store), &config).await.1
+}
+
+/// Waits until `ready` finds what it looks for, checking again after each
+/// write to `state`'s database, such as background auditing makes.
+async fn written_until<T>(state: &ApiState, mut ready: impl AsyncFnMut() -> Option<T>) -> T {
+    let mut written = state.written();
+    loop {
+        if let Some(value) = ready().await {
+            return value;
+        }
+        written.changed().await.expect("the store is alive");
+    }
 }
 
 /// The runtime and state of a contract daemon over `store`, opened in
@@ -1096,21 +1105,17 @@ impl GrantFixture {
     /// Reads the audit trail at `uri` as `token` once it holds `count`
     /// records, since they are written in the background.
     async fn audit(&self, token: &str, uri: &str, count: usize) -> serde_json::Value {
-        // Allow for a loaded machine.
-        eventually(
-            Duration::from_secs(10),
-            Duration::from_millis(20),
-            async || {
-                let (status, body) = self
-                    .router
-                    .call(token, "GET", uri, serde_json::Value::Null)
-                    .await;
-                assert_eq!(status, 200, "{body}");
-                (body["data"]["items"].as_array().unwrap().len() >= count).then_some(body)
-            },
-        )
-        .await
-        .unwrap_or_else(|| panic!("audit trail at {uri} never held {count} records"))
+        let audited = written_until(&self.state, async || {
+            let (status, body) = self
+                .router
+                .call(token, "GET", uri, serde_json::Value::Null)
+                .await;
+            assert_eq!(status, 200, "{body}");
+            (body["data"]["items"].as_array().unwrap().len() >= count).then_some(body)
+        });
+        tokio::time::timeout(Duration::from_secs(10), audited)
+            .await
+            .unwrap_or_else(|_| panic!("audit trail at {uri} never held {count} records"))
     }
 
     /// Serves the fixture's router over TCP.
