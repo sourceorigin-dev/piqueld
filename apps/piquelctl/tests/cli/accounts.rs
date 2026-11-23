@@ -168,7 +168,7 @@ fn whoami_names_grant_applications_past_the_first_page() {
 /// the ID rather than as a flag. Revocations cascade unless `--no-cascade`.
 #[test]
 fn account_changes_resolve_usernames_to_typed_requests() {
-    let server = start_server(false, 14, |request| match request.path.as_str() {
+    let reply = |request: Request| match request.path.as_str() {
         "/api/v1/auth/me" => Reply::bare(&json!({
             "user": {"id": "bob-id", "username": "bob", "display_name": "Bob"},
             "grants": [],
@@ -186,7 +186,11 @@ fn account_changes_resolve_usernames_to_typed_requests() {
         "/api/v1/auth/manage" => Reply::bare(&json!({})),
         "/api/v1/applications?limit=100" => Reply::json(page(Vec::new(), None)),
         path => panic!("unexpected path {path}"),
-    });
+    };
+    // `update` syncs the renamed login to disk, which on a busy disk can
+    // outlast the server's `ACCEPT_TIMEOUT`, so it gets a server of its own
+    // and the other changes one started after it.
+    let server = start_server(false, 2, reply);
     let Endpoint::Tcp(url) = &server.endpoint else {
         panic!("TCP server");
     };
@@ -211,6 +215,8 @@ fn account_changes_resolve_usernames_to_typed_requests() {
         saved["endpoints"][url]["accounts"]["bob-id"],
         json!({"username": "robert", "token": "pqd_bob"})
     );
+    let mut requests = server.finish();
+    let server = start_server(false, 12, reply);
     for arguments in [
         &["account", "delete", "bob", "--yes"][..],
         &["account", "passkey", "rename", "-_key", "laptop"],
@@ -234,8 +240,8 @@ fn account_changes_resolve_usernames_to_typed_requests() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    let sent: Vec<Value> = server
-        .finish()
+    requests.extend(server.finish());
+    let sent: Vec<Value> = requests
         .into_iter()
         .filter(|request| request.path == "/api/v1/auth/manage")
         .map(|request| serde_json::from_slice(&request.body).unwrap())
