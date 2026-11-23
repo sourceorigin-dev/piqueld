@@ -71,9 +71,16 @@ impl LogRecord {
             )
     }
 
+    /// Whether log text keeps `character`: anything not [`Self::hidden`],
+    /// and tabs, newlines and the zero-width (non-)joiners U+200C and
+    /// U+200D, which emoji sequences and Persian text need.
+    #[must_use]
+    pub const fn kept(character: char) -> bool {
+        !Self::hidden(character) || matches!(character, '\t' | '\n' | '\u{200C}' | '\u{200D}')
+    }
+
     /// Removes terminal control sequences, including CSI colors and OSC titles/links.
-    /// Other [`Self::hidden`] characters are dropped too, except tabs, newlines,
-    /// and the zero-width (non-)joiners that join emoji and scripts.
+    /// Other characters log text doesn't [keep](Self::kept) are dropped too.
     ///
     /// ```text
     /// "\x1b[31mred\x1b[0m\r\ttext\n"                -> "red\ttext\n"
@@ -104,7 +111,7 @@ impl LogRecord {
                     }
                     _ => {}
                 }
-            } else if !Self::hidden(ch) || matches!(ch, '\t' | '\n' | '\u{200C}' | '\u{200D}') {
+            } else if Self::kept(ch) {
                 output.push(ch);
             }
         }

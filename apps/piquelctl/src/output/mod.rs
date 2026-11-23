@@ -379,19 +379,15 @@ impl<'a> HumanWriter<'a> {
         self.line(value)
     }
 
-    /// Writes captured log text, keeping newlines, tabs and the zero-width
-    /// (non-)joiners U+200C and U+200D, which emoji sequences and Persian
-    /// text need, but escaping every other control or invisible format
-    /// character (see [`LogRecord::hidden`]) so logs cannot drive the terminal or
+    /// Writes captured log text, escaping every character log text doesn't
+    /// keep (see [`LogRecord::kept`]) so logs cannot drive the terminal or
     /// disguise what they print.
     pub(crate) fn log_text(&mut self, text: &str) -> io::Result<()> {
         for character in text.chars() {
-            if LogRecord::hidden(character)
-                && !matches!(character, '\n' | '\t' | '\u{200C}' | '\u{200D}')
-            {
-                write!(self.writer, "{}", character.escape_default())?;
-            } else {
+            if LogRecord::kept(character) {
                 write!(self.writer, "{character}")?;
+            } else {
+                write!(self.writer, "{}", character.escape_default())?;
             }
         }
         Ok(())
