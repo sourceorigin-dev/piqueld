@@ -258,7 +258,7 @@ pub struct ObservedNetwork {
 impl ObservedNetwork {
     /// Whether this is a link network services are still attached to.
     #[must_use]
-    pub fn is_linked_in_use(&self) -> bool {
+    pub(crate) fn is_linked_in_use(&self) -> bool {
         self.in_use && self.labels.contains_key(LINK_LABEL)
     }
 
@@ -266,7 +266,7 @@ impl ObservedNetwork {
     ///
     /// Only checks identity (owner and name), not configuration drift.
     #[must_use]
-    pub fn matches_ownership(
+    pub(crate) fn matches_ownership(
         &self,
         desired: &DesiredNetwork,
         application: &ResolvedApplication,
@@ -303,7 +303,7 @@ pub struct ObservedVolume {
 impl ObservedVolume {
     /// Returns whether this volume has the expected owner and volume label role.
     #[must_use]
-    pub fn is_owned_by(&self, instance: &InstanceId, application: &EnvironmentId) -> bool {
+    pub(crate) fn is_owned_by(&self, instance: &InstanceId, application: &EnvironmentId) -> bool {
         OwnershipState::for_resource(
             &self.labels,
             instance,
@@ -475,7 +475,7 @@ impl ObservedService {
 
     /// Returns whether ownership labels identify the desired service.
     #[must_use]
-    pub fn matches_ownership(
+    pub(crate) fn matches_ownership(
         &self,
         desired: &DesiredService,
         application: &ResolvedApplication,

@@ -123,7 +123,7 @@ impl BuildRegistry {
     ///
     /// # Errors
     /// Returns why the HTTP client could not be created.
-    pub fn new(repository: BuildRepository) -> reqwest::Result<Self> {
+    pub(crate) fn new(repository: BuildRepository) -> reqwest::Result<Self> {
         let client = reqwest::Client::builder()
             .connect_timeout(Self::CONNECT_TIMEOUT)
             .timeout(Self::REQUEST_TIMEOUT)
@@ -151,7 +151,7 @@ impl BuildRegistry {
     ///
     /// # Errors
     /// Returns why the registry couldn't be listed.
-    pub async fn pushed_images(
+    pub(crate) async fn pushed_images(
         &self,
         owner: &InstanceId,
     ) -> Result<BTreeSet<RepositoryDigest>, RegistryError> {
@@ -312,7 +312,7 @@ impl BuildRegistry {
     ///
     /// # Errors
     /// Returns why the registry did not delete it.
-    pub async fn delete(&self, image: &RepositoryDigest) -> Result<(), RegistryError> {
+    pub(crate) async fn delete(&self, image: &RepositoryDigest) -> Result<(), RegistryError> {
         let digest = self
             .repository
             .digest_of(image)

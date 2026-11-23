@@ -1,5 +1,6 @@
 //! Tests for manifest syntax, validation, rendering, and saved templates.
 
+use super::validation::parse_template_json;
 use super::variables::{Reference, Segment, SystemVariable};
 use super::*;
 use crate::{ApiErrorCode, ApplicationId, EnvironmentName};

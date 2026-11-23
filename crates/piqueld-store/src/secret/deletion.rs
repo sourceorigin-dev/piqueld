@@ -21,7 +21,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn check_secret_references(
+    pub(crate) async fn check_secret_references(
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         mounted: &BTreeSet<&str>,
         scope: SecretScope<'_>,

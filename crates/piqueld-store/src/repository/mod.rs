@@ -30,7 +30,7 @@ pub struct DeploymentInput {
     pub origin: DeploymentOrigin,
     /// The manifest the application had last read from its repository when
     /// the deployment was requested.
-    pub repository: Option<ApplicationTemplate>,
+    repository: Option<ApplicationTemplate>,
 }
 
 impl DeploymentInput {
@@ -51,7 +51,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn insert_deployment_on(
+    pub(crate) async fn insert_deployment_on(
         tx: &mut Transaction<'_, Sqlite>,
         operation: &Operation,
         application: &ApplicationTemplate,

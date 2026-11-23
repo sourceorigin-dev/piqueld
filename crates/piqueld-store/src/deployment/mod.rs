@@ -85,12 +85,12 @@ impl Flags {
 /// A deployment's captured inputs.
 pub struct Snapshot {
     /// The manifest as captured, with references unresolved.
-    pub template: ApplicationTemplate,
+    pub(crate) template: ApplicationTemplate,
     /// The rendered manifest and its values; absent until a
     /// repository-backed manifest is fetched.
     pub rendering: Option<Rendering>,
     /// Problems found while fetching the manifest that did not stop the deployment.
-    pub warnings: Vec<DiagnosticView>,
+    warnings: Vec<DiagnosticView>,
 }
 
 impl DeploymentRow {
@@ -155,9 +155,9 @@ pub struct CurrentDeployment {
     pub id: String,
     /// Whether its operation has succeeded, as opposed to still rolling out,
     /// failed, or retried.
-    pub succeeded: bool,
+    pub(crate) succeeded: bool,
     /// The release its target runs, when it recorded or received one.
-    pub release: Option<piqueld_core::ReleaseId>,
+    pub(crate) release: Option<piqueld_core::ReleaseId>,
 }
 
 impl Store {

@@ -194,7 +194,7 @@ impl RedirectUrl {
 
     /// The destination's hostname.
     #[must_use]
-    pub fn hostname(&self) -> &str {
+    pub(super) fn hostname(&self) -> &str {
         Self::parts(self.as_str()).map_or("", |(host, ..)| host)
     }
 }
@@ -310,12 +310,12 @@ impl TryFrom<u16> for RedirectStatus {
 #[serde(deny_unknown_fields)]
 pub struct ValidatedRedirect {
     /// Absolute destination URL.
-    pub to: RedirectUrl,
+    to: RedirectUrl,
     /// HTTP redirect status code.
     #[schema(inline)]
     pub status: RedirectStatus,
     /// Appends the request path and query to `to`.
-    pub preserve_path: bool,
+    preserve_path: bool,
 }
 
 impl ValidatedRedirect {

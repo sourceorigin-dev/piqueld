@@ -339,7 +339,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn request_delete_on(
+    pub(crate) async fn request_delete_on(
         tx: &mut Transaction<'_, Sqlite>,
         id: &EnvironmentId,
     ) -> Result<Operation, StoreError> {
@@ -419,7 +419,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn request_deploy_on(
+    pub(crate) async fn request_deploy_on(
         tx: &mut Transaction<'_, Sqlite>,
         environment: &StoredEnvironment,
     ) -> Result<Operation, StoreError> {
@@ -581,7 +581,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn environment_owner_on(
+    pub(crate) async fn environment_owner_on(
         connection: &mut SqliteConnection,
         id: &EnvironmentId,
     ) -> Result<Option<EnvironmentOwner>, StoreError> {

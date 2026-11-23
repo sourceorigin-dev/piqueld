@@ -328,7 +328,7 @@ impl Default for EnvironmentConfig {
 pub struct PreviewConfig {
     /// The strictest visibility preview routes get. `private` keeps every
     /// route on the tailnet; `public` restricts nothing.
-    pub visibility: Visibility,
+    pub(super) visibility: Visibility,
     /// The previews' value of the variable `<variable>`. It replaces the
     /// `[spec.variables]` default, or declares a variable without one.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -338,7 +338,7 @@ pub struct PreviewConfig {
 impl PreviewConfig {
     /// Whether every setting has its default, so exports can omit the block.
     #[must_use]
-    pub fn is_default(&self) -> bool {
+    fn is_default(&self) -> bool {
         *self == Self::default()
     }
 }

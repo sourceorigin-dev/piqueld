@@ -42,7 +42,7 @@ impl SecurityEvent {
 
     /// Event kind in daemon history.
     #[must_use]
-    pub const fn kind(self) -> EventKind {
+    const fn kind(self) -> EventKind {
         match self {
             Self::AdminGranted => EventKind::AdminGranted,
             Self::PrivilegedToken => EventKind::PrivilegedTokenCreated,
@@ -74,7 +74,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn security_event_on(
+    pub(crate) async fn security_event_on(
         db: &mut SqliteConnection,
         event: SecurityEvent,
         message: &str,
@@ -107,7 +107,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn replace_user_grants_on(
+    pub(super) async fn replace_user_grants_on(
         db: &mut SqliteConnection,
         user_id: &str,
         grants: &Grants,
@@ -129,7 +129,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn check_token_on(
+    pub(super) async fn check_token_on(
         db: &mut SqliteConnection,
         credential: &NewCredential<'_>,
         actor: Attribution<'_>,
@@ -174,7 +174,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn check_denial_burst_on(
+    pub(crate) async fn check_denial_burst_on(
         db: &mut SqliteConnection,
         peer: Option<&str>,
         actor: Attribution<'_>,

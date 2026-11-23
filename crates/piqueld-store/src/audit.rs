@@ -25,10 +25,10 @@ pub struct NewAuditEvent {
     /// Method and route template, then what the request changed beyond it.
     pub action: String,
     /// Whether it succeeded, was denied, or failed.
-    pub outcome: AuditOutcome,
+    pub(crate) outcome: AuditOutcome,
     /// HTTP status of the response, or of the change it records (see
     /// [`AuditRequest`]).
-    pub status: u16,
+    pub(crate) status: u16,
     /// Who made the request and from where.
     pub origin: AuditOrigin,
     /// Application the route names by ID.

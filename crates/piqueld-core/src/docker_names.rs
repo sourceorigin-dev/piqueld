@@ -64,7 +64,7 @@ impl DockerConfigName {
 impl DockerNetworkName {
     /// Whether this is the canonical private or ingress network for an application.
     #[must_use]
-    pub fn is_for_application(&self, id: &EnvironmentId) -> bool {
+    fn is_for_application(&self, id: &EnvironmentId) -> bool {
         self == &Self::for_application(id) || self == &Self::for_ingress(id)
     }
 
@@ -132,7 +132,7 @@ impl DockerServiceName {
 impl DockerVolumeName {
     /// Derives a volume name from stable application and logical volume identity.
     #[must_use]
-    pub fn for_volume(id: &EnvironmentId, volume: &VolumeName) -> Self {
+    pub(crate) fn for_volume(id: &EnvironmentId, volume: &VolumeName) -> Self {
         Self(docker_resource_name(
             id,
             ResourceKind::Volume,

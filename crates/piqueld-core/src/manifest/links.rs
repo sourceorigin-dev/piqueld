@@ -17,7 +17,7 @@ use utoipa::ToSchema;
 
 /// Most exports or imports one application declares, and most applications
 /// one export grants.
-pub const MAX_LINKS: usize = 64;
+const MAX_LINKS: usize = 64;
 
 /// A service of this application that other applications may reach over a
 /// private link, as `<service>.<application>`.
@@ -61,7 +61,7 @@ pub struct ValidatedExport {
     pub applications: BTreeSet<ApplicationName>,
     /// Whether previews of those applications may import it too.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub previews: bool,
+    pub(crate) previews: bool,
 }
 
 /// A validated import.
@@ -69,9 +69,9 @@ pub struct ValidatedExport {
 #[serde(deny_unknown_fields)]
 pub struct ValidatedImport {
     /// Application exporting the service.
-    pub application: ApplicationName,
+    pub(crate) application: ApplicationName,
     /// Exported service of that application.
-    pub service: ServiceName,
+    pub(crate) service: ServiceName,
     /// Environment of that application to reach; unset reaches the one named
     /// like the importing environment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,7 +89,7 @@ impl ValidatedImport {
 /// The name an exported service answers to on its link networks:
 /// `<service>.<application>`.
 #[must_use]
-pub fn alias(service: &ServiceName, application: &ApplicationName) -> String {
+pub(crate) fn alias(service: &ServiceName, application: &ApplicationName) -> String {
     format!("{service}.{application}")
 }
 
@@ -114,7 +114,7 @@ impl Export {
 impl ValidatedExport {
     /// Converts back to the editable input shape.
     #[must_use]
-    pub fn to_input(&self) -> Export {
+    pub(super) fn to_input(&self) -> Export {
         Export {
             service: self.service.to_string(),
             applications: self.applications.iter().map(ToString::to_string).collect(),
@@ -148,7 +148,7 @@ impl Import {
 impl ValidatedImport {
     /// Converts back to the editable input shape.
     #[must_use]
-    pub fn to_input(&self) -> Import {
+    pub(super) fn to_input(&self) -> Import {
         Import {
             application: self.application.to_string(),
             service: self.service.to_string(),

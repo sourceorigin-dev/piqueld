@@ -20,7 +20,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub fn check_undeclared(
+    pub(super) fn check_undeclared(
         application: &ApplicationTemplate,
         name: &EnvironmentName,
     ) -> Result<(), StoreError> {
@@ -33,7 +33,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub fn check_source_undeclared(
+    pub(crate) fn check_source_undeclared(
         application: &ApplicationTemplate,
         name: &EnvironmentName,
     ) -> Result<(), StoreError> {
@@ -70,7 +70,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn converge_environments_on(
+    pub(crate) async fn converge_environments_on(
         tx: &mut Transaction<'_, Sqlite>,
         application: &ApplicationId,
         declarations: &[Declaration],
@@ -194,7 +194,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn declare_edited_on(
+    pub(crate) async fn declare_edited_on(
         tx: &mut Transaction<'_, Sqlite>,
         application: &ApplicationId,
         before: &ApplicationSpec,

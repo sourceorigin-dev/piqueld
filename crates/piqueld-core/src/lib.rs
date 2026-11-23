@@ -9,13 +9,13 @@ pub mod audit;
 pub mod auth;
 pub mod build_machine;
 mod changes;
-pub mod docker_names;
+mod docker_names;
 pub mod edit;
-pub mod environment;
+mod environment;
 pub mod event;
 pub mod exec;
-pub mod identity;
-pub mod images;
+mod identity;
+mod images;
 pub mod json_schema;
 pub mod links;
 pub mod manifest;
@@ -23,47 +23,43 @@ pub mod names;
 pub mod observability;
 pub mod operation;
 pub mod planner;
-pub mod release;
+mod release;
 pub mod resource;
-pub mod retention;
+mod retention;
 pub mod sync;
 pub mod tailnet;
 pub mod timeline;
-pub mod toml_diagnostic;
-pub mod urls;
+mod toml_diagnostic;
+mod urls;
 
 pub use api::ApiErrorCode;
 pub use docker_names::{DockerConfigName, DockerNetworkName, DockerServiceName, DockerVolumeName};
 pub use environment::{EnvironmentKind, EnvironmentSource, Preview, PromotedFrom, TrackedBranch};
 pub use event::{Event, EventActor, EventDetail, EventKind};
 pub use identity::{
-    ApplicationId, ApplicationIdError, EnvironmentId, EnvironmentIdError, ReleaseId,
-    ReleaseIdError, ResourceKind, docker_resource_name, docker_resource_readable_prefix,
+    ApplicationId, ApplicationIdError, EnvironmentId, EnvironmentIdError, ReleaseId, ResourceKind,
+    docker_resource_name, docker_resource_readable_prefix,
 };
 pub use images::{BuiltImage, ImageReference, ImmutableImage, RepositoryDigest};
 pub use manifest::{
-    APPLICATION_API_VERSION, APPLICATION_KIND, ApplicationSpec, HealthCheck, Metadata, Mount,
-    NormalizedApplication, ResourceLimits, Service, Source, ValidatedApplication, ValidationError,
+    NormalizedApplication, Service, Source, ValidatedApplication, ValidationError,
     ValidationErrors, Volume, parse_json, parse_toml,
 };
 pub use names::{
-    ApplicationName, ApplicationNameError, EnvironmentName, EnvironmentNameError, GitBranch,
-    GitBranchError, JobName, JobNameError, PreviewSlot, PreviewSlotError, PreviewSlug,
-    PreviewSlugError, RouteName, RouteNameError, ServiceName, ServiceNameError, VolumeName,
-    VolumeNameError, is_request_id,
+    ApplicationName, EnvironmentName, EnvironmentNameError, GitBranch, GitBranchError, JobName,
+    PreviewSlot, PreviewSlotError, PreviewSlug, RouteName, ServiceName, VolumeName, is_request_id,
 };
 pub use operation::{ApplicationState, Operation, OperationKind, OperationState, Phase};
+pub(crate) use planner::ActionReason;
 pub use planner::{
-    ActionKind, ActionReason, ActionRisk, DiagnosticSeverity, Plan, PlanAction, PlanDiagnostic,
-    PlanRequest, PlanSummary,
+    ActionKind, DiagnosticSeverity, Plan, PlanAction, PlanDiagnostic, PlanRequest, PlanSummary,
 };
 pub use release::{BuildFingerprint, BuildInputs, Release};
 pub use resource::{
     CompileError, Convergence, DesiredFile, DesiredJob, DesiredJobRun, DesiredMount,
-    DesiredNetwork, DesiredService, DesiredVolume, InstanceId, InstanceIdError,
-    ObservedApplication, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume, Ownership,
-    OwnershipState, ResolutionRequirement, ResolutionSet, ResolvedApplication, ResolvedSource,
-    RuntimeMessage, Sha256Digest, Sha256DigestError, TaskDiagnostic, TaskState,
+    DesiredNetwork, DesiredService, DesiredVolume, InstanceId, ObservedApplication,
+    ObservedService, Ownership, OwnershipState, ResolutionRequirement, ResolutionSet,
+    ResolvedApplication, ResolvedSource, RuntimeMessage, Sha256Digest, TaskState,
     compile_application, compile_release, image_repository, preview_resolution, valid_logical_name,
 };
 pub use retention::{

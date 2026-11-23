@@ -45,7 +45,7 @@ pub fn parse_template_toml(input: &str) -> Result<ValidatedTemplate, ValidationE
 /// # Errors
 /// Returns validation errors, or one decode error naming the rejected input
 /// and its location.
-pub fn parse_template_json(input: &str) -> Result<ValidatedTemplate, ValidationErrors> {
+pub(super) fn parse_template_json(input: &str) -> Result<ValidatedTemplate, ValidationErrors> {
     ApplicationManifest::decode_json(input)?.validate_template()
 }
 

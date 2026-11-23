@@ -185,7 +185,7 @@ pub enum JobRuns<'a> {
 impl JobRuns<'_> {
     /// Returns whether a run started by `operation` is selected.
     #[must_use]
-    pub fn selects(self, operation: Option<&str>) -> bool {
+    fn selects(self, operation: Option<&str>) -> bool {
         match self {
             Self::All => true,
             Self::Of(selected) => operation == Some(selected),

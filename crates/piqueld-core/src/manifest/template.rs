@@ -89,7 +89,7 @@ impl ValidatedTemplate {
     /// # Errors
     ///
     /// Returns `variable_unresolved` for every value that references variables.
-    pub fn into_literal(mut self) -> Result<ValidatedApplication, ValidationErrors> {
+    pub(super) fn into_literal(mut self) -> Result<ValidatedApplication, ValidationErrors> {
         let mut errors = Vec::new();
         self.spec.visit_values(&mut |path, slot| {
             if slot

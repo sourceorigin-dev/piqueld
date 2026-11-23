@@ -22,7 +22,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn operation_event(
+    pub(crate) async fn operation_event(
         tx: &mut Transaction<'_, Sqlite>,
         id: &str,
         kind: EventKind,
@@ -350,7 +350,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn environment_event_on(
+    pub(crate) async fn environment_event_on(
         tx: &mut Transaction<'_, Sqlite>,
         id: &str,
         kind: EventKind,

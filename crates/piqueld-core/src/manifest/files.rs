@@ -202,7 +202,7 @@ impl RepositoryFiles {
     }
 
     /// Each captured path and its content, in path order.
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
         self.0
             .iter()
             .map(|(path, content)| (path.as_str(), content.as_str()))
@@ -216,7 +216,7 @@ impl RepositoryFiles {
 
     /// Total bytes of every captured file.
     #[must_use]
-    pub fn bytes(&self) -> usize {
+    fn bytes(&self) -> usize {
         self.0.values().map(String::len).sum()
     }
 }
@@ -305,7 +305,7 @@ impl super::ApplicationSpec {
 /// The lowercase hexadecimal SHA-256 digest of `content`, which names the
 /// Swarm config a file is mounted from.
 #[must_use]
-pub fn content_digest(content: &str) -> String {
+pub(crate) fn content_digest(content: &str) -> String {
     format!("{:x}", Sha256::digest(content))
 }
 

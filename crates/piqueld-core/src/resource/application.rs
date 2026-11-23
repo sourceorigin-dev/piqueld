@@ -158,7 +158,7 @@ impl ResolvedApplication {
     /// referenced service. Read the service so prepared targets saved by older
     /// versions, which cleared job container dependencies, work too.
     #[must_use]
-    pub fn job_dependencies(&self, job: &DesiredJob) -> BTreeSet<&str> {
+    pub(crate) fn job_dependencies(&self, job: &DesiredJob) -> BTreeSet<&str> {
         self.services
             .dependencies_of(job.container.logical_name.as_str())
     }

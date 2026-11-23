@@ -241,7 +241,7 @@ impl ActionKind {
 
     /// The timeline step running this action is journaled as.
     #[must_use]
-    pub fn step(&self) -> crate::timeline::StepKey {
+    fn step(&self) -> crate::timeline::StepKey {
         crate::timeline::StepKey {
             phase: self.phase(),
             resource: Some(self.resource_name().to_owned()),
@@ -306,13 +306,13 @@ impl PlanAction {
 
     /// Creates an action with its planning reason.
     #[must_use]
-    pub fn new(kind: ActionKind, reason: ActionReason) -> Self {
+    fn new(kind: ActionKind, reason: ActionReason) -> Self {
         Self { kind, reason }
     }
 
     /// Creates a non-mutating convergence wait for `service`.
     #[must_use]
-    pub fn wait_for_service(service: &DesiredService) -> Self {
+    fn wait_for_service(service: &DesiredService) -> Self {
         Self::new(
             ActionKind::WaitForService {
                 service: service.name.to_string(),
@@ -324,7 +324,7 @@ impl PlanAction {
 
     /// Creates a non-mutating service removal wait.
     #[must_use]
-    pub fn wait_for_service_removal(service: &str) -> Self {
+    fn wait_for_service_removal(service: &str) -> Self {
         Self::new(
             ActionKind::WaitForServiceRemoval {
                 service: service.into(),
@@ -383,7 +383,7 @@ impl PlanDiagnostic {
 
     /// A diagnostic about `resource`. Only errors block execution.
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         code: ApiErrorCode,
         severity: DiagnosticSeverity,
         resource: impl Into<String>,
@@ -412,7 +412,7 @@ pub struct PlanSummary {
     /// Count of blocking ownership conflicts.
     pub blocking_conflicts: usize,
     /// Action counts grouped by stable action name.
-    pub by_action: BTreeMap<String, usize>,
+    by_action: BTreeMap<String, usize>,
 }
 
 /// Ordered runtime plan and its diagnostics.

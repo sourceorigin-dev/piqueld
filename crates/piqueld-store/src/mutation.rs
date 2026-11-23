@@ -379,7 +379,7 @@ impl Mutation {
     /// deploy and restore, and `previews:delete` to delete, which `Deploy` and
     /// `Delete` include.
     #[must_use]
-    pub fn required(
+    pub(crate) fn required(
         &self,
         connection: Option<&RepositoryManifest>,
     ) -> &'static [piqueld_core::access::AppPermission] {
@@ -419,7 +419,9 @@ impl Mutation {
     /// The installation-wide permission this mutation needs besides
     /// [`Self::required`]: granting telemetry reaches every application's.
     #[must_use]
-    pub const fn required_installation(&self) -> Option<piqueld_core::access::GlobalPermission> {
+    pub(crate) const fn required_installation(
+        &self,
+    ) -> Option<piqueld_core::access::GlobalPermission> {
         match self {
             Self::SetTelemetry { .. } => {
                 Some(piqueld_core::access::GlobalPermission::TelemetryGrant)
@@ -453,7 +455,7 @@ impl Mutation {
     /// how a following environment renders, such as a rename, take effect
     /// with its next deployment, as without sync.
     #[must_use]
-    pub fn deploys_on_push(&self, connection: Option<&RepositoryManifest>) -> bool {
+    fn deploys_on_push(&self, connection: Option<&RepositoryManifest>) -> bool {
         match self {
             Self::Save { application, .. } => application.spec().deploys_on_push(connection),
             Self::Edit { edit, .. } => edit.deploys_on_push(connection),
