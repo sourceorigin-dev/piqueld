@@ -6,7 +6,9 @@ use crate::{
 };
 use piqueld_client::{
     Client, ClientError,
-    auth::{DeviceStart, DeviceToken, OperatorLink, SensitiveAction, SetupLink, User},
+    auth::{
+        DeviceLoginStatus, DeviceStart, DeviceToken, OperatorLink, SensitiveAction, SetupLink, User,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -577,11 +579,11 @@ impl Approval {
             loop {
                 tokio::time::sleep(Duration::from_secs(interval)).await;
                 let result = client.auth_device_poll(&start.device_code).await?;
-                match result.status.as_str() {
-                    "authorization_pending" => {}
-                    "slow_down" => interval += 5,
-                    "complete" => return Ok(result),
-                    _ => {
+                match DeviceLoginStatus::parse(&result.status) {
+                    Some(DeviceLoginStatus::AuthorizationPending) => {}
+                    Some(DeviceLoginStatus::SlowDown) => interval += 5,
+                    Some(DeviceLoginStatus::Complete) => return Ok(result),
+                    None => {
                         return Err(CliError::new(
                             ErrorKind::General,
                             "unexpected device login response",

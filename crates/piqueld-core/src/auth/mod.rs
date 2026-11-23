@@ -1,5 +1,6 @@
 //! Authentication contracts shared by the daemon, browser, and CLI.
 use crate::access::Grants;
+use crate::names::{compared_as_string, string_enum};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use utoipa::ToSchema;
@@ -571,10 +572,32 @@ pub struct DeviceRequest {
     pub confirms: Option<DeviceConfirmation>,
 }
 
+string_enum! {
+    /// Where a device login stands, as a poll reports it in
+    /// [`DeviceToken::status`].
+    pub enum DeviceLoginStatus {
+        /// Not approved yet: poll again after the interval.
+        AuthorizationPending => "authorization_pending",
+        /// Polled sooner than five seconds after the last poll: wait five
+        /// seconds longer between polls.
+        SlowDown => "slow_down",
+        /// Approved: the response carries the issued token, exactly once,
+        /// unless the login confirmed an existing one.
+        Complete => "complete",
+    }
+}
+
+compared_as_string!(DeviceLoginStatus);
+
 /// Poll result; the token is returned exactly once after explicit approval.
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct DeviceToken {
     /// `authorization_pending`, `slow_down`, or `complete`.
+    //
+    // A `DeviceLoginStatus`, kept a string so a response with a status this
+    // build doesn't know still decodes, and `piquelctl` stops with
+    // "unexpected device login response". Compare it with
+    // `DeviceLoginStatus::parse` or `==`.
     pub status: String,
     /// Issued CLI credential; absent when the request confirmed an existing
     /// login instead.
