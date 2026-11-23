@@ -72,12 +72,14 @@ pub fn parse_json(input: &str) -> Result<ValidatedApplication, ValidationErrors>
 /// Redacts map keys and unknown components from a serde decode path.
 ///
 /// Keeps the longest prefix made of known manifest field names with numeric
-/// indices, so user-supplied map keys (e.g. environment names) never leak.
+/// indices, ending at the first map field, so user-supplied map keys (e.g.
+/// environment names) never leak, even when they match a field name.
 ///
 /// ```text
-/// "spec.services[0].replicas"         -> "spec.services[0].replicas"
-/// "spec.services[0].environment.KEY"  -> "spec.services[0].environment"
-/// "bogus.field"                       -> "$"
+/// "spec.services[0].replicas"           -> "spec.services[0].replicas"
+/// "spec.services[0].environment.KEY"    -> "spec.services[0].environment"
+/// "spec.services[0].environment.image"  -> "spec.services[0].environment"
+/// "bogus.field"                         -> "$"
 /// ```
 #[must_use]
 pub fn safe_decode_path(path: &str) -> String {
@@ -155,6 +157,8 @@ pub fn safe_decode_path(path: &str) -> String {
         "stop_service",
         "receives_telemetry",
     ];
+    // Fields whose values are maps with user-supplied keys.
+    const MAPS: &[&str] = &["args", "environment", "environments", "variables"];
     let mut safe = Vec::new();
     for component in path.split('.') {
         let field_end = component.find('[').unwrap_or(component.len());
@@ -163,6 +167,9 @@ pub fn safe_decode_path(path: &str) -> String {
             break;
         }
         safe.push(component);
+        if MAPS.contains(&field) {
+            break;
+        }
     }
     if safe.is_empty() {
         "$".into()

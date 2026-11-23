@@ -254,41 +254,91 @@ image = "nginx:1.27"
 }
 
 /// Every property name in the manifest JSON schema survives decode path
-/// redaction, so a new manifest field can't truncate its decode errors.
+/// redaction, so a new manifest field can't truncate its decode errors, and
+/// the key after every map property is redacted, so a new map can't leak its
+/// keys.
 #[test]
 fn decode_paths_keep_every_manifest_field() {
-    fn property_names(schema: &serde_json::Value, names: &mut Vec<String>) {
+    /// Whether `schema` is a map, following references into `root` and
+    /// through `allOf`, `oneOf` and `anyOf`, so a map behind a named type
+    /// counts too.
+    fn is_map(schema: &serde_json::Value, root: &serde_json::Value) -> bool {
+        if schema
+            .get("additionalProperties")
+            .is_some_and(serde_json::Value::is_object)
+        {
+            return true;
+        }
+        if let Some(reference) = schema.get("$ref").and_then(serde_json::Value::as_str) {
+            return reference
+                .strip_prefix('#')
+                .and_then(|pointer| root.pointer(pointer))
+                .is_some_and(|target| is_map(target, root));
+        }
+        ["allOf", "oneOf", "anyOf"].iter().any(|key| {
+            schema
+                .get(key)
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|schemas| schemas.iter().any(|schema| is_map(schema, root)))
+        })
+    }
+    /// Collects each property's name and whether its value is a map.
+    fn property_names(
+        schema: &serde_json::Value,
+        root: &serde_json::Value,
+        names: &mut Vec<(String, bool)>,
+    ) {
         match schema {
             serde_json::Value::Object(object) => {
                 if let Some(serde_json::Value::Object(properties)) = object.get("properties") {
-                    names.extend(properties.keys().cloned());
+                    names.extend(
+                        properties
+                            .iter()
+                            .map(|(name, property)| (name.clone(), is_map(property, root))),
+                    );
                 }
                 for value in object.values() {
-                    property_names(value, names);
+                    property_names(value, root, names);
                 }
             }
             serde_json::Value::Array(items) => {
                 for item in items {
-                    property_names(item, names);
+                    property_names(item, root, names);
                 }
             }
             _ => {}
         }
     }
+    // A map behind a reference, as a map newtype's schema is, counts.
+    let definitions = serde_json::json!({"defs": {"Map": {"additionalProperties": {}}}});
+    assert!(is_map(
+        &serde_json::json!({"$ref": "#/defs/Map"}),
+        &definitions
+    ));
+    let schema = piqueld_core::manifest::ApplicationManifest::json_schema();
     let mut names = Vec::new();
-    property_names(
-        &piqueld_core::manifest::ApplicationManifest::json_schema(),
-        &mut names,
+    property_names(&schema, &schema, &mut names);
+    assert!(names.iter().any(|(name, _)| name == "stop_service"));
+    assert!(
+        names
+            .iter()
+            .any(|(name, map)| name == "environment" && *map)
     );
-    assert!(names.iter().any(|name| name == "stop_service"));
     let redacted = names
         .iter()
-        .filter(|name| piqueld_core::manifest::safe_decode_path(name) != **name)
+        .filter(|(name, _)| piqueld_core::manifest::safe_decode_path(name) != *name)
         .collect::<std::collections::BTreeSet<_>>();
     assert!(
         redacted.is_empty(),
         "redacted manifest fields: {redacted:?}"
     );
+    let leaking = names
+        .iter()
+        .filter(|(name, map)| {
+            *map && piqueld_core::manifest::safe_decode_path(&format!("{name}.image")) != *name
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(leaking.is_empty(), "maps keeping their keys: {leaking:?}");
 }
 
 #[test]
@@ -310,6 +360,24 @@ stop_service = "yes"
     };
     assert_eq!(error.code, ApiErrorCode::ManifestDecodeFailed);
     assert_eq!(error.path, "spec.jobs[0].stop_service");
+}
+
+/// A map key is redacted from decode errors even when it matches a field name.
+#[test]
+fn decode_errors_redact_map_keys_named_like_fields() {
+    let manifest = format!(
+        r#"{}
+[spec.services.environment]
+image = ["notes"]
+"#,
+        valid_manifest("notes")
+    );
+    let error = parse_toml(&manifest).unwrap_err();
+    let [error] = error.0.as_slice() else {
+        panic!("expected one decode error: {error}");
+    };
+    assert_eq!(error.code, ApiErrorCode::ManifestDecodeFailed);
+    assert_eq!(error.path, "spec.services[0].environment");
 }
 
 #[test]
