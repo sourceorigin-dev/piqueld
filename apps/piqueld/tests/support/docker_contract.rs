@@ -39,6 +39,7 @@ macro_rules! scenarios {
     ($test:ident) => {
         $test!(ensured_resources_are_observed_and_ensuring_again_changes_nothing);
         $test!(service_updates_are_observed);
+        $test!(hardened_services_are_observed);
         $test!(detaching_a_network_changes_only_the_service_networks);
         $test!(removing_services_and_networks_is_idempotent);
         $test!(secrets_are_only_changed_by_their_owner);
@@ -177,6 +178,7 @@ impl Environment {
             rollout: piqueld_core::manifest::ValidatedRollout::default(),
             receives_telemetry: false,
             telemetry: None,
+            security: piqueld_core::manifest::ServiceSecurity::default(),
         }
     }
 
@@ -288,6 +290,27 @@ impl<D: DockerApi> Contract<D> {
         assert_eq!(
             Self::service(&observed, &updated).drift(&service),
             ["replicas", "environment"]
+        );
+    }
+
+    /// A service with every security setting on converges, healthy, and is
+    /// observed with them; without them, it is `security` drift.
+    pub async fn hardened_services_are_observed(&self) {
+        let plain = self.ensure_web(&self.environment).await;
+        let hardened = DesiredService {
+            security: piqueld_core::manifest::ServiceSecurity {
+                user: Some("65534:65534".parse().unwrap()),
+                read_only_root: true,
+                drop_capabilities: true,
+                no_new_privileges: true,
+            },
+            ..plain.clone()
+        };
+        self.docker.ensure_service(&hardened).await.unwrap();
+        let observed = self.converged(&hardened).await;
+        assert_eq!(
+            Self::service(&observed, &hardened).drift(&plain),
+            ["security"]
         );
     }
 

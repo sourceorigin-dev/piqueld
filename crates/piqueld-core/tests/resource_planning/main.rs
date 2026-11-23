@@ -96,6 +96,7 @@ fn observed(desired: &piqueld_core::resource::ResolvedApplication) -> ObservedAp
                 networks: service.network_attachments(),
                 labels: service.labels.clone(),
                 rollout: Some(service.rollout_policy()),
+                security: service.security,
                 telemetry: service.telemetry.clone(),
                 runtime_configuration_matches: true,
                 tasks: vec![ObservedTask {

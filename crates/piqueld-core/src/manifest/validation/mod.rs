@@ -156,6 +156,11 @@ pub fn safe_decode_path(path: &str) -> String {
         "volume_access",
         "stop_service",
         "receives_telemetry",
+        "security",
+        "user",
+        "read_only_root",
+        "drop_capabilities",
+        "no_new_privileges",
     ];
     // Fields whose values are maps with user-supplied keys.
     const MAPS: &[&str] = &["args", "environment", "environments", "variables"];
@@ -593,7 +598,8 @@ impl ApplicationSpec {
 
     /// At most one service of an application receives the daemon's
     /// telemetry, with at most one replica, since each environment has one
-    /// telemetry socket and one collector listens on it.
+    /// telemetry socket and one collector listens on it. It runs as the
+    /// daemon's user, so it sets none of its own.
     fn validate_telemetry_receiver(&self, errors: &mut Vec<ValidationError>) {
         let receivers = self
             .services
@@ -617,6 +623,13 @@ impl ApplicationSpec {
                     ApiErrorCode::TelemetryReceiverReplicas,
                     format!("spec.services[{index}].replicas"),
                     "a service receiving telemetry runs at most one replica, since one collector listens on its socket",
+                ));
+            }
+            if service.security.user.is_some() {
+                errors.push(ValidationError::new(
+                    ApiErrorCode::TelemetryReceiverUser,
+                    format!("spec.services[{index}].security.user"),
+                    "a service receiving telemetry runs as the daemon's user, so it can't set its own",
                 ));
             }
         }

@@ -192,6 +192,7 @@ mod tests {
             labels: BTreeMap::new(),
             rollout: None,
             telemetry: None,
+            security: piqueld_core::manifest::ServiceSecurity::default(),
             runtime_configuration_matches: true,
             tasks,
             convergence: Convergence::Converged,

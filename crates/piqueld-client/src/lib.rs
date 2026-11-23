@@ -92,14 +92,15 @@ pub use piqueld_core::api::{
     ApiErrorCode, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_REQUEST_BODY_BYTES, MAX_SECRET_VALUE_BYTES,
 };
 pub use piqueld_core::manifest::{
-    ApplicationManifest, ApplicationSpec, ApplicationTemplate, Build, DeclaredSource,
-    EnvironmentChange, EnvironmentConfig, Export, FileMode, FileSource, GitRepository, HealthCheck,
-    Import, Job, JobRun, JobVolumeAccess, ManifestRepository, ManifestRevision, Metadata, Mount,
-    Redirect, RedirectStatus, Reference, RepositoryManifest, ResourceLimits, Rollback, Rollout,
-    RolloutOrder, RolloutOrderSource, Route, RouteTarget, SecretDeclaration, SecretEncoding,
-    SecretGenerator, SecretMount, SecretSource, Segment, Service, ServiceFile, Source,
-    SourceRepository, SystemVariable, Template, Typed, ValidatedBuild, ValidatedRollout,
-    ValidatedSource, Variable, VariableValue, Visibility, Volume,
+    ApplicationManifest, ApplicationSpec, ApplicationTemplate, Build, ContainerUser,
+    DeclaredSource, EnvironmentChange, EnvironmentConfig, Export, FileMode, FileSource,
+    GitRepository, HealthCheck, Import, Job, JobRun, JobVolumeAccess, ManifestRepository,
+    ManifestRevision, Metadata, Mount, Redirect, RedirectStatus, Reference, RepositoryManifest,
+    ResourceLimits, Rollback, Rollout, RolloutOrder, RolloutOrderSource, Route, RouteTarget,
+    SecretDeclaration, SecretEncoding, SecretGenerator, SecretMount, SecretSource, Segment,
+    Service, ServiceFile, ServiceSecurity, Source, SourceRepository, SystemVariable, Template,
+    Typed, ValidatedBuild, ValidatedRollout, ValidatedSource, Variable, VariableValue, Visibility,
+    Volume,
 };
 pub use piqueld_core::planner::{ActionReason, ActionRisk};
 pub use piqueld_core::{

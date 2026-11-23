@@ -9,7 +9,7 @@ use crate::editor::{Choice, FileForm, HealthKind, Section, ServiceForm, SourceKi
 use leptos::prelude::*;
 use piqueld_client::{
     ApplicationManifest, Client, FileSource, GitRepository, Mount, RepositoryManifest, Rollout,
-    Service, Source, Typed, Volume,
+    Service, ServiceSecurity, Source, Typed, Volume,
     access::AppPermission,
     edit::{ApplicationEdit, ServiceEdit, ServiceGeneral, ServiceProcess},
     sync::RepositorySync,
@@ -1241,6 +1241,7 @@ pub(super) fn NewService() -> impl IntoView {
             resources: None,
             depends_on: Vec::new(),
             rollout: Rollout::default(),
+            security: ServiceSecurity::default(),
             receives_telemetry: false,
         };
         context.save(ApplicationEdit::AddService(Box::new(service)), move |_| {

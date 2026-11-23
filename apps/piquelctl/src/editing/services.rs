@@ -13,7 +13,7 @@ use crate::{
 };
 use clap::{Args, Subcommand};
 use piqueld_client::{
-    Client, HealthCheck, Rollout, RolloutOrder, Service, Source, Template, Typed,
+    Client, HealthCheck, Rollout, RolloutOrder, Service, ServiceSecurity, Source, Template, Typed,
     edit::{ApplicationEdit, ServiceEdit},
 };
 use std::collections::BTreeMap;
@@ -345,6 +345,7 @@ impl AddServiceArgs {
             resources: None,
             depends_on: Vec::new(),
             rollout: Rollout::default(),
+            security: ServiceSecurity::default(),
             receives_telemetry: false,
         })
     }

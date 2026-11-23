@@ -1,4 +1,5 @@
 use super::policy::ServiceRuntimePolicy;
+use super::spec::ALL_CAPABILITIES;
 use super::{
     BTreeMap, BollardDocker, BollardResult, Convergence, DockerError, HealthCheck, HealthConfig,
     INGRESS_PROXIES_ENV, InspectContainerOptionsBuilder, MountTypeEnum, NANO_CPUS_PER_MILLICORE,
@@ -6,7 +7,7 @@ use super::{
     ResourceLimits, ServiceSpec, TaskDiagnostic, TaskSpecContainerSpec, TaskState,
 };
 use bollard::models::{HealthStatusEnum, ServiceSpecUpdateConfigOrderEnum};
-use piqueld_core::manifest::{HealthTiming, RolloutOrder, RolloutPolicy};
+use piqueld_core::manifest::{HealthTiming, RolloutOrder, RolloutPolicy, ServiceSecurity};
 use piqueld_core::resource::{TELEMETRY_TARGET, TelemetryMount};
 
 impl BollardDocker {
@@ -186,6 +187,7 @@ impl BollardDocker {
             labels,
             rollout: Self::observed_rollout(spec),
             telemetry: Self::observed_telemetry(container),
+            security: Self::observed_security(container),
             runtime_configuration_matches,
             tasks,
             convergence,
@@ -249,11 +251,12 @@ impl BollardDocker {
             .collect()
     }
 
-    /// Returns the bind mount at the telemetry target and the container's
-    /// user, if either is set. Either alone never matches a desired receiver,
-    /// so it is drift.
+    /// Returns the bind mount at the telemetry target, if any, with the
+    /// container's user, which is empty without one. Any such mount is
+    /// reported, so one on a service that receives no telemetry, with a user
+    /// or not, is `telemetry` drift.
     pub(super) fn observed_telemetry(container: &TaskSpecContainerSpec) -> Option<TelemetryMount> {
-        let source = container
+        container
             .mounts
             .iter()
             .flatten()
@@ -261,12 +264,32 @@ impl BollardDocker {
                 mount.typ == Some(MountTypeEnum::BIND)
                     && mount.target.as_deref() == Some(TELEMETRY_TARGET)
             })
-            .map(|mount| mount.source.clone().unwrap_or_default());
-        let user = container.user.clone().filter(|user| !user.is_empty());
-        (source.is_some() || user.is_some()).then(|| TelemetryMount {
-            source: source.unwrap_or_default(),
-            user: user.unwrap_or_default(),
-        })
+            .map(|mount| TelemetryMount {
+                source: mount.source.clone().unwrap_or_default(),
+                user: container.user.clone().unwrap_or_default(),
+            })
+    }
+
+    /// Returns the security settings the container runs with. While a bind
+    /// mount is at the telemetry target, the container's user is left out:
+    /// [`Self::observed_telemetry`] reports it, so the telemetry comparison
+    /// catches any difference. The runtime policy rejects values the
+    /// settings can't express, such as a named user or one dropped
+    /// capability.
+    pub(super) fn observed_security(container: &TaskSpecContainerSpec) -> ServiceSecurity {
+        ServiceSecurity {
+            user: Self::observed_telemetry(container)
+                .is_none()
+                .then(|| container.user.as_deref()?.parse().ok())
+                .flatten(),
+            read_only_root: container.read_only.unwrap_or(false),
+            drop_capabilities: container.capability_drop.as_deref()
+                == Some(&[ALL_CAPABILITIES.to_owned()]),
+            no_new_privileges: container
+                .privileges
+                .as_ref()
+                .is_some_and(|privileges| privileges.no_new_privileges == Some(true)),
+        }
     }
 
     /// Converts Docker's update order and monitor back into a rollout policy,

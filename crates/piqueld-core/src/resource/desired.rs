@@ -15,7 +15,7 @@ use crate::manifest::domain::{
     ValidatedJob as Job, ValidatedMount as Mount, ValidatedService as Service,
 };
 use crate::manifest::{
-    FileMode, FileSource, JobRun, JobVolumeAccess, RepositoryFiles, RolloutPolicy,
+    FileMode, FileSource, JobRun, JobVolumeAccess, RepositoryFiles, RolloutPolicy, ServiceSecurity,
     ValidatedHealthCheck, ValidatedResourceLimits, ValidatedRollout,
 };
 use crate::{
@@ -153,6 +153,10 @@ pub struct DesiredService {
     /// default, so targets prepared before the setting existed still decode.
     #[serde(default, skip_serializing_if = "ValidatedRollout::is_default")]
     pub rollout: ValidatedRollout,
+    /// Opt-in hardening, which jobs share. Omitted when off, so targets
+    /// prepared before the setting existed still decode.
+    #[serde(default, skip_serializing_if = "ServiceSecurity::is_default")]
+    pub security: ServiceSecurity,
     /// Whether the service receives the daemon's telemetry once its
     /// environment is granted it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -243,6 +247,7 @@ impl DesiredService {
             labels: ownership.labels(),
             depends_on: service.depends_on.clone(),
             rollout: service.rollout,
+            security: service.security,
             receives_telemetry: service.receives_telemetry,
             telemetry: None,
         }

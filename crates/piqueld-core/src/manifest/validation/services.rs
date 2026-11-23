@@ -2,8 +2,8 @@
 
 use super::super::variables::{Template, Typed};
 use super::super::{
-    FileSource, HealthCheck, Job, ResourceLimits, SecretMount, Service, ServiceFile, Source,
-    ValidatedRollout,
+    FileSource, HealthCheck, Job, ResourceLimits, SecretMount, Service, ServiceFile,
+    ServiceSecurity, Source, ValidatedRollout,
 };
 use super::{
     MAX_CPU_MILLIS, REPLICAS, ValidationError, VariableMap, lacks_executable, safe_key_echo,
@@ -22,7 +22,8 @@ const HEALTHCHECK_RETRIES: std::ops::RangeInclusive<u32> = 1..=100;
 
 impl Service {
     /// Validates the service at `base`: name, replicas, source, secrets, files,
-    /// environment, mounts, process arguments, health check, and resource limits.
+    /// environment, mounts, process arguments, health check, resource limits,
+    /// and that nothing mounts at a read-only root's `/tmp`.
     ///
     /// `volume_names` holds declared volumes for mount references, and
     /// `manifest_backed` allows `"self"` Git sources and repository files. Secret
@@ -103,6 +104,20 @@ impl Service {
             resources.validate(base, errors);
         }
         self.rollout.validate(base, errors);
+        if self.security.read_only_root
+            && self
+                .mounts
+                .iter()
+                .map(|mount| &mount.target)
+                .chain(self.files.iter().map(|file| &file.target))
+                .any(|target| target == ServiceSecurity::TMPFS_TARGET)
+        {
+            errors.push(ValidationError::new(
+                ApiErrorCode::ReadOnlyRootTmpMount,
+                format!("{base}.security.read_only_root"),
+                "a read-only root keeps /tmp writable in memory, so nothing may mount at /tmp",
+            ));
+        }
     }
 
     /// Checks file count, that each target is safe and collides with no other

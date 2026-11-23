@@ -338,6 +338,9 @@ pub struct ValidatedService {
     /// Rollout settings. Omitted when default so existing specification hashes stay stable.
     #[serde(skip_serializing_if = "ValidatedRollout::is_default")]
     pub rollout: ValidatedRollout,
+    /// Opt-in hardening. Omitted when off so existing specification hashes stay stable.
+    #[serde(skip_serializing_if = "super::ServiceSecurity::is_default")]
+    pub security: super::ServiceSecurity,
     /// Whether the service receives the daemon's telemetry once its
     /// environment is granted it. Omitted when false so existing
     /// specification hashes stay stable.
@@ -898,6 +901,7 @@ impl ValidatedService {
                 })
                 .collect::<Result<_, ValidationErrors>>()?,
             rollout: ValidatedRollout::from_input(value.rollout, &format!("{base}.rollout"))?,
+            security: value.security,
             receives_telemetry: value.receives_telemetry,
         })
     }
@@ -955,6 +959,7 @@ impl ValidatedService {
                 .map(ValidatedResourceLimits::to_input),
             depends_on: self.depends_on.iter().map(ToString::to_string).collect(),
             rollout: self.rollout.into(),
+            security: self.security,
             receives_telemetry: self.receives_telemetry,
         }
     }

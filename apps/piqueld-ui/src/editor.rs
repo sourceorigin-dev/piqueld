@@ -589,6 +589,7 @@ mod tests {
             resources: None,
             depends_on: Vec::new(),
             rollout: Rollout::default(),
+            security: piqueld_client::ServiceSecurity::default(),
             receives_telemetry: false,
         }
     }

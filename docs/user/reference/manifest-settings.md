@@ -567,6 +567,12 @@ Type: array of tables. Optional.
 
 Secrets mounted as files, at most 64.
 
+### `spec.services[].security`
+
+Type: table. Optional.
+
+Opt-in hardening of the containers: their user, a read-only root filesystem, no capabilities and no new privileges.
+
 ### `spec.services[].source`
 
 Type: table. Required.
@@ -723,6 +729,34 @@ Name of the secret. It may reference variables, so each environment can mount it
 Type: string. Required.
 
 Absolute path of the file under `/run/secrets/`, unique in the service.
+
+## `[spec.services.security]` table
+
+Opt-in hardening of the service's containers and its jobs'. Every setting is off by default, and changing one redeploys the service.
+
+### `spec.services[].security.drop_capabilities`
+
+Type: boolean. Default: `false`.
+
+Whether the containers run without any Linux capability, so even their root user can't bypass file permissions or change file owners.
+
+### `spec.services[].security.no_new_privileges`
+
+Type: boolean. Default: `false`.
+
+Whether the containers' processes can't gain privileges, such as through setuid programs like `sudo`.
+
+### `spec.services[].security.read_only_root`
+
+Type: boolean. Default: `false`.
+
+Whether the containers' root filesystem is read-only. Volumes and files mount as usual, and `/tmp` is a writable in-memory directory, so nothing can mount at `/tmp` itself.
+
+### `spec.services[].security.user`
+
+Type: string. Optional.
+
+Numeric user, and optionally group, the containers run as instead of the image's: `uid` or `uid:gid`, such as `1000:1000`, each at most 2147483647. A service that receives telemetry can't set it, since it runs as the daemon's user.
 
 ## `[spec.services.source]` table
 

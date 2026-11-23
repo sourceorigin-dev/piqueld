@@ -873,6 +873,7 @@ mod tests {
             resources: None,
             depends_on: depends_on.iter().map(|&name| name.into()).collect(),
             rollout: crate::manifest::Rollout::default(),
+            security: crate::manifest::ServiceSecurity::default(),
             receives_telemetry: false,
         };
         let mut manifest = ApplicationManifest {

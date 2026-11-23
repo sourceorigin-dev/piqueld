@@ -12,7 +12,9 @@ use super::{
     DesiredFile, DesiredMount, DesiredNetwork, DesiredService, InstanceId, LINK_LABEL,
     OwnershipState, ResolvedApplication, SERVICE_LABEL, SecretFile, TelemetryMount,
 };
-use crate::manifest::{RolloutPolicy, ValidatedHealthCheck, ValidatedResourceLimits};
+use crate::manifest::{
+    RolloutPolicy, ServiceSecurity, ValidatedHealthCheck, ValidatedResourceLimits,
+};
 use crate::{EnvironmentId, ResourceKind};
 
 /// Untrusted mount observation from Docker, including foreign volume names.
@@ -288,6 +290,10 @@ pub struct ObservedService {
     /// either is set; the user is empty without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryMount>,
+    /// Observed security settings; the user is the telemetry receiver's
+    /// while its socket is mounted, so it appears there instead.
+    #[serde(default, skip_serializing_if = "ServiceSecurity::is_default")]
+    pub security: ServiceSecurity,
     /// Whether adapter-owned settings remain canonical.
     pub runtime_configuration_matches: bool,
     /// Task observations used to derive convergence.
@@ -360,6 +366,7 @@ impl ObservedService {
             ("resources", self.resources == desired.resources),
             ("rollout", self.rollout == Some(desired.rollout_policy())),
             ("telemetry", self.telemetry == desired.telemetry),
+            ("security", self.security == desired.security),
             ("runtime_policy", self.runtime_configuration_matches),
             ("labels", owned_label_subset(&self.labels, &desired.labels)),
         ]
