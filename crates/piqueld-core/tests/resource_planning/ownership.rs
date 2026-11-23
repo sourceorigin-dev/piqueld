@@ -75,6 +75,7 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
         resources: None,
         depends_on: Vec::new(),
         rollout: Rollout::default(),
+        security: piqueld_core::manifest::ServiceSecurity::default(),
         receives_telemetry: false,
         telemetry: None,
         networks: vec![

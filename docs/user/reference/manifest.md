@@ -51,7 +51,8 @@ name = "data"
 
 Services support replicas, environment variables, command and argument arrays,
 health checks, startup dependencies, rollout settings, CPU/memory limits, mounts of declared
-named volumes, read-only [files](#files), file references to application secrets, and
+named volumes, read-only [files](#files), file references to application secrets,
+opt-in [security](#security) hardening, and
 receiving the daemon's [telemetry](#telemetry-receivers). Named volumes are retained when an application
 is deleted. Secret values are never manifest fields (manifests may only ask piqueld to
 generate them), and there are no manifest
@@ -1157,6 +1158,44 @@ When rollback is automatic, `app plan` and `env promote --plan` warn with
 but that declares no `healthcheck`: unless its image defines a health check, a
 rollout whose containers run without serving can't be detected and rolled
 back.
+
+## Security
+
+Each service can harden its containers. Every setting is off by default:
+
+```toml
+[[spec.services]]
+name = "web"
+
+[spec.services.security]
+user = "1000:1000"        # uid, or uid:gid
+read_only_root = true
+drop_capabilities = true
+no_new_privileges = true
+```
+
+- `user` runs the containers as this numeric user, and group if given,
+  instead of the image's. Each ID is at most 2147483647. Names such as
+  `nginx` aren't accepted: they depend on each image's `/etc/passwd`. The
+  user must be able to read the image's files and write its volumes.
+- `read_only_root` makes the root filesystem read-only. Volumes and
+  [files](#files) mount as usual, and `/tmp` is a writable in-memory
+  directory, so nothing can mount at `/tmp` itself
+  (`read_only_root_tmp_mount`).
+- `drop_capabilities` drops every Linux capability. Even root inside the
+  container can then no longer bypass file permissions or change file owners;
+  ordinary permissions still apply, so it can read a file anyone may read. It
+  can still listen on ports below 1024, which Docker allows every user in a
+  container's own network.
+- `no_new_privileges` stops processes from gaining privileges, such as through
+  setuid programs like `sudo`.
+
+The service's [jobs](#jobs) run with the same settings. The settings are part
+of the manifest and its hash, so changing one redeploys the service. Images
+that write outside their volumes and `/tmp`, run as root, or need a capability
+fail to start; check the service's logs and turn the setting that breaks them
+off. A [telemetry receiver](#telemetry-receivers) runs as the daemon's user,
+so it can't set `user` (`telemetry_receiver_user`).
 
 ## Telemetry receivers
 

@@ -702,6 +702,8 @@
           "import_unconnected",
           "telemetry_receiver_duplicate",
           "telemetry_receiver_replicas",
+          "telemetry_receiver_user",
+          "read_only_root_tmp_mount",
           "telemetry_not_granted",
           "release_incompatible",
           "unowned_name_collision",
@@ -3046,6 +3048,10 @@
               "$ref": "#/components/schemas/SecretFile"
             },
             "type": "array"
+          },
+          "security": {
+            "$ref": "#/components/schemas/ServiceSecurity",
+            "description": "Opt-in hardening, which jobs share. Omitted when off, so targets\nprepared before the setting existed still decode."
           },
           "source": {
             "$ref": "#/components/schemas/ResolvedSource",
@@ -12510,6 +12516,10 @@
             },
             "type": "array"
           },
+          "security": {
+            "$ref": "#/components/schemas/ServiceSecurity",
+            "description": "Opt-in hardening of the containers: their user, a read-only root\nfilesystem, no capabilities and no new privileges."
+          },
           "source": {
             "$ref": "#/components/schemas/Source",
             "description": "Where the service's image comes from: a prebuilt image, or a Git\nbuild."
@@ -12645,6 +12655,35 @@
           "order_source",
           "monitor_seconds"
         ],
+        "type": "object"
+      },
+      "ServiceSecurity": {
+        "additionalProperties": false,
+        "description": "Opt-in hardening of the service's containers and its jobs'. Every setting\nis off by default, and changing one redeploys the service.",
+        "properties": {
+          "drop_capabilities": {
+            "default": false,
+            "description": "Whether the containers run without any Linux capability, so even\ntheir root user can't bypass file permissions or change file owners.",
+            "type": "boolean"
+          },
+          "no_new_privileges": {
+            "default": false,
+            "description": "Whether the containers' processes can't gain privileges, such as\nthrough setuid programs like `sudo`.",
+            "type": "boolean"
+          },
+          "read_only_root": {
+            "default": false,
+            "description": "Whether the containers' root filesystem is read-only. Volumes and\nfiles mount as usual, and `/tmp` is a writable in-memory directory,\nso nothing can mount at `/tmp` itself.",
+            "type": "boolean"
+          },
+          "user": {
+            "default": null,
+            "description": "Numeric user, and optionally group, the containers run as instead of\nthe image's: `uid` or `uid:gid`, such as `1000:1000`, each at most\n2147483647. A service that\nreceives telemetry can't set it, since it runs as the daemon's user.",
+            "example": "1000:1000",
+            "nullable": true,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "Session": {
@@ -14508,6 +14547,10 @@
               "$ref": "#/components/schemas/ValidatedSecretMount"
             },
             "type": "array"
+          },
+          "security": {
+            "$ref": "#/components/schemas/ServiceSecurity",
+            "description": "Opt-in hardening. Omitted when off so existing specification hashes stay stable."
           },
           "source": {
             "$ref": "#/components/schemas/ValidatedSource",

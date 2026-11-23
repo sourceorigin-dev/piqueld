@@ -1104,6 +1104,10 @@
           },
           "type": "array"
         },
+        "security": {
+          "$ref": "#/definitions/ServiceSecurity",
+          "description": "Opt-in hardening of the containers: their user, a read-only root\nfilesystem, no capabilities and no new privileges."
+        },
         "source": {
           "$ref": "#/definitions/Source",
           "description": "Where the service's image comes from: a prebuilt image, or a Git\nbuild."
@@ -1144,6 +1148,37 @@
         }
       ],
       "description": "A read-only file mounted into a service's containers, from exactly one\nsource: `path` in the manifest's repository, or inline `content`. Its\ncontent can't be empty, and is at most 500 KiB."
+    },
+    "ServiceSecurity": {
+      "additionalProperties": false,
+      "description": "Opt-in hardening of the service's containers and its jobs'. Every setting\nis off by default, and changing one redeploys the service.",
+      "properties": {
+        "drop_capabilities": {
+          "default": false,
+          "description": "Whether the containers run without any Linux capability, so even\ntheir root user can't bypass file permissions or change file owners.",
+          "type": "boolean"
+        },
+        "no_new_privileges": {
+          "default": false,
+          "description": "Whether the containers' processes can't gain privileges, such as\nthrough setuid programs like `sudo`.",
+          "type": "boolean"
+        },
+        "read_only_root": {
+          "default": false,
+          "description": "Whether the containers' root filesystem is read-only. Volumes and\nfiles mount as usual, and `/tmp` is a writable in-memory directory,\nso nothing can mount at `/tmp` itself.",
+          "type": "boolean"
+        },
+        "user": {
+          "default": null,
+          "description": "Numeric user, and optionally group, the containers run as instead of\nthe image's: `uid` or `uid:gid`, such as `1000:1000`, each at most\n2147483647. A service that\nreceives telemetry can't set it, since it runs as the daemon's user.",
+          "example": "1000:1000",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "Source": {
       "description": "Where a service's image comes from.",

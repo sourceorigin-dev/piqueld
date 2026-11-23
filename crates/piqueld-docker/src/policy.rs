@@ -2,24 +2,25 @@ use super::{
     BTreeSet, BollardDocker, HealthConfig, HealthProbe, INSTANCE_LABEL, MountTypeEnum,
     NANO_CPUS_PER_MILLICORE, RESTART_DELAY, SERVICE_LABEL, ServiceSpec,
     ServiceSpecUpdateConfigFailureActionEnum, TaskSpec, TaskSpecContainerSpec,
-    TaskSpecRestartPolicyConditionEnum,
+    TaskSpecRestartPolicyConditionEnum, spec::ALL_CAPABILITIES,
 };
+use piqueld_core::manifest::{ContainerUser, ServiceSecurity};
 
 /// The runtime policy emitted by the desired-service Docker specification builder.
 ///
 /// This policy verifies exactly the fields piqueld authors — replication,
 /// update settings, the restart condition and delay, mounts (named volumes,
-/// and a telemetry receiver's socket directory, whose source and user the
-/// desired service compares), environment,
+/// a telemetry receiver's socket directory, whose source and user the
+/// desired service compares, and a read-only root's `/tmp`), environment,
 /// network targets and logical-name aliases, health checks and the probe
-/// config they run, file configs, resource limits, and the placement pin to
-/// the local node.
+/// config they run, file configs, resource limits, the security settings a
+/// service's `security` expresses, and the placement pin to the local node.
 /// Fields the builder never sets are
 /// accepted only at known Engine defaults, so ordinary engine-defaulted
 /// echo-back does not register as drift while unsupported non-default values
 /// do. Security relevant settings piqueld cannot express (privileged
-/// execution, Linux capabilities, sysctls, users other than a telemetry
-/// receiver's, groups, runtimes, log drivers) are
+/// execution, added or single dropped capabilities, sysctls, named users,
+/// groups, runtimes, log drivers) are
 /// explicitly denied: their presence means out-of-band modification.
 pub(super) struct ServiceRuntimePolicy;
 
@@ -76,13 +77,8 @@ impl ServiceRuntimePolicy {
                     && placement.platforms.as_ref().is_none_or(Vec::is_empty)
             })
             && task.force_update.is_none_or(|value| value == 0)
-            // Only a telemetry receiver runs as another user, the daemon's;
-            // the desired service compares which.
-            && (container.user.is_none()
-                || BollardDocker::observed_telemetry(container)
-                    .is_some_and(|telemetry| !telemetry.source.is_empty()))
+            && Self::security(container)
             && container.groups.as_ref().is_none_or(Vec::is_empty)
-            && container.privileges.is_none()
             && container
                 .labels
                 .as_ref()
@@ -91,7 +87,6 @@ impl ServiceRuntimePolicy {
             && container.dir.as_deref().is_none_or(str::is_empty)
             && !container.tty.unwrap_or(false)
             && !container.open_stdin.unwrap_or(false)
-            && !container.read_only.unwrap_or(false)
             && container.stop_signal.as_deref().is_none_or(str::is_empty)
             && container
                 .stop_grace_period
@@ -128,8 +123,34 @@ impl ServiceRuntimePolicy {
                 .as_ref()
                 .is_none_or(std::collections::HashMap::is_empty)
             && container.capability_add.as_ref().is_none_or(Vec::is_empty)
-            && container.capability_drop.as_ref().is_none_or(Vec::is_empty)
             && container.ulimits.as_ref().is_none_or(Vec::is_empty)
+    }
+
+    /// Accepts only security settings a service's `security` expresses,
+    /// which the desired service compares: a numeric user (or a telemetry
+    /// receiver's, the daemon's), a read-only root exactly when `/tmp` is
+    /// an in-memory mount, all capabilities dropped or none, and no new
+    /// privileges as the only privilege setting.
+    fn security(container: &TaskSpecContainerSpec) -> bool {
+        let tmpfs = container.mounts.iter().flatten().any(|mount| {
+            mount.typ == Some(MountTypeEnum::TMPFS)
+                && mount.target.as_deref() == Some(ServiceSecurity::TMPFS_TARGET)
+        });
+        container.user.as_deref().is_none_or(|user| {
+            user.parse::<ContainerUser>().is_ok()
+                || BollardDocker::observed_telemetry(container)
+                    .is_some_and(|telemetry| !telemetry.source.is_empty())
+        }) && container.read_only.unwrap_or(false) == tmpfs
+            && container
+                .capability_drop
+                .as_deref()
+                .is_none_or(|dropped| dropped.is_empty() || dropped == [ALL_CAPABILITIES])
+            && container.privileges.as_ref().is_none_or(|privileges| {
+                privileges.credential_spec.is_none()
+                    && privileges.se_linux_context.is_none()
+                    && privileges.seccomp.is_none()
+                    && privileges.app_armor.is_none()
+            })
     }
 
     /// Accepts only Docker's default rollback config, no service-level
@@ -189,8 +210,9 @@ impl ServiceRuntimePolicy {
     }
 
     /// Requires every mount to be a plain named volume without extra
-    /// options, except one writable bind mount at the telemetry target, with
-    /// a target Swarm passes on as written.
+    /// options, except one writable bind mount at the telemetry target and
+    /// one read-only root's in-memory `/tmp`, with a target Swarm passes on
+    /// as written.
     fn mounts(container: &TaskSpecContainerSpec) -> bool {
         container.mounts.as_ref().is_none_or(|mounts| {
             let telemetry = |mount: &&bollard::models::Mount| {
@@ -198,10 +220,18 @@ impl ServiceRuntimePolicy {
                     && mount.target.as_deref() == Some(piqueld_core::resource::TELEMETRY_TARGET)
                     && !mount.read_only.unwrap_or(false)
             };
+            let tmpfs = |mount: &&bollard::models::Mount| {
+                mount.typ == Some(MountTypeEnum::TMPFS)
+                    && mount.target.as_deref() == Some(ServiceSecurity::TMPFS_TARGET)
+                    && mount.source.as_deref().is_none_or(str::is_empty)
+                    && !mount.read_only.unwrap_or(false)
+            };
             mounts.iter().filter(telemetry).count() <= 1
+                && mounts.iter().filter(tmpfs).count() <= 1
                 && mounts.iter().all(|mount| {
-                    (mount.typ == Some(MountTypeEnum::VOLUME) || telemetry(&mount))
-                        && mount.source.as_ref().is_some_and(|value| !value.is_empty())
+                    (tmpfs(&mount)
+                        || (mount.typ == Some(MountTypeEnum::VOLUME) || telemetry(&mount))
+                            && mount.source.as_ref().is_some_and(|value| !value.is_empty()))
                         && mount.target.as_ref().is_some_and(|value| {
                             !value.is_empty() && BollardDocker::is_swarm_literal(value)
                         })
@@ -381,6 +411,7 @@ mod tests {
             .labels(),
             depends_on: Vec::new(),
             rollout: Rollout::default(),
+            security: piqueld_core::manifest::ServiceSecurity::default(),
             receives_telemetry: false,
             telemetry: None,
         }
@@ -421,6 +452,99 @@ mod tests {
         update.monitor = Some(5_000_000_000);
         update.order = Some(ServiceSpecUpdateConfigOrderEnum::EMPTY);
         assert_eq!(BollardDocker::observed_rollout(&spec), None);
+    }
+
+    /// Each security setting is authored, accepted by the policy and
+    /// observed back; values it can't express are drift.
+    #[test]
+    fn authored_security_is_observed_back() {
+        let mut hardened = desired(Vec::new());
+        hardened.security = ServiceSecurity {
+            user: Some("1000:1000".parse().unwrap()),
+            read_only_root: true,
+            drop_capabilities: true,
+            no_new_privileges: true,
+        };
+        let mut spec = BollardDocker::service_spec(&hardened, "local-node").unwrap();
+        assert!(ServiceRuntimePolicy::matches(&spec, "local-node"));
+        let container = spec
+            .task_template
+            .as_mut()
+            .and_then(|task| task.container_spec.as_mut())
+            .unwrap();
+        assert_eq!(
+            BollardDocker::observed_security(container),
+            hardened.security
+        );
+        assert_eq!(
+            BollardDocker::observed_security(
+                BollardDocker::service_spec(&desired(Vec::new()), "local-node")
+                    .unwrap()
+                    .task_template
+                    .unwrap()
+                    .container_spec
+                    .as_ref()
+                    .unwrap()
+            ),
+            ServiceSecurity::default()
+        );
+        let drifted = |change: fn(&mut TaskSpecContainerSpec)| {
+            let mut spec = spec.clone();
+            change(
+                spec.task_template
+                    .as_mut()
+                    .and_then(|task| task.container_spec.as_mut())
+                    .unwrap(),
+            );
+            !ServiceRuntimePolicy::matches(&spec, "local-node")
+        };
+        assert!(drifted(|container| container.user = Some("app".into())));
+        assert!(drifted(|container| container.read_only = Some(false)));
+        assert!(drifted(|container| {
+            container.capability_drop = Some(vec!["NET_RAW".into()]);
+        }));
+        assert!(drifted(|container| {
+            container.privileges.as_mut().unwrap().app_armor =
+                Some(bollard::models::TaskSpecContainerSpecPrivilegesAppArmor::default());
+        }));
+    }
+
+    /// A bind mount at the telemetry target on a service that receives no
+    /// telemetry is observed as telemetry, so it is drift, and keeps the
+    /// container's user out of its security settings.
+    #[test]
+    fn a_telemetry_mount_without_a_receiver_is_observed_as_telemetry() {
+        let plain = desired(Vec::new());
+        let mut spec = BollardDocker::service_spec(&plain, "local-node").unwrap();
+        let container = spec
+            .task_template
+            .as_mut()
+            .and_then(|task| task.container_spec.as_mut())
+            .unwrap();
+        container
+            .mounts
+            .get_or_insert_default()
+            .push(bollard::models::Mount {
+                target: Some(piqueld_core::resource::TELEMETRY_TARGET.into()),
+                source: Some("/srv/telemetry".into()),
+                typ: Some(MountTypeEnum::BIND),
+                ..Default::default()
+            });
+        let observed = BollardDocker::observed_telemetry(container);
+        assert_eq!(
+            observed,
+            Some(piqueld_core::resource::TelemetryMount {
+                source: "/srv/telemetry".into(),
+                user: String::new(),
+            })
+        );
+        assert_ne!(observed, plain.telemetry);
+        container.user = Some("1000".into());
+        assert_eq!(BollardDocker::observed_security(container).user, None);
+        assert_eq!(
+            BollardDocker::observed_telemetry(container).map(|telemetry| telemetry.user),
+            Some("1000".into())
+        );
     }
 
     /// Swarm would expand `{{` as a Go template, so it is escaped when
@@ -663,13 +787,15 @@ mod tests {
             "local-node"
         ));
 
+        // A numeric user is the desired service's to compare; a named one
+        // is never authored.
         let mut injected_user = authored;
         if let Some(container) = injected_user
             .task_template
             .as_mut()
             .and_then(|task| task.container_spec.as_mut())
         {
-            container.user = Some("0".into());
+            container.user = Some("root".into());
         }
         assert!(!ServiceRuntimePolicy::matches(&injected_user, "local-node"));
     }

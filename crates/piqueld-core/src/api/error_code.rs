@@ -553,6 +553,12 @@ string_enum! {
         TelemetryReceiverDuplicate => "telemetry_receiver_duplicate",
         /// A service receiving telemetry runs more than one replica.
         TelemetryReceiverReplicas => "telemetry_receiver_replicas",
+        /// A service receiving telemetry sets its user, though it runs as the
+        /// daemon's.
+        TelemetryReceiverUser => "telemetry_receiver_user",
+        /// A service with a read-only root mounts a volume or file at `/tmp`,
+        /// where its writable in-memory directory goes.
+        ReadOnlyRootTmpMount => "read_only_root_tmp_mount",
         /// A service receives telemetry, but its environment is not granted it, so
         /// it runs without the telemetry socket.
         TelemetryNotGranted => "telemetry_not_granted",

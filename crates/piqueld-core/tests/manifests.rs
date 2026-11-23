@@ -638,6 +638,46 @@ fn at_most_one_service_receives_telemetry() {
     assert_ne!(receiving.spec_hash(), plain.spec_hash());
 }
 
+/// Hardening is part of the spec hash, so turning it on redeploys; it
+/// can't set a telemetry receiver's user or let anything mount at a
+/// read-only root's `/tmp`.
+#[test]
+fn security_settings_are_hashed_and_validated() {
+    let security = "\n[spec.services.security]\nuser = \"1000:1000\"\nread_only_root = true\ndrop_capabilities = true\nno_new_privileges = true\n";
+    let manifest = |extra: &str| format!("{}{security}{extra}", valid_manifest("notes"));
+    let id = ApplicationId::parse("app-notes-01").unwrap();
+    let hardened = parse_toml(&manifest("")).unwrap().normalize(id.clone());
+    let plain = parse_toml(&valid_manifest("notes")).unwrap().normalize(id);
+    let settings = hardened.spec().services[0].security;
+    assert_eq!(
+        settings.user.map(|user| user.to_string()).as_deref(),
+        Some("1000:1000")
+    );
+    assert!(settings.read_only_root && settings.drop_capabilities && settings.no_new_privileges);
+    assert_ne!(hardened.spec_hash(), plain.spec_hash());
+    assert!(parse_toml(&manifest("").replace("1000:1000", "app")).is_err());
+    assert_errors(
+        &manifest("").replace(
+            "name = \"web\"",
+            "name = \"web\"\nreceives_telemetry = true",
+        ),
+        &[(
+            ApiErrorCode::TelemetryReceiverUser,
+            "spec.services[0].security.user",
+        )],
+    );
+    assert_errors(
+        &format!(
+            "{}[[spec.volumes]]\nname = \"scratch\"\n",
+            manifest("[[spec.services.mounts]]\nvolume = \"scratch\"\ntarget = \"/tmp\"\n")
+        ),
+        &[(
+            ApiErrorCode::ReadOnlyRootTmpMount,
+            "spec.services[0].security.read_only_root",
+        )],
+    );
+}
+
 #[test]
 fn healthcheck_rules_include_the_interval_cap_and_single_zero_error() {
     let zero_interval = valid_manifest("notes").replace(

@@ -506,6 +506,10 @@ pub struct Service {
     /// How Docker replaces the service's containers on each deployment.
     #[serde(default, skip_serializing_if = "super::Rollout::is_default")]
     pub rollout: super::Rollout,
+    /// Opt-in hardening of the containers: their user, a read-only root
+    /// filesystem, no capabilities and no new privileges.
+    #[serde(default, skip_serializing_if = "super::ServiceSecurity::is_default")]
+    pub security: super::ServiceSecurity,
     /// Whether the service receives the daemon's traces, metrics and logs,
     /// on a socket in `/run/piqueld/telemetry`, once its environment is
     /// granted telemetry. At most one service of an application receives

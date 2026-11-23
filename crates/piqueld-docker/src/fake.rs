@@ -502,6 +502,7 @@ pub fn observed_service(desired: &DesiredService) -> ObservedService {
         networks: desired.network_attachments(),
         labels: desired.labels.clone(),
         rollout: Some(desired.rollout_policy()),
+        security: desired.security,
         telemetry: desired.telemetry.clone(),
         runtime_configuration_matches: true,
         tasks: (1..=u64::from(desired.replicas))

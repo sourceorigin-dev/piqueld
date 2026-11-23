@@ -492,6 +492,18 @@ its collector creates there. The runtime policy accepts that one bind mount and
 user override, and the mount's source and the user are compared like any other
 field: a bind mount or user that differs from them is `telemetry` drift.
 
+## Security settings
+
+A service's [`security`](../../user/reference/manifest.md#security) settings
+become the Swarm container's `User`, `ReadOnly` with a `tmpfs` mount at
+`/tmp`, `CapabilityDrop: ["ALL"]` and `Privileges.NoNewPrivileges`. The runtime
+policy accepts only those shapes: a numeric user, a read-only root exactly
+when `/tmp` is in memory, all capabilities dropped or none, and no other
+privilege setting. Within them, observation reads the settings back and a
+difference is `security` drift. While a telemetry receiver's socket is
+mounted, the container's user is the receiver's and counts as `telemetry`
+instead; validation keeps receivers from setting a user.
+
 Like links, the mount is projected each time the target is planned, from the
 grant as it is now, and is never part of a prepared target. Granting or
 revoking telemetry runs a full scan right away, so the controller adds or

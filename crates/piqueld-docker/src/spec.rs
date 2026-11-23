@@ -6,9 +6,12 @@ use super::{
     ServiceSpecUpdateConfigOrderEnum, TaskSpec, TaskSpecContainerSpec, TaskSpecResources,
     TaskSpecRestartPolicy, TaskSpecRestartPolicyConditionEnum,
 };
-use piqueld_core::manifest::{HealthExecution, RolloutOrder, RolloutPolicy};
+use bollard::models::TaskSpecContainerSpecPrivileges;
+use piqueld_core::manifest::{HealthExecution, RolloutOrder, RolloutPolicy, ServiceSecurity};
 use piqueld_core::resource::{INSTANCE_LABEL, TELEMETRY_TARGET};
 
+/// The capability list entry that drops every capability.
+pub(super) const ALL_CAPABILITIES: &str = "ALL";
 /// Opens a Go template action in the fields Swarm expands.
 const SWARM_OPEN: &str = "{{";
 /// A Go template action that prints [`SWARM_OPEN`].
@@ -119,8 +122,11 @@ impl BollardDocker {
 
     /// Builds the container, network, resource, placement, and restart
     /// portions of a service. A telemetry receiver also bind-mounts its
-    /// socket directory and runs as its user.
+    /// socket directory and runs as its user. Its security settings set the
+    /// user, a read-only root with an in-memory `/tmp`, no capabilities, and
+    /// no new privileges.
     fn task_spec(desired: &DesiredService, node_id: &str) -> Result<TaskSpec, DockerError> {
+        let security = desired.security;
         Ok(TaskSpec {
             placement: Some(bollard::models::TaskSpecPlacement {
                 constraints: Some(vec![Self::placement_constraint(node_id)]),
@@ -155,14 +161,30 @@ impl BollardDocker {
                             read_only: Some(false),
                             ..Default::default()
                         }))
+                        .chain(security.read_only_root.then(|| Mount {
+                            target: Some(ServiceSecurity::TMPFS_TARGET.into()),
+                            typ: Some(MountTypeEnum::TMPFS),
+                            ..Default::default()
+                        }))
                         .collect(),
                 ),
                 // A receiver runs as the daemon, so the daemon may connect to
-                // the socket it creates.
+                // the socket it creates. Validation lets only others set one.
                 user: desired
                     .telemetry
                     .as_ref()
-                    .map(|telemetry| telemetry.user.clone()),
+                    .map(|telemetry| telemetry.user.clone())
+                    .or_else(|| security.user.map(|user| user.to_string())),
+                read_only: security.read_only_root.then_some(true),
+                capability_drop: security
+                    .drop_capabilities
+                    .then(|| vec![ALL_CAPABILITIES.into()]),
+                privileges: security
+                    .no_new_privileges
+                    .then(|| TaskSpecContainerSpecPrivileges {
+                        no_new_privileges: Some(true),
+                        ..Default::default()
+                    }),
                 health_check: desired.healthcheck.as_ref().map(Self::health_config),
                 ..Default::default()
             }),

@@ -36,6 +36,7 @@ pub mod limits;
 pub mod links;
 pub mod rollout;
 pub mod routes;
+pub mod security;
 pub mod template;
 /// Shared tests for manifest variables and templates.
 #[cfg(test)]
@@ -67,6 +68,7 @@ pub use routes::{
     Hostname, RedirectStatus, RedirectUrl, RouteHostname, RouteTarget, ValidatedRedirect,
     ValidatedRoute, Visibility, VisibilityError,
 };
+pub use security::{ContainerUser, ServiceSecurity};
 pub use template::{ApplicationTemplate, Rendering, ValidatedTemplate};
 pub use validation::{
     ValidationError, ValidationErrors, parse_json, parse_template_json, parse_template_toml,
