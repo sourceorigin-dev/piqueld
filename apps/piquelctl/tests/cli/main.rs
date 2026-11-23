@@ -15,15 +15,14 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{BufRead, BufReader, Read, Write},
-    net::TcpListener,
-    os::unix::{fs::PermissionsExt, net::UnixListener},
+    net::{SocketAddr, TcpListener, TcpStream},
+    os::unix::{
+        fs::PermissionsExt,
+        net::{UnixListener, UnixStream},
+    },
     path::PathBuf,
     process::{Command, Output, Stdio},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
+    sync::{Arc, mpsc},
     thread,
     time::Duration,
 };
@@ -146,31 +145,38 @@ impl Reply {
 }
 
 enum Endpoint {
-    Tcp(String),
+    Tcp(SocketAddr),
     Unix(PathBuf),
 }
 
 struct TestServer {
     endpoint: Endpoint,
     records: Arc<Mutex<Vec<Request>>>,
-    _directory: TempDir,
+    directory: TempDir,
     join: Option<thread::JoinHandle<()>>,
-    stop: Arc<AtomicBool>,
 }
 
-impl TestServer {
-    /// Asks the server to stop accepting, then joins it and returns the
-    /// requests it served. For a server that may never reach its request
-    /// count, such as one serving `usize::MAX`, once the client exited.
-    fn stop(self) -> Vec<Request> {
-        self.stop.store(true, Ordering::Relaxed);
-        self.finish()
-    }
+/// The method of the request [`TestServer::finish`] sends to end the server,
+/// for the server's own directory as its target. A TCP port freed by one
+/// server can be another's by then, so a server ignores other targets.
+const FINISH: &str = "FINISH";
 
-    /// Joins the server without asking it to stop, so it first serves all
-    /// its expected requests or waits `ACCEPT_TIMEOUT` for the next one, and
-    /// returns the requests it served.
+impl TestServer {
+    /// Ends the server once the client exited, and returns the requests it
+    /// served. The server answers the connections the client left queued,
+    /// then reaches this one's [`FINISH`] request and stops; a server that
+    /// already served its expected requests has stopped listening.
     fn finish(mut self) -> Vec<Request> {
+        let request = format!(
+            "{FINISH} {} HTTP/1.1\r\n\r\n",
+            self.directory.path().display()
+        );
+        let _ = match &self.endpoint {
+            Endpoint::Tcp(address) => TcpStream::connect(address)
+                .and_then(|mut stream| stream.write_all(request.as_bytes())),
+            Endpoint::Unix(path) => UnixStream::connect(path)
+                .and_then(|mut stream| stream.write_all(request.as_bytes())),
+        };
         self.join
             .take()
             .expect("server join handle")
@@ -183,67 +189,56 @@ impl TestServer {
     fn command(&self) -> Command {
         let mut command = support::command();
         match &self.endpoint {
-            Endpoint::Tcp(url) => command.args(["--url", url]),
+            Endpoint::Tcp(address) => command.args(["--url", &format!("http://{address}/")]),
             Endpoint::Unix(path) => command.args(["--socket", path.to_str().expect("socket path")]),
         };
         command
     }
 }
 
-const ACCEPT_TIMEOUT: Duration = Duration::from_secs(10);
-
 /// Bounds how long a connected client can stall a read, so a stalled request
 /// fails the test instead of blocking `finish()`.
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Serves `expected_requests` connections, each with one request answered by
-/// `handler`, over a Unix socket or TCP. Gives up once no client connected
-/// for `ACCEPT_TIMEOUT`, so a request-count mismatch fails fast instead of
-/// hanging forever. The listener closes after the last expected request, so
-/// a test that asserts a request is never sent serves `usize::MAX` and
-/// [`TestServer::stop`]s once the client exited.
+/// `handler`, over a Unix socket or TCP, until [`TestServer::finish`]. The
+/// listener closes after the last expected request, so a test that asserts
+/// a request is never sent serves `usize::MAX`.
 fn start_server<F>(unix: bool, expected_requests: usize, handler: F) -> TestServer
 where
     F: FnMut(Request) -> Reply + Send + 'static,
 {
     let directory = tempdir().expect("temporary server directory");
     let records = Arc::new(Mutex::new(Vec::new()));
-    let stop = Arc::new(AtomicBool::new(false));
     let handler = Mutex::new(handler);
     let serve = {
-        let (records, stop) = (Arc::clone(&records), Arc::clone(&stop));
+        let records = Arc::clone(&records);
+        let finish = directory.path().display().to_string();
         move |mut accept: Accept| {
-            let mut deadline = std::time::Instant::now() + ACCEPT_TIMEOUT;
             let mut served = 0;
-            while served < expected_requests && !stop.load(Ordering::Relaxed) {
-                match accept() {
-                    Ok(stream) => {
-                        served += 1;
-                        deadline = std::time::Instant::now() + ACCEPT_TIMEOUT;
-                        serve_stream(stream, &records, &handler);
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        if std::time::Instant::now() >= deadline {
+            while served < expected_requests {
+                let Ok(mut stream) = accept() else {
+                    break;
+                };
+                match read_request(&mut stream) {
+                    Some(request) if request.method == FINISH => {
+                        if request.path == finish {
                             break;
                         }
-                        thread::sleep(Duration::from_millis(10));
+                        continue;
                     }
-                    Err(_) => break,
+                    Some(request) => serve_request(stream, request, &records, &handler),
+                    None => {}
                 }
+                served += 1;
             }
         }
     };
-    // BSD sockets inherit the listener's nonblocking mode, so each accepted
-    // stream is made blocking again, with a read timeout.
     let (endpoint, accept): (_, Accept) = if unix {
         let path = directory.path().join("piqueld.sock");
         let listener = UnixListener::bind(&path).expect("Unix listener");
-        listener
-            .set_nonblocking(true)
-            .expect("non-blocking accept applies");
         let accept = move || {
             let (stream, _) = listener.accept()?;
-            stream.set_nonblocking(false).expect("blocking request I/O");
             stream
                 .set_read_timeout(Some(READ_TIMEOUT))
                 .expect("read timeout applies");
@@ -253,28 +248,20 @@ where
     } else {
         let listener = TcpListener::bind("127.0.0.1:0").expect("TCP listener");
         let address = listener.local_addr().expect("TCP address");
-        listener
-            .set_nonblocking(true)
-            .expect("non-blocking accept applies");
         let accept = move || {
             let (stream, _) = listener.accept()?;
-            stream.set_nonblocking(false).expect("blocking request I/O");
             stream
                 .set_read_timeout(Some(READ_TIMEOUT))
                 .expect("read timeout applies");
             Ok(Box::new(stream) as Box<dyn Stream>)
         };
-        (
-            Endpoint::Tcp(format!("http://{address}/")),
-            Box::new(accept),
-        )
+        (Endpoint::Tcp(address), Box::new(accept))
     };
     TestServer {
         endpoint,
         records,
-        _directory: directory,
+        directory,
         join: Some(thread::spawn(move || serve(accept))),
-        stop,
     }
 }
 
@@ -282,17 +269,16 @@ where
 trait Stream: Read + Write {}
 impl<S: Read + Write> Stream for S {}
 
-/// Accepts the next connection of a nonblocking listener.
+/// Accepts the listener's next connection.
 type Accept = Box<dyn FnMut() -> std::io::Result<Box<dyn Stream>> + Send>;
 
-fn serve_stream(
+/// Records `request` and writes `handler`'s reply to it.
+fn serve_request(
     mut stream: Box<dyn Stream>,
+    request: Request,
     records: &Mutex<Vec<Request>>,
     handler: &Mutex<impl FnMut(Request) -> Reply>,
 ) {
-    let Some(request) = read_request(&mut stream) else {
-        return;
-    };
     let websocket_key = request.headers.get("sec-websocket-key").cloned();
     records.lock().push(request.clone());
     let reply = handler.lock()(request);

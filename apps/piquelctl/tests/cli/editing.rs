@@ -90,7 +90,7 @@ fn assert_edit_refused(arguments: &[&str]) {
         Reply::json(app_view("app-notes-01", "notes"))
     });
     assert_eq!(run(&server, arguments).status.code(), Some(2));
-    assert_eq!(server.stop().len(), 1);
+    assert_eq!(server.finish().len(), 1);
 }
 
 #[test]

@@ -178,7 +178,7 @@ fn noninteractive_apply_stops_after_inspection() {
     assert!(!output.status.success());
     assert_eq!(output.stdout, b"");
     assert!(String::from_utf8_lossy(&output.stderr).contains("confirmation"));
-    assert_eq!(server.stop().len(), 1);
+    assert_eq!(server.finish().len(), 1);
 }
 
 #[test]
@@ -609,7 +609,7 @@ fn apply_protects_the_inspected_identity_and_revision_with_confirmation_skipped(
         "application conflicts are not connection failures: {error}"
     );
     assert_eq!(
-        server.stop().len(),
+        server.finish().len(),
         2,
         "generation conflicts must not retry"
     );
