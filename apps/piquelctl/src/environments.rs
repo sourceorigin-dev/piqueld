@@ -192,8 +192,8 @@ pub(crate) enum EnvCommand {
     /// rendered manifest, images and pinned secret versions. Jobs don't run,
     /// and volume contents and migrations stay as they are.
     ///
-    /// Restoring the current deployment while a newer one rolls out stops
-    /// that rollout and returns the environment to the current deployment.
+    /// Restoring the last successful deployment while a newer one rolls out
+    /// stops that rollout and returns the environment to it.
     Restore(RestoreArgs<NamedEnvironment>),
     /// Wait until a deployment of an environment is ready.
     ///

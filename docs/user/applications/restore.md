@@ -108,27 +108,30 @@ rendered with its current variables and secrets instead.
 
 ## Stop a rollout in progress
 
-To abandon a deployment while it rolls out, restore the deployment the
-environment runs, its current one. The restore stops the rollout and returns
-the environment to that deployment.
+To abandon a deployment while it rolls out, restore the environment's last
+successful deployment. The restore stops the rollout and returns the
+environment to that deployment.
 
-- **In the dashboard**, open the deployment tagged **Current target** on the
-  environment's **Deployments** tab. While a newer deployment is under way, its
-  page offers **Restore**.
-- **With `piquelctl`**, restore the deployment `env history` marks `current`:
+- **In the dashboard**, open the deployment tagged **Last successful** on the
+  environment's **Deployments** tab, and select **Restore**.
+- **With `piquelctl`**, restore the deployment `env history` marks
+  `last successful`:
 
   ```console
-  piquelctl env restore hello production <current-deployment-id>
+  piquelctl env restore hello production <last-successful-deployment-id>
   ```
 
 - **With the API**, post its ID to the
   [restore endpoint](../reference/api.md#restoring-a-deployment).
 
-There is no separate cancel. Any new deployment, restore, promotion or
-[stop](environments.md#stop-an-environment) of the environment supersedes the
-rollout in progress: piqueld stops its work, and its history records it as
-`superseded`. When the environment has no current deployment because none
-succeeded yet, stop it instead.
+There is no separate cancel. Any new deployment, restore or promotion of the
+environment supersedes the rollout in progress: piqueld stops its work, and
+its history records it as `superseded`.
+
+When no deployment has succeeded yet, there is nothing to restore.
+[Stop](environments.md#stop-an-environment) the environment instead: the
+deployment in progress carries on with no replicas, so its services scale to
+zero.
 
 ## Roll back failed rollouts automatically
 
