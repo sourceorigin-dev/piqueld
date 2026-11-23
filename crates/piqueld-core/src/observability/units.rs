@@ -5,7 +5,7 @@ use std::fmt;
 /// A quantity in tenths of a unit, rounded half up from `value` of a `unit`:
 /// `Tenths::of(1536, 1024)` reads `1.5`. With `{:#}`, a whole number drops
 /// its `.0`. Sizes, durations and compact counts round this way.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub(super) struct Tenths(u128);
 
 impl Tenths {
@@ -43,10 +43,12 @@ impl Bytes {
 impl fmt::Display for Bytes {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         const UNITS: [&str; 4] = ["KiB", "MiB", "GiB", "TiB"];
-        // The largest unit it reaches, of 2^(10 × power) bytes.
+        // The largest unit it reaches once rounded, of 2^(10 × power) bytes:
+        // the one whose previous unit rounds to 1024.0 or more, so 1023.95 KiB
+        // reads as 1.0 MiB.
         match (1..=UNITS.len())
             .rev()
-            .find(|power| self.0 >> (10 * power) > 0)
+            .find(|power| Tenths::of(u128::from(self.0), 1 << (10 * (power - 1))) >= Tenths(10_240))
         {
             None => write!(formatter, "{} B", self.0),
             Some(power) => {
@@ -115,6 +117,12 @@ mod tests {
             (1023, "1023 B"),
             (1024, "1.0 KiB"),
             (1536, "1.5 KiB"),
+            (1_048_524, "1023.9 KiB"),
+            (1_048_525, "1.0 MiB"),
+            (1_073_689_395, "1023.9 MiB"),
+            (1_073_689_396, "1.0 GiB"),
+            (1_099_457_940_684, "1023.9 GiB"),
+            (1_099_457_940_685, "1.0 TiB"),
             (52_428_800, "50.0 MiB"),
             (127_026_911_232, "118.3 GiB"),
             (u64::MAX, "16777216.0 TiB"),

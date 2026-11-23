@@ -136,20 +136,22 @@ impl Elapsed {
 impl fmt::Display for Elapsed {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let milliseconds = self.0.as_millis();
+        // Rounded first, so the unit is picked after rounding: 3,599.5 s
+        // reads as an hour rather than 60 minutes.
+        let seconds = (milliseconds + 500) / 1_000;
         match milliseconds {
             0..=999 => write!(formatter, "{milliseconds} ms"),
             // Tenths of a second, below the 60.0 s that is shown as a
             // minute.
             1_000..=59_949 => write!(formatter, "{} s", Tenths::of(milliseconds, 1_000)),
-            59_950..=3_599_999 => {
-                let seconds = (milliseconds + 500) / 1_000;
+            _ if seconds < 3_600 => {
                 write!(formatter, "{} min {} s", seconds / 60, seconds % 60)
             }
             _ => write!(
                 formatter,
                 "{} h {} min",
-                milliseconds / 3_600_000,
-                (milliseconds % 3_600_000) / 60_000
+                seconds / 3_600,
+                seconds % 3_600 / 60
             ),
         }
     }
@@ -255,6 +257,8 @@ mod tests {
             (59_949, "59.9 s"),
             (59_950, "1 min 0 s"),
             (252_000, "4 min 12 s"),
+            (3_599_499, "59 min 59 s"),
+            (3_599_500, "1 h 0 min"),
             (7_500_000, "2 h 5 min"),
         ] {
             assert_eq!(Elapsed::from_millis(milliseconds).to_string(), text);
