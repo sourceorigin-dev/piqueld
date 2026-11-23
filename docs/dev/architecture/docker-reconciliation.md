@@ -251,7 +251,12 @@ request aborts its connection driver, and timeout errors retain their cause.
 `DiagnosticCode::deployment_failure` classifies what a failed deployment
 failed at: a job (`job_failed`, `job_timeout`), which ends the deployment
 before rollout as described above, or its rollout (`service_update_failed`: Docker paused an update
-because a task failed within its monitor window). When an operation fails with
+because a task failed within its monitor window).
+`OperationError::deployment_failure` adds `ServiceTimeout`, a service the
+rollout waited for that didn't converge before its deadline. It records
+`convergence_timeout`, which other timeouts share, so only the error tells it
+apart. A job dependency's wait fails with a plain `ConvergenceTimeout`
+instead, since it stops the deployment before rollout. When an operation fails with
 a rollout failure, the controller's `fail` checks the environment's effective
 `rollback` (`StoredEnvironment::rollback`, read from the manifest the
 environment deploys; previews are always manual). If it is automatic, and the

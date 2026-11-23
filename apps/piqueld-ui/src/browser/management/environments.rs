@@ -947,7 +947,7 @@ fn EnvironmentRollback() -> impl IntoView {
     };
     SettingCard {
         title: "Rollback",
-        about: "A rollout fails when Docker pauses a service update because a new container failed within its monitor window. Automatic rollback then restores the last successful deployment at once; manual leaves the environment degraded until you deploy or restore. Volumes and migrations are never reverted.",
+        about: "A rollout fails when Docker pauses a service update because a new container failed within its monitor window, or when a service doesn't become ready within the convergence timeout. Automatic rollback then restores the last successful deployment at once; manual leaves the environment degraded until you deploy or restore. Volumes and migrations are never reverted.",
         promoted_noun: "setting",
         button: "Save rollback",
     }

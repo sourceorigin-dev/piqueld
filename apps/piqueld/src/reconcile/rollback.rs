@@ -65,7 +65,7 @@ impl<D: DockerApi> Controller<D> {
         operation: &Operation,
         error: &OperationError,
     ) -> Result<bool, StoreError> {
-        if error.diagnostic_code().deployment_failure() != Some(DeploymentFailure::Rollout) {
+        if error.deployment_failure() != Some(DeploymentFailure::Rollout) {
             return Ok(false);
         }
         let origin = self.store.deployment_origin(&operation.id).await?;

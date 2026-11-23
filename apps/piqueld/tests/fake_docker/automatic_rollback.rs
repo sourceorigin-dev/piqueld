@@ -1,21 +1,31 @@
 use super::*;
 use piqueld_core::{api::DeploymentOrigin, manifest::Rollback};
+use std::sync::atomic::AtomicBool;
 
-/// An application with a job whose `production` environment has
-/// `rollback`.
-fn manifest(rollback: Option<Rollback>) -> ApplicationManifest {
-    let mut manifest = migration();
+/// `manifest` with its `production` environment's `rollback`.
+fn with_rollback(
+    mut manifest: ApplicationManifest,
+    rollback: Option<Rollback>,
+) -> ApplicationManifest {
     manifest
         .spec
         .set_environment_rollback("production", rollback);
     manifest
 }
 
+/// An application with a job whose `production` environment has
+/// `rollback`.
+fn manifest(rollback: Option<Rollback>) -> ApplicationManifest {
+    with_rollback(migration(), rollback)
+}
+
 /// Deploys `manifest` successfully, then again once its tag resolves to
-/// another image whose rollout fails. Returns both deployments.
-async fn fail_second_rollout(
+/// another image, with `failure` set to fail or stall its services' rollout.
+/// Returns both deployments, the second not yet run.
+async fn deploy_twice(
     harness: &ControllerHarness,
     manifest: ApplicationManifest,
+    failure: &AtomicBool,
 ) -> (Operation, Operation) {
     let first = harness.apply(manifest, None).await;
     harness.finish(&first).await;
@@ -26,15 +36,22 @@ async fn fail_second_rollout(
         .await
         .digests
         .insert("ghcr.io/example/notes:1.4.0".into(), "b".repeat(64));
-    harness
-        .docker
-        .fail_convergence
-        .store(true, Ordering::SeqCst);
+    failure.store(true, Ordering::SeqCst);
     let second = harness
         .applications()
         .deploy(&first.environment_id, None)
         .await
         .unwrap();
+    (first, second)
+}
+
+/// Deploys `manifest` successfully, then again with a rollout Docker
+/// pauses. Returns both deployments.
+async fn fail_second_rollout(
+    harness: &ControllerHarness,
+    manifest: ApplicationManifest,
+) -> (Operation, Operation) {
+    let (first, second) = deploy_twice(harness, manifest, &harness.docker.fail_convergence).await;
     assert_eq!(
         harness.scan_result(&second).await,
         (OperationState::Failed, Some("service_update_failed".into()))
@@ -135,4 +152,39 @@ async fn a_failure_without_an_earlier_success_says_why_it_was_not_rolled_back() 
         harness.latest(&operation.environment_id).await.id,
         operation.id
     );
+}
+
+/// A service that never converges during the rollout rolls it back. One a
+/// job depends on stops the deployment before its rollout, so it doesn't.
+#[tokio::test]
+async fn only_a_rollout_that_never_converges_is_rolled_back() {
+    for (manifest, rolls_back) in [
+        (migration(), true),
+        (super::jobs::manifest_with_job_dependencies(), false),
+    ] {
+        let mut harness = ControllerHarness::new().await;
+        harness.set_convergence_timeout(Duration::from_secs(3));
+        let manifest = with_rollback(manifest, Some(Rollback::Automatic));
+        let (first, second) =
+            deploy_twice(&harness, manifest, &harness.docker.stall_convergence).await;
+        assert_eq!(
+            harness.scan_result(&second).await,
+            (OperationState::Failed, Some("convergence_timeout".into()))
+        );
+        let latest = harness.latest(&first.environment_id).await;
+        if rolls_back {
+            assert_eq!(
+                harness
+                    .deployment(&first.environment_id, &latest.id)
+                    .await
+                    .origin,
+                DeploymentOrigin::Restore {
+                    deployment: first.id.clone(),
+                    rolled_back: Some(second.id.clone()),
+                }
+            );
+        } else {
+            assert_eq!(latest.id, second.id);
+        }
+    }
 }

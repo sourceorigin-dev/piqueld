@@ -135,7 +135,13 @@ impl<D: DockerApi> Controller<D> {
                 cancellation,
                 deadline,
             )
-            .await?;
+            .await
+            .map_err(|error| match error {
+                // A dependency that never converges stops the jobs before
+                // the rollout, so it is no rollout failure to roll back.
+                OperationError::ServiceTimeout => OperationError::ConvergenceTimeout,
+                error => error,
+            })?;
             if matches!(action.kind, ActionKind::WaitForService { .. }) {
                 deadline = tokio::time::Instant::now() + self.retry.convergence_timeout;
             }

@@ -110,7 +110,11 @@ rendered with its current variables and secrets instead.
 
 A rollout fails when Docker pauses it because a new container exited, or
 failed its [health check](services.md#health-checks), soon after it started.
-Each environment chooses what happens then:
+It also fails when a service it updates doesn't become ready in time, such as
+when its new containers can't be scheduled. The daemon's
+[`reconciliation.convergence_timeout_seconds`](../reference/configuration-settings.md#reconciliationconvergence_timeout_seconds)
+sets how long it waits, 2 minutes by default. Each environment chooses what
+happens then:
 
 - **Automatic** restores the environment's last successful deployment at once,
   as a restore by hand would.
@@ -171,7 +175,8 @@ piqueld rolls back each failed deployment once at most. It doesn't roll back:
 - a deployment that succeeded before, then fails when piqueld rolls it out
   again, such as to repair a service someone changed by hand;
 - a deployment whose [job](jobs.md) fails: the job stops it before its
-  services roll out, so they keep running the previous version.
+  services roll out, so they keep running the previous version. The same
+  goes for a service a job depends on that doesn't become ready in time.
 
 Docker only notices a container that exits or fails its health check.
 Without a health check, in the manifest or in its image, a container that

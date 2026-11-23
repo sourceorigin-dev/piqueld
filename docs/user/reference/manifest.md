@@ -1114,7 +1114,11 @@ updates the service once.
 ## Rollback
 
 A rollout fails when Docker pauses it because a replacement task failed within
-its [monitor window](#rollout). Each environment chooses what happens then:
+its [monitor window](#rollout), or when a service it updates doesn't become
+ready within
+[`reconciliation.convergence_timeout_seconds`](configuration-settings.md#reconciliationconvergence_timeout_seconds),
+such as when its new tasks stay pending. Each environment chooses what happens
+then:
 
 ```toml
 [spec.environments.production]
@@ -1146,7 +1150,9 @@ its own outcome, so `env wait` on it exits with the deployment failure code.
 When nothing can be restored, because no earlier deployment succeeded or its
 images or pinned secret versions are gone, the failed deployment records a
 `rollback_unavailable` event saying why. A failed [job](#jobs) never needs a
-rollback: it stops the deployment before its services roll out.
+rollback: it stops the deployment before its services roll out. Neither does
+a service a job depends on that doesn't become ready in time: the deployment
+fails with `convergence_timeout` before its rollout, and piqueld retries it.
 
 A rollback runs no jobs and doesn't revert data. Migrations that ran stay
 applied, so the restored version must still run against them; write
