@@ -87,6 +87,8 @@ pub use environments::{
     PromotedFrom, ReleasePlan, ReleasePromotion, RestoreRequest, RouteUrl, RunState, SecretProblem,
     TelemetryReport, TrackedBranch, UrlCondition, UrlState,
 };
+/// The names of the messages a live event stream sends.
+pub use piqueld_core::api::StreamMessage;
 /// Request size and page size limits the daemon enforces.
 pub use piqueld_core::api::{
     ApiErrorCode, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_REQUEST_BODY_BYTES, MAX_SECRET_VALUE_BYTES,

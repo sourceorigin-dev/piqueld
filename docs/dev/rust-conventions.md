@@ -39,13 +39,15 @@ still reads a code it doesn't know yet; compare one with
 their own `DiagnosticCode`.
 
 Other strings that cross crates are named the same way, as a `string_enum!`
-in `piqueld-core`: the kind of each history event is an `EventKind`. Record
-and compare one through its variant, never its string, and in SQL bind it as
-a parameter. Migrations can't name it, so a store test checks that every kind
-the schema spells out, in an index or a view, is an `EventKind`. `Event.kind`
-stays a `String`, since history holds kinds older daemons recorded and a
-client may read kinds a newer daemon adds; compare it with
-`Event::known_kind` or `==`.
+in `piqueld-core`: the kind of each history event is an `EventKind`, and the
+name of each message a live server-sent event stream sends a `StreamMessage`.
+Record and compare one through its variant, never its string, and in SQL bind
+it as a parameter. Migrations can't name an `EventKind`, so a store test
+checks that every kind the schema spells out, in an index or a view, is one.
+`Event.kind` stays a `String`, since history holds kinds older daemons
+recorded and a client may read kinds a newer daemon adds; compare it with
+`Event::known_kind` or `==`. A stream reader likewise skips message names it
+doesn't know.
 
 Production code never panics without saying why: `expect_used`, `panic`,
 `todo`, `unimplemented` and `dbg_macro` are denied outside tests. Return an

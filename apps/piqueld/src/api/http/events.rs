@@ -17,7 +17,7 @@ use axum::{
 use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     Event,
-    api::{Envelope, Page},
+    api::{Envelope, Page, StreamMessage},
     observability::{EventFilter, EventKinds, EventScope},
 };
 use piqueld_store::Visibility;
@@ -248,7 +248,7 @@ impl Follow for FollowEvents {
             if let Some(event) = self.pending.pop_front() {
                 self.after = event.id;
                 let message = ServerEvent::default().id(format!("v1:{}", self.after));
-                return Some(live::json(message, "event", event));
+                return Some(live::json(message, StreamMessage::Event, event));
             }
             if self.checkpoint > self.after {
                 // An ID-only message moves Last-Event-ID past events the filter
@@ -270,22 +270,18 @@ impl Follow for FollowEvents {
                     self.checkpoint = next;
                 }
                 Err(error) => {
-                    let kind = if matches!(
+                    let name = if matches!(
                         error,
                         crate::api::ApplicationError::Store(
                             piqueld_store::StoreError::HistoryExpired
                         )
                     ) {
-                        "history_expired"
+                        StreamMessage::HistoryExpired
                     } else {
-                        "stream_error"
+                        StreamMessage::StreamError
                     };
                     self.done = true;
-                    return Some(
-                        ServerEvent::default()
-                            .event(kind)
-                            .data("Reload history before reconnecting"),
-                    );
+                    return Some(live::named(name).data("Reload history before reconnecting"));
                 }
             }
         }

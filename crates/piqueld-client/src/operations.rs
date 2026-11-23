@@ -1,6 +1,6 @@
 //! Asynchronous operation inspection, and their timelines of steps.
 use crate::{
-    Client, ClientError, Operation,
+    Client, ClientError, Operation, StreamMessage,
     client::{EnvelopedCall, GeneratedCall},
     sse::{Messages, Received},
 };
@@ -69,15 +69,15 @@ impl TimelineStream {
                 Ok(Received::Comment) => return Some(Ok(None)),
                 Err(error) => return Some(Err(error)),
             };
-            return Some(match message.event.as_str() {
-                "timeline" => serde_json::from_str(&message.data)
+            return Some(match StreamMessage::parse(&message.event) {
+                Some(StreamMessage::Timeline) => serde_json::from_str(&message.data)
                     .map(Some)
                     .map_err(|source| ClientError::Decode { source }),
-                "stream_error" => Err(ClientError::exchange(format!(
+                Some(StreamMessage::StreamError) => Err(ClientError::exchange(format!(
                     "the timeline stream failed: {}",
                     message.data
                 ))),
-                "access_ended" => Err(ClientError::api(
+                Some(StreamMessage::AccessEnded) => Err(ClientError::api(
                     http::StatusCode::FORBIDDEN,
                     message.data.as_bytes(),
                 )),
