@@ -13,13 +13,18 @@
 //! Everything else in the data directory is left out: caches recreated on
 //! start, local-preview bundles in `snapshots/`, retired keys, and earlier
 //! backups.
+//!
+//! `piqueld restore` puts a backup back into an empty data directory (see
+//! [`Backups::restore`]).
 
+mod restore;
 mod rotation;
 #[cfg(test)]
 mod tests;
 
 use anyhow::{Context, Result, bail};
 use piqueld_store::{DatabaseCopy, DatabaseFile, DatabaseIdentity, SCHEMA_VERSION};
+pub use restore::Refusal;
 pub use rotation::PreMigration;
 use rustix::fs::{AtFlags, CWD, Dir, FileType, Mode, OFlags};
 use serde::{Deserialize, Serialize};
