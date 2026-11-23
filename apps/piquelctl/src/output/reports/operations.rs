@@ -3,7 +3,7 @@
 use crate::deployments::Deployed;
 use piqueld_client::{
     AcceptedOperation, ApplicationLogs, BuildLogPage, BuildRecord, DeletedApplication, Event,
-    Operation, OperationState, Page, Phase, SavedApplication, observability::Timestamp,
+    LogRecord, Operation, OperationState, Page, Phase, SavedApplication, observability::Timestamp,
     system::BuiltOn,
 };
 use serde::Serialize;
@@ -33,14 +33,18 @@ report!(AcceptedDeploymentReport, self, out, {
 
 report!(ApplicationLogs, self, out, {
     for log in &self.items {
-        out.value(format_args!(
-            "{} {} {} {} | ",
-            log.timestamp, log.service, log.task_id, log.stream
-        ))?;
-        out.log_text(&log.message)?;
-        out.blank()?;
+        log.render_human(out)?;
     }
     Ok(())
+});
+
+report!(LogRecord, self, out, {
+    out.value(format_args!(
+        "{} {} {} {} | ",
+        self.timestamp, self.service, self.task_id, self.stream
+    ))?;
+    out.log_text(&self.message)?;
+    out.blank()
 });
 
 report!(BuildLogPage, self, out, {

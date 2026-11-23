@@ -133,8 +133,8 @@ pub use system::{
 
 pub use piqueld_core::api::{
     ApplicationLogs, BuildLogChunk, BuildLogPage, BuildRecord, BuildState, Envelope,
-    EnvironmentAccess, ErrorBody, LogRecord, LogStream, ManifestChange, MountedSecret, Page,
-    SecretAccess, SecretAccessChange, SecretKeyRecovery, SecretMetadata, StoredSecret,
+    EnvironmentAccess, ErrorBody, LogRecord, LogStream, LogTime, ManifestChange, MountedSecret,
+    Page, SecretAccess, SecretAccessChange, SecretKeyRecovery, SecretMetadata, StoredSecret,
 };
 
 use http::StatusCode;

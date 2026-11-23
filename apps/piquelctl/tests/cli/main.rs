@@ -115,9 +115,15 @@ impl Reply {
     /// Streams each of `timelines` as a `timeline` server-sent event, then
     /// ends the stream, as the daemon's timeline stream does when it stops.
     fn timelines(timelines: &[Value]) -> Self {
+        Self::stream("timeline", timelines)
+    }
+
+    /// Streams each of `messages` as a server-sent event named `name`, then
+    /// ends the stream, as the daemon's streams do when it stops.
+    fn stream(name: &str, messages: &[Value]) -> Self {
         let mut body = Vec::new();
-        for timeline in timelines {
-            write!(body, "event: timeline\ndata: {timeline}\n\n").expect("writes to a Vec");
+        for message in messages {
+            write!(body, "event: {name}\ndata: {message}\n\n").expect("writes to a Vec");
         }
         Self {
             status: "200 OK",

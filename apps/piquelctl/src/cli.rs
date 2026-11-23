@@ -913,4 +913,8 @@ pub(crate) struct LogArgs {
         value_parser = clap::value_parser!(u32).range(1..=86400)
     )]
     pub(crate) since_seconds: u32,
+    /// Keep printing output as it is written, until interrupted. Tasks that
+    /// start meanwhile, such as a deployment's, are followed too.
+    #[arg(long, short)]
+    pub(crate) follow: bool,
 }

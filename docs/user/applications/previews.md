@@ -168,6 +168,8 @@ piquelctl preview show blog feat/login
 ```
 
 `preview show` also says what the preview deploys and how its branch moved.
+`preview logs --follow` keeps printing new output, as the **Logs** tab shows
+it, until you press Ctrl-C.
 
 ## Give previews stored secrets
 

@@ -2718,6 +2718,7 @@ Options:
   Defaults to every service.
 - `--tail <TAIL>`: Show at most this many of the most recent lines, from 1 to 1000, merged across services. Default: `200`.
 - `--since-seconds <SECONDS>`: Only show output written within this many seconds, from 1 to 86400 (a day). Default: `3600`.
+- `-f, --follow`: Keep printing output as it is written, until interrupted. Tasks that start meanwhile, such as a deployment's, are followed too.
 
 ## `piquelctl app exec`
 
@@ -3647,6 +3648,7 @@ Options:
   Defaults to every service.
 - `--tail <TAIL>`: Show at most this many of the most recent lines, from 1 to 1000, merged across services. Default: `200`.
 - `--since-seconds <SECONDS>`: Only show output written within this many seconds, from 1 to 86400 (a day). Default: `3600`.
+- `-f, --follow`: Keep printing output as it is written, until interrupted. Tasks that start meanwhile, such as a deployment's, are followed too.
 
 ## `piquelctl env history`
 
@@ -3894,6 +3896,7 @@ Options:
   Defaults to every service.
 - `--tail <TAIL>`: Show at most this many of the most recent lines, from 1 to 1000, merged across services. Default: `200`.
 - `--since-seconds <SECONDS>`: Only show output written within this many seconds, from 1 to 86400 (a day). Default: `3600`.
+- `-f, --follow`: Keep printing output as it is written, until interrupted. Tasks that start meanwhile, such as a deployment's, are followed too.
 
 ## `piquelctl preview history`
 

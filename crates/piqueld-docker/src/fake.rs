@@ -33,6 +33,8 @@ pub const FAILED_UPDATE_MESSAGE: &str = "update paused due to failure or early t
 pub struct FakeDocker {
     /// Every service, network, and volume the engine runs.
     pub observed: Arc<Mutex<ObservedApplication>>,
+    /// Where each watcher of container starts hears of one.
+    pub starts: Arc<std::sync::Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>>>,
     /// Secrets by Docker secret name.
     pub secrets: Arc<Mutex<BTreeMap<String, Secret>>>,
     /// Fails removing secrets.
@@ -531,6 +533,16 @@ pub fn observed_service(desired: &DesiredService) -> ObservedService {
     }
 }
 
+impl FakeDocker {
+    /// Tells every watcher of container starts that container `id` started,
+    /// forgetting those that stopped watching.
+    fn started(&self, id: &str) {
+        if let Ok(mut watchers) = self.starts.lock() {
+            watchers.retain(|watcher| watcher.send(id.to_owned()).is_ok());
+        }
+    }
+}
+
 #[async_trait]
 impl DockerApi for FakeDocker {
     async fn ensure_secret(
@@ -614,12 +626,42 @@ impl DockerApi for FakeDocker {
         Ok(piqueld_core::api::ApplicationLogs::default())
     }
 
-    /// The fake runs no containers.
+    /// Each running task of an ensured service runs in a container named
+    /// after the task.
     async fn managed_containers(
         &self,
         _instance: &InstanceId,
     ) -> Result<Vec<super::ManagedContainer>, DockerError> {
-        Ok(Vec::new())
+        let observed = self.observed.lock().await;
+        Ok(observed
+            .services
+            .iter()
+            .flat_map(|service| {
+                let label = |label| service.labels.get(label);
+                let workload = label(APPLICATION_LABEL)
+                    .and_then(|id| EnvironmentId::parse(id).ok())
+                    .zip(label(SERVICE_LABEL))
+                    .map(|(environment, name)| super::Workload::Service {
+                        environment,
+                        name: name.clone(),
+                    });
+                service
+                    .tasks
+                    .iter()
+                    .filter(|task| task.state == TaskState::Running)
+                    .filter_map(move |task| {
+                        Some(super::ManagedContainer {
+                            id: task.id.clone(),
+                            name: task.id.clone(),
+                            state: super::ContainerState::Running,
+                            created: 0,
+                            task: Some(task.id.clone()),
+                            workload: workload.clone()?,
+                            receiver: false,
+                        })
+                    })
+            })
+            .collect())
     }
 
     async fn container_usage(
@@ -629,13 +671,34 @@ impl DockerApi for FakeDocker {
         Ok(None)
     }
 
-    fn container_logs(&self, _id: &str, _since: i32) -> super::ContainerLogs {
-        futures_util::stream::empty().boxed()
+    /// Each container writes `<id> served request <n>` to stdout every
+    /// second, as long as it is followed.
+    fn container_logs(&self, id: &str, _since: i32) -> super::ContainerLogs {
+        let id = id.to_owned();
+        futures_util::stream::unfold(0_u64, move |request| {
+            let line = format!("{id} served request {request}");
+            async move {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let lines = super::LogLines {
+                    stream: Some(piqueld_core::api::LogStream::Stdout),
+                    lines: vec![(super::now_ns(), line)],
+                };
+                Some((Ok(lines), request + 1))
+            }
+        })
+        .boxed()
     }
 
-    /// No container ever starts.
+    /// Reports the containers of the tasks ensured services start from now.
     fn container_starts(&self, _since: i64) -> super::ContainerStarts {
-        futures_util::stream::pending().boxed()
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        if let Ok(mut watchers) = self.starts.lock() {
+            watchers.push(sender);
+        }
+        futures_util::stream::unfold(receiver, async |mut receiver| {
+            Some((Ok(Some(receiver.recv().await?)), receiver))
+        })
+        .boxed()
     }
 
     async fn ping(&self) -> Result<(), DockerError> {
@@ -995,6 +1058,13 @@ impl DockerApi for FakeDocker {
                 task.state = TaskState::Starting;
                 task.healthy = None;
             }
+        }
+        let running = service
+            .tasks
+            .iter()
+            .filter(|task| task.state == TaskState::Running);
+        for task in running {
+            self.started(&task.id);
         }
         observed.services.push(service);
         self.rollout.lock().await.push(format!("ensure {logical}"));

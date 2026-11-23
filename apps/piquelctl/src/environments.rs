@@ -21,7 +21,7 @@ use crate::{
 use clap::{Args, Subcommand, ValueEnum};
 use piqueld_client::{
     ApplicationView, Client, ClientError, CreateEnvironmentRequest, EnvironmentBranchRequest,
-    EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView, EnvironmentView,
+    EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView, EnvironmentView, LogTime,
     Operation, PromoteRequest, Rollback, Visibility, edit::ApplicationEdit,
 };
 
@@ -1150,24 +1150,71 @@ async fn wait_until_stopped(
     }
 }
 
-/// Emits a bounded snapshot of runtime logs, warning when the daemon truncated it.
+/// How long a followed log stream may stay silent before it counts as
+/// dropped: the daemon sends a keep-alive every 15 seconds.
+const LOG_STREAM_IDLE: std::time::Duration = std::time::Duration::from_secs(45);
+
+/// Emits a bounded snapshot of runtime logs, warning when the daemon truncated
+/// it. With `--follow`, then emits each line written after it, one report
+/// each (one JSON object per line with `--json`), until interrupted or the
+/// daemon ends the stream.
 pub(crate) async fn logs(
     console: &mut Console,
     client: &Client,
     environment: &EnvironmentView,
     window: &LogArgs,
 ) -> Result<()> {
+    let id = environment.id.as_str();
+    let service = window.service.as_deref();
     let logs = client
-        .environment_logs(
-            environment.id.as_str(),
-            window.service.as_deref(),
-            window.tail,
-            window.since_seconds,
-        )
+        .environment_logs(id, service, window.tail, window.since_seconds)
         .await?;
-    console.emit(&logs)?;
+    if window.follow {
+        logs.items.iter().try_for_each(|log| console.emit(log))?;
+    } else {
+        console.emit(&logs)?;
+    }
     if logs.truncated {
         console.warning("Log snapshot was truncated; narrow the service or time window.")?;
     }
-    Ok(())
+    if !window.follow {
+        return Ok(());
+    }
+    // Resumes after the snapshot's newest line, or, without one, at the
+    // start of its window, so no line written meanwhile is missed.
+    let after = logs.items.last().map_or_else(
+        || {
+            let since = std::time::Duration::from_secs(window.since_seconds.into());
+            let start = std::time::SystemTime::now()
+                .checked_sub(since)
+                .and_then(|start| start.duration_since(std::time::UNIX_EPOCH).ok())
+                .unwrap_or_default();
+            LogTime(i64::try_from(start.as_nanos()).unwrap_or(i64::MAX)).to_string()
+        },
+        |newest| newest.timestamp.clone(),
+    );
+    let mut stream = client
+        .environment_logs_stream(id, service, None, Some(&after))
+        .await?;
+    // Following is the operator's time, which `--timeout` doesn't count.
+    crate::support::interactive(async {
+        loop {
+            match tokio::time::timeout(LOG_STREAM_IDLE, stream.next()).await {
+                Ok(Some(Ok(Some(record)))) => console.emit(&record)?,
+                Ok(Some(Ok(None))) => {}
+                Ok(Some(Err(error))) => return Err(error.into()),
+                Ok(None) => {
+                    console.warning("The daemon ended the log stream.")?;
+                    return Ok(());
+                }
+                Err(_) => {
+                    return Err(CliError::new(
+                        ErrorKind::Unavailable,
+                        "the log stream went silent; the daemon may be unreachable",
+                    ));
+                }
+            }
+        }
+    })
+    .await
 }

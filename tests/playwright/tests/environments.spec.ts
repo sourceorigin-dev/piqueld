@@ -315,3 +315,35 @@ test('a dashboard listing requested before a save does not undo it', async ({ pa
   }
   await expect(title(page)).toHaveText('live');
 });
+
+test.describe('with deployments', () => {
+  test.use({ fakeDocker: true });
+
+  test('the Logs tab follows a deployment\'s new task live, and pauses and resumes', async ({ page, account }) => {
+    void account;
+    const { app, env, generation } = await apply(page, webManifest('live'));
+    await page.goto(`/dashboard/applications/${app}/environments/${env}`);
+    await environmentTab(page, 'Logs').click();
+    const logs = card(page, 'Application logs');
+    await expect(logs.getByText('Live', { exact: true })).toBeVisible();
+    await expect(logs.getByText('No output in the last hour yet.', { exact: false })).toBeVisible();
+
+    // The deployment's task starts while the tab is open, and its output
+    // appears as it is written.
+    await call(page, 'POST', `environments/${env}/deploy?expected_generation=${generation}`);
+    const output = logs.getByRole('region', { name: 'Application log output' });
+    await expect(output).toContainText('served request 0', { timeout: 20_000 });
+
+    await logs.getByRole('button', { name: 'Pause', exact: true }).click();
+    await expect(logs.getByText('Paused', { exact: true })).toBeVisible();
+    const shown = await output.textContent();
+    await page.waitForTimeout(2_500);
+    expect(await output.textContent()).toBe(shown);
+
+    // Resuming reads the latest output again, which the fake engine keeps
+    // none of, then follows the task from its first line.
+    await logs.getByRole('button', { name: 'Resume', exact: true }).click();
+    await expect(logs.getByText('Live', { exact: true })).toBeVisible();
+    await expect(output).toContainText('served request 0', { timeout: 10_000 });
+  });
+});
