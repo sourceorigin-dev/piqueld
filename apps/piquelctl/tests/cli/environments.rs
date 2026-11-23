@@ -956,7 +956,8 @@ fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
 
 /// `logs --follow` prints the snapshot, then the lines the daemon streams
 /// after the snapshot's newest one, one JSON object each. A stream that ends
-/// is reopened after the newest line printed, until the daemon refuses it.
+/// is reopened after the newest line printed, through failures trying again
+/// may fix, such as a 502, until the daemon refuses it.
 #[test]
 fn followed_logs_resume_after_the_newest_line_until_refused() {
     let record = |timestamp: &str, message: &str| {
@@ -972,7 +973,8 @@ fn followed_logs_resume_after_the_newest_line_until_refused() {
     let streamed = record("2026-01-01T00:00:01.000000001Z", "second");
     let (first, second) = (snapshot.clone(), streamed.clone());
     let stream = "/api/v1/environments/env-staging-01/logs/stream?";
-    let server = start_server(false, 4, move |request| match request.path.as_str() {
+    let mut reopened = 0;
+    let server = start_server(false, 5, move |request| match request.path.as_str() {
         "/api/v1/applications/app-notes-01" => Reply::json(two_environment_view()),
         path if path.starts_with("/api/v1/environments/env-staging-01/logs?") => {
             Reply::json(json!({"items": [first.clone()], "truncated": false}))
@@ -981,6 +983,13 @@ fn followed_logs_resume_after_the_newest_line_until_refused() {
             Reply::stream("log", std::slice::from_ref(&second))
         }
         path if path.starts_with(stream) && path.contains("after=2026-01-01T00%3A00%3A01.") => {
+            reopened += 1;
+            if reopened == 1 {
+                return Reply::status(
+                    "502 Bad Gateway",
+                    &json!({"code": "docker_unavailable", "message": "Docker is unavailable"}),
+                );
+            }
             Reply::status(
                 "403 Forbidden",
                 &json!({"code": "permission_denied", "message": "refused"}),
@@ -1000,6 +1009,6 @@ fn followed_logs_resume_after_the_newest_line_until_refused() {
         .collect::<Vec<_>>();
     assert_eq!(lines, [snapshot, streamed]);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("reconnecting"), "{stderr}");
-    assert_eq!(server.finish().len(), 4);
+    assert!(stderr.contains("the daemon ended it"), "{stderr}");
+    assert_eq!(server.finish().len(), 5);
 }

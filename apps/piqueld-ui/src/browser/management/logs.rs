@@ -147,8 +147,13 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
         });
         live.set_value(opened);
     };
-    // Reads the latest output, then follows what is written after it.
+    // Reads the latest output, then follows what is written after it; in a
+    // hidden tab, waits until it is shown.
     let start = move || {
+        if document_hidden() {
+            hidden.set_value(true);
+            return;
+        }
         live.set_value(None);
         generation.update(|generation| *generation += 1);
         let current = generation.get_untracked();

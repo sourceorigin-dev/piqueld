@@ -19,7 +19,6 @@ use crate::{
     support::{MAX_POLL_INTERVAL, POLL_INTERVAL, join_or, retry_transport},
 };
 use clap::{Args, Subcommand, ValueEnum};
-use http::StatusCode;
 use piqueld_client::{
     ApplicationView, Client, ClientError, CreateEnvironmentRequest, EnvironmentBranchRequest,
     EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView, EnvironmentView, LogTime,
@@ -1205,8 +1204,9 @@ pub(crate) async fn logs(
 /// Prints each line `stream` sends until interrupted. A stream that ends,
 /// or goes silent past the keep-alives, as when the daemon restarts, is
 /// reopened after the newest line printed, `after`, pausing longer between
-/// failed attempts. It ends only once the daemon refuses it, such as when
-/// the caller lost access or the environment was deleted.
+/// failed attempts, as long as the failure is one trying again may fix
+/// ([`CliError::is_unavailable`]). Any other ends it, such as the caller
+/// losing access or the environment being deleted.
 async fn follow_logs(
     console: &mut Console,
     client: &Client,
@@ -1231,8 +1231,9 @@ async fn follow_logs(
                     continue;
                 }
                 Ok(Some(Ok(None))) => continue,
-                Ok(Some(Err(error))) => Some(error),
-                Ok(None) | Err(_) => None,
+                Ok(Some(Err(error))) => error.into(),
+                Ok(None) => CliError::new(ErrorKind::Unavailable, "the daemon ended it"),
+                Err(_) => CliError::new(ErrorKind::Unavailable, "it went silent"),
             }
         } else {
             tokio::time::sleep(pause).await;
@@ -1245,17 +1246,16 @@ async fn follow_logs(
                     stream = Some(opened);
                     continue;
                 }
-                Err(error) => Some(error),
+                Err(error) => error.into(),
             }
         };
-        if let Some(error) = error.filter(|error| {
-            matches!(error, ClientError::Api { status, .. }
-                if *status != StatusCode::SERVICE_UNAVAILABLE)
-        }) {
-            return Err(error.into());
+        if !error.is_unavailable() {
+            return Err(error);
         }
         if stream.take().is_some() {
-            console.warning("The log stream was interrupted; reconnecting.")?;
+            console.warning(format_args!(
+                "The log stream was interrupted ({error}); reconnecting."
+            ))?;
         }
     }
 }
