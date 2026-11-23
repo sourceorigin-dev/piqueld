@@ -595,8 +595,8 @@ async fn event_streams_end_once_access_is_lost_or_the_daemon_stops() {
     assert!(!text.contains("access_ended"), "{text}");
 }
 
-/// A log stream sends the output its environment's tasks wrote after
-/// `after`, on the chosen stream, then that of a task started while it is
+/// A log stream resumes after its `Last-Event-ID`, sending the output its
+/// environment's tasks wrote since, on the chosen stream, then that of a task started while it is
 /// open, and ends with `access_ended` once its reader loses `logs:read`.
 #[tokio::test]
 async fn log_streams_follow_new_tasks_until_access_is_lost() {
@@ -613,10 +613,13 @@ async fn log_streams_follow_new_tasks_until_access_is_lost() {
     f.runtime.start_container("one", &f.blog_production, "web");
     f.runtime
         .start_container("other", &f.shop_production, "web");
-    let after = piqueld_core::api::LogTime(piqueld_docker::now_ns() - 5_400_000_000_000);
+    // Between the fake's `old` and `hello` lines: a stream ignoring it
+    // would start now, and send neither.
+    let resume = piqueld_core::api::LogTime(piqueld_docker::now_ns() - 5_400_000_000_000);
     let request = Request::builder()
-        .uri(format!("{stream}?stream=stdout&after={after}"))
+        .uri(format!("{stream}?stream=stdout"))
         .header("authorization", format!("Bearer {reader}"))
+        .header("last-event-id", resume.to_string())
         .body(Body::empty())
         .unwrap();
     let response = f.router.open(request).await;

@@ -107,17 +107,19 @@ impl QueryParams for LogStreamQuery {
 /// events.
 ///
 /// Sends a `log` message for each line as Docker writes it, its data a
-/// `LogRecord` and its ID the line's timestamp, so a reconnecting client
-/// resumes after the last line it received. Each container's lines come in
-/// order; lines of several containers interleave as they arrive. Tasks that
-/// start while the stream is open, such as a rollout's, are followed too.
+/// `LogRecord` and its ID the newest timestamp sent so far, which a
+/// reconnecting client resumes after. Each container's lines come in order;
+/// lines of several containers interleave as they arrive, so a resume can
+/// repeat or skip lines written within a moment of the newest one sent,
+/// such as during the first replayed lines. Tasks that start while the
+/// stream is open, such as a rollout's, are followed too.
 /// Malformed parameters and timestamps fail with 400 `logs_query_invalid`.
 /// The stream ends with a `stream_error` message once Docker can no longer
 /// be read, with an `access_ended` message whose data is the `ErrorBody` of
 /// the request that would now be refused once the caller loses access, and
 /// without a message when the daemon shuts down.
 #[utoipa::path(get,path="/api/v1/environments/{id}/logs/stream",operation_id="streamEnvironmentLogs",params(("id"=String,Path),LogStreamQuery),
- responses((status=200,description="SSE of `log` messages, each a `LogRecord`; IDs are timestamps",body=String,content_type="text/event-stream"),
+ responses((status=200,description="SSE of `log` messages, each a `LogRecord`; IDs are the newest timestamp sent",body=String,content_type="text/event-stream"),
  ApiErrors<400, 404, 502, 503>))]
 pub(super) async fn stream(
     State(state): State<ApiState>,
@@ -153,6 +155,7 @@ pub(super) async fn stream(
         lease: Lease::new(state.clone(), identity, source),
         environment: id,
         logs,
+        newest: String::new(),
         done: false,
     };
     Ok(follow.serve())
@@ -165,6 +168,9 @@ struct FollowLogs {
     lease: Lease,
     environment: EnvironmentId,
     logs: LogFollower,
+    /// The newest timestamp sent, each message's ID. Timestamps share one
+    /// fixed-width format, so they compare as text.
+    newest: String,
     /// Whether a final message was sent.
     done: bool,
 }
@@ -198,7 +204,10 @@ impl Follow for FollowLogs {
             tokio::select! {
                 record = self.logs.next() => return Some(match record {
                     Ok(record) => {
-                        let message = ServerEvent::default().id(record.timestamp.clone());
+                        if record.timestamp > self.newest {
+                            self.newest.clone_from(&record.timestamp);
+                        }
+                        let message = ServerEvent::default().id(self.newest.clone());
                         live::json(message, StreamMessage::Log, record)
                     }
                     Err(error) => {

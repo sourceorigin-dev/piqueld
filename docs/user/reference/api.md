@@ -707,12 +707,15 @@ have no available history. No output is stored by piqueld.
 
 `GET /api/v1/environments/{id}/logs/stream` follows the same output live
 through server-sent events, with the same `service` and `stream` filters. Each
-line is a `log` message whose data is a log record and whose ID is the line's
-timestamp. It starts with output written after `after`, an RFC 3339 timestamp
-at most a day back, or from when it opens; a `Last-Event-ID` header takes the
-place of `after`, so a reconnecting client resumes after the last line it
-received. Each container's lines arrive in order, and tasks that start while
-the stream is open, such as a rollout's, are followed too. A malformed `after`
+line is a `log` message whose data is a log record and whose ID is the newest
+timestamp sent so far. It starts with output written after `after`, an RFC 3339
+timestamp at most a day back, or from when it opens; a `Last-Event-ID` header
+takes the place of `after`, so a reconnecting client resumes after the newest
+line it received. Each container's lines arrive in order, but lines of several
+containers interleave as they arrive, so a resume can repeat or skip lines
+written within a moment of the newest one, such as while the stream first
+replays output. Tasks that start while the stream is open, such as a
+rollout's, are followed too. A malformed `after`
 fails with `400 logs_query_invalid`. The stream ends with `stream_error` once
 Docker can no longer be read, and otherwise like the
 [event stream](#event-history). It needs `logs:read`, like the snapshot.

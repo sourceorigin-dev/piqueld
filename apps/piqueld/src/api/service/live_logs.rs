@@ -27,8 +27,12 @@ pub struct LogFollower {
     stream: Option<LogStream>,
     /// Output written at or before this, in Unix nanoseconds, is skipped.
     after: i64,
-    /// Containers followed or found to have no output, by ID.
+    /// Containers followed, by ID.
     followed: HashSet<String>,
+    /// Containers listed once started, and those whose start already made it
+    /// list them again, by ID: their starts list nothing again, so another
+    /// environment's containers cost one listing each at most.
+    seen: HashSet<String>,
     /// Each followed container's records, as Docker sends them.
     followers: SelectAll<BoxStream<'static, Vec<LogRecord>>>,
     /// Container starts since `after`, which Docker replays.
@@ -68,6 +72,7 @@ impl ApplicationService {
             stream,
             after,
             followed: HashSet::new(),
+            seen: HashSet::new(),
             followers: SelectAll::new(),
             rescan: true,
             pending: VecDeque::new(),
@@ -79,7 +84,8 @@ impl ApplicationService {
 
 impl LogFollower {
     /// The next record written. The output of each container comes in
-    /// order; containers' output interleaves as it arrives. Cancel-safe.
+    /// order; containers' output interleaves as it arrives, so records of
+    /// different containers may come out of timestamp order. Cancel-safe.
     /// # Errors
     /// Returns runtime errors once containers can no longer be listed or
     /// their starts watched; the follower should then be dropped.
@@ -97,7 +103,7 @@ impl LogFollower {
                     self.pending.extend(records);
                 }
                 start = self.starts.next() => match start {
-                    Some(Ok(Some(id))) => self.rescan |= !self.followed.contains(&id),
+                    Some(Ok(Some(id))) => self.rescan |= self.seen.insert(id),
                     Some(Ok(None)) => {}
                     Some(Err(error)) => return Err(error.into()),
                     None => {
@@ -112,13 +118,19 @@ impl LogFollower {
     /// it doesn't follow yet.
     async fn discover(&mut self) -> Result<(), BoundaryError> {
         for container in self.runtime.containers().await? {
+            // Not started yet: its start brings it back.
+            if container.state == ContainerState::Created {
+                continue;
+            }
+            self.seen.insert(container.id.clone());
             let Workload::Service { environment, name } = container.workload else {
                 continue;
             };
             if environment != self.environment
-                || self.service.as_ref().is_some_and(|service| *service != name)
-                // Not started yet: its start brings it back.
-                || container.state == ContainerState::Created
+                || self
+                    .service
+                    .as_ref()
+                    .is_some_and(|service| *service != name)
                 || !self.followed.insert(container.id.clone())
             {
                 continue;

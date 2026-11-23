@@ -9274,10 +9274,12 @@ impl Client {
     events
 
     Sends a `log` message for each line as Docker writes it, its data a
-    `LogRecord` and its ID the line's timestamp, so a reconnecting client
-    resumes after the last line it received. Each container's lines come in
-    order; lines of several containers interleave as they arrive. Tasks that
-    start while the stream is open, such as a rollout's, are followed too.
+    `LogRecord` and its ID the newest timestamp sent so far, which a
+    reconnecting client resumes after. Each container's lines come in order;
+    lines of several containers interleave as they arrive, so a resume can
+    repeat or skip lines written within a moment of the newest one sent,
+    such as during the first replayed lines. Tasks that start while the
+    stream is open, such as a rollout's, are followed too.
     Malformed parameters and timestamps fail with 400 `logs_query_invalid`.
     The stream ends with a `stream_error` message once Docker can no longer
     be read, with an `access_ended` message whose data is the `ErrorBody` of
