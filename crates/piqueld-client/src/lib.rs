@@ -124,6 +124,7 @@ pub use previews::{
     PreviewLimitReached, PreviewLimits, PreviewSlot, PreviewSlug, PreviewUsage, PreviewView,
     PrunePreviewsRequest,
 };
+pub use sse::LiveStream;
 pub use system::{
     CertificateStatus, DnsProviderStatus, DnsStatus, ImageStatus, RegistryImageStatus,
     SnapshotLimits, SystemStatus, TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver,

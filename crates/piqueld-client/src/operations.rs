@@ -1,8 +1,7 @@
 //! Asynchronous operation inspection, and their timelines of steps.
 use crate::{
-    Client, ClientError, Operation, StreamMessage,
+    Client, ClientError, LiveStream, Operation, StreamMessage,
     client::{EnvelopedCall, GeneratedCall},
-    sse::{Messages, Received},
 };
 use piqueld_core::timeline::Timeline;
 
@@ -39,50 +38,10 @@ impl Client {
             .stream_operation_timeline(id)
             .payload()
             .await?;
-        Ok(TimelineStream {
-            messages: Messages::new(body),
-        })
+        Ok(LiveStream::new(body, StreamMessage::Timeline))
     }
 }
 
 /// An operation's timeline as the daemon streams it: whole, at once, then
 /// again each time it changes. Reconnecting sends it whole again.
-pub struct TimelineStream {
-    messages: Messages,
-}
-
-impl TimelineStream {
-    /// The timeline as it changed; `Ok(None)` for a keep-alive, which the
-    /// daemon sends every 15 seconds, so a caller can tell a quiet operation
-    /// from a dropped stream; or `None` once the stream ended, as it does
-    /// when the daemon shuts down. Cancel-safe.
-    ///
-    /// # Errors
-    /// Returns a transport error when the connection fails, an exchange
-    /// error when the daemon can no longer read history (`stream_error`),
-    /// and a 403 API error with the daemon's reason once the caller lost
-    /// access (`access_ended`). The stream ends after any of them.
-    pub async fn next(&mut self) -> Option<Result<Option<Timeline>, ClientError>> {
-        loop {
-            let message = match self.messages.next().await? {
-                Ok(Received::Message(message)) => message,
-                Ok(Received::Comment) => return Some(Ok(None)),
-                Err(error) => return Some(Err(error)),
-            };
-            return Some(match StreamMessage::parse(&message.event) {
-                Some(StreamMessage::Timeline) => serde_json::from_str(&message.data)
-                    .map(Some)
-                    .map_err(|source| ClientError::Decode { source }),
-                Some(StreamMessage::StreamError) => Err(ClientError::exchange(format!(
-                    "the timeline stream failed: {}",
-                    message.data
-                ))),
-                Some(StreamMessage::AccessEnded) => Err(ClientError::api(
-                    http::StatusCode::FORBIDDEN,
-                    message.data.as_bytes(),
-                )),
-                _ => continue,
-            });
-        }
-    }
-}
+pub type TimelineStream = LiveStream<Timeline>;

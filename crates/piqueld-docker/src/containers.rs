@@ -16,7 +16,7 @@ use bollard::{
 use futures_util::stream::BoxStream;
 use piqueld_core::{
     EnvironmentId, InstanceId,
-    api::LogStream,
+    api::{LogStream, LogTime},
     resource::{
         APPLICATION_LABEL, INGRESS_LABEL, INSTANCE_LABEL, JOB_LABEL, MANAGED_LABEL, SERVICE_LABEL,
         TELEMETRY_TARGET,
@@ -287,7 +287,7 @@ impl BollardDocker {
             .lines()
             .map(|line| {
                 let (timestamp, message) = line.split_once(' ').unwrap_or(("", line));
-                let timestamp = unix_nanos(timestamp).unwrap_or_else(super::now_ns);
+                let timestamp = LogTime::parse(timestamp).map_or_else(super::now_ns, |time| time.0);
                 (timestamp, message.to_owned())
             })
             .collect();
@@ -359,38 +359,6 @@ impl BollardDocker {
     }
 }
 
-/// Reads one of Docker's UTC RFC 3339 timestamps, such as
-/// `2026-01-01T00:00:00.000000001Z`, as Unix nanoseconds.
-fn unix_nanos(timestamp: &str) -> Option<i64> {
-    let (date, time) = timestamp.strip_suffix('Z')?.split_once('T')?;
-    let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
-    let numbers = |text: &str, separator| -> Option<[i128; 3]> {
-        text.split(separator)
-            .map(|part| part.parse::<i64>().ok().map(i128::from))
-            .collect::<Option<Vec<_>>>()?
-            .try_into()
-            .ok()
-    };
-    let [year, month, day] = numbers(date, '-')?;
-    let [hour, minute, second] = numbers(clock, ':')?;
-    if !(1..=12).contains(&month)
-        || !(1..=31).contains(&day)
-        || fraction.len() > 9
-        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return None;
-    }
-    let nanos: i128 = format!("{fraction:0<9}").parse().ok()?;
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(400);
-    let year_of_era = year - era * 400;
-    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    let days = era * 146_097 + day_of_era - 719_468;
-    let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second;
-    i64::try_from(seconds * 1_000_000_000 + nanos).ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,26 +378,6 @@ mod tests {
 
         let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
         docker.client().expect("`client` should succeed");
-    }
-
-    #[test]
-    fn docker_timestamps_read_as_unix_nanoseconds() {
-        for (timestamp, nanos) in [
-            ("1970-01-01T00:00:00Z", Some(0)),
-            (
-                "2026-01-01T00:00:00.000000001Z",
-                Some(1_767_225_600_000_000_001),
-            ),
-            ("2024-02-29T23:59:59.5Z", Some(1_709_251_199_500_000_000)),
-            ("2026-01-01T00:00:00+01:00", None),
-            ("2026-13-01T00:00:00Z", None),
-            ("9223372036854775807-01-01T00:00:00Z", None),
-            ("1970-01-01T9223372036854775807:00:00Z", None),
-            ("1970-01-01T00:-9223372036854775808:00Z", None),
-            ("not a timestamp", None),
-        ] {
-            assert_eq!(unix_nanos(timestamp), nanos, "{timestamp}");
-        }
     }
 
     /// Task containers take their service's labels; other installations'

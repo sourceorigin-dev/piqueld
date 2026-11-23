@@ -20,6 +20,8 @@ async fn digest_pinned_requested_images_compile() {
         exec_gate: Gate::default(),
         instance: InstanceId::parse("test").unwrap(),
         unavailable: AtomicBool::new(false),
+        containers: std::sync::Mutex::default(),
+        starts: std::sync::Mutex::default(),
     };
 
     runtime

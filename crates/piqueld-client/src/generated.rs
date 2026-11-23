@@ -9270,6 +9270,83 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
+    /*Follows container output of an environment's services as server-sent
+    events
+
+    Sends a `log` message for each line as Docker writes it, its data a
+    `LogRecord` and its ID the line's timestamp, so a reconnecting client
+    resumes after the last line it received. Each container's lines come in
+    order; lines of several containers interleave as they arrive. Tasks that
+    start while the stream is open, such as a rollout's, are followed too.
+    Malformed parameters and timestamps fail with 400 `logs_query_invalid`.
+    The stream ends with a `stream_error` message once Docker can no longer
+    be read, with an `access_ended` message whose data is the `ErrorBody` of
+    the request that would now be refused once the caller loses access, and
+    without a message when the daemon shuts down.
+
+    Sends a `GET` request to `/api/v1/environments/{id}/logs/stream`
+
+    Arguments:
+    - `id`
+    - `after`: Only include output written after this RFC 3339 UTC timestamp, at most a
+    day back; from when the stream opens when omitted. A `Last-Event-ID`
+    header takes its place.
+    - `service`: Only include output from this service (1–63 characters); all services when omitted.
+    - `stream`: Only include this output stream; both when omitted.
+    */
+    pub async fn stream_environment_logs<'a>(
+        &'a self,
+        id: &'a str,
+        after: Option<&'a str>,
+        service: Option<&'a str>,
+        stream: Option<&'a piqueld_core::api::LogStream>,
+    ) -> Result<ResponseValue<ByteStream>, Error<piqueld_core::api::ErrorBody>> {
+        let url = format!(
+            "{}/api/v1/environments/{}/logs/stream",
+            self.baseurl,
+            encode_path(&id.to_string()),
+        );
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .get(url)
+            .query(&progenitor_client::QueryParam::new("after", &after))
+            .query(&progenitor_client::QueryParam::new("service", &service))
+            .query(&progenitor_client::QueryParam::new("stream", &stream))
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "stream_environment_logs",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => Ok(ResponseValue::stream(response)),
+            400u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            404u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            502u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            503u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
     /*Promotes a release into a promoted environment
 
     Deploys the release of the source environment's current deployment (which

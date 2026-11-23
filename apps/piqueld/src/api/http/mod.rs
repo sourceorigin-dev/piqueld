@@ -372,6 +372,7 @@ fn documented_router() -> OpenApiRouter<ApiState> {
         .routes(authenticated!(observability::audit))
         .routes(granted!(Global(AuditRead) => observability::verify_audit))
         .routes(granted!(App(LogsRead) => logs::get))
+        .routes(granted!(App(LogsRead) => logs::stream))
         .routes(granted!(App(LogsRead) => traffic::get))
         .routes(granted!(App(Exec) => exec::exec))
         .routes(authenticated!(builds::list))

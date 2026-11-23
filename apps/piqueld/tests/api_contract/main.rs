@@ -97,6 +97,10 @@ struct FakeRuntime {
     exec_gate: Gate,
     instance: InstanceId,
     unavailable: AtomicBool,
+    /// Containers it runs, added by [`Self::start_container`].
+    containers: std::sync::Mutex<Vec<piqueld_docker::ManagedContainer>>,
+    /// Where each watcher of container starts hears of one.
+    starts: std::sync::Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
 }
 
 impl FakeRuntime {
@@ -107,6 +111,31 @@ impl FakeRuntime {
             exec_gate: Gate::default(),
             instance: store.instance_id().clone(),
             unavailable: AtomicBool::new(false),
+            containers: std::sync::Mutex::default(),
+            starts: std::sync::Mutex::default(),
+        }
+    }
+
+    /// Starts container `id`, a task of `environment`'s `service`, telling
+    /// everyone watching starts.
+    fn start_container(&self, id: &str, environment: &str, service: &str) {
+        self.containers
+            .lock()
+            .unwrap()
+            .push(piqueld_docker::ManagedContainer {
+                id: id.into(),
+                name: id.into(),
+                state: piqueld_docker::ContainerState::Running,
+                created: 0,
+                task: Some(format!("task-{id}")),
+                workload: piqueld_docker::Workload::Service {
+                    environment: environment.parse().unwrap(),
+                    name: service.into(),
+                },
+                receiver: false,
+            });
+        for watcher in self.starts.lock().unwrap().iter() {
+            let _ = watcher.send(id.into());
         }
     }
 
@@ -309,9 +338,8 @@ impl RuntimeBoundary for FakeRuntime {
         self.check_available().await?;
         Ok(ObservedApplication::default())
     }
-    /// The fake runtime runs no containers.
     async fn containers(&self) -> Result<Vec<piqueld_docker::ManagedContainer>, BoundaryError> {
-        Ok(Vec::new())
+        Ok(self.containers.lock().unwrap().clone())
     }
     async fn container_usage(
         &self,
@@ -319,12 +347,30 @@ impl RuntimeBoundary for FakeRuntime {
     ) -> Result<Option<piqueld_docker::ContainerUsage>, BoundaryError> {
         Ok(None)
     }
-    fn container_logs(&self, _: &str, _: i32) -> piqueld_docker::ContainerLogs {
-        futures_util::stream::empty().boxed()
+    /// Each container wrote `old <id>` two hours ago and `hello <id>` an hour
+    /// ago to stdout, and `debug <id>` to stderr.
+    fn container_logs(&self, id: &str, _: i32) -> piqueld_docker::ContainerLogs {
+        let hours_ago = |hours: i64| piqueld_docker::now_ns() - hours * 3_600_000_000_000;
+        let stdout = piqueld_docker::LogLines {
+            stream: Some(piqueld_core::api::LogStream::Stdout),
+            lines: vec![
+                (hours_ago(2), format!("old {id}")),
+                (hours_ago(1), format!("hello {id}")),
+            ],
+        };
+        let stderr = piqueld_docker::LogLines {
+            stream: Some(piqueld_core::api::LogStream::Stderr),
+            lines: vec![(hours_ago(1), format!("debug {id}"))],
+        };
+        futures_util::stream::iter([Ok(stdout), Ok(stderr)]).boxed()
     }
-    /// No container ever starts.
     fn container_starts(&self, _: i64) -> piqueld_docker::ContainerStarts {
-        futures_util::stream::pending().boxed()
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        self.starts.lock().unwrap().push(sender);
+        futures_util::stream::unfold(receiver, async |mut receiver| {
+            Some((Ok(Some(receiver.recv().await?)), receiver))
+        })
+        .boxed()
     }
 }
 
