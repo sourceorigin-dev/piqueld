@@ -422,8 +422,17 @@ export const test = base.extend<Options & { daemon: Daemon; passkeys: Passkeys; 
   browserErrors: [async ({ page }, use) => {
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
+    // Chromium logs each response with an error status as a console error,
+    // and the dashboard reads those as answers, such as a signed-out 401 or
+    // the readiness 503, as specs provoke them on purpose. Any other console
+    // error, such as one the dashboard logs, fails the test.
+    page.on('console', message => {
+      if (message.type() === 'error' && !message.text().startsWith('Failed to load resource: ')) {
+        errors.push(`console error: ${message.text()}`);
+      }
+    });
     await use();
-    expect(errors, 'Uncaught browser errors').toEqual([]);
+    expect(errors, 'Uncaught errors and console errors in the browser').toEqual([]);
   }, { auto: true }],
 });
 export { expect };

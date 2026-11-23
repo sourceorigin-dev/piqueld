@@ -180,3 +180,10 @@ async fn oversized_timeout_is_an_input_error_instead_of_a_panic() {
 
     assert_eq!(error.to_string(), "timeout is too large");
 }
+
+/// clap's debug assertions over the whole command tree, which otherwise
+/// only the `cli_reference` example that `just openapi-check` runs makes.
+#[test]
+fn command_tree_is_valid() {
+    super::command().debug_assert();
+}

@@ -169,4 +169,35 @@ mod tests {
             service
         );
     }
+
+    /// Pins every constructor's name for one environment. Resources on
+    /// existing hosts carry these names, so a change here orphans them: the
+    /// daemon creates new ones and no longer recognizes the old. Change a
+    /// name only together with a migration of the resources that have it.
+    #[test]
+    fn names_stay_the_same_across_releases() {
+        let id = EnvironmentId::parse("env-0000000001").unwrap();
+        let exporter = EnvironmentId::parse("env-0000000002").unwrap();
+        let names = [
+            DockerServiceName::for_service(&id, &ServiceName::parse("web").unwrap()).to_string(),
+            DockerServiceName::for_job(&id, &JobName::parse("migrate").unwrap()).to_string(),
+            DockerVolumeName::for_volume(&id, &VolumeName::parse("data").unwrap()).to_string(),
+            DockerNetworkName::for_application(&id).to_string(),
+            DockerNetworkName::for_ingress(&id).to_string(),
+            DockerNetworkName::for_link(&id, &exporter).to_string(),
+            DockerConfigName::for_file(&id, "hello\n", FileMode::READ_ONLY).to_string(),
+        ];
+        assert_eq!(
+            names,
+            [
+                "piqueld-env-0000000001-service-web-76993d01aba5",
+                "piqueld-env-0000000001-job-migrate-af1cf5d450f1",
+                "piqueld-env-0000000001-volume-data-a7f4431b5987",
+                "piqueld-env-0000000001-network-b612a964f4bd",
+                "piqueld-env-0000000001-network-ingress-b2bafc607de6",
+                "piqueld-env-0000000001-network-link-env-0000000002-cc3a31c438dc",
+                "piqueld-env-0000000001-file-5891b5b522d5df086d0ff0-85dbd53dee1f",
+            ]
+        );
+    }
 }

@@ -70,6 +70,19 @@ fn image_manifest_parses_from_both_supported_formats() {
     );
 }
 
+/// The example the development quickstart applies stays valid, and its
+/// export reads back as the same application.
+#[test]
+fn the_basic_website_example_is_valid() {
+    let example = parse_toml(include_str!("../../../examples/basic-website.toml"))
+        .unwrap()
+        .normalize(ApplicationId::parse("app-basic-website").unwrap());
+    let reparsed = parse_toml(&example.export_toml().unwrap())
+        .unwrap()
+        .normalize(example.id().clone());
+    assert_eq!(example, reparsed);
+}
+
 #[test]
 fn normalization_is_canonical_and_round_trips() {
     let validated = parse_toml(TOML).unwrap();
