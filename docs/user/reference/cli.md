@@ -263,6 +263,13 @@ from, its release, and which is the current target and the last successful
 one. An [automatic rollback](manifest.md#rollback) shows as "rolled back from
 deployment \<failed> to deployment \<restored>".
 
+`env attempts APP [ENV]` lists each time piqueld tried a deployment, newest
+first, as the dashboard's **Attempts** tab does: each attempt's number, state,
+failure code and message, and when it last changed. The attempt running now
+leads until its outcome is recorded. It lists the latest deployment's attempts,
+or those of `--deployment ID`, 100 per page; `--cursor` pages the deployment
+`--deployment` names. `preview attempts` does the same for a preview.
+
 `env restore APP ENV DEPLOYMENT` deploys an earlier deployment again exactly as
 it ran: its rendered manifest, its images and the secret versions it pinned,
 never newer ones. It is recorded as a new deployment restored from that one,
@@ -531,6 +538,7 @@ written to stderr, so stdout remains valid JSON.
 | `env url --route` / `preview url --route` | `RouteUrl` |
 | `env wait` / `preview wait` | `Deployment` |
 | `env history` / `preview history` | `{ "items": [DeploymentView], "next_cursor": string or null }` |
+| `env attempts` / `preview attempts` | `{ "items": [Operation], "next_cursor": string or null }`; each item is one attempt of the deployment, whose ID is the deployment's |
 | `env restore` / `preview restore` | Same as `env deploy`, with `--no-wait` too |
 | `env traffic` | `TrafficReport` |
 | `env create` / `env rename` / `env branch` / `env sync` / `env telemetry` / `env source` / `env stop` | `EnvironmentView` |

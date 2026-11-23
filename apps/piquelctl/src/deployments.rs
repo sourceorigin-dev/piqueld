@@ -7,7 +7,7 @@ use crate::{
     error::{CliCode, CliError, ErrorKind, Result},
     output::{
         Console,
-        reports::{AcceptedDeploymentReport, Named, OperationOutcomeReport},
+        reports::{AcceptedDeploymentReport, AttemptsReport, Named, OperationOutcomeReport},
     },
     support::{join_or, retry_transport},
 };
@@ -165,13 +165,18 @@ async fn find_deployment(
     client
         .deployment(environment.id.as_str(), id)
         .await
-        .map_err(|error| match error {
-            ClientError::Api { status, .. } if status.as_u16() == 404 => CliError::new(
-                ErrorKind::Input,
-                format!("deployment {id:?} of {} was not found", environment.name),
-            ),
-            error => error.into(),
-        })
+        .map_err(not_found(environment, id))
+}
+
+/// Maps the API's 404 for deployment `id` of `environment` to an input error.
+fn not_found(environment: &EnvironmentView, id: &str) -> impl FnOnce(ClientError) -> CliError {
+    move |error| match error {
+        ClientError::Api { status, .. } if status.as_u16() == 404 => CliError::new(
+            ErrorKind::Input,
+            format!("deployment {id:?} of {} was not found", environment.name),
+        ),
+        error => error.into(),
+    }
 }
 
 /// `environment`'s latest deployment, if any: its latest operation unless
@@ -361,6 +366,59 @@ impl<T: Args + Target> HistoryArgs<T> {
             .deployments(environment.id.as_str(), self.cursor.as_deref(), self.limit)
             .await?;
         console.emit(&Named::new(&page, &application))
+    }
+}
+
+// `attempts` arguments shared by `env attempts` and `preview attempts`.
+#[derive(Debug, Args)]
+pub(crate) struct AttemptsArgs<T: Args> {
+    #[command(flatten)]
+    target: T,
+    /// ID of the deployment, as `history` lists it. By default, the latest
+    /// deployment.
+    #[arg(long, value_name = "ID")]
+    deployment: Option<String>,
+    /// Cursor from the previous page; needs `--deployment`.
+    #[arg(long, requires = "deployment")]
+    cursor: Option<String>,
+}
+
+impl<T: Args + Target> AttemptsArgs<T> {
+    /// Emits one page of a deployment's attempts, newest first, 100 per
+    /// page. The first page leads with the attempt running now, until the
+    /// API retains its outcome.
+    pub(crate) async fn run(&self, console: &mut Console, client: &Client) -> Result<()> {
+        let environment = &self.target.environment(client).await?;
+        // The deployment's operation is read before its attempts, so the
+        // attempt it runs is newer than any retained outcome. `--cursor`
+        // needs `--deployment`, and a later page lists retained ones alone.
+        let (deployment, live) = match (&self.deployment, &self.cursor) {
+            (None, _) => {
+                let latest = latest_deployment(client, environment)
+                    .await?
+                    .ok_or_else(|| {
+                        CliError::new(
+                            ErrorKind::Input,
+                            format!("{} has no deployments yet", environment.name),
+                        )
+                    })?;
+                (latest.id.clone(), Some(latest))
+            }
+            // Reading it reports an unknown deployment by name.
+            (Some(id), None) => {
+                let deployment = find_deployment(client, environment, id).await?;
+                (id.clone(), Some(deployment.operation))
+            }
+            (Some(id), Some(_)) => (id.clone(), None),
+        };
+        let mut page = client
+            .deployment_attempts(environment.id.as_str(), &deployment, self.cursor.as_deref())
+            .await
+            .map_err(not_found(environment, &deployment))?;
+        if let Some(live) = live {
+            page.items = live.attempts(&page.items);
+        }
+        console.emit(&AttemptsReport { deployment, page })
     }
 }
 

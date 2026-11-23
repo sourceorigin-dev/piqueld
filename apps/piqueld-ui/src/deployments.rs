@@ -138,18 +138,11 @@ impl Attempts {
         self.cursor = page.next_cursor;
     }
 
-    /// The attempts to list for a deployment whose operation is `live`: the
-    /// API retains only completed outcomes, so the attempt it is running
-    /// leads the list until its outcome is retained.
+    /// The attempts to list for a deployment whose operation is `live`; see
+    /// [`Operation::attempts`].
     #[must_use]
     pub fn visible(&self, live: &Operation) -> Vec<Operation> {
-        let running =
-            live.attempt > 0 && !self.items.iter().any(|item| item.attempt == live.attempt);
-        running
-            .then(|| live.clone())
-            .into_iter()
-            .chain(self.items.iter().cloned())
-            .collect()
+        live.attempts(&self.items)
     }
 }
 
@@ -365,53 +358,34 @@ mod tests {
     }
 
     #[test]
-    fn the_running_attempt_leads_until_its_outcome_is_retained() {
+    fn older_attempt_pages_append_and_a_refresh_shows_the_newest_alone() {
         let mut attempts = Attempts::default();
         let retained = |attempt| operation("operation-1", attempt, OperationState::Failed);
-        attempts.show(
-            Page {
-                items: vec![retained(2)],
-                next_cursor: Some("older".into()),
-            },
-            false,
-        );
-        attempts.show(
-            Page {
-                items: vec![retained(1)],
-                next_cursor: None,
-            },
-            true,
-        );
-        assert_eq!(attempts.cursor, None);
-
-        let listed = |attempts: &Attempts, live: &Operation| {
+        let page = |attempts: &[u64], next: Option<&str>| Page {
+            items: attempts.iter().copied().map(retained).collect(),
+            next_cursor: next.map(str::to_owned),
+        };
+        let numbers = |attempts: &Attempts| {
             attempts
-                .visible(live)
+                .items
                 .iter()
-                .map(|item| (item.attempt, item.state))
+                .map(|item| item.attempt)
                 .collect::<Vec<_>>()
         };
-        let running = operation("operation-1", 3, OperationState::Running);
+        attempts.show(page(&[2], Some("older")), false);
+        attempts.show(page(&[1], None), true);
         assert_eq!(
-            listed(&attempts, &running),
-            [
-                (3, OperationState::Running),
-                (2, OperationState::Failed),
-                (1, OperationState::Failed)
-            ]
+            (numbers(&attempts), attempts.cursor.clone()),
+            (vec![2, 1], None)
         );
-        // Refreshing shows the newest page alone; a retained outcome is listed
-        // once, and nothing ran before the first attempt.
-        attempts.show(
-            Page {
-                items: vec![retained(3)],
-                next_cursor: Some("older".into()),
-            },
-            false,
+        // The running attempt leads them (see `Operation::attempts`).
+        let running = operation("operation-1", 3, OperationState::Running);
+        assert_eq!(attempts.visible(&running).len(), 3);
+        attempts.show(page(&[3], Some("older")), false);
+        assert_eq!(
+            (numbers(&attempts), attempts.cursor.as_deref()),
+            (vec![3], Some("older"))
         );
-        assert_eq!(listed(&attempts, &running), [(3, OperationState::Failed)]);
-        let requested = operation("operation-1", 0, OperationState::Requested);
-        assert_eq!(listed(&Attempts::default(), &requested), []);
     }
 
     /// A plan of promoting a release from `origin`, at revision 7, whose

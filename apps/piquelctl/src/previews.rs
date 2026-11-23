@@ -5,7 +5,8 @@ use crate::{
     cli::LogArgs,
     commands::{resolve_application, wait_for_deletion, wait_for_operation},
     deployments::{
-        Deployed, HistoryArgs, RestoreArgs, Target, UrlArgs, WaitArgs, wait_for_accepted,
+        AttemptsArgs, Deployed, HistoryArgs, RestoreArgs, Target, UrlArgs, WaitArgs,
+        wait_for_accepted,
     },
     environments::logs,
     error::{CliError, ErrorKind, Result},
@@ -74,6 +75,12 @@ pub(crate) enum PreviewCommand {
     /// List a preview's deployments, newest first: each one's outcome and
     /// where it came from.
     History(HistoryArgs<PreviewArgs>),
+    /// List the attempts of one of a preview's deployments, newest first: each
+    /// try at rolling it out, how it ended, and when it last changed.
+    ///
+    /// The attempt running now leads until its outcome is recorded. Without
+    /// `--deployment`, it lists the latest deployment's attempts.
+    Attempts(AttemptsArgs<PreviewArgs>),
     /// Deploy an earlier, succeeded deployment of a preview again exactly as
     /// it ran, without running its jobs.
     Restore(RestoreArgs<PreviewArgs>),
@@ -261,6 +268,7 @@ impl PreviewCommand {
                 logs(console, client, &preview, window).await
             }
             Self::History(args) => args.run(console, client).await,
+            Self::Attempts(args) => args.run(console, client).await,
             Self::Restore(args) => args.run(console, client).await,
             Self::Wait(args) => args.run(console, client).await,
             Self::Url(args) => args.run(console, client).await,

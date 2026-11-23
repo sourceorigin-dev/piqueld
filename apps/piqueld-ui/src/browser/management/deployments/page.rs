@@ -505,12 +505,7 @@ fn DeploymentAttempts(deployment: Signal<DeploymentView>) -> impl IntoView {
 fn AttemptRow(attempt: Operation) -> impl IntoView {
     let context = editor();
     let history = operation_events(&attempt.id);
-    let outcome = match (attempt.error_code, attempt.error_message) {
-        (Some(code), Some(message)) => format!("{code}: {message}"),
-        (Some(code), None) => code,
-        (None, Some(message)) => message,
-        (None, None) => String::new(),
-    };
+    let outcome = attempt.failure();
     view! {
         <tr>
             <td class="num">{attempt.attempt}</td>
