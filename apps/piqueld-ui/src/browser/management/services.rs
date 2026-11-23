@@ -18,19 +18,16 @@ use piqueld_client::{
     edit::{ApplicationEdit, ServiceEdit},
 };
 
-const SERVICE_TABS: [&str; 11] = [
-    Section::General.title(),
-    Section::Environment.title(),
-    Section::Process.title(),
-    Section::Storage.title(),
-    Section::Files.title(),
-    Section::Health.title(),
-    Section::Dependencies.title(),
-    Section::Rollout.title(),
-    Section::Telemetry.title(),
-    Section::Resources.title(),
-    "Logs",
-];
+/// Every `Section`'s tab, in order, then the service's logs.
+const SERVICE_TABS: [&str; Section::ALL.len() + 1] = {
+    let mut tabs = ["Logs"; Section::ALL.len() + 1];
+    let mut index = 0;
+    while index < Section::ALL.len() {
+        tabs[index] = Section::ALL[index].title();
+        index += 1;
+    }
+    tabs
+};
 
 /// Saved services of the application, each linking to its service editor page.
 #[component]

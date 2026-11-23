@@ -1,4 +1,4 @@
-//! Editing services: adding, renaming and listing them, their environment variables, health checks and rollout settings.
+//! Editing services: adding, renaming and listing them, their environment variables, health checks, rollout and security settings.
 
 use super::{
     ArgumentsArgs, BuildRepository, CommandArgs, CpuArgs, DependsOnArgs, EditFlags, GitBuildArgs,
@@ -13,7 +13,8 @@ use crate::{
 };
 use clap::{Args, Subcommand};
 use piqueld_client::{
-    Client, HealthCheck, Rollout, RolloutOrder, Service, ServiceSecurity, Source, Template, Typed,
+    Client, ContainerUser, HealthCheck, Rollout, RolloutOrder, Service, ServiceSecurity, Source,
+    Template, Typed,
     edit::{ApplicationEdit, ServiceEdit},
 };
 use std::collections::BTreeMap;
@@ -98,6 +99,12 @@ pub(crate) enum ServiceCommand {
     /// environments granted telemetry with `env telemetry`. At most one
     /// service per application can receive it, and it must run one replica.
     Telemetry(ReceivesTelemetryArgs),
+    /// Harden the service's containers and its jobs'.
+    ///
+    /// Every setting is off unless you pass its flag, so running it without
+    /// flags turns them all off. The next deployment replaces the service's
+    /// containers.
+    Security(SecurityArgs),
     /// Mount a volume into a service, or remove a mount.
     Mount {
         #[command(subcommand)]
@@ -147,6 +154,24 @@ pub(crate) struct ReceivesTelemetryArgs {
     /// to never receive it.
     #[arg(value_name = "on|off", action = clap::ArgAction::Set, value_parser = on_off())]
     enabled: bool,
+}
+#[derive(Debug, Args)]
+pub(crate) struct SecurityArgs {
+    #[command(flatten)]
+    target: ServiceTarget,
+    /// Run as this numeric user, and group if given, instead of the image's
+    /// user, such as `1000:1000`. A service receiving telemetry can't set it.
+    #[arg(long, value_name = "UID[:GID]")]
+    user: Option<ContainerUser>,
+    /// Make the root filesystem read-only. `/tmp` stays writable, in memory.
+    #[arg(long)]
+    read_only_root: bool,
+    /// Drop every Linux capability.
+    #[arg(long)]
+    drop_capabilities: bool,
+    /// Keep processes from gaining privileges, such as through `sudo`.
+    #[arg(long)]
+    no_new_privileges: bool,
 }
 #[derive(Debug, Args)]
 pub(crate) struct AddServiceArgs {
@@ -382,6 +407,12 @@ impl ServiceCommand {
             Self::Telemetry(args) => args
                 .target
                 .field(ServiceEdit::ReceivesTelemetry(args.enabled)),
+            Self::Security(args) => args.target.field(ServiceEdit::Security(ServiceSecurity {
+                user: args.user,
+                read_only_root: args.read_only_root,
+                drop_capabilities: args.drop_capabilities,
+                no_new_privileges: args.no_new_privileges,
+            })),
             Self::Mount { command } => command.edit(),
             Self::Secret { command } => return command.run(client, console).await,
             Self::Health { command } => command.edit(),

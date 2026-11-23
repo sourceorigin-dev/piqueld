@@ -614,6 +614,7 @@ pub(super) fn ServiceGroup(name: String, section: Section) -> impl IntoView {
             Section::Dependencies => ServiceEdit::DependsOn(service.depends_on.clone()),
             Section::Rollout => ServiceEdit::Rollout(service.rollout.clone()),
             Section::Telemetry => ServiceEdit::ReceivesTelemetry(service.receives_telemetry),
+            Section::Security => ServiceEdit::Security(service.security),
             Section::Resources => ServiceEdit::Resources(service.resources.clone()),
         };
         context.save(ApplicationEdit::Service { name, edit }, move |_| {
@@ -659,6 +660,9 @@ const fn section_hint(section: Section) -> &'static str {
         Section::Telemetry => {
             "In environments granted telemetry, the service gets the daemon's traces, metrics and logs from every application, over an OTLP socket it listens on at /run/piqueld/telemetry/otlp.sock, and runs as the daemon's user. At most one service per application."
         }
+        Section::Security => {
+            "Harden the service's containers and its jobs'. Images that run as root, write outside their volumes and /tmp, or need a capability may fail to start with these on."
+        }
         Section::Resources => "Leave a limit blank to use the runtime default.",
     }
 }
@@ -695,17 +699,36 @@ fn service_fields(section: Section, service: String, form: RwSignal<ServiceForm>
         Section::Health => health_fields(form),
         Section::Dependencies => dependency_fields(service, form),
         Section::Rollout => rollout_fields(form),
-        Section::Telemetry => view! {
-            <label class="checkbox">
-                <input
-                    type="checkbox"
-                    prop:checked={move || form.with(|v| v.receives_telemetry)}
-                    on:change={move |ev| {
-                        form.update(|v| v.receives_telemetry = event_target_checked(&ev));
-                    }}
-                />
-                "Receive telemetry"
-            </label>
+        Section::Telemetry => checkbox(
+            "Receive telemetry",
+            form,
+            |v| v.receives_telemetry,
+            |v, on| v.receives_telemetry = on,
+        ),
+        Section::Security => view! {
+            <div class="stack-sm">
+                <div class="form-grid">
+                    {text_input("User (uid or uid:gid)", form, |v| v.security.user.clone(), |v, s| v.security.user = s)}
+                </div>
+                {checkbox(
+                    "Read-only root filesystem, with a writable /tmp in memory",
+                    form,
+                    |v| v.security.settings.read_only_root,
+                    |v, on| v.security.settings.read_only_root = on,
+                )}
+                {checkbox(
+                    "Drop every Linux capability",
+                    form,
+                    |v| v.security.settings.drop_capabilities,
+                    |v, on| v.security.settings.drop_capabilities = on,
+                )}
+                {checkbox(
+                    "Block new privileges, such as through sudo",
+                    form,
+                    |v| v.security.settings.no_new_privileges,
+                    |v, on| v.security.settings.no_new_privileges = on,
+                )}
+            </div>
         }
         .into_any(),
         Section::Resources => view! {
@@ -1179,6 +1202,27 @@ fn health_fields(form: RwSignal<ServiceForm>) -> AnyView {
                 )}
             </div>
         </Show>
+    }
+    .into_any()
+}
+
+/// Labelled checkbox bound to the flag of `form` that `read` and `write`
+/// select.
+fn checkbox(
+    label: &'static str,
+    form: RwSignal<ServiceForm>,
+    read: impl Fn(&ServiceForm) -> bool + Copy + Send + Sync + 'static,
+    write: impl Fn(&mut ServiceForm, bool) + Copy + 'static,
+) -> AnyView {
+    view! {
+        <label class="checkbox">
+            <input
+                type="checkbox"
+                prop:checked={move || form.with(read)}
+                on:change={move |event| form.update(|v| write(v, event_target_checked(&event)))}
+            />
+            {label}
+        </label>
     }
     .into_any()
 }

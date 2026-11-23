@@ -1065,6 +1065,16 @@ pub fn set_service_secrets(id: &str, service: &str) -> String {
     )
 }
 
+/// `PUT /api/v1/applications/{id}/services/{service}/security`
+#[must_use]
+pub fn set_service_security(id: &str, service: &str) -> String {
+    format!(
+        "/api/v1/applications/{id}/services/{service}/security",
+        id = encode_path(id),
+        service = encode_path(service)
+    )
+}
+
 /// `PUT /api/v1/applications/{id}/services/{service}/source`
 #[must_use]
 pub fn set_service_source(id: &str, service: &str) -> String {

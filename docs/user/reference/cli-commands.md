@@ -944,6 +944,7 @@ Commands:
 - [`piquelctl app service depends-on`](#piquelctl-app-service-depends-on): Set the services that must be healthy before this one rolls out.
 - [`piquelctl app service rollout`](#piquelctl-app-service-rollout): Set the order and monitor window of the service's rollouts.
 - [`piquelctl app service telemetry`](#piquelctl-app-service-telemetry): Choose whether the service receives the daemon's own telemetry.
+- [`piquelctl app service security`](#piquelctl-app-service-security): Harden the service's containers and its jobs'.
 - [`piquelctl app service mount`](#piquelctl-app-service-mount): Mount a volume into a service, or remove a mount.
 - [`piquelctl app service secret`](#piquelctl-app-service-secret): Mount a secret into a service as a file, or remove a mount.
 - [`piquelctl app service health`](#piquelctl-app-service-health): Set, change, or remove a service's health check.
@@ -1413,6 +1414,33 @@ Options:
 - `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
 - `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
+
+## `piquelctl app service security`
+
+Harden the service's containers and its jobs'.
+
+Every setting is off unless you pass its flag, so running it without flags turns them all off. The next deployment replaces the service's containers.
+
+```text
+piquelctl app service security [OPTIONS] <APP> <SERVICE>
+```
+
+Arguments:
+
+- `<APP>`: Application name or stable ID.
+- `<SERVICE>`: Service name.
+
+Options:
+
+- `--deploy`: Also deploy the saved configuration to each declared environment that isn't promoted from another.
+- `--no-wait`: Return once the change is saved, or its deployments accepted, without waiting for them to end.
+- `--expected-generation <GENERATION>`: Save only if the application's saved generation is still `GENERATION`. By default, it must still be the generation the command read, so a concurrent change fails the save instead of being overwritten.
+- `--force`: Save even if the application changed since the command read it. It still asks for confirmation.
+- `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
+- `--user <UID[:GID]>`: Run as this numeric user, and group if given, instead of the image's user, such as `1000:1000`. A service receiving telemetry can't set it.
+- `--read-only-root`: Make the root filesystem read-only. `/tmp` stays writable, in memory.
+- `--drop-capabilities`: Drop every Linux capability.
+- `--no-new-privileges`: Keep processes from gaining privileges, such as through `sudo`.
 
 ## `piquelctl app service mount`
 

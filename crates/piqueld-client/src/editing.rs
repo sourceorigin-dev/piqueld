@@ -8,8 +8,9 @@ use piqueld_core::{
         ExportsValue, FilesValue, GeneratedSecretsValue, HealthValue, ImportsValue, JobsValue,
         MemoryValue, MountsValue, OptionalStringValue, ReplicasValue, RepositorySyncValue,
         RepositoryValue, ResourcesValue, RollbackValue, RolloutValue, RoutesValue, SecondsValue,
-        SecretsValue, ServiceEdit, ServiceGeneral, ServiceProcess, SourceValue, StringValue,
-        StringsValue, TemplateValue, TemplatesValue, VariablesValue, VisibilityValue, VolumesValue,
+        SecretsValue, SecurityValue, ServiceEdit, ServiceGeneral, ServiceProcess, SourceValue,
+        StringValue, StringsValue, TemplateValue, TemplatesValue, VariablesValue, VisibilityValue,
+        VolumesValue,
     },
     manifest::{Mount, Service, ServiceFile, Volume},
 };
