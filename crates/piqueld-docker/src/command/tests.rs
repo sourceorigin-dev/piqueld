@@ -17,7 +17,16 @@ async fn cancellation_kills_descendants_in_the_command_group() {
     // whose descendant still owns its output streams.
     for ending in ["wait", "exit 0"] {
         let directory = tempfile::tempdir().unwrap();
+        // A FIFO, so reading it waits for the descendant to write its PID.
         let pidfile = directory.path().join("descendant.pid");
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            &pidfile,
+            rustix::fs::FileType::Fifo,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+            0,
+        )
+        .unwrap();
         let path = pidfile.clone();
         let script = format!(r#"sh -c 'echo $$ > "$1"; exec sleep 60' child "$1" & {ending}"#);
         let command = tokio::spawn(async move {
@@ -28,37 +37,35 @@ async fn cancellation_kills_descendants_in_the_command_group() {
             )
             .await
         });
-        let pid = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            loop {
-                if let Ok(contents) = tokio::fs::read_to_string(&pidfile).await
-                    && let Ok(pid) = contents.trim().parse::<u32>()
-                {
-                    break pid;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-        })
+        let pid = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            tokio::fs::read_to_string(&pidfile),
+        )
         .await
+        .unwrap()
         .unwrap();
+        let pid = rustix::process::Pid::from_raw(pid.trim().parse().unwrap()).unwrap();
+        // Readable once the descendant exits, though it is not this
+        // process's child. It runs `sleep 60` until the cancellation.
+        let pidfd = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()).unwrap();
         command.abort();
         assert!(command.await.unwrap_err().is_cancelled());
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            loop {
-                // Orphaned descendants can briefly be zombies until PID 1 reaps
-                // them. They cannot continue work or retain build pipes/slots.
-                let status = tokio::fs::read_to_string(format!("/proc/{pid}/stat")).await;
-                if status
-                    .as_ref()
-                    .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
-                    || status.as_ref().is_ok_and(|status| status.contains(") Z "))
-                {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("cancelled command descendant stopped");
+        let exited = tokio::task::spawn_blocking(move || {
+            let mut fds = [rustix::event::PollFd::new(
+                &pidfd,
+                rustix::event::PollFlags::IN,
+            )];
+            let limit = rustix::event::Timespec {
+                tv_sec: 5,
+                tv_nsec: 0,
+            };
+            rustix::event::poll(&mut fds, Some(&limit))
+        });
+        assert_eq!(
+            exited.await.unwrap().unwrap(),
+            1,
+            "cancelled command descendant stopped"
+        );
     }
 }
 

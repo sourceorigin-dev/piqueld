@@ -15,8 +15,8 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
     process::{Child, Command, Stdio},
-    sync::{Arc, Barrier},
-    time::{Duration, Instant},
+    sync::{Arc, Barrier, mpsc},
+    time::Duration,
 };
 
 // A concurrent spawn can inherit another test's flock until exec closes the
@@ -145,19 +145,26 @@ fn lock_holder_process() {
     std::io::stdin().read_line(&mut input).unwrap();
 }
 
-/// Sends `request` to the Unix API `socket` and returns the whole response,
-/// waiting up to 30 seconds for the daemon to listen.
-fn unix_request(socket: &std::path::Path, request: &str) -> String {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let mut stream = loop {
-        match std::os::unix::net::UnixStream::connect(socket) {
-            Ok(stream) => break stream,
-            Err(error) => {
-                assert!(Instant::now() < deadline, "the API never listened: {error}");
-                std::thread::sleep(Duration::from_millis(50));
+/// Waits for `daemon`'s log to say its API listens on its Unix socket, then
+/// drains the rest of its output on a thread, so logging never blocks it.
+fn await_listening(daemon: &mut Child) {
+    let stdout = daemon.stdout.take().expect("the daemon's stdout is piped");
+    let (listening, ready) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if line.contains("HTTP API listening") && line.contains("piqueld.sock") {
+                let _ = listening.send(());
             }
         }
-    };
+    });
+    ready
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the API listens on its socket");
+}
+
+/// Sends `request` to the Unix API `socket` and returns the whole response.
+fn unix_request(socket: &std::path::Path, request: &str) -> String {
+    let mut stream = std::os::unix::net::UnixStream::connect(socket).unwrap();
     stream.write_all(request.as_bytes()).unwrap();
     let mut response = String::new();
     stream.read_to_string(&mut response).unwrap();
@@ -187,31 +194,26 @@ fn the_api_serves_without_docker_and_stops_on_sigterm() {
     let mut daemon = Command::new(env!("CARGO_BIN_EXE_piqueld"))
         .arg("--config")
         .arg(&config)
-        .stdout(Stdio::null())
+        .env("RUST_LOG", "info")
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
 
+    await_listening(&mut daemon);
     let response = unix_request(
         &runtime.join("piqueld.sock"),
         "GET /api/v1/system/readiness HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
     );
-    rustix::process::kill_process(
-        rustix::process::Pid::from_child(&daemon),
-        rustix::process::Signal::TERM,
-    )
-    .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let status = loop {
-        if let Some(status) = daemon.try_wait().unwrap() {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            daemon.kill().unwrap();
-            panic!("the daemon did not stop on SIGTERM");
-        }
-        std::thread::sleep(Duration::from_millis(50));
+    let pid = rustix::process::Pid::from_child(&daemon);
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).unwrap();
+    let (exited, exit) = mpsc::channel();
+    std::thread::spawn(move || exited.send(daemon.wait()));
+    let Ok(status) = exit.recv_timeout(Duration::from_secs(30)) else {
+        let _ = rustix::process::kill_process(pid, rustix::process::Signal::KILL);
+        panic!("the daemon did not stop on SIGTERM");
     };
+    let status = status.unwrap();
 
     assert!(
         response.starts_with("HTTP/1.1 503"),
