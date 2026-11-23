@@ -98,12 +98,11 @@ pub(crate) enum EnvCommand {
     /// Choose what happens when an environment's rollout fails.
     ///
     /// A rollout fails when Docker pauses a service update because a new
-    /// container failed within its monitor window, or when a service it
-    /// updates doesn't become ready within the convergence timeout. With
-    /// `automatic`, piqueld
-    /// then restores the environment's last successful deployment, like `env
-    /// restore`; with `manual`, the environment stays degraded until you
-    /// deploy or restore. `default` is automatic for promoted environments and
+    /// container failed within its monitor window, or when a service the
+    /// rollout waits for doesn't become ready within the convergence timeout.
+    /// With `automatic`, piqueld then restores the environment's last
+    /// successful deployment, like `env restore`; with `manual`, the
+    /// environment stays degraded until you deploy or restore. `default` is automatic for promoted environments and
     /// manual for the others. The setting is saved in the environment's
     /// `[spec.environments.<name>]` block. Data is never reverted.
     Rollback(RollbackArgs),

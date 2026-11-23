@@ -110,8 +110,8 @@ rendered with its current variables and secrets instead.
 
 A rollout fails when Docker pauses it because a new container exited, or
 failed its [health check](services.md#health-checks), soon after it started.
-It also fails when a service it updates doesn't become ready in time, such as
-when its new containers can't be scheduled. The daemon's
+It also fails when a service the rollout waits for doesn't become ready in
+time, such as when its new containers can't be scheduled. The daemon's
 [`reconciliation.convergence_timeout_seconds`](../reference/configuration-settings.md#reconciliationconvergence_timeout_seconds)
 sets how long it waits, 2 minutes by default. Each environment chooses what
 happens then:
@@ -238,12 +238,13 @@ It runs the release of the deployment it restored.
   environment of an application that reads its manifest from a repository,
   or a promoted one, uses the setting of the manifest it last deployed, as
   [rolling back automatically](#roll-back-failed-rollouts-automatically)
-  describes. When piqueld can't roll back,
-  because no earlier deployment succeeded or its images or secret versions
-  are gone, the failed deployment records a `rollback_unavailable` event
-  saying why. A deployment that failed with `convergence_timeout` is retried
-  with a growing delay, so it records the event again on each attempt. To see it, open the deployment from the **Deployments** tab
-  and select **All events** beside its live events. Fix the cause, then deploy again.
+  describes. When piqueld can't roll back, because no earlier deployment
+  succeeded or its images or secret versions are gone, the failed deployment
+  records a `rollback_unavailable` event saying why. A deployment that failed
+  with `convergence_timeout` is retried with a growing delay, so it records
+  the event again on each attempt. To see it, open the deployment from the
+  **Deployments** tab and select **All events** beside its live events. Fix
+  the cause, then deploy again.
 - **There is no Restore button.** The deployment didn't succeed, or it is
   the newest one and the environment runs it. Without `apps:deploy`, or
   `previews:deploy` for a preview, the dashboard doesn't offer it either.

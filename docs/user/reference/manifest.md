@@ -1114,8 +1114,8 @@ updates the service once.
 ## Rollback
 
 A rollout fails when Docker pauses it because a replacement task failed within
-its [monitor window](#rollout), or when a service it updates doesn't become
-ready within
+its [monitor window](#rollout), or when a service the rollout waits for doesn't
+become ready within
 [`reconciliation.convergence_timeout_seconds`](configuration-settings.md#reconciliationconvergence_timeout_seconds),
 such as when its new tasks stay pending. Each environment chooses what happens
 then:
