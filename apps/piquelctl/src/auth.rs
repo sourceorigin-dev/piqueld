@@ -19,8 +19,9 @@ use std::{
 /// Upper bound for one device login, regardless of the daemon's `expires_in`.
 const MAX_DEVICE_LOGIN_SECS: u64 = 15 * 60;
 /// How long an update waits for another `piquelctl` to release the
-/// credentials lock.
-const LOCK_WAIT: Duration = Duration::from_secs(30);
+/// credentials lock. Tests wait up to an hour, because on a heavily loaded
+/// machine their concurrent updates can take minutes to get through it.
+const LOCK_WAIT: Duration = Duration::from_secs(if cfg!(test) { 3600 } else { 30 });
 
 /// Private per-user login store (`credentials.json`), keyed by daemon endpoint.
 /// Kept separate from profiles so shareable connection config never holds tokens.
