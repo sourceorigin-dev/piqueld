@@ -3,6 +3,17 @@ use super::{Envelope, SecretCipher, SecretOwner, Store, StoreError};
 use crate::secrets::KeyFailure;
 use piqueld_core::api::{CheckStatus, SecretKeyRecovery, SystemCheck, SystemCheckId};
 
+/// How a master key file relates to the database it should decrypt.
+pub(crate) enum KeyBinding {
+    /// Nothing stored needs a key yet; `present` says whether one exists.
+    Unbound {
+        /// Whether the key file exists.
+        present: bool,
+    },
+    /// The key decrypts the verifier or, without one, a stored value.
+    Matches,
+}
+
 /// What a master key makes of the stored values and webhook secrets.
 enum Ciphertext {
     /// Nothing is stored.
@@ -34,28 +45,8 @@ impl Store {
         let check =
             |status, message: String| SystemCheck::new(SystemCheckId::SecretKey, status, message);
         let path = self.secret_key_path.display();
-        let mut tx = self.snapshot().await?;
-        let verifier = Self::secret_key_verifier_on(&mut *tx).await?;
-        // Values stored without a verifier still need their key, as in
-        // `verified_secret_cipher`.
-        let bound = verifier.is_some()
-            || !matches!(
-                Self::probe_ciphertext_on(&mut tx, None).await?,
-                Ciphertext::None
-            );
-        match self.secret_key_path.try_exists() {
-            Ok(false) if bound => {
-                return Ok(check(CheckStatus::Fail, KeyFailure::Missing.to_string()).next_step(
-                    format!("Restore {path} from backup, or discard every stored value with `piquelctl secrets recover-key`."),
-                ));
-            }
-            Ok(false) => {
-                return Ok(check(
-                    CheckStatus::Pass,
-                    format!("no secret is stored yet; {path} is created by the first secret write"),
-                ));
-            }
-            Ok(true) => {}
+        let key = match self.secret_key_path.try_exists() {
+            Ok(present) => present.then_some(self.secret_key_path.as_path()),
             Err(error) => {
                 return Ok(check(
                     CheckStatus::Fail,
@@ -63,31 +54,28 @@ impl Store {
                 )
                 .next_step("Check the data directory's permissions."));
             }
-        }
-        let opened = match SecretCipher::open(&self.secret_key_path) {
-            Ok(cipher) => match &verifier {
-                Some(verifier) => cipher.verify(verifier),
-                None if bound => match Self::probe_ciphertext_on(&mut tx, Some(&cipher)).await? {
-                    Ciphertext::Decrypts => Ok(()),
-                    _ => Err(KeyFailure::AuthenticationFailed.into()),
-                },
-                None => Ok(()),
-            },
-            Err(error) => Err(error),
         };
-        Ok(match opened {
-            Ok(()) if bound => check(
+        let mut tx = self.snapshot().await?;
+        Ok(match Self::key_binding_on(&mut tx, key).await? {
+            Ok(KeyBinding::Unbound { present: false }) => check(
                 CheckStatus::Pass,
-                format!("{path} is private and matches the database"),
+                format!("no secret is stored yet; {path} is created by the first secret write"),
             ),
-            Ok(()) => check(
+            Ok(KeyBinding::Unbound { present: true }) => check(
                 CheckStatus::Pass,
                 format!("{path} is private; the first secret write binds it to the database"),
+            ),
+            Ok(KeyBinding::Matches) => check(
+                CheckStatus::Pass,
+                format!("{path} is private and matches the database"),
             ),
             Err(error) => {
                 let step = match KeyFailure::of(&error) {
                     Some(KeyFailure::NotPrivate) => format!(
                         "Make {path} a regular file owned by the daemon user with mode 0600."
+                    ),
+                    Some(KeyFailure::Missing) => format!(
+                        "Restore {path} from backup, or discard every stored value with `piquelctl secrets recover-key`."
                     ),
                     _ => format!(
                         "Restore the original {path} from backup, or discard every stored value with `piquelctl secrets recover-key`."
@@ -95,6 +83,44 @@ impl Store {
                 };
                 check(CheckStatus::Fail, format!("{error:#}")).next_step(step)
             }
+        })
+    }
+
+    /// Compares the master key at `key`, or no key file (`None`), with the
+    /// database `tx` reads, without changing either. The key must exist
+    /// while the database has a verifier or encrypted values, be private,
+    /// and decrypt the verifier or, without one, a stored value. The inner
+    /// error is the key's failure, such as [`KeyFailure::Missing`].
+    ///
+    /// # Errors
+    /// Returns a storage error when the database can't be read.
+    pub(crate) async fn key_binding_on(
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        key: Option<&std::path::Path>,
+    ) -> Result<anyhow::Result<KeyBinding>, StoreError> {
+        let verifier = Self::secret_key_verifier_on(&mut **tx).await?;
+        // Values stored without a verifier still need their key, as in
+        // `verified_secret_cipher`.
+        let bound = verifier.is_some()
+            || !matches!(Self::probe_ciphertext_on(tx, None).await?, Ciphertext::None);
+        let Some(key) = key else {
+            return Ok(if bound {
+                Err(KeyFailure::Missing.into())
+            } else {
+                Ok(KeyBinding::Unbound { present: false })
+            });
+        };
+        let cipher = match SecretCipher::open(key) {
+            Ok(cipher) => cipher,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(match &verifier {
+            Some(verifier) => cipher.verify(verifier).map(|()| KeyBinding::Matches),
+            None if bound => match Self::probe_ciphertext_on(tx, Some(&cipher)).await? {
+                Ciphertext::Decrypts => Ok(KeyBinding::Matches),
+                _ => Err(KeyFailure::AuthenticationFailed.into()),
+            },
+            None => Ok(KeyBinding::Unbound { present: true }),
         })
     }
 

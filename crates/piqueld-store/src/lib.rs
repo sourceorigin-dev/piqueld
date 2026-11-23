@@ -7,6 +7,7 @@ mod acceptance;
 mod application;
 mod audit;
 mod auth;
+mod backup;
 mod build;
 mod deployment;
 mod environment;
@@ -29,6 +30,7 @@ pub use auth::{
     DirectoryView, Invitation, NewCredential, NewInvitation, NewPasskey, PasskeyOwner,
     SecurityEvent,
 };
+pub use backup::{DatabaseCopy, DatabaseFile, DatabaseIdentity};
 pub use build::{BuildOutcome, LogAppend, LogEnding, ReusableBuild};
 pub use journal::JournalAction;
 pub use observability::DESTINATION_CHANGED;
@@ -737,28 +739,11 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
 
-        // SQLite does not expose PRAGMA assignment through bind parameters.
-        // The assigned version below comes only from the embedded migrations.
-        let version: i64 = sqlx::query_scalar!("PRAGMA user_version")
-            .fetch_one(&pool)
-            .await
-            .map_err(StoreError::database)?
-            .ok_or(StoreError::Database)?;
-        let version = u64::try_from(version).map_err(StoreError::schema_mismatch)?;
+        let mut connection = pool.acquire().await.map_err(StoreError::database)?;
+        let version = Self::schema_version_on(&mut connection).await?;
+        drop(connection);
         if version > SCHEMA_VERSION {
             return Err(StoreError::SchemaMismatch);
-        }
-        if version > 0 {
-            let recorded = sqlx::query_scalar!(
-                "SELECT schema_version FROM instance_metadata WHERE singleton=1"
-            )
-            .fetch_optional(&pool)
-            .await
-            .map_err(StoreError::database)?
-            .ok_or(StoreError::SchemaMismatch)?;
-            if u64::try_from(recorded).map_err(StoreError::schema_mismatch)? != version {
-                return Err(StoreError::SchemaMismatch);
-            }
         }
 
         let migration_start = usize::try_from(version).map_err(StoreError::schema_mismatch)?;
@@ -799,6 +784,36 @@ impl Store {
             previews: piqueld_core::manifest::PreviewLimits::default(),
             access_changes: tokio::sync::watch::Sender::new(()),
         })
+    }
+
+    /// The schema version of the database `connection` reads: its `PRAGMA
+    /// user_version`, zero before the first migration. Once migrated,
+    /// `instance_metadata` must record the same version.
+    ///
+    /// # Errors
+    /// Returns [`StoreError::SchemaMismatch`] when the two disagree.
+    async fn schema_version_on(connection: &mut sqlx::SqliteConnection) -> Result<u64, StoreError> {
+        // SQLite does not expose PRAGMA assignment through bind parameters.
+        // The assigned version comes only from the embedded migrations.
+        let version: i64 = sqlx::query_scalar!("PRAGMA user_version")
+            .fetch_one(&mut *connection)
+            .await
+            .map_err(StoreError::database)?
+            .ok_or(StoreError::Database)?;
+        let version = u64::try_from(version).map_err(StoreError::schema_mismatch)?;
+        if version > 0 {
+            let recorded = sqlx::query_scalar!(
+                "SELECT schema_version FROM instance_metadata WHERE singleton=1"
+            )
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(StoreError::database)?
+            .ok_or(StoreError::SchemaMismatch)?;
+            if u64::try_from(recorded).map_err(StoreError::schema_mismatch)? != version {
+                return Err(StoreError::SchemaMismatch);
+            }
+        }
+        Ok(version)
     }
 
     /// Applies one migration and records `version` in a single immediate
