@@ -108,8 +108,9 @@ pub struct DaemonStats {
     pub pending_deliveries: i64,
     /// Notification deliveries that exhausted retries or were rejected.
     pub failed_deliveries: i64,
-    /// How long the oldest operation waiting to execute has waited, in
-    /// milliseconds; none while no operation waits.
+    /// How long the oldest operation waiting to execute has waited since it
+    /// was queued, or queued again for a retry, in milliseconds; none while
+    /// no operation waits.
     #[serde(default)]
     pub oldest_queued_operation_ms: Option<i64>,
     /// How long the oldest notification delivery awaiting a retry has

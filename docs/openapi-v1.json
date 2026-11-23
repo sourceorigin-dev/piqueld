@@ -2259,7 +2259,7 @@
             "type": "integer"
           },
           "oldest_queued_operation_ms": {
-            "description": "How long the oldest operation waiting to execute has waited, in\nmilliseconds; none while no operation waits.",
+            "description": "How long the oldest operation waiting to execute has waited since it\nwas queued, or queued again for a retry, in milliseconds; none while\nno operation waits.",
             "format": "int64",
             "nullable": true,
             "type": "integer"
@@ -4251,7 +4251,7 @@
                 "type": "integer"
               },
               "oldest_queued_operation_ms": {
-                "description": "How long the oldest operation waiting to execute has waited, in\nmilliseconds; none while no operation waits.",
+                "description": "How long the oldest operation waiting to execute has waited since it\nwas queued, or queued again for a retry, in milliseconds; none while\nno operation waits.",
                 "format": "int64",
                 "nullable": true,
                 "type": "integer"

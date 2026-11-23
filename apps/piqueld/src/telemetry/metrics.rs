@@ -2,7 +2,7 @@
 use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, Histogram, Meter};
 use parking_lot::Mutex;
-use piqueld_core::observability::DaemonStats;
+use piqueld_core::observability::{DaemonStats, Elapsed};
 use std::sync::Arc;
 
 /// Latest daemon and service measurements. The service samples them every
@@ -141,23 +141,7 @@ const GAUGES: &[(&str, &str, &str, Read)] = &[
         },
     ),
     (
-        "piqueld.queue.oldest.age",
-        "ms",
-        "How long the oldest queued operation or notification delivery has waited",
-        |s| {
-            stat(s, |stats| {
-                [
-                    ("operations", stats.oldest_queued_operation_ms),
-                    ("deliveries", stats.oldest_pending_delivery_ms),
-                ]
-                .into_iter()
-                .filter_map(|(queue, age)| Some((count(age?), vec![KeyValue::new("queue", queue)])))
-                .collect()
-            })
-        },
-    ),
-    (
-        "piqueld.database.writes.waiting",
+        "piqueld.database.write.waiting",
         "{write}",
         "Database writes waiting for their turn",
         |s| stat(s, |stats| vec![(stats.waiting_writes, vec![])]),
@@ -192,22 +176,8 @@ const GAUGES: &[(&str, &str, &str, Read)] = &[
     ),
 ];
 
-/// Integer counters, which only grow while the daemon runs: name, unit,
-/// description, and how to read them.
-const COUNTERS: &[(&str, &str, &str, Read)] = &[
-    (
-        "piqueld.database.write.waits",
-        "{write}",
-        "Database writes that had to wait for their turn",
-        |s| stat(s, |stats| vec![(stats.write_waits, vec![])]),
-    ),
-    (
-        "piqueld.database.write.wait_time",
-        "ms",
-        "How long database writes waited for their turn, in all",
-        |s| stat(s, |stats| vec![(stats.write_wait_ms, vec![])]),
-    ),
-];
+/// Reads one duration's points from the daemon statistics, in milliseconds.
+type ReadMillis = fn(&DaemonStats) -> Vec<(i64, Vec<KeyValue>)>;
 
 /// Points read from the daemon statistics, none before the first sample.
 fn stat(
@@ -246,52 +216,7 @@ impl Instruments {
     /// Registers every instrument on `meter`.
     pub(super) fn new(meter: &Meter) -> Self {
         let snapshot = Arc::new(Mutex::new(Snapshot::default()));
-        let observe = |read: Read| {
-            let snapshot = Arc::clone(&snapshot);
-            move |observer: &dyn opentelemetry::metrics::AsyncInstrument<u64>| {
-                for (value, attributes) in read(&snapshot.lock()) {
-                    observer.observe(value, &attributes);
-                }
-            }
-        };
-        for &(name, unit, description, read) in GAUGES {
-            meter
-                .u64_observable_gauge(name)
-                .with_unit(unit)
-                .with_description(description)
-                .with_callback(observe(read))
-                .build();
-        }
-        for &(name, unit, description, read) in COUNTERS {
-            meter
-                .u64_observable_counter(name)
-                .with_unit(unit)
-                .with_description(description)
-                .with_callback(observe(read))
-                .build();
-        }
-        let cpu = |read: fn(&DaemonStats) -> Option<f64>| {
-            let snapshot = Arc::clone(&snapshot);
-            move |observer: &dyn opentelemetry::metrics::AsyncInstrument<f64>| {
-                if let Some(value) = snapshot.lock().stats.as_ref().and_then(read) {
-                    observer.observe(value, &[]);
-                }
-            }
-        };
-        meter
-            .f64_observable_counter("process.cpu.time")
-            .with_unit("s")
-            .with_description("CPU time used by the daemon process")
-            .with_callback(cpu(|stats| stats.cpu_seconds))
-            .build();
-        meter
-            .f64_observable_gauge("process.cpu.utilization")
-            .with_unit("1")
-            .with_description("CPU used by the daemon process between samples; 1 is one full core")
-            .with_callback(cpu(|stats| {
-                stats.cpu_percent.map(|percent| percent / 100.0)
-            }))
-            .build();
+        Self::observe_snapshot(meter, &snapshot);
         let histogram = |name: &'static str, description: &'static str, boundaries: &[f64]| {
             meter
                 .f64_histogram(name)
@@ -333,5 +258,95 @@ impl Instruments {
                 .build(),
             snapshot,
         }
+    }
+
+    /// Registers the instruments that read the latest `snapshot` at each
+    /// collection.
+    fn observe_snapshot(meter: &Meter, snapshot: &Arc<Mutex<Snapshot>>) {
+        let observe = |read: Read| {
+            let snapshot = Arc::clone(snapshot);
+            move |observer: &dyn opentelemetry::metrics::AsyncInstrument<u64>| {
+                for (value, attributes) in read(&snapshot.lock()) {
+                    observer.observe(value, &attributes);
+                }
+            }
+        };
+        for &(name, unit, description, read) in GAUGES {
+            meter
+                .u64_observable_gauge(name)
+                .with_unit(unit)
+                .with_description(description)
+                .with_callback(observe(read))
+                .build();
+        }
+        meter
+            .u64_observable_counter("piqueld.database.write.waits")
+            .with_unit("{write}")
+            .with_description("Database writes that had to wait for their turn")
+            .with_callback(observe(|s| {
+                stat(s, |stats| vec![(stats.write_waits, vec![])])
+            }))
+            .build();
+        // Durations in seconds, from the statistics' milliseconds.
+        let seconds = |read: ReadMillis| {
+            let snapshot = Arc::clone(snapshot);
+            move |observer: &dyn opentelemetry::metrics::AsyncInstrument<f64>| {
+                for (milliseconds, attributes) in snapshot.lock().stats.iter().flat_map(read) {
+                    observer.observe(
+                        Elapsed::from_millis(milliseconds).0.as_secs_f64(),
+                        &attributes,
+                    );
+                }
+            }
+        };
+        meter
+            .f64_observable_counter("piqueld.database.write.wait_time")
+            .with_unit("s")
+            .with_description("How long database writes waited for their turn, in all")
+            .with_callback(seconds(|stats| {
+                vec![(
+                    i64::try_from(stats.write_wait_ms).unwrap_or(i64::MAX),
+                    vec![],
+                )]
+            }))
+            .build();
+        meter
+            .f64_observable_gauge("piqueld.queue.oldest.age")
+            .with_unit("s")
+            .with_description(
+                "How long the oldest queued operation or notification delivery has waited",
+            )
+            .with_callback(seconds(|stats| {
+                [
+                    ("operations", stats.oldest_queued_operation_ms),
+                    ("deliveries", stats.oldest_pending_delivery_ms),
+                ]
+                .into_iter()
+                .filter_map(|(queue, age)| Some((age?, vec![KeyValue::new("queue", queue)])))
+                .collect()
+            }))
+            .build();
+        let cpu = |read: fn(&DaemonStats) -> Option<f64>| {
+            let snapshot = Arc::clone(snapshot);
+            move |observer: &dyn opentelemetry::metrics::AsyncInstrument<f64>| {
+                if let Some(value) = snapshot.lock().stats.as_ref().and_then(read) {
+                    observer.observe(value, &[]);
+                }
+            }
+        };
+        meter
+            .f64_observable_counter("process.cpu.time")
+            .with_unit("s")
+            .with_description("CPU time used by the daemon process")
+            .with_callback(cpu(|stats| stats.cpu_seconds))
+            .build();
+        meter
+            .f64_observable_gauge("process.cpu.utilization")
+            .with_unit("1")
+            .with_description("CPU used by the daemon process between samples; 1 is one full core")
+            .with_callback(cpu(|stats| {
+                stats.cpu_percent.map(|percent| percent / 100.0)
+            }))
+            .build();
     }
 }

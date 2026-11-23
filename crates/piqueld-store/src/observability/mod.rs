@@ -70,7 +70,7 @@ impl Store {
             FROM notification_deliveries
             WHERE state='pending') AS pending,(SELECT COUNT(*)
             FROM notification_deliveries
-            WHERE state='failed') AS failed,(SELECT MIN(created_at_ms)
+            WHERE state='failed') AS failed,(SELECT MIN(updated_at_ms)
             FROM operations
             WHERE state='requested') AS \"oldest_queued: i64\",(SELECT MIN(created_at_ms)
             FROM notification_deliveries
@@ -128,8 +128,8 @@ impl Store {
             queued_operations: row.queued,
             pending_deliveries: row.pending,
             failed_deliveries: row.failed,
-            oldest_queued_operation_ms: row.oldest_queued.map(|at| now.saturating_sub(at).max(0)),
-            oldest_pending_delivery_ms: row.oldest_pending.map(|at| now.saturating_sub(at).max(0)),
+            oldest_queued_operation_ms: row.oldest_queued.map(|at| now.saturating_sub(at)),
+            oldest_pending_delivery_ms: row.oldest_pending.map(|at| now.saturating_sub(at)),
             waiting_writes,
             write_waits,
             write_wait_ms,

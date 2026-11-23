@@ -1681,3 +1681,28 @@ async fn daemon_stats_report_write_waits_and_queue_ages() {
     );
     assert_eq!(stats.oldest_pending_delivery_ms, None);
 }
+
+/// A retried operation has waited since its retry, not since it was first
+/// created.
+#[tokio::test]
+async fn a_retried_operation_waits_from_its_retry() {
+    let (_temp, store) = Store::temporary().await;
+    let op = application(&store).await;
+    fail(&store, &op).await;
+    let three_days_ago = now_ms() - 3 * 86_400_000;
+    sqlx::query("UPDATE operations SET created_at_ms=?1,updated_at_ms=?1 WHERE id=?2")
+        .bind(three_days_ago)
+        .bind(&op.id)
+        .execute(&store.pool)
+        .await
+        .unwrap();
+    let failed = store.operation(&op.id).await.unwrap();
+    store.retry_operation(&failed).await.unwrap();
+    let stats = store.daemon_stats().await.unwrap();
+    assert!(
+        stats
+            .oldest_queued_operation_ms
+            .is_some_and(|age| (0..60_000).contains(&age)),
+        "{stats:?}"
+    );
+}

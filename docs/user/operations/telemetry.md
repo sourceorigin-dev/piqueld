@@ -207,9 +207,9 @@ named after their method and route, such as `GET /api/v1/environments/{id}`.
 | `piqueld.access.denials` | | API requests refused for a missing credential or permission |
 | `piqueld.database.size` | `file` (`database`, `wal`) | The database's size in bytes |
 | `piqueld.notification.deliveries` | `state` (`pending`, `failed`) | Notifications waiting or failed |
-| `piqueld.queue.oldest.age` | `queue` (`operations`, `deliveries`) | How long the oldest queued operation, or the oldest notification awaiting a retry, has waited, in milliseconds; absent while none waits |
-| `piqueld.database.writes.waiting` | | Database writes waiting for their turn, since the daemon writes one at a time |
-| `piqueld.database.write.waits`, `piqueld.database.write.wait_time` | | Writes that had to wait for their turn since the daemon started, and how long they waited in all, in milliseconds |
+| `piqueld.queue.oldest.age` | `queue` (`operations`, `deliveries`) | How long the oldest queued operation, or the oldest notification awaiting a retry, has waited, in seconds; absent while none waits |
+| `piqueld.database.write.waiting` | | Database writes waiting for their turn, since the daemon writes one at a time |
+| `piqueld.database.write.waits`, `piqueld.database.write.wait_time` | | Writes that had to wait for their turn since the daemon started, and how long they waited in all, in seconds |
 | `piqueld.uptime`, `process.memory.usage`, `process.cpu.time`, `process.cpu.utilization`, `piqueld.disk.available`, `piqueld.events`, `piqueld.diagnostics`, `piqueld.build_output.size` | | The rest of what the **Daemon status** page shows |
 
 Prometheus translates the names, such as `piqueld_deployments_total`.
