@@ -27,6 +27,7 @@ fn service(tasks: Vec<ObservedTask>, healthcheck_configured: bool) -> ObservedSe
         runtime_configuration_matches: true,
         tasks,
         convergence: Convergence::Converged,
+        update_message: None,
     }
 }
 
@@ -38,14 +39,17 @@ fn service_diagnostics_ignore_historical_tasks() {
                 state: TaskState::Failed,
                 healthy: None,
                 desired_running: false,
-                diagnostic: Some(TaskDiagnostic::Failed { exit_code: Some(1) }),
+                diagnostic: Some(TaskDiagnostic::Failed {
+                    exit_code: Some(1),
+                    reason: None,
+                }),
                 ..ObservedTask::default()
             },
             ObservedTask {
                 state: TaskState::Rejected,
                 healthy: None,
                 desired_running: true,
-                diagnostic: Some(TaskDiagnostic::Rejected),
+                diagnostic: Some(TaskDiagnostic::Rejected { reason: None }),
                 ..ObservedTask::default()
             },
         ],

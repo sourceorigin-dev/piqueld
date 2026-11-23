@@ -133,9 +133,11 @@ pub enum OperationError {
     /// A one-shot job exceeded its timeout and was stopped.
     #[error("job {0} did not finish before its timeout; rollout stopped")]
     JobTimeout(String),
-    /// A service update failed in Docker.
-    #[error("service update paused after task failure; the previous healthy task is retained")]
-    ServiceUpdateFailed,
+    /// A service failed to roll out in Docker, as
+    /// [`ObservedService::rollout_failure`](piqueld_core::ObservedService::rollout_failure)
+    /// words it: which service, and Docker's reason when it gave one.
+    #[error("{0}")]
+    ServiceUpdateFailed(String),
     /// The runtime plan is blocked by a diagnostic without a specific mapping.
     #[error("runtime plan is blocked by {0}")]
     PlanBlocked(&'static str),
@@ -192,7 +194,7 @@ impl OperationError {
             Self::DockerRequestFailed(_) => DiagnosticCode::DockerRequestFailed,
             Self::ValidationFailed(_) => DiagnosticCode::ValidationFailed,
             Self::ManifestFetchFailed(_) => DiagnosticCode::ManifestFetchFailed,
-            Self::ServiceUpdateFailed => DiagnosticCode::ServiceUpdateFailed,
+            Self::ServiceUpdateFailed(_) => DiagnosticCode::ServiceUpdateFailed,
             Self::JobFailed { .. } => DiagnosticCode::JobFailed,
             Self::JobTimeout(_) => DiagnosticCode::JobTimeout,
             Self::PlanBlocked(_) => DiagnosticCode::PlanBlocked,

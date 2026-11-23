@@ -2,7 +2,9 @@
 
 use piqueld_core::manifest::{RolloutOrder, ValidatedRollout as Rollout};
 use piqueld_core::planner::{ActionKind, DiagnosticSeverity, PlanRequest};
-use piqueld_core::resource::{Convergence, ObservedApplication, compile_application};
+use piqueld_core::resource::{
+    Convergence, ObservedApplication, RuntimeMessage, TaskDiagnostic, compile_application,
+};
 use piqueld_core::{ApplicationId, Plan, parse_toml};
 
 use super::{application, environment, instance, observed, resolutions};
@@ -253,20 +255,57 @@ fn obsolete_cleanup_is_gated_and_reports_deferred_diagnostics() {
     );
 }
 
+/// The diagnostic names the service by its manifest name and gives Docker's
+/// reason, a desired task's error before the paused update's message.
 #[test]
 fn failed_convergence_blocks_with_a_service_update_diagnostic() {
     let app = application();
     let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
     let mut failed = observed(&desired);
-    failed.services[0].convergence = Convergence::Failed;
-    let plan = Plan::from_request(&PlanRequest::Reconcile { desired }, &failed);
-    assert!(plan.is_blocked());
-    let diagnostic = plan
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.code == "service_update_failed")
-        .expect("blocking update-failure diagnostic");
-    assert_eq!(diagnostic.severity, DiagnosticSeverity::Error);
+    let service = &mut failed.services[0];
+    service.convergence = Convergence::Failed;
+    service.update_message = RuntimeMessage::new("update paused due to failure of task 1");
+    let message = |failed: &ObservedApplication| {
+        let plan = Plan::from_request(
+            &PlanRequest::Reconcile {
+                desired: desired.clone(),
+            },
+            failed,
+        );
+        assert!(plan.is_blocked());
+        let diagnostic = plan
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "service_update_failed")
+            .expect("blocking update-failure diagnostic");
+        assert_eq!(diagnostic.severity, DiagnosticSeverity::Error);
+        diagnostic.message.clone()
+    };
+    assert_eq!(
+        message(&failed),
+        "service web failed to roll out: update paused due to failure of task 1"
+    );
+    failed.services[0].tasks[0].diagnostic = Some(TaskDiagnostic::Rejected {
+        reason: RuntimeMessage::new("No such image: ghcr.io/example/notes:1.4.0"),
+    });
+    assert_eq!(
+        message(&failed),
+        "service web failed to roll out: No such image: ghcr.io/example/notes:1.4.0"
+    );
+}
+
+/// Docker's text loses terminal escapes and line breaks, and is capped.
+#[test]
+fn runtime_messages_are_cleaned_and_capped() {
+    let message = |raw: &str| RuntimeMessage::new(raw).map(String::from);
+    assert_eq!(
+        message("\x1b[31mstarting container failed:\n\t oci error\x1b[0m").as_deref(),
+        Some("starting container failed: oci error")
+    );
+    assert_eq!(message(" \x1b[0m\n"), None);
+    let long = message(&"a".repeat(400)).expect("a capped message");
+    assert_eq!(long.chars().count(), RuntimeMessage::MAX_CHARS + 1);
+    assert!(long.ends_with('…'));
 }
 
 #[test]

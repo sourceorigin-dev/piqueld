@@ -157,9 +157,73 @@ pub enum TaskDiagnostic {
     Failed {
         /// Exit code reported by Docker, when available.
         exit_code: Option<i64>,
+        /// Docker's error for the task, when it gave one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<RuntimeMessage>,
     },
     /// Docker rejected the task before it could run.
-    Rejected,
+    Rejected {
+        /// Docker's error for the task, such as a missing image.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<RuntimeMessage>,
+    },
+}
+
+impl TaskDiagnostic {
+    /// Docker's error for the task, when it gave one.
+    #[must_use]
+    pub const fn reason(&self) -> Option<&RuntimeMessage> {
+        match self {
+            Self::Failed { reason, .. } | Self::Rejected { reason } => reason.as_ref(),
+        }
+    }
+}
+
+/// Text Docker reports about a task or a service update, such as
+/// "No such image: …", made safe to show: terminal control sequences are
+/// removed, whitespace runs become one space, and it is capped at
+/// [`RuntimeMessage::MAX_CHARS`] characters.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(from = "String", into = "String")]
+pub struct RuntimeMessage(String);
+
+impl RuntimeMessage {
+    /// The most characters kept, before the ellipsis marking a cut.
+    pub const MAX_CHARS: usize = 300;
+
+    /// Cleans `raw`, or returns `None` when nothing printable is left.
+    ///
+    /// ```text
+    /// "\x1b[31mNo such image:\n  web:1\x1b[0m" -> "No such image: web:1"
+    /// ```
+    #[must_use]
+    pub fn new(raw: &str) -> Option<Self> {
+        Some(Self::from(raw.to_owned())).filter(|message| !message.0.is_empty())
+    }
+}
+
+impl From<String> for RuntimeMessage {
+    fn from(raw: String) -> Self {
+        let clean = crate::api::LogRecord::clean_message(&raw);
+        let mut words = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+        if let Some((cut, _)) = words.char_indices().nth(Self::MAX_CHARS) {
+            words.truncate(cut);
+            words.push('…');
+        }
+        Self(words)
+    }
+}
+
+impl From<RuntimeMessage> for String {
+    fn from(message: RuntimeMessage) -> Self {
+        message.0
+    }
+}
+
+impl std::fmt::Display for RuntimeMessage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
 }
 
 /// Aggregate health state derived from observed tasks.
@@ -300,9 +364,38 @@ pub struct ObservedService {
     pub tasks: Vec<ObservedTask>,
     /// Aggregate convergence state.
     pub convergence: Convergence,
+    /// Docker's message for a paused update, such as which task failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_message: Option<RuntimeMessage>,
 }
 
 impl ObservedService {
+    /// Says that the service failed to roll out, naming it by its manifest
+    /// name, and why when Docker said: the first error of a task Swarm still
+    /// wants running, else of a task on the new specification, else the
+    /// paused update's message.
+    ///
+    /// ```text
+    /// "service web failed to roll out: No such image: example/web:2"
+    /// ```
+    #[must_use]
+    pub fn rollout_failure(&self) -> String {
+        let service = self.labels.get(SERVICE_LABEL).unwrap_or(&self.name);
+        let reason = |wanted: fn(&ObservedTask) -> bool| {
+            self.tasks
+                .iter()
+                .filter(|task| wanted(task))
+                .find_map(|task| task.diagnostic.as_ref()?.reason())
+        };
+        match reason(|task| task.desired_running)
+            .or_else(|| reason(|task| task.current))
+            .or(self.update_message.as_ref())
+        {
+            Some(reason) => format!("service {service} failed to roll out: {reason}"),
+            None => format!("service {service} failed to roll out"),
+        }
+    }
+
     /// Whether observed mounts equal the desired ones, ignoring order.
     pub(crate) fn mounts_match(&self, desired: &DesiredService) -> bool {
         unordered_eq(

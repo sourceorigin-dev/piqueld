@@ -39,6 +39,13 @@ async fn fail_second_rollout(
         harness.scan_result(&second).await,
         (OperationState::Failed, Some("service_update_failed".into()))
     );
+    assert_eq!(
+        harness.operation(&second.id).await.error_message,
+        Some(format!(
+            "service web failed to roll out: {}",
+            piqueld_docker::fake::FAILED_UPDATE_MESSAGE
+        ))
+    );
     (first, second)
 }
 

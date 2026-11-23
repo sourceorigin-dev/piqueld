@@ -12,7 +12,7 @@ use futures_util::StreamExt as _;
 use piqueld_core::resource::{
     APPLICATION_LABEL, Convergence, DesiredService, INSTANCE_LABEL, MANAGED_LABEL,
     ObservedApplication, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume,
-    SERVICE_LABEL, SPEC_HASH_LABEL, TaskState, image_repository,
+    RuntimeMessage, SERVICE_LABEL, SPEC_HASH_LABEL, TaskState, image_repository,
 };
 use piqueld_core::{EnvironmentId, InstanceId, Sha256Digest};
 use std::{
@@ -24,6 +24,9 @@ use std::{
     time::Duration,
 };
 use tokio::sync::Mutex;
+
+/// The message of an update `fail_convergence` pauses.
+pub const FAILED_UPDATE_MESSAGE: &str = "update paused due to failure or early termination of task";
 
 /// The engine's state, shared by its clones. Each knob is off by default.
 #[derive(Clone, Default)]
@@ -48,7 +51,8 @@ pub struct FakeDocker {
     pub builder_unavailable: Arc<AtomicBool>,
     /// Leaves ensured services updating.
     pub stall_convergence: Arc<AtomicBool>,
-    /// Fails ensured services' rollouts.
+    /// Fails ensured services' rollouts, pausing their updates with
+    /// [`FAILED_UPDATE_MESSAGE`].
     pub fail_convergence: Arc<AtomicBool>,
     /// Logical services that stay updating, their tasks starting, for this
     /// many observations after an ensure.
@@ -523,6 +527,7 @@ pub fn observed_service(desired: &DesiredService) -> ObservedService {
             })
             .collect(),
         convergence: Convergence::Converged,
+        update_message: None,
     }
 }
 
@@ -981,6 +986,7 @@ impl DockerApi for FakeDocker {
         let logical = desired.logical_name.to_string();
         if self.fail_convergence.load(Ordering::SeqCst) {
             service.convergence = Convergence::Failed;
+            service.update_message = RuntimeMessage::new(FAILED_UPDATE_MESSAGE);
         } else if self.stall_convergence.load(Ordering::SeqCst)
             || self.slow_services.lock().await.get(&logical) > Some(&0)
         {

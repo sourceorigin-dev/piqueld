@@ -107,6 +107,7 @@ fn observed(desired: &ResolvedApplication) -> ObservedApplication {
                     ..ObservedTask::default()
                 }],
                 convergence: Convergence::Converged,
+                update_message: None,
             })
             .collect(),
         linked_networks: Vec::new(),

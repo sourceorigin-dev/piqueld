@@ -2,7 +2,7 @@
 use piqueld_core::{
     ApiErrorCode, ObservedApplication,
     api::{DiagnosticView, EnvironmentStatusView, ObservedApplicationView, ObservedServiceView},
-    resource::{Convergence, ObservedService, TaskDiagnostic, TaskState},
+    resource::{Convergence, ObservedService, RuntimeMessage, TaskDiagnostic, TaskState},
 };
 use piqueld_store::StoredEnvironment;
 
@@ -99,13 +99,14 @@ fn service_diagnostics(service: &ObservedService) -> Vec<DiagnosticView> {
         service.convergence,
         Convergence::Degraded | Convergence::Failed
     ) {
-        let healthy_replicas = healthy_replicas(service);
+        let healthy = format!(
+            "{} of {} observed replicas are healthy",
+            healthy_replicas(service),
+            service.replicas
+        );
         diagnostics.push(DiagnosticView::new(
             ApiErrorCode::ServiceNotConverged,
-            format!(
-                "{} of {} observed replicas are healthy",
-                healthy_replicas, service.replicas
-            ),
+            with_reason(healthy, service.update_message.as_ref()),
         ));
     }
     diagnostics.extend(
@@ -114,22 +115,33 @@ fn service_diagnostics(service: &ObservedService) -> Vec<DiagnosticView> {
             .iter()
             .filter(|task| task.desired_running)
             .filter_map(|task| task.diagnostic.as_ref())
-            .map(|diagnostic| match diagnostic {
-                TaskDiagnostic::Failed { exit_code } => DiagnosticView::new(
-                    ApiErrorCode::TaskFailed,
-                    exit_code.map_or_else(
-                        || "a desired task exited unsuccessfully".into(),
-                        |code| format!("a desired task exited with status code {code}"),
+            .map(|diagnostic| {
+                let (code, summary) = match diagnostic {
+                    TaskDiagnostic::Failed { exit_code, .. } => (
+                        ApiErrorCode::TaskFailed,
+                        exit_code.map_or_else(
+                            || "a desired task exited unsuccessfully".into(),
+                            |code| format!("a desired task exited with status code {code}"),
+                        ),
                     ),
-                ),
-                TaskDiagnostic::Rejected => DiagnosticView::new(
-                    ApiErrorCode::TaskRejected,
-                    "the runtime rejected a desired task before it started",
-                ),
+                    TaskDiagnostic::Rejected { .. } => (
+                        ApiErrorCode::TaskRejected,
+                        "the runtime rejected a desired task before it started".into(),
+                    ),
+                };
+                DiagnosticView::new(code, with_reason(summary, diagnostic.reason()))
             }),
     );
     diagnostics.truncate(MAX_SERVICE_DIAGNOSTICS);
     diagnostics
+}
+
+/// Appends Docker's `reason`, when it gave one, to a diagnostic's `summary`.
+fn with_reason(summary: String, reason: Option<&RuntimeMessage>) -> String {
+    match reason {
+        Some(reason) => format!("{summary}: {reason}"),
+        None => summary,
+    }
 }
 
 /// Collects detail-page diagnostics in priority order: status message, latest

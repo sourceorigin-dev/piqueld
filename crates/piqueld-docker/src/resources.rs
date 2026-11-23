@@ -340,12 +340,15 @@ impl BollardDocker {
                         Self::observe_task(task, updated, healthy)
                     })
                     .collect::<Vec<_>>();
-                Some(Self::observe_service(
-                    &spec,
-                    node_id,
-                    tasks,
-                    service.update_status.and_then(|u| u.state),
-                ))
+                let update = service.update_status.unwrap_or_default();
+                Some(
+                    Self::observe_service(&spec, node_id, tasks, update.state).map(|observed| {
+                        ObservedService {
+                            update_message: Self::paused_update_message(update),
+                            ..observed
+                        }
+                    }),
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
         let ingress = DockerNetworkName::for_ingress(application);
