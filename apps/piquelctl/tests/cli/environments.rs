@@ -99,6 +99,94 @@ fn env_commands_target_the_named_environment() {
     let _ = server.finish();
 }
 
+/// Asserts `arguments` are a usage error naming `flag`, refused before the
+/// daemon is contacted.
+fn assert_usage_error(arguments: &[&str], flag: &str) {
+    let output = support::command()
+        .arg("--json")
+        .args(arguments)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{arguments:?}");
+    let error = support::json_error(&output);
+    assert_eq!(error["code"], "usage", "{arguments:?}");
+    assert!(error["message"].as_str().unwrap().contains(flag), "{error}");
+}
+
+#[test]
+fn local_snapshot_flags_are_refused_with_a_preview() {
+    let deploy = [
+        "preview",
+        "deploy",
+        "app-notes-01",
+        "notes-feat-login-0a1b2c",
+    ];
+    for flag in [
+        &["--branch", "feat"][..],
+        &["--full-history"],
+        &["--allow-secret-files"],
+    ] {
+        assert_usage_error(&[&deploy[..], flag].concat(), flag[0]);
+    }
+
+    let server = start_server(false, 2, move |request| match request.path.as_str() {
+        "/api/v1/applications/app-notes-01" => Reply::json(notes_with_a_preview()),
+        "/api/v1/previews/env-preview-01/deploy" => {
+            assert_eq!(request.method, "POST");
+            Reply::accepted(accepted("env-preview-01"))
+        }
+        path => panic!("unexpected path {path}"),
+    });
+    let output = run(&server, &[&deploy[..], &["--no-wait"]].concat());
+    assert_eq!(
+        assert_json_success(&output)["environment_id"],
+        "env-preview-01"
+    );
+    let _ = server.finish();
+}
+
+#[test]
+fn a_promoted_environment_refuses_a_pinned_commit() {
+    let commit = "a".repeat(40);
+    assert_usage_error(
+        &[
+            "env",
+            "create",
+            "app-notes-01",
+            "qa",
+            "--promote-from",
+            "staging",
+            "--commit",
+            &commit,
+        ],
+        "--commit",
+    );
+
+    let server = request_server(
+        app_view("app-notes-01", "notes"),
+        "POST",
+        "/api/v1/applications/app-notes-01/environments",
+        json!({"name": "qa", "branch": "release", "commit": commit, "expected_generation": 1}),
+        Reply::json(environment("app-notes-01", "env-qa-01", "qa")),
+    );
+    let output = run(
+        &server,
+        &[
+            "env",
+            "create",
+            "app-notes-01",
+            "qa",
+            "--branch",
+            "release",
+            "--commit",
+            &commit,
+            "--yes",
+        ],
+    );
+    assert_eq!(assert_json_success(&output)["name"], "qa");
+    let _ = server.finish();
+}
+
 #[test]
 fn deleting_an_application_with_several_environments_names_every_one() {
     let server = start_server(false, usize::MAX, move |request| {
