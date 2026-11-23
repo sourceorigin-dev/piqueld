@@ -62,6 +62,42 @@ fn service_diagnostics_ignore_historical_tasks() {
     assert_eq!(diagnostics[0].code, ApiErrorCode::TaskRejected);
 }
 
+/// A failed service gives Docker's reason even once Swarm replaced the
+/// failed task, and a desired task's row gives its own.
+#[test]
+fn service_diagnostics_give_dockers_reason() {
+    let rejected = |desired_running, reason| ObservedTask {
+        state: TaskState::Rejected,
+        desired_running,
+        current: true,
+        diagnostic: Some(TaskDiagnostic::Rejected {
+            reason: RuntimeMessage::new(reason),
+        }),
+        ..ObservedTask::default()
+    };
+    let mut service = service(vec![rejected(false, "No such image: web:2")], false);
+    service.convergence = Convergence::Failed;
+    let messages = |service: &ObservedService| {
+        service_diagnostics(service)
+            .into_iter()
+            .map(|diagnostic| diagnostic.message)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        messages(&service),
+        ["0 of 1 observed replicas are healthy: No such image: web:2"]
+    );
+    service.tasks.push(rejected(true, "invalid mount config"));
+    assert_eq!(
+        messages(&service),
+        [
+            "0 of 1 observed replicas are healthy: invalid mount config",
+            "the runtime rejected a desired task before it started: invalid mount config",
+        ]
+    );
+}
+
 #[test]
 fn pending_runtime_health_is_not_reported_as_healthy() {
     let task = ObservedTask {

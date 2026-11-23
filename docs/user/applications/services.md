@@ -393,8 +393,8 @@ health check.
 - **The deployment fails with `service_update_failed`.** A new replica failed
   its health check, exited, or never started, and Docker stopped the rollout.
   The deployment's error names the service and, when Docker gave one, its
-  reason, such as `No such image`. The dashboard's environment page also lists
-  the failing tasks' reasons under **Diagnostics**. Read the service's logs with
+  reason, such as `No such image`. The dashboard's environment page shows the
+  same reason under **Diagnostics**. Read the service's logs with
   `piquelctl app logs notes --service web`, fix the cause, and deploy again.
 - **A service never becomes healthy.** Check that the health check's port and
   path match what the container serves. An HTTP check connects to `127.0.0.1`

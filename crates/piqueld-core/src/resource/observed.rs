@@ -370,10 +370,25 @@ pub struct ObservedService {
 }
 
 impl ObservedService {
+    /// Docker's reason the service is failing, when it gave one: the first
+    /// error of a task Swarm still wants running, else of a task on the new
+    /// specification, which Swarm stops wanting once it replaces it, else
+    /// the paused update's message.
+    #[must_use]
+    pub fn failure_reason(&self) -> Option<&RuntimeMessage> {
+        let reason = |wanted: fn(&ObservedTask) -> bool| {
+            self.tasks
+                .iter()
+                .filter(|task| wanted(task))
+                .find_map(|task| task.diagnostic.as_ref()?.reason())
+        };
+        reason(|task| task.desired_running)
+            .or_else(|| reason(|task| task.current))
+            .or(self.update_message.as_ref())
+    }
+
     /// Says that the service failed to roll out, naming it by its manifest
-    /// name, and why when Docker said: the first error of a task Swarm still
-    /// wants running, else of a task on the new specification, else the
-    /// paused update's message.
+    /// name, and why with [`Self::failure_reason`].
     ///
     /// ```text
     /// "service web failed to roll out: No such image: example/web:2"
@@ -381,16 +396,7 @@ impl ObservedService {
     #[must_use]
     pub fn rollout_failure(&self) -> String {
         let service = self.labels.get(SERVICE_LABEL).unwrap_or(&self.name);
-        let reason = |wanted: fn(&ObservedTask) -> bool| {
-            self.tasks
-                .iter()
-                .filter(|task| wanted(task))
-                .find_map(|task| task.diagnostic.as_ref()?.reason())
-        };
-        match reason(|task| task.desired_running)
-            .or_else(|| reason(|task| task.current))
-            .or(self.update_message.as_ref())
-        {
+        match self.failure_reason() {
             Some(reason) => format!("service {service} failed to roll out: {reason}"),
             None => format!("service {service} failed to roll out"),
         }

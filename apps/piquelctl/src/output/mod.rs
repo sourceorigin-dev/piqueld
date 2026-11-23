@@ -17,6 +17,7 @@ use crate::{
     error::{CliError, ErrorKind, Result},
 };
 use parking_lot::Mutex;
+use piqueld_client::LogRecord;
 use progress::ProgressOutput;
 pub(crate) use progress::{Progress, ProgressTask, TaskOutcome};
 use serde::Serialize;
@@ -347,35 +348,6 @@ impl<'a> HumanWriter<'a> {
         writeln!(self.writer)
     }
 
-    /// Whether human output escapes `character`: a control character, or one
-    /// of the common invisible Unicode format characters, such as a
-    /// bidirectional override (U+202A–U+202E, U+2066–U+2069), a direction
-    /// mark (U+200E, U+200F, U+061C), a zero-width one, a Hangul filler, or
-    /// the line and paragraph separators (U+2028, U+2029), which could
-    /// reorder or hide the text around it.
-    const fn hidden(character: char) -> bool {
-        character.is_control()
-            || matches!(
-                character,
-                '\u{00AD}'
-                    | '\u{034F}'
-                    | '\u{061C}'
-                    | '\u{115F}'
-                    | '\u{1160}'
-                    | '\u{180E}'
-                    | '\u{200B}'..='\u{200F}'
-                    | '\u{2028}'..='\u{202E}'
-                    | '\u{2060}'..='\u{2064}'
-                    | '\u{2066}'..='\u{206F}'
-                    | '\u{3164}'
-                    | '\u{FEFF}'
-                    | '\u{FFA0}'
-                    | '\u{FFF9}'..='\u{FFFB}'
-                    | '\u{E0001}'
-                    | '\u{E0020}'..='\u{E007F}'
-            )
-    }
-
     /// Writes a bold cyan `Label:` prefix and an escaped value line.
     pub(crate) fn label(&mut self, label: &str, value: impl fmt::Display) -> io::Result<()> {
         write!(self.writer, "\x1b[1;36m{}:\x1b[0m ", Escaped(label))?;
@@ -410,11 +382,11 @@ impl<'a> HumanWriter<'a> {
     /// Writes captured log text, keeping newlines, tabs and the zero-width
     /// (non-)joiners U+200C and U+200D, which emoji sequences and Persian
     /// text need, but escaping every other control or invisible format
-    /// character (see [`Self::hidden`]) so logs cannot drive the terminal or
+    /// character (see [`LogRecord::hidden`]) so logs cannot drive the terminal or
     /// disguise what they print.
     pub(crate) fn log_text(&mut self, text: &str) -> io::Result<()> {
         for character in text.chars() {
-            if Self::hidden(character)
+            if LogRecord::hidden(character)
                 && !matches!(character, '\n' | '\t' | '\u{200C}' | '\u{200D}')
             {
                 write!(self.writer, "{}", character.escape_default())?;
@@ -434,7 +406,7 @@ impl<T: fmt::Display> fmt::Display for Escaped<T> {
         impl fmt::Write for Escape<'_, '_> {
             fn write_str(&mut self, value: &str) -> fmt::Result {
                 for character in value.chars() {
-                    if HumanWriter::hidden(character) {
+                    if LogRecord::hidden(character) {
                         write!(self.0, "{}", character.escape_default())?;
                     } else {
                         write!(self.0, "{character}")?;

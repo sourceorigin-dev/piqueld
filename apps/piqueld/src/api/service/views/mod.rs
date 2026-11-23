@@ -91,8 +91,9 @@ fn healthy_replicas(service: &ObservedService) -> u16 {
 }
 
 /// Summarizes a service's problems: a convergence diagnostic when degraded or
-/// failed, then failures of currently desired tasks (historical tasks are
-/// ignored). Capped at `MAX_SERVICE_DIAGNOSTICS`.
+/// failed, with Docker's reason ([`ObservedService::failure_reason`]), then
+/// failures of currently desired tasks (historical tasks are ignored).
+/// Capped at `MAX_SERVICE_DIAGNOSTICS`.
 fn service_diagnostics(service: &ObservedService) -> Vec<DiagnosticView> {
     let mut diagnostics = Vec::new();
     if matches!(
@@ -106,7 +107,7 @@ fn service_diagnostics(service: &ObservedService) -> Vec<DiagnosticView> {
         );
         diagnostics.push(DiagnosticView::new(
             ApiErrorCode::ServiceNotConverged,
-            with_reason(healthy, service.update_message.as_ref()),
+            with_reason(healthy, service.failure_reason()),
         ));
     }
     diagnostics.extend(

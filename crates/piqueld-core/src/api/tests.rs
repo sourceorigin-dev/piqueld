@@ -127,6 +127,12 @@ fn terminal_controls_are_removed_but_text_and_lines_survive() {
         ),
         "text link"
     );
+    // Bidirectional overrides and zero-width characters go; the joiner of
+    // an emoji sequence stays.
+    assert_eq!(
+        LogRecord::clean_message("evil\u{202E}gpj.exe\u{200B}\u{FEFF} 👩\u{200D}💻"),
+        "evilgpj.exe 👩\u{200D}💻"
+    );
 }
 
 /// A whole page also matches the summary schema, and an empty page matches
