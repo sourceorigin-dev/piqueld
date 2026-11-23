@@ -78,6 +78,8 @@ impl Scenario {
                         "first backend"
                     );
                     requests += 1;
+                    // wall-clock: paces requests through the real gateway while the
+                    // deployment runs, to catch any reload that drops one.
                     tokio::time::sleep(Duration::from_millis(25)).await;
                 }
                 requests
@@ -127,17 +129,17 @@ impl Scenario {
             },
             async {
                 tokio::time::timeout(Duration::from_mins(1), async {
-                    while self
-                        .store
-                        .operation(&routed)
-                        .await
-                        .unwrap()
-                        .phase
-                        .map(piqueld_core::Phase::as_str)
-                        != Some("routing")
-                    {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    }
+                    self.store
+                        .wait_until(async || {
+                            self.store
+                                .operation(&routed)
+                                .await
+                                .unwrap()
+                                .phase
+                                .map(piqueld_core::Phase::as_str)
+                                == Some("routing")
+                        })
+                        .await;
                     let mut private =
                         application("private", "private.example.test", "private backend")
                             .to_manifest();
@@ -150,11 +152,7 @@ impl Scenario {
                         ),
                     )
                     .await;
-                    while self.store.operation(&operation).await.unwrap().state
-                        != OperationState::Succeeded
-                    {
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                    }
+                    self.succeeded(&operation).await;
                     assert_eq!(
                         self.store.operation(&routed).await.unwrap().state,
                         OperationState::Running
@@ -163,15 +161,9 @@ impl Scenario {
                 .await
                 .expect("private deployment proceeds while gateway writer is blocked");
                 drop(guard);
-                tokio::time::timeout(Duration::from_mins(1), async {
-                    while self.store.operation(&routed).await.unwrap().state
-                        != OperationState::Succeeded
-                    {
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                    }
-                })
-                .await
-                .unwrap();
+                tokio::time::timeout(Duration::from_mins(1), self.succeeded(&routed))
+                    .await
+                    .unwrap();
                 cancellation.cancel();
             }
         );
@@ -186,6 +178,8 @@ impl Scenario {
                 {
                     break;
                 }
+                // wall-clock: Caddy, a real process, comes back on its own after the
+                // restart and signals nothing; ask again until it answers.
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })
@@ -221,6 +215,8 @@ impl Scenario {
                     self.body_across_reload("one.example.test").await,
                     "first backend"
                 );
+                // wall-clock: Swarm starts the replacement's container on its own; look
+                // again while checking traffic stays on the first backend.
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })
@@ -239,6 +235,8 @@ impl Scenario {
                     .as_str(),
                 "web"
             );
+            // wall-clock: the unhealthy replacement gets real time to take
+            // over in Swarm, which it must not; nothing signals that it never will.
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         let health = self
@@ -308,6 +306,8 @@ impl Scenario {
                         matches!(body.as_str(), "first backend" | "replacement backend"),
                         "{body}"
                     );
+                    // wall-clock: paces requests through the real gateway while the
+                    // deployment runs, to catch any reload that drops one.
                     tokio::time::sleep(Duration::from_millis(25)).await;
                 }
             }
@@ -419,6 +419,8 @@ impl Scenario {
         self.client.get(probe).send().await.unwrap();
         // Lines reach the daemon as Caddy writes them; stopping the counter
         // flushes them.
+        // wall-clock: Caddy writes access log lines on its own schedule and
+        // signals nothing; give it time before the counter stops.
         tokio::time::sleep(Duration::from_secs(1)).await;
         self.counting.cancel();
         let counter = self.counter.lock().await.take().unwrap();
@@ -508,6 +510,8 @@ impl Scenario {
                 {
                     break;
                 }
+                // wall-clock: Swarm recreates the endpoints on its own and signals
+                // nothing; synchronize and ask again until the backend answers.
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })

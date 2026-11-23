@@ -123,6 +123,8 @@ async fn backend(mut request: Request<hyper::body::Incoming>) -> Result<Response
             .body(Body::from_stream(stream::unfold(
                 0_u32,
                 |sequence| async move {
+                    // wall-clock: paces the live event stream through the real gateway,
+                    // so it keeps flowing across the reload.
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     Some((
                         Ok::<_, Infallible>(format!("data: {sequence}\n\n")),
