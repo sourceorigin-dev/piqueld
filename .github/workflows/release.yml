@@ -1,9 +1,9 @@
 # Creates the GitHub release of a version when `just release` pushes its tag,
 # such as v0.1.0, with the static release archive install.sh installs and its
-# checksums, each with a build provenance attestation. gh creates the release as a draft, uploads the files, then
-# publishes it, so the latest release always has its archive. Its notes list
-# the pull requests merged since the previous release. See
-# docs/dev/releasing.md.
+# checksums, each with a build provenance attestation. gh creates the release
+# as a draft, uploads the files, then publishes it, so the latest release
+# always has its archive. Its notes list the pull requests merged since the
+# previous release. See docs/dev/releasing.md.
 
 name: Release
 

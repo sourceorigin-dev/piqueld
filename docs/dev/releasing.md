@@ -180,11 +180,14 @@ piquelctl --version
 docs.rs builds the new `piqueld-client` documentation within a few minutes.
 
 The GitHub release lists the archive and `SHA256SUMS`. The release workflow
-also attests their build provenance, so anyone can check that it built a
-downloaded archive from the tagged commit:
+also attests their build provenance, so anyone can check, on their own
+machine, that `release.yml` built a downloaded archive from the release's tag:
 
 ```console
-gh attestation verify piqueld-<version>-x86_64-linux.tar.gz --repo sourceorigin-dev/piqueld
+gh release download v<version> -R sourceorigin-dev/piqueld -p 'piqueld-<version>-x86_64-linux.tar.gz'
+gh attestation verify piqueld-<version>-x86_64-linux.tar.gz --repo sourceorigin-dev/piqueld \
+  --signer-workflow sourceorigin-dev/piqueld/.github/workflows/release.yml \
+  --source-ref refs/tags/v<version>
 ```
 
 On a disposable Linux
