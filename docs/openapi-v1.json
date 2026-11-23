@@ -2252,6 +2252,18 @@
             "nullable": true,
             "type": "integer"
           },
+          "oldest_pending_delivery_ms": {
+            "description": "How long the oldest notification delivery awaiting a retry has\nwaited since it was queued, in milliseconds; none while none waits.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "oldest_queued_operation_ms": {
+            "description": "How long the oldest operation waiting to execute has waited, in\nmilliseconds; none while no operation waits.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
           "pending_deliveries": {
             "description": "Notification deliveries awaiting a retry.",
             "format": "int64",
@@ -2278,8 +2290,26 @@
             "minimum": 0,
             "type": "integer"
           },
+          "waiting_writes": {
+            "description": "Database writes waiting for their turn, since the daemon writes one\nat a time.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
           "wal_bytes": {
             "description": "`SQLite` write-ahead log size.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "write_wait_ms": {
+            "description": "How long those writes waited in all, in milliseconds.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "write_waits": {
+            "description": "Database writes that had to wait for their turn since the daemon\nstarted.",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
@@ -4214,6 +4244,18 @@
                 "nullable": true,
                 "type": "integer"
               },
+              "oldest_pending_delivery_ms": {
+                "description": "How long the oldest notification delivery awaiting a retry has\nwaited since it was queued, in milliseconds; none while none waits.",
+                "format": "int64",
+                "nullable": true,
+                "type": "integer"
+              },
+              "oldest_queued_operation_ms": {
+                "description": "How long the oldest operation waiting to execute has waited, in\nmilliseconds; none while no operation waits.",
+                "format": "int64",
+                "nullable": true,
+                "type": "integer"
+              },
               "pending_deliveries": {
                 "description": "Notification deliveries awaiting a retry.",
                 "format": "int64",
@@ -4240,8 +4282,26 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "waiting_writes": {
+                "description": "Database writes waiting for their turn, since the daemon writes one\nat a time.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
               "wal_bytes": {
                 "description": "`SQLite` write-ahead log size.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "write_wait_ms": {
+                "description": "How long those writes waited in all, in milliseconds.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "write_waits": {
+                "description": "Database writes that had to wait for their turn since the daemon\nstarted.",
                 "format": "int64",
                 "minimum": 0,
                 "type": "integer"

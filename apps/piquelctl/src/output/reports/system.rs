@@ -4,7 +4,7 @@ use super::health;
 use crate::{profiles::ProfileSummary, support::join_or};
 use piqueld_client::{
     DnsStatus, ImageStatus, PreviewUsage, RegistryImageStatus, SystemStatus, TelemetryStatus,
-    observability::{Bytes, DaemonStats, Timestamp, Uptime},
+    observability::{Bytes, DaemonStats, Elapsed, Timestamp, Uptime},
     system::{
         BuilderCheck, BuilderStatus, HostConfiguration, IngressStatus, PublicIngressStatus,
         SystemCheck,
@@ -328,18 +328,37 @@ report!(DaemonStats, self, out, {
         "Retained build output",
         Bytes::from_i64(self.build_output_bytes),
     )?;
+    // How long the oldest of a queue has waited, when one waits.
+    let oldest = |age: Option<i64>| {
+        age.map_or_else(String::new, |age| {
+            format!("; the oldest has waited {}", Elapsed::from_millis(age))
+        })
+    };
     out.label(
         "Operations",
         format_args!(
-            "{} running, {} queued",
-            self.running_operations, self.queued_operations
+            "{} running, {} queued{}",
+            self.running_operations,
+            self.queued_operations,
+            oldest(self.oldest_queued_operation_ms)
         ),
     )?;
     out.label(
         "Notification deliveries",
         format_args!(
-            "{} awaiting a retry, {} failed",
-            self.pending_deliveries, self.failed_deliveries
+            "{} awaiting a retry, {} failed{}",
+            self.pending_deliveries,
+            self.failed_deliveries,
+            oldest(self.oldest_pending_delivery_ms)
+        ),
+    )?;
+    out.label(
+        "Database writes",
+        format_args!(
+            "{} waiting; {} waited {} in all",
+            self.waiting_writes,
+            self.write_waits,
+            Elapsed(Duration::from_millis(self.write_wait_ms))
         ),
     )
 });

@@ -482,8 +482,9 @@ Daemon status and Host settings pages do:
   [resource measurements](../operations/history.md#watch-the-daemon-itself): uptime,
   resident memory, CPU usage, the database and its write-ahead log, free disk
   on the data directory's filesystem, retained events, diagnostics and build
-  output, running and queued operations, and notification deliveries
-  awaiting a retry or failed.
+  output, running and queued operations, notification deliveries awaiting a
+  retry or failed, how long the oldest of each queue has waited, and how many
+  database writes wait, or have waited, for their turn.
   The daemon measures at most every 5 seconds and averages CPU usage since
   its previous measurement, so its first measurement has none. What the host
   cannot measure is unavailable, never zero.

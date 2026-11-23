@@ -108,6 +108,25 @@ pub struct DaemonStats {
     pub pending_deliveries: i64,
     /// Notification deliveries that exhausted retries or were rejected.
     pub failed_deliveries: i64,
+    /// How long the oldest operation waiting to execute has waited, in
+    /// milliseconds; none while no operation waits.
+    #[serde(default)]
+    pub oldest_queued_operation_ms: Option<i64>,
+    /// How long the oldest notification delivery awaiting a retry has
+    /// waited since it was queued, in milliseconds; none while none waits.
+    #[serde(default)]
+    pub oldest_pending_delivery_ms: Option<i64>,
+    /// Database writes waiting for their turn, since the daemon writes one
+    /// at a time.
+    #[serde(default)]
+    pub waiting_writes: u64,
+    /// Database writes that had to wait for their turn since the daemon
+    /// started.
+    #[serde(default)]
+    pub write_waits: u64,
+    /// How long those writes waited in all, in milliseconds.
+    #[serde(default)]
+    pub write_wait_ms: u64,
 }
 
 string_enum! {

@@ -112,7 +112,11 @@ The dashboard's **Daemon status** page shows:
   where telemetry is exported;
 - the daemon's uptime, memory, CPU, database size and free disk space;
 - how many events and diagnostics are kept, and how much build output;
-- running and queued operations, and pending and failed notifications.
+- running and queued operations, and pending and failed notifications, with
+  how long the oldest of each queue has waited;
+- how many database writes wait for their turn, since the daemon writes one at
+  a time, and how many waited, and for how long, since it started. Writes that
+  wait often or long point to a slow disk or a busy daemon.
 
 These are current values. For their history, [export telemetry](telemetry.md).
 

@@ -1654,3 +1654,30 @@ async fn requested_webhook_secret_rotations_commit_with_their_audit_record() {
             .any(|action| { action.contains(kept.as_str()) || action.contains(secret.as_str()) })
     );
 }
+
+/// Statistics count the writes that waited for their turn and how long, and
+/// how long the oldest queued operation has waited.
+#[tokio::test]
+async fn daemon_stats_report_write_waits_and_queue_ages() {
+    let (_temp, store) = Store::temporary().await;
+    let writer = store.hold_writer().await;
+    let release = async {
+        store.writer_waiting().await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        drop(writer);
+    };
+    // Deploying queues its operation, once the held turn is released.
+    let (saved, ()) = tokio::join!(
+        store.save_template(template("queued", "[spec]"), true),
+        release
+    );
+    assert!(saved.operation_id.is_some());
+    let stats = store.daemon_stats().await.unwrap();
+    assert_eq!((stats.waiting_writes, stats.write_waits), (0, 1));
+    assert!(stats.write_wait_ms >= 20, "{stats:?}");
+    assert!(
+        stats.oldest_queued_operation_ms.is_some_and(|age| age >= 0),
+        "{stats:?}"
+    );
+    assert_eq!(stats.oldest_pending_delivery_ms, None);
+}

@@ -141,6 +141,28 @@ const GAUGES: &[(&str, &str, &str, Read)] = &[
         },
     ),
     (
+        "piqueld.queue.oldest.age",
+        "ms",
+        "How long the oldest queued operation or notification delivery has waited",
+        |s| {
+            stat(s, |stats| {
+                [
+                    ("operations", stats.oldest_queued_operation_ms),
+                    ("deliveries", stats.oldest_pending_delivery_ms),
+                ]
+                .into_iter()
+                .filter_map(|(queue, age)| Some((count(age?), vec![KeyValue::new("queue", queue)])))
+                .collect()
+            })
+        },
+    ),
+    (
+        "piqueld.database.writes.waiting",
+        "{write}",
+        "Database writes waiting for their turn",
+        |s| stat(s, |stats| vec![(stats.waiting_writes, vec![])]),
+    ),
+    (
         "piqueld.service.replicas",
         "{replica}",
         "Replicas of each deployed service: desired by the manifest, running, and healthy",
@@ -167,6 +189,23 @@ const GAUGES: &[(&str, &str, &str, Read)] = &[
                 })
                 .collect()
         },
+    ),
+];
+
+/// Integer counters, which only grow while the daemon runs: name, unit,
+/// description, and how to read them.
+const COUNTERS: &[(&str, &str, &str, Read)] = &[
+    (
+        "piqueld.database.write.waits",
+        "{write}",
+        "Database writes that had to wait for their turn",
+        |s| stat(s, |stats| vec![(stats.write_waits, vec![])]),
+    ),
+    (
+        "piqueld.database.write.wait_time",
+        "ms",
+        "How long database writes waited for their turn, in all",
+        |s| stat(s, |stats| vec![(stats.write_wait_ms, vec![])]),
     ),
 ];
 
@@ -207,17 +246,28 @@ impl Instruments {
     /// Registers every instrument on `meter`.
     pub(super) fn new(meter: &Meter) -> Self {
         let snapshot = Arc::new(Mutex::new(Snapshot::default()));
-        for &(name, unit, description, read) in GAUGES {
+        let observe = |read: Read| {
             let snapshot = Arc::clone(&snapshot);
+            move |observer: &dyn opentelemetry::metrics::AsyncInstrument<u64>| {
+                for (value, attributes) in read(&snapshot.lock()) {
+                    observer.observe(value, &attributes);
+                }
+            }
+        };
+        for &(name, unit, description, read) in GAUGES {
             meter
                 .u64_observable_gauge(name)
                 .with_unit(unit)
                 .with_description(description)
-                .with_callback(move |observer| {
-                    for (value, attributes) in read(&snapshot.lock()) {
-                        observer.observe(value, &attributes);
-                    }
-                })
+                .with_callback(observe(read))
+                .build();
+        }
+        for &(name, unit, description, read) in COUNTERS {
+            meter
+                .u64_observable_counter(name)
+                .with_unit(unit)
+                .with_description(description)
+                .with_callback(observe(read))
                 .build();
         }
         let cpu = |read: fn(&DaemonStats) -> Option<f64>| {

@@ -32,7 +32,9 @@ fn resources_and_settings_show_the_daemon_measurements_and_host_settings() {
             "database_bytes": 12_582_912, "wal_bytes": 4_194_304,
             "available_disk_bytes": null, "events": 1234, "diagnostics": 5,
             "build_output_bytes": 2048, "running_operations": 1, "queued_operations": 2,
-            "pending_deliveries": 3, "failed_deliveries": 0
+            "pending_deliveries": 3, "failed_deliveries": 0,
+            "oldest_queued_operation_ms": 125_000, "oldest_pending_delivery_ms": null,
+            "waiting_writes": 1, "write_waits": 12, "write_wait_ms": 340
         })),
         "/api/v1/system/configuration" => Reply::json(json!({"groups": {
             "Docker": {"Socket": "/run/docker.sock"},
@@ -50,8 +52,9 @@ fn resources_and_settings_show_the_daemon_measurements_and_host_settings() {
         "Database: 12.0 MiB (WAL 4.0 MiB)",
         "Available disk: unavailable on this host",
         "Retained build output: 2.0 KiB",
-        "Operations: 1 running, 2 queued",
-        "Notification deliveries: 3 awaiting a retry, 0 failed",
+        "Operations: 1 running, 2 queued; the oldest has waited 2 min 5 s\n",
+        "Notification deliveries: 3 awaiting a retry, 0 failed\n",
+        "Database writes: 1 waiting; 12 waited 340 ms in all\n",
     ] {
         assert!(stdout.contains(line), "{stdout}");
     }
