@@ -21,7 +21,11 @@ Progenitor and checked into `piqueld-client`. They reuse the core wire contracts
 and share bounded TCP/Unix/browser response handling. Handwritten convenience
 methods unwrap envelopes, provide local validation, and cover the requests
 Progenitor cannot generate: the two TOML operations, the local snapshot upload,
-and the exec WebSocket. The generator is a
+and the exec WebSocket. `piqueld_client::paths`, generated from the same
+document, builds each operation's path, in a function named after its
+operation ID as the generated client's methods are. Those requests take their
+paths from it, as do the dashboard's manifest download link and its event
+streams, which the browser opens itself. The generator is a
 daemon example that only development builds compile; the client uses Progenitor's
 small runtime support crate. See
 [client generation](https://github.com/sourceorigin-dev/piqueld/blob/main/tools/client-codegen/README.md).

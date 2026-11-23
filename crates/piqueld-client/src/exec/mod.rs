@@ -5,8 +5,7 @@
 //! cookie. Dropping both the reader and the writer closes the connection,
 //! which stops streaming without stopping the command.
 
-use crate::{Client, ClientError};
-use piqueld_core::api::API_PREFIX;
+use crate::{Client, ClientError, paths};
 use piqueld_core::exec::MAX_STDIN_BYTES;
 pub use piqueld_core::exec::{
     ExecCommand, ExecCommandError, ExecFrame, ExecInput, ExecOutput, ExecRequest, TerminalSize,
@@ -37,9 +36,9 @@ impl Client {
         request: &ExecRequest,
     ) -> Result<(ExecReader, ExecWriter), ClientError> {
         let url = format!(
-            "{}{API_PREFIX}/environments/{}/exec",
+            "{}{}",
             self.generated.baseurl,
-            progenitor_client::encode_path(id)
+            paths::exec_environment_command(id)
         );
         let request = serde_json::to_string(request).map_err(ClientError::invalid_request)?;
         let (reader, writer) = socket::open(self, url, request).await?;

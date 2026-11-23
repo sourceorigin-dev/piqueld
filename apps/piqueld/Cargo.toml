@@ -100,6 +100,8 @@ piqueld-store = { workspace = true, features = ["testing"] }
 tokio-tungstenite.workspace = true
 # The `generate_openapi` example, which `just generate` runs.
 piqueld-generated.workspace = true
+# Names paths like Progenitor names methods.
+heck.workspace = true
 prettyplease.workspace = true
 progenitor.workspace = true
 syn.workspace = true

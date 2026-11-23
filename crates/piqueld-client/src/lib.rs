@@ -39,6 +39,12 @@ pub mod observability;
 pub mod openapi;
 /// Operation inspection contracts, and their timelines of steps.
 pub mod operations;
+/// Each operation's path, for what the client does not send itself: the
+/// dashboard's links and event streams, and the client's hand-written
+/// requests. Functions are named after the API's operation IDs, as the
+/// generated client's methods are, and percent-encode path parameters as
+/// those methods do.
+pub mod paths;
 /// Preview lifecycle and branch state contracts.
 pub mod previews;
 /// Deploying on push: environment opt-out and GitHub webhooks.
@@ -118,7 +124,7 @@ pub use system::{
 };
 
 pub use piqueld_core::api::{
-    API_PREFIX, ApplicationLogs, BuildLogChunk, BuildLogPage, BuildRecord, BuildState, Envelope,
+    ApplicationLogs, BuildLogChunk, BuildLogPage, BuildRecord, BuildState, Envelope,
     EnvironmentAccess, ErrorBody, LogRecord, LogStream, ManifestChange, MountedSecret, Page,
     SecretAccess, SecretAccessChange, SecretKeyRecovery, SecretMetadata, StoredSecret,
 };

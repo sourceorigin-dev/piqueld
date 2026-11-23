@@ -19,6 +19,7 @@ use leptos_router::NavigateOptions;
 use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use piqueld_client::access::AppPermission;
+use piqueld_client::paths;
 
 /// The application page: shared configuration, its environments, and history
 /// across all of them.
@@ -50,7 +51,7 @@ pub(super) fn ApplicationSections() -> impl IntoView {
             <div class="page-actions">
                 <a
                     class="btn btn-ghost"
-                    href={format!("/api/v1/applications/{id}/manifest")}
+                    href={paths::download_application_manifest(&id)}
                     download
                     title="Download the saved manifest as TOML"
                 >

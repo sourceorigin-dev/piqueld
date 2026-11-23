@@ -7,6 +7,7 @@ docs/openapi-v1.json linguist-generated=true
 docs/application-manifest.schema.json linguist-generated=true
 docs/piqueld-config.schema.json linguist-generated=true
 crates/piqueld-client/src/generated.rs linguist-generated=true
+crates/piqueld-client/src/paths.rs linguist-generated=true
 docs/user/reference/cli-commands.md linguist-generated=true
 docs/user/reference/manifest-settings.md linguist-generated=true
 docs/user/reference/configuration-settings.md linguist-generated=true

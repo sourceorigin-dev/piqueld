@@ -1,22 +1,24 @@
-//! Generates or checks the `OpenAPI` specification, its Rust client bindings,
-//! the standalone application manifest and daemon configuration JSON
-//! Schemas, and the documentation's settings references rendered from those
-//! schemas. `piquelctl`'s `cli_reference` example renders the command
-//! reference; it depends on the client this generates, so it runs as a
-//! separate step.
+//! Generates or checks the `OpenAPI` specification, its Rust client bindings
+//! and operation paths, the standalone application manifest and daemon
+//! configuration JSON Schemas, and the documentation's settings references
+//! rendered from those schemas. `piquelctl`'s `cli_reference` example renders
+//! the command reference; it depends on the client this generates, so it runs
+//! as a separate step.
 
 mod settings_reference;
 
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
+use heck::ToSnakeCase;
 use piqueld::api::http::openapi_document;
 use piqueld_config::DaemonConfig;
 use piqueld_core::manifest::ApplicationManifest;
 use piqueld_generated::Artifacts;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use settings_reference::SettingsPage;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
     fs,
     io::Write,
     process::{Command, Stdio},
@@ -76,6 +78,7 @@ impl Generator {
             .context("read Progenitor configuration")?,
         )
         .context("parse Progenitor configuration")?;
+        let operation_paths = Self::generate_paths(paths)?;
         let client = self.generate_client(document.clone(), &config)?;
         let document = format!("{}\n", serde_json::to_string_pretty(&document)?);
         let manifest_schema = ApplicationManifest::json_schema();
@@ -90,6 +93,10 @@ impl Generator {
             ("docs/application-manifest.schema.json", manifest_schema),
             ("docs/piqueld-config.schema.json", config_schema),
             ("crates/piqueld-client/src/generated.rs", client),
+            (
+                "crates/piqueld-client/src/paths.rs",
+                self.rustfmt(&operation_paths)?,
+            ),
             (SettingsPage::MANIFEST.path, manifest_settings),
             (SettingsPage::CONFIG.path, config_settings),
         ])?;
@@ -155,6 +162,88 @@ impl Generator {
 )]
 
 {source}"#
+        ))
+    }
+
+    /// Generates the source of `piqueld_client::paths` from the document's
+    /// `paths`: one function per operation, named after its operation ID as
+    /// the generated client's methods are, that builds the operation's path
+    /// with its path parameters percent-encoded as the client encodes them.
+    /// It reads the complete document, so it also covers the operations
+    /// Progenitor's copy drops, such as the exec WebSocket.
+    fn generate_paths(paths: &Map<String, Value>) -> Result<String> {
+        let mut functions = BTreeMap::new();
+        for (path, item) in paths {
+            let operations = item
+                .as_object()
+                .with_context(|| format!("OpenAPI path {path} is not an object"))?;
+            for (method, operation) in operations {
+                let Some(operation) = operation.as_object() else {
+                    continue;
+                };
+                let id = operation
+                    .get("operationId")
+                    .and_then(Value::as_str)
+                    .with_context(|| format!("{method} {path} has no operation ID"))?;
+                // Progenitor names its methods with heck's snake case too.
+                let name = id.to_snake_case();
+                let mut template = String::new();
+                let mut parameters = Vec::new();
+                let mut arguments = String::new();
+                // Placeholders are the odd parts between braces.
+                for (index, part) in path.split(['{', '}']).enumerate() {
+                    if index % 2 == 0 {
+                        template.push_str(part);
+                        continue;
+                    }
+                    let format = operation
+                        .get("parameters")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .find(|parameter| {
+                            parameter.get("in").and_then(Value::as_str) == Some("path")
+                                && parameter.get("name").and_then(Value::as_str) == Some(part)
+                        })
+                        .and_then(|parameter| parameter.get("schema"))
+                        .map(|schema| {
+                            (
+                                schema.get("type").and_then(Value::as_str),
+                                schema.get("format").and_then(Value::as_str),
+                            )
+                        });
+                    // Strings are percent-encoded; integers need no encoding.
+                    let kind = match format {
+                        Some((Some("string"), _)) => {
+                            write!(arguments, ", {part} = encode_path({part})")?;
+                            "&str"
+                        }
+                        Some((Some("integer"), Some("int64"))) => "i64",
+                        _ => bail!("{id}'s path parameter {part} has an unsupported type"),
+                    };
+                    write!(template, "{{{part}}}")?;
+                    parameters.push(format!("{part}: {kind}"));
+                }
+                let body = if parameters.is_empty() {
+                    format!("String::from({template:?})")
+                } else {
+                    format!("format!({template:?}{arguments})")
+                };
+                let function = format!(
+                    "/// `{} {path}`\n#[must_use]\npub fn {name}({}) -> String {{ {body} }}\n\n",
+                    method.to_uppercase(),
+                    parameters.join(", ")
+                );
+                ensure!(
+                    functions.insert(name, function).is_none(),
+                    "two operations are named {id}"
+                );
+            }
+        }
+        Ok(format!(
+            "// Generated from the OpenAPI document. Run `just generate`; do not edit.\n\n\
+             use progenitor_client::encode_path;\n\n{}",
+            functions.into_values().collect::<String>()
         ))
     }
 
