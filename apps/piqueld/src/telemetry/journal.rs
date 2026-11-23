@@ -27,7 +27,7 @@ use opentelemetry_sdk::trace::{SpanData, SpanEvents, SpanLinks};
 use piqueld_core::Phase;
 use piqueld_core::observability::DiagnosticCode;
 use piqueld_core::operation::OperationKind;
-use piqueld_core::{Event, Operation};
+use piqueld_core::{Event, EventKind, Operation};
 use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
@@ -73,26 +73,21 @@ impl Journal {
 
     /// Whether recording `event` needs its operation as stored now.
     pub(crate) fn needs_operation(event: &Event) -> bool {
-        Self::attempt_outcome(&event.kind).is_some()
+        event.known_kind().and_then(Self::attempt_outcome).is_some()
     }
 
-    /// Event kinds that may end an attempt and, with it, the operation, with
-    /// the attempt's outcome.
-    const ENDS_ATTEMPTS: [(&str, &str); 6] = [
-        ("operation_succeeded", "succeeded"),
-        ("operation_failed", "failed"),
-        ("operation_cancelled", "cancelled"),
-        ("operation_superseded", "superseded"),
-        ("operation_interrupted", "interrupted"),
-        ("reconciliation_requested", "requeued"),
-    ];
-
-    /// The outcome of the attempt an event of `kind` ends, if it ends one.
-    fn attempt_outcome(kind: &str) -> Option<&'static str> {
-        Self::ENDS_ATTEMPTS
-            .iter()
-            .find(|(ends, _)| *ends == kind)
-            .map(|(_, outcome)| *outcome)
+    /// The outcome of the attempt an event of `kind` ends, if it may end
+    /// one and, with it, the operation.
+    fn attempt_outcome(kind: EventKind) -> Option<&'static str> {
+        Some(match kind {
+            EventKind::OperationSucceeded => "succeeded",
+            EventKind::OperationFailed => "failed",
+            EventKind::OperationCancelled => "cancelled",
+            EventKind::OperationSuperseded => "superseded",
+            EventKind::OperationInterrupted => "interrupted",
+            EventKind::ReconciliationRequested => "requeued",
+            _ => return None,
+        })
     }
 
     /// Exports `event` as a log record, plus any span it ends and the
@@ -107,8 +102,11 @@ impl Journal {
     /// Builds the spans `event` ends, recording deployment and build metrics
     /// along the way.
     fn spans(&mut self, event: &Event, context: EventContext<'_>) -> Vec<SpanData> {
-        match event.kind.as_str() {
-            "operation_started" => {
+        let Some(kind) = event.known_kind() else {
+            return Vec::new();
+        };
+        match kind {
+            EventKind::OperationStarted => {
                 if let (Some(operation), Some(attempt)) = (&event.operation_id, event.attempt) {
                     if self.open.len() >= OPEN_ATTEMPTS {
                         self.open.clear();
@@ -118,9 +116,9 @@ impl Journal {
                 }
                 Vec::new()
             }
-            "action_succeeded" | "action_failed" | "action_outcome_unknown" => {
-                self.action(event, context).into_iter().collect()
-            }
+            EventKind::ActionSucceeded
+            | EventKind::ActionFailed
+            | EventKind::ActionOutcomeUnknown => self.action(event, context).into_iter().collect(),
             kind => Self::attempt_outcome(kind)
                 .map_or_default(|outcome| self.operation(event, context, outcome)),
         }
@@ -129,9 +127,9 @@ impl Journal {
     /// The span of a finished action, and its build metrics.
     fn action(&self, event: &Event, context: EventContext<'_>) -> Option<SpanData> {
         let action = event.action_id.as_deref()?;
-        let outcome = match event.kind.as_str() {
-            "action_succeeded" => "succeeded",
-            "action_failed" => "failed",
+        let outcome = match event.known_kind() {
+            Some(EventKind::ActionSucceeded) => "succeeded",
+            Some(EventKind::ActionFailed) => "failed",
             _ => "unknown",
         };
         let duration = event.duration_ms.map(Duration::from_millis);
@@ -203,7 +201,7 @@ impl Journal {
                 Some(operation.created_at_ms),
                 operation.attempt,
             ),
-            None if event.kind == "operation_succeeded" => {
+            None if event.kind == EventKind::OperationSucceeded => {
                 (None, None, event.attempt.unwrap_or_default())
             }
             None => return Vec::new(),
@@ -211,7 +209,7 @@ impl Journal {
         let attempt = event.attempt.unwrap_or(attempts);
         // Deletions never fail: they record each error and keep their attempt
         // running until it is retried.
-        if event.kind == "operation_failed" && kind == Some(OperationKind::Delete) {
+        if event.kind == EventKind::OperationFailed && kind == Some(OperationKind::Delete) {
             return Vec::new();
         }
         let end = time(event.created_at_ms);

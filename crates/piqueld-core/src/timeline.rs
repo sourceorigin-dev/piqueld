@@ -11,7 +11,8 @@
 use crate::observability::{Diagnostic, Elapsed};
 use crate::resource::TaskState;
 use crate::{
-    Event, EventDetail, Operation, OperationKind, OperationState, Phase, names::string_enum,
+    Event, EventDetail, EventKind, Operation, OperationKind, OperationState, Phase,
+    names::string_enum,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -669,19 +670,22 @@ impl Timeline {
             self.plan(steps, *coverage);
             return;
         }
-        match event.kind.as_str() {
-            "target_promoted" => self.promoted_at_ms = Some(event.created_at_ms),
-            "action_started" => self.start(event),
+        let Some(kind) = event.known_kind() else {
+            return;
+        };
+        match kind {
+            EventKind::TargetPromoted => self.promoted_at_ms = Some(event.created_at_ms),
+            EventKind::ActionStarted => self.start(event),
             kind => {
                 let Some(step) = self.action(event) else {
                     return;
                 };
                 match kind {
-                    "action_requested" => {
+                    EventKind::ActionRequested => {
                         step.retries = event.retry.unwrap_or(1).saturating_sub(1);
                         step.state = StepState::Running;
                     }
-                    "action_progressed" => {
+                    EventKind::ActionProgressed => {
                         if let Some(EventDetail::Rollout {
                             tasks,
                             monitor_seconds,
@@ -690,14 +694,16 @@ impl Timeline {
                             step.observe(tasks, *monitor_seconds, event.created_at_ms);
                         }
                     }
-                    "action_retry" => {
+                    EventKind::ActionRetry => {
                         step.state = StepState::Retrying;
                         step.diagnostic.clone_from(&event.diagnostic);
                     }
-                    "action_succeeded" | "action_failed" | "action_outcome_unknown" => {
+                    EventKind::ActionSucceeded
+                    | EventKind::ActionFailed
+                    | EventKind::ActionOutcomeUnknown => {
                         step.state = match kind {
-                            "action_succeeded" => StepState::Succeeded,
-                            "action_failed" => StepState::Failed,
+                            EventKind::ActionSucceeded => StepState::Succeeded,
+                            EventKind::ActionFailed => StepState::Failed,
                             _ => StepState::Interrupted,
                         };
                         step.finished_at_ms = Some(event.created_at_ms);

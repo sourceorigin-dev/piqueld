@@ -15,6 +15,7 @@ use super::{
 };
 use crate::secrets::{Envelope, Generate, SecretCipher, SecretOwner};
 use anyhow::Context;
+use piqueld_core::EventKind;
 use piqueld_core::{
     ApplicationId,
     api::SecretMetadata,
@@ -185,7 +186,7 @@ impl Store {
         sqlx::query!("INSERT INTO secret_versions(environment_id,name,generation,swarm_name,nonce,ciphertext) VALUES(?1,?2,?3,?4,?5,?6)",id,name,generation,swarm_name,envelope.nonce,envelope.ciphertext).execute(&mut **tx).await.map_err(StoreError::database)?;
         let (scope, by) = (SecretScope::Environment(application), actor.attribution());
         let message = format!("Stored secret version {generation}");
-        Self::secret_event_on(tx, scope, ("secret_saved", &message, name), by, now).await?;
+        Self::secret_event_on(tx, scope, (EventKind::SecretSaved, &message, name), by, now).await?;
         Ok(SecretMetadata {
             name: name.into(),
             generation,
@@ -199,11 +200,12 @@ impl Store {
     pub(super) async fn secret_event_on(
         connection: &mut SqliteConnection,
         scope: SecretScope<'_>,
-        (kind, message, name): (&str, &str, &str),
+        (kind, message, name): (EventKind, &str, &str),
         by: Attribution<'_>,
         now: i64,
     ) -> Result<(), StoreError> {
         let operator = by.operator_uid();
+        let kind = kind.as_str();
         match scope {
             SecretScope::Application(id) => {
                 let id = id.as_str();

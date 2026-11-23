@@ -6,6 +6,7 @@ use super::{
     ApplicationState, EnvironmentId, Operation, OperationKind, Store, StoreError,
     StoredEnvironment, now_ms,
 };
+use piqueld_core::EventKind;
 use piqueld_core::{
     EnvironmentKind, EnvironmentName, EnvironmentSource, InstanceId, NormalizedApplication,
     PromotedFrom, Release, ReleaseId, ValidationErrors,
@@ -535,7 +536,7 @@ impl Store {
         .execute(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        Self::operation_event(tx, &operation.id, "target_resolved", None, now).await?;
+        Self::operation_event(tx, &operation.id, EventKind::TargetResolved, None, now).await?;
         Ok(operation)
     }
 }

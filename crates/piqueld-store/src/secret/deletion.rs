@@ -1,6 +1,7 @@
 //! Reserve cleanup under the writer lock, then release it before Docker I/O.
 use super::{EnvironmentId, NormalizedApplication, SecretScope, SecretSource, Store, StoreError};
 use crate::StoredEnvironment;
+use piqueld_core::EventKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A reserved secret deletion: its token and, per environment, the Swarm
@@ -177,7 +178,7 @@ impl Store {
         let mut change = None;
         if deleted > 0 {
             let scope = SecretScope::Environment(application);
-            let event = ("secret_deleted", Self::SECRET_DELETED, name);
+            let event = (EventKind::SecretDeleted, Self::SECRET_DELETED, name);
             let by = author.actor.attribution();
             Self::secret_event_on(&mut tx, scope, event, by, super::now_ms()).await?;
             change = Some(Self::deletion_change(name, deletion_id, "completed"));

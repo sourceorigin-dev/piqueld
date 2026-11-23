@@ -4,6 +4,7 @@ use super::{
     Actor, Author, Operation, OperationKind, Store, StoreError, StoredApplication, now_ms,
 };
 use crate::{Mutation, MutationResponse, PreviewMutation, PromotionMutation};
+use piqueld_core::EventKind;
 use piqueld_core::access::{AppPermission, Grants, Target};
 use piqueld_core::api::{
     AcceptedOperation, CreatedPreview, DeletedApplication, EnvironmentView, SavedApplication,
@@ -879,7 +880,8 @@ impl Store {
                 field: edit.field(),
             })
             .map_err(StoreError::corrupt)?;
-            sqlx::query!("INSERT INTO events(application_id,generation,kind,message,detail_json,resource,created_at_ms) VALUES(?1,?2,'application_edited','Saved application configuration',?3,?4,?5)",app_id,generation,detail,resource,now).execute(&mut **tx).await.map_err(StoreError::database)?;
+            let event_kind = EventKind::ApplicationEdited.as_str();
+            sqlx::query!("INSERT INTO events(application_id,generation,kind,message,detail_json,resource,created_at_ms) VALUES(?1,?2,?6,'Saved application configuration',?3,?4,?5)",app_id,generation,detail,resource,now,event_kind).execute(&mut **tx).await.map_err(StoreError::database)?;
             (saved, true)
         };
         Self::deploy_saved(tx, &id, &mut saved, deploy).await?;
@@ -1031,7 +1033,8 @@ impl Store {
         sqlx::query!("UPDATE operations SET target_json=json_set(target_json,'$.name',?1) WHERE target_json IS NOT NULL AND id IN (SELECT (SELECT o.id FROM operations o WHERE o.environment_id=e.id ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) FROM environments e WHERE e.application_id=?2)",name,id)
             .execute(&mut **tx).await.map_err(StoreError::database)?;
         let message = format!("renamed {old_name} to {name}");
-        sqlx::query!("INSERT INTO events(application_id,generation,kind,message,created_at_ms) VALUES(?1,?2,'application_renamed',?3,?4)",id,revision,message,now).execute(&mut **tx).await.map_err(StoreError::database)?;
+        let event_kind = EventKind::ApplicationRenamed.as_str();
+        sqlx::query!("INSERT INTO events(application_id,generation,kind,message,created_at_ms) VALUES(?1,?2,?5,?3,?4)",id,revision,message,now,event_kind).execute(&mut **tx).await.map_err(StoreError::database)?;
         Ok((saved(id, generation), true))
     }
 

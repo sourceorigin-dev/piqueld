@@ -1,5 +1,6 @@
 //! What an operation's timeline expects, from its environment's history.
 use super::{Store, StoreError, decode_name};
+use piqueld_core::EventKind;
 use piqueld_core::Operation;
 use piqueld_core::timeline::{ExpectedStep, StepKey};
 use std::collections::BTreeMap;
@@ -50,14 +51,16 @@ impl Store {
         };
         let ids = serde_json::to_string(&previous.iter().map(|row| &row.id).collect::<Vec<_>>())
             .map_err(StoreError::corrupt)?;
+        let event_kind = EventKind::ActionSucceeded.as_str();
         let actions = sqlx::query!(
             r#"SELECT operation_id AS "operation_id!", attempt, phase AS "phase!", resource,
             duration_ms AS "duration_ms!"
             FROM events
-            WHERE operation_id IN (SELECT value FROM json_each(?1)) AND kind='action_succeeded'
+            WHERE operation_id IN (SELECT value FROM json_each(?1)) AND kind=?2
             AND phase IS NOT NULL AND duration_ms IS NOT NULL
             ORDER BY id"#,
             ids,
+            event_kind,
         )
         .fetch_all(&mut *tx)
         .await

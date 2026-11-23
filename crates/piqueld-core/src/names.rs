@@ -189,6 +189,32 @@ macro_rules! string_enum {
 }
 pub(crate) use string_enum;
 
+// Lets a wire field that stays a `String`, so it still reads values a newer
+// daemon adds or old rows hold, be built from and compared with a
+// `string_enum!`'s values: `event.kind == EventKind::OperationFailed`.
+macro_rules! compared_as_string {
+    ($name:ident) => {
+        impl From<$name> for String {
+            fn from(value: $name) -> Self {
+                value.as_str().to_owned()
+            }
+        }
+
+        impl PartialEq<$name> for String {
+            fn eq(&self, value: &$name) -> bool {
+                self == value.as_str()
+            }
+        }
+
+        impl PartialEq<$name> for str {
+            fn eq(&self, value: &$name) -> bool {
+                self == value.as_str()
+            }
+        }
+    };
+}
+pub(crate) use compared_as_string;
+
 use std::ops::RangeInclusive;
 
 /// Byte lengths of one DNS label.

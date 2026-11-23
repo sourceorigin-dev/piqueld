@@ -2,7 +2,7 @@
 use super::DestinationRow;
 use crate::{Paging, Store, StoreError, new_id, now_ms, seconds_ms};
 use piqueld_core::{
-    Event,
+    Event, EventKind,
     api::Page,
     observability::{
         DeliveryState, Diagnostic, DiagnosticCode, EventScope, NotificationCategory,
@@ -309,7 +309,8 @@ impl Store {
         let app = (event.scope == EventScope::Application)
             .then(|| event.environment_id.as_ref().map(ToString::to_string))
             .flatten();
-        if event.kind == "operation_succeeded" {
+        let known = event.known_kind();
+        if known == Some(EventKind::OperationSucceeded) {
             for category in [
                 NotificationCategory::BuildFailures,
                 NotificationCategory::DeploymentFailures,
@@ -337,31 +338,30 @@ impl Store {
             let security = NotificationCategory::Security;
             return Self::enqueue(tx, event.id, security).await;
         }
-        if event.kind == "daemon_started" {
+        if known == Some(EventKind::DaemonStarted) {
             let started = NotificationCategory::DaemonStarted;
             return Self::enqueue(tx, event.id, started).await;
         }
-        let category = match (
-            event.kind.as_str(),
-            event.scope,
-            event.error_code.as_deref(),
-        ) {
+        let category = match (known, event.scope, event.error_code.as_deref()) {
             (
-                "operation_failed",
+                Some(EventKind::OperationFailed),
                 EventScope::Application,
                 Some("git_build_failed" | "builder_unavailable"),
             ) => NotificationCategory::BuildFailures,
-            ("operation_failed", EventScope::Application, _) => {
+            (Some(EventKind::OperationFailed), EventScope::Application, _) => {
                 NotificationCategory::DeploymentFailures
             }
-            ("diagnostic" | "operation_failed", EventScope::Daemon, Some(code))
-                if !matches!(
-                    code,
-                    "docker_unavailable"
-                        | "swarm_manager_unavailable"
-                        | "swarm_topology_unsupported"
-                        | "ingress_unavailable"
-                ) =>
+            (
+                Some(EventKind::Diagnostic | EventKind::OperationFailed),
+                EventScope::Daemon,
+                Some(code),
+            ) if !matches!(
+                code,
+                "docker_unavailable"
+                    | "swarm_manager_unavailable"
+                    | "swarm_topology_unsupported"
+                    | "ingress_unavailable"
+            ) =>
             {
                 NotificationCategory::DaemonFailures
             }
@@ -597,9 +597,10 @@ impl Store {
             .transpose()
             .map_err(StoreError::corrupt)?;
         let error_code = failed.then_some(code.as_str());
+        let event_kind = EventKind::DependencyHealthChanged.as_str();
         let event = sqlx::query!(
             "INSERT INTO events(scope,application_id,environment_id,kind,message,error_code,diagnostic_id,diagnostic_json,
-            created_at_ms) VALUES(?1,(SELECT application_id FROM environments WHERE id=?2),?2,'dependency_health_changed',?3,?4,?5,?6,?7)",
+            created_at_ms) VALUES(?1,(SELECT application_id FROM environments WHERE id=?2),?2,?8,?3,?4,?5,?6,?7)",
             scope,
             application,
             summary,
@@ -607,6 +608,7 @@ impl Store {
             diagnostic_id,
             json,
             observed,
+            event_kind,
         )
         .execute(&mut **tx)
         .await

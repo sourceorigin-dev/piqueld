@@ -1,6 +1,7 @@
 //! Authenticate the database's key before accepting any new ciphertext.
 use super::{Envelope, SecretCipher, SecretOwner, Store, StoreError};
 use crate::secrets::KeyFailure;
+use piqueld_core::EventKind;
 use piqueld_core::api::{CheckStatus, SecretKeyRecovery, SystemCheck, SystemCheckId};
 
 /// How a master key file relates to the database it should decrypt.
@@ -322,11 +323,12 @@ impl Store {
         let now = super::now_ms();
         let by = author.actor.attribution();
         let operator = by.operator_uid();
+        let discarded = EventKind::SecretValuesDiscarded.as_str();
         // Each affected environment's and application's history explains why
         // its values need replacing.
-        sqlx::query!("INSERT INTO events(application_id,environment_id,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid) SELECT (SELECT application_id FROM environments WHERE id=secret_versions.environment_id),environment_id,'secret_values_discarded','Secret key recovery discarded '||COUNT(*)||' stored values; store replacements, then deploy',?1,?2,?3,?4 FROM secret_versions WHERE available=1 GROUP BY environment_id",now,by.user_id,by.credential_id,operator)
+        sqlx::query!("INSERT INTO events(application_id,environment_id,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid) SELECT (SELECT application_id FROM environments WHERE id=secret_versions.environment_id),environment_id,?5,'Secret key recovery discarded '||COUNT(*)||' stored values; store replacements, then deploy',?1,?2,?3,?4 FROM secret_versions WHERE available=1 GROUP BY environment_id",now,by.user_id,by.credential_id,operator,discarded)
             .execute(&mut *tx).await.map_err(StoreError::database)?;
-        sqlx::query!("INSERT INTO events(application_id,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid) SELECT application_id,'secret_values_discarded','Secret key recovery discarded '||COUNT(*)||' stored values; store replacements, then deploy',?1,?2,?3,?4 FROM application_secret_versions WHERE available=1 GROUP BY application_id",now,by.user_id,by.credential_id,operator)
+        sqlx::query!("INSERT INTO events(application_id,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid) SELECT application_id,?5,'Secret key recovery discarded '||COUNT(*)||' stored values; store replacements, then deploy',?1,?2,?3,?4 FROM application_secret_versions WHERE available=1 GROUP BY application_id",now,by.user_id,by.credential_id,operator,discarded)
             .execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!(
             "UPDATE secret_versions SET available=0,nonce=X'',ciphertext=X'' WHERE available=1"

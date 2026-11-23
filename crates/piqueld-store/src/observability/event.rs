@@ -5,7 +5,7 @@ use crate::{
     now_ms,
 };
 use piqueld_core::{
-    Event, EventActor, EventDetail, Operation,
+    Event, EventActor, EventDetail, EventKind, Operation,
     api::Page,
     observability::{Diagnostic, EventFilter, EventScope},
     sync::SystemActor,
@@ -25,10 +25,11 @@ impl Store {
     pub async fn operation_event(
         tx: &mut Transaction<'_, Sqlite>,
         id: &str,
-        kind: &str,
+        kind: EventKind,
         message: Option<&str>,
         now: i64,
     ) -> Result<(), StoreError> {
+        let kind = kind.as_str();
         let operation = Self::operation_on(tx, id).await?;
         let diagnostic = if let Some(code) = &operation.error_code {
             let attempt = i64::try_from(operation.attempt).map_err(StoreError::corrupt)?;
@@ -106,11 +107,12 @@ impl Store {
             .map_err(StoreError::corrupt)?;
         let phase = coverage.phase().as_str();
         let now = now_ms();
+        let event_kind = EventKind::PlanRecorded.as_str();
         self.write(sqlx::query!(
             "INSERT INTO events(application_id,environment_id,operation_id,generation,attempt,kind,
             phase,resource,created_at_ms,detail_json,actor_user_id,actor_credential_id,
             actor_operator_uid,actor_system)
-            SELECT e.application_id,o.environment_id,o.id,o.generation,o.attempt,'plan_recorded',?1,?2,
+            SELECT e.application_id,o.environment_id,o.id,o.generation,o.attempt,?6,?1,?2,
             ?3,?4,o.actor_user_id,o.actor_credential_id,o.actor_operator_uid,o.actor_system
             FROM operations o LEFT JOIN environments e ON e.id=o.environment_id
             WHERE o.id=?5",
@@ -119,6 +121,7 @@ impl Store {
             now,
             detail,
             id,
+            event_kind,
         ))
         .await
         .map_err(StoreError::database)?;
@@ -132,11 +135,13 @@ impl Store {
     /// Returns storage errors.
     pub async fn routed(&self, operation: &Operation) -> Result<bool, StoreError> {
         let attempt = i64::try_from(operation.attempt).map_err(StoreError::corrupt)?;
+        let event_kind = EventKind::ActionStarted.as_str();
         sqlx::query_scalar!(
             r#"SELECT EXISTS(SELECT 1 FROM events WHERE operation_id=?1 AND attempt=?2
-            AND phase='routing' AND kind='action_started') AS "routed!: bool""#,
+            AND phase='routing' AND kind=?3) AS "routed!: bool""#,
             operation.id,
             attempt,
+            event_kind,
         )
         .fetch_one(&self.pool)
         .await
@@ -314,10 +319,11 @@ impl Store {
         let json = serde_json::to_string(&diagnostic).map_err(StoreError::corrupt)?;
         let now = now_ms();
         let operator = actor.operator_uid();
+        let event_kind = EventKind::Diagnostic.as_str();
         self.write(sqlx::query!(
             "INSERT INTO events(scope,application_id,environment_id,kind,message,error_code,diagnostic_id,
             diagnostic_json,request_id,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid)
-            SELECT ?1,(SELECT application_id FROM environments WHERE id=?2),?2,'diagnostic',?3,?4,?5,?6,?7,?8,?9,?10,?11
+            SELECT ?1,(SELECT application_id FROM environments WHERE id=?2),?2,?12,?3,?4,?5,?6,?7,?8,?9,?10,?11
             WHERE ?1='daemon' OR EXISTS(SELECT 1
             FROM environments
             WHERE id=?2)",
@@ -332,6 +338,7 @@ impl Store {
             actor.user_id,
             actor.credential_id,
             operator,
+            event_kind,
         ))
         .await
         .map_err(StoreError::database)?;
@@ -346,10 +353,11 @@ impl Store {
     pub async fn environment_event_on(
         tx: &mut Transaction<'_, Sqlite>,
         id: &str,
-        kind: &str,
+        kind: EventKind,
         message: &str,
         now: i64,
     ) -> Result<(), StoreError> {
+        let kind = kind.as_str();
         sqlx::query!(
             "INSERT INTO events(application_id,environment_id,kind,message,created_at_ms) VALUES((SELECT application_id FROM environments WHERE id=?1),?1,?2,?3,?4)",
             id,
@@ -374,11 +382,12 @@ impl Store {
         actor: crate::Attribution<'_>,
         application: &ApplicationId,
         environment: &EnvironmentId,
-        kind: &str,
+        kind: EventKind,
         message: &str,
         resource: &str,
     ) -> Result<(), StoreError> {
         let (application, environment) = (application.as_str(), environment.as_str());
+        let kind = kind.as_str();
         let now = now_ms();
         let operator = actor.operator_uid();
         self.write(sqlx::query!(
@@ -407,8 +416,10 @@ impl Store {
     /// Returns storage errors.
     pub async fn record_daemon_started(&self, version: &str) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
+        let kind = EventKind::DaemonStarted.as_str();
         let previous = sqlx::query_scalar!(
-            "SELECT resource FROM events WHERE kind='daemon_started' ORDER BY id DESC LIMIT 1"
+            "SELECT resource FROM events WHERE kind=?1 ORDER BY id DESC LIMIT 1",
+            kind,
         )
         .fetch_optional(&mut *tx)
         .await
@@ -423,10 +434,11 @@ impl Store {
         let now = now_ms();
         sqlx::query!(
             "INSERT INTO events(scope,kind,message,resource,created_at_ms)
-            VALUES('daemon','daemon_started',?1,?2,?3)",
+            VALUES('daemon',?4,?1,?2,?3)",
             message,
             version,
             now,
+            kind,
         )
         .execute(&mut *tx)
         .await
@@ -763,7 +775,7 @@ mod tests {
                     crate::Attribution::default(),
                     application,
                     &deleted,
-                    "command_finished",
+                    EventKind::CommandFinished,
                     "done",
                     "web",
                 )
@@ -854,5 +866,106 @@ mod tests {
                 assert!(!plan.contains("TEMP B-TREE"), "{plan}");
             }
         }
+    }
+
+    /// The schema can't name an `EventKind`, so each kind its indexes,
+    /// triggers and views spell out (`security_denial_bursts`, the
+    /// `operation_progress` view) must parse as one: a kind it misspells, or
+    /// that a variant stops writing, would leave it matching nothing.
+    #[tokio::test]
+    async fn kinds_the_schema_spells_out_are_event_kinds() {
+        let (_temp, store) = Store::temporary().await;
+        let objects: Vec<(String, String)> =
+            sqlx::query_as("SELECT tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL")
+                .fetch_all(&store.pool)
+                .await
+                .unwrap();
+        let mut kinds = Vec::new();
+        for (table, sql) in &objects {
+            kinds.extend(event_kinds_in(table, sql));
+        }
+        assert!(!kinds.is_empty(), "the schema spells out event kinds");
+        for kind in kinds {
+            assert!(EventKind::parse(&kind).is_some(), "{kind}");
+        }
+    }
+
+    /// The kinds `sql`, a schema object on `table`, compares an events row's
+    /// `kind` with: `kind = '…'` or `kind IN ('…', …)`, on `events` itself or
+    /// an alias of it, such as `failed.kind` after `FROM events failed`.
+    fn event_kinds_in(table: &str, sql: &str) -> Vec<String> {
+        let tokens = sql_tokens(sql);
+        let token = |index: usize| tokens.get(index).map_or("", String::as_str);
+        // Bare `kind` is the events row's only in an object on `events`.
+        let mut rows = vec![if table == "events" { "" } else { "events" }.to_owned()];
+        for (index, name) in tokens.iter().enumerate() {
+            let alias = token(index + 1);
+            let keyword = ["as", "where", "on", "set", "join", "left", "order", "limit"];
+            if name.eq_ignore_ascii_case("events")
+                && alias.starts_with(|c: char| c.is_ascii_alphabetic())
+                && !keyword.iter().any(|word| alias.eq_ignore_ascii_case(word))
+            {
+                rows.push(alias.to_owned());
+            }
+        }
+        let mut kinds = Vec::new();
+        for index in 0..tokens.len() {
+            let qualifier = if index >= 2 && token(index - 1) == "." {
+                token(index - 2)
+            } else {
+                ""
+            };
+            if token(index) != "kind" || !rows.iter().any(|row| row == qualifier) {
+                continue;
+            }
+            let literals = match token(index + 1).to_ascii_lowercase().as_str() {
+                "=" => index + 2..index + 3,
+                "in" => {
+                    index + 3
+                        ..(index + 3..tokens.len())
+                            .find(|&i| token(i) == ")")
+                            .unwrap_or(index + 3)
+                }
+                _ => continue,
+            };
+            kinds.extend(
+                tokens[literals]
+                    .iter()
+                    .filter_map(|literal| literal.strip_prefix('\''))
+                    .map(|literal| literal.trim_end_matches('\'').to_owned()),
+            );
+        }
+        kinds
+    }
+
+    /// `sql` split into identifiers, quoted strings (quotes kept) and single
+    /// punctuation characters.
+    fn sql_tokens(sql: &str) -> Vec<String> {
+        let mut tokens = Vec::new();
+        let mut chars = sql.chars().peekable();
+        while let Some(first) = chars.next() {
+            if first.is_whitespace() {
+                continue;
+            }
+            let mut token = first.to_string();
+            if first == '\'' {
+                for next in chars.by_ref() {
+                    token.push(next);
+                    if next == '\'' {
+                        break;
+                    }
+                }
+            } else if first.is_ascii_alphanumeric() || first == '_' {
+                while let Some(&next) = chars.peek() {
+                    if !(next.is_ascii_alphanumeric() || next == '_') {
+                        break;
+                    }
+                    token.push(next);
+                    chars.next();
+                }
+            }
+            tokens.push(token);
+        }
+        tokens
     }
 }

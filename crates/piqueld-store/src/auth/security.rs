@@ -2,7 +2,7 @@
 //! is delivered as a `security` notification (see `process_notification_event`).
 use crate::auth::access::Holder;
 use crate::{Attribution, NewCredential, Store, StoreError, now_ms};
-use piqueld_core::access::Grants;
+use piqueld_core::{EventKind, access::Grants};
 use sqlx::SqliteConnection;
 
 /// A security-relevant occurrence, by its event kind.
@@ -42,23 +42,23 @@ impl SecurityEvent {
 
     /// Event kind in daemon history.
     #[must_use]
-    pub const fn kind(self) -> &'static str {
+    pub const fn kind(self) -> EventKind {
         match self {
-            Self::AdminGranted => "admin_granted",
-            Self::PrivilegedToken => "privileged_token_created",
-            Self::DenialBurst => "access_denial_burst",
-            Self::RecoveryIssued => "admin_recovery_issued",
-            Self::OperatorSignInIssued => "operator_sign_in_issued",
-            Self::NewAddress => "credential_new_address",
-            Self::SecretKeyRecovered => "secret_key_recovered",
-            Self::DestinationChanged => "notification_destination_changed",
+            Self::AdminGranted => EventKind::AdminGranted,
+            Self::PrivilegedToken => EventKind::PrivilegedTokenCreated,
+            Self::DenialBurst => EventKind::AccessDenialBurst,
+            Self::RecoveryIssued => EventKind::AdminRecoveryIssued,
+            Self::OperatorSignInIssued => EventKind::OperatorSignInIssued,
+            Self::NewAddress => EventKind::CredentialNewAddress,
+            Self::SecretKeyRecovered => EventKind::SecretKeyRecovered,
+            Self::DestinationChanged => EventKind::NotificationDestinationChanged,
         }
     }
 
     /// The security event an event kind records, if any.
     #[must_use]
     pub fn parse(kind: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|event| event.kind() == kind)
+        Self::ALL.into_iter().find(|event| *kind == event.kind())
     }
 }
 
@@ -80,7 +80,7 @@ impl Store {
         message: &str,
         actor: Attribution<'_>,
     ) -> Result<(), StoreError> {
-        let kind = event.kind();
+        let kind = event.kind().as_str();
         let now = now_ms();
         let operator = actor.operator_uid();
         let system = actor.system.map(piqueld_core::sync::SystemActor::as_str);
@@ -184,14 +184,14 @@ impl Store {
         let (window, cooldown) = (now - 60_000, now - DENIAL_BURST_COOLDOWN_MS);
         // Runs under the writer lock on every refusal, so it stays bounded:
         // the cooldown only reads this address and account's recent bursts
-        // (`security_denial_bursts`, which needs the kind spelled out), and
-        // the count stops at the threshold (`audit_refusals`). The host
-        // operator, which has no account, is told apart from anonymous
-        // callers by its Unix user.
+        // (`security_denial_bursts`), and the count stops at the threshold
+        // (`audit_refusals`). The host operator, which has no account, is
+        // told apart from anonymous callers by its Unix user.
         let operator = actor.operator_uid();
+        let event_kind = EventKind::AccessDenialBurst.as_str();
         let burst = sqlx::query_scalar!(
             r#"SELECT NOT EXISTS(SELECT 1 FROM events
-                WHERE kind='access_denial_burst' AND resource IS ?2 AND actor_user_id IS ?3
+                WHERE kind=?7 AND resource IS ?2 AND actor_user_id IS ?3
                 AND actor_operator_uid IS ?6 AND created_at_ms>=?5)
             AND (SELECT COUNT(*) FROM (SELECT 1 FROM audit_events
                 WHERE outcome='denied' AND user_id IS ?3 AND peer IS ?2
@@ -204,6 +204,7 @@ impl Store {
             DENIAL_BURST,
             cooldown,
             operator,
+            event_kind,
         )
         .fetch_one(&mut *db)
         .await

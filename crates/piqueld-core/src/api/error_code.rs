@@ -1,6 +1,6 @@
 //! Every stable machine-readable code the API returns.
 
-use crate::names::string_enum;
+use crate::names::{compared_as_string, string_enum};
 
 string_enum! {
     #[serde]
@@ -578,25 +578,7 @@ string_enum! {
     }
 }
 
-impl From<ApiErrorCode> for String {
-    fn from(code: ApiErrorCode) -> Self {
-        code.as_str().to_owned()
-    }
-}
-
-/// Compares a wire `code` with a known one: `error.code == ApiErrorCode::NotFound`.
-impl PartialEq<ApiErrorCode> for String {
-    fn eq(&self, code: &ApiErrorCode) -> bool {
-        self == code.as_str()
-    }
-}
-
-/// Compares a wire `code` with a known one: `error.code == ApiErrorCode::NotFound`.
-impl PartialEq<ApiErrorCode> for str {
-    fn eq(&self, code: &ApiErrorCode) -> bool {
-        self == code.as_str()
-    }
-}
+compared_as_string!(ApiErrorCode);
 
 #[cfg(test)]
 mod tests {

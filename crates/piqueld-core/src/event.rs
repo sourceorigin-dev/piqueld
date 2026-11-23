@@ -1,4 +1,5 @@
 //! Informational control-plane history; never used to reconstruct engine state.
+use crate::names::{compared_as_string, string_enum};
 use crate::{ApplicationId, EnvironmentId};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -20,6 +21,10 @@ pub struct Event {
     /// Execution attempt for attempt-related events.
     pub attempt: Option<u64>,
     /// Stable event category, such as `operation_failed` or `health_changed`.
+    //
+    // An `EventKind`, kept a string so events of kinds a newer daemon adds,
+    // or that older daemons recorded, still read; compare it with
+    // `Event::known_kind` or `==`.
     pub kind: String,
     /// Sanitized diagnostic or state description.
     pub message: Option<String>,
@@ -60,6 +65,156 @@ pub struct Event {
     /// Unix timestamp in milliseconds.
     pub created_at_ms: i64,
 }
+
+impl Event {
+    /// The event's kind, when this build knows it.
+    #[must_use]
+    pub fn known_kind(&self) -> Option<EventKind> {
+        EventKind::parse(&self.kind)
+    }
+}
+
+string_enum! {
+    /// Every kind of event the daemon records, as stored in history and sent
+    /// as [`Event::kind`]. A kind never changes, but new ones are added.
+    pub enum EventKind {
+        // An operation's lifecycle.
+        /// An apply operation was requested, or applying a fetched manifest
+        /// changed the application.
+        ApplicationApplied => "application_applied",
+        /// A refresh operation was requested.
+        RefreshRequested => "refresh_requested",
+        /// A delete operation was requested.
+        DeletionRequested => "deletion_requested",
+        /// An operation was requested again, to be retried.
+        ReconciliationRequested => "reconciliation_requested",
+        /// A rollback to an earlier deployment was requested.
+        RollbackRequested => "rollback_requested",
+        /// A failed rollout could not be rolled back automatically; the
+        /// message says why.
+        RollbackUnavailable => "rollback_unavailable",
+        /// An operation started running.
+        OperationStarted => "operation_started",
+        /// An operation succeeded.
+        OperationSucceeded => "operation_succeeded",
+        /// An operation failed, or a deletion failed an attempt it retries.
+        OperationFailed => "operation_failed",
+        /// An operation was cancelled.
+        OperationCancelled => "operation_cancelled",
+        /// A newer request replaced a requested or running operation.
+        OperationSuperseded => "operation_superseded",
+        /// The daemon restarted while an operation ran; it runs again.
+        OperationInterrupted => "operation_interrupted",
+        /// An operation fetched its manifest; the message is the commit.
+        ManifestFetched => "manifest_fetched",
+        /// An operation resolved the release it deploys.
+        TargetResolved => "target_resolved",
+        /// An operation published its resolved release to its environment.
+        TargetPromoted => "target_promoted",
+        /// A tracked branch moved, starting a deployment of its new head.
+        BranchSynced => "branch_synced",
+        /// An operation's environment changed state; the message is the new
+        /// state.
+        StatusChanged => "status_changed",
+        /// The runtime health of an operation's environment changed; the
+        /// message is the new health.
+        HealthChanged => "health_changed",
+        /// An action of an operation changed runtime state.
+        ResourceMutated => "resource_mutated",
+        /// An operation planned the steps it runs next, listed in its
+        /// [`EventDetail::Planned`].
+        PlanRecorded => "plan_recorded",
+
+        // A journaled runtime request (action).
+        /// An action was journaled, before it is requested.
+        ActionStarted => "action_started",
+        /// An action's request is about to be sent, as its `retry`th attempt.
+        ActionRequested => "action_requested",
+        /// An action's attempt failed and will be retried.
+        ActionRetry => "action_retry",
+        /// A running action observed progress, such as a service's rollout,
+        /// listed in its [`EventDetail::Rollout`].
+        ActionProgressed => "action_progressed",
+        /// An action succeeded.
+        ActionSucceeded => "action_succeeded",
+        /// An action failed.
+        ActionFailed => "action_failed",
+        /// An action was still open when the daemon stopped, so whether it
+        /// took effect is unknown.
+        ActionOutcomeUnknown => "action_outcome_unknown",
+
+        // Applications and environments, outside any operation.
+        /// An application's configuration was edited, as its
+        /// [`EventDetail::Edited`] says.
+        ApplicationEdited => "application_edited",
+        /// An application was renamed.
+        ApplicationRenamed => "application_renamed",
+        /// An application's webhook secret was replaced.
+        WebhookSecretGenerated => "webhook_secret_generated",
+        /// An environment was created.
+        EnvironmentCreated => "environment_created",
+        /// An environment was renamed.
+        EnvironmentRenamed => "environment_renamed",
+        /// An environment's manifest source changed.
+        EnvironmentSourceChanged => "environment_source_changed",
+        /// An environment's branch tracking changed.
+        EnvironmentSyncChanged => "environment_sync_changed",
+        /// An environment was granted, or lost, every application's
+        /// telemetry.
+        EnvironmentTelemetryChanged => "environment_telemetry_changed",
+        /// An environment was stopped.
+        EnvironmentStopped => "environment_stopped",
+        /// A stopped environment was started.
+        EnvironmentStarted => "environment_started",
+        /// A preview environment was created.
+        PreviewCreated => "preview_created",
+        /// A command started in one of an environment's services.
+        CommandStarted => "command_started",
+        /// A command run in an environment's service finished.
+        CommandFinished => "command_finished",
+
+        // Secrets.
+        /// A secret's value was stored.
+        SecretSaved => "secret_saved",
+        /// A secret was deleted.
+        SecretDeleted => "secret_deleted",
+        /// Which environments may use a stored secret changed.
+        SecretAccessChanged => "secret_access_changed",
+        /// Secret key recovery discarded the stored values of an application
+        /// or environment.
+        SecretValuesDiscarded => "secret_values_discarded",
+
+        // The daemon.
+        /// An unexpected failure outside any operation, with its diagnostic.
+        Diagnostic => "diagnostic",
+        /// A dependency of the daemon, such as certificate renewal or
+        /// telemetry export, failed or recovered.
+        DependencyHealthChanged => "dependency_health_changed",
+        /// The daemon started; the resource is its version.
+        DaemonStarted => "daemon_started",
+
+        // Security events, in daemon history.
+        /// An account received `admin` on every application.
+        AdminGranted => "admin_granted",
+        /// A token was created without expiry or with `admin`.
+        PrivilegedTokenCreated => "privileged_token_created",
+        /// Many requests from one address and account were refused within a
+        /// minute; the resource is that address.
+        AccessDenialBurst => "access_denial_burst",
+        /// An admin recovery link was issued over the Unix socket.
+        AdminRecoveryIssued => "admin_recovery_issued",
+        /// A host operator sign-in link was issued over the Unix socket.
+        OperatorSignInIssued => "operator_sign_in_issued",
+        /// A credential was used from an address it had not used before.
+        CredentialNewAddress => "credential_new_address",
+        /// The secret master key was recovered, discarding stored values.
+        SecretKeyRecovered => "secret_key_recovered",
+        /// A notification destination was created, changed or deleted.
+        NotificationDestinationChanged => "notification_destination_changed",
+    }
+}
+
+compared_as_string!(EventKind);
 
 /// Structured facts an event records beyond its common fields, tagged by
 /// `type`.

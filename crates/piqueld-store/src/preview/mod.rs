@@ -7,6 +7,7 @@ use super::{
     ApplicationState, Operation, ResolvedApplication, Store, StoreError, StoredApplication,
     StoredEnvironment, now_ms,
 };
+use piqueld_core::EventKind;
 use piqueld_core::{
     ApiErrorCode, ApplicationId, EnvironmentId, GitBranch, Preview, PreviewSlot, PreviewSlug,
     access::Scope,
@@ -117,7 +118,7 @@ impl Store {
             Self::check_preview_limits_on(tx, application_id, &id, limits).await?;
             Self::write_status(tx, &id, ApplicationState::NotDeployed, now).await?;
             let message = format!("created preview {slug} of branch {branch}");
-            Self::environment_event_on(tx, &id, "preview_created", &message, now).await?;
+            Self::environment_event_on(tx, &id, EventKind::PreviewCreated, &message, now).await?;
         }
         Ok((
             EnvironmentId::parse(id).map_err(StoreError::corrupt)?,

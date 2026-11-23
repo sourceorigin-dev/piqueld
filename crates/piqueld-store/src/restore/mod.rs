@@ -12,6 +12,7 @@ use super::{
     StoredEnvironment, acceptance::Accepted, now_ms,
 };
 use crate::Restore;
+use piqueld_core::EventKind;
 use piqueld_core::{
     NormalizedApplication, api::DeploymentOrigin, manifest::ApplicationTemplate,
     resource::ResolvedApplication,
@@ -131,7 +132,7 @@ impl Store {
         Self::operation_event(
             &mut tx,
             &operation.id,
-            "rollback_requested",
+            EventKind::RollbackRequested,
             Some(&message),
             now_ms(),
         )
@@ -154,7 +155,7 @@ impl Store {
         Self::operation_event(
             &mut tx,
             &operation.id,
-            "rollback_unavailable",
+            EventKind::RollbackUnavailable,
             Some(reason),
             now_ms(),
         )
@@ -291,7 +292,7 @@ impl Store {
         .execute(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        Self::operation_event(tx, &operation.id, "target_resolved", None, now).await?;
+        Self::operation_event(tx, &operation.id, EventKind::TargetResolved, None, now).await?;
         Ok(operation)
     }
 }
