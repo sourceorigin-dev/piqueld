@@ -37,6 +37,6 @@ test('daemon status runs the installation checks', async ({ page, account }) => 
   await expect(page.getByRole('heading', { name: 'Installation checks', exact: true })).toBeVisible();
   const backups = page.locator('.status-row', { hasText: 'Backups' });
   await expect(backups).toContainText('Skipped');
-  await expect(backups).toContainText('Next step: Back up the data directory');
+  await expect(backups).toContainText('Next step: Copy the data directory, including secrets.key, off the host');
   await expect(page.locator('.status-row', { hasText: 'Public URL' })).toContainText('Warning');
 });

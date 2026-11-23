@@ -711,7 +711,7 @@ installation (`GET /api/v1/system/checks`, which needs `system:read`):
 | Ports 80/443 | With direct ingress, they are held by the running managed Caddy gateway, or nothing on the host listens on them |
 | Secret key | `secrets.key` is a private file matching the stored verifier, or not needed yet |
 | API socket | The runtime directory passes startup's checks, and the socket is `0660` with the daemon's group |
-| Backups | Always skipped: piqueld does not take backups yet |
+| Backups | Always skipped: piqueld only backs up its data directory, on the same disk, before an upgrade. The message names the latest such backup |
 
 Each check is `pass`, `warn`, `fail`, or `skip` (not applicable, such as the
 tailnet node while `[tailscale]` is disabled), with a next step when action is

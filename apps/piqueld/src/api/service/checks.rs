@@ -4,7 +4,7 @@
 //! as [`crate::ingress::Ingress::docker_check`].
 
 use super::{ApplicationError, ApplicationService};
-use crate::ingress::Ingress;
+use crate::{backup::Backups, ingress::Ingress};
 use piqueld_core::api::{CheckStatus, SystemCheck, SystemCheckId, SystemChecks, TailnetStatus};
 use std::{os::unix::fs::MetadataExt, path::PathBuf, time::Duration};
 
@@ -16,6 +16,8 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 pub(super) struct CheckSettings {
     public_url: String,
     runtime_dir: PathBuf,
+    /// The data directory's backups.
+    backups: Backups,
 }
 
 impl From<&piqueld_config::DaemonConfig> for CheckSettings {
@@ -23,11 +25,34 @@ impl From<&piqueld_config::DaemonConfig> for CheckSettings {
         Self {
             public_url: config.public_url().to_owned(),
             runtime_dir: config.server.runtime_dir.clone(),
+            backups: Backups::new(&config.server.data_dir),
         }
     }
 }
 
 impl CheckSettings {
+    /// Names the latest backup the daemon took before migrating its
+    /// database. Those stay on the same disk, and piqueld takes no other
+    /// backups yet, so their freshness is not checked.
+    fn backups_check(&self) -> SystemCheck {
+        let latest = match self.backups.latest_before_migration() {
+            Ok(Some((path, backup))) => format!(
+                "the latest backup before an upgrade is {}, of schema {}, taken {}",
+                path.display(),
+                backup.schema_version,
+                piqueld_core::observability::UtcTime(backup.created_at_ms).rfc3339()
+            ),
+            Ok(None) => "no upgrade has migrated the database yet".to_owned(),
+            Err(error) => format!("could not list the backups taken before upgrades: {error:#}"),
+        };
+        SystemCheck::new(
+            SystemCheckId::Backups,
+            CheckStatus::Skip,
+            format!("piqueld only backs up its data directory on the same disk before an upgrade, so freshness is not checked; {latest}"),
+        )
+        .next_step("Copy the data directory, including secrets.key, off the host with your own tooling.")
+    }
+
     /// Checks that the website origin is HTTPS and answers piqueld's
     /// liveness probe with a trusted certificate. Reaching it from the
     /// daemon's host does not prove browsers elsewhere can, nor the reverse.
@@ -205,7 +230,7 @@ impl ApplicationService {
                 ports,
                 secret_key,
                 runtime,
-                Self::backups_check(),
+                settings.backups_check(),
             ],
         })
     }
@@ -241,17 +266,6 @@ impl ApplicationService {
                 ),
             ),
         }
-    }
-
-    /// Backups are not implemented yet, so their freshness cannot be
-    /// checked. Once they are, this reports the latest backup's age.
-    fn backups_check() -> SystemCheck {
-        SystemCheck::new(
-            SystemCheckId::Backups,
-            CheckStatus::Skip,
-            "piqueld does not take backups yet, so their freshness is not checked",
-        )
-        .next_step("Back up the data directory, including secrets.key, with your own tooling.")
     }
 
     /// Runs an ingress `check`, failing check `id` if it takes longer than
@@ -312,6 +326,7 @@ mod tests {
         let settings = CheckSettings {
             public_url: "HTTP://LOCALHOST:7845/".into(),
             runtime_dir: PathBuf::from("/run/piqueld"),
+            backups: Backups::new("/var/lib/piqueld"),
         };
         let check = settings.public_url_check().await;
         assert_eq!(check.status, CheckStatus::Warn);

@@ -128,6 +128,14 @@ The daemon updates its database when a new version first starts. These updates
 only go forward: an older daemon refuses a database a newer one has updated, so
 going back to the previous binary alone isn't a rollback.
 
+Before it updates the database, the daemon backs up the data directory into
+`/var/lib/piqueld/backups/pre-<schema>-<time>`, where `<schema>` is the
+database's version and `<time>` when it was taken, in Unix milliseconds. It
+keeps the last three. If the backup fails, the daemon doesn't start, and its
+log says why. This backup holds the database, `secrets.key`, and the tailnet
+and ingress state. It is on the same disk as the data directory, so it doesn't
+replace your own backup.
+
 1. [Back up](#back-up) the data directory.
 2. Keep the previous version and its configuration. On NixOS, the previous
    system generation keeps them.
