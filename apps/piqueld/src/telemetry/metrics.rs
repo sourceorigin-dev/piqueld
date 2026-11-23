@@ -2,7 +2,7 @@
 use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, Histogram, Meter};
 use parking_lot::Mutex;
-use piqueld_core::observability::{DaemonStats, Elapsed};
+use piqueld_core::observability::DaemonStats;
 use std::sync::Arc;
 
 /// Latest daemon and service measurements. The service samples them every
@@ -177,7 +177,7 @@ const GAUGES: &[(&str, &str, &str, Read)] = &[
 ];
 
 /// Reads one duration's points from the daemon statistics, in milliseconds.
-type ReadMillis = fn(&DaemonStats) -> Vec<(i64, Vec<KeyValue>)>;
+type ReadMillis = fn(&DaemonStats) -> Vec<(u64, Vec<KeyValue>)>;
 
 /// Points read from the daemon statistics, none before the first sample.
 fn stat(
@@ -293,7 +293,7 @@ impl Instruments {
             move |observer: &dyn opentelemetry::metrics::AsyncInstrument<f64>| {
                 for (milliseconds, attributes) in snapshot.lock().stats.iter().flat_map(read) {
                     observer.observe(
-                        Elapsed::from_millis(milliseconds).0.as_secs_f64(),
+                        std::time::Duration::from_millis(milliseconds).as_secs_f64(),
                         &attributes,
                     );
                 }
@@ -303,12 +303,7 @@ impl Instruments {
             .f64_observable_counter("piqueld.database.write.wait_time")
             .with_unit("s")
             .with_description("How long database writes waited for their turn, in all")
-            .with_callback(seconds(|stats| {
-                vec![(
-                    i64::try_from(stats.write_wait_ms).unwrap_or(i64::MAX),
-                    vec![],
-                )]
-            }))
+            .with_callback(seconds(|stats| vec![(stats.write_wait_ms, vec![])]))
             .build();
         meter
             .f64_observable_gauge("piqueld.queue.oldest.age")
@@ -322,7 +317,7 @@ impl Instruments {
                     ("deliveries", stats.oldest_pending_delivery_ms),
                 ]
                 .into_iter()
-                .filter_map(|(queue, age)| Some((age?, vec![KeyValue::new("queue", queue)])))
+                .filter_map(|(queue, age)| Some((count(age?), vec![KeyValue::new("queue", queue)])))
                 .collect()
             }))
             .build();
