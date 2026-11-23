@@ -236,9 +236,10 @@ async fn timeline_streams_outlive_the_request_timeout() {
             "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
         let first = format!("{head}event: timeline\ndata: {timeline}\n\n");
         socket.write_all(first.as_bytes()).await.unwrap();
-        // wall-clock: the pause must outlast the client's real 50ms timeout.
-        // Paused time would also advance that timeout while the request still
-        // waits on the socket, failing the request before the stream starts.
+        // wall-clock: the pause must outlast the client's 50ms timeout, which
+        // `.streaming()` drops. Paused time would jump to the 30s connect
+        // timeout while the loopback connect is still in flight (seen on
+        // macOS), failing the request before the stream opens.
         tokio::time::sleep(Duration::from_millis(150)).await;
         let ended =
             r#"{"code":"forbidden","message":"access ended","details":null,"request_id":"r1"}"#;
