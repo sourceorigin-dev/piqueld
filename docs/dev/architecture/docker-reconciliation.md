@@ -255,8 +255,8 @@ because a task failed within its monitor window).
 `OperationError::deployment_failure` adds `ServiceTimeout`, a service the
 rollout waited for that didn't converge before its deadline. It records
 `convergence_timeout`, which other timeouts share, so only the error tells it
-apart. A job dependency's wait fails with a plain `ConvergenceTimeout`
-instead, since it stops the deployment before rollout. When an operation fails with
+apart. It includes the wait for a service a before-rollout job depends on:
+that service already runs the new spec, and no job has run yet. When an operation fails with
 a rollout failure, the controller's `fail` checks the environment's effective
 `rollback` (`StoredEnvironment::rollback`, read from the manifest the
 environment deploys; previews are always manual). If it is automatic, and the

@@ -1149,10 +1149,10 @@ to repair drift, stays degraded rather than returning to older code. The failed 
 its own outcome, so `env wait` on it exits with the deployment failure code.
 When nothing can be restored, because no earlier deployment succeeded or its
 images or pinned secret versions are gone, the failed deployment records a
-`rollback_unavailable` event saying why. A failed [job](#jobs) never needs a
-rollback: it stops the deployment before its services roll out. Neither does
-a service a job depends on that doesn't become ready in time: the deployment
-fails with `convergence_timeout` before its rollout, and piqueld retries it.
+`rollback_unavailable` event saying why. A deployment that failed with
+`convergence_timeout` is then retried with backoff, and records it again on
+each attempt. A failed [job](#jobs) never needs a rollback: it stops the
+deployment before its services roll out.
 
 A rollback runs no jobs and doesn't revert data. Migrations that ran stay
 applied, so the restored version must still run against them; write

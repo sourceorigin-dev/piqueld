@@ -175,8 +175,7 @@ piqueld rolls back each failed deployment once at most. It doesn't roll back:
 - a deployment that succeeded before, then fails when piqueld rolls it out
   again, such as to repair a service someone changed by hand;
 - a deployment whose [job](jobs.md) fails: the job stops it before its
-  services roll out, so they keep running the previous version. The same
-  goes for a service a job depends on that doesn't become ready in time.
+  services roll out, so they keep running the previous version.
 
 Docker only notices a container that exits or fails its health check.
 Without a health check, in the manifest or in its image, a container that
@@ -242,7 +241,8 @@ It runs the release of the deployment it restored.
   describes. When piqueld can't roll back,
   because no earlier deployment succeeded or its images or secret versions
   are gone, the failed deployment records a `rollback_unavailable` event
-  saying why. To see it, open the deployment from the **Deployments** tab
+  saying why. A deployment that failed with `convergence_timeout` is retried
+  with a growing delay, so it records the event again on each attempt. To see it, open the deployment from the **Deployments** tab
   and select **All events** beside its live events. Fix the cause, then deploy again.
 - **There is no Restore button.** The deployment didn't succeed, or it is
   the newest one and the environment runs it. Without `apps:deploy`, or

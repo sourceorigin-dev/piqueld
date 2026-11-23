@@ -400,9 +400,11 @@ health check.
   `0.0.0.0`. It doesn't follow redirects.
 - **The deployment fails with `convergence_timeout`.** A service didn't become
   ready in time. A deployment gives up when no service has become ready for
-  120 seconds, start periods included, and piqueld then retries on its own,
-  unless the environment
-  [rolls back automatically](restore.md#roll-back-failed-rollouts-automatically).
+  120 seconds, start periods included, and piqueld then retries on its own.
+  An environment that
+  [rolls back automatically](restore.md#roll-back-failed-rollouts-automatically)
+  restores its last successful deployment instead, and retries only when it
+  can't.
   Give a slow service a longer `start_period_seconds` so it isn't restarted
   while it starts, and raise
   [`reconciliation.convergence_timeout_seconds`](../reference/configuration-settings.md#reconciliationconvergence_timeout_seconds),

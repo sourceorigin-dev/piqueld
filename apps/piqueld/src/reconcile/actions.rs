@@ -368,8 +368,16 @@ impl<D: DockerApi> Controller<D> {
                 }
                 _ => {}
             }
+            // Sleep straight to the deadline rather than leave less than a
+            // poll for the next observation, which the deadline would cut
+            // off as a plain `ConvergenceTimeout`.
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            Self::pause(cancellation, poll.min(remaining)).await?;
+            let pause = if remaining < poll.saturating_mul(2) {
+                remaining
+            } else {
+                poll
+            };
+            Self::pause(cancellation, pause).await?;
             poll = poll.saturating_mul(2).min(SERVICE_POLL_MAX);
         }
     }

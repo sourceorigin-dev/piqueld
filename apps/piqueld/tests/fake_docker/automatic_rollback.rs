@@ -154,14 +154,11 @@ async fn a_failure_without_an_earlier_success_says_why_it_was_not_rolled_back() 
     );
 }
 
-/// A service that never converges during the rollout rolls it back. One a
-/// job depends on stops the deployment before its rollout, so it doesn't.
+/// A service that never converges during the rollout rolls it back,
+/// including one a job depends on, which runs the new spec before the job.
 #[tokio::test]
-async fn only_a_rollout_that_never_converges_is_rolled_back() {
-    for (manifest, rolls_back) in [
-        (migration(), true),
-        (super::jobs::manifest_with_job_dependencies(), false),
-    ] {
+async fn a_rollout_that_never_converges_is_rolled_back() {
+    for manifest in [migration(), super::jobs::manifest_with_job_dependencies()] {
         let mut harness = ControllerHarness::new().await;
         harness.set_convergence_timeout(Duration::from_secs(3));
         let manifest = with_rollback(manifest, Some(Rollback::Automatic));
@@ -171,20 +168,16 @@ async fn only_a_rollout_that_never_converges_is_rolled_back() {
             harness.scan_result(&second).await,
             (OperationState::Failed, Some("convergence_timeout".into()))
         );
-        let latest = harness.latest(&first.environment_id).await;
-        if rolls_back {
-            assert_eq!(
-                harness
-                    .deployment(&first.environment_id, &latest.id)
-                    .await
-                    .origin,
-                DeploymentOrigin::Restore {
-                    deployment: first.id.clone(),
-                    rolled_back: Some(second.id.clone()),
-                }
-            );
-        } else {
-            assert_eq!(latest.id, second.id);
-        }
+        let rollback = harness.latest(&first.environment_id).await;
+        assert_eq!(
+            harness
+                .deployment(&first.environment_id, &rollback.id)
+                .await
+                .origin,
+            DeploymentOrigin::Restore {
+                deployment: first.id.clone(),
+                rolled_back: Some(second.id.clone()),
+            }
+        );
     }
 }

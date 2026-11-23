@@ -178,7 +178,7 @@ impl DiagnosticCode {
             Self::ConvergenceTimeout => (
                 Application,
                 true,
-                "Inspect service health and resource capacity. Reconciliation will retry.",
+                "Inspect service health and resource capacity. Reconciliation retries unless automatic rollback restored the last successful deployment.",
             ),
             Self::PreparationTimeout => (
                 Application,
