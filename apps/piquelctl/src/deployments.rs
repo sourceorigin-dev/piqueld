@@ -174,6 +174,20 @@ async fn find_deployment(
         })
 }
 
+/// `environment`'s latest deployment, if any: its latest operation unless
+/// that deletes it. The daemon picks it by creation time, so it need not be
+/// the first row of the deployment list, which pages by ID: after a restart
+/// with the clock behind, an older deployment can have the higher ID.
+pub(crate) async fn latest_deployment(
+    client: &Client,
+    environment: &EnvironmentView,
+) -> Result<Option<Operation>> {
+    let detail = client.environment_detail(environment.id.as_str()).await?;
+    Ok(detail
+        .latest_operation
+        .filter(|operation| operation.kind != OperationKind::Delete))
+}
+
 /// Emits an accepted deployment as is with `no_wait`, otherwise waits for it
 /// and emits how it ended.
 pub(crate) async fn wait_for_accepted(
@@ -305,14 +319,9 @@ impl<T: Args + Target> WaitArgs<T> {
     /// `environment`'s, or its latest one.
     async fn deployment(&self, client: &Client, environment: &EnvironmentView) -> Result<String> {
         let Some(id) = &self.deployment else {
-            let page = client
-                .deployment_summaries(environment.id.as_str(), None, Some(1))
-                .await?;
-            return page
-                .items
-                .into_iter()
-                .next()
-                .map(|deployment| deployment.operation.id)
+            return latest_deployment(client, environment)
+                .await?
+                .map(|operation| operation.id)
                 .ok_or_else(|| {
                     CliError::new(
                         ErrorKind::Input,

@@ -24,8 +24,9 @@ use piqueld_client::{
 #[derive(Clone, Copy)]
 struct ShownDeployment {
     deployment: RwSignal<Option<DeploymentView>>,
-    /// Whether a newer deployment is listed: one that failed before
-    /// replacing the current target leaves Restore offered on it.
+    /// Whether the environment's latest deployment is a newer one: one that
+    /// failed before replacing the current target leaves Restore offered on
+    /// it.
     newer: RwSignal<bool>,
     error: RwSignal<Option<String>>,
 }
@@ -40,26 +41,24 @@ impl ShownDeployment {
     }
 
     /// Reads deployment `operation` of `environment`, and whether a newer
-    /// deployment is listed. Abandoned when the calling owner is cleaned up.
+    /// deployment is the environment's latest, from its detail read alongside
+    /// rather than the polled one, which can trail a change made elsewhere.
+    /// Abandoned when the calling owner is cleaned up.
     fn load(self, environment: String, operation: String) {
         let alive = Alive::new();
         spawn_local(async move {
             let client = Client::browser();
-            let (deployment, newest) = futures_util::join!(
+            let (deployment, detail) = futures_util::join!(
                 client.deployment(&environment, &operation),
-                client.deployment_summaries(&environment, None, Some(1)),
+                client.environment_detail(&environment),
             );
             if !alive.get() {
                 return;
             }
-            match deployment.and_then(|deployment| Ok((deployment, newest?))) {
-                Ok((deployment, newest)) => {
-                    self.newer.set(
-                        newest
-                            .items
-                            .first()
-                            .is_some_and(|newest| newest.operation.id != operation),
-                    );
+            match deployment.and_then(|deployment| Ok((deployment, detail?))) {
+                Ok((deployment, detail)) => {
+                    self.newer
+                        .set(deployment.superseded_by(detail.latest_operation.as_ref()));
                     self.deployment.set(Some(deployment));
                     self.error.set(None);
                 }

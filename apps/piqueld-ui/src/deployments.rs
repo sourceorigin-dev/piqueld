@@ -3,8 +3,9 @@
 //! attempt lists, promotion confirmation, and preview creation.
 
 use piqueld_client::{
-    CreatePreviewRequest, DeploymentOrigin, DeploymentSummary, DeploymentView, Operation, Page,
-    PlanView, PromoteRequest, ReleaseAvailability, SystemVariable, sync::short_commit,
+    CreatePreviewRequest, DeploymentOrigin, DeploymentSummary, DeploymentView, Operation,
+    OperationKind, Page, PlanView, PromoteRequest, ReleaseAvailability, SystemVariable,
+    sync::short_commit,
 };
 
 /// What a deployment's row in its environment's history, and its page, say
@@ -34,6 +35,18 @@ pub trait DeploymentFacts {
         let operation = self.operation();
         let started = operation.started_at_ms.unwrap_or(operation.created_at_ms);
         u64::try_from(operation.finished_at_ms? - started).ok()
+    }
+
+    /// Whether `latest`, its environment's latest operation, is a newer
+    /// deployment. The daemon picks the latest by creation time: the
+    /// deployment list, paged by ID, can list an older deployment first.
+    fn superseded_by(&self, latest: Option<&Operation>) -> bool {
+        let operation = self.operation();
+        latest.is_some_and(|latest| {
+            latest.kind != OperationKind::Delete
+                && latest.environment_id == operation.environment_id
+                && latest.id != operation.id
+        })
     }
 }
 
@@ -292,6 +305,27 @@ mod tests {
         built.operation.finished_at_ms = Some(39_000);
         assert_eq!(built.commit().as_deref(), Some("main @ 0123456789ab"));
         assert_eq!(built.duration_ms(), Some(38_000));
+    }
+
+    /// Only another deployment, the environment's latest, supersedes one: not
+    /// the deployment itself, a deletion, or another environment's operation.
+    #[test]
+    fn only_the_latest_deployment_of_its_environment_supersedes_one() {
+        let current = deployment("operation-1", true, true);
+        assert!(!current.superseded_by(None));
+        assert!(!current.superseded_by(Some(&current.operation)));
+        let failed = operation("operation-0", 1, OperationState::Failed);
+        assert!(current.superseded_by(Some(&failed)));
+        let deletion = Operation {
+            kind: OperationKind::Delete,
+            ..failed.clone()
+        };
+        assert!(!current.superseded_by(Some(&deletion)));
+        let elsewhere = Operation {
+            environment_id: "env-fedcba9876543210fedcba9876543210".parse().unwrap(),
+            ..failed
+        };
+        assert!(!current.superseded_by(Some(&elsewhere)));
     }
 
     #[test]

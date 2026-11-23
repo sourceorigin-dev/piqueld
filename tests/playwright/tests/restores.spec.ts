@@ -1,5 +1,6 @@
 import {
-  test, expect, auth, confirmNext, deployed, deploymentRows, deploymentTab, environmentTab, openDeployment, register, serveDeployments,
+  test, expect, auth, confirmNext, deployed, deploymentRows, deploymentTab, environmentTab, openDeployment, register, rewrite,
+  serveDeployments,
   type Managed,
 } from '../fixtures.js';
 import type { Route } from '@playwright/test';
@@ -18,7 +19,12 @@ test('an earlier deployment is restored from the deployment history', async ({ p
     succeeded_at_ms: Date.now(),
     current_target: true,
   };
-  await serveDeployments(page, env, () => ({ items: [restore, succeeded], next_cursor: null }));
+  // After a restart with the clock behind, the earlier deployment has the
+  // higher ID and lists first: the daemon still names the restore latest.
+  await serveDeployments(page, env, () => ({ items: [succeeded, restore], next_cursor: null }));
+  await rewrite(page, `/api/v1/environments/${env}/detail`, data => {
+    data.latest_operation = restore.operation;
+  });
   let restored: unknown;
   await page.route(url => url.pathname === `/api/v1/environments/${env}/restore`, async (route: Route) => {
     restored = route.request().postDataJSON();
@@ -34,13 +40,13 @@ test('an earlier deployment is restored from the deployment history', async ({ p
   await expect(rows).toHaveCount(2);
   const restoreButton = page.getByRole('button', { name: 'Restore', exact: true });
   // The current target has nothing to restore.
-  await openDeployment(page, rows.nth(0));
+  await openDeployment(page, rows.nth(1));
   await expect(page.getByRole('region', { name: 'Deployment progress' })).toContainText(`Restored from deployment ${earlier}`);
   await expect(restoreButton).toHaveCount(0);
 
   // Restoring the earlier one opens the restoring deployment's page.
   await page.goBack();
-  await openDeployment(page, rows.nth(1));
+  await openDeployment(page, rows.nth(0));
   confirmNext(page);
   await restoreButton.click();
   await expect(page).toHaveURL(`/dashboard/applications/${app}/environments/${env}/deployments/operation-0123456789abcdf1`);
@@ -72,12 +78,17 @@ test('the current deployment is offered for restore after a newer one failed', a
     current_target: false,
     last_successful: false,
   };
-  await serveDeployments(page, env, () => ({ items: [failed, current], next_cursor: null }));
+  // Listed below the earlier one, as after a restart with the clock behind:
+  // the daemon still names it latest.
+  await serveDeployments(page, env, () => ({ items: [current, failed], next_cursor: null }));
+  await rewrite(page, `/api/v1/environments/${env}/detail`, data => {
+    data.latest_operation = failed.operation;
+  });
 
   await page.goto(`/dashboard/applications/${app}/environments/${env}`);
   await environmentTab(page, 'Deployments').click();
   const rows = deploymentRows(page);
   await expect(rows).toHaveCount(2);
-  await openDeployment(page, rows.nth(1));
+  await openDeployment(page, rows.nth(0));
   await expect(page.getByRole('button', { name: 'Restore', exact: true })).toBeVisible();
 });

@@ -56,8 +56,8 @@ impl History {
 
     /// Polls the first page of `environment` every 2 seconds while the
     /// editor's Deployments tab is selected and the page is visible, and
-    /// right after the tab opens, following its newest deployment while it
-    /// runs (see `RunningDeployment`). Stops when the owning view unmounts.
+    /// right after the tab opens, following the deployment it lists running
+    /// (see `RunningDeployment`). Stops when the owning view unmounts.
     fn poll(self, context: EditorContext, environment: String) {
         let active = Alive::new();
         let running = use_context::<RunningDeployment>();
@@ -73,8 +73,16 @@ impl History {
                     }
                     match result {
                         Ok(page) => {
-                            if let (Some(newest), Some(running)) = (page.items.first(), running) {
-                                running.saw(&newest.operation);
+                            // Starting an operation supersedes the one in
+                            // progress, so at most one row runs, whatever
+                            // the page's order.
+                            if let (Some(listed), Some(running)) = (
+                                page.items
+                                    .iter()
+                                    .find(|listed| !listed.operation.state.terminal()),
+                                running,
+                            ) {
+                                running.saw(&listed.operation);
                             }
                             self.merge(page);
                             self.error.set(None);
