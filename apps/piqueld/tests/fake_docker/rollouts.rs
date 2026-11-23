@@ -704,6 +704,7 @@ async fn dependents_roll_out_once_their_dependencies_converge() {
 #[tokio::test]
 async fn each_dependency_gets_the_full_convergence_timeout() {
     let names = ["a", "b", "c", "d", "e", "f"];
+    // Each service depends on the one before it.
     let services: Vec<(&str, &[&str])> = names
         .iter()
         .enumerate()

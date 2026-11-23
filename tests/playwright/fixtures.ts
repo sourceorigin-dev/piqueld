@@ -380,6 +380,10 @@ export type Options = {
   processEnv: NodeJS.ProcessEnv;
 };
 
+/** The console errors Chromium logs for API responses the dashboard expects; see `browserErrors`. */
+const expectedResourceError =
+  /^Failed to load resource: (the server responded with a status of (4\d\d|503) |net::ERR_(FAILED|CONNECTION_REFUSED)$)/;
+
 export const test = base.extend<Options & { daemon: Daemon; passkeys: Passkeys; account: User; cli: Cli; browserErrors: void }>({
   fakeDocker: [false, { option: true }],
   processEnv: [{}, { option: true }],
@@ -422,13 +426,16 @@ export const test = base.extend<Options & { daemon: Daemon; passkeys: Passkeys; 
   browserErrors: [async ({ page }, use) => {
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
-    // Chromium logs each response with an error status as a console error,
-    // and the dashboard reads those as answers, such as a signed-out 401 or
-    // the readiness 503, as specs provoke them on purpose. Any other console
-    // error, such as one the dashboard logs, fails the test.
+    // Chromium logs each API response with an error status as a console
+    // error, though the dashboard reads them as answers, such as a signed-out
+    // 401 or the readiness 503, and specs provoke others on purpose, some by
+    // aborting requests. Any other console error fails the test: another 5xx,
+    // a missing asset, or an error the dashboard logs.
     page.on('console', message => {
-      if (message.type() === 'error' && !message.text().startsWith('Failed to load resource: ')) {
-        errors.push(`console error: ${message.text()}`);
+      if (message.type() !== 'error') return;
+      const api = new URL(message.location().url, page.url()).pathname.startsWith('/api/');
+      if (!(api && expectedResourceError.test(message.text()))) {
+        errors.push(`console error: ${message.text()} (${message.location().url})`);
       }
     });
     await use();
