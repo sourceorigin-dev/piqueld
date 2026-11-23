@@ -8,7 +8,10 @@ const PRUNE_BATCH: usize = 1_000;
 /// How long ago a preview's deployment must have finished before it can be
 /// pruned: a superseded one may still be stopping.
 const PREVIEW_MIN_AGE_MS: i64 = 3_600_000;
-/// Releases each application keeps beyond those a deployment references.
+/// How many of each application's releases pruning keeps, highest IDs first,
+/// whether or not a deployment references them; it keeps every one a
+/// deployment references too. IDs follow creation time, except across a
+/// restart with the clock behind.
 const KEPT_RELEASES: i64 = 50;
 
 /// How much deployment history each environment keeps; see

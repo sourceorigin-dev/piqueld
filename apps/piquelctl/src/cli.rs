@@ -428,7 +428,8 @@ pub(crate) enum Command {
     /// Read one page of the event history, newest first.
     ///
     /// Events record what happened to applications, environments and the
-    /// daemon, such as edits, deployments and failures.
+    /// daemon, such as edits, deployments and failures. A deleted
+    /// environment's events outlive it: find them with `--env` and its ID.
     #[command(alias = "events")]
     Event {
         #[command(flatten)]
@@ -716,11 +717,12 @@ pub(crate) struct ApplyArgs {
 // Shared `--deploy` / `--no-wait` flags for commands that save configuration.
 #[derive(Debug, Args)]
 pub(crate) struct DeploymentArgs {
-    /// Also deploy the saved configuration.
+    /// Also deploy the saved configuration to each declared environment that
+    /// isn't promoted from another.
     #[arg(long)]
     pub(crate) deploy: bool,
-    /// Return once the change is saved, or its deployment accepted, without
-    /// waiting for the deployment to end.
+    /// Return once the change is saved, or its deployments accepted, without
+    /// waiting for them to end.
     #[arg(long)]
     pub(crate) no_wait: bool,
 }

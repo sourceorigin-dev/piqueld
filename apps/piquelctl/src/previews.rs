@@ -110,7 +110,7 @@ pub(crate) enum PreviewCommand {
     Prune {
         /// Application name or stable ID.
         application: String,
-        /// Select the previews whose branch no longer exists. Required.
+        /// Select the previews whose branch no longer exists.
         #[arg(long, required = true)]
         branch_gone: bool,
         #[command(flatten)]
