@@ -712,9 +712,10 @@ timestamp sent so far. It starts with output written after `after`, an RFC 3339
 timestamp at most a day back, or from when it opens; a `Last-Event-ID` header
 takes the place of `after`, so a reconnecting client resumes after the newest
 line it received. Each container's lines arrive in order, but lines of several
-containers interleave as they arrive, so a resume can repeat or skip lines
-written within a moment of the newest one, such as while the stream first
-replays output. Tasks that start while the stream is open, such as a
+containers interleave as they arrive. A resume never repeats a line, but skips
+those another container wrote before the newest one received and hadn't
+delivered yet: usually a moment's worth, more if the stream dropped while first
+replaying output. Tasks that start while the stream is open, such as a
 rollout's, are followed too. A malformed `after`
 fails with `400 logs_query_invalid`. The stream ends with `stream_error` once
 Docker can no longer be read, and otherwise like the
