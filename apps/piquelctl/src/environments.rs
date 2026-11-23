@@ -16,13 +16,15 @@ use crate::{
         Console, TaskOutcome,
         reports::{DeletionReport, EnvironmentRow, EnvironmentShowReport, Named, PromotionReport},
     },
-    support::{join_or, retry_transport},
+    support::{MAX_POLL_INTERVAL, POLL_INTERVAL, join_or, retry_transport},
 };
 use clap::{Args, Subcommand, ValueEnum};
+use http::StatusCode;
 use piqueld_client::{
     ApplicationView, Client, ClientError, CreateEnvironmentRequest, EnvironmentBranchRequest,
     EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView, EnvironmentView, LogTime,
     Operation, PromoteRequest, Rollback, Visibility, edit::ApplicationEdit,
+    environments::LogRecordStream,
 };
 
 #[derive(Debug, Subcommand)]
@@ -1193,28 +1195,67 @@ pub(crate) async fn logs(
         },
         |newest| newest.timestamp.clone(),
     );
-    let mut stream = client
+    let stream = client
         .environment_logs_stream(id, service, None, Some(&after))
         .await?;
     // Following is the operator's time, which `--timeout` doesn't count.
-    crate::support::interactive(async {
-        loop {
-            match tokio::time::timeout(LOG_STREAM_IDLE, stream.next()).await {
-                Ok(Some(Ok(Some(record)))) => console.emit(&record)?,
-                Ok(Some(Ok(None))) => {}
-                Ok(Some(Err(error))) => return Err(error.into()),
-                Ok(None) => {
-                    console.warning("The daemon ended the log stream.")?;
-                    return Ok(());
+    crate::support::interactive(follow_logs(console, client, id, service, stream, after)).await
+}
+
+/// Prints each line `stream` sends until interrupted. A stream that ends,
+/// or goes silent past the keep-alives, as when the daemon restarts, is
+/// reopened after the newest line printed, `after`, pausing longer between
+/// failed attempts. It ends only once the daemon refuses it, such as when
+/// the caller lost access or the environment was deleted.
+async fn follow_logs(
+    console: &mut Console,
+    client: &Client,
+    id: &str,
+    service: Option<&str>,
+    stream: LogRecordStream,
+    mut after: String,
+) -> Result<()> {
+    let mut stream = Some(stream);
+    let mut pause = POLL_INTERVAL;
+    loop {
+        let error = if let Some(open) = &mut stream {
+            match tokio::time::timeout(LOG_STREAM_IDLE, open.next()).await {
+                Ok(Some(Ok(Some(record)))) => {
+                    // Timestamps share one fixed-width format, so they
+                    // compare as text.
+                    if record.timestamp > after {
+                        after.clone_from(&record.timestamp);
+                    }
+                    console.emit(&record)?;
+                    pause = POLL_INTERVAL;
+                    continue;
                 }
-                Err(_) => {
-                    return Err(CliError::new(
-                        ErrorKind::Unavailable,
-                        "the log stream went silent; the daemon may be unreachable",
-                    ));
-                }
+                Ok(Some(Ok(None))) => continue,
+                Ok(Some(Err(error))) => Some(error),
+                Ok(None) | Err(_) => None,
             }
+        } else {
+            tokio::time::sleep(pause).await;
+            pause = (pause * 2).min(MAX_POLL_INTERVAL);
+            match client
+                .environment_logs_stream(id, service, None, Some(&after))
+                .await
+            {
+                Ok(opened) => {
+                    stream = Some(opened);
+                    continue;
+                }
+                Err(error) => Some(error),
+            }
+        };
+        if let Some(error) = error.filter(|error| {
+            matches!(error, ClientError::Api { status, .. }
+                if *status != StatusCode::SERVICE_UNAVAILABLE)
+        }) {
+            return Err(error.into());
         }
-    })
-    .await
+        if stream.take().is_some() {
+            console.warning("The log stream was interrupted; reconnecting.")?;
+        }
+    }
 }

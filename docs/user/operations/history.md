@@ -95,8 +95,12 @@ message, with a hint for what to do next.
   shows, and **Resume** reads the latest lines again. With `piquelctl`, run
   `piquelctl env logs <app> <environment>`, or `piquelctl app logs <app>` when
   the application has a single environment, and add `--follow` (`-f`) to keep
-  printing new output until you press Ctrl-C. These are lines read from
-  Docker; for a lasting record, [export them](telemetry.md).
+  printing new output until you press Ctrl-C. If the daemon restarts,
+  `--follow` reconnects and goes on after the last line it printed. With
+  `--json`, `--follow` prints one JSON object per line. The **Logs** tab stops
+  following while its browser tab is hidden, and reads the latest lines again
+  when you return. These are lines read from Docker; for a lasting record,
+  [export them](telemetry.md).
 - A build's output: in the dashboard, see the **Builds** page and each
   application's **Builds** tab. With `piquelctl`, `piquelctl build list`
   lists recent builds, and `piquelctl build logs <id>` prints one's output.

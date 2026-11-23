@@ -345,5 +345,22 @@ test.describe('with deployments', () => {
     await logs.getByRole('button', { name: 'Resume', exact: true }).click();
     await expect(logs.getByText('Live', { exact: true })).toBeVisible();
     await expect(output).toContainText('served request 0', { timeout: 10_000 });
+
+    // Hiding the tab closes the stream, and showing it again reads the
+    // latest lines before following them; a paused card stays paused.
+    const setHidden = (hidden: boolean) => page.evaluate(hidden => {
+      Object.defineProperty(document, 'hidden', { value: hidden, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+    }, hidden);
+    const snapshot = () => page.waitForRequest(request => request.url().includes(`/environments/${env}/logs?`));
+    await setHidden(true);
+    const reread = snapshot();
+    await setHidden(false);
+    await reread;
+    await expect(logs.getByText('Live', { exact: true })).toBeVisible();
+    await logs.getByRole('button', { name: 'Pause', exact: true }).click();
+    await setHidden(true);
+    await setHidden(false);
+    await expect(logs.getByText('Paused', { exact: true })).toBeVisible();
   });
 });

@@ -955,10 +955,10 @@ fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
 }
 
 /// `logs --follow` prints the snapshot, then the lines the daemon streams
-/// after the snapshot's newest one, one JSON object each, until the daemon
-/// ends the stream.
+/// after the snapshot's newest one, one JSON object each. A stream that ends
+/// is reopened after the newest line printed, until the daemon refuses it.
 #[test]
-fn followed_logs_resume_after_the_snapshot() {
+fn followed_logs_resume_after_the_newest_line_until_refused() {
     let record = |timestamp: &str, message: &str| {
         json!({
             "service": "web",
@@ -971,17 +971,20 @@ fn followed_logs_resume_after_the_snapshot() {
     let snapshot = record("2026-01-01T00:00:00.000000001Z", "first");
     let streamed = record("2026-01-01T00:00:01.000000001Z", "second");
     let (first, second) = (snapshot.clone(), streamed.clone());
-    let server = start_server(false, 3, move |request| match request.path.as_str() {
+    let stream = "/api/v1/environments/env-staging-01/logs/stream?";
+    let server = start_server(false, 4, move |request| match request.path.as_str() {
         "/api/v1/applications/app-notes-01" => Reply::json(two_environment_view()),
         path if path.starts_with("/api/v1/environments/env-staging-01/logs?") => {
             Reply::json(json!({"items": [first.clone()], "truncated": false}))
         }
-        path if path.starts_with("/api/v1/environments/env-staging-01/logs/stream?") => {
-            assert!(
-                path.contains("after=2026-01-01T00%3A00%3A00.000000001Z"),
-                "{path}"
-            );
+        path if path.starts_with(stream) && path.contains("after=2026-01-01T00%3A00%3A00.") => {
             Reply::stream("log", std::slice::from_ref(&second))
+        }
+        path if path.starts_with(stream) && path.contains("after=2026-01-01T00%3A00%3A01.") => {
+            Reply::status(
+                "403 Forbidden",
+                &json!({"code": "permission_denied", "message": "refused"}),
+            )
         }
         path => panic!("unexpected path {path}"),
     });
@@ -989,7 +992,7 @@ fn followed_logs_resume_after_the_snapshot() {
         &server,
         &["env", "logs", "app-notes-01", "staging", "--follow"],
     );
-    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.status.code(), Some(7), "{output:?}");
     let lines = std::str::from_utf8(&output.stdout)
         .unwrap()
         .lines()
@@ -997,6 +1000,6 @@ fn followed_logs_resume_after_the_snapshot() {
         .collect::<Vec<_>>();
     assert_eq!(lines, [snapshot, streamed]);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("ended the log stream"), "{stderr}");
-    server.finish();
+    assert!(stderr.contains("reconnecting"), "{stderr}");
+    assert_eq!(server.finish().len(), 4);
 }

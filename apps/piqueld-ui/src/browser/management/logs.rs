@@ -3,9 +3,10 @@
 use super::super::logs::{LogKind, LogViewer, StreamFilter};
 use super::super::stream::EventStream;
 use super::super::ui::{Icon, Tone, badge, icon, notice};
-use super::super::{Alive, ClientErrorExt};
+use super::super::{Alive, ClientErrorExt, document_hidden};
 use super::editor;
 use crate::log_output::LogLine;
+use leptos::ev;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use piqueld_client::{Client, LogRecord, StreamMessage, paths};
@@ -13,6 +14,9 @@ use std::collections::VecDeque;
 
 /// The most lines the card keeps; older ones scroll away.
 const MAX_LINES: usize = 1000;
+/// How often lines that arrived are drawn, so a chatty service redraws the
+/// list a few times a second rather than every frame.
+const FLUSH: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// Where the card's live output stands.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -55,7 +59,7 @@ impl Follow {
 pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -> impl IntoView {
     let context = editor();
     let records = RwSignal::new(VecDeque::<LogRecord>::new());
-    let pending = StoredValue::new_local(Vec::<LogRecord>::new());
+    let pending = StoredValue::new_local(VecDeque::<LogRecord>::new());
     let truncated = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let follow = RwSignal::new(Follow::Connecting);
@@ -68,10 +72,12 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
     let generation = RwSignal::new(0_u64);
     let alive = Alive::new();
     let id = context.environment_id();
-    // Lines arriving together are drawn in one frame.
+    // Whether hiding the tab closed the stream, which showing it reopens.
+    let hidden = StoredValue::new(false);
+    // Lines arriving within a `FLUSH` are drawn together.
     let flush = move || {
         let arrived = pending.try_update_value(std::mem::take).unwrap_or_default();
-        records.update(|records| {
+        records.try_update(|records| {
             records.extend(arrived);
             let excess = records.len().saturating_sub(MAX_LINES);
             records.drain(..excess);
@@ -115,17 +121,21 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
                 };
                 let first = pending
                     .try_update_value(|pending| {
-                        pending.push(record);
+                        if pending.len() == MAX_LINES {
+                            pending.pop_front();
+                        }
+                        pending.push_back(record);
                         pending.len() == 1
                     })
                     .unwrap_or(false);
                 if first {
-                    request_animation_frame(flush);
+                    set_timeout(flush, FLUSH);
                 }
             },
             move || {
                 error.set(Some(
-                    "The log stream closed. Resume to follow it again.".into(),
+                    "The log stream closed: the daemon may be busy or restarting. Resume to follow it again."
+                        .into(),
                 ));
                 follow.set(Follow::Stopped);
             },
@@ -162,7 +172,7 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
                 Ok(logs) => {
                     let after = logs.items.last().map(|newest| newest.timestamp.clone());
                     truncated.set(logs.truncated);
-                    pending.set_value(Vec::new());
+                    pending.set_value(VecDeque::new());
                     records.set(logs.items.into());
                     error.set(None);
                     open(after);
@@ -175,6 +185,22 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
         });
     };
     let start = StoredValue::new_local(start);
+    // A hidden tab draws nothing and holds one of the daemon's few log
+    // streams, so hiding it closes the stream and showing it reads the latest
+    // lines again. A stream the operator paused stays paused.
+    let visibility = window_event_listener(ev::visibilitychange, move |_| {
+        if document_hidden() {
+            if matches!(follow.get_untracked(), Follow::Connecting | Follow::Live) {
+                live.set_value(None);
+                generation.update(|generation| *generation += 1);
+                hidden.set_value(true);
+            }
+        } else if hidden.get_value() {
+            hidden.set_value(false);
+            start.with_value(|start| start());
+        }
+    });
+    on_cleanup(move || visibility.remove());
     Effect::new(move |_| {
         let _ = (service.get(), stream.get());
         start.with_value(|start| start());
