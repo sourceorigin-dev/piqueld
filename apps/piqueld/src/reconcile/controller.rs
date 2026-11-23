@@ -808,9 +808,11 @@ mod tests {
             async move { controller.sync_routes(&operation, &routes, true).await }
         });
         // The routing phase commits just before staging waits for the gateway.
-        while store.operation(&operation.id).await.unwrap().phase != Some(Phase::Routing) {
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
+        store
+            .wait_until(async || {
+                store.operation(&operation.id).await.unwrap().phase == Some(Phase::Routing)
+            })
+            .await;
         store
             .accept(
                 crate::api::Actor::Daemon,
@@ -858,9 +860,11 @@ mod tests {
         );
         let finished = async {
             // Operations start only after the first discovery pass, including recovery.
-            while store.operation(&operation.id).await.unwrap().state == OperationState::Requested {
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
+            store
+                .wait_until(async || {
+                    store.operation(&operation.id).await.unwrap().state != OperationState::Requested
+                })
+                .await;
             let finished = store.finish_action(&action, None).await;
             cancellation.cancel();
             finished

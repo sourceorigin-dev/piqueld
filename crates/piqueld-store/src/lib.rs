@@ -929,6 +929,9 @@ impl Store {
 /// leaves it.
 struct Writers {
     queue: tokio::sync::Mutex<()>,
+    /// How many writers wait for their turn, so a test holding the queue
+    /// knows when another writer queued behind it.
+    waiting: tokio::sync::watch::Sender<usize>,
     written: tokio::sync::watch::Sender<()>,
 }
 
@@ -936,6 +939,7 @@ impl Default for Writers {
     fn default() -> Self {
         Self {
             queue: tokio::sync::Mutex::default(),
+            waiting: tokio::sync::watch::Sender::new(0),
             written: tokio::sync::watch::Sender::new(()),
         }
     }
@@ -944,10 +948,28 @@ impl Default for Writers {
 impl Writers {
     /// Waits for this writer's turn.
     async fn lock(&self) -> Writer<'_> {
+        let _waiting = Waiting::new(&self.waiting);
         Writer {
             _turn: self.queue.lock().await,
             written: &self.written,
         }
+    }
+}
+
+/// A writer counted in [`Writers::waiting`] until dropped: once it has its
+/// turn, or stopped waiting for it.
+struct Waiting<'a>(&'a tokio::sync::watch::Sender<usize>);
+
+impl<'a> Waiting<'a> {
+    fn new(waiting: &'a tokio::sync::watch::Sender<usize>) -> Self {
+        waiting.send_modify(|waiting| *waiting += 1);
+        Self(waiting)
+    }
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.send_modify(|waiting| *waiting -= 1);
     }
 }
 
@@ -1310,6 +1332,21 @@ impl Store {
             .find(|environment| environment.name == piqueld_core::EnvironmentName::default_name())
             .expect("a production environment")
             .id
+    }
+
+    /// Waits until `ready` holds, checking it again after each write.
+    ///
+    /// # Panics
+    /// Never: the store outlives its write notifications.
+    #[expect(
+        clippy::expect_used,
+        reason = "The store owns the sender, so it outlives the receiver."
+    )]
+    pub async fn wait_until(&self, mut ready: impl AsyncFnMut() -> bool) {
+        let mut written = self.written();
+        while !ready().await {
+            written.changed().await.expect("the store is alive");
+        }
     }
     /// Creates the destination `name` with `settings`.
     ///

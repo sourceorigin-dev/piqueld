@@ -247,13 +247,12 @@ async fn a_cancelled_finish_is_completed_with_its_ending() {
             .items[0]
             .state
     };
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        while state().await == BuildState::Running {
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap();
+    let finished = log
+        .store
+        .wait_until(async || state().await != BuildState::Running);
+    tokio::time::timeout(std::time::Duration::from_secs(10), finished)
+        .await
+        .expect("the retry finishes the build");
     assert_eq!(state().await, BuildState::Failed);
     assert_eq!(stored(&log).await, (expected, true));
 }

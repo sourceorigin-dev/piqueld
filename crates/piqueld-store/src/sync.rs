@@ -747,9 +747,9 @@ mod tests {
         assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
         // A listing that started before another deployment finished never
         // undoes it, even when that deployment recorded the same commit
-        // again: it lists again.
+        // again: it lists again. `now_ms` never repeats, so that deployment
+        // records a later sync.
         let before = store.get(&id).await.unwrap().environment.synced;
-        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
         store.deployed_at(&id, A).await;
         let stale = submit(&store, &id, "https://example.com/notes.git", B, before).await;
         assert!(matches!(stale, SyncOutcome::Busy));
