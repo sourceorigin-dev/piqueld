@@ -7,10 +7,11 @@
 //!   the gateway's runtime sockets;
 //! - `backup.json`, the [`Manifest`] describing it.
 //!
-//! `piqueld restore` puts a backup back into an empty data directory (see
-//! [`Backups::restore`]).
+//! [`Backups::restore`] puts a backup back into an empty data directory, and
+//! [`Backups::roll_back`] the newest one this binary opens.
 
 mod restore;
+mod roll_back;
 mod rotation;
 #[cfg(test)]
 mod tests;
@@ -18,11 +19,13 @@ mod tests;
 use anyhow::{Context, Result, bail};
 use piqueld_store::{DatabaseCopy, DatabaseFile, DatabaseIdentity, SCHEMA_VERSION};
 pub use restore::Refusal;
+pub use roll_back::RollBack;
+use roll_back::RolledBack;
 pub use rotation::PreMigration;
 use rustix::fs::{AtFlags, CWD, Dir, FileType, Mode, OFlags};
 use serde::{Deserialize, Serialize};
 use std::{
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     fs::{self, File, OpenOptions},
     io,
     os::{
@@ -95,22 +98,11 @@ impl Backups {
     /// # Errors
     /// Returns the failed step. A failed backup leaves nothing behind.
     pub async fn before_migration(&self) -> Result<Option<PathBuf>> {
-        let database = self.data_dir.join(DATABASE);
-        if !database
-            .try_exists()
-            .with_context(|| format!("inspect {}", database.display()))?
-        {
-            return Ok(None);
-        }
-        let mut live = DatabaseFile::open(&database)
-            .await
-            .with_context(|| format!("open {}", database.display()))?;
-        let identity = live
+        if self
             .identity()
-            .await
-            .context("read the database's schema")?;
-        live.close().await.context("close the database")?;
-        if identity.is_none_or(|identity| identity.schema_version >= SCHEMA_VERSION) {
+            .await?
+            .is_none_or(|identity| identity.schema_version >= SCHEMA_VERSION)
+        {
             return Ok(None);
         }
 
@@ -136,6 +128,27 @@ impl Backups {
         sync(&directory)?;
         PreMigration::prune(&directory, PRE_MIGRATION_KEEP)?;
         Ok(Some(backup))
+    }
+
+    /// The identity of the data directory's database, without migrating it:
+    /// `None` when there is none, or it has no schema yet.
+    async fn identity(&self) -> Result<Option<DatabaseIdentity>> {
+        let database = self.data_dir.join(DATABASE);
+        if !database
+            .try_exists()
+            .with_context(|| format!("inspect {}", database.display()))?
+        {
+            return Ok(None);
+        }
+        let mut live = DatabaseFile::open(&database)
+            .await
+            .with_context(|| format!("open {}", database.display()))?;
+        let identity = live
+            .identity()
+            .await
+            .context("read the database's schema")?;
+        live.close().await.context("close the database")?;
+        Ok(identity)
     }
 
     /// The newest pre-migration backup, if any.
@@ -344,4 +357,68 @@ fn sync(path: &Path) -> Result<()> {
     File::open(path)
         .and_then(|directory| directory.sync_all())
         .with_context(|| format!("sync {}", path.display()))
+}
+
+/// The names of the entries in the directory `path` that `keep` keeps,
+/// sorted.
+fn entries(path: &Path, keep: impl Fn(&OsStr) -> bool) -> Result<Vec<OsString>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(path).with_context(|| format!("read {}", path.display()))? {
+        let name = entry
+            .with_context(|| format!("read {}", path.display()))?
+            .file_name();
+        if keep(&name) {
+            names.push(name);
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+/// A failed [`move_entries`].
+struct Moved {
+    /// The move that failed.
+    error: anyhow::Error,
+    /// Why the entries already moved didn't all go back, if they didn't.
+    undo: Option<anyhow::Error>,
+}
+
+/// Moves the entries `names` of the directory `from` into the directory
+/// `to`, on the same filesystem, in order, then syncs both. If a move
+/// fails, the entries already moved go back, so either all move or none.
+fn move_entries(from: &Path, to: &Path, names: &[OsString]) -> Result<(), Moved> {
+    let mut moved = Vec::new();
+    let forward = names
+        .iter()
+        .try_for_each(|name| {
+            fs::rename(from.join(name), to.join(name)).with_context(|| {
+                format!("move {} into {}", from.join(name).display(), to.display())
+            })?;
+            moved.push(name);
+            Ok(())
+        })
+        .and_then(|()| sync(to))
+        .and_then(|()| sync(from));
+    let Err(error) = forward else {
+        return Ok(());
+    };
+    let stuck: Vec<_> = moved
+        .iter()
+        .rev()
+        .filter_map(|name| {
+            fs::rename(to.join(name), from.join(name))
+                .err()
+                .map(|undo| format!("{}: {undo}", name.display()))
+        })
+        .collect();
+    let undo = if stuck.is_empty() {
+        sync(to).and_then(|()| sync(from)).err()
+    } else {
+        Some(anyhow::anyhow!(
+            "could not move back into {} {}",
+            from.display(),
+            stuck.join(", ")
+        ))
+    };
+    Err(Moved { error, undo })
 }

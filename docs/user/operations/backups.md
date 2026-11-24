@@ -143,8 +143,99 @@ replace your own backup.
 
 ## Roll back
 
+To go back to the previous version after an upgrade, go back to its binary,
+then let `piqueld roll-back` restore the backup the daemon took before it
+updated the database.
+
 > **Warning:** restoring a backup also undoes every change made since it was
 > taken: application edits, accounts and deployment history.
+
+1. Stop the upgraded daemon:
+
+   ```console
+   sudo systemctl stop piqueld
+   ```
+
+2. Go back to the previous version: on NixOS, run
+   `sudo nixos-rebuild switch --rollback`; elsewhere, reinstall the previous
+   binary.
+3. Roll back, as the daemon's user, with the previous version's `piqueld`:
+
+   ```console
+   sudo -u piqueld piqueld --config /etc/piqueld/config.toml roll-back
+   ```
+
+   On NixOS, with [`rollBack`](#roll-back-on-every-start) set, skip this
+   step: the daemon does it as it starts. Without it, the configuration is in
+   the Nix store: use the `--config` path `systemctl cat piqueld` shows.
+
+   It prints where the state it replaced went:
+
+   ```text
+   restored backup /var/lib/piqueld/backups/pre-<schema>-<time> (schema <schema>); the state it replaced is in /var/lib/piqueld/rolled-back-<time>
+   ```
+
+4. Start the daemon:
+
+   ```console
+   sudo systemctl start piqueld
+   ```
+
+`piqueld roll-back` does nothing when the installed `piqueld` can open the
+database, or there is none. Otherwise it:
+
+1. picks the newest backup in `/var/lib/piqueld/backups` that this version
+   can open, and checks it as [`piqueld restore`](#roll-back-by-hand) does: the
+   database's integrity, that the database is the one the backup describes,
+   and that `secrets.key` decrypts its secrets;
+2. stops this installation's [ingress](../networking/routes.md#enable-the-gateway)
+   containers, which use the data directory. Your applications' routes stay
+   unreachable until the daemon starts again, and starts them;
+3. moves everything in the data directory into
+   `/var/lib/piqueld/rolled-back-<time>`, where `<time>` is when it rolled
+   back, in Unix milliseconds;
+4. restores the backup, and puts back the directory telemetry collectors
+   [listen in](telemetry.md#receive-telemetry-in-an-application), so they keep
+   receiving.
+
+If no backup fits, or the one it picked fails a check, it fails before it
+stops or moves anything.
+
+It never deletes the state it replaced: the database, with every change since
+the backup, the daemon's backups, and everything else stay in
+`rolled-back-<time>`. Delete that directory once you no longer need it.
+
+piqueld then compares what Docker runs with the deployments in the restored
+database, and repairs the difference, as it repairs any drift.
+
+### Roll back on every start
+
+A host can run `piqueld roll-back` each time the daemon starts, so that going
+back to a previous version, such as a NixOS rollback, also rolls back its
+state. It only covers going back to a version that does this too, so set it up
+before you upgrade.
+
+On NixOS, set:
+
+```nix
+services.piqueld.rollBack = true;
+```
+
+Elsewhere, add it to the unit with `sudo systemctl edit piqueld`:
+
+```ini
+[Service]
+ExecStartPre=/usr/local/bin/piqueld --config /etc/piqueld/config.toml roll-back
+```
+
+It must run as the daemon's user, as the unit's `User=` does, not as root with
+systemd's `+` prefix. The daemon's user owns the data directory, which
+`piqueld roll-back` checks, and the files it restores.
+
+### Roll back by hand
+
+When the previous version doesn't have `piqueld roll-back`, or to restore a
+backup you [took yourself](#back-up), restore it by hand:
 
 1. Stop the upgraded daemon:
 
@@ -185,10 +276,9 @@ replace your own backup.
    ```
 
    Use the upgraded version's `piqueld`: the previous one may not have this
-   command. It first checks the backup: the database's integrity, that the
-   database is the one the backup describes, and that `secrets.key` decrypts
-   its secrets. It restores nothing if a check fails. Add `--check` to run
-   the checks only.
+   command. It runs the same checks as `piqueld roll-back`, and restores
+   nothing if one fails. Add `--check` to run the checks only. The data
+   directory must be empty, but for `rolled-back-<time>` directories.
 
    To restore a backup you [took yourself](#back-up) instead, copy it in
    place, without the upgraded database's `-wal` and `-shm` files, then give
@@ -222,9 +312,6 @@ replace your own backup.
    It may fail to start a few times, until piqueld removes the stale socket
    the backup holds.
 
-piqueld then compares what Docker runs with the deployments in the restored
-database, and repairs the difference, as it repairs any drift.
-
 ## Troubleshooting
 
 - **The integrity check doesn't print `ok`.** The copy is damaged: take the
@@ -235,8 +322,15 @@ database, and repairs the difference, as it repairs any drift.
 - **The daemon doesn't start after an upgrade, and its log says it failed to
   back up the data directory.** It hasn't updated anything. Fix the cause the
   log names, such as a full disk, then start it again.
+- **`piqueld roll-back` fails because no backup has a version it supports.**
+  The daemon keeps its last three backups, and each holds the database as it
+  was before an upgrade. If they are all newer than the installed version,
+  none fits. Run a newer version again, or
+  [restore a backup you took yourself](#roll-back-by-hand).
 - **The daemon refuses to start because of an unfinished restore.** A
-  `piqueld restore` was interrupted, or failed and couldn't undo what it had
-  restored. Empty the data directory, then restore again.
+  `piqueld restore` or `piqueld roll-back` was interrupted, or failed and
+  couldn't undo what it had done. A roll-back leaves the state it replaced in
+  `rolled-back-<time>`. Move everything else in the data directory aside,
+  then restore again.
 - **The daemon can't write to a restored database.** Its files must belong to
   the daemon's user: run `sudo chown -R piqueld:piqueld /var/lib/piqueld`.

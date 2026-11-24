@@ -62,10 +62,14 @@ build machine, such as when cross-compiling.
 
 `dataDir` defaults to `/var/lib/piqueld`, with mode `0700`, holding `piqueld.db`.
 The daemon keeps the backups it takes before an upgrade in its `backups`
-directory. To [roll back](../operations/backups.md#roll-back), run
-`piqueld restore` as the `piqueld` user with `--data-dir`, which doesn't read
-the configuration. The module puts the daemon's package, with `piqueld`, on
-the system `PATH`.
+directory. Set `services.piqueld.rollBack = true;` to run
+[`piqueld roll-back`](../operations/backups.md#roll-back) as the `piqueld`
+user before each start: after a system rollback to a generation that also
+sets it, it restores the newest backup that generation's piqueld can open,
+and moves the state it replaces into `dataDir`'s `rolled-back-<time>`
+directory. It does nothing while piqueld can open the database. Without it,
+run `piqueld roll-back` or `piqueld restore` yourself, as the `piqueld` user.
+The module puts the daemon's package, with `piqueld`, on the system `PATH`.
 `runtimeDir` defaults to `/run/piqueld`, prepared by systemd with mode `0750`.
 The socket is `/run/piqueld/piqueld.sock`, owned by `piqueld:piqueld` with mode
 `0660`. After logging in again to refresh group membership, users can connect

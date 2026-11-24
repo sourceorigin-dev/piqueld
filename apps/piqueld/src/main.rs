@@ -6,7 +6,7 @@ use clap::Parser;
 use piqueld::api::ApplicationService;
 use piqueld::api::http::{self, ApiState, UiAssets, UnixPeer};
 use piqueld::auth::Auth;
-use piqueld::backup::Backups;
+use piqueld::backup::{Backups, RollBack};
 use piqueld::ingress::{DashboardSocket, Ingress};
 use piqueld::tailnet::Node;
 use piqueld::tailnet::TailnetLookup;
@@ -90,6 +90,18 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Roll the data directory back to a backup this piqueld can open, when
+    /// a newer piqueld updated its database, then exit.
+    ///
+    /// Run it as the daemon's user while the daemon is stopped, such as
+    /// before each start. When this piqueld can open the database, or there
+    /// is none, it does nothing. Otherwise it stops this installation's
+    /// ingress containers, moves the data directory's contents into a
+    /// `rolled-back-<time>` directory inside it, without deleting anything,
+    /// and restores the newest backup in `backups/` this piqueld can open,
+    /// after the checks `piqueld restore` runs. When no backup fits, or a
+    /// check fails, it fails before moving anything.
+    RollBack,
 }
 
 impl Args {
@@ -144,6 +156,35 @@ async fn main() -> Result<()> {
                 println!("backup {what} is valid");
             } else {
                 println!("restored backup {what} into {}", data_dir.display());
+            }
+            Ok(())
+        }
+        Some(Command::RollBack) => {
+            let config = load_config(args.config.as_deref())?;
+            let socket = &config.docker.socket;
+            let data_dir = &config.server.data_dir;
+            let rolled_back = Backups::new(data_dir)
+                .roll_back(async |instance| {
+                    let stopped = Ingress::stop_offline(socket, instance).await?;
+                    println!("stopped {stopped} ingress containers");
+                    Ok(())
+                })
+                .await
+                .with_context(|| format!("failed to roll back {}", data_dir.display()))?;
+            match rolled_back {
+                RollBack::Unneeded => {
+                    println!("nothing to roll back in {}", data_dir.display());
+                }
+                RollBack::Restored {
+                    backup,
+                    manifest,
+                    aside,
+                } => println!(
+                    "restored backup {} (schema {}); the state it replaced is in {}",
+                    backup.display(),
+                    manifest.schema_version,
+                    aside.display()
+                ),
             }
             Ok(())
         }

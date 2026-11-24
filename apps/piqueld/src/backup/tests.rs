@@ -1,6 +1,6 @@
 use super::*;
 use piqueld_store::Store;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
 /// A data directory whose database an older daemon left at the schema
 /// before this binary's, with a stored secret, so its key is bound to it,
@@ -32,21 +32,7 @@ async fn outdated(data_dir: &Path) -> String {
         .expect("the secret is stored, binding a new key");
     let instance = store.instance_id().as_str().to_owned();
     drop(store);
-    let options = sqlx::sqlite::SqliteConnectOptions::new().filename(data_dir.join(DATABASE));
-    let pool = sqlx::SqlitePool::connect_with(options)
-        .await
-        .expect("the database opens");
-    let older = SCHEMA_VERSION - 1;
-    sqlx::query(&format!("PRAGMA user_version = {older}"))
-        .execute(&pool)
-        .await
-        .expect("the version changes");
-    sqlx::query("UPDATE instance_metadata SET schema_version=?1")
-        .bind(i64::try_from(older).expect("the version fits"))
-        .execute(&pool)
-        .await
-        .expect("the recorded version changes");
-    pool.close().await;
+    set_schema(data_dir, SCHEMA_VERSION - 1).await;
 
     let write = |path: &str, contents: &[u8]| {
         let path = data_dir.join(path);
@@ -67,6 +53,25 @@ async fn outdated(data_dir: &Path) -> String {
     )
     .expect("a symlink is created");
     instance
+}
+
+/// Records `version` as the schema of the database in `data_dir`, as a
+/// daemon of that version would.
+async fn set_schema(data_dir: &Path, version: u64) {
+    let options = sqlx::sqlite::SqliteConnectOptions::new().filename(data_dir.join(DATABASE));
+    let pool = sqlx::SqlitePool::connect_with(options)
+        .await
+        .expect("the database opens");
+    sqlx::query(&format!("PRAGMA user_version = {version}"))
+        .execute(&pool)
+        .await
+        .expect("the version changes");
+    sqlx::query("UPDATE instance_metadata SET schema_version=?1")
+        .bind(i64::try_from(version).expect("the version fits"))
+        .execute(&pool)
+        .await
+        .expect("the recorded version changes");
+    pool.close().await;
 }
 
 /// Runs `sql` on the database in `data_dir`, or a backup, without checking
@@ -103,6 +108,8 @@ fn backup_names(data_dir: &Path) -> Vec<String> {
 /// instance ID.
 async fn backed_up() -> (tempfile::TempDir, PathBuf, String) {
     let data_dir = tempfile::tempdir().expect("a data directory is created");
+    fs::set_permissions(data_dir.path(), fs::Permissions::from_mode(0o700))
+        .expect("the data directory is private");
     let instance = outdated(data_dir.path()).await;
     let backup = Backups::new(data_dir.path())
         .before_migration()
@@ -262,8 +269,8 @@ async fn a_symlinked_state_directory_is_not_followed() {
 }
 
 /// A backup checks out without touching the data directory, then restores
-/// into a missing one as a database and key that match, with the tailnet
-/// and ingress state.
+/// into one holding only rolled-back state, as a database and key that
+/// match, with the tailnet and ingress state.
 #[tokio::test]
 async fn a_backup_restores_into_an_empty_data_directory() {
     let (source, backup, instance) = backed_up().await;
@@ -275,6 +282,11 @@ async fn a_backup_restores_into_an_empty_data_directory() {
         .await
         .expect("the backup checks out");
     assert!(!data_dir.exists(), "checking touches nothing");
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .recursive(true)
+        .create(data_dir.join("rolled-back-1"))
+        .expect("a rolled-back directory is created");
 
     let manifest = backups
         .restore(&backup, false)
@@ -362,8 +374,6 @@ async fn restore_refuses_backups_it_cannot_trust() {
     let error = refused(&backup).await;
     assert!(error.is::<Damaged>(), "{error:#}");
 
-    fs::set_permissions(source.path(), fs::Permissions::from_mode(0o700))
-        .expect("the data directory is private");
     let error = Backups::new(source.path())
         .restore(&backup, false)
         .await
@@ -411,4 +421,140 @@ fn a_failed_publish_moves_back_what_it_moved() {
         .expect_err("the publish fails");
     assert!(error.downcast_ref::<Refusal>().is_none(), "{error:#}");
     assert_eq!(files(data_dir.path()), ["b/kept"]);
+}
+
+/// Rolls `data_dir` back, returning what it did and the instance whose
+/// ingress it stopped, if it did.
+async fn roll_back(data_dir: &Path) -> (Result<RollBack>, Option<String>) {
+    let mut stopped = None;
+    let result = Backups::new(data_dir)
+        .roll_back(async |instance| {
+            stopped = Some(instance.as_str().to_owned());
+            Ok(())
+        })
+        .await;
+    (result, stopped)
+}
+
+/// The names in the directory `path`, sorted.
+fn names(path: &Path) -> Vec<String> {
+    entries(path, |_| true)
+        .expect("the directory reads")
+        .into_iter()
+        .map(|name| name.into_string().expect("UTF-8"))
+        .collect()
+}
+
+/// A roll-back touches nothing while this binary opens the database, or
+/// there is none.
+#[tokio::test]
+async fn roll_back_leaves_a_database_this_binary_opens() {
+    let target = tempfile::tempdir().expect("a directory is created");
+    let missing = target.path().join("data");
+    let (result, stopped) = roll_back(&missing).await;
+    assert!(matches!(result, Ok(RollBack::Unneeded)), "{result:?}");
+    assert!(!missing.exists() && stopped.is_none());
+
+    let (data_dir, _, _) = backed_up().await;
+    let before = files(data_dir.path());
+    let (result, stopped) = roll_back(data_dir.path()).await;
+    assert!(matches!(result, Ok(RollBack::Unneeded)), "{result:?}");
+    assert!(stopped.is_none());
+    assert_eq!(files(data_dir.path()), before);
+}
+
+/// After a newer daemon migrated the database, a roll-back stops the
+/// instance's ingress, moves the state aside and restores the newest backup
+/// this binary opens, past one the newer daemon took, then puts the
+/// telemetry sockets back.
+#[tokio::test]
+async fn roll_back_restores_the_newest_backup_this_binary_opens() {
+    let (data_dir, backup, instance) = backed_up().await;
+    let data_dir = data_dir.path();
+    fs::create_dir_all(data_dir.join("telemetry/env")).expect("a receiver's directory is created");
+    fs::write(data_dir.join("telemetry/env/otlp.sock"), b"").expect("its socket is created");
+    set_schema(data_dir, SCHEMA_VERSION + 1).await;
+    let newer = PreMigration {
+        created_at_ms: i64::MAX,
+        schema_version: SCHEMA_VERSION + 1,
+    };
+    fs::create_dir(data_dir.join(BACKUPS).join(newer.name())).expect("a newer backup is made");
+
+    let (result, stopped) = roll_back(data_dir).await;
+    let Ok(RollBack::Restored {
+        backup: restored,
+        manifest,
+        aside,
+    }) = result
+    else {
+        panic!("the state is rolled back: {result:?}");
+    };
+    assert_eq!(restored, backup);
+    assert_eq!(manifest.schema_version, SCHEMA_VERSION - 1);
+    assert_eq!(stopped.as_deref(), Some(instance.as_str()));
+    let aside_name = aside
+        .file_name()
+        .expect("it has a name")
+        .to_str()
+        .expect("UTF-8");
+    assert_eq!(
+        names(data_dir),
+        [
+            "ingress",
+            DATABASE,
+            aside_name,
+            SECRET_KEY,
+            "tailscale",
+            "telemetry"
+        ]
+    );
+    assert!(data_dir.join("telemetry/env/otlp.sock").exists());
+    assert_eq!(
+        names(&aside),
+        [
+            BACKUPS,
+            "ingress",
+            DATABASE,
+            "piqueld.db-shm",
+            "piqueld.db-wal",
+            SECRET_KEY,
+            "snapshots",
+            "tailscale"
+        ]
+    );
+    let identity = Backups::new(data_dir)
+        .identity()
+        .await
+        .expect("the database reads")
+        .expect("it has a schema");
+    assert_eq!(identity.schema_version, SCHEMA_VERSION - 1);
+
+    let (result, _) = roll_back(data_dir).await;
+    assert!(matches!(result, Ok(RollBack::Unneeded)), "{result:?}");
+}
+
+/// Without a backup this binary opens, a roll-back fails before it touches
+/// anything, but for the `-wal` and `-shm` files SQLite may leave when it
+/// reads the database.
+#[tokio::test]
+async fn roll_back_without_a_fitting_backup_changes_nothing() {
+    let (data_dir, backup, _) = backed_up().await;
+    let data_dir = data_dir.path();
+    set_schema(data_dir, SCHEMA_VERSION + 1).await;
+    fs::remove_dir_all(&backup).expect("the backup is removed");
+    let state = |data_dir| {
+        let mut files = files(data_dir);
+        files.retain(|file| !file.ends_with("-wal") && !file.ends_with("-shm"));
+        files
+    };
+    let before = state(data_dir);
+
+    let (result, stopped) = roll_back(data_dir).await;
+    let error = result.expect_err("the roll-back fails");
+    assert!(
+        matches!(error.downcast_ref(), Some(Refusal::NoBackup { .. })),
+        "{error:#}"
+    );
+    assert!(stopped.is_none());
+    assert_eq!(state(data_dir), before);
 }

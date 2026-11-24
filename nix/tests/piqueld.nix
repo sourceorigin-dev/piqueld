@@ -1,6 +1,7 @@
 # The piqueld and piquelctl modules, as the flake's `default` module enables
-# them: the daemon starts as its own user, reaches Docker, serves the
-# dashboard on localhost, and root runs piquelctl over its socket.
+# them: the daemon starts as its own user, after checking whether to roll
+# back, reaches Docker, serves the dashboard on localhost, and root runs
+# piquelctl over its socket.
 { modules }:
 { pkgs, ... }:
 {
@@ -9,6 +10,7 @@
     imports = modules;
     services.piqueld = {
       enable = true;
+      rollBack = true;
       settings.server.listen_mode = "localhost";
     };
     environment.systemPackages = [ pkgs.curl ];
@@ -24,6 +26,9 @@
 
     with subtest("The daemon runs as its own user"):
         machine.succeed("test \"$(ps -o user= -p \"$(systemctl show -P MainPID piqueld)\")\" = piqueld")
+
+    with subtest("It checks whether to roll back first, which a fresh database doesn't need"):
+        machine.succeed("journalctl -u piqueld.service | grep -q 'nothing to roll back'")
 
     with subtest("It initializes Docker as a single-node Swarm"):
         machine.wait_until_succeeds("test \"$(docker info --format '{{.Swarm.LocalNodeState}}')\" = active")

@@ -186,6 +186,31 @@ impl Infrastructure {
             .await
     }
 
+    /// The IDs of the running containers that carry every one of `labels`,
+    /// each a `key=value`.
+    ///
+    /// # Errors
+    /// The failed request.
+    pub async fn running_containers(
+        &self,
+        labels: Vec<String>,
+    ) -> Result<Vec<String>, DockerError> {
+        let operation = "list containers";
+        let filters = serde_json::to_string(&BollardDocker::label_filter(labels))
+            .map_err(|source| DockerError::request(operation, source))?;
+        let path = format!(
+            "/containers/json?filters={}",
+            url::form_urlencoded::byte_serialize(filters.as_bytes()).collect::<String>()
+        );
+        let containers = self.send(operation, Method::GET, &path, None).await?;
+        Ok(containers
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|container| container["Id"].as_str().map(str::to_owned))
+            .collect())
+    }
+
     /// Inspects the network `name`, if it exists.
     ///
     /// # Errors

@@ -49,6 +49,8 @@ pub(super) enum UnmetRequirement {
 pub(super) const CONFIGURATION_LABEL: &str = "io.piqueld.ingress-configuration";
 /// The writable scratch space of managed containers with a temporary directory.
 pub(super) const TMPFS: &str = "rw,noexec,nosuid,size=16777216";
+/// How long a stopped container gets to exit before Docker kills it.
+pub(super) const STOP_SECONDS: u32 = 10;
 /// Log lines read from each container per relay.
 const LOG_LINES: u16 = 100;
 /// Longest a pinned image pull may take.
@@ -691,7 +693,7 @@ impl Ingress {
             .await?;
         let result = async {
             journal
-                .change(|docker| docker.stop_container(&self.name, 10))
+                .change(|docker| docker.stop_container(&self.name, STOP_SECONDS))
                 .await?;
             self.rename_container(journal, &self.name, &previous)
                 .await?;
