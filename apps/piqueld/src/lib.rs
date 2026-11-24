@@ -12,6 +12,7 @@ pub mod operations;
 pub mod reconcile;
 pub mod tailnet;
 pub mod telemetry;
+pub mod updater;
 
 mod certificate;
 pub mod git;

@@ -140,6 +140,43 @@ jobs:
       - run: sudo piquelctl status
       # sg runs it with the piqueld group the script added.
       - run: sg piqueld -c 'piquelctl setup-link'
+      # `piqueld update` from a directory, as offline: to a second build (the
+      # same binaries under another version), back with `rollback`, then to a
+      # build that passes check-config but doesn't start, which it undoes.
+      - name: Update, roll back, and recover from a build that doesn't start
+        run: |
+          archive=$(basename target/dist/piqueld-*-x86_64-linux.tar.gz)
+          version=${archive#piqueld-}
+          version=${version%-x86_64-linux.tar.gz}
+          current() { readlink /usr/local/lib/piqueld/current; }
+          release() { # <version> <directory>: a release of target/dist's archive
+            mkdir -p "$2"
+            cp "target/dist/$archive" "$2/piqueld-$1-x86_64-linux.tar.gz"
+            (cd "$2" && sha256sum "piqueld-$1-x86_64-linux.tar.gz" >SHA256SUMS)
+          }
+          release "$version-next" next
+          sudo piqueld update --version "$version-next" --from "$PWD/next"
+          test "$(current)" = "$version-next"
+          sudo piquelctl status
+          sudo piqueld update rollback
+          test "$(current)" = "$version"
+          sudo piquelctl status
+          mkdir -p broken/files
+          tar --extract --gzip --file "target/dist/$archive" --strip-components=1 --directory broken/files
+          printf '#!/bin/sh\ncase " $* " in *" check-config "*) exit 0 ;; esac\nexit 1\n' >broken/files/piqueld
+          chmod +x broken/files/piqueld
+          tar --create --gzip --file "broken/piqueld-$version-broken-x86_64-linux.tar.gz" --directory broken files
+          (cd broken && sha256sum "piqueld-$version-broken-x86_64-linux.tar.gz" >SHA256SUMS)
+          if output=$(sudo piqueld update --version "$version-broken" --from "$PWD/broken" 2>&1); then
+            echo "$output"
+            echo "::error::the update to a build that doesn't start succeeded"
+            exit 1
+          fi
+          echo "$output"
+          grep -q "runs again" <<<"$output"
+          test "$(current)" = "$version"
+          test "$(readlink /usr/local/lib/piqueld/previous)" = "$version-next"
+          sudo piquelctl status
       - name: Show the daemon's logs
         if: failure()
         run: sudo journalctl --unit piqueld --no-pager

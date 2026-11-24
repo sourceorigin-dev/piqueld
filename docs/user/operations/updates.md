@@ -62,7 +62,7 @@ piquelctl update check
 piqueld 0.2.0 follows the stable channel
 Update available: 0.3.0
 Release notes: https://github.com/sourceorigin-dev/piqueld/releases/tag/v0.3.0
-To update: Run the install script for this build: curl -fsSL https://piqueld.dev/install.sh | PIQUELD_VERSION=0.3.0 sh
+To update: Install it on the host, which restarts piqueld: sudo piqueld update
 Last checked: 2026-11-25 09:12:44Z
 ```
 
@@ -74,10 +74,20 @@ Read the release notes first: before 1.0, a minor version such as 0.3.0 may
 need changes to your configuration. Then install it the way you installed
 piqueld, as the panel and `piquelctl` say:
 
-- With the install script, run it for the build piqueld names, with
-  `PIQUELD_VERSION`. Without it, the script installs the newest stable
-  release, which is older than a nightly; see
-  [updating with the script](../getting-started/install.md#update-piqueld).
+- With the install script, run on the host:
+
+  ```console
+  sudo piqueld update
+  ```
+
+  It downloads the newest build of your channel, checks it against its
+  checksum and checks your configuration with it. Then it restarts piqueld on
+  it, and waits until the daemon answers. If the daemon doesn't start, it
+  goes back to the version you ran, unless the new one already updated the
+  database; see [troubleshooting](#troubleshooting). Add `--version` to
+  install another published version, such as `--version 0.3.0`, and `--from`
+  to install from a directory holding a release's archive and `SHA256SUMS`,
+  such as on a host without internet access.
 - On NixOS, follow the channel's tag with the flake input, as in
   [choose a channel](#choose-a-channel), update it, then rebuild:
 
@@ -89,6 +99,21 @@ piqueld, as the panel and `piquelctl` say:
 The daemon backs up its data before its first start on a new version; see
 [backups and upgrades](backups.md#upgrade).
 
+## Go back to the previous version
+
+With the install script, `piqueld update` keeps the version it replaced. Go
+back to it, and restart piqueld on it:
+
+```console
+sudo piqueld update rollback
+```
+
+It refuses when the version you run took the newest backup before updating
+the database, which older versions can't read. Then go forward instead with
+`piqueld update --version`, or [restore the backup](backups.md#roll-back),
+which undoes every change since. On NixOS, roll back the system:
+`sudo nixos-rebuild switch --rollback`.
+
 ## Troubleshooting
 
 - **The last check failed.** The panel and `piquelctl update status` say why,
@@ -97,6 +122,11 @@ The daemon backs up its data before its first start on a new version; see
   piqueld reads the channel's feed from GitHub, at
   [`updates.feed_url`](../reference/configuration-settings.md); allow the host
   to reach `github.com` over HTTPS, or point it at a mirror.
+- **`piqueld update` says the new version didn't start after updating the
+  database.** It leaves that version installed, as the previous one can't
+  read the database. Read why it didn't start with `journalctl -u piqueld`,
+  then fix the cause, or [restore the backup](backups.md#roll-back) it names
+  and run `sudo piqueld update rollback`.
 - **The channel can't be changed.** `updates.channel` in the daemon
   configuration sets it. Change it there, then restart the daemon.
 - **You want no checks**, such as on a host without internet access. Set

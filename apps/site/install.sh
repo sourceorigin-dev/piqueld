@@ -5,22 +5,26 @@
 #   curl -fsSL https://piqueld.dev/install.sh | sh
 #
 # It says what it will do and asks before changing anything. It installs the
-# daemon and piquelctl from a GitHub release to /usr/local/bin, creates the
-# piqueld user, writes /etc/piqueld/config.toml unless it exists, installs and
-# (re)starts the piqueld systemd service, and offers to add you to the piqueld
-# group, so that you run piquelctl without sudo. The steps that need root run
-# with sudo, and print their command first. Running it again updates piqueld,
-# keeping its configuration and data. See
+# daemon and piquelctl from a GitHub release into /usr/local/lib/piqueld/<version>,
+# linked from /usr/local/bin, creates the piqueld user, writes
+# /etc/piqueld/config.toml unless it exists, installs and (re)starts the
+# piqueld systemd service, and offers to add you to the piqueld group, so that
+# you run piquelctl without sudo. The steps that need root run with sudo, and
+# print their command first. Afterwards, `sudo piqueld update` updates piqueld;
+# running the script again works too, keeping its configuration and data. See
 # https://docs.piqueld.dev/user/getting-started/install.html.
 #
 # Options:
 #   --yes                Don't ask: install, and add the user running the
 #                        script to the piqueld group. Without a terminal to
 #                        ask on, the script needs it.
+#   --channel CHANNEL    Install the newest build of `stable`, the default, or
+#                        `nightly`, and follow that channel's updates.
 #
 # Environment:
-#   PIQUELD_VERSION      The version to install, such as 0.1.0; the latest
-#                        release by default.
+#   PIQUELD_VERSION      The version to install, such as 0.1.0 or
+#                        0.4.0-nightly.20261125; the channel's newest build by
+#                        default.
 #   PIQUELD_RELEASE_URL  Where the version's release files are; its GitHub
 #                        release by default. CI points it at a local build.
 #
@@ -34,6 +38,9 @@ export PATH
 
 repository=https://github.com/sourceorigin-dev/piqueld
 prefix=/usr/local/bin
+# Each build's directory, and the `current` and `previous` links to them,
+# which `piqueld update` maintains.
+builds=/usr/local/lib/piqueld
 config=/etc/piqueld/config.toml
 unit=/etc/systemd/system/piqueld.service
 
@@ -92,11 +99,21 @@ check_host() {
     fi
 }
 
-# Prints the version to install: PIQUELD_VERSION, without a leading v, or the
-# latest release's, from where GitHub redirects its latest release.
+# Prints the version to install: PIQUELD_VERSION, without a leading v, the
+# newest nightly's, from the nightly channel's feed, or the latest release's,
+# from where GitHub redirects its latest release.
 version() {
     if [ -n "${PIQUELD_VERSION:-}" ]; then
         echo "${PIQUELD_VERSION#v}"
+        return
+    fi
+    if [ "$channel" = nightly ]; then
+        feed=$(curl --proto '=https' --fail --silent --show-error --location \
+            "$repository/releases/download/channels/nightly.json") ||
+            fail "couldn't read the nightly channel's newest build"
+        nightly=$(printf '%s\n' "$feed" | sed -n 's/^ *"number": *"\([^"]*\)".*/\1/p' | head -n 1)
+        [ -n "$nightly" ] || fail "the nightly channel names no build"
+        echo "$nightly"
         return
     fi
     latest=$(curl --proto '=https' --fail --silent --show-error --location --head \
@@ -121,7 +138,7 @@ plan() {
     say "  - Download $archive from"
     say "    $release,"
     say "    and check it against the release's SHA256SUMS."
-    say "  - Install piqueld and piquelctl to $prefix."
+    say "  - Install piqueld and piquelctl to $builds/$version, linked from $prefix."
     getent passwd piqueld >/dev/null ||
         say "  - Create the piqueld system user, in the docker group."
     if [ -e "$config" ]; then
@@ -220,12 +237,24 @@ next_steps() {
 
 main() {
     yes=0
-    for argument in "$@"; do
-        case "$argument" in
+    channel=stable
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
         --yes | -y) yes=1 ;;
-        *) fail "unknown option $argument; the only option is --yes" ;;
+        --channel)
+            [ "$#" -gt 1 ] || fail "--channel needs a channel: stable or nightly"
+            channel=$2
+            shift
+            ;;
+        --channel=*) channel=${1#--channel=} ;;
+        *) fail "unknown option $1; the options are --yes and --channel" ;;
         esac
+        shift
     done
+    case "$channel" in
+    stable | nightly) ;;
+    *) fail "unknown channel $channel; the channels are stable and nightly" ;;
+    esac
     check_host
     version=$(version)
     archive="piqueld-$version-x86_64-linux.tar.gz"
@@ -237,7 +266,31 @@ main() {
     fetch "$work"
     files="$work/piqueld-$version-x86_64-linux"
     [ -z "$sudo" ] || say "Running the steps that need root with sudo"
-    as_root install -m 0755 "$files/piqueld" "$files/piquelctl" "$prefix/"
+    # Readable by the service's user whatever root's umask.
+    as_root install -d -m 0755 "$builds" "$builds/$version"
+    as_root install -m 0755 "$files/piqueld" "$files/piquelctl" "$builds/$version/"
+    as_root install -m 0644 "$files/piqueld.service" "$files/LICENSE" "$builds/$version/"
+    # The build this replaces, which `piqueld update rollback` returns to:
+    # the current one, or the binaries older versions of this script copied
+    # to $prefix, kept as a build of their version.
+    current=$(readlink "$builds/current" 2>/dev/null || true)
+    if [ -z "$current" ] && [ -f "$prefix/piqueld" ] && [ ! -L "$prefix/piqueld" ]; then
+        current=$("$prefix/piqueld" --version | sed -n 's/^piqueld //p')
+        if [ -n "$current" ] && [ "$current" != "$version" ]; then
+            as_root install -d -m 0755 "$builds/$current"
+            as_root install -m 0755 "$prefix/piqueld" "$prefix/piquelctl" "$builds/$current/"
+            [ ! -f "$unit" ] || as_root install -m 0644 "$unit" "$builds/$current/piqueld.service"
+        fi
+    fi
+    if [ -n "$current" ] && [ "$current" != "$version" ]; then
+        as_root ln -sfn "$current" "$builds/previous"
+    fi
+    if [ "$(readlink "$builds/current" 2>/dev/null || true)" != "$version" ]; then
+        as_root ln -sfn "$version" "$builds/current"
+    fi
+    # Replaces the binaries older versions of this script copied here.
+    as_root ln -sfn "$builds/current/piqueld" "$prefix/piqueld"
+    as_root ln -sfn "$builds/current/piquelctl" "$prefix/piquelctl"
     getent passwd piqueld >/dev/null ||
         as_root useradd --system --user-group --groups docker --home-dir /var/lib/piqueld \
             --no-create-home --shell "$(command -v nologin || echo /bin/false)" piqueld
@@ -245,12 +298,17 @@ main() {
         default_config "$work/config.toml"
         as_root install -D -m 0640 -g piqueld "$work/config.toml" "$config"
     fi
-    as_root install -m 0644 "$files/piqueld.service" "$unit"
+    as_root install -m 0644 "$builds/current/piqueld.service" "$unit"
     as_root systemctl daemon-reload
     as_root systemctl enable --quiet piqueld
     as_root systemctl restart piqueld
     [ "$join" = 0 ] || as_root usermod --append --groups piqueld "$user"
     wait_for_daemon
+    # Tells the daemon which channel's updates to look for.
+    if [ "$channel" != stable ] && ! as_root "$prefix/piquelctl" update channel "$channel"; then
+        say "piqueld runs, but couldn't follow or check the $channel channel; see above, then run:"
+        say "  ${sudo:+sudo }$prefix/piquelctl update channel $channel"
+    fi
     next_steps
 }
 

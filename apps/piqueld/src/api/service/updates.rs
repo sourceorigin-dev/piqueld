@@ -81,12 +81,18 @@ impl Updates {
         }
     }
 
-    /// How this binary was installed, from where it runs: the Nix store, the
-    /// install script's `/usr/local/bin`, or elsewhere.
+    /// How this binary was installed, from where it runs: the Nix store, a
+    /// build directory of the install script's (`crate::updater::Layout`),
+    /// or a binary an older script copied to `/usr/local/bin`, or elsewhere.
     fn install_method() -> InstallMethod {
         match std::env::current_exe() {
             Ok(path) if path.starts_with("/nix/store") => InstallMethod::Nix,
-            Ok(path) if path == Path::new("/usr/local/bin/piqueld") => InstallMethod::Script,
+            Ok(path)
+                if path.starts_with("/usr/local/lib/piqueld")
+                    || path == Path::new("/usr/local/bin/piqueld") =>
+            {
+                InstallMethod::Script
+            }
             _ => InstallMethod::Other,
         }
     }

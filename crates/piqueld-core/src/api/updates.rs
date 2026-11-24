@@ -12,7 +12,7 @@ string_enum! {
         /// From a Nix package, such as the NixOS module's: update the flake
         /// input, then rebuild.
         Nix => "nix",
-        /// By the install script, into `/usr/local/bin`: run it again.
+        /// By the install script: update with `sudo piqueld update`.
         Script => "script",
         /// Some other way, such as `cargo install`.
         Other => "other",
@@ -53,9 +53,8 @@ pub struct UpdateStatus {
 
 impl UpdateStatus {
     /// How to install the newer build, for people, by [`InstallMethod`];
-    /// absent while none is available. It names the build, as the install
-    /// script installs the newest stable release otherwise, and the channel's
-    /// tag, which a flake input must follow to get its builds.
+    /// absent while none is available. It names the channel's tag, which a
+    /// flake input must follow to get its builds.
     #[must_use]
     pub fn how_to_update(&self) -> Option<String> {
         let latest = self.latest.as_ref().filter(|_| self.available)?;
@@ -66,9 +65,9 @@ impl UpdateStatus {
                 "Point the piqueld flake input at github:sourceorigin-dev/piqueld/{}, then: nix flake update piqueld && sudo nixos-rebuild switch",
                 self.channel
             ),
-            InstallMethod::Script => format!(
-                "Run the install script for this build: curl -fsSL https://piqueld.dev/install.sh | PIQUELD_VERSION={number} sh"
-            ),
+            InstallMethod::Script => {
+                "Install it on the host, which restarts piqueld: sudo piqueld update".to_owned()
+            }
             InstallMethod::Other => {
                 format!("Install piqueld {number} the way you installed this build.")
             }

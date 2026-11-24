@@ -11,6 +11,7 @@ use piqueld::ingress::{DashboardSocket, Ingress};
 use piqueld::tailnet::Node;
 use piqueld::tailnet::TailnetLookup;
 use piqueld::telemetry::{Sockets, Telemetry};
+use piqueld::updater::{Layout, Updater};
 use piqueld_config::{ConfigError, DaemonConfig};
 use piqueld_core::wait;
 use std::{net::SocketAddr, os::unix::fs::OpenOptionsExt, path::PathBuf, sync::Arc};
@@ -104,9 +105,72 @@ enum Command {
     /// the checks `piqueld restore` runs. When no backup fits, or a check
     /// fails, it fails before moving anything.
     RollBack,
+    /// Install a newer piqueld build on a host the install script set up,
+    /// and restart the service on it; run it as root.
+    ///
+    /// Without --version, it installs the newest build of the channel the
+    /// daemon follows. It checks the build's SHA-256 and that it accepts the
+    /// configuration first, and goes back to the previous build if the
+    /// daemon doesn't start on it. It keeps that build for `rollback`.
+    #[command(args_conflicts_with_subcommands = true)]
+    Update {
+        /// What to do instead of installing a build.
+        #[command(subcommand)]
+        action: Option<UpdateAction>,
+        /// Install this published version, such as 0.3.0 or
+        /// 0.4.0-nightly.20261125, instead.
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
+        /// Read the release archive and its SHA256SUMS from this directory
+        /// instead of downloading them, such as on a host without internet
+        /// access.
+        #[arg(long, value_name = "DIR")]
+        from: Option<PathBuf>,
+    },
+}
+
+/// What `piqueld update` does other than install a build.
+#[derive(Debug, clap::Subcommand)]
+enum UpdateAction {
+    /// Go back to the build the last update replaced, and restart the
+    /// service on it.
+    ///
+    /// It refuses when the current build updated the database, which older
+    /// builds can't read: restore the backup taken before that instead.
+    Rollback,
 }
 
 impl Args {
+    /// Runs `piqueld update`, reporting each step on stdout: `action`, or
+    /// else installs `version`, read from `from` when given, or the newest
+    /// build of the daemon's channel.
+    async fn update(
+        &self,
+        action: Option<&UpdateAction>,
+        version: Option<&str>,
+        from: Option<&std::path::Path>,
+    ) -> Result<()> {
+        tracing_subscriber::fmt()
+            .without_time()
+            .with_target(false)
+            .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
+            .try_init()
+            .map_err(|error| anyhow::anyhow!(error))
+            .context("failed to initialize tracing")?;
+        let config = self
+            .config
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH));
+        let updater = Updater::new(Layout::script(), config)?;
+        match action {
+            Some(UpdateAction::Rollback) => updater.rollback().await,
+            None => {
+                let build = updater.target(version, from).await?;
+                updater.update(&build).await
+            }
+        }
+    }
+
     /// Opens `--log-file` for appending, creating it private when missing.
     fn open_log_file(&self) -> Result<Option<std::fs::File>> {
         self.log_file
@@ -192,6 +256,14 @@ async fn main() -> Result<()> {
                 ),
             }
             Ok(())
+        }
+        Some(Command::Update {
+            action,
+            version,
+            from,
+        }) => {
+            args.update(action.as_ref(), version.as_deref(), from.as_deref())
+                .await
         }
         None => {
             let config = load_config(args.config.as_deref())?;
