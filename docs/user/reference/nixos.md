@@ -10,6 +10,23 @@ Import the flake module and enable the service:
 }
 ```
 
+## Follow a channel
+
+The flake's `stable` and `nightly` tags each point at their channel's newest
+build: the latest release, or last night's build of `main`. Follow one
+with your flake's input, and update to its newest build with
+`nix flake update piqueld`, then rebuild:
+
+```nix
+{
+  inputs.piqueld.url = "github:sourceorigin-dev/piqueld/stable";
+  # Or every night's build of main:
+  # inputs.piqueld.url = "github:sourceorigin-dev/piqueld/nightly";
+}
+```
+
+## Daemon and CLI
+
 The default package embeds the dashboard. `services.piqueld.package` can select
 `inputs.piqueld.packages.${pkgs.system}.daemon` for API-only operation.
 The default module installs the CLI when the daemon is enabled; set

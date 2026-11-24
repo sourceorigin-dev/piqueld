@@ -93,7 +93,10 @@ enum Task {
         args: Vec<String>,
     },
     /// Build the static `x86_64-linux` release archive, which install.sh
-    /// installs, and its checksums, into `target/dist`.
+    /// installs, and its checksums, into `target/dist`. With
+    /// `PIQUELD_BUILD_CHANNEL` set to `stable` or `nightly`, build that
+    /// channel's next build, and write its feed, which the release workflows
+    /// publish.
     Dist,
     /// Publish the crates to crates.io, with the prebuilt dashboard the
     /// published daemon embeds.

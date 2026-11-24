@@ -87,8 +87,9 @@ Each binary knows its version, and the commit it was built from and when
 that commit was made, which `piquelctl status` shows. The dashboard shows the
 version and the commit.
 `piqueld_core::version` reads them at compile time from `PIQUELD_BUILD_*`
-variables: `cargo xtask dist` and the Nix packages set the commit, and the
-release workflow sets the channel, `stable`. A build without them, such as
+variables: `cargo xtask dist` and the Nix packages set the commit, and
+`cargo xtask dist` passes on `PIQUELD_BUILD_CHANNEL`, the channel, and sets a
+nightly's version. A build without them, such as
 `cargo install` or a development build, knows only its version.
 
 `just dist`, which runs `cargo xtask dist`, builds them into `target/dist`. It
@@ -102,10 +103,63 @@ reads the archive from `PIQUELD_RELEASE_URL` there, instead of the release.
 
 The release workflow,
 [`.github/workflows/release.yml`](https://github.com/sourceorigin-dev/piqueld/blob/main/.github/workflows/release.yml),
-runs on each `v<version>` tag. It builds the archive and creates the GitHub
-release with it, with notes listing the pull requests merged since the
-previous release. The release is published only once its files are uploaded,
+runs on each `v<version>` tag but a nightly's. It builds the archive with
+`cargo xtask dist`, with `PIQUELD_BUILD_CHANNEL=stable`, and creates the GitHub release with it,
+with notes listing the pull requests merged since the previous stable
+release. The release is published only once its files are uploaded,
 so the script always finds the latest release's archive.
+
+## Channels
+
+An installation follows one of two channels, and piqueld tells it when its
+channel has a newer build:
+
+- **Stable**: the versions a maintainer releases, as below.
+- **Nightly**: `main`, built every night. Its version is the next minor
+  version's, with the date, such as `0.3.0-nightly.20261125` after 0.2.x,
+  which sorts after every 0.2 release and before 0.3.0. Nightlies aren't
+  published to crates.io.
+
+The nightly run of the [release checks](validation.md#release-checks), at
+midnight UTC, publishes the nightly once its checks pass: its `install` job
+builds the archive with `cargo xtask dist`, with
+`PIQUELD_BUILD_CHANNEL=nightly`, and installs it,
+then its `nightly` job publishes that archive as a GitHub prerelease tagged
+`v<version>`, such as `v0.3.0-nightly.20261125`. It skips a commit no newer
+than the one the channel has, and deletes nightlies older than two weeks but
+the one the feed names. Only one nightly can be published a day, as its
+version holds the date: a run on a day whose nightly the feed already names
+fails. A run that failed before updating the feed left a release no one
+installed, which a later run that day replaces, and the two-week cleanup
+deletes otherwise. To publish one now, such as after fixing a failed night:
+
+```console
+gh workflow run release-checks.yml --ref main -f nightly=true
+```
+
+Each channel has two pointers to its newest build, which the workflow that
+publishes a build moves, through `.github/actions/channel`:
+
+- Its **feed**, `stable.json` or `nightly.json` on the rolling `channels`
+  GitHub release, which `cargo xtask dist` writes for the channel
+  `PIQUELD_BUILD_CHANNEL` names: the build's
+  version, commit, commit time and channel, its release page, and its
+  archive's URL and SHA-256 (`piqueld_core::version::Feed`). piqueld reads it
+  to check for updates. The action uploads it last, after the tag: the
+  nightly job skips a commit the feed already names, so a run that fails
+  before is retried whole.
+- Its **tag**, `stable` or `nightly`, which [NixOS
+  flakes](../user/reference/nixos.md#follow-a-channel) follow. Tags, not
+  branches: GitHub refuses the workflow's token a branch update whose commits
+  change workflows. The token can't move a tag across such commits either,
+  so the action deletes the tag and creates it again: if creating it fails,
+  the channel has no tag until a run succeeds. They move, so fetch them with
+  `git fetch --tags --force`.
+
+The `channels` release and the nightlies are prereleases, so the latest
+release, which the install script installs, is always a stable one. A channel
+has neither pointer until its first build is published: the first nightly
+after this was set up, and the first release after 0.1.0.
 
 ## Set up publishing
 
@@ -176,7 +230,10 @@ and the [GitHub CLI](https://cli.github.com) signed in to the repository.
 5. Wait for the tag's
    [release workflow](https://github.com/sourceorigin-dev/piqueld/actions/workflows/release.yml)
    to build the release binaries and create the GitHub release, which takes
-   about as long as the `install` job of the release checks. For a release that breaks existing
+   about as long as the `install` job of the release checks. It then makes the
+   version the stable [channel's](#channels) newest build. If only that last
+   step fails, rerunning the workflow fails on the existing release: delete
+   the release on GitHub, keeping its tag, and rerun it. For a release that breaks existing
    setups, then edit the release on GitHub to say how to upgrade.
 
 ## Check that it works
