@@ -162,21 +162,8 @@ exits.
 `just setup-worktree` prepares a new worktree: it runs `just dev config`, then
 `just build`. T3 Code runs it when it creates a worktree, often several at
 once, so the build runs at low priority (`nice -n 10`) on half the machine's
-cores unless `CARGO_BUILD_JOBS` is set. It leaves a marker
-in `target/worktree-setup/`, so an agent starting in the worktree knows
-whether to wait:
-
-| Marker | Meaning |
-| --- | --- |
-| `running` | Setup is running while it holds `lock`, beside the marker; the file holds its PID. If nothing holds the lock, setup was interrupted. |
-| `done` | Setup succeeded. |
-| `failed` | Setup failed. The file holds the last 40 lines of its output. |
-
-`output.log`, beside the marker, keeps the latest run's whole output. Run
-`just setup-worktree` again to retry a failed or interrupted setup, or to
-prepare a worktree T3 Code didn't create. A second run refuses to start while
-one holds the lock, and `flock target/worktree-setup/lock true` waits for it
-to end.
+cores unless `CARGO_BUILD_JOBS` is set. Run it yourself to prepare a worktree
+T3 Code didn't create.
 
 ## Logs
 
