@@ -50,8 +50,9 @@ per version of its sources, instead of compiling it each time; see
 *Dashboard cache* workflow builds main's module as soon as a merge changes its
 sources, so the merge queue and pull requests find it.
 
-`just` runs the default validation set (`validate`), including a single check of
-the generated files, and never modifies a file. Both local
+`just` alone runs `check-changed`; `just validate` runs the full validation
+set, including a single check of the generated files, and never modifies a
+file. Both local
 validation and CI compare the committed artifacts without rewriting them. CI
 skips `check` and `build`: the stronger all-target Clippy and the test builds
 cover them. `fmt` and `generate` are editing commands whose results are
