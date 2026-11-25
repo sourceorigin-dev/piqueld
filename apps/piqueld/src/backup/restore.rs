@@ -66,8 +66,8 @@ pub enum Refusal {
     OtherInstance(String),
     /// A restore was interrupted, or failed and couldn't be undone.
     #[error(
-        "{} holds an unfinished restore, {}, which only holds a copy of the backup: with the daemon stopped, move the data directory's other entries but backups, telemetry and rolled-back-* into a new rolled-back-<name> directory there, then remove it and run piqueld restore again",
-        .0.display(), .1.display()
+        "{} holds an unfinished restore, {}, which only holds a copy of the backup: with the daemon stopped, move the data directory's other entries but backups, telemetry, rolled-back-* and that copy into a new rolled-back-<name> directory there, then remove {} and run piqueld restore again",
+        .0.display(), .1.display(), .1.display()
     )]
     Unfinished(PathBuf, PathBuf),
 }
@@ -155,7 +155,8 @@ impl Backups {
 
     /// Makes the verified copy `staged` the staging directory, which marks
     /// the restore unfinished until [`Self::finish`] removes it, and returns
-    /// its path.
+    /// its path. If that can't be synced, removes it again, and reports
+    /// [`Refusal::Unfinished`] when that fails too.
     pub(super) fn mark(&self, staged: tempfile::TempDir) -> Result<PathBuf> {
         let data_dir = &self.data_dir;
         let staging = data_dir.join(format!("{STAGING}{}", piqueld_store::now_ms()));

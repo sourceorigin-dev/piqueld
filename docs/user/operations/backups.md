@@ -346,13 +346,20 @@ repairs any drift.
      sudo systemctl stop piqueld
      ```
 
-  2. Move the data directory's other contents, but for `backups`,
-     `telemetry` and `rolled-back-<time>` directories, into a new directory
-     named `rolled-back-<anything>` inside it, such as
-     `/var/lib/piqueld/rolled-back-recovered`. `piqueld restore` leaves those
-     in place.
+  2. Create a directory named `rolled-back-<anything>` inside the data
+     directory, which `piqueld restore` leaves in place:
+
+     ```console
+     sudo install -d -o piqueld -g piqueld -m 0700 /var/lib/piqueld/rolled-back-recovered
+     ```
+
+     Move the data directory's other contents into it, but for `backups`,
+     `telemetry`, the `rolled-back-<time>` directories and the
+     `.restore-<time>` directory.
   3. Remove the `.restore-<time>` directory.
-  4. Restore the backup again, as the daemon's user:
+  4. Restore the backup again, as the daemon's user. A roll-back's backup is
+     in `/var/lib/piqueld/backups`; for another restore, use the backup you
+     were restoring:
 
      ```console
      sudo -u piqueld piqueld restore --data-dir /var/lib/piqueld /var/lib/piqueld/backups/pre-<schema>-<time>
