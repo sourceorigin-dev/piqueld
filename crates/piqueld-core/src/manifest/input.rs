@@ -10,7 +10,6 @@ use utoipa::ToSchema;
 
 /// An application: what it runs, and how its environments and previews
 /// deploy it.
-// Strict public request and export shape: unknown fields are errors.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplicationManifest {
@@ -33,10 +32,6 @@ impl ApplicationManifest {
         let mut schema = crate::json_schema::standalone::<Self>("piqueld application manifest");
         schema["properties"]["api_version"]["const"] = APPLICATION_API_VERSION.into();
         schema["properties"]["kind"]["const"] = APPLICATION_KIND.into();
-        // utoipa expresses `deny_unknown_fields` on structs only, not on the
-        // variants of these internally tagged enums. serde enforces it on
-        // their struct variants only: a unit variant, whose sole property is
-        // its tag, ignores other fields.
         for name in [
             Source::name(),
             Build::name(),
@@ -57,8 +52,6 @@ impl ApplicationManifest {
                 variant["additionalProperties"] = false.into();
             }
         }
-        // utoipa bounds unsigned integers from below only; typed fields'
-        // literals are their first alternative.
         for (name, maximum) in [
             ("Typed_u16", u64::from(u16::MAX)),
             ("Typed_u32", u64::from(u32::MAX)),
@@ -264,7 +257,6 @@ impl ApplicationSpec {
 /// `branch`, `commit`, `promote_from` and `sync` leaves an existing
 /// environment's source as it is, unless the previous manifest set one of
 /// them: removing them returns the environment to the default source.
-// `super::declaration` converges environments to these blocks.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct EnvironmentConfig {
@@ -430,7 +422,6 @@ impl std::fmt::Display for Variable {
 }
 
 /// The Git repository and file each deployment reads the manifest from.
-// Independent of the services' sources.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RepositoryManifest {
@@ -682,9 +673,6 @@ impl SourceRepository {
 }
 
 /// The literal `"self"`, selecting the manifest's own repository.
-// A unit variant of the untagged `SourceRepository` would match `null`, not
-// `"self"`. Serde's per-variant `untagged` would avoid this type, but utoipa
-// only supports `untagged` on the whole enum and would misdescribe Git sources.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub enum ManifestRepository {
     /// The manifest's own repository.
@@ -734,7 +722,6 @@ impl GitRepository {
 }
 
 /// How to build a Git source's image.
-// Build backends are selected independently from the source.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Build {
@@ -1026,7 +1013,6 @@ string_enum! {
 
 /// An HTTP route: requests for a hostname go to a service, or get a
 /// redirect. A route sets either `service` and `port`, or `redirect`.
-// Validated independently of whether ingress is enabled.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Route {
@@ -1034,7 +1020,6 @@ pub struct Route {
     /// application. A wildcard such as `*.example.com` serves every name one
     /// label below `example.com` that no exact route claims.
     pub hostname: Template,
-    // Declared after `hostname`, so routes stay ordered by hostname.
     /// Name that selects the route in every environment and preview, e.g.
     /// `piquelctl env url --route web`. It is unique in the application and
     /// can't reference variables.
@@ -1128,14 +1113,12 @@ mod tests {
         let mut spec = ApplicationSpec::default();
         assert_eq!(spec.rollback("production", true), Rollback::Automatic);
         assert_eq!(spec.rollback("production", false), Rollback::Manual);
-        // Returning to the default adds no block.
         spec.set_environment_rollback("production", None);
         assert!(spec.environments.is_empty());
         spec.set_environment_rollback("production", Some(Rollback::Manual));
         assert_eq!(spec.rollback("production", true), Rollback::Manual);
         spec.set_environment_rollback("staging", Some(Rollback::Automatic));
         assert_eq!(spec.rollback("staging", false), Rollback::Automatic);
-        // An existing block is kept, back on the default.
         spec.set_environment_rollback("production", None);
         assert_eq!(
             spec.environments["production"],

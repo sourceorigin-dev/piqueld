@@ -43,7 +43,6 @@ impl TomlDiagnostic {
                     + 1,
             });
         Self {
-            // Syntax messages span lines; keep each diagnostic on one line.
             message: error.message().lines().collect::<Vec<_>>().join("; "),
             location,
         }

@@ -3,11 +3,8 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use utoipa::openapi::schema::AnyOfBuilder;
-// What the `ToSchema` derive writes in full (`utoipa::ToSchema`, `RefBuilder`,
-// `RefOr`, `Schema`, ...) is not imported here: next to a named import its
-// paths count as unnecessary qualifications. The traits come in unnamed.
 use utoipa::ToSchema as _;
+use utoipa::openapi::schema::AnyOfBuilder;
 
 use super::{AcceptedOperation, DiagnosticView, Page};
 use crate::manifest::{ApplicationTemplate, SystemVariable, VariableValue};
@@ -161,9 +158,6 @@ impl DeploymentPage {
     }
 }
 
-// Written out because the derive documents an untagged enum as `oneOf`, which
-// a whole page fails: it also matches the summary schema, which allows more
-// properties, and an empty page matches both. `anyOf` accepts either.
 impl utoipa::PartialSchema for DeploymentPage {
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
         AnyOfBuilder::new()

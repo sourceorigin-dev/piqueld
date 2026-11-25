@@ -113,6 +113,5 @@ fn ages_of_moments_to_come_read_forward() {
     assert_eq!(ago(-90).as_deref(), Some("in 2 min"));
     assert_eq!(ago(-2 * 86_400).as_deref(), Some("in 2 d"));
     assert_eq!(ago(-604_800), None);
-    // The difference saturates rather than overflowing.
     assert_eq!(Age::at(i64::MIN, i64::MAX).label(), None);
 }

@@ -94,7 +94,6 @@ fn plans_replace_the_forecast_and_actions_fill_them_in() {
             (Phase::WaitForService, StepState::Forecast),
         ]
     );
-    // Each plan replaces only its own stage's forecast.
     apply(
         &mut timeline,
         vec![planned(
@@ -157,7 +156,6 @@ fn an_operation_that_ended_forecasts_nothing() {
     );
     let mut failed = timeline.operation.clone();
     failed.state = OperationState::Failed;
-    // Followed live, as a new read does.
     timeline.set_operation(failed.clone());
     assert_eq!(states(&timeline), [(Phase::BuildGit, StepState::Failed)]);
     let read = Timeline::new(failed, vec![key(Phase::EnsureService, "web")], Vec::new());
@@ -188,7 +186,6 @@ fn retries_and_failures_stay_on_their_step() {
         vec![
             requested,
             action("action_failed", "a1", Phase::EnsureService, "web", 400),
-            // A new attempt runs the same step again as its own.
             action("action_started", "a2", Phase::EnsureService, "web", 500),
         ],
     );
@@ -225,12 +222,8 @@ fn only_a_run_whose_steps_all_succeeded_compares_with_the_usual() {
         run("action_succeeded", OperationState::Succeeded),
         Some(32_000)
     );
-    // A run that failed after 6 s is not 26 s faster than usual, even
-    // when it failed after its last step succeeded.
     assert_eq!(run("action_failed", OperationState::Failed), None);
     assert_eq!(run("action_succeeded", OperationState::Failed), None);
-    // Nor is one with a step it never ran before, whose usual time would
-    // only count its known steps.
     let mut timeline = timeline(&[(Phase::BuildGit, "web", 30_000)]);
     apply(
         &mut timeline,
@@ -260,11 +253,8 @@ fn sources_count_once_towards_the_time_left() {
             action("action_started", "a2", Phase::BuildGit, "web", 0),
         ],
     );
-    // Usually the longest source's 30 s, then the job's 5 s.
     assert_eq!(timeline.usual_ms(), Some(35_000));
-    // The longest source has 20 s left, then the job's 5 s.
     assert_eq!(timeline.remaining_ms(10_000), Some(25_000));
-    // A step running over its expectation counts as about to end.
     assert_eq!(timeline.remaining_ms(40_000), Some(5_000));
 }
 
@@ -298,7 +288,6 @@ fn rollouts_record_each_task_state_and_when_none_served() {
         &mut timeline,
         vec![
             action("action_started", "wait", Phase::WaitForService, "web", 0),
-            // Stop-first: the old task stops before the new one runs.
             rollout(100, &[("old", false, Running)]),
             rollout(200, &[("old", false, Shutdown), ("new", true, Preparing)]),
             rollout(300, &[("old", false, Shutdown), ("new", true, Preparing)]),
@@ -334,7 +323,6 @@ fn rollouts_record_each_task_state_and_when_none_served() {
         }]
     );
 
-    // Start-first: the old task serves until the new one does.
     let mut start_first = self::timeline(&[]);
     apply(
         &mut start_first,
@@ -347,8 +335,6 @@ fn rollouts_record_each_task_state_and_when_none_served() {
     );
     assert_eq!(start_first.steps[0].gaps(), []);
     assert!(start_first.steps[0].overlapped());
-    // A stop-first rollout neither overlaps, nor, when its handover
-    // fell between two observations, shows a gap.
     assert!(!timeline.steps[0].overlapped());
     let mut unseen = self::timeline(&[]);
     apply(
@@ -387,7 +373,6 @@ fn rollouts_summarize_their_new_tasks_monitor_window_and_downtime() {
         }
     );
     assert_eq!(tasks.to_string(), "0/1 new task running");
-    // Down since the old task stopped, and still.
     let down = Downtime {
         ms: 800,
         ongoing: true,
@@ -404,7 +389,6 @@ fn rollouts_summarize_their_new_tasks_monitor_window_and_downtime() {
     );
     let step = &timeline.steps[0];
     assert_eq!(step.new_tasks().unwrap().running, 1);
-    // Swarm watches the new task for 5 s from when it ran.
     let window = Window {
         from_ms: 2_000,
         to_ms: 7_000,
@@ -418,7 +402,6 @@ fn rollouts_summarize_their_new_tasks_monitor_window_and_downtime() {
     };
     assert_eq!(step.downtime(9_000), Some(down));
 
-    // Once the step ended, no window is open.
     apply(
         &mut timeline,
         vec![action(
@@ -442,7 +425,6 @@ fn another_attempt_starts_over() {
             action("action_failed", "a1", Phase::BuildGit, "web", 2),
         ],
     );
-    // Requested again, its latest attempt is the run before.
     let mut requested = timeline.operation.clone();
     requested.state = OperationState::Requested;
     timeline.set_operation(requested.clone());
@@ -451,7 +433,6 @@ fn another_attempt_starts_over() {
     retried.state = OperationState::Running;
     retried.attempt = 2;
     timeline.set_operation(retried);
-    // Events of the earlier attempt no longer apply.
     let mut late = action("action_started", "a3", Phase::EnsureService, "web", 3);
     late.id = timeline.cursor + 1;
     late.operation_id = Some("op".into());
@@ -495,9 +476,7 @@ fn only_noticeably_unusual_durations_are_flagged() {
         ],
     );
     let unusual: Vec<_> = timeline.steps.iter().map(Step::unusual_ms).collect();
-    // 20 s over its 30 s is unusual; 1 s over 20 s is not.
     assert_eq!(unusual, [Some(30_000), None, None]);
-    // The sources build at once, then the service updates.
     assert_eq!(timeline.usual_ms(), Some(31_000));
 }
 
@@ -541,7 +520,6 @@ fn progress_counts_from_the_first_start_and_rounds_down() {
     );
     assert_eq!(queued.elapsed_ms, None);
 
-    // The operation's own start trails its first step's.
     timeline.operation.state = OperationState::Running;
     timeline.operation.started_at_ms = Some(2_000);
     apply(
@@ -556,9 +534,7 @@ fn progress_counts_from_the_first_start_and_rounds_down() {
     assert_eq!(running.status(), "Deploying");
     assert_eq!(running.running, ["Run job migrate"]);
     assert_eq!(running.elapsed_ms, Some(12_000));
-    // One step of three: 33 %, and 4 of a 12-cell bar.
     assert_eq!((running.percent(), running.filled(12)), (33, 4));
-    // The job has 2 s left, then the service's 2 s.
     assert_eq!(running.outlook().as_deref(), Some("~4.0 s left"));
 }
 
@@ -607,7 +583,6 @@ fn progress_tells_the_time_left_then_against_the_usual() {
         progress.elapsed_ms = Some(elapsed);
         assert_eq!(progress.outlook().as_deref(), Some(outlook), "{elapsed}");
     }
-    // A run that is not comparable with the usual one says nothing.
     progress.usual_ms = None;
     assert_eq!(progress.outlook(), None);
 }

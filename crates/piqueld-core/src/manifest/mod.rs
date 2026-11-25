@@ -1,10 +1,9 @@
 //! Public application manifests and their validated, canonical domain model.
 
-// Sorts every order-insensitive collection of a specification (services by
-// name, their mounts, secrets, files, and dependencies, then job secrets,
-// volumes, routes, generated secrets, exports, and imports) so equivalent manifests serialize and hash
-// identically. Process arguments and other ordered lists are untouched. Both
-// `ApplicationSpec` and `ValidatedSpec` have these fields.
+/// Sorts every order-insensitive collection of a specification (services and
+/// their members, job secrets, volumes, routes, generated secrets, exports and
+/// imports) so equivalent manifests serialize and hash identically. Ordered
+/// lists such as process arguments are untouched.
 macro_rules! sort_unordered {
     ($spec:expr) => {{
         let spec = &mut $spec;
@@ -240,7 +239,6 @@ impl NormalizedApplication {
     #[must_use]
     pub fn spec_hash(&self) -> String {
         let mut normalized = self.clone().normalize();
-        // Manifest location does not change the desired runtime resources.
         normalized.spec.manifest = None;
         hash_spec(&normalized.spec, &normalized.files)
     }
@@ -308,8 +306,8 @@ fn hash_spec(spec: &impl Serialize, files: &RepositoryFiles) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
-// Deserialization re-runs full manifest validation and normalization, so
-// stored or received JSON can never produce an unvalidated application.
+/// Deserialization re-runs full manifest validation and normalization, so
+/// stored or received JSON can never produce an unvalidated application.
 impl<'de> Deserialize<'de> for NormalizedApplication {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         /// Escapes `${{` in every string: rendered values are literal text,

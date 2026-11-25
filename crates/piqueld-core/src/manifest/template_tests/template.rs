@@ -12,7 +12,6 @@ fn hostnames_render_per_environment_before_deployment() {
             .map(String::from)
             .collect::<Vec<_>>()
     };
-    // Routes that only render for a deployment reserve nothing yet.
     assert_eq!(hostnames("staging"), ["staging.piquel.fr"]);
     assert_eq!(hostnames("production"), ["piquel.fr"]);
 }
@@ -33,8 +32,6 @@ fn literal_rendering_conversion_hash_and_exports_match_the_domain_model() {
         assert_eq!(template.metadata(), normalized.metadata());
         assert_eq!(template.spec(), &manifest.spec);
         assert_eq!(ApplicationTemplate::from(&normalized), template);
-        // Saved configuration and replay fingerprints were stored as
-        // normalized applications; literal templates serialize identically.
         let canonical = normalized.canonical_json().unwrap();
         assert_eq!(template.canonical_json().unwrap(), canonical);
         assert_eq!(serde_json::to_string(&template).unwrap(), canonical);
@@ -367,7 +364,6 @@ fn renders_like_compares_names_read_with_deployment_values() {
     assert!(renamed("${{ deployment.id }}-${{ git.sha }}.example.com"));
     assert!(!renamed("${{ app.name }}-${{ deployment.id }}.example.com"));
     assert!(!renamed("${{ app.name }}-${{ git.branch }}.example.com"));
-    // Renders the same for both names, but is no valid hostname.
     assert!(!renamed("${{ deployment.id }} invalid.example.com"));
 }
 

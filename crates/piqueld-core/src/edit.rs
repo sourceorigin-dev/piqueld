@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
-// Declares one `{ "value": ... }` request body per field type used by the field edit
-// endpoints. `deserialize_with` makes `value` required even when its type is `Option`,
-// so clients must send an explicit `null` to clear a setting.
+/// Declares one `{ "value": ... }` request body per field type used by the field edit
+/// endpoints. `deserialize_with` makes `value` required even when its type is `Option`,
+/// so clients must send an explicit `null` to clear a setting.
 macro_rules! value_request {
     ($($name:ident: $ty:ty;)*) => {$ (
         #[doc = concat!("Typed replacement value for `", stringify!($name), "`.")]
@@ -382,7 +382,7 @@ trait Keyed: Sized {
     }
 }
 
-// Implements `Keyed` from each declaration's kind and key field.
+/// Implements `Keyed` from each declaration's kind and key field.
 macro_rules! keyed {
     ($($type:ty => $kind:literal, $key:ident;)*) => {$(
         impl Keyed for $type {
@@ -526,7 +526,6 @@ impl ApplicationEdit {
     /// to `new`, or drops them when `new` is `None` because the service was
     /// removed. Renaming an exported service renames its link alias.
     fn retarget_service(manifest: &mut ApplicationManifest, old: &str, new: Option<&String>) {
-        // Repoints one reference; returns whether to keep what holds it.
         let retarget = |service: &mut String| {
             service.as_str() != old || new.inspect(|new| service.clone_from(new)).is_some()
         };
@@ -831,8 +830,6 @@ macro_rules! field_endpoints {
 }
 
 /// Revision protection and deployment policy for a field edit.
-// Reserved for `edit_endpoint!`: the API contract test that classifies
-// write routes for the audit trail recognises typed edits by these options.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in = Query)]

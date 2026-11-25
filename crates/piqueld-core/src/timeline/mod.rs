@@ -466,7 +466,6 @@ impl Step {
     /// for it, from the first observation on; a stop-first rollout has one.
     #[must_use]
     pub fn gaps(&self) -> Vec<Gap> {
-        // Every moment a task's serving changed, in order.
         let mut changes: Vec<(i64, bool)> = self
             .tasks
             .iter()

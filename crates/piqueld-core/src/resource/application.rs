@@ -202,7 +202,6 @@ impl ResolvedApplication {
                 service.networks.sort();
             }
         }
-        // Redirects are answered by the gateway, so only proxied routes need the network.
         if enabled
             && self
                 .routes
@@ -259,7 +258,6 @@ impl ResolvedApplication {
                 for service in &mut self.services {
                     service.networks.push(name.clone());
                 }
-                // Jobs run before rollout, so they reach imports too.
                 for job in &mut self.jobs {
                     job.container.networks.push(name.clone());
                     job.container.networks.sort();

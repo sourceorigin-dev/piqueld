@@ -28,8 +28,6 @@ fn jobs_reuse_their_service_container_under_a_distinct_identity() {
     assert_eq!(job.container.image, service.image);
     assert_eq!(job.container.environment, service.environment);
     assert_eq!(job.container.mounts, service.mounts);
-    // Runs only read volumes unless the job declares exclusive access, also
-    // for targets prepared before the setting existed.
     assert!(!service.mounts[0].read_only);
     assert_eq!(job.exclusive_volumes().count(), 0);
     assert!(job.for_operation("operation-1").container.mounts[0].read_only);
@@ -58,7 +56,6 @@ fn jobs_reuse_their_service_container_under_a_distinct_identity() {
         ),
         piqueld_core::OwnershipState::Owned
     );
-    // A run is labelled with the operation that starts it.
     let operation_label = piqueld_core::resource::JOB_OPERATION_LABEL;
     assert!(!job.container.labels.contains_key(operation_label));
     let run = job.for_operation("operation-1");
@@ -200,7 +197,6 @@ fn assert_job_stops_web(desired: &ResolvedApplication) {
             .map(|action| action.kind.to_string())
     };
 
-    // The dependency starts first, then the running web stops.
     let mut running = observed(desired);
     running
         .services
@@ -213,8 +209,6 @@ fn assert_job_stops_web(desired: &ResolvedApplication) {
         .retain(|service| service.name != web.name.as_str());
     assert_eq!(next(&ready), None);
 
-    // Repair of the previous target must not restart web while the job may
-    // still run or has changed what web uses.
     let mut repair = plan_for(&ready);
     assert_eq!(
         repair.next_repair().unwrap().kind.to_string(),
@@ -265,7 +259,6 @@ fn previews_list_jobs_after_their_dependencies_and_warn_about_stopped_services()
         [(ApiErrorCode::JobStopsServices.as_str(), "migrate")]
     );
 
-    // Unresolved sources leave only resolution actions, which jobs follow.
     let mut plan = Plan::from_request(
         &PlanRequest::Preview {
             unresolved: preview_resolution(&app, &ResolutionSet::default()),
@@ -279,7 +272,6 @@ fn previews_list_jobs_after_their_dependencies_and_warn_about_stopped_services()
         Some("RUN JOB migrate".into())
     );
 
-    // A job stopping its own service warns about that service alone.
     let app = migration(|job| job.stop_service = true);
     let mut plan = Plan::from_request(
         &PlanRequest::Preview {

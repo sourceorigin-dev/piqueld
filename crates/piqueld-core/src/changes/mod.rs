@@ -210,7 +210,6 @@ impl ManifestChange {
             fields.insert(path, Value::Object(whole));
         }
         entries("volumes", "name", &mut fields);
-        // Jobs run in declared order, so a reordering is a change of its own.
         let mut order = Vec::new();
         for (path, job) in entries("jobs", "name", &mut fields) {
             order.push(Value::String(path["jobs.".len()..].to_owned()));

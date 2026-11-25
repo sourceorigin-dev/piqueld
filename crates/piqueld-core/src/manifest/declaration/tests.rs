@@ -84,7 +84,6 @@ fn declarations_resolve_sources_with_promotion_sources_first() {
             },
         ]
     );
-    // Without a repository, environments deploy the saved manifest.
     let saved = self::spec("[spec.environments.staging.variables]\nx=1\n").unwrap();
     assert_eq!(
         saved.declared_environments().unwrap()[0].source,
@@ -321,7 +320,6 @@ fn changes_create_resource_and_report_what_the_manifest_dropped() {
             "old: no longer declared; kept until deleted with `piquelctl env delete`",
         ]
     );
-    // Nothing is managed without declarations.
     assert_eq!(
         EnvironmentChange::between(&[], &[old, production, staging]),
         []

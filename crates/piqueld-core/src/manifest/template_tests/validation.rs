@@ -24,7 +24,6 @@ fn invalid_references_fail_validation_with_their_field_paths() {
             ),
         ]
     );
-    // `git.*` needs a repository manifest, and variables reference only system variables.
     let text = manifest("[spec.variables]\nweb_replicas = 1\ntag = \"${{ vars.web_replicas }}\"\n")
         .replace("${{ env.name }}", "${{ git.sha }}");
     assert_eq!(
@@ -37,7 +36,6 @@ fn invalid_references_fail_validation_with_their_field_paths() {
             (ApiErrorCode::VariableNotAllowed, "spec.variables.tag"),
         ]
     );
-    // Literal parsing rejects any remaining reference.
     let errors = parse_toml(&manifest(VARIABLES)).unwrap_err();
     assert!(
         errors
@@ -354,7 +352,6 @@ fn plain_names_paths_and_keys_reject_even_escaped_references() {
     ] {
         for text in ["${{env.name}}", "$${{env.name}}"] {
             let mut wire = input.clone();
-            // Optional commit is absent in the fixture.
             if pointer.ends_with("/commit") {
                 let parent = pointer.strip_suffix("/commit").unwrap();
                 wire.pointer_mut(parent).unwrap()["commit"] = json!(text);

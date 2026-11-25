@@ -677,8 +677,6 @@ impl Plan {
             .filter(|service| dependencies.contains(service.logical_name.as_str()))
             .map(|service| service.name.to_string())
             .collect::<BTreeSet<_>>();
-        // The previous version of a stopped service must not run beside a
-        // job changing what it uses, nor against data the job already changed.
         let stopped = self
             .actions
             .iter()
@@ -894,11 +892,8 @@ impl Plan {
         blocked: &mut BTreeSet<String>,
     ) -> bool {
         let mut ready = true;
-        // Pending convergence waits keyed by logical service name.
         let mut waits: Vec<(&str, PlanAction)> = Vec::new();
-        // Ensures that must wait for a dependency to converge first.
         let mut deferred = Vec::new();
-        // Startup order sees each dependency's wait before its dependents.
         let (ordered, cyclic) = desired.services.startup_order();
         for service in ordered.into_iter().chain(cyclic) {
             let reason = match observed
@@ -945,8 +940,6 @@ impl Plan {
                 },
                 reason,
             );
-            // A service scaled to zero starts nothing, so a stopped
-            // environment's services all scale down at once.
             let waits_on_dependency = service.replicas > 0
                 && service
                     .depends_on
@@ -962,8 +955,6 @@ impl Plan {
                 PlanAction::wait_for_service(service),
             ));
         }
-        // The controller executes the first action and replans, so waiting
-        // here rolls each deferred service out only once its dependencies converge.
         for (service, ensure) in deferred {
             for dependency in &service.depends_on {
                 if let Some(index) = waits

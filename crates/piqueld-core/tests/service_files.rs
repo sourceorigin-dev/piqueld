@@ -77,7 +77,6 @@ fn captured(content: &str) -> RepositoryFiles {
 #[test]
 fn contents_are_mounted_verbatim_and_survive_storage() {
     let content = "${{ vars.missing }} ${HOME} {{ .Values }}";
-    // Only files are kept verbatim when stored, not other values called `files`.
     let template = template(&service(
         "web",
         &format!(
@@ -97,7 +96,6 @@ fn contents_are_mounted_verbatim_and_survive_storage() {
     assert_eq!(web.files[0].content, content);
     assert_eq!(web.files[0].mode.bits(), 0o444);
     assert_eq!(web.environment["files"], "${{ literal }}");
-    // Docker materializes a config once per container, with one mode.
     assert_ne!(
         DockerConfigName::for_file(&environment(), content, web.files[0].mode),
         DockerConfigName::for_file(&environment(), content, "0400".parse().unwrap())
@@ -114,7 +112,6 @@ fn validation_keeps_files_apart_from_mounts_secrets_and_piqueld() {
         ("/etc/b", "content = \"x\""),
         ("/etc/b", "content = \"x\""),
         ("etc/c", "content = \"x\""),
-        // A file there would shadow the files and secrets inside.
         ("/etc", "content = \"x\""),
         ("/run", "content = \"x\""),
     ]
@@ -213,15 +210,12 @@ fn repository_files_are_captured_hashed_and_mounted_by_content() {
         web.files[0].config_name,
         DockerConfigName::for_file(&environment(), "a: 1", web.files[0].mode)
     );
-    // New content is a new config for the service mounting it only, and a
-    // new specification.
     assert_ne!(
         web.files[0].config_name,
         changed.services[1].files[0].config_name
     );
     assert_eq!(api.files, changed.services[0].files);
     assert_ne!(application.spec_hash(), changed_application.spec_hash());
-    // Plans of rendered applications, such as promotions, show the bytes.
     let content = ManifestChange::between_applications(Some(&application), &changed_application);
     assert_eq!(
         content
@@ -231,7 +225,6 @@ fn repository_files_are_captured_hashed_and_mounted_by_content() {
         ["repository_files.otel.yaml"]
     );
 
-    // A release keeps the bytes it captured, so promotions mount them.
     let release = Release::new(first.clone(), Some("0".repeat(40)), &target);
     let promoted = release
         .render(EnvironmentName::parse("staging").unwrap(), None)
@@ -246,7 +239,6 @@ fn repository_files_are_captured_hashed_and_mounted_by_content() {
         release.content_hash()
     );
 
-    // Saved manifests leave the captured bytes to deployments.
     assert!(first.clone().without_files().files().is_empty());
     assert_eq!(
         template

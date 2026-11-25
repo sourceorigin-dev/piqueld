@@ -593,11 +593,6 @@ compared_as_string!(DeviceLoginStatus);
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct DeviceToken {
     /// `authorization_pending`, `slow_down`, or `complete`.
-    //
-    // A `DeviceLoginStatus`, kept a string so a response with a status this
-    // build doesn't know still decodes, and `piquelctl` stops with
-    // "unexpected device login response". Compare it with
-    // `DeviceLoginStatus::parse` or `==`.
     pub status: String,
     /// Issued CLI credential; absent when the request confirmed an existing
     /// login instead.

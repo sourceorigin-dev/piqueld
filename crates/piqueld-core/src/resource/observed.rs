@@ -360,7 +360,6 @@ impl ObservedService {
                 ),
             ),
             ("mounts", self.mounts_match(desired)),
-            // Multiplicity is significant, so a duplicated attachment is drift.
             ("networks", self.networks_match(desired)),
             ("healthcheck", self.healthcheck_matches(desired)),
             ("resources", self.resources == desired.resources),

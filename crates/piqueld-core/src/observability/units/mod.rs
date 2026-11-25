@@ -43,9 +43,6 @@ impl Bytes {
 impl fmt::Display for Bytes {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         const UNITS: [&str; 4] = ["KiB", "MiB", "GiB", "TiB"];
-        // The largest unit it reaches once rounded, of 2^(10 × power) bytes:
-        // the one whose previous unit rounds to 1024.0 or more, so 1023.95 KiB
-        // reads as 1.0 MiB.
         match (1..=UNITS.len())
             .rev()
             .find(|power| Tenths::of(u128::from(self.0), 1 << (10 * (power - 1))) >= Tenths(10_240))
@@ -67,11 +64,9 @@ pub struct Count(pub i64);
 
 impl fmt::Display for Count {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Both forms format the magnitude and put the sign in front.
         let sign = if self.0 < 0 { "-" } else { "" };
         let n = self.0.unsigned_abs();
         if formatter.alternate() && n >= 10_000 {
-            // From 999,950 on, a thousand thousands round to a million.
             let (unit, suffix) = if n >= 999_950 {
                 (1_000_000, "M")
             } else {

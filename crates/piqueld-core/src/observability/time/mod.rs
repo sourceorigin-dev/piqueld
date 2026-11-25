@@ -82,7 +82,6 @@ impl Timestamp {
 
 impl fmt::Display for Timestamp {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // `UtcTime` reads to the minute; the seconds follow.
         let second = self.0.div_euclid(1_000).rem_euclid(60);
         write!(formatter, "{}:{second:02}Z", UtcTime(self.0))
     }
@@ -136,13 +135,9 @@ impl Elapsed {
 impl fmt::Display for Elapsed {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let milliseconds = self.0.as_millis();
-        // Rounded first, so the unit is picked after rounding: 3,599.5 s
-        // reads as an hour rather than 60 minutes.
         let seconds = (milliseconds + 500) / 1_000;
         match milliseconds {
             0..=999 => write!(formatter, "{milliseconds} ms"),
-            // Tenths of a second, below the 60.0 s that is shown as a
-            // minute.
             1_000..=59_949 => write!(formatter, "{} s", Tenths::of(milliseconds, 1_000)),
             _ if seconds < 3_600 => {
                 write!(formatter, "{} min {} s", seconds / 60, seconds % 60)

@@ -27,14 +27,12 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
     };
     assert!(network.has_valid_identity());
 
-    // A service label on a network breaks the role separation.
     let mut mislabeled = network.clone();
     mislabeled
         .labels
         .insert("io.piqueld.service".into(), "web".into());
     assert!(!mislabeled.has_valid_identity());
 
-    // An off-canonical name is rejected.
     let mut renamed = network.clone();
     renamed.name = DockerNetworkName::parse(format!("{}x", renamed.name)).unwrap();
     assert!(!renamed.has_valid_identity());
@@ -162,14 +160,12 @@ fn logical_name_is_an_alias_only_on_the_private_network() {
         ]
     );
 
-    // Services deployed before aliases existed register as drift and gain them.
     let mut unaliased = observed(&desired);
     for attachment in &mut unaliased.services[0].networks {
         attachment.aliases.clear();
     }
     assert!(!unaliased.services[0].matches(&desired.services[0]));
 
-    // The shared gateway joins the ingress network, so an alias there is drift.
     let mut exposed = observed(&desired);
     exposed.services[0].networks[1].aliases = vec!["web".into()];
     assert!(!exposed.services[0].matches(&desired.services[0]));

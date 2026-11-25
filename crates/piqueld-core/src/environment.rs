@@ -333,7 +333,7 @@ impl std::fmt::Display for TrackedBranch {
     }
 }
 
-// Deserialization validates, so stored or received branches are always valid.
+/// Deserialization validates, so stored or received branches are always valid.
 impl<'de> Deserialize<'de> for TrackedBranch {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
@@ -378,7 +378,6 @@ mod tests {
 
     #[test]
     fn preview_slugs_are_sanitized_truncated_and_hashed_over_the_exact_key() {
-        // Stable across releases: slugs are persisted, and hostnames use them.
         assert_eq!(
             slug("feat/Login_Page", None).as_str(),
             "notes-feat-login-page-6fdeb6"
@@ -397,7 +396,6 @@ mod tests {
                 .starts_with("notes-feature-very-long-name-very-")
         );
         assert!(!long.as_str().contains("--"));
-        // Keys that sanitize alike still get distinct slugs.
         let alike = [
             slug("feat/login", None),
             slug("feat-login", None),

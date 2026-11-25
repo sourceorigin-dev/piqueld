@@ -241,8 +241,6 @@ impl Default for RetentionConfig {
 /// How much output of each build is kept, and for how long. Builds
 /// themselves are listed until deployment history pruning removes their
 /// operation.
-// The schema bounds here and on `ImagesConfig` document the ranges
-// `piqueld_config::DaemonConfig::validate` enforces; change both together.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct BuildHistoryConfig {
@@ -314,7 +312,6 @@ mod tests {
 
     fn built(id: char) -> ResolvedSource {
         ResolvedSource::Git {
-            // Availability only reads the variant and image.
             requested: ValidatedSource::Image {
                 image: "unused".into(),
             },
@@ -356,7 +353,6 @@ mod tests {
             [&api, &web]
         );
 
-        // A build pushed to the build registry is pulled again.
         let mut pushed = built('b');
         if let ResolvedSource::Git { image_id, .. } = &mut pushed {
             *image_id = pulled('c').repository_digest().unwrap().clone().into();

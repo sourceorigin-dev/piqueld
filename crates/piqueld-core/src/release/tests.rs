@@ -117,8 +117,6 @@ fn records_provenance_images_and_fingerprint_and_hashes_content() {
             .map(|(field, value)| (field.to_owned(), value.to_owned()))
         )
     );
-    // The name renders through `${{ app.name }}`, so it is content, like
-    // a build argument.
     let renamed = Release {
         template: release
             .template
@@ -127,7 +125,6 @@ fn records_provenance_images_and_fingerprint_and_hashes_content() {
         ..release.clone()
     };
     assert_ne!(renamed.content_hash(), release.content_hash());
-    // So is the branch the manifest was read from, `${{ git.branch }}`.
     let mut manifest = release.template.spec().manifest.clone().unwrap();
     manifest.repository.branch = "release".into();
     let branched = Release {

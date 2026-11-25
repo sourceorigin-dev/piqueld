@@ -41,7 +41,6 @@ impl TryFrom<String> for BuilderEndpoint {
         let address = value
             .strip_prefix("tcp://")
             .map(|rest| rest.strip_suffix('/').unwrap_or(rest));
-        // An IPv6 host is bracketed, so its port follows the last colon.
         let valid = address
             .and_then(|address| address.rsplit_once(':'))
             .is_some_and(|(host, port)| {
@@ -82,8 +81,6 @@ pub struct BuildRepository(String);
 impl TryFrom<String> for BuildRepository {
     type Error = &'static str;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        // Only a repository on an explicit registry, without a tag or
-        // digest, is its own canonical form: `piqueld` would be Docker Hub's.
         if crate::image_repository(&value).as_deref() == Some(value.as_str()) {
             Ok(Self(value))
         } else {

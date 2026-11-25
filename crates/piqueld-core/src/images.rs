@@ -67,8 +67,6 @@ impl ImageReference {
     /// ```
     #[must_use]
     pub fn pinned(&self, digest: &Sha256Digest) -> RepositoryDigest {
-        // A valid reference's repository is at most 255 bytes, so with a
-        // SHA-256 digest it is always a valid repository digest.
         RepositoryDigest(format!("{}@{digest}", image_name(self.as_str())))
     }
 }
@@ -194,7 +192,6 @@ mod tests {
         let repository = format!("alpine@{digest}");
         RepositoryDigest::parse(&repository).expect("`RepositoryDigest::parse` should succeed");
         ImmutableImage::parse(&repository).expect("`ImmutableImage::parse` should succeed");
-        // A built image is stored as either, and reads back as what it was.
         for (value, pushed) in [(&digest, false), (&repository, true)] {
             let image: BuiltImage = serde_json::from_value(value.as_str().into()).unwrap();
             assert_eq!(matches!(image, BuiltImage::Pushed(_)), pushed);

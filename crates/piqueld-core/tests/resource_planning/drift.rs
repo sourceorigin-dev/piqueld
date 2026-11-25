@@ -22,7 +22,6 @@ fn changed_rollout_settings_drift_until_applied() {
     let updated = observed(&desired).services.remove(0);
     assert_eq!(updated.drift(&desired.services[0]), [] as [&str; 0]);
 
-    // Docker reporting a policy piqueld cannot express is drift too.
     let unexpressible = ObservedService {
         rollout: None,
         ..updated
@@ -90,7 +89,6 @@ fn unsupported_observed_healthcheck_is_healthcheck_drift() {
     let mut desired =
         compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
     desired.services[0].healthcheck = None;
-    // Docker reports a health check that piqueld cannot represent.
     let mut drifted = observed(&desired);
     drifted.services[0].healthcheck_configured = true;
     assert_eq!(
@@ -104,12 +102,10 @@ fn observation_matching_ignores_order_but_not_multiplicity() {
     let app = application();
     let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
 
-    // Order is irrelevant for networks and mounts alike...
     let mut reordered = observed(&desired);
     reordered.services[0].mounts.reverse();
     assert!(reordered.services[0].matches(&desired.services[0]));
 
-    // ...but multiplicity is preserved: duplicated attachments are drift.
     let mut duplicated = observed(&desired);
     duplicated.services[0].networks = desired.services[0]
         .network_attachments()

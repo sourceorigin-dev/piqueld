@@ -9,9 +9,7 @@ use super::{
 use crate::{ApiErrorCode, resource::valid_logical_name};
 use std::collections::{BTreeMap, BTreeSet};
 
-// Limits bounding manifest size and validation work. Route, service, and
-// volume counts are checked before any per-item validation and stop it early;
-// the remaining limits are reported alongside per-item errors.
+/// Most routes a manifest may declare; checked before any per-item validation.
 const MAX_ROUTES: usize = 64;
 const MAX_SERVICES: usize = 64;
 const MAX_VOLUMES: usize = 64;
@@ -162,7 +160,6 @@ pub fn safe_decode_path(path: &str) -> String {
         "drop_capabilities",
         "no_new_privileges",
     ];
-    // Fields whose values are maps with user-supplied keys.
     const MAPS: &[&str] = &["args", "environment", "environments", "variables"];
     let mut safe = Vec::new();
     for component in path.split('.') {
@@ -342,8 +339,6 @@ impl ApplicationManifest {
         let decode = |path: &str, error: &toml::de::Error| {
             ValidationErrors::decode(path, crate::TomlDiagnostic::new(input, error).to_string())
         };
-        // A syntax error has no field path, so it names the root, as
-        // serde_path_to_error does.
         let deserializer = toml::Deserializer::parse(input).map_err(|error| decode(".", &error))?;
         serde_path_to_error::deserialize(deserializer)
             .map_err(|error| decode(&error.path().to_string(), error.inner()))
@@ -398,7 +393,6 @@ impl ApplicationManifest {
                 ));
             }
         }
-        // Bound work before walking attacker-controlled collections.
         if !self.spec.within_budgets(&mut errors) {
             return Err(ValidationErrors::sorted(errors));
         }
@@ -509,7 +503,6 @@ impl ApplicationSpec {
             ));
             within_budget = false;
         } else {
-            // Unique dependencies name other services, so a valid list is shorter.
             for (index, service) in self.services.iter().enumerate() {
                 if service.depends_on.len() > MAX_SERVICES {
                     errors.push(ValidationError::new(
@@ -756,7 +749,6 @@ struct VariableMap {
     field: &'static str,
     /// Name piqueld sets itself for ingress, which users cannot declare.
     reserved: Option<&'static str>,
-    // Error codes reported for each rule.
     name_invalid: ApiErrorCode,
     value_invalid: ApiErrorCode,
     count_excessive: ApiErrorCode,

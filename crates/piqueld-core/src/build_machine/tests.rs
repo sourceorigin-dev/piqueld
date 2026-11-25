@@ -14,7 +14,6 @@ fn a_builder_is_a_tcp_host_and_port() {
         assert_eq!(parsed.address(), address);
     }
     for invalid in [
-        // No port, another scheme, credentials, a path, and a bare IPv6 host.
         "tcp://build.example.ts.net",
         "ssh://build.example.ts.net:22",
         "tcp://user@build.example:1234",
@@ -44,7 +43,6 @@ fn a_build_repository_is_on_a_named_registry_without_a_tag() {
         repository.digest_of(&repository.image(&digest)),
         Some(digest.clone())
     );
-    // The same digest in another repository, or one this one prefixes.
     for other in [
         "build.example.ts.net:5000/other",
         "build.example.ts.net:5000/piqueld/sub",
@@ -52,7 +50,6 @@ fn a_build_repository_is_on_a_named_registry_without_a_tag() {
         let other = BuildRepository::try_from(other.to_owned()).unwrap();
         assert_eq!(repository.digest_of(&other.image(&digest)), None);
     }
-    // Docker Hub's, a tag, and upper case.
     for invalid in [
         "piqueld",
         "registry.example/piqueld:v1",

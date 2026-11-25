@@ -43,7 +43,6 @@ fn links_join_the_importer_and_only_imported_services_on_the_importers_network()
     let (importer, exporter, link) = linked_environments();
     let name = DockerNetworkName::for_link(&importer.id, &exporter.id);
 
-    // The importer owns the network, which all of its services join unaliased.
     let as_importer = importer
         .clone()
         .with_links(std::slice::from_ref(&link), &ObservedApplication::default());
@@ -63,7 +62,6 @@ fn links_join_the_importer_and_only_imported_services_on_the_importers_network()
             })
     );
 
-    // The exporter joins only a network its importer owns, under its alias.
     let linked = |labels: BTreeMap<String, String>| ObservedApplication {
         linked_networks: vec![ObservedNetwork {
             name: name.to_string(),

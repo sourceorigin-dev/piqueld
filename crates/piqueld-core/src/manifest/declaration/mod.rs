@@ -137,7 +137,6 @@ impl ApplicationSpec {
             if placed.contains(name) {
                 continue;
             }
-            // Walks up the chain of sources, then places it from the top down.
             let mut chain = vec![*name];
             while let Some(DeclaredSource::Promoted { from }) = declared
                 .get(chain[chain.len() - 1])
@@ -148,7 +147,6 @@ impl ApplicationSpec {
                     break;
                 }
                 if !declared.contains_key(from) {
-                    // An invalid declaration already has its own errors.
                     if self.environments.contains_key(from) {
                         break;
                     }
@@ -256,8 +254,6 @@ impl ApplicationSpec {
                 Err(errors)
             };
         };
-        // Its own branch is unpinned unless it pins a commit; otherwise it
-        // follows the branch and commit `spec.manifest` names.
         let (branch, commit) = match &config.branch {
             Some(branch) => (branch.clone(), config.commit.clone()),
             None => (
@@ -272,7 +268,6 @@ impl ApplicationSpec {
             invalid
                 .0
                 .into_iter()
-                // The connection's own fields are checked at spec.manifest.
                 .filter(|error| match error.path.as_str() {
                     "branch" => config.branch.is_some(),
                     _ => config.commit.is_some(),
@@ -283,9 +278,6 @@ impl ApplicationSpec {
                 })
                 .collect::<Vec<_>>()
         })?;
-        // Only its own pin: one inherited from `spec.manifest`, or from the
-        // revision a deployment fetched, keeps it opted in but not following,
-        // as `piquelctl env sync` does for a pinned environment.
         let sync = config.sync.unwrap_or(false);
         if sync && config.commit.is_some() {
             return Err(vec![fail(
@@ -409,7 +401,6 @@ impl EnvironmentChange {
                     to: declaration.source.clone(),
                 });
             }
-            // Promoted environments never build, so never sync.
             let promoted = matches!(declaration.source, DeclaredSource::Promoted { .. });
             if !promoted && current.sync != declaration.sync {
                 changes.push(Self::Sync {

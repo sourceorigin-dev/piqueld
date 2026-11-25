@@ -131,7 +131,6 @@ fn self_sources_build_from_the_manifest_revision() {
     );
     assert_eq!(pinned.spec().manifest, app.spec().manifest);
 
-    // Disconnecting keeps building from the former manifest repository.
     let mut disconnected = app.to_manifest();
     ApplicationEdit::Repository(None)
         .apply(&mut disconnected)

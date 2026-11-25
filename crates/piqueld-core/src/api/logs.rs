@@ -55,7 +55,6 @@ impl LogRecord {
         while let Some(ch) = chars.next() {
             if ch == '\u{1b}' {
                 match chars.next() {
-                    // CSI: parameters run until a final byte in `@..=~`.
                     Some('[') => {
                         for c in chars.by_ref() {
                             if ('@'..='~').contains(&c) {
@@ -63,7 +62,6 @@ impl LogRecord {
                             }
                         }
                     }
-                    // OSC, DCS, PM, APC: strings end at BEL or ST (`ESC \`).
                     Some(']' | 'P' | '^' | '_') => {
                         while let Some(c) = chars.next() {
                             if c == '\u{7}' || (c == '\u{1b}' && chars.next_if_eq(&'\\').is_some())
@@ -72,7 +70,6 @@ impl LogRecord {
                             }
                         }
                     }
-                    // Other two-byte escapes drop just the escape and its selector.
                     _ => {}
                 }
             } else if !ch.is_control() || matches!(ch, '\t' | '\n') {

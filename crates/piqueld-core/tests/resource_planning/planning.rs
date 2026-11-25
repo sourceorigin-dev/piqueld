@@ -45,7 +45,6 @@ fn plan_shows_effective_rollouts_and_warns_about_overlapping_writers() {
         (view, plan)
     };
 
-    // The fixture's only service mounts its volume writable.
     let (derived, plan) = rollout(&application());
     assert_eq!(
         (derived.order, derived.order_source, derived.monitor_seconds),
@@ -194,8 +193,6 @@ fn converged_services_need_no_work_and_delete_retains_volumes() {
 fn obsolete_cleanup_is_gated_and_reports_deferred_diagnostics() {
     let app = application();
     let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
-    // Build a fully-converged observation, then add an obsolete owned service
-    // while breaking convergence of the wanted service so cleanup stays gated.
     let base = observed(&desired);
     let mut gated = base.clone();
     gated.services[0].convergence = Convergence::Updating;
@@ -231,7 +228,6 @@ fn obsolete_cleanup_is_gated_and_reports_deferred_diagnostics() {
         plan.diagnostics
     );
 
-    // Once everything converges, the stale service is removed.
     let ready = observed(&desired);
     let mut converged_with_stale = ready.clone();
     let mut stale_ready = ready.services[0].clone();
@@ -299,7 +295,6 @@ fn cleanup_plans_are_stable_across_engine_listing_order() {
         );
         snapshot.volumes.push(volume);
     }
-    // Foreign observations must remain diagnostics regardless of their position.
     let mut foreign = snapshot.networks[0].clone();
     foreign.name = "unmanaged-network".into();
     foreign.labels.clear();

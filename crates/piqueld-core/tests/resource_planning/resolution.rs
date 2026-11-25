@@ -77,11 +77,9 @@ fn preview_plans_splice_resolution_actions_first() {
 
 #[test]
 fn wire_decoding_enforces_domain_guards() {
-    // TaskState unknown strings decode to Unknown.
     let task: TaskState = serde_json::from_str("\"some-future-state\"").unwrap();
     assert_eq!(task, TaskState::Unknown);
 
-    // ResolvedSource digest references must be immutable repository digests.
     let good = serde_json::json!({
         "type": "image",
         "requested": "nginx:1",
