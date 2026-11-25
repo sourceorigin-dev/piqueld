@@ -71,7 +71,7 @@ pub(super) async fn get(
     ApiQuery(query): ApiQuery<LogQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let id = EnvironmentId::parse(id)?;
-    let _admitted = state.admit(crate::api::Expensive::Logs)?;
+    let _admitted = state.admit(Expensive::Logs)?;
     Ok(ok(state
         .logs(
             &id,

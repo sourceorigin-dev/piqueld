@@ -134,9 +134,11 @@ impl FakeRuntime {
                 },
                 receiver: false,
             });
-        for watcher in self.starts.lock().unwrap().iter() {
-            let _ = watcher.send(id.into());
-        }
+        // A watcher whose stream ended is dropped.
+        self.starts
+            .lock()
+            .unwrap()
+            .retain(|watcher| watcher.send(id.into()).is_ok());
     }
 
     /// Resolves every image of `application` to a digest of `a`s and
