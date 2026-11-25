@@ -17,6 +17,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Notify;
 
+/// Bounds an application log read, which serves an interactive API request.
+const LOG_READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// Bounds the Engine ping of a readiness check.
+const DOCKER_PING_TIMEOUT: Duration = Duration::from_secs(2);
+/// Bounds the Swarm probe of a readiness check.
+const SWARM_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Application runtime orchestration backed by Docker.
 pub struct ApplicationRuntime<D> {
     docker: Arc<D>,
@@ -134,9 +141,8 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
         since: u32,
         stream: Option<piqueld_core::api::LogStream>,
     ) -> Result<piqueld_core::api::ApplicationLogs, BoundaryError> {
-        // Log reads serve interactive API requests, so they get a short fixed budget.
         tokio::time::timeout(
-            Duration::from_secs(10),
+            LOG_READ_TIMEOUT,
             self.docker
                 .application_logs(&self.instance_id, id, service, tail, since, stream),
         )
@@ -147,11 +153,11 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
 
     /// Pings the Engine first and only probes Swarm when the Engine answered.
     async fn readiness(&self) -> (bool, bool) {
-        let docker = tokio::time::timeout(Duration::from_secs(2), self.docker.ping())
+        let docker = tokio::time::timeout(DOCKER_PING_TIMEOUT, self.docker.ping())
             .await
             .is_ok_and(|r| r.is_ok());
         let swarm = docker
-            && tokio::time::timeout(Duration::from_secs(3), self.docker.ensure_swarm(false))
+            && tokio::time::timeout(SWARM_PROBE_TIMEOUT, self.docker.ensure_swarm(false))
                 .await
                 .is_ok_and(|r| r.is_ok());
         (docker, swarm)

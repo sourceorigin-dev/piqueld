@@ -13,6 +13,13 @@ use piqueld_store::{StoreError, now_ms};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+/// Bounds one webhook request.
+const WEBHOOK_TIMEOUT: Duration = Duration::from_secs(10);
+/// How often notification observation samples readiness and statistics.
+const OBSERVE_INTERVAL: Duration = Duration::from_secs(15);
+/// How often delivery looks for a due webhook while none is.
+const DELIVERY_POLL_INTERVAL: Duration = Duration::from_secs(1);
+
 /// Sends notifications. Requests time out after ten seconds and never follow
 /// redirects, so a receiver cannot bounce them elsewhere, nor go through an
 /// environment proxy (`HTTPS_PROXY`), which would see the secrets their URLs
@@ -25,7 +32,7 @@ impl Notifier {
     pub(super) fn new() -> reqwest::Result<Self> {
         Ok(Self(
             reqwest::Client::builder()
-                .timeout(Duration::from_secs(10))
+                .timeout(WEBHOOK_TIMEOUT)
                 .redirect(reqwest::redirect::Policy::none())
                 .no_proxy()
                 .build()?,
@@ -109,7 +116,7 @@ impl ApplicationService {
         scan_seconds: u64,
         cancellation: CancellationToken,
     ) {
-        let mut tick = Ticker::new(Duration::from_secs(15));
+        let mut tick = Ticker::new(OBSERVE_INTERVAL);
         while tick.tick(&cancellation).await {
             let result = async {
                 let readiness = self.readiness(&piqueld_core::access::Scope::All).await;
@@ -146,7 +153,7 @@ impl ApplicationService {
     /// the next as soon as one is attempted, and checking again every second
     /// while none is due. Errors are logged and never stop the worker.
     pub async fn deliver_notifications(&self, cancellation: CancellationToken) {
-        let mut tick = Ticker::new(Duration::from_secs(1));
+        let mut tick = Ticker::new(DELIVERY_POLL_INTERVAL);
         let mut idle = true;
         loop {
             if idle && !tick.tick(&cancellation).await {

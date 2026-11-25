@@ -13,6 +13,9 @@ use tokio::{sync::Notify, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+/// First wait between attempts to ensure the Swarm; it grows up to
+/// [`MAX_SWARM_RETRY_DELAY`].
+const INITIAL_SWARM_RETRY_DELAY: Duration = Duration::from_secs(1);
 /// Longest wait between attempts to reach Docker as a Swarm manager, and so
 /// how long readiness, which probes Docker directly, can report ready before
 /// reconciliation starts.
@@ -174,7 +177,7 @@ impl ApplicationService {
             .store
             .begin_action(None, Phase::EnsureSwarm, None)
             .await?;
-        let mut delay = Duration::from_secs(1);
+        let mut delay = INITIAL_SWARM_RETRY_DELAY;
         let mut attempt = 0_u32;
         let error = loop {
             attempt = attempt.saturating_add(1);

@@ -7,6 +7,11 @@ use piqueld_core::api::{
 };
 use std::time::Duration;
 
+/// Bounds the storage probe of a readiness check.
+const DATABASE_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Bounds the Docker and Swarm probes of a readiness check together.
+const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(6);
+
 impl ApplicationService {
     /// Returns daemon identity and version information, with the tailnet node,
     /// DNS providers and DNS-01 certificates, previews against their limits
@@ -84,8 +89,8 @@ impl ApplicationService {
     /// routes are limited to the environments of `readable` applications.
     pub async fn readiness(&self, readable: &Scope) -> ReadinessStatus {
         let (database, runtime) = tokio::join!(
-            tokio::time::timeout(Duration::from_secs(2), self.store.probe()),
-            tokio::time::timeout(Duration::from_secs(6), self.runtime.readiness())
+            tokio::time::timeout(DATABASE_PROBE_TIMEOUT, self.store.probe()),
+            tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, self.runtime.readiness())
         );
         let database = database.is_ok_and(|result| result.is_ok());
         let (docker, swarm) = runtime.unwrap_or((false, false));

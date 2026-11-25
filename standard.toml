@@ -97,13 +97,6 @@ paths = [
 [deviations.inline-limits]
 reason = "56 findings in 32 files, fixed in a follow-up"
 paths = [
-  "apps/piqueld/src/api/http/lease.rs",
-  "apps/piqueld/src/api/service/notification_worker.rs",
-  "apps/piqueld/src/api/service/startup.rs",
-  "apps/piqueld/src/api/service/system.rs",
-  "apps/piqueld/src/api/service/telemetry/mod.rs",
-  "apps/piqueld/src/application/runtime.rs",
-  "apps/piqueld/src/auth/mod.rs",
   "apps/piqueld/src/ingress/certificates.rs",
   "apps/piqueld/src/ingress/gateway.rs",
   "apps/piqueld/src/ingress/mod.rs",
