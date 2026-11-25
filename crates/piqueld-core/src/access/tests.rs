@@ -60,7 +60,6 @@ fn application_checks_hide_unreadable_applications() {
         grants.require(Permission::App(AppPermission::LogsRead)),
         Err(Denied::Missing(Permission::App(AppPermission::LogsRead)))
     );
-    // An unknown target is hidden unless the permission covers everything.
     let deploy = [AppPermission::Deploy];
     assert_eq!(
         grants.require_change(&deploy, Target::Unknown),
@@ -227,8 +226,6 @@ fn previews_permissions_stop_at_previews() {
         agent.require_change(&[AppPermission::Exec], preview),
         Err(Denied::Missing(Permission::App(AppPermission::Exec)))
     );
-    // Whole-application permissions include previews permissions, never
-    // the reverse, whether handing them out or limiting a token.
     let deployer = grants(&[("apps:deploy", only_blog)]);
     let previews = grants(&[("previews:deploy", only_blog)]);
     assert!(deployer.covers(&previews));
@@ -256,7 +253,6 @@ fn escalation_is_newly_held_admin_or_installation_power() {
     let operate = grants(&[("system:operate", None)]);
     assert!(operate.escalates(&Grants::default()));
     assert!(!Grants::default().escalates(&operate));
-    // `admin` everywhere already holds `accounts:manage`.
     let mut managing = Grants::admin();
     managing
         .grant(
@@ -265,7 +261,6 @@ fn escalation_is_newly_held_admin_or_installation_power() {
         )
         .expect("accounts:manage applies to the whole installation");
     assert!(!managing.escalates(&Grants::admin()));
-    // Ordinary access never escalates.
     let deploy = grants(&[("apps:deploy", None)]);
     assert!(!deploy.escalates(&Grants::default()));
 }

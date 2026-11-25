@@ -191,7 +191,6 @@ impl Release {
                 branch: manifest.repository.branch.clone(),
                 sha: commit.clone(),
             });
-        // Releases are instantiated for environments, never for previews.
         let mut rendering = self.template.render(&RenderContext {
             target: RenderTarget::Environment(environment),
             git,

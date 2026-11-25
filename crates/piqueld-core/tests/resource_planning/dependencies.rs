@@ -62,8 +62,6 @@ fn service_steps(desired: &ResolvedApplication, observed: &ObservedApplication) 
 #[test]
 fn dependents_roll_out_only_after_their_dependencies_converge() {
     let desired = dependent_application();
-    // The controller executes the first action and replans, so `server` cannot
-    // start before the wait for `db` succeeds. Independent services do not wait.
     assert_eq!(
         service_steps(&desired, &ObservedApplication::default()),
         [
@@ -93,7 +91,6 @@ fn dependents_roll_out_only_after_their_dependencies_converge() {
         ),
         ["ensure_service server", "wait_for_service server"]
     );
-    // A converged dependent does not hold drift repair behind its dependency.
     assert_eq!(
         service_steps(
             &desired,
@@ -111,7 +108,6 @@ fn dependents_roll_out_only_after_their_dependencies_converge() {
 fn stopped_dependents_scale_down_without_waiting_for_their_dependencies() {
     let running = dependent_application();
     let stopped = running.clone().with_stopped(true);
-    // `db` is still shutting down while `server` and `web` run.
     let mut observation = dependent_observation(&running, Convergence::Updating, &[]);
     for (service, observed) in running.services.iter().zip(&mut observation.services) {
         if service.logical_name.as_str() == "db" {

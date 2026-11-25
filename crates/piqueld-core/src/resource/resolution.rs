@@ -123,7 +123,6 @@ impl ResolvedSource {
                         image_repository(digest_reference.as_str()) == Some(repository)
                     })
             }
-            // Unpinned "self" sources never match; deployments pin them first.
             (
                 ValidatedSource::Git {
                     repository: SourceRepository::Git(repository),

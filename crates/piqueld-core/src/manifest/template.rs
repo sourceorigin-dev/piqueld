@@ -358,8 +358,8 @@ impl From<&NormalizedApplication> for ApplicationTemplate {
     }
 }
 
-// Deserialization re-runs template validation and normalization, so stored or
-// received JSON can never produce an unvalidated template.
+/// Deserialization re-runs template validation and normalization, so stored or
+/// received JSON can never produce an unvalidated template.
 impl<'de> Deserialize<'de> for ApplicationTemplate {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]

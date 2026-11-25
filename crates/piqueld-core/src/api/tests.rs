@@ -44,7 +44,6 @@ fn stable_ids_select_before_names_that_look_like_them() {
         delete_intent: false,
         created_at_ms: 1,
         updated_at_ms: 1,
-        // Name order puts the impostor first.
         environments: vec![
             environment("env-impostor-01", "app-notes-01"),
             environment("app-notes-01", "production"),

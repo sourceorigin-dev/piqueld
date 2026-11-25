@@ -87,7 +87,6 @@ fn normalization_is_canonical_and_round_trips() {
 fn spec_hash_is_pinned_and_ignores_metadata() {
     let app = normalized();
     assert_eq!(app.spec_hash(), GOLDEN_SPEC_HASH);
-    // Metadata is outside the v2 envelope: a cosmetic rename keeps the hash.
     let exported = app.export_toml().unwrap();
     let renamed = parse_toml(&exported.replace("name = \"notes\"", "name = \"renamed\""))
         .unwrap()
@@ -189,7 +188,6 @@ fn service_dependencies_reject_unknown_duplicate_and_cyclic_names() {
             ),
         ]
     );
-    // Oversized lists are rejected before any entry is examined.
     assert_eq!(
         dependency_errors(&[("web", &["db"; 65]), ("db", &[])]),
         [(
@@ -206,7 +204,6 @@ fn service_dependencies_reject_unknown_duplicate_and_cyclic_names() {
             "spec.services[0].depends_on".into()
         )]
     );
-    // Services behind a cycle cannot start either, so they are reported too.
     assert_eq!(
         dependency_errors(&[
             ("web", &["api"]),
@@ -309,7 +306,6 @@ fn decode_paths_keep_every_manifest_field() {
             _ => {}
         }
     }
-    // A map behind a reference, as a map newtype's schema is, counts.
     let definitions = serde_json::json!({"defs": {"Map": {"additionalProperties": {}}}});
     assert!(is_map(
         &serde_json::json!({"$ref": "#/defs/Map"}),
@@ -385,7 +381,6 @@ fn malformed_and_invalid_manifests_return_safe_validation_errors() {
     let error = parse_toml(include_str!("fixtures/manifests/invalid.toml")).unwrap_err();
     assert!(has_code(&error, ApiErrorCode::ApiVersionUnsupported));
     assert!(has_code(&error, ApiErrorCode::ImageInvalid));
-    // The display lists every error.
     let display = error.to_string();
     for item in &error.0 {
         assert!(display.contains(&item.code), "{display}");
@@ -620,7 +615,6 @@ fn at_most_one_service_receives_telemetry() {
     .unwrap()
     .normalize(id);
     assert!(receiving.spec().services[0].receives_telemetry);
-    // One collector listens on the socket, and replacements stop it first.
     assert_errors(
         &format!(
             "{header}{}",
@@ -697,7 +691,6 @@ fn healthcheck_rules_include_the_interval_cap_and_single_zero_error() {
         .filter(|error| error.code == ApiErrorCode::HealthcheckTimeoutInvalid)
         .count();
     assert_eq!(interval_errors, 1, "{errors:?}");
-    // The dependent timeout error is suppressed when interval is zero.
     assert_eq!(timeout_errors, 0, "{errors:?}");
 
     let huge_interval = valid_manifest("notes").replace(
@@ -901,7 +894,6 @@ fn rollout_settings_are_typed_bounded_and_backwards_compatible() {
     use piqueld_core::manifest::{RolloutOrder, ValidatedRollout as Rollout};
     let id = ApplicationId::parse("app-notes-01").unwrap();
 
-    // An empty block is the same specification as none.
     let empty = parse_toml(&rollout_manifest(""))
         .unwrap()
         .normalize(id.clone());
@@ -1033,8 +1025,6 @@ fn manifest_json_schema_matches_serde_strictness() {
     }
     let schema = piqueld_core::manifest::ApplicationManifest::json_schema();
     let definitions = &schema["definitions"];
-    // Each value adds `extra` to a valid variant: the variant's schema admits
-    // it exactly when serde does.
     let cases: [(&str, &str, Value, Decodes); 7] = [
         (
             "RepositorySync",
@@ -1297,7 +1287,6 @@ target = "/run/secrets/owner"
         .normalize(app.id().clone());
     assert_eq!(reparsed, app);
 
-    // A job can't override what its service sets.
     let mut conflicting = app.to_manifest();
     let job = &mut conflicting.spec.jobs[0];
     job.environment.insert("RUST_LOG".into(), "debug".into());
@@ -1390,7 +1379,6 @@ fn exclusive_jobs_need_a_writable_volume_their_dependencies_do_not_mount() {
         target: "/data".into(),
         read_only,
     };
-    // Mount flags of web and db, and the number of errors expected.
     for (web, db, errors) in [
         (Some(false), None, 0),
         (Some(true), None, 1),

@@ -74,8 +74,6 @@ impl<T: Dependent> StartupOrder<T> for [T] {
         let mut started = BTreeSet::new();
         let mut ordered = Vec::with_capacity(self.len());
         let mut pending = self.iter().collect::<Vec<_>>();
-        // Each pass starts every service whose dependencies already started.
-        // Services count is bounded by validation, so repeated passes are cheap.
         loop {
             let remaining = pending.len();
             pending.retain(|&service| {

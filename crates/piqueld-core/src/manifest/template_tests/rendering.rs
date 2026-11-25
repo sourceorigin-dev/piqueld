@@ -30,7 +30,6 @@ fn rendering_selects_each_environments_values_and_never_reevaluates_text() {
         VariableValue::String("piquel.fr".into())
     );
 
-    // A value that looks like a reference is substituted as text, not evaluated.
     let quoted = template.clone();
     let mut manifest = quoted.to_manifest();
     manifest
@@ -74,7 +73,6 @@ fn whole_references_keep_their_type_and_mixed_text_renders_to_a_string() {
             .replicas,
         2
     );
-    // A rendered value still passes the field's own validation.
     let errors = render(&typed("\"${{ vars.web_replicas }}\"", "0"), "production").unwrap_err();
     assert_eq!(
         codes_and_paths(&errors),
@@ -83,7 +81,6 @@ fn whole_references_keep_their_type_and_mixed_text_renders_to_a_string() {
             "spec.services[0].replicas"
         )]
     );
-    // Mixed interpolation yields a string, which an enum field may accept.
     let order = manifest("[spec.variables]\nweb_replicas = 1\ntag = \"stable\"\nkind = \"stop\"\n")
         .replace(
             "[spec.services.source]",
@@ -104,7 +101,6 @@ fn whole_references_keep_their_type_and_mixed_text_renders_to_a_string() {
 
 #[test]
 fn variables_without_a_value_fail_only_the_environment_that_needs_them() {
-    // `tag` has a value only in staging; `domain` only in production.
     let template = template(
         "[spec.variables]\nweb_replicas = 1\n[spec.environments.staging.variables]\ntag = \"stable\"\n[spec.environments.production.variables]\ndomain = \"piquel.fr\"\n",
     );
@@ -207,7 +203,6 @@ fn every_templated_field_reports_its_missing_value_path() {
         input["spec"]["environments"] = json!({"staging": {"variables": {"value": value}}});
         let template = normalize(serde_json::from_value(input).unwrap());
         let errors = render(&template, "production").unwrap_err();
-        // Normalization sorts the templated hostname before literal hostnames.
         let path = if pointer == "/spec/routes/1/hostname" {
             "spec.routes[0].hostname"
         } else {
@@ -436,7 +431,6 @@ fn typed_fields_reject_wrong_types_ranges_and_mixed_text() {
             "${{vars.n}}",
             json!(true),
         ),
-        // Strings are never parsed into numbers, even when they look like one.
         (
             "/spec/services/0/replicas",
             "spec.services[0].replicas",
@@ -590,7 +584,6 @@ fn text_budget_accepts_exact_limit_and_reports_only_first_overflow() {
     const LIMIT: usize = 4 * 1024 * 1024;
     for (bytes, expected_errors) in [(LIMIT, 0), (LIMIT + 1, 1)] {
         let mut spec = base().spec;
-        // Image is visited first, followed by environment entries in key order.
         spec.services[0].source = Source::Image { image: "".into() };
         spec.services[0].environment = std::collections::BTreeMap::from([
             ("A".into(), "é".repeat(bytes / 2).into()),
@@ -660,7 +653,6 @@ port = 3000
             .map(|route| (route.hostname.to_string(), route.visibility))
             .collect::<Vec<_>>()
     };
-    // Environments without a block, or with `public`, restrict nothing.
     for environment in ["production", "preview"] {
         assert_eq!(
             visibilities(environment),
@@ -735,7 +727,6 @@ fn secret_mount_names_select_each_environments_secret_and_resolve_once_rendered(
         );
     }
 
-    // A rendered name is validated like a literal one, at the mount's path.
     manifest
         .spec
         .variables
@@ -767,7 +758,6 @@ fn preview() -> RenderTarget {
 #[test]
 fn previews_override_defaults_with_their_own_variables_and_no_environment_block() {
     let slug = preview().name().to_owned();
-    // A block named like the slug configures an environment, never the preview.
     let template = template(&format!(
         r#"{VARIABLES}
 [spec.environments.{slug}.variables]
@@ -814,7 +804,6 @@ port = 3000
         hostnames,
         [format!("{slug}.dev.piquel.fr"), "preview.piquel.fr".into()]
     );
-    // Environments never see the previews' values.
     let errors = render(&template, "staging").unwrap_err();
     assert_eq!(
         errors.0[0].message,
@@ -845,7 +834,6 @@ visibility = "public"
         visibility("[spec.previews]\nvisibility = \"public\"\n"),
         Visibility::Public
     );
-    // Environments are unaffected by the previews' ceiling.
     let template = template(&format!("{VARIABLES}{routes}"));
     let rendered = render(&template, "production").unwrap();
     assert_eq!(

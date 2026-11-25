@@ -8,11 +8,7 @@ string_enum! {
     /// error response, and of each validation error, compilation error, plan
     /// diagnostic and status diagnostic it reports. A code never changes, but
     /// new ones are added, so a client should expect codes it doesn't know.
-    //
-    // Wire types keep `code` a `String`, so clients still read the codes a
-    // newer daemon adds; compare one with `ApiErrorCode::parse` or `==`.
     pub enum ApiErrorCode {
-        // Requests the daemon can't read.
         /// 400: the request is invalid, such as a malformed `Idempotency-Key`,
         /// an event stream asked for newest-first or with a bad
         /// `Last-Event-ID`, or input the store refuses.
@@ -81,7 +77,6 @@ string_enum! {
         /// 400: a promotion names both a source deployment and a release.
         PromotionInvalid => "promotion_invalid",
 
-        // Authentication and access.
         /// 401: the request carries no valid session or token.
         AuthenticationRequired => "authentication_required",
         /// 400: an authentication request is malformed or expired.
@@ -122,7 +117,6 @@ string_enum! {
         /// 403: the action needs a recent passkey sign-in.
         ReauthenticationRequired => "reauthentication_required",
 
-        // Applications, environments and deployments.
         /// 400: a change names neither a revision nor `force=true`.
         PreconditionRequired => "precondition_required",
         /// 409: the application changed since the caller read its
@@ -196,7 +190,6 @@ string_enum! {
         /// 500: a local snapshot upload failed in the daemon.
         SnapshotUnavailable => "snapshot_unavailable",
 
-        // Secrets.
         /// 409: the secret changed since the caller read it; `details` has
         /// the expected and actual generations.
         SecretGenerationConflict => "secret_generation_conflict",
@@ -229,7 +222,6 @@ string_enum! {
         /// 400: the secret value is empty or too large.
         SecretValueInvalid => "secret_value_invalid",
 
-        // Notifications.
         /// 400: a notification destination needs a URL.
         DestinationUrlRequired => "destination_url_required",
         /// 400: a notification destination's URL is invalid.
@@ -239,7 +231,6 @@ string_enum! {
         /// 409: the delivery can't be retried.
         DeliveryNotRetryable => "delivery_not_retryable",
 
-        // The daemon and its runtime.
         /// 503: the effective host configuration is unavailable.
         ConfigurationUnavailable => "configuration_unavailable",
         /// 503: too many requests like this one are running.
@@ -264,7 +255,6 @@ string_enum! {
         /// response is not a readable `ErrorBody`.
         InvalidErrorResponse => "invalid_error_response",
 
-        // Status diagnostics.
         /// A desired service was not found in the runtime.
         ServiceMissing => "service_missing",
         /// Not every replica of a service is healthy.
@@ -279,7 +269,6 @@ string_enum! {
         /// ignored.
         ManifestConnectionIgnored => "manifest_connection_ignored",
 
-        // Manifest validation errors, in `details.errors`.
         /// Manifest does not decode against the strict public schema.
         ManifestDecodeFailed => "manifest_decode_failed",
         /// Manifest `api_version` is not supported.
@@ -443,7 +432,6 @@ string_enum! {
         /// until rollout.
         JobStopsServices => "job_stops_services",
 
-        // Templates, variables, previews, snapshots, environments and files.
         /// Template text has a `${{` without a well-formed `namespace.name` reference.
         TemplateInvalid => "template_invalid",
         /// Reference names a namespace that is reserved for a later feature.
@@ -526,7 +514,6 @@ string_enum! {
         /// An application's files together exceed their byte budget.
         FileTotalExcessive => "file_total_excessive",
 
-        // Compilation errors and links.
         /// Service source has no immutable resolution yet.
         SourceUnresolved => "source_unresolved",
         /// A mounted secret has no pinned Docker secret version yet.
@@ -566,7 +553,6 @@ string_enum! {
         /// environment than for the release, so its images do not apply there.
         ReleaseIncompatible => "release_incompatible",
 
-        // Plan diagnostics.
         /// Same-name runtime resource is not owned by this application.
         UnownedNameCollision => "unowned_name_collision",
         /// Immutable runtime configuration differs from desired state.

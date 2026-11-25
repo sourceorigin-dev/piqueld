@@ -323,8 +323,6 @@ mod tests {
                 (1, OperationState::Failed)
             ]
         );
-        // A retained outcome is listed once, and nothing ran before the
-        // first attempt.
         let ended = [attempt(3, OperationState::Failed)];
         assert_eq!(
             listed(&running.attempts(&ended)),

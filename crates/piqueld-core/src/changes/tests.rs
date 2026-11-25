@@ -60,7 +60,6 @@ fn edits_list_secret_declarations_and_environment_sources() {
         .map(|change| change.field)
         .collect::<Vec<_>>();
     assert_eq!(fields, ["environments.production.branch", "secrets.token"]);
-    // Plans show a generated secret's declaration, never a value.
     let planned = ManifestChange::between(Some(&read), &saved);
     assert_eq!(
         planned

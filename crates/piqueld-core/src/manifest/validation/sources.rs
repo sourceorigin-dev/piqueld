@@ -38,7 +38,6 @@ impl Build {
             }
         }
         VariableMap::BUILD_ARGS.validate(args, path, errors);
-        // Each argument is passed as `KEY=VALUE`; references count once rendered.
         let total: usize = args
             .iter()
             .filter_map(|(key, value)| Some(key.len() + value.as_literal()?.len() + 1))

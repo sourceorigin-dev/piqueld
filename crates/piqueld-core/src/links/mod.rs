@@ -248,7 +248,6 @@ pub fn report(environment: &EnvironmentId, parties: &[LinkParty], readable: &Sco
                 }
                 Some(_) => ImportState::Full,
             };
-            // A renamed exporter keeps the link, under its current name.
             let application = exporter
                 .map_or(&import.application, |exporter| &exporter.application)
                 .clone();

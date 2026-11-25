@@ -1,18 +1,18 @@
 //! Validated names and shared scaffolding for string-backed types.
 
-// Validators stay with the owning type; the macro only supplies identical
-// construction, wire-format, and standard-trait implementations.
-//
-// Each invocation declares a `String` newtype plus a unit error type. Outside the
-// declaring module the only way to build the newtype is `parse` (also used by
-// `Deserialize` and `FromStr`), so every value has passed `$validate`; code in the
-// declaring module that constructs it directly must uphold `$validate` itself. Doc
-// attributes on the newtype feed the generated `OpenAPI` schema.
-//
-//     validated_string!(
-//         /// Docs for the newtype.
-//         Name, NameError, "error message", |value: &str| !value.is_empty()
-//     );
+/// Declares a `String` newtype plus a unit error type, with identical
+/// construction, wire-format and standard-trait implementations. The validator
+/// stays with the owning type: outside the declaring module the only way to
+/// build the newtype is `parse` (also used by `Deserialize` and `FromStr`), so
+/// every value has passed `$validate`. Doc attributes on the newtype feed the
+/// generated `OpenAPI` schema.
+///
+/// ```text
+/// validated_string!(
+///     /// Docs for the newtype.
+///     Name, NameError, "error message", |value: &str| !value.is_empty()
+/// );
+/// ```
 macro_rules! validated_string {
     ($(#[$meta:meta])* $name:ident, $error:ident, $message:expr, $validate:expr) => {
         #[doc = concat!("Invalid `", stringify!($name), "` input.")]
@@ -96,9 +96,9 @@ macro_rules! validated_string {
 }
 pub(crate) use validated_string;
 
-// Declares a logical name: a `validated_string!` checked by
-// `valid_logical_name`, whose error message starts with `$subject`, such as
-// "service names".
+/// Declares a logical name: a `validated_string!` checked by
+/// `valid_logical_name`, whose error message starts with `$subject`, such as
+/// "service names".
 macro_rules! logical_name {
     ($(#[$meta:meta])* $name:ident, $error:ident, $subject:literal) => {
         $crate::names::validated_string!(
@@ -113,23 +113,23 @@ macro_rules! logical_name {
     };
 }
 
-// Declares a fieldless enum whose variants each have one stable string form,
-// taken from a single `Variant => "form"` table, with `ALL`, `as_str`,
-// `parse`, and `Display`, so storage, API, and display values cannot drift
-// apart. A leading `#[serde]` also derives `Deserialize`, `Serialize`, and
-// `ToSchema`, renaming each variant to its form. Further derives, such as
-// `Default` or `Ord`, go with the enum's other attributes. Forms are matched
-// as `tt` rather than `literal`: `ToSchema` ignores a rename whose value
-// arrives as a `literal` fragment, wrapped in an invisible group.
-//
-//     string_enum! {
-//         #[serde]
-//         /// Docs for the enum.
-//         pub enum Outcome {
-//             /// Docs for the variant.
-//             Allowed => "allowed",
-//         }
-//     }
+/// Declares a fieldless enum whose variants each have one stable string form,
+/// from a single `Variant => "form"` table, with `ALL`, `as_str`, `parse` and
+/// `Display`. A leading `#[serde]` also derives `Deserialize`, `Serialize` and
+/// `ToSchema`, renaming each variant to its form. Forms are matched as `tt`,
+/// not `literal`: `ToSchema` ignores a rename whose value arrives as a
+/// `literal` fragment.
+///
+/// ```text
+/// string_enum! {
+///     #[serde]
+///     /// Docs for the enum.
+///     pub enum Outcome {
+///         /// Docs for the variant.
+///         Allowed => "allowed",
+///     }
+/// }
+/// ```
 macro_rules! string_enum {
     (
         #[serde]
@@ -189,9 +189,8 @@ macro_rules! string_enum {
 }
 pub(crate) use string_enum;
 
-// Lets a wire field that stays a `String`, so it still reads values a newer
-// daemon adds or old rows hold, be built from and compared with a
-// `string_enum!`'s values: `event.kind == EventKind::OperationFailed`.
+/// Lets a wire field that stays a `String` be built from and compared with a
+/// `string_enum!`'s values: `event.kind == EventKind::OperationFailed`.
 macro_rules! compared_as_string {
     ($name:ident) => {
         impl From<$name> for String {

@@ -1065,7 +1065,6 @@ impl<'a> Scope<'a> {
         for segment in segments {
             let part = match segment {
                 Segment::Text(part) => part,
-                // The first missing value is reported, bounding errors.
                 Segment::Reference(reference) => self.lookup(&reference, path, errors)?.to_string(),
             };
             let rendered = self.rendered.get();

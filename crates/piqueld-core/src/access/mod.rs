@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use utoipa::ToSchema;
 
-// Declares a permission enum whose wire names and descriptions come from one
-// `Variant => "wire", "description"` table.
+/// Declares a permission enum whose wire names and descriptions come from one
+/// `Variant => "wire", "description"` table.
 macro_rules! permissions {
     ($(#[$meta:meta])* $name:ident { $($(#[$variant_meta:meta])* $variant:ident => $value:literal, $description:literal),+ $(,)? }) => {
         string_enum! {
@@ -715,8 +715,6 @@ impl Grants {
                     }
                 })
             }),
-            // As for an application that does not exist: only callers who
-            // could act on every application learn that.
             Target::Unknown => required.iter().try_for_each(|permission| {
                 if self.app_scope(*permission) == Scope::All {
                     Ok(())

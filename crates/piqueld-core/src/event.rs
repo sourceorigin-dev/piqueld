@@ -21,10 +21,6 @@ pub struct Event {
     /// Execution attempt for attempt-related events.
     pub attempt: Option<u64>,
     /// Stable event category, such as `operation_failed` or `health_changed`.
-    //
-    // An `EventKind`, kept a string so events of kinds a newer daemon adds,
-    // or that older daemons recorded, still read; compare it with
-    // `Event::known_kind` or `==`.
     pub kind: String,
     /// Sanitized diagnostic or state description.
     pub message: Option<String>,
@@ -78,7 +74,6 @@ string_enum! {
     /// Every kind of event the daemon records, as stored in history and sent
     /// as [`Event::kind`]. A kind never changes, but new ones are added.
     pub enum EventKind {
-        // An operation's lifecycle.
         /// An apply operation was requested, or applying a fetched manifest
         /// changed the application.
         ApplicationApplied => "application_applied",
@@ -125,7 +120,6 @@ string_enum! {
         /// [`EventDetail::Planned`].
         PlanRecorded => "plan_recorded",
 
-        // A journaled runtime request (action).
         /// An action was journaled, before it is requested.
         ActionStarted => "action_started",
         /// An action's request is about to be sent, as its `retry`th attempt.
@@ -143,7 +137,6 @@ string_enum! {
         /// took effect is unknown.
         ActionOutcomeUnknown => "action_outcome_unknown",
 
-        // Applications and environments, outside any operation.
         /// An application's configuration was edited, as its
         /// [`EventDetail::Edited`] says.
         ApplicationEdited => "application_edited",
@@ -173,7 +166,6 @@ string_enum! {
         /// A command run in an environment's service finished.
         CommandFinished => "command_finished",
 
-        // Secrets.
         /// A secret's value was stored.
         SecretSaved => "secret_saved",
         /// A secret was deleted.
@@ -184,7 +176,6 @@ string_enum! {
         /// or environment.
         SecretValuesDiscarded => "secret_values_discarded",
 
-        // The daemon.
         /// An unexpected failure outside any operation, with its diagnostic.
         Diagnostic => "diagnostic",
         /// A dependency of the daemon, such as certificate renewal or
@@ -193,7 +184,6 @@ string_enum! {
         /// The daemon started; the resource is its version.
         DaemonStarted => "daemon_started",
 
-        // Security events, in daemon history.
         /// An account received `admin` on every application.
         AdminGranted => "admin_granted",
         /// A token was created without expiry or with `admin`.

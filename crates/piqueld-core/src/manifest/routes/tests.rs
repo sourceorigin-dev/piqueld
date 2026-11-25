@@ -79,9 +79,7 @@ fn wildcards_match_one_label_below_their_parent() {
             .normalize(app.id().clone()),
         app
     );
-    // Wildcards are never exact hostnames.
     Hostname::parse("*.example.com").expect_err("`Hostname::parse` should be rejected");
-    // Probes skip names exact routes claim, and fit the longest parent.
     let claimed = [host("a.tenants.example.com")];
     assert_eq!(
         hostname.served(&claimed),
@@ -96,7 +94,6 @@ fn wildcards_match_one_label_below_their_parent() {
             .is_some()
     );
 
-    // A wildcard redirect loops when it reaches a name only it serves.
     let redirect = |to: &str, exact: &str| {
         parse_toml(&manifest(&format!(
             "[[spec.routes]]\nhostname='*.example.com'\nredirect={{to='{to}'}}\n{exact}"
@@ -199,7 +196,6 @@ fn redirects_are_validated_and_keep_the_flat_wire_shape() {
 
 #[test]
 fn decoding_keeps_stored_routes_and_rejects_mixed_targets() {
-    // Stored proxy routes predate redirects and must still decode.
     let stored: ValidatedRoute = serde_json::from_value(
         serde_json::json!({"hostname":"a.example.com","service":"web","port":80}),
     )

@@ -287,7 +287,6 @@ fn typed_template_schema_describes_reference_text() {
     use utoipa::PartialSchema;
     let schema = serde_json::to_value(Typed::<u16>::schema()).unwrap();
     assert!(schema.to_string().contains("TypedTemplate"));
-    // OpenAPI follows the private schema-only type through its registered schema.
     let mut schemas = Vec::new();
     <Typed<u16> as ToSchema>::schemas(&mut schemas);
     let schema = schemas

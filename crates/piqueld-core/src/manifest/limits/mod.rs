@@ -24,16 +24,13 @@ pub struct PreviewLimits {
     /// `preview_limit_reached`. `0` refuses every new preview.
     pub max_total: u32,
     /// CPU limit, in millicores, of preview services that set none.
-    // The bounds are `MAX_CPU_MILLIS`, which `validate` enforces.
     #[schema(minimum = 1, maximum = 1_048_576)]
     pub default_cpu_millis: u32,
     /// Memory limit, in bytes, of preview services that set none.
-    // `i64::MAX`, which `validate` enforces; the attribute takes literals only.
     #[schema(minimum = 1, maximum = 9_223_372_036_854_775_807_i64)]
     pub default_memory_bytes: u64,
     /// Most replicas a preview service runs; manifests asking for more are
     /// capped with a warning.
-    // The bounds are `REPLICAS`, which `validate` enforces.
     #[schema(minimum = 1, maximum = 100)]
     pub max_replicas: u16,
 }

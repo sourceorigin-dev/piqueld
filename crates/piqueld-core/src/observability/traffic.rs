@@ -84,12 +84,10 @@ mod tests {
 
     #[test]
     fn daily_visitors_average_over_the_counted_part_of_the_window() {
-        // A 24-hour period starts on the hour, so it runs a little longer.
         assert_eq!(report(24, 300, 0).daily_visitors(), 300);
         assert_eq!(report(25, 300, 0).daily_visitors(), 288);
         assert_eq!(report(30 * 24, 9_000, 0).daily_visitors(), 300);
         assert_eq!(report(30 * 24, 20, 0).daily_visitors(), 1);
-        // Days before the first request don't count; at least a day does.
         assert_eq!(report(30 * 24, 1_500, 25 * 24).daily_visitors(), 300);
         assert_eq!(report(1, 40, 0).daily_visitors(), 40);
         assert_eq!(report(30 * 24, 0, 30 * 24).daily_visitors(), 0);

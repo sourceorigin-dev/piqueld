@@ -104,9 +104,6 @@ impl RouteUrl {
         if !applied.contains(route) {
             pending.push(UrlCondition::Ingress);
         }
-        // A disabled listener never serves the route, checked or not. A
-        // listener failure observed since the route's check outdates it;
-        // other applications' network failures do not.
         let listener = match (route.visibility, &ingress.public) {
             _ if !ingress.enabled => Some("Ingress is disabled in daemon configuration"),
             (Visibility::Private, _) if !ingress.private.enabled => {

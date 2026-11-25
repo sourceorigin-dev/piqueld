@@ -74,7 +74,6 @@ fn imports_connect_to_the_same_named_environment_that_exports_to_them() {
     let report = super::report(&parties[0].environment, &parties, &Scope::All);
     assert_eq!(report.importers.len(), 1);
     assert_eq!(report.importers[0].application.as_str(), "notes");
-    // Readers who cannot see notes do not learn it imports anything.
     let hidden = Scope::one(parties[0].application_id.clone());
     let report = super::report(&parties[0].environment, &parties, &hidden);
     assert_eq!(report.importers, Vec::new());
@@ -92,7 +91,6 @@ fn imports_name_another_environment_and_previews_need_the_exporters_consent() {
     let mut parties = deployed(vec![auth, preview, missing]);
 
     assert_eq!(links(&parties), Vec::new());
-    // Not exporting to previews and not existing look the same.
     for party in &parties[1..] {
         assert_eq!(
             report(&party.environment, &parties, &Scope::All).imports[0].state,
@@ -141,8 +139,6 @@ fn grants_follow_the_application_bound_when_deployed_not_its_name() {
     let mut parties = deployed(vec![auth, notes]);
     assert_eq!(links(&parties).len(), 1);
 
-    // notes is renamed, and another application takes its name: notes
-    // keeps its link, the newcomer gets none, even after auth redeploys.
     parties[1].application = ApplicationName::parse("journal").unwrap();
     let mut impostor = party("c", "notes", "staging");
     impostor.application_id = ApplicationId::parse("app-impostor").unwrap();
@@ -157,7 +153,6 @@ fn grants_follow_the_application_bound_when_deployed_not_its_name() {
         ImportState::Unavailable
     );
 
-    // Renaming auth keeps notes' link, which reports auth's new name.
     let mut parties = parties;
     parties[0].application = ApplicationName::parse("identity").unwrap();
     let report = report(&parties[1].environment, &parties, &Scope::All);
@@ -169,7 +164,6 @@ fn grants_follow_the_application_bound_when_deployed_not_its_name() {
 fn unbound_names_match_the_application_holding_them() {
     let mut auth = party("a", "auth", "staging");
     auth.exports = vec![export("api", &["notes"], false)];
-    // auth deploys before notes exists, so its grant stays unbound.
     let auth = deployed(vec![auth]).remove(0);
     assert_eq!(auth.bindings, Bindings::new());
     let mut notes = party("b", "notes", "staging");

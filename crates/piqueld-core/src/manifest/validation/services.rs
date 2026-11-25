@@ -142,7 +142,6 @@ impl Service {
                 ),
             ));
         }
-        // Mount, secret, and file targets a file must not contain.
         let others = targets
             .iter()
             .copied()
@@ -225,8 +224,6 @@ impl Service {
                 ));
             }
             validate_absolute_path(&mount.target, &format!("{path}.target"), errors);
-            // HTTP health checks mount piqueld-probe there, and telemetry
-            // receivers their socket directory.
             for (reserved, purpose) in [
                 (piqueld_probe::CONTAINER_PATH, "health probe"),
                 (crate::resource::TELEMETRY_TARGET, "telemetry socket"),
@@ -283,7 +280,6 @@ impl SecretMount {
     ) {
         for (index, secret) in secrets.iter().enumerate() {
             let path = format!("{base}.secrets[{index}]");
-            // Names that reference variables are validated once rendered.
             if let Some(name) = secret.name.as_literal() {
                 validate_name(&name, &format!("{path}.name"), errors);
             }
