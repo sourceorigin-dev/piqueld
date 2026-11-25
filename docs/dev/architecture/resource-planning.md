@@ -23,8 +23,8 @@ piqueld owns and reports blocking ownership or immutable-configuration conflicts
 Foreign resources are never mutated.
 
 A deletion plan removes owned services and networks. Named volumes appear as
-informational retention actions and remain available after environment deletion;
-deleting a preview also removes the volumes it created.
+informational retention actions and are detached when the environment is
+deleted; deleting a preview also removes the volumes it created.
 
 [Links](docker-reconciliation.md#link-networks) are resolved from every
 environment's active target (`piqueld_core::links`) and projected onto a fresh

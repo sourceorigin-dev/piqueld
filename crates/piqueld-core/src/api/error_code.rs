@@ -64,6 +64,8 @@ string_enum! {
         ApplicationIdInvalid => "application_id_invalid",
         /// 400: an environment ID is malformed.
         EnvironmentIdInvalid => "environment_id_invalid",
+        /// 400: a volume ID is malformed.
+        VolumeIdInvalid => "volume_id_invalid",
         /// 400: a preview slot is malformed.
         PreviewSlotInvalid => "preview_slot_invalid",
         /// 400: a notification destination name is malformed.
@@ -166,6 +168,14 @@ string_enum! {
         /// 409: secret versions a restore needs are gone;
         /// `details.secrets` lists them.
         RestoreSecretsUnavailable => "restore_secrets_unavailable",
+        /// 409: the environment already binds the volume name to a volume.
+        VolumeNameBound => "volume_name_bound",
+        /// 409: the volume is attached to an environment; only detached
+        /// volumes can be attached or deleted.
+        VolumeAttached => "volume_attached",
+        /// 409: previews delete their volumes with them, so no volume can be
+        /// attached to one.
+        VolumePreview => "volume_preview",
         /// 409: the hostname is reserved by another environment, another
         /// application's wildcard, or this installation.
         HostnameConflict => "hostname_conflict",

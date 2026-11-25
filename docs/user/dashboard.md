@@ -32,7 +32,10 @@ whose **Menu** button opens the navigation and the footer. The home page and App
 across applications, the latest of each environment; each row opens that
 deployment in its environment's history.
 Daemon status also runs the [installation checks](reference/cli.md#installation-checks)
-when it opens and on demand, showing each with its next step.
+when it opens and on demand, showing each with its next step, and lists the
+[detached volumes](applications/volumes-and-files.md#delete-a-detached-volume)
+deleted environments left, each with a **Delete** button for accounts with
+`system:operate`.
 Applications also has a clickable directory with each application's health (its
 least healthy environment) and last deployment time.
 
@@ -57,7 +60,7 @@ secrets this environment may mount or mounts; a new secret saved there may be mo
 this environment only, unless its access is changed. Then the environment's generated values
 can be regenerated for the next deployment, or deleted so a later deployment
 generates new ones. Deletion confirms the environment
-name, retains its Docker volumes, and leaves the application and other
+name, detaches its volumes, keeping their data, and leaves the application and other
 environments intact; **Retry deletion** resumes cleanup when needed. An
 environment page whose environment no longer exists says so rather than showing
 another environment.
@@ -263,7 +266,9 @@ a URLs card, a Links card when it imports services or others import its
 services, a Telemetry card when it is granted the daemon's
 [telemetry](operations/telemetry.md#receive-telemetry-in-an-application) or
 deploys a service receiving it (whether it is granted, which service receives
-it, and whether the daemon is connected), observed services, and
+it, and whether the daemon is connected), observed services, a
+[Volumes](applications/volumes-and-files.md#see-an-environments-volumes) card
+listing the volume each volume name is bound to with its size, and
 reconciliation diagnostics. The Links card
 lists each import as connected or waiting, with why, and the environments of
 readable applications importing its services; a preview's Overview shows it
@@ -298,8 +303,9 @@ environment's Overview links to the release its current target runs. Current tar
 are distinct. Old history is pruned as
 [history and diagnostics](operations/history.md#how-long-history-is-kept)
 describes. Deploying an
-empty application removes its runtime services and network. Removing volumes or
-deleting an application retains environments' Docker volume data; deleting an
+empty application removes its runtime services and network. Removing volumes
+keeps their data, and deleting an application detaches environments' volumes,
+keeping their data; deleting an
 application deletes every environment and preview, with the previews' volumes,
 its configuration, and all database history. The
 confirmation names the environments being deleted.

@@ -68,6 +68,12 @@ pub trait RuntimeBoundary: Send + Sync + 'static {
         environment: &EnvironmentId,
         names: &[String],
     ) -> Result<(), BoundaryError>;
+    /// Removes a detached volume and its data, after checking its labels
+    /// name the environment that created it.
+    async fn remove_volume(
+        &self,
+        volume: &piqueld_store::DockerVolume,
+    ) -> Result<(), BoundaryError>;
     /// Creates a command in one running task of the environment's service.
     /// Returns `None` when the service has no running task.
     async fn create_exec(

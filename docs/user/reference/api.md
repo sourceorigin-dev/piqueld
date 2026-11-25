@@ -139,7 +139,7 @@ when the complete normalized manifest is needed.
 | POST | `/api/v1/environments/{id}/promote` | Promote a release into a promoted environment: `{ "deployment": null, "release": null, "expected_generation": 3 }`; 202 with `AcceptedPromotion` |
 | POST | `/api/v1/environments/{id}/promote/plan` | Plan that promotion, or an earlier `release` for any environment, without changing anything; `PlanView` with `release` |
 | GET | `/api/v1/environments/{id}` | Environment metadata |
-| GET | `/api/v1/environments/{id}/detail` | Environment, application intent, the `manifest` it deploys, resolved generation, `status`, current release, observed runtime, operation, diagnostics, the URL of each rendered route with its state (see [URL readiness](#url-readiness)), and its `links` (see below) |
+| GET | `/api/v1/environments/{id}/detail` | Environment, application intent, the `manifest` it deploys, resolved generation, `status`, current release, observed runtime, operation, diagnostics, the URL of each rendered route with its state (see [URL readiness](#url-readiness)), its `links` (see below), and its `volumes`, as `GET /environments/{id}/volumes` lists them |
 | GET | `/api/v1/environments/{id}/status` | Intent progress and separate runtime health |
 | POST | `/api/v1/environments/{id}/deploy` | Deploy the environment from its source with fresh source resolution; supersede pending work. `branch=NAME` or `commit=SHA` fetches a repository-backed manifest from that revision instead of the environment's branch, for this deployment only. `rebuild=true` builds every Git source again |
 | GET | `/api/v1/environments/{id}/deployments` | Deployment snapshots, newest first; `limit` per page, from 1 to 100, three without it. `view=summary` lists each without its manifests: its operation, origin, release, flags, and the `git_sha` and `git_branch` it was read from |
@@ -160,6 +160,11 @@ when the complete normalized manifest is needed.
 | POST | `/api/v1/previews/{id}/deploy` | Deploy the head of the preview's branch, replacing a local snapshot it runs; 202 with `AcceptedOperation` |
 | POST | `/api/v1/previews/{id}/restore` | Restore an earlier, succeeded deployment of the preview exactly, as for an [environment](#restoring-a-deployment); 202 with `AcceptedOperation` |
 | DELETE | `/api/v1/previews/{id}` | Delete the preview and every volume it created; 202 with `AcceptedOperation` |
+| GET | `/api/v1/environments/{id}/volumes` | The [volumes](../applications/volumes-and-files.md#what-happens-to-volume-data) the environment binds its volume names to, as `VolumeView`s: `id`, `docker_name`, `pool` (`local`), `state` (`attached` or `detached`), `binding` (application, environment and `name`), `size_bytes` and `measured_at_ms` once measured, and `created_at_ms` |
+| PUT | `/api/v1/environments/{id}/volumes/{name}` | Attach a detached volume under `name`, mounted from the next deployment: `{ "volume": "volume-..." }`; needs `apps:write` and `system:operate`. 409 `volume_name_bound` when the environment binds `name` already, `volume_attached` for an attached volume, `volume_preview` for a preview |
+| GET | `/api/v1/volumes?detached=true` | Every volume, attached ones first, or only detached ones, each with `detached_from` (application, environment and `name`) when known (`system:read`) |
+| GET | `/api/v1/volumes/{volume}` | One `VolumeView` (`system:read`) |
+| DELETE | `/api/v1/volumes/{volume}` | Delete a detached volume and its data (`system:operate`); 409 `volume_attached` for an attached one |
 | GET | `/api/v1/operations/{id}` | Inspect progress, attempt count, and safe diagnostics |
 | GET | `/api/v1/operations/{id}/timeline` | The operation's [timeline](#operation-timelines): its steps, done and left |
 | GET | `/api/v1/operations/{id}/timeline/stream` | Follow the timeline live through SSE |
@@ -564,7 +569,8 @@ pending/running older operations `superseded`, separately from cancellation.
 The CLI treats supersession as success with an explicit outcome and stops waiting
 immediately, without following the replacement. Each execution increments
 `attempt`. Deployment attempt outcomes remain available even after event pruning.
-Deletion retains volumes and completes only after runtime absence is verified.
+Deletion detaches the environment's volumes, keeping their data, and
+completes only after runtime absence is verified.
 It then removes the environment, its operations, deployments, attempts, builds,
 and receipts. Its events stay in the application's history until the application
 is deleted. Clients waiting for deletion poll environment (or application)

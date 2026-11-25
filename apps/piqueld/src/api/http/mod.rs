@@ -47,6 +47,7 @@ mod secrets;
 mod system;
 mod traffic;
 mod ui;
+mod volumes;
 mod webhooks;
 pub use webhooks::webhook_router;
 
@@ -292,6 +293,7 @@ fn finish_router(
 fn documented_router() -> OpenApiRouter<ApiState> {
     OpenApiRouter::with_openapi(openapi::base_document())
         .merge(editing::router())
+        .merge(volumes::router())
         .routes(public!(auth::status))
         .routes(public!(auth::setup_link))
         .routes(public!(auth::recover_admin))

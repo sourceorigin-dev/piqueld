@@ -53,7 +53,9 @@ mod stopped;
 mod sync;
 mod telemetry;
 mod timeline;
+mod volume;
 pub use sync::{BranchHead, SyncApplication};
+pub use volume::{DockerVolume, VolumeError};
 
 use piqueld_core::{
     ApplicationId, EnvironmentId, EnvironmentKind, EnvironmentName, EnvironmentSource,
@@ -286,6 +288,9 @@ pub enum StoreError {
     /// Restoring a deployment was refused.
     #[error(transparent)]
     Restore(#[from] RestoreError),
+    /// A volume change was refused.
+    #[error(transparent)]
+    Volume(#[from] VolumeError),
     /// A unique logical name or identifier already exists.
     #[error("resource already exists")]
     AlreadyExists,

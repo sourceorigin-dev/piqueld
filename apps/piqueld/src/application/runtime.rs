@@ -184,6 +184,20 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
             .await?;
         Ok(())
     }
+    async fn remove_volume(
+        &self,
+        volume: &piqueld_store::DockerVolume,
+    ) -> Result<(), BoundaryError> {
+        let ownership = piqueld_core::resource::Ownership::scope(&self.instance_id, &volume.owner);
+        DockerTimeout::Request
+            .run(
+                "remove volume",
+                self.docker
+                    .remove_volume(volume.docker_name.as_str(), &ownership),
+            )
+            .await?;
+        Ok(())
+    }
     async fn create_exec(
         &self,
         environment: &EnvironmentId,

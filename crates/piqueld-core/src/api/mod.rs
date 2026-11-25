@@ -17,6 +17,7 @@ mod system;
 mod telemetry;
 #[cfg(test)]
 mod tests;
+mod volumes;
 
 pub use applications::*;
 pub use builds::*;
@@ -30,6 +31,7 @@ pub use secrets::*;
 pub use streams::*;
 pub use system::*;
 pub use telemetry::*;
+pub use volumes::*;
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

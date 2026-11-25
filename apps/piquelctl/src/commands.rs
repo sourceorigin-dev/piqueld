@@ -56,6 +56,7 @@ pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Re
         )),
         Command::Secrets { action } => action.run(client, console).await,
         Command::Notification { command } => command.run(client, console).await,
+        Command::Volume { command } => command.run(client, console).await,
         Command::Status => status(cli, client, console).await,
         Command::Resources => console.emit(&client.daemon_stats().await?),
         Command::Settings => console.emit(&client.system_configuration().await?),
@@ -434,7 +435,7 @@ impl ApplyArgs {
 
 impl DeleteArgs {
     /// Confirms and deletes an application, all its environments (named volumes
-    /// are retained), and all its previews (their volumes are removed), guarded by
+    /// are detached and kept), and all its previews (their volumes are removed), guarded by
     /// the expected generation unless `--force`. With several environments,
     /// `--environments` must name every one. Waits until the application is gone
     /// unless `--no-wait`.
@@ -468,7 +469,7 @@ impl DeleteArgs {
             }
         }
         console.info(format_args!(
-            "deleting {name} ({}) and its environments {}: managed services and networks are removed; named volumes are retained",
+            "deleting {name} ({}) and its environments {}: managed services and networks are removed; environments' volumes are detached and kept",
             application.application.id(),
             join_or(&names, "(none)")
         ))?;
@@ -488,7 +489,7 @@ impl DeleteArgs {
             .confirm(
                 flags.yes,
                 &format!(
-                    "Delete application {name:?}? Named volumes of environments will be retained.{previews}"
+                    "Delete application {name:?}? Environments' volumes will be detached and kept.{previews}"
                 ),
             )
             .await?;

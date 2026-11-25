@@ -9,13 +9,14 @@ use utoipa::ToSchema;
 #[cfg(doc)]
 use super::TELEMETRY_TARGET;
 use super::{
-    DesiredFile, DesiredMount, DesiredNetwork, DesiredService, InstanceId, LINK_LABEL,
-    OwnershipState, ResolvedApplication, SERVICE_LABEL, SecretFile, TelemetryMount,
+    APPLICATION_LABEL, DesiredFile, DesiredMount, DesiredNetwork, DesiredService, INSTANCE_LABEL,
+    InstanceId, LINK_LABEL, MANAGED_LABEL, OwnershipState, ResolvedApplication, SERVICE_LABEL,
+    SecretFile, TelemetryMount,
 };
 use crate::manifest::{
     RolloutPolicy, ServiceSecurity, ValidatedHealthCheck, ValidatedResourceLimits,
 };
-use crate::{EnvironmentId, ResourceKind};
+use crate::{DockerVolumeName, EnvironmentId, ResourceKind};
 
 /// Untrusted mount observation from Docker, including foreign volume names.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
@@ -314,6 +315,40 @@ impl ObservedVolume {
     }
 }
 
+/// A volume an instance manages, as a survey of every volume finds it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ManagedVolume {
+    /// Its Docker name.
+    pub name: DockerVolumeName,
+    /// The environment its labels name, which created it.
+    pub owner: EnvironmentId,
+    /// The disk space it uses, if Docker measured it.
+    pub size_bytes: Option<u64>,
+}
+
+impl ManagedVolume {
+    /// The volume named `name` with `labels`, if `instance` manages it: its
+    /// labels mark it managed by `instance` and name a valid environment.
+    #[must_use]
+    pub fn of(
+        name: &str,
+        labels: &BTreeMap<String, String>,
+        instance: &InstanceId,
+        size_bytes: Option<u64>,
+    ) -> Option<Self> {
+        let label = |key: &str| labels.get(key).map(String::as_str);
+        if label(MANAGED_LABEL) != Some("true") || label(INSTANCE_LABEL) != Some(instance.as_str())
+        {
+            return None;
+        }
+        Some(Self {
+            name: DockerVolumeName::parse(name).ok()?,
+            owner: EnvironmentId::parse(label(APPLICATION_LABEL)?).ok()?,
+            size_bytes,
+        })
+    }
+}
+
 /// Observed Docker service state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -511,6 +546,11 @@ pub struct ObservedApplication {
     pub networks: Vec<ObservedNetwork>,
     /// Volumes observed for the application.
     pub volumes: Vec<ObservedVolume>,
+    /// Volumes piqueld created for other environments, which the
+    /// environment may have attached since: their labels keep naming the
+    /// environment that created them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub other_volumes: Vec<ObservedVolume>,
     /// Services observed for the application.
     pub services: Vec<ObservedService>,
     /// Link networks other environments own for their links to this one.

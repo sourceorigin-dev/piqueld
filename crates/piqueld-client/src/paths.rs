@@ -26,6 +26,16 @@ pub fn apply_application() -> String {
     String::from("/api/v1/applications/apply")
 }
 
+/// `PUT /api/v1/environments/{id}/volumes/{name}`
+#[must_use]
+pub fn attach_volume(id: &str, name: &str) -> String {
+    format!(
+        "/api/v1/environments/{id}/volumes/{name}",
+        id = encode_path(id),
+        name = encode_path(name)
+    )
+}
+
 /// `POST /api/v1/auth/device/approve`
 #[must_use]
 pub fn auth_device_approve() -> String {
@@ -226,6 +236,12 @@ pub fn delete_preview(id: &str) -> String {
     format!("/api/v1/previews/{id}", id = encode_path(id))
 }
 
+/// `DELETE /api/v1/volumes/{volume}`
+#[must_use]
+pub fn delete_volume(volume: &str) -> String {
+    format!("/api/v1/volumes/{volume}", volume = encode_path(volume))
+}
+
 /// `POST /api/v1/environments/{id}/deploy`
 #[must_use]
 pub fn deploy_environment(id: &str) -> String {
@@ -356,6 +372,12 @@ pub fn get_preview(id: &str) -> String {
     format!("/api/v1/previews/{id}", id = encode_path(id))
 }
 
+/// `GET /api/v1/volumes/{volume}`
+#[must_use]
+pub fn get_volume(volume: &str) -> String {
+    format!("/api/v1/volumes/{volume}", volume = encode_path(volume))
+}
+
 /// `GET /api/v1/applications/{id}/webhook`
 #[must_use]
 pub fn get_webhook(id: &str) -> String {
@@ -399,6 +421,12 @@ pub fn list_deployments(id: &str) -> String {
     )
 }
 
+/// `GET /api/v1/environments/{id}/volumes`
+#[must_use]
+pub fn list_environment_volumes(id: &str) -> String {
+    format!("/api/v1/environments/{id}/volumes", id = encode_path(id))
+}
+
 /// `GET /api/v1/events/kinds`
 #[must_use]
 pub fn list_event_kinds() -> String {
@@ -421,6 +449,12 @@ pub fn list_previews(id: &str) -> String {
 #[must_use]
 pub fn list_releases(id: &str) -> String {
     format!("/api/v1/applications/{id}/releases", id = encode_path(id))
+}
+
+/// `GET /api/v1/volumes`
+#[must_use]
+pub fn list_volumes() -> String {
+    String::from("/api/v1/volumes")
 }
 
 /// `GET /api/v1/notifications/deliveries`

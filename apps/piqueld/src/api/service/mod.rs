@@ -17,6 +17,7 @@ mod sync;
 mod system;
 mod telemetry;
 mod views;
+mod volumes;
 mod webhooks;
 
 use crate::application::{BoundaryError, RuntimeBoundary};

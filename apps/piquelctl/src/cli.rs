@@ -414,6 +414,12 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: crate::previews::PreviewCommand,
     },
+    /// List the volumes the daemon tracks, and attach or delete the detached
+    /// volumes deleted environments leave.
+    Volume {
+        #[command(subcommand)]
+        command: crate::volumes::VolumeCommand,
+    },
     /// Inspect Git source builds and job runs, and read their output.
     #[command(alias = "builds")]
     Build(BuildArgs),

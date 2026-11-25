@@ -103,20 +103,95 @@ briefly unavailable at each deployment; see
 
 ## What happens to volume data
 
-piqueld keeps the volume data of environments, but not of previews:
+piqueld tracks every volume it creates. An environment binds each volume name
+its manifest declares to one volume, and keeps that binding across
+deployments. Volumes of environments are never deleted with them, but those of
+previews are:
 
-- **Removing a volume from the manifest** keeps its data. Declare a volume of
-  the same name again, and the environment gets its data back.
-- **Deleting an environment** keeps its volumes, with their data, in Docker on
-  the host. A new environment never reuses them, even with the same name: it
-  gets new, empty volumes.
-- **Deleting an application** keeps its environments' volumes, in the same
+- **Removing a volume from the manifest** keeps its data, and the
+  environment's binding. Declare a volume of the same name again, and the
+  environment gets its data back.
+- **Deleting an environment** detaches its volumes: they keep their data, and
+  piqueld lists them as detached volumes. A new environment never reuses them
+  on its own, even with the same name: it gets new, empty volumes, unless you
+  [attach](#attach-a-detached-volume) one.
+- **Deleting an application** detaches its environments' volumes in the same
   way, but deletes its [previews](previews.md), with their volumes.
 - **Deleting a preview** deletes its volumes and their data.
 
-So back up a volume before you delete its environment. Its data then stays on
-the host until you remove it with Docker: the volume's name starts with
-`piqueld-` and the environment's ID, as `piquelctl env show` prints it.
+## See an environment's volumes
+
+Each volume has an ID, a Docker name, a size and a state: `attached` while an
+environment binds a name to it, `detached` after its environment is deleted.
+piqueld measures each volume's size every 15 minutes.
+
+- **In the dashboard,** the environment's **Overview** lists them under
+  **Volumes**, with the name each is bound to and its size.
+- **With `piquelctl`,** list the volumes of one environment, or of all of an
+  application's:
+
+  ```console
+  piquelctl volume list notes production
+  ```
+
+  ```text
+  volume-019abf3c0e8f7d1a9c2b4e6f80a1b2c3  attached  48.2 MB  notes/production as data
+  ```
+
+  `piquelctl volume show <volume>` shows one volume in full.
+
+Listing every volume of the installation, with `piquelctl volume list`, needs
+the `system:read` [permission](../accounts/permissions.md#grants).
+
+## Attach a detached volume
+
+A detached volume can serve another environment, such as one you recreated
+after deleting it. Attaching it binds one of the environment's volume names to
+it. The environment mounts it where its manifest mounts that name, from its
+next deployment.
+
+Attaching needs `apps:write` on the application and `system:operate`, since
+the volume may hold another application's data. The dashboard can't attach a
+volume; use `piquelctl`.
+
+1. Find the volume's ID, and where it was bound before:
+
+   ```console
+   piquelctl volume list --detached
+   ```
+
+   ```text
+   volume-019abf3c0e8f7d1a9c2b4e6f80a1b2c3  detached  48.2 MB  from notes/staging as data
+   ```
+
+2. Attach it under a name the environment doesn't bind yet:
+
+   ```console
+   piquelctl volume attach notes staging data volume-019abf3c0e8f7d1a9c2b4e6f80a1b2c3
+   ```
+
+3. Deploy the environment, with `piquelctl env deploy notes staging`, so its
+   services mount the volume.
+
+A name the environment already binds can't take another volume, even one
+that holds nothing: attaching to it fails with `volume_name_bound`. Attach the
+volume to an environment before its first deployment that declares the name,
+or under another name. Previews delete their volumes, so they take none.
+
+## Delete a detached volume
+
+> **Warning:** deleting a volume deletes its data. It can't be undone.
+
+Only detached volumes can be deleted. Deleting needs `system:operate`.
+
+- **In the dashboard,** the **Daemon status** page lists detached volumes,
+  with where each was bound. Select **Delete** next to the volume, then
+  confirm.
+- **With `piquelctl`:**
+
+  ```console
+  piquelctl volume delete volume-019abf3c0e8f7d1a9c2b4e6f80a1b2c3
+  ```
 
 ## Back up a volume
 
@@ -236,6 +311,13 @@ $ piquelctl app exec notes web -- ls -l /etc/nginx/conf.d/default.conf
   the directory the image has at the mount's path, or belongs to root if the
   image has none. A service that runs as another user can only write to a
   volume mounted where its image has a directory it owns.
+- **A detached volume has no environment it came from.** piqueld found it in
+  Docker, labelled as its own, after its environment had been deleted, before
+  piqueld tracked volumes. Its Docker name starts with `piqueld-` and the
+  environment's ID.
+- **A deleted volume is listed again.** Docker couldn't remove it, for example
+  because a container you started yourself mounts it. piqueld lists it again as
+  detached at its next measurement; delete it again once nothing uses it.
 - **The database's data is gone after a new deployment.** Check that the volume
   is mounted where the image keeps its data, such as `/var/lib/postgresql/data`
   for PostgreSQL. Data written anywhere else is lost when the container is

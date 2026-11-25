@@ -96,6 +96,9 @@ impl RuntimeBoundary for Runtime {
     async fn lock_mutations(&self) -> tokio::sync::OwnedMutexGuard<()> {
         Arc::new(tokio::sync::Mutex::new(())).lock_owned().await
     }
+    async fn remove_volume(&self, _: &piqueld_store::DockerVolume) -> Result<(), BoundaryError> {
+        Ok(())
+    }
     async fn remove_secrets(
         &self,
         _: &EnvironmentId,

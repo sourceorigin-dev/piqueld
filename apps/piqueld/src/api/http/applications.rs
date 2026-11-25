@@ -157,7 +157,7 @@ impl QueryParams for DeleteApplicationQuery {
 /// accepts the deletion operations.
 #[utoipa::path(
     delete, path = "/api/v1/applications/{id}", operation_id = "deleteApplication",
-    summary = "Delete an application with its environments, retaining their volumes, and its previews",
+    summary = "Delete an application with its environments, detaching their volumes, and its previews",
     params(("id" = String, Path, min_length = 8, max_length = 64), DeleteApplicationQuery,IdempotencyKey),
     responses(
         (status = 202, description = "Deletion operations", body = Envelope<DeletedApplication>),

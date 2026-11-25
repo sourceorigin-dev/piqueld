@@ -80,7 +80,7 @@ test('the dashboard creates, renames and deletes only the chosen environment', a
   page.once('dialog', dialog => dialog.dismiss());
   await remove.click();
   await expect(remove).toBeEnabled();
-  confirmNext(page, 'The application and other environments remain. Docker volume data will be retained.');
+  confirmNext(page, 'The application and other environments remain. Its volumes will be detached and kept with their data.');
   const deleted = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().includes(`/environments/${qa}?`));
   await remove.click();
   expect((await deleted).status()).toBe(202);

@@ -22,7 +22,15 @@ during their next reconciliation.
 The deployable unit is an environment of an application. Every environment
 deploys its application's saved manifest into its own network, services, and
 volumes, named and labelled after the environment ID (the ownership label key
-remains `io.piqueld.application`). Environments are reconciled independently;
+remains `io.piqueld.application`). Volumes are the exception to the naming:
+the store binds each manifest volume name of an environment to a tracked
+volume when it saves a target (`Store::bind_volumes_on`), which rewrites the
+target's volume and mount names to that volume's Docker name, `piqueld-<volume
+ID>` for volumes created since tracking. A volume keeps the labels of the
+environment that created it, since Docker can't relabel one, so its desired
+labels, which ownership checks compare, are that environment's. Observation
+lists every managed volume and returns those of other environments in
+`other_volumes`, where the planner finds a volume attached from one. Environments are reconciled independently;
 an operation, its status, and its prepared target belong to one environment.
 
 Apply validates and persists the entire normalized manifest. Save-only Apply
@@ -197,9 +205,11 @@ about 6 seconds, before it fails as a Docker request failure.
 
 Deletion remains running until a fresh observation confirms services and
 networks are absent. Failed deletion attempts record diagnostics and follow the
-same retry policy. Deletion removes the environment's Swarm secrets. Named volumes
-remain available after deletion, except a preview's, which deletion removes and
-waits for.
+same retry policy. Deletion removes the environment's Swarm secrets. Its volumes
+are detached, except a preview's, which deletion removes and waits for. The
+volume survey (`Controller::run_volume_survey`) lists every volume the
+instance manages every 15 minutes, adopting those the store has no record of
+as detached and recording sizes.
 
 Operation state describes progress toward intent. Runtime health is recorded
 separately, so a failed replacement can coexist with healthy existing services.

@@ -290,6 +290,14 @@ impl<D: DockerApi> DockerApi for LimitedDocker<D> {
     ) -> Result<(), DockerError> {
         self.inner.remove_network(name, ownership).await
     }
+    /// Measuring volumes counts as an observation.
+    async fn volumes(
+        &self,
+        instance: &piqueld_core::InstanceId,
+    ) -> Result<Vec<piqueld_core::resource::ManagedVolume>, DockerError> {
+        let _permit = self.observing().await;
+        self.inner.volumes(instance).await
+    }
     async fn remove_volume(
         &self,
         name: &str,

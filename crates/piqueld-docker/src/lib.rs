@@ -497,9 +497,17 @@ pub trait DockerApi: Send + Sync + 'static {
     /// labels that no service mounts, now or in the previous spec a rollback
     /// restores. Docker refuses to remove configs in use.
     async fn prune_files(&self, ownership: &BTreeMap<String, String>) -> Result<(), DockerError>;
+    /// Lists the volumes `instance` manages, with the environment that
+    /// created each and its size where Docker measures it. Measuring walks
+    /// every volume's files, so it is slow on large volumes.
+    async fn volumes(
+        &self,
+        instance: &InstanceId,
+    ) -> Result<Vec<piqueld_core::resource::ManagedVolume>, DockerError>;
     /// Removes a managed volume and its data after rechecking its ownership.
-    /// A missing volume counts as removed. Only deleting a preview removes
-    /// volumes; environments retain theirs.
+    /// A missing volume counts as removed. Deleting a preview removes its
+    /// volumes; an environment's are detached, and removed only when one
+    /// is deleted.
     async fn remove_volume(
         &self,
         name: &str,

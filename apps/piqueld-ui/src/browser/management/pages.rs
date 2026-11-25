@@ -183,7 +183,7 @@ fn DeleteApplication() -> impl IntoView {
             .saved
             .with_untracked(ApplicationViewExt::environment_names);
         let message = format!(
-            "Delete this application, all its environments ({}) and previews, their services, and all deployment history? Environments' Docker volume data will be retained; previews' volumes are removed with their data.",
+            "Delete this application, all its environments ({}) and previews, their services, and all deployment history? Environments' volumes will be detached and kept with their data; previews' volumes are removed with their data.",
             environments.join(", ")
         );
         if !confirm(&message) {
@@ -215,7 +215,7 @@ fn DeleteApplication() -> impl IntoView {
                 <div>
                     <h3>"Delete application"</h3>
                     <p>
-                        "Removes every environment's and preview's running services and all configuration and deployment history. Environments' Docker volumes and their data are retained; previews' volumes are removed with their data."
+                        "Removes every environment's and preview's running services and all configuration and deployment history. Environments' volumes are detached and kept with their data; previews' volumes are removed with their data."
                     </p>
                 </div>
                 <button

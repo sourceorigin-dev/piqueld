@@ -317,3 +317,4 @@ pub use images::ImagesInUse;
 mod jobs;
 mod links;
 mod rollback;
+mod volumes;

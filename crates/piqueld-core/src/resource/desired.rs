@@ -19,8 +19,8 @@ use crate::manifest::{
     ValidatedHealthCheck, ValidatedResourceLimits, ValidatedRollout,
 };
 use crate::{
-    DockerConfigName, DockerNetworkName, DockerServiceName, DockerVolumeName, ImmutableImage,
-    JobName, ServiceName, VolumeName,
+    DockerConfigName, DockerNetworkName, DockerServiceName, DockerVolumeName, EnvironmentId,
+    ImmutableImage, JobName, ServiceName, VolumeName,
 };
 
 /// Desired private overlay network state.
@@ -54,25 +54,28 @@ impl DesiredNetwork {
 pub struct DesiredVolume {
     /// Manifest-level volume name.
     pub logical_name: VolumeName,
-    /// Canonical Docker resource name.
+    /// Docker name of the volume the environment binds the name to.
     pub name: DockerVolumeName,
-    /// Expected ownership labels.
+    /// Expected ownership labels: those of the environment that created the
+    /// volume, which may since have been attached to another one.
     pub labels: BTreeMap<String, String>,
 }
 
 impl DesiredVolume {
-    /// Returns whether the volume has a canonical name and identity.
-    ///
-    /// Requires valid ownership labels without a service label, a safe logical
-    /// name, and a Docker name derived from the labelled application.
+    /// Returns whether the volume has a valid identity: ownership labels
+    /// without a service label, and a safe logical name. The Docker name
+    /// comes from the volume's record, so it is not derived here.
     #[must_use]
     pub fn has_valid_identity(&self) -> bool {
-        let Some(application) = Ownership::labelled_environment(&self.labels) else {
-            return false;
-        };
-        valid_logical_name(self.logical_name.as_str())
+        self.owner().is_some()
+            && valid_logical_name(self.logical_name.as_str())
             && !self.labels.contains_key(SERVICE_LABEL)
-            && self.name == DockerVolumeName::for_volume(&application, &self.logical_name)
+    }
+
+    /// The environment the volume's labels name, which created it.
+    #[must_use]
+    pub fn owner(&self) -> Option<EnvironmentId> {
+        Ownership::labelled_environment(&self.labels)
     }
 }
 

@@ -86,6 +86,7 @@ impl Store {
         let mut resolved = resolve.map(|resolve| resolve(&environment));
         if let Some(resolved) = &mut resolved {
             Self::bind_links_on(&mut tx, resolved).await?;
+            Self::bind_volumes_on(&mut tx, resolved).await?;
         }
         let resolved = resolved
             .as_ref()

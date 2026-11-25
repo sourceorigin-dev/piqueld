@@ -1,49 +1,9 @@
 use super::*;
 use crate::Actor::Daemon;
-use crate::testing::prebuilt;
+use crate::testing::{prebuilt, pulled, target};
 use crate::{Mutation, MutationResponse};
-use piqueld_core::{
-    EnvironmentName, InstanceId, NormalizedApplication, ResolutionSet, ResolvedSource, ServiceName,
-    compile_application, manifest::ApplicationTemplate,
-};
+use piqueld_core::{EnvironmentName, ResolvedSource, ServiceName, manifest::ApplicationTemplate};
 use std::collections::BTreeMap;
-
-/// The image `web` of the [`prebuilt`] application pulls.
-const IMAGE: &str = "ghcr.io/example/notes:1.4.0";
-
-/// `IMAGE` resolved to a digest of 64 `byte`s.
-fn pulled(byte: char) -> ResolvedSource {
-    ResolvedSource::parse_image(
-        IMAGE,
-        format!(
-            "ghcr.io/example/notes@sha256:{}",
-            byte.to_string().repeat(64)
-        ),
-    )
-    .expect("parse image succeeds")
-}
-
-/// `application` compiled for `environment`, with `web` pulled as `web`.
-fn target(
-    application: &NormalizedApplication,
-    environment: &EnvironmentId,
-    instance: &str,
-    web: ResolvedSource,
-) -> ResolvedApplication {
-    compile_application(
-        application,
-        environment,
-        InstanceId::parse(instance).expect("the instance id parses"),
-        &ResolutionSet {
-            sources: BTreeMap::from([(
-                ServiceName::parse("web").expect("the service name parses"),
-                web,
-            )]),
-            secret_names: BTreeMap::new(),
-        },
-    )
-    .expect("compile application succeeds")
-}
 
 /// Saves `notes` with a `staging` environment next to `production`.
 async fn save_with_staging(store: &Store) -> (ApplicationId, EnvironmentId, EnvironmentId) {

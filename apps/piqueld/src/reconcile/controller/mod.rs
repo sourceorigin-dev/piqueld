@@ -195,44 +195,46 @@ impl<D: DockerApi> Controller<D> {
         Ok(stopped)
     }
 
-    /// Removes every volume in a preview's inventory, including volumes later
+    /// Removes every volume a preview created, including volumes later
     /// manifests dropped, journaled like other runtime mutations. Then
     /// observes the runtime and fails, so the deletion is retried, while any
-    /// of them is left.
+    /// of them is left. Their records go with the preview.
     async fn remove_preview_volumes(&self, operation: &Operation) -> Result<(), OperationError> {
-        let names = self
+        let volumes = self
             .store
             .preview_volumes(&operation.environment_id)
             .await?;
-        if names.is_empty() {
+        if volumes.is_empty() {
             return Ok(());
         }
         self.journaled(
             &operation.id,
             Phase::RemoveVolumes,
             None,
-            self.remove_volumes(operation, &names),
+            self.remove_volumes(operation, &volumes),
         )
         .await?;
         Ok(self.store.mutation_event(&operation.id).await?)
     }
 
-    /// Removes `names` and verifies none of them is still observed.
+    /// Removes `volumes` and verifies none of them is still observed.
     async fn remove_volumes(
         &self,
         operation: &Operation,
-        names: &[String],
+        volumes: &[piqueld_store::DockerVolume],
     ) -> Result<(), OperationError> {
         let ownership = self.ownership_labels(&operation.environment_id);
-        for name in names {
-            self.docker.remove_volume(name, &ownership).await?;
+        for volume in volumes {
+            self.docker
+                .remove_volume(volume.docker_name.as_str(), &ownership)
+                .await?;
         }
         let observed = self.docker.observe(&operation.environment_id).await?;
-        if observed
-            .volumes
-            .iter()
-            .any(|volume| names.contains(&volume.name))
-        {
+        if observed.volumes.iter().any(|observed| {
+            volumes
+                .iter()
+                .any(|volume| volume.docker_name.as_str() == observed.name)
+        }) {
             return Err(OperationError::DockerRequestFailed(
                 "verifying the preview's volumes were removed",
             ));

@@ -53,7 +53,7 @@ impl EditorContext {
             self.notice.set(if environment.is_some() {
                 "Environment saved.".into()
             } else {
-                "Environment deletion accepted. Its volumes will be retained.".into()
+                "Environment deletion accepted. Its volumes will be detached and kept.".into()
             });
             done(environment);
             self.refresh_dashboard();
@@ -1030,7 +1030,7 @@ pub(super) fn EnvironmentSettings() -> impl IntoView {
             return;
         }
         let message = format!(
-            "Delete environment {}, its services, secrets and deployment history? The application and other environments remain. Docker volume data will be retained.",
+            "Delete environment {}, its services, secrets and deployment history? The application and other environments remain. Its volumes will be detached and kept with their data.",
             current()
         );
         if !confirm(&message) {
@@ -1095,7 +1095,7 @@ pub(super) fn EnvironmentSettings() -> impl IntoView {
                 <div>
                     <h3>"Delete environment"</h3>
                     <p>
-                        "Removes this environment's running services, secrets, and deployment history. Its events stay in the application's history. Docker volumes and their data are retained."
+                        "Removes this environment's running services, secrets, and deployment history. Its events stay in the application's history. Its volumes are detached and kept with their data, listed on the daemon status page."
                     </p>
                 </div>
                 <button

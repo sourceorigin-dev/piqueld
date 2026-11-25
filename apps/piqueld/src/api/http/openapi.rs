@@ -2,7 +2,7 @@
 //! metadata and served at `/api/v1/openapi.json`.
 use axum::{Extension, body::Bytes, response::IntoResponse};
 use http::header;
-use piqueld_core::api::{Envelope, ErrorBody, SecretMetadata};
+use piqueld_core::api::{Envelope, ErrorBody, SecretMetadata, VolumeView};
 use piqueld_core::{edit::RoutesValue, manifest::Route};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -15,7 +15,7 @@ use utoipa::{OpenApi, ToResponse};
     info(
         title = "piqueld API",
         version = "v1",
-        description = "piqueld control-plane API. Mutation responses identify durable operations; named volumes are retained on deletion.",
+        description = "piqueld control-plane API. Mutation responses identify durable operations; deleting an environment detaches its volumes and keeps them.",
         license(name = "Apache-2.0", identifier = "Apache-2.0")
     ),
     components(schemas(
@@ -51,6 +51,9 @@ use utoipa::{OpenApi, ToResponse};
         Envelope<Vec<piqueld_core::api::StoredSecret>>,
         Envelope<piqueld_core::api::StoredSecret>,
         Envelope<bool>,
+        VolumeView,
+        Envelope<Vec<VolumeView>>,
+        Envelope<VolumeView>,
         Route,
         RoutesValue,
         piqueld_core::api::PreviewLimitReached,

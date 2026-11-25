@@ -820,7 +820,7 @@ pub(crate) struct DeleteArgs {
 }
 
 impl DeleteArgs {
-    /// Confirms and deletes an environment (named volumes are retained), guarded by
+    /// Confirms and deletes an environment (its volumes are detached and kept), guarded by
     /// the expected generation unless `--force`. Waits until the environment is gone
     /// unless `--no-wait`.
     async fn run(&self, client: &Client, console: &mut Console) -> Result<()> {
@@ -828,7 +828,7 @@ impl DeleteArgs {
         let flags = &self.deletion;
         let name = application.application.metadata().name.clone();
         console.info(format_args!(
-            "deleting environment {} ({}) of {name}: managed services and network are removed; named volumes are retained",
+            "deleting environment {} ({}) of {name}: managed services and network are removed; its volumes are detached, kept until you delete them",
             environment.name.as_str(),
             environment.id
         ))?;
@@ -836,7 +836,7 @@ impl DeleteArgs {
             .confirm(
                 flags.yes,
                 &format!(
-                    "Delete environment {:?} of application {name:?}? Named volumes will be retained.",
+                    "Delete environment {:?} of application {name:?}? Its volumes will be detached and kept.",
                     environment.name.as_str()
                 ),
             )

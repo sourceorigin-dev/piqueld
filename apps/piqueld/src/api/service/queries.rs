@@ -165,6 +165,7 @@ impl ApplicationService {
         };
         let urls = self.urls(&stored, &observed_view.services).await?;
         let links = self.store.link_report(id, None, readable).await?;
+        let volumes = self.store.environment_volumes(id).await?;
         let telemetry = piqueld_core::api::TelemetryReport {
             granted: stored.environment.telemetry,
             receiver: stored
@@ -189,6 +190,7 @@ impl ApplicationService {
             urls: Some(urls),
             links: Some(links),
             telemetry: Some(telemetry),
+            volumes: Some(volumes),
         })
     }
     /// The manifest a promotion from `source` would deploy next: that of the
@@ -478,7 +480,7 @@ impl ApplicationService {
         let resolutions = ResolutionSet::default();
         let unresolved = preview_resolution(app, &resolutions);
         let desired = if unresolved.is_empty() {
-            let desired = compile_application(
+            let mut desired = compile_application(
                 app,
                 environment,
                 self.store.instance_id().clone(),
@@ -486,6 +488,7 @@ impl ApplicationService {
             )
             .map_err(BoundaryError::Compilation)?
             .with_ingress(self.ingress_enabled());
+            self.store.bind_existing_volumes(&mut desired).await?;
             let desired = self.store.with_links(desired, &observed).await?;
             Some(self.telemetry.project(desired, granted))
         } else {

@@ -216,7 +216,7 @@ report!(ShowReport<'_>, self, out, {
             "Named volumes",
             join_or(spec.volumes.iter().map(|volume| &volume.name), ""),
         )?;
-        out.line("Named volumes are retained on deletion.")?;
+        out.line("Deleting an environment detaches its volumes and keeps them.")?;
     }
     if !spec.variables.is_empty()
         || !spec.environments.is_empty()

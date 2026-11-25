@@ -392,7 +392,7 @@ pub(super) async fn plan_promotion(
 /// Deletes an environment's services and networks, retaining its volumes.
 #[utoipa::path(
     delete, path = "/api/v1/environments/{id}", operation_id = "deleteEnvironment",
-    summary = "Delete an environment's services and networks, retaining volumes",
+    summary = "Delete an environment's services and networks, detaching its volumes",
     params(("id" = String, Path, min_length = 8, max_length = 64), GenerationQuery,IdempotencyKey),
     responses(
         (status = 202, description = "Deletion operation", body = Envelope<AcceptedOperation>),

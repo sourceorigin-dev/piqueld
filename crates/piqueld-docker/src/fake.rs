@@ -984,9 +984,14 @@ impl DockerApi for FakeDocker {
         observed
             .services
             .retain(|service| relevant(&service.name, &service.labels));
-        observed
+        (observed.volumes, observed.other_volumes) = observed
             .volumes
-            .retain(|volume| relevant(&volume.name, &volume.labels));
+            .into_iter()
+            .filter(|volume| {
+                relevant(&volume.name, &volume.labels)
+                    || volume.labels.get(MANAGED_LABEL).map(String::as_str) == Some("true")
+            })
+            .partition(|volume| relevant(&volume.name, &volume.labels));
         (observed.networks, observed.linked_networks) = observed
             .networks
             .into_iter()
@@ -1278,6 +1283,28 @@ impl DockerApi for FakeDocker {
         }
         observed.networks.retain(|network| network.name != name);
         Ok(())
+    }
+
+    async fn volumes(
+        &self,
+        instance: &InstanceId,
+    ) -> Result<Vec<piqueld_core::resource::ManagedVolume>, DockerError> {
+        let _probe = self.observations.enter().await;
+        Ok(self
+            .observed
+            .lock()
+            .await
+            .volumes
+            .iter()
+            .filter_map(|volume| {
+                piqueld_core::resource::ManagedVolume::of(
+                    &volume.name,
+                    &volume.labels,
+                    instance,
+                    Some(0),
+                )
+            })
+            .collect())
     }
 
     async fn remove_volume(

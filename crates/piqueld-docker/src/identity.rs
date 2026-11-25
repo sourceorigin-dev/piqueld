@@ -33,6 +33,12 @@ impl BollardDocker {
         Self::label_filter(vec![format!("{APPLICATION_LABEL}={application}")])
     }
 
+    /// Selects every resource piqueld manages, whatever its instance or
+    /// environment.
+    pub(super) fn managed_filter() -> Filters {
+        Self::label_filter(vec![format!("{MANAGED_LABEL}=true")])
+    }
+
     /// Selects the link networks importers own for their links to `exporter`.
     pub(super) fn link_label_filter(exporter: &EnvironmentId) -> Filters {
         Self::label_filter(vec![format!("{LINK_LABEL}={exporter}")])

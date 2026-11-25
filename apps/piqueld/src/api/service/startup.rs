@@ -109,9 +109,10 @@ impl ApplicationService {
                     cancellation.cancel();
                     result
                 };
-                let (result, (), ()) = tokio::join!(
+                let (result, (), (), ()) = tokio::join!(
                     reconcile,
                     reconciler.run_image_cleanup(cancellation.child_token()),
+                    reconciler.run_volume_survey(cancellation.child_token()),
                     ingress.run(cancellation.child_token()),
                 );
                 result

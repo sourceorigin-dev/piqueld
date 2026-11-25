@@ -12,6 +12,7 @@ mod observability;
 mod runtime;
 mod stream;
 mod ui;
+mod volumes;
 
 use dashboard::{ApplicationsPage, OverviewPage, Sidebar};
 use ui::{Icon, STALE, Tone, icon, notice};

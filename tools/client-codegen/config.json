@@ -694,6 +694,26 @@
       "schema": "Envelope_WebhookSecret",
       "name": "EnvelopeWebhookSecret",
       "rustType": "piqueld_core::api::Envelope<piqueld_core::sync::WebhookSecret>"
+    },
+    {
+      "schema": "Envelope_Vec_VolumeView",
+      "name": "EnvelopeVecVolumeView",
+      "rustType": "piqueld_core::api::Envelope<Vec<piqueld_core::api::VolumeView>>"
+    },
+    {
+      "schema": "Envelope_VolumeView",
+      "name": "EnvelopeVolumeView",
+      "rustType": "piqueld_core::api::Envelope<piqueld_core::api::VolumeView>"
+    },
+    {
+      "schema": "VolumeView",
+      "name": "VolumeView",
+      "rustType": "piqueld_core::api::VolumeView"
+    },
+    {
+      "schema": "AttachVolumeRequest",
+      "name": "AttachVolumeRequest",
+      "rustType": "piqueld_core::api::AttachVolumeRequest"
     }
   ]
 }
