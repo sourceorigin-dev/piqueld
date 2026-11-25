@@ -19,10 +19,6 @@ ci-watchers = ["fail-fast"]
 
 [deviations]
 
-[deviations.workspace-lints]
-reason = "4675 findings of `clippy::unwrap_used` in 207 files, most of them tests, fixed in a follow-up (PQD-124)"
-paths = ["Cargo.toml"]
-
 [deviations.anyhow-edges]
 reason = "the `piqueld` library returns anyhow errors across about 100 uses in 30 files, from startup to the ingress and backup workers; typed errors are a project of their own, not part of this sweep"
 crates = ["piqueld"]

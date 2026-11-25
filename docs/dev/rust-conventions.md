@@ -63,6 +63,8 @@ its `expect`, whose message says what holds, under an
 `#[expect(clippy::expect_used, reason = "...")]` on the smallest item around
 it, such as `reason = "The placeholder IDs are valid constants."`. Tests may
 panic; integration test crates say so once, in an `#![expect]` at their root.
+Nothing unwraps, tests included: `unwrap_used` is denied everywhere, and a
+test's `expect` says what holds, such as `expect("the store opens")`.
 
 Library crates never print: `print_stdout` and `print_stderr` are denied outside
 tests. A library returns the text or logs it with `tracing`; binaries and
