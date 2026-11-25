@@ -38,27 +38,14 @@ impl DeploymentRetention {
 }
 
 impl Store {
-    /// Prunes each environment's finished deployments that are both older
-    /// than `retention.deployment_days` and beyond its newest
-    /// `retention.deployments_per_environment`, with their operations. It
-    /// never prunes an environment's current or latest deployment, its newest
-    /// `images.keep_deployments` successful ones (at least one, which an
-    /// automatic rollback restores), one a remaining deployment restored,
-    /// whose origin names it, or one whose jobs still need cleaning up.
-    /// Previews keep only those, of their deployments finished over
-    /// [`PREVIEW_MIN_AGE_MS`] ago. Then removes the build and job-run records
-    /// of pruned operations whose output expired, except a build whose image
-    /// a remaining build reused, which names it, and the releases no
-    /// deployment references beyond each application's newest
-    /// [`KEPT_RELEASES`]. Either setting at zero disables all of this.
-    ///
-    /// The candidates are chosen once, then deleted [`PRUNE_BATCH`] at a time,
-    /// each batch rechecking what can change meanwhile: job cleanup, and
-    /// restores accepted since. Deleting a deployment's operation cascades to
-    /// it, its attempts, inputs and secret pins, so each batch also advances
-    /// `history_coverage.pruned_through_ms`: deployment analytics over the
-    /// pruned span are then marked incomplete.
-    ///
+    /// Prunes each environment's finished deployments older than
+    /// `retention.deployment_days` and beyond its newest
+    /// `retention.deployments_per_environment`, with their operations, keeping
+    /// its current and latest deployment, its newest `images.keep_deployments`
+    /// successful ones, restored ones, ones whose jobs need cleaning up and, for
+    /// previews, those finished under [`PREVIEW_MIN_AGE_MS`] ago. Then removes
+    /// expired build and job-run records of pruned operations and releases
+    /// beyond each application's newest [`KEPT_RELEASES`]. A zero setting disables it.
     /// # Errors
     /// Returns storage or encoding errors.
     pub async fn prune_deployment_history(&self) -> Result<(), StoreError> {

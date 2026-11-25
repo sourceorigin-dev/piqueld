@@ -113,23 +113,16 @@ impl Store {
             .ok_or(StoreError::NotFound)
     }
 
-    /// Creates or rotates a stored secret. Rotation only affects a later
-    /// deployment. `expected` is the current generation (zero to create),
-    /// and, when the caller read it, the access: once an existing secret's
-    /// access is no longer that, the write fails with `SecretAccessConflict`
-    /// instead of overwriting a concurrent access change. A new secret gets
-    /// `access`, or every environment and no previews; an existing one keeps
-    /// its access unless `access` replaces it. Each store holds at most 100
-    /// secrets, 1000 available versions and 100 MiB. Rejected while the
-    /// application or the secret is being deleted, and for names the saved
-    /// manifest or an environment's last fetched one declares as generated.
-    /// The author's actor needs `secrets:write` on the application, checked
-    /// in the transaction, which also records the request's change (its
-    /// name, generation and any new access; never the value).
-    ///
+    /// Creates or rotates a stored secret; rotation only affects a later
+    /// deployment. `expected` is the current generation (zero to create) and,
+    /// when the caller read it, the access: an existing secret whose access
+    /// changed fails with `SecretAccessConflict`. A new secret gets `access`, or
+    /// every environment and no previews; an existing one keeps its access unless
+    /// `access` replaces it. Rejected while the application or secret is being
+    /// deleted, and for names the manifest declares as generated. The author's
+    /// actor needs `secrets:write`, checked in the transaction.
     /// # Errors
-    /// Returns invalid input, refusal, conflicts (`SecretAccessConflict`
-    /// among them), quota, key or database errors.
+    /// Returns invalid input, refusal, conflicts, quota, key or database errors.
     pub async fn put_stored_secret<'a>(
         &self,
         author: impl Into<Author<'_>>,

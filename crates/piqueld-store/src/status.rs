@@ -86,16 +86,13 @@ impl Store {
         Ok(())
     }
 
-    /// Records a meaningful observed health transition without overwriting intent progress.
-    /// Health is `absent` with no services, `ready` when every expected
-    /// service is observed and all observed ones converged, `stopped`
-    /// instead in a stopped environment once they run no replica and no
-    /// task, else `degraded`.
-    /// Expected are the services of the operation's target while it is in
-    /// progress, else of the environment's active target, and none while it
-    /// is deleted. A `health_changed` event is recorded when the value
-    /// changes. The observation time is refreshed then, or once it is a scan
-    /// interval old: an unchanged observation within that writes nothing.
+    /// Records a meaningful observed health transition without overwriting intent
+    /// progress. Health is `absent` with no services, `ready` when every expected
+    /// service is observed and converged, `stopped` once a stopped environment runs
+    /// no replica or task, else `degraded`. Expected are the services of the
+    /// operation's target while in progress, else of the active target, none once
+    /// deleted. Records `health_changed` when the value changes; the observation
+    /// time refreshes then, or once a scan interval old.
     /// # Errors
     /// Returns a store error. Superseded observations are ignored.
     pub async fn record_health(

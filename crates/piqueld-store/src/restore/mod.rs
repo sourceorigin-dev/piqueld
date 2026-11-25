@@ -208,18 +208,15 @@ impl Store {
         serde_json::from_str(&target).map_err(StoreError::corrupt)
     }
 
-    /// Accepts restoring `deployment` into `environment` in `tx`, where
-    /// nothing can change underneath: it starts a deployment recorded as a
-    /// restore of it, as an automatic rollback of `rolled_back` when set,
-    /// with its rendered manifest, values, warnings, fetched
-    /// revision and release, pins the
-    /// secret versions it pinned (failing, naming them, for those gone since,
-    /// and with `secret_access_denied` for stored secrets the environment may
-    /// no longer mount), and saves its prepared target under the
-    /// application's current name, its links bound to the applications it
-    /// bound while they still exist. A branch-following or promoted environment's
-    /// own manifest becomes the restored one. Its images are then retention
-    /// roots, so callers holding cleanup off may let go once this commits.
+    /// Accepts restoring `deployment` into `environment` in `tx`, where nothing
+    /// can change underneath: it starts a deployment recorded as a restore of it
+    /// (an automatic rollback of `rolled_back` when set), with its rendered
+    /// manifest, values, warnings, revision and release, pins the secret versions
+    /// it pinned (failing, naming them, for those gone since or no longer
+    /// mountable), and saves its prepared target under the application's current
+    /// name. A branch-following or promoted environment's own manifest becomes the
+    /// restored one. Its images are then retention roots, so callers holding
+    /// cleanup off may let go once this commits.
     pub(super) async fn accept_restore_on(
         tx: &mut Transaction<'_, Sqlite>,
         environment: &StoredEnvironment,

@@ -108,15 +108,12 @@ impl Store {
         serde_json::from_str(json).map_err(StoreError::corrupt)
     }
     /// Retries a failed delivery only while its destination still exists,
-    /// unchanged, enabled, receiving its category and, unless it is a
-    /// recovery, the event.
-    /// Also refuses failures already followed by a delivered recovery,
-    /// recoveries whose incident has reopened, and failures whose incident has
-    /// since closed. Security events and daemon starts open no incident, so
-    /// their deliveries stay retryable. Resets the delivery to `pending` with a
-    /// fresh retry window. The author's actor needs `system:operate`, checked
-    /// in the same transaction, which also records the request's retry
-    /// (that it was queued, not whether it is delivered).
+    /// unchanged, enabled, receiving its category and, unless it is a recovery,
+    /// the event; also refuses failures already followed by a delivered recovery
+    /// or whose incident has since closed, and recoveries whose incident
+    /// reopened. Resets the delivery to `pending` with a fresh retry window. The
+    /// author's actor needs `system:operate`, checked in the same transaction,
+    /// which also records the retry.
     ///
     /// # Errors
     /// Returns absence, a [`RetryError`] naming why it cannot be retried, or
@@ -790,14 +787,10 @@ impl Store {
     /// 2. cancels recoveries none of whose failures can still be delivered,
     ///    and deployments whose recovery was delivered;
     /// 3. picks the earliest due delivery, holding recoveries until every linked
-    ///    failure is settled and at least one was delivered, and deployments
-    ///    while their recovery is pending;
-    /// 4. leases it for 30 seconds by pushing `next_attempt_ms` and counting the attempt.
+    ///    failure is settled and deployments while their recovery is pending;
+    /// 4. leases it for 30 seconds, counting the attempt.
     ///
-    /// A delivery that can no longer be sent (an unknown category, or a
-    /// destination or category since removed, whose changes cancel pending
-    /// deliveries anyway) is settled with an error instead, so it cannot
-    /// block the ones behind it.
+    /// A delivery that can no longer be sent is settled with an error instead.
     ///
     /// # Errors
     /// Returns a storage error.

@@ -74,21 +74,6 @@ paths = [
   "crates/piqueld-docker/src/logs/mod.rs",
   "crates/piqueld-docker/src/policy/mod.rs",
   "crates/piqueld-docker/src/spec.rs",
-  "crates/piqueld-store/src/acceptance.rs",
-  "crates/piqueld-store/src/auth/mod.rs",
-  "crates/piqueld-store/src/environment/declaration.rs",
-  "crates/piqueld-store/src/history/mod.rs",
-  "crates/piqueld-store/src/ingress/mod.rs",
-  "crates/piqueld-store/src/observability/destinations.rs",
-  "crates/piqueld-store/src/observability/notifications.rs",
-  "crates/piqueld-store/src/promotion/mod.rs",
-  "crates/piqueld-store/src/repository/mod.rs",
-  "crates/piqueld-store/src/restore/mod.rs",
-  "crates/piqueld-store/src/secret/key.rs",
-  "crates/piqueld-store/src/secret/mod.rs",
-  "crates/piqueld-store/src/secret/stored/mod.rs",
-  "crates/piqueld-store/src/status.rs",
-  "crates/piqueld-store/src/sync/mod.rs",
 ]
 
 [deviations.recipes]

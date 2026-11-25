@@ -95,15 +95,13 @@ impl Store {
             })
             .collect())
     }
-    /// Stores a value for an environment's generated secret; deployments
-    /// generate them (see `pin_secrets_on`).
-    /// `expected` is the current generation (zero to create). The value is
-    /// encrypted into a new immutable version with its own Swarm secret name
-    /// (`piqueld-secret-<uuid>`), subject to per-environment count and byte quotas.
-    /// Rejected while the environment or the secret is being deleted. The
-    /// author's actor needs `secrets:write` on the environment's application,
-    /// checked in the transaction, which also records the request's change
-    /// (its name and generation; never the value).
+    /// Stores a value for an environment's generated secret. `expected` is the
+    /// current generation (zero to create). The value is encrypted into a new
+    /// immutable version with its own Swarm secret name (`piqueld-secret-<uuid>`),
+    /// subject to per-environment quotas. Rejected while the environment or the
+    /// secret is being deleted. The author's actor needs `secrets:write` on the
+    /// environment's application, checked in the transaction, which records the
+    /// change (never the value).
     ///
     /// # Errors
     /// Returns invalid input, refusal, version conflict, key or database errors.
@@ -373,15 +371,12 @@ impl Store {
     }
     /// Returns the logical-to-Swarm secret names a deployment operation uses,
     /// first storing the `generated` values it needs (see `generated_secrets`);
-    /// a value set concurrently wins over a generated one. Storing them in
-    /// the caller's transaction keeps a rejected deployment from leaving
-    /// them behind. The first call checks the environment may mount every stored secret
-    /// (see `check_secret_access_on`), then pins the current generation of
-    /// every referenced secret, so retries deploy the same versions even after
-    /// rotation; later calls reuse the pins. A stored secret's version gets the
-    /// environment's own Docker secret the first time it is pinned there.
-    /// Fails if referenced secrets have no value (`SecretMissing`, naming
-    /// them), are being deleted, or had their value discarded by key recovery.
+    /// a value set concurrently wins. The first call checks the environment may
+    /// mount every stored secret (see `check_secret_access_on`), then pins the
+    /// current generation of every referenced secret, so retries deploy the same
+    /// versions; later calls reuse the pins. Fails if referenced secrets have no
+    /// value (`SecretMissing`, naming them), are being deleted, or had their value
+    /// discarded by key recovery.
     pub(super) async fn pin_secrets_on(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,

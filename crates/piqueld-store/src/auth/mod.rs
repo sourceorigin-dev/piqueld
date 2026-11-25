@@ -678,11 +678,9 @@ impl Store {
     /// session. Returns `false` when the secret was already used or has
     /// expired, when an enrollment invitation targets another account, or when
     /// a signed-in caller adds a passkey to an account that is not its own.
-    ///
     /// The passkey is issued by the caller's credential or the redeemed
-    /// invitation, and the redemption's session by the passkey, as if it
-    /// signed in with it. Both record themselves as made through `request`:
-    /// a redemption under the account it signed in.
+    /// invitation, and the session by the passkey; both record themselves as
+    /// made through `request`.
     ///
     /// # Errors
     /// Returns a storage error.

@@ -259,18 +259,13 @@ impl Store {
             .collect()
     }
 
-    /// Creates or replaces the destination `name`, which the author's actor
-    /// needs `notifications:manage` for, checked in the same transaction,
-    /// which also records the request's change (see
-    /// `SavedDestination::audit_change`), never its URL.
-    ///
-    /// A new URL or kind makes the destination a new receiver: its pending
-    /// deliveries are cancelled, and its earlier deliveries detached, so no
-    /// recovery of a failure sent before is sent to it. Disabling it, or
-    /// removing a category, cancels the pending deliveries affected. Neither
-    /// a new receiver, enabling it again, nor adding a category replays
-    /// earlier events. Records a `notification_destination_changed` security
-    /// event, which the destination itself only receives when it was kept.
+    /// Creates or replaces the destination `name`, which the author's actor needs
+    /// `notifications:manage` for, checked in the same transaction, which also
+    /// records the request's change (see `SavedDestination::audit_change`), never
+    /// its URL. A new URL or kind makes it a new receiver: its pending deliveries
+    /// are cancelled and earlier ones detached; disabling it or removing a
+    /// category cancels the pending deliveries affected. Records a
+    /// `notification_destination_changed` security event.
     ///
     /// # Errors
     /// Returns refusal, [`DestinationError`], secret storage or database errors.

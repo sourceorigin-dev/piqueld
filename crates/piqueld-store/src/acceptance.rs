@@ -59,28 +59,13 @@ impl Accepted {
 
 impl Store {
     /// Commits a mutation and its optional replay receipt in one transaction.
-    /// `expected_generation` compares the inspected application revision; zero
-    /// means the application must be absent, and `None` omits the revision check.
-    /// `request_id` is a validated caller-supplied idempotency key, distinct from
-    /// the server-generated operation ID (renames do not create an operation).
-    ///
-    /// 1. Checks that `actor` may submit the mutation against the current
-    ///    application, before any replay. Replaying a save may also pass the
-    ///    check a creation passes, since it may have created that application.
-    /// 2. Returns the stored response when `request_id` replays an identical
-    ///    request from the same account.
-    /// 3. With `force`, drops the generation and identity preconditions.
-    /// 4. Executes the mutation against the current application or environment,
-    ///    refusing renames of repository-backed applications, and
-    ///    gives an account that created an application through an unscoped
-    ///    credential its matching grants there.
-    /// 5. Attributes the operations and events it wrote to the caller.
-    /// 6. Stores the replay receipt for 24 hours, and records the change in
-    ///    the audit trail when it comes from an API request and changed
-    ///    anything (see [`crate::AuditRequest`]), then commits through
-    ///    hostname reservation checks of every affected environment.
-    ///
-    /// The returned flag asks the controller to wake up; replays never wake it.
+    /// `expected_generation` compares the inspected application revision (zero
+    /// means the application must be absent, `None` skips the check); `request_id`
+    /// is the caller's idempotency key. `actor` must be allowed the mutation
+    /// before any replay; an identical replay from the same account returns the
+    /// stored response and never wakes the controller. `force` drops the
+    /// generation and identity preconditions. Audits API changes (see
+    /// [`crate::AuditRequest`]). Returns whether the controller should wake up.
     ///
     /// # Errors
     /// Returns a storage error.
