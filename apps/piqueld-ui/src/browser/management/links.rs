@@ -15,7 +15,6 @@ fn ExportSettings() -> impl IntoView {
     let context = editor();
     let dialog = RowDialog::<ExportDraft>::new();
     let draft = dialog.draft;
-    // Saves `rows` as the application's exports, closing the dialog.
     let save = move |rows: Vec<ExportDraft>| {
         let exports = rows.into_iter().map(ExportDraft::export).collect();
         context.save(ApplicationEdit::Exports(exports), move |_| {
@@ -143,7 +142,6 @@ fn ImportSettings() -> impl IntoView {
     let context = editor();
     let dialog = RowDialog::<ImportDraft>::new();
     let draft = dialog.draft;
-    // Saves `rows` as the application's imports, closing the dialog.
     let save = move |rows: Vec<ImportDraft>| {
         let imports = rows.into_iter().map(ImportDraft::import).collect();
         context.save(ApplicationEdit::Imports(imports), move |_| {

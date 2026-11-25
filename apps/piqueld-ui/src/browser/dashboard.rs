@@ -68,8 +68,6 @@ pub(super) fn Sidebar() -> impl IntoView {
         location.pathname.track();
         opened.set(false);
     });
-    // Pages the caller could not load anything on are hidden; the daemon
-    // enforces every permission regardless.
     let system = can(Permission::Global(GlobalPermission::SystemRead));
     let display_name = move || who.get().map(|who| who.name().to_owned());
     let initial = move || {
@@ -418,7 +416,6 @@ fn readiness_rows(status: &ReadinessStatus) -> AnyView {
     } else {
         (Tone::Ok, "Ready")
     };
-    // In tunnel mode, public routes' CNAME records point at the tunnel ID.
     let tunnel_row = match &ingress.public {
         PublicIngressStatus::Tunnel {
             id,
@@ -440,8 +437,6 @@ fn readiness_rows(status: &ReadinessStatus) -> AnyView {
         }
         _ => None,
     };
-    // The apps node's name and addresses are what private routes' DNS
-    // records point at.
     let private = &ingress.private;
     let private_row = (ingress.enabled && private.enabled).then(|| {
         let node = match (&private.dns_name, private.addresses.is_empty()) {

@@ -15,7 +15,6 @@ fn an_application_shows_its_least_healthy_environment() {
         ]),
         ApplicationHealth::Failed
     );
-    // A missing status is pending, never healthy.
     assert_eq!(
         row(vec![
             environment("production", false, Some((ApplicationState::Ready, None))),
@@ -23,8 +22,6 @@ fn an_application_shows_its_least_healthy_environment() {
         ]),
         ApplicationHealth::Pending
     );
-    // A stopped environment reads as stopped whatever its last status,
-    // which ranks above a healthy one but below any problem.
     assert_eq!(
         row(vec![
             environment("production", false, Some((ApplicationState::Ready, None))),
@@ -121,10 +118,7 @@ fn previews_report_their_most_constrained_limit() {
         .expect("usage")
     };
     assert_eq!(PreviewLoad::of(&usage(3, &[1, 1])), PreviewLoad::Within);
-    // One application at its own limit refuses its next preview while
-    // the installation still has room.
     assert_eq!(PreviewLoad::of(&usage(3, &[2, 1])), PreviewLoad::AtLimit);
     assert_eq!(PreviewLoad::of(&usage(5, &[1])), PreviewLoad::AtLimit);
-    // A count over a lowered limit outweighs one at its limit.
     assert_eq!(PreviewLoad::of(&usage(5, &[3, 2])), PreviewLoad::OverLimit);
 }

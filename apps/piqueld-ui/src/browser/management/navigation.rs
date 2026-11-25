@@ -93,8 +93,6 @@ pub(super) fn guard_navigation(dirty: RwSignal<BTreeSet<String>>) {
     let guard = use_context::<HistoryGuard>().expect("history guard installed before router");
     let location = use_location();
     Effect::new(move |_| {
-        // Query-only navigation (such as `?tab=` links) keeps this
-        // editor mounted, so cancellation must restore its latest address.
         location.pathname.track();
         location.search.track();
         location.hash.track();
@@ -131,8 +129,6 @@ pub(super) fn guard_navigation(dirty: RwSignal<BTreeSet<String>>) {
         .add_event_listener_with_callback_and_bool("click", callback.as_ref().unchecked_ref(), true)
         .is_ok()
     {
-        // Browser handles are not `Send`, so the owner keeps them until its
-        // cleanups run (before it disposes stored values).
         let listener = StoredValue::new_local((document, callback));
         on_cleanup(move || {
             listener.with_value(|(document, callback)| {

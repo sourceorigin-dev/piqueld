@@ -35,7 +35,6 @@ pub trait OutputChunks {
 
 impl OutputChunks for Vec<BuildLogChunk> {
     fn merge_newest(&mut self, page: Vec<BuildLogChunk>) -> bool {
-        // Offsets are byte positions in the retained output, which never change.
         let start = page.first().map_or(i64::MAX, |chunk| chunk.offset);
         self.retain(|chunk| chunk.offset < start);
         let kept = !self.is_empty();

@@ -291,7 +291,6 @@ impl ApplicationViewExt for ApplicationView {
             Typed::Literal(replicas) => return count(replicas, *replicas == 1),
             Typed::Template(template) => template,
         };
-        // A typed template is exactly one reference.
         let variable = match template.segments().as_deref() {
             Ok([Segment::Reference(Reference::Variable(name))]) => name.clone(),
             _ => return format!("{template} replicas"),

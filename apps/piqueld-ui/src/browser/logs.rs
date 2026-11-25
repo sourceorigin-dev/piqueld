@@ -40,7 +40,6 @@ impl LogPreferences {
         Effect::new(move |_| {
             let current = value.get();
             if let Some(storage) = &storage {
-                // Browser privacy settings may disable preference persistence.
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "storage may be full or blocked, and the setting then lasts only this session"
@@ -145,16 +144,12 @@ pub(super) fn LogViewer(
     let previous_prepend = StoredValue::new(0);
     let height = StoredValue::new(0);
     let updating = StoredValue::new(false);
-    // Remembers where the viewer is scrolled, and follows new output while
-    // scrolled to (within 24 pixels of) the end.
     let record = move |node: &web_sys::HtmlDivElement| {
         position.set(node.scroll_top());
         follow.set(node.scroll_height() - node.client_height() - node.scroll_top() <= 24);
     };
     Effect::new(move |_| {
         lines.with(|_| ());
-        // A prepended chunk can complete an existing partial line, so rendered
-        // line equality cannot reliably identify an older page insertion.
         let revision = prepend_revision.get();
         let prepend = revision != previous_prepend.get_value();
         previous_prepend.set_value(revision);

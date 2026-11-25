@@ -65,7 +65,6 @@ impl Key<'_> {
         if self.ctrl && self.shift && matches!(self.key, "C" | "c" | "V" | "v") {
             return None;
         }
-        // xterm's modifier parameter: 1 plus Shift 1, Alt 2, Control 4.
         let modifiers = 1 + u8::from(self.shift) + 2 * u8::from(self.alt) + 4 * u8::from(self.ctrl);
         let cursor = |code: char| {
             if modifiers > 1 {
@@ -117,7 +116,6 @@ impl Key<'_> {
                 }
             }
         };
-        // Alt sends Escape first, as xterm's `metaSendsEscape` does.
         Some(if self.alt {
             [&[0x1b], &bytes[..]].concat()
         } else {
@@ -157,17 +155,13 @@ impl vt100::Callbacks for Replies {
     ) {
         let param = params.first().and_then(|param| param.first()).copied();
         match (i1, c, param) {
-            // Device status: "OK".
             (None, 'n', Some(5)) => self.0.extend_from_slice(b"\x1b[0n"),
-            // Cursor position, 1-based. A cursor waiting to wrap past the
-            // last column, which `vt100` reports as the width, is still in it.
             (None, 'n', Some(6)) => {
                 let (row, col) = screen.cursor_position();
                 let col = col.min(screen.size().1.saturating_sub(1));
                 self.0
                     .extend_from_slice(format!("\x1b[{};{}R", row + 1, col + 1).as_bytes());
             }
-            // Primary device attributes: a VT100 with advanced video.
             (None, 'c', None | Some(0)) => self.0.extend_from_slice(b"\x1b[?1;2c"),
             _ => {}
         }
@@ -299,7 +293,6 @@ impl Terminal {
     pub fn paste(&mut self, text: &str) -> Vec<u8> {
         let screen = self.parser.screen_mut();
         screen.set_scrollback(0);
-        // Terminals send Enter as a carriage return.
         let text = text.replace("\r\n", "\r").replace('\n', "\r");
         if screen.bracketed_paste() {
             let text = text.replace('\x1b', "");
@@ -320,7 +313,6 @@ impl Terminal {
             (!screen.hide_cursor() && screen.scrollback() == 0).then(|| screen.cursor_position());
         let mut html = String::new();
         for row in 0..rows {
-            // Consecutive cells with the same style share one span.
             let mut run = (String::new(), String::new());
             for col in 0..cols {
                 let Some(cell) = screen.cell(row, col) else {
@@ -536,17 +528,14 @@ mod tests {
             alt,
             ..Key::default()
         };
-        // AltGr+q types `@` on a German layout, reported with Control and Alt.
         assert_eq!(
             key("@", true, true).on_layout(true, false).encode(false),
             Some(b"@".to_vec())
         );
-        // Option+2 types `@` on a macOS German layout.
         assert_eq!(
             key("@", false, true).on_layout(false, true).encode(false),
             Some(b"@".to_vec())
         );
-        // Option+Left still moves by word, and Alt+b elsewhere still sends Escape.
         assert_eq!(
             key("ArrowLeft", false, true)
                 .on_layout(false, true)
@@ -574,11 +563,9 @@ mod tests {
 
     #[test]
     fn every_wheel_movement_scrolls_at_least_a_line_towards_history_when_up() {
-        // A trackpad's few pixels still scroll one line, up into history.
         assert_eq!(Terminal::wheel_lines(-3.0, 16.0), 1);
         assert_eq!(Terminal::wheel_lines(3.0, 16.0), -1);
         assert_eq!(Terminal::wheel_lines(-100.0, 16.0), 6);
-        // No vertical movement, such as horizontal scrolling, scrolls nothing.
         assert_eq!(Terminal::wheel_lines(0.0, 16.0), 0);
     }
 
@@ -595,7 +582,6 @@ mod tests {
     #[test]
     fn colors_beyond_the_named_ones_show_as_the_nearest() {
         let mut terminal = Terminal::new(SIZE, true);
-        // 256-color red, RGB green on default, then the cursor in inverse video.
         drop(terminal.write(b"\x1b[38;5;196ma\x1b[38;2;0;250;10mb\x1b[0m"));
         assert_eq!(
             terminal.html().lines().next().unwrap(),
@@ -616,7 +602,6 @@ mod tests {
         assert_eq!(terminal.write(b"ab\x1b["), b"");
         assert_eq!(terminal.write(b"6n"), b"\x1b[1;3R");
         assert_eq!(terminal.write(b"\x1b[c"), b"\x1b[?1;2c");
-        // A full line leaves the cursor waiting to wrap, still in the last column.
         assert_eq!(terminal.write(b"\r1234567890\x1b[6n"), b"\x1b[1;10R");
     }
 
@@ -626,7 +611,6 @@ mod tests {
         assert_eq!(terminal.paste("a\nb"), b"a\rb");
         drop(terminal.write(b"\x1b[?2004h"));
         assert_eq!(terminal.paste("a"), b"\x1b[200~a\x1b[201~");
-        // A pasted end marker would run the rest as typed commands.
         assert_eq!(
             terminal.paste("a\x1b[201~\nrm"),
             b"\x1b[200~a[201~\rrm\x1b[201~"

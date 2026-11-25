@@ -36,7 +36,6 @@ impl EventStream {
                 let listener = Listener::new(move |event: MessageEvent| {
                     message(name, &event.data().as_string().unwrap_or_default());
                 });
-                // Only fails for a listener that is not a function.
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "best effort: a failing browser call leaves the page as it is"
@@ -51,7 +50,6 @@ impl EventStream {
         let error = Closure::<dyn FnMut(Event)>::new({
             let source = source.clone();
             move |_| {
-                // Errors also report each reconnection the browser tries.
                 if source.ready_state() == EventSource::CLOSED {
                     failed();
                 }

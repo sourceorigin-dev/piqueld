@@ -56,7 +56,6 @@ pub struct Axis {
 impl Axis {
     /// An axis from `origin_ms` to at least `end_ms`.
     fn new(origin_ms: i64, end_ms: i64) -> Self {
-        // Signed integers have no stable `next_multiple_of`.
         let round_up = |value: i64, step: i64| (value + step - 1) / step * step;
         let length = (end_ms - origin_ms).max(1);
         let tick = TICKS
@@ -195,8 +194,6 @@ impl Waterfall {
             .max();
         let now = now_ms.map(|now| latest.map_or(now, |latest| now.max(latest)));
         let expected = |step: &Step| i64::try_from(step.expected_ms.unwrap_or(0)).unwrap_or(0);
-        // When each step started or should start, and when it ended, or
-        // should end.
         let mut cursor = now;
         let mut group = None;
         let times: Vec<_> = steps
@@ -433,8 +430,6 @@ impl Lanes {
         now_ms: i64,
     ) -> Vec<TaskStretch> {
         let window = monitor_seconds.and_then(|seconds| lane.monitor(seconds));
-        // Each look, from when, and until when if it ended; changes the
-        // lane doesn't show, such as a first health verdict, merge.
         let mut times: Vec<(TaskLook, i64, Option<i64>)> = Vec::new();
         for (index, span) in lane.spans.iter().enumerate() {
             let look = TaskLook::of(*span);
@@ -448,8 +443,6 @@ impl Lanes {
                 _ => times.push((look, span.from_ms, until)),
             }
         }
-        // Watched from when it first served until the window closed, then
-        // running.
         let watched = window.and_then(|window| {
             let index = times
                 .iter()
@@ -541,14 +534,12 @@ mod tests {
     #[test]
     fn steps_left_are_placed_after_those_running_as_they_usually_take() {
         let steps = [
-            // Sources run at once; web is over its usual 20 s.
             ran(Phase::BuildGit, "api", 0, Some(10), 12),
             ran(Phase::BuildGit, "web", 0, None, 20),
             left(Phase::RunJob, "migrate", 5),
             left(Phase::EnsureService, "api", 10),
         ];
         let waterfall = Waterfall::new(&steps, Some(30_000));
-        // 45 s of work fit a 50 s axis ticking every 10 s.
         let axis = waterfall.axis.unwrap();
         assert_eq!(
             axis.ticks().map(|(_, label)| label).collect::<Vec<_>>(),
@@ -564,16 +555,13 @@ mod tests {
             spans,
             [
                 (span(0, 2000), span(0, 2400), false),
-                // Running up to now, past its usual duration.
                 (span(0, 6000), span(0, 4000), true),
-                // The job starts now, the service after it.
                 (None, span(6000, 1000), false),
                 (None, span(7000, 2000), false),
             ]
         );
         assert_eq!(waterfall.now, Some(6000));
         assert_eq!(waterfall.current(), Some(&waterfall.rows[1].id));
-        // Each stage opens once.
         let stages: Vec<_> = waterfall.rows.iter().map(|row| row.stage).collect();
         assert_eq!(
             stages,
@@ -622,7 +610,6 @@ mod tests {
                 })
                 .collect(),
         };
-        // Stop-first: the old task stops at 2 s, the new one runs at 4 s.
         let step = Step {
             tasks: vec![
                 lane(
@@ -633,7 +620,6 @@ mod tests {
                 lane(
                     "old",
                     false,
-                    // Its health verdict at 1 s changes nothing the lane shows.
                     &[
                         (TaskState::Running, 0),
                         (TaskState::Running, 1_000),
@@ -655,7 +641,6 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
-        // At 6 s, on a 6 s axis, the new task is in its monitor window.
         assert_eq!(
             looks(6_000),
             [
@@ -677,7 +662,6 @@ mod tests {
                 ),
             ]
         );
-        // At 10 s, on a 10 s axis, the window closed at 9 s.
         assert_eq!(
             looks(10_000)[1].2,
             [
@@ -686,7 +670,6 @@ mod tests {
                 (TaskLook::Running, 9000, None),
             ]
         );
-        // No task served from 2 s to 4 s.
         let waterfall = Waterfall::new(std::slice::from_ref(&step), Some(10_000));
         assert_eq!(
             waterfall.rows[0].down,

@@ -124,7 +124,6 @@ impl DashboardSignals {
         self.refreshing.set(true);
         spawn_local(async move {
             let result = DashboardSnapshot::fetch(&client).await;
-            // The layout unmounted meanwhile and disposed its signals.
             if self.system.try_get_untracked().is_none() {
                 return;
             }
@@ -542,8 +541,6 @@ async fn environment_detail(
     selected: Option<&str>,
 ) -> Result<Option<EnvironmentDetailView>, String> {
     let application = client.application(id).await.user_error()?;
-    // A selection that no longer exists is reported instead of silently
-    // replaced, so later actions never target another environment.
     let environment = match selected {
         Some(selected) => application
             .deployable(selected)
@@ -617,13 +614,10 @@ impl ClientErrorExt for ClientError {
                 format!("Could not initialize the API client: {source}")
             }
             Self::Endpoint { message } => format!("The dashboard endpoint is invalid: {message}"),
-            // The browser appends a JavaScript stack trace to the reason.
             Self::Transport { message, .. } => format!(
                 "Could not reach piqueld: {}",
                 message.lines().next().unwrap_or_default()
             ),
-            // Validation refusals name each failing field in their details;
-            // the message alone would only say the manifest is invalid.
             Self::Api { error, .. } => {
                 let problems = error
                     .details

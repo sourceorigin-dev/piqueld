@@ -115,7 +115,6 @@ fn replica_summaries_resolve_variables_per_environment() {
         .validate_template()
         .unwrap()
         .normalize(ApplicationId::parse(APP).unwrap());
-    // Services are kept in name order.
     let api = application.spec().services[0].clone();
     let db = application.spec().services[1].clone();
     let web = application.spec().services[2].clone();
@@ -148,7 +147,6 @@ fn replica_summaries_resolve_variables_per_environment() {
         view.replica_summary(&web),
         "replicas: production 3, staging 2"
     );
-    // A value in only one of several environments names that environment.
     assert_eq!(view.replica_summary(&api), "replicas: production 4");
 }
 
@@ -172,7 +170,6 @@ fn query_parameters_open_only_tabs_the_page_has() {
     let environment = Page::Environment("env".into());
     assert_eq!(environment.initial_tab(query(&[("tab", "logs")])), "Logs");
     assert_eq!(slug("Command & arguments"), "command-arguments");
-    // Environment pages have no releases; application pages no deployments or logs.
     assert_eq!(
         environment.initial_tab(query(&[("release", "r1")])),
         "Overview"
@@ -185,7 +182,6 @@ fn query_parameters_open_only_tabs_the_page_has() {
         Page::Application.initial_tab(query(&[("release", "r1"), ("tab", "jobs")])),
         "Releases"
     );
-    // A deployment's page opens on its timeline.
     let deployment = Page::Deployment {
         environment: "env".into(),
         operation: "op".into(),
@@ -269,9 +265,7 @@ fn previews_permissions_allow_only_in_previews() {
         Some("env-production-01")
     ));
     assert!(!saved.allows(&previews, AppPermission::LogsRead, None));
-    // Previews permissions grant only what `on_previews` names.
     assert!(!saved.allows(&previews, AppPermission::Exec, Some("feature-1a2b3c")));
-    // Grants on another application never apply.
     let elsewhere = grants(AppPermission::LogsRead, "app-other-01");
     assert!(!saved.allows(&elsewhere, AppPermission::LogsRead, None));
 }

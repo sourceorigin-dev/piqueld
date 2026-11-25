@@ -110,8 +110,6 @@ fn a_polled_newest_page_keeps_older_pages_and_moves_the_flags() {
             .map(|item| (item.current_target, item.last_successful))
             .collect::<Vec<_>>()
     };
-    // A newer deployment became the current target, but hasn't succeeded
-    // yet: deployment 2, off the polled page, stays the last successful.
     list.merge_newest(vec![summary("operation-3", true, false)]);
     assert_eq!(
         ids(&list),
@@ -121,7 +119,6 @@ fn a_polled_newest_page_keeps_older_pages_and_moves_the_flags() {
         flags(&list),
         [(true, false), (false, true), (false, false), (false, false)]
     );
-    // Then a newer one succeeded without becoming the current target.
     list.merge_newest(vec![summary("operation-4", false, true)]);
     assert_eq!(
         flags(&list)[..3],
@@ -150,7 +147,6 @@ fn older_attempt_pages_append_and_a_refresh_shows_the_newest_alone() {
         (numbers(&attempts), attempts.cursor.clone()),
         (vec![2, 1], None)
     );
-    // The running attempt leads them (see `Operation::attempts`).
     let running = operation("operation-1", 3, OperationState::Running);
     assert_eq!(attempts.visible(&running).len(), 3);
     attempts.show(page(&[3], Some("older")), false);
@@ -211,7 +207,6 @@ fn a_promotion_confirms_exactly_the_reviewed_source_and_revision() {
     assert_eq!(request.expected_generation, Some(7));
     assert_eq!(request.release, None);
 
-    // An earlier release is deployed as itself, not pinned to a deployment.
     let id = "rel-0123456789abcdef0123456789abcdef";
     let release = Promotion::new(Some(id.into()))
         .confirmed(&plan(&json!({ "type": "release" }), &present, &none))
@@ -219,8 +214,6 @@ fn a_promotion_confirms_exactly_the_reviewed_source_and_revision() {
     assert_eq!(release.deployment, None);
     assert_eq!(release.release.as_deref(), Some(id));
 
-    // Missing secrets, or built images that are gone, block it; missing
-    // registry images are pulled again by digest.
     let missing = json!([{ "problem": "missing", "secret": "api-key" }]);
     let confirmed = |availability: &str, secrets: &Value| {
         let availability = json!({ "state": availability, "missing": [] });

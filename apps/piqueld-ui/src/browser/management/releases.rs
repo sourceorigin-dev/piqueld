@@ -33,13 +33,11 @@ pub(super) fn ReleaseHistory(application: String) -> impl IntoView {
         leptos_router::hooks::use_query_map().with_untracked(|q| q.get("release")),
     );
     let alive = Alive::new();
-    // `None` reloads the first page; a cursor appends the page after it.
     let load = move |mut next: Option<String>| {
         loading.set(true);
         let (application, requested) = (application.get_value(), requested.get_value());
         let alive = alive.clone();
         spawn_local(async move {
-            // A refresh replaces the list once its first page arrives.
             let mut replace = next.is_none();
             for page_number in 1..=SEARCH_PAGES {
                 let result = Client::browser()
@@ -165,7 +163,6 @@ pub(super) fn ReleaseCard(
         .with(|q| q.get("release").is_some_and(|id| id == initial.id.as_str()));
     let opened = RwSignal::new(selected || planned);
     let id = initial.id.to_string();
-    // Promoted environments it can be deployed into.
     let targets = move || context.saved.with(ApplicationViewExt::release_targets);
     let manifest_commit = initial.release.commit().map(str::to_owned);
     let images = move || release.with(|release| release.availability.as_ref().map(availability));

@@ -75,7 +75,6 @@ fn the_device_fragment_opens_approval_once_signed_in_as_an_account() {
     };
     assert_eq!(page("#devices"), signed_in);
     assert_eq!(page(""), signed_in);
-    // Signed out, the page asks for a passkey first.
     assert_eq!(
         SignInPage::new(None, true, None, "#device=ABCD-EFGH"),
         SignInPage::SignIn
@@ -128,7 +127,6 @@ fn a_single_scope_selection_round_trips() {
     assert!(!selection.everywhere && !selection.mixed);
     assert_eq!(selection.applications, [app("app-blog")].into());
     assert_eq!(selection.grants(), only_blog);
-    // Installation-wide permissions alone count as every application.
     assert!(GrantSelection::from(&grants(&[(MANAGE, Scope::All)])).everywhere);
 }
 

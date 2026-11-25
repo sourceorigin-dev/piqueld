@@ -104,7 +104,6 @@ impl DeploymentList for Vec<DeploymentSummary> {
                 None => self.push(item),
             }
         }
-        // Operation IDs are time-ordered, as the daemon pages them.
         self.sort_by(|a, b| b.operation.id.cmp(&a.operation.id));
     }
 

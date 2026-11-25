@@ -103,8 +103,6 @@ fn Destinations(refresh: Refresh) -> impl IntoView {
                 .user_error()
         }
     });
-    // Why the draft can't be saved, shown in the dialog: the modal hides
-    // the page's notices behind it.
     let invalid = RwSignal::new(None::<String>);
     let edit = move |destination: Option<NotificationDestination>| {
         form.load(destination.as_ref());
