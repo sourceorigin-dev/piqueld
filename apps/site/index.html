@@ -83,9 +83,10 @@ h1 + p { margin-top: calc(var(--row) / 2); }
 .copy { padding: 2px 0; margin-block: -2px; color: var(--violet); background: none; border: 0; cursor: pointer; }
 .status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .note, .out, .prompt { color: var(--muted); }
-/* Code is coloured as a terminal colours it: the names of settings, options
-   and fields of output, and the values written for settings. Green is only
-   for what went well, and violet only for links. */
+/* Code is coloured as a terminal colours it: the names of settings,
+   subcommands, options and fields of output, and the values written for
+   settings and given to commands. Green is only for what went well, and
+   violet only for links. */
 .key { color: var(--key); }
 .value { color: var(--value); }
 .ok { color: var(--ok); }
@@ -149,7 +150,7 @@ figure img { display: block; width: 100%; height: auto; border: 1px solid var(--
         <h2>SYNOPSIS</h2>
         <div class="body">
             <div class="install">
-                <pre><code id="install"><b>curl</b> <span class="key">-fsSL</span> https://piqueld.dev/install.sh | <b>sh</b></code></pre>
+                <pre><code id="install"><b>curl</b> <span class="key">-fsSL</span> <span class="value">https://piqueld.dev/install.sh</span> | <b>sh</b></code></pre>
                 <button class="copy" type="button" aria-label="Copy the install command" hidden>[copy]</button>
                 <span class="status" role="status"></span>
             </div>
@@ -206,7 +207,7 @@ figure img { display: block; width: 100%; height: auto; border: 1px solid var(--
         <div class="body">
             <p>A coding agent deploys its worktree, before it pushes:</p>
             <div class="transcript">
-                <div class="line"><span class="prompt">$</span> <b>piquelctl</b> preview deploy blog <span class="key">--local</span></div>
+                <div class="line"><span class="prompt">$</span> <b>piquelctl</b> <span class="key">preview deploy</span> <span class="value">blog</span> <span class="key">--local</span></div>
                 <div class="line out">snapshot: succeeded · 535 bytes against 3c1922b70fbd…</div>
                 <div class="line out">Info: sending uncommitted files: draft.html, index.html</div>
                 <div class="line out">…</div>
@@ -216,15 +217,15 @@ figure img { display: block; width: 100%; height: auto; border: 1px solid var(--
             </div>
             <p>You push to main, and staging follows:</p>
             <div class="transcript">
-                <div class="line"><span class="prompt">$</span> <b>git</b> push origin main</div>
-                <div class="line"><span class="prompt">$</span> <b>piquelctl</b> env show blog staging</div>
+                <div class="line"><span class="prompt">$</span> <b>git</b> <span class="key">push</span> <span class="value">origin main</span></div>
+                <div class="line"><span class="prompt">$</span> <b>piquelctl</b> <span class="key">env show</span> <span class="value">blog staging</span></div>
                 <div class="line out">…</div>
                 <div class="line"><span class="key">Sync:</span> <span class="ok">following</span>, last synced 44928efc5d32…</div>
                 <div class="line out">…</div>
             </div>
             <p>You promote what staging runs:</p>
             <div class="transcript">
-                <div class="line"><span class="prompt">$</span> <b>piquelctl</b> env promote blog production</div>
+                <div class="line"><span class="prompt">$</span> <b>piquelctl</b> <span class="key">env promote</span> <span class="value">blog production</span></div>
                 <div class="line out">Promoting release rel-01a16d95e162… into environment production: promoted from staging's deployment operation-01a16d95dac6…, deployment operation-01a16d964c78…</div>
                 <div class="line"><span class="key">Operation:</span> operation-01a16d964c78…</div>
                 <div class="line">  <span class="key">State:</span> <span class="ok">succeeded</span></div>
