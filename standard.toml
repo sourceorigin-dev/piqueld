@@ -64,7 +64,6 @@ paths = [
   "apps/piqueld/src/reconcile/images.rs",
   "apps/piqueld/src/tailnet/node.rs",
   "apps/piqueld/src/telemetry/mod.rs",
-  "crates/piqueld-build/src/lib.rs",
 ]
 
 [deviations.recipes]

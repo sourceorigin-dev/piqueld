@@ -95,18 +95,13 @@ impl fmt::Debug for BuildError {
 
 /// A nested build into its own target directory beside the outer one.
 ///
-/// The nested Cargo must never share this build's target directory: the outer
-/// Cargo holds its build-directory lock until the build script returns, so
-/// sharing would deadlock. The nested Cargo joins the outer build's jobserver
-/// (`CARGO_MAKEFLAGS`), so both share one limit on parallel jobs.
-///
-/// The outer rustflags, rustc wrappers, and profile overrides are stripped
-/// because they describe the host build: host rustflags such as
-/// `-C target-cpu=native` or linker arguments break a wasm32 build, and would
-/// also override the nested target's own rustflags
-/// (`CARGO_TARGET_<TRIPLE>_RUSTFLAGS`, `target.<triple>.rustflags`), which
-/// still apply; `cargo clippy` sets `RUSTC_WORKSPACE_WRAPPER`. The nested
-/// profile alone defines the rest.
+/// Sharing the outer target directory would deadlock: the outer Cargo holds
+/// its build-directory lock until the build script returns. The nested Cargo
+/// joins the outer build's jobserver (`CARGO_MAKEFLAGS`), so both share one
+/// limit on parallel jobs. The outer rustflags, rustc wrappers and profile
+/// overrides are stripped, as they describe the host build (such as
+/// `-C target-cpu=native`, which breaks wasm32); the nested target's own
+/// rustflags and profile still apply.
 pub struct NestedCargo {
     /// `<outer target dir>-<suffix>`, e.g. `target-ui`.
     target_dir: PathBuf,
