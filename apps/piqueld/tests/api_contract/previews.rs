@@ -17,7 +17,7 @@ fn repository_with_branches(branches: &[&str]) -> Repository {
 #[tokio::test]
 async fn pruning_deletes_previews_only_when_their_branch_is_confirmed_gone() {
     use piqueld_client::{BranchState, CreatePreviewRequest, PrunePreviewsRequest};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let repository = repository_with_branches(&["feat/gone", "feat/kept"]);
     let (server, application) = connected_application(&temp, &repository, None).await;
     let client = server.client();
@@ -32,7 +32,7 @@ async fn pruning_deletes_previews_only_when_their_branch_is_confirmed_gone() {
             client
                 .create_preview(application, &request)
                 .await
-                .unwrap()
+                .expect("the preview is created")
                 .preview
                 .id,
         );
@@ -47,7 +47,7 @@ async fn pruning_deletes_previews_only_when_their_branch_is_confirmed_gone() {
                 client
                     .preview(preview.as_str())
                     .await
-                    .unwrap()
+                    .expect("the preview loads")
                     .preview
                     .delete_intent,
             );
@@ -59,7 +59,7 @@ async fn pruning_deletes_previews_only_when_their_branch_is_confirmed_gone() {
         client
             .previews(application)
             .await
-            .unwrap()
+            .expect("the previews list")
             .into_iter()
             .map(|view| view.branch)
             .collect::<Vec<_>>()
@@ -70,7 +70,7 @@ async fn pruning_deletes_previews_only_when_their_branch_is_confirmed_gone() {
     ));
 
     let moved = temp.path().join("moved");
-    std::fs::rename(repository.path(), &moved).unwrap();
+    std::fs::rename(repository.path(), &moved).expect("the path renames");
     assert!(matches!(
         states().await.as_slice(),
         [BranchState::Unknown { .. }, BranchState::Unknown { .. }]
@@ -78,12 +78,15 @@ async fn pruning_deletes_previews_only_when_their_branch_is_confirmed_gone() {
     let error = client
         .prune_previews(application, &prune)
         .await
-        .unwrap_err();
+        .expect_err("the prune is rejected");
     assert_eq!(api_error(error).status, 502);
     assert_eq!(deleting().await, [false, false]);
 
-    std::fs::rename(&moved, repository.path()).unwrap();
-    let deleted = client.prune_previews(application, &prune).await.unwrap();
+    std::fs::rename(&moved, repository.path()).expect("the path renames");
+    let deleted = client
+        .prune_previews(application, &prune)
+        .await
+        .expect("the previews prune");
     assert_eq!(deleted.len(), 1);
     assert_eq!(deleted[0].preview.id, previews[0]);
     assert_eq!(deleting().await, [true, false]);
@@ -105,7 +108,7 @@ async fn connected_application(
             ..new_application()
         })
         .await
-        .unwrap();
+        .expect("the application applies");
     (server, saved.application_id)
 }
 
@@ -117,7 +120,7 @@ fn connected_manifest(repository: &Repository) -> ApplicationManifest {
             "repository": {"url": repository.path().display().to_string(), "branch": "main"},
             "path": "app.toml",
         }))
-        .unwrap(),
+        .expect("the value deserialises"),
     );
     manifest
 }
@@ -128,7 +131,7 @@ fn connected_manifest(repository: &Repository) -> ApplicationManifest {
 #[tokio::test]
 async fn local_snapshots_upload_within_limits_and_are_never_pruned() {
     use piqueld_client::{BranchState, CreatePreviewRequest, PrunePreviewsRequest};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let repository = repository_with_branches(&["feat/gone"]);
     let limit = std::num::NonZeroU64::new(8192);
     let (server, application) = connected_application(&temp, &repository, limit).await;
@@ -141,7 +144,7 @@ async fn local_snapshots_upload_within_limits_and_are_never_pruned() {
     let gone = client
         .create_preview(application, &request)
         .await
-        .unwrap()
+        .expect("the preview is created")
         .preview
         .id;
     repository.git(&["branch", "-D", "feat/gone"]);
@@ -158,19 +161,22 @@ async fn local_snapshots_upload_within_limits_and_are_never_pruned() {
     };
     let created = upload(work.bundle("feat/local", Some(&base)))
         .await
-        .unwrap();
+        .expect("the upload succeeds");
     assert!(created.created);
     let local = created.preview.id;
     let deployments = client
         .deployments(local.as_str(), None, None)
         .await
-        .unwrap();
+        .expect("the deployments list");
     assert!(matches!(
         &deployments.items[0].origin,
         piqueld_client::DeploymentOrigin::Local(snapshot) if snapshot.base.as_deref() == Some(base.as_str())
     ));
 
-    let states = client.previews(application).await.unwrap();
+    let states = client
+        .previews(application)
+        .await
+        .expect("the previews list");
     let states = states
         .into_iter()
         .map(|view| view.branch)
@@ -182,14 +188,17 @@ async fn local_snapshots_upload_within_limits_and_are_never_pruned() {
     let prune = PrunePreviewsRequest {
         previews: vec![gone.clone(), local.clone()],
     };
-    let deleted = client.prune_previews(application, &prune).await.unwrap();
+    let deleted = client
+        .prune_previews(application, &prune)
+        .await
+        .expect("the previews prune");
     assert_eq!(deleted.len(), 1);
     assert_eq!(deleted[0].preview.id, gone);
     assert!(
         !client
             .preview(local.as_str())
             .await
-            .unwrap()
+            .expect("the preview loads")
             .preview
             .delete_intent
     );
@@ -204,17 +213,19 @@ async fn local_snapshots_upload_within_limits_and_are_never_pruned() {
         })
         .collect::<Vec<_>>();
     work.commit(&[("noise.bin", &noise)]);
-    let large = upload(work.bundle("feat/local", None)).await.unwrap_err();
+    let large = upload(work.bundle("feat/local", None))
+        .await
+        .expect_err("the upload is rejected");
     assert_eq!(api_error(large), ApiError::new(413, "snapshot_too_large"));
     let invalid = upload(b"# v2 git bundle\nnot a bundle\n\n".to_vec()).await;
     assert_eq!(
-        api_error(invalid.unwrap_err()),
+        api_error(invalid.expect_err("the upload is rejected")),
         ApiError::new(422, "snapshot_invalid")
     );
     let deployments = client
         .deployments(local.as_str(), None, None)
         .await
-        .unwrap();
+        .expect("the deployments list");
     assert_eq!(deployments.items.len(), 1);
 }
 
@@ -248,15 +259,20 @@ impl PreviewFixture {
     ];
 
     async fn new() -> Self {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("the temporary directory is created");
         let database = database(&temp);
         let repository = repository_with_branches(&["feat/one", "feat/two"]);
         let state = state(&temp).await;
         let blog = save(&state, connected_manifest(&repository))
             .await
             .application_id;
-        let blog_id = piqueld_core::ApplicationId::parse(blog.as_str()).unwrap();
-        let production = state.application(&blog_id).await.unwrap().environments[0]
+        let blog_id =
+            piqueld_core::ApplicationId::parse(blog.as_str()).expect("the application id parses");
+        let production = state
+            .application(&blog_id)
+            .await
+            .expect("the application loads")
+            .environments[0]
             .id
             .to_string();
         let app = Some(blog.as_str());
@@ -286,7 +302,7 @@ impl PreviewFixture {
         assert_eq!(status, 200, "{created}");
         created["token"]
             .as_str()
-            .unwrap()
+            .expect("the value is a string")
             .clone_into(&mut fixture.agent);
         fixture
     }
@@ -316,7 +332,7 @@ impl PreviewFixture {
             .bind(environment)
             .fetch_one(&mut sqlite::connect(&self.database).await)
             .await
-            .unwrap()
+            .expect("the row exists")
     }
 
     /// Creates a preview of `branch` as the agent, returning its ID.
@@ -325,7 +341,10 @@ impl PreviewFixture {
         let request = serde_json::json!({"branch": branch});
         let (status, body) = self.router.call(&self.agent, "POST", &uri, request).await;
         assert!(status < 300, "{status} {body}");
-        body["data"]["preview"]["id"].as_str().unwrap().to_owned()
+        body["data"]["preview"]["id"]
+            .as_str()
+            .expect("the value is a string")
+            .to_owned()
     }
 }
 
@@ -463,10 +482,10 @@ async fn previews_permissions_never_widen() {
         .await;
     let id = directory["credentials"]
         .as_array()
-        .unwrap()
+        .expect("the value is an array")
         .iter()
         .find(|credential| credential["name"] == "agent" && credential["user_id"] == "owner")
-        .unwrap()["id"]
+        .expect("the item exists")["id"]
         .clone();
     let revoke = serde_json::json!({"action": "revoke_credential", "id": id});
     assert_eq!(f.router.call(&f.owner, "POST", manage, revoke).await.0, 200);

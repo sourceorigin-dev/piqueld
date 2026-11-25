@@ -21,9 +21,9 @@ async fn grants_hide_applications_and_name_missing_permissions() {
     assert_eq!(status, 200);
     let listed: Vec<_> = body["data"]["items"]
         .as_array()
-        .unwrap()
+        .expect("the value is an array")
         .iter()
-        .map(|item| item["id"].as_str().unwrap())
+        .map(|item| item["id"].as_str().expect("the value is a string"))
         .collect();
     assert_eq!(listed, [f.blog.as_str()]);
     let (status, body) = f
@@ -123,7 +123,7 @@ async fn audit_trail_records_callers_and_outcomes() {
     let body = f.audit(&f.deployer, "/api/v1/audit", 5).await;
     let trail: std::collections::BTreeSet<_> = body["data"]["items"]
         .as_array()
-        .unwrap()
+        .expect("the value is an array")
         .iter()
         .map(|event| {
             assert_eq!(event["user_id"], "deployer");
@@ -131,9 +131,13 @@ async fn audit_trail_records_callers_and_outcomes() {
             if !event["environment_id"].is_null() {
                 assert_eq!(event["application_id"], f.blog.as_str());
             }
-            let action = event["action"].as_str().unwrap().split(' ').take(2);
+            let action = event["action"]
+                .as_str()
+                .expect("a string")
+                .split(' ')
+                .take(2);
             (
-                event["outcome"].as_str().unwrap().to_owned(),
+                event["outcome"].as_str().expect("a string").to_owned(),
                 action.collect::<Vec<_>>().join(" "),
                 event["permission"].as_str().map(str::to_owned),
             )
@@ -165,7 +169,7 @@ async fn audit_trail_records_callers_and_outcomes() {
         .header("authorization", format!("Bearer {}", f.deployer))
         .header("origin", "https://attacker.example")
         .body(Body::empty())
-        .unwrap();
+        .expect("the body builds");
     assert_eq!(f.router.send(foreign).await.status, 403);
     let mut status = 0;
     for _ in 0..31 {
@@ -186,15 +190,21 @@ async fn audit_trail_records_callers_and_outcomes() {
     let body = f.audit(&f.auditor, "/api/v1/audit?outcome=denied", 7).await;
     let anonymous: Vec<_> = body["data"]["items"]
         .as_array()
-        .unwrap()
+        .expect("the value is an array")
         .iter()
         .filter(|event| event["user_id"].is_null())
-        .map(|event| event["status"].as_u64().unwrap())
+        .map(|event| event["status"].as_u64().expect("the value is a number"))
         .collect();
     assert_eq!(anonymous, [401]);
     let deployer = "/api/v1/audit?user_id=deployer&outcome=denied";
     let body = f.audit(&f.auditor, deployer, 6).await;
-    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        body["data"]["items"]
+            .as_array()
+            .expect("the value is an array")
+            .len(),
+        6
+    );
 }
 
 /// A change a request commits records itself in its own transaction, with
@@ -210,25 +220,29 @@ async fn committed_changes_record_themselves_once() {
             .header("authorization", format!("Bearer {}", f.deployer))
             .header("idempotency-key", "deploy-once")
             .body(Body::empty())
-            .unwrap()
+            .expect("the request body builds")
     };
     for _ in 0..2 {
         assert_eq!(f.router.send(deploy()).await.status, 202);
         f.state.drain_audit(Duration::from_secs(5)).await;
     }
     let body = f.audit(&f.deployer, "/api/v1/audit", 2).await;
-    let items = body["data"]["items"].as_array().unwrap();
+    let items = body["data"]["items"]
+        .as_array()
+        .expect("the value is an array");
     let route = "POST /api/v1/environments/{id}/deploy";
     let [replayed, committed] = items.as_slice() else {
         panic!("one record per request expected: {body}");
     };
     assert_eq!(replayed["action"], route);
-    let action = committed["action"].as_str().unwrap();
+    let action = committed["action"].as_str().expect("the value is a string");
     assert!(
         action.starts_with(&format!("{route} generation ")) && action.contains(" operation "),
         "{action}"
     );
-    let environment = staging.strip_prefix("/api/v1/environments/").unwrap();
+    let environment = staging
+        .strip_prefix("/api/v1/environments/")
+        .expect("the prefix is present");
     for event in items {
         assert_eq!(event["outcome"], "allowed");
         assert_eq!(event["status"], 202);
@@ -252,10 +266,13 @@ async fn own_audit_trails_reveal_nothing_hidden() {
         .header("authorization", format!("Bearer {}", f.deployer))
         .header("origin", "https://attacker.example")
         .body(Body::empty())
-        .unwrap();
+        .expect("the request body builds");
     assert_eq!(f.router.send(foreign).await.status, 403);
     let body = f.audit(&f.deployer, "/api/v1/audit", 2).await;
-    for event in body["data"]["items"].as_array().unwrap() {
+    for event in body["data"]["items"]
+        .as_array()
+        .expect("the value is an array")
+    {
         assert_eq!(event["environment_id"], f.shop_production.as_str());
         assert!(event["application_id"].is_null(), "{event}");
     }
@@ -288,11 +305,13 @@ async fn own_audit_trails_reveal_nothing_hidden() {
                 && !action.contains(secret)
         });
     assert!(recorded, "{body}");
-    let token = created["token"].as_str().unwrap();
+    let token = created["token"].as_str().expect("the value is a string");
     let manifest = format!("/api/v1/applications/{}/manifest", f.blog);
     assert_eq!(f.router.status(token, "GET", &manifest).await, 200);
     let body = f.audit(token, "/api/v1/audit", 1).await;
-    let items = body["data"]["items"].as_array().unwrap();
+    let items = body["data"]["items"]
+        .as_array()
+        .expect("the value is an array");
     assert_eq!(items.len(), 1, "{body}");
     assert_eq!(items[0]["action"], "GET /api/v1/applications/{id}/manifest");
     let account = "/api/v1/audit?credential_id=deployer";
@@ -333,7 +352,9 @@ async fn creators_receive_matching_grants_on_new_applications() {
     assert_eq!(status, 200, "{body}");
     let created = format!(
         "/api/v1/applications/{}",
-        body["data"]["application_id"].as_str().unwrap()
+        body["data"]["application_id"]
+            .as_str()
+            .expect("the value is a string")
     );
     assert_eq!(f.router.status(&f.creator, "GET", &created).await, 200);
     let mut input = manifest();
@@ -364,7 +385,7 @@ async fn telemetry_grants_need_the_telemetry_grant_permission() {
     use piqueld::api::{Actor, ApplicationError, Mutation, MutationResponse};
     use piqueld_core::access::Denied;
     use piqueld_store::{Caller, StoreError};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let state = state(&temp).await;
     let database = database(&temp);
     let saved = save(&state, manifest()).await;
@@ -480,7 +501,7 @@ async fn delivery_retries_need_system_operate_and_name_refusals() {
     )
     .execute(&mut connection)
     .await
-    .unwrap();
+    .expect("the statement executes");
     let (status, listed) = f
         .router
         .call(
@@ -505,7 +526,10 @@ async fn delivery_retries_need_system_operate_and_name_refusals() {
         (409, &"delivery_not_retryable".into())
     );
     assert!(
-        error["message"].as_str().unwrap().contains("pending"),
+        error["message"]
+            .as_str()
+            .expect("the value is a string")
+            .contains("pending"),
         "{error}"
     );
     let missing = "/api/v1/notifications/deliveries/missing/retry";

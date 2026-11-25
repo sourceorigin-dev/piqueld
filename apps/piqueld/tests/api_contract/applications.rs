@@ -11,14 +11,14 @@ async fn digest_pinned_requested_images_compile() {
         panic!("expected image fixture")
     };
     *image = format!("ghcr.io/example/notes@sha256:{}", "b".repeat(64)).into();
-    let application = input
-        .validate()
-        .unwrap()
-        .normalize(piqueld_core::ApplicationId::parse("app-digest-fixture").unwrap());
+    let application = input.validate().expect("the value validates").normalize(
+        piqueld_core::ApplicationId::parse("app-digest-fixture")
+            .expect("the application id parses"),
+    );
     let runtime = FakeRuntime {
         cleanup_gate: None,
         exec_gate: Gate::default(),
-        instance: InstanceId::parse("test").unwrap(),
+        instance: InstanceId::parse("test").expect("the instance id parses"),
         unavailable: AtomicBool::new(false),
         containers: std::sync::Mutex::default(),
         starts: std::sync::Mutex::default(),
@@ -26,7 +26,8 @@ async fn digest_pinned_requested_images_compile() {
 
     runtime
         .prepare(
-            &piqueld_core::EnvironmentId::parse("env-digest-fixture").unwrap(),
+            &piqueld_core::EnvironmentId::parse("env-digest-fixture")
+                .expect("the environment id parses"),
             &application,
             &ResolutionSet::default(),
         )
@@ -97,15 +98,23 @@ image = "ghcr.io/example/notes:1"
 
 #[tokio::test]
 async fn saved_configuration_preview_and_deployment_are_separate_even_offline() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     api.runtime.set_unavailable(true);
     let mut request = new_application();
     request.manifest.spec.services.clear();
-    let saved = api.client.apply_application(&request).await.unwrap();
+    let saved = api
+        .client
+        .apply_application(&request)
+        .await
+        .expect("the application applies");
     assert!(saved.operation_id.is_none());
     let production = production_through(&api.client, &saved.application_id).await;
-    let detail = api.client.environment_detail(&production).await.unwrap();
+    let detail = api
+        .client
+        .environment_detail(&production)
+        .await
+        .expect("the environment detail loads");
     assert_eq!(
         detail.status.state,
         piqueld_core::ApplicationState::NotDeployed
@@ -115,18 +124,18 @@ async fn saved_configuration_preview_and_deployment_are_separate_even_offline() 
         .client
         .deploy_environment(&production, saved.generation, None, false)
         .await
-        .unwrap();
+        .expect("the environment deploys");
     let second = api
         .client
         .deploy_environment(&production, saved.generation, None, false)
         .await
-        .unwrap();
+        .expect("the environment deploys");
     assert_ne!(first.operation_id, second.operation_id);
     let history = api
         .client
         .deployments(&production, None, None)
         .await
-        .unwrap();
+        .expect("the deployments list");
     assert_eq!(history.items.len(), 2);
     assert_eq!(
         history.items[1].operation.state,
@@ -136,7 +145,7 @@ async fn saved_configuration_preview_and_deployment_are_separate_even_offline() 
         .client
         .deployments(&production, None, Some(1))
         .await
-        .unwrap();
+        .expect("the deployments list");
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].operation.id, second.operation_id);
     assert!(page.next_cursor.is_some());
@@ -144,7 +153,7 @@ async fn saved_configuration_preview_and_deployment_are_separate_even_offline() 
         .client
         .deployments(&production, None, Some(0))
         .await
-        .unwrap_err();
+        .expect_err("the listing is rejected");
     assert_eq!(api_error(refused).code, "pagination_invalid");
     request.expected_application_id = Some(saved.application_id.clone());
     request.expected_generation = Some(saved.generation);
@@ -155,7 +164,11 @@ async fn saved_configuration_preview_and_deployment_are_separate_even_offline() 
         .push(piqueld_core::manifest::Volume {
             name: "later".into(),
         });
-    let saved = api.client.apply_application(&request).await.unwrap();
+    let saved = api
+        .client
+        .apply_application(&request)
+        .await
+        .expect("the application applies");
     assert_eq!(
         api.deployed(&production, &second.operation_id)
             .await
@@ -170,14 +183,18 @@ async fn saved_configuration_preview_and_deployment_are_separate_even_offline() 
         .expect_err("`` should be rejected");
     api.runtime.set_unavailable(false);
     request.expected_generation = Some(saved.generation);
-    let preview = api.client.plan_application(&request, None).await.unwrap();
+    let preview = api
+        .client
+        .plan_application(&request, None)
+        .await
+        .expect("the application plans");
     assert!(!preview.identical);
     assert!(!preview.changes.is_empty());
 }
 
 #[tokio::test]
 async fn deploy_after_rename_captures_saved_name_and_spec() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let accepted = api.deploy().await;
     api.finish_operation(&accepted.operation_id, None).await;
@@ -187,18 +204,21 @@ async fn deploy_after_rename_captures_saved_name_and_spec() {
     api.client
         .set_application_name(&accepted.application_id, &name, &at_generation(1))
         .await
-        .unwrap();
+        .expect("the name is set");
     let mut edited = new_application();
     edited.manifest.metadata.name = "renamed".into();
     edited.manifest.spec.services[0].replicas = 2.into();
     edited.expected_generation = Some(2);
     edited.expected_application_id = Some(accepted.application_id.clone());
-    api.client.apply_application(&edited).await.unwrap();
+    api.client
+        .apply_application(&edited)
+        .await
+        .expect("the application applies");
     let refreshed = api
         .client
         .deploy_environment(&accepted.environment_id, 3, None, false)
         .await
-        .unwrap();
+        .expect("the environment deploys");
     let snapshot = api
         .deployed(&accepted.environment_id, &refreshed.operation_id)
         .await;
@@ -216,22 +236,26 @@ async fn deploy_after_rename_captures_saved_name_and_spec() {
 
 #[tokio::test]
 async fn unavailable_observation_does_not_claim_services_are_missing() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let accepted = api.deploy().await;
-    let id = piqueld_core::EnvironmentId::parse(&accepted.environment_id).unwrap();
-    let app = api.store.get(&id).await.unwrap();
+    let id = piqueld_core::EnvironmentId::parse(&accepted.environment_id)
+        .expect("the environment id parses");
+    let app = api.store.get(&id).await.expect("the item exists");
     let target = api
         .runtime
         .prepare(
             &id,
-            &app.render(app.manifest().unwrap(), &accepted.operation_id)
-                .unwrap()
-                .application,
+            &app.render(
+                app.manifest().expect("the manifest builds"),
+                &accepted.operation_id,
+            )
+            .expect("the page renders")
+            .application,
             &ResolutionSet::default(),
         )
         .await
-        .unwrap();
+        .expect("the change prepares");
     api.store
         .transition_operation(
             &accepted.operation_id,
@@ -240,20 +264,30 @@ async fn unavailable_observation_does_not_claim_services_are_missing() {
             None,
         )
         .await
-        .unwrap();
-    let op = api.store.operation(&accepted.operation_id).await.unwrap();
-    api.store.save_prepared(&op, &target).await.unwrap();
-    api.store.publish_prepared(&op).await.unwrap();
+        .expect("the operation transitions");
+    let op = api
+        .store
+        .operation(&accepted.operation_id)
+        .await
+        .expect("the operation loads");
+    api.store
+        .save_prepared(&op, &target)
+        .await
+        .expect("the prepared change saves");
+    api.store
+        .publish_prepared(&op)
+        .await
+        .expect("the prepared change publishes");
     api.store
         .set_status_for_operation(&op.id, piqueld_core::ApplicationState::Ready, None)
         .await
-        .unwrap();
+        .expect("the status is set");
     api.runtime.set_unavailable(true);
     let detail = api
         .client
         .environment_detail(&accepted.environment_id)
         .await
-        .unwrap();
+        .expect("the environment detail loads");
     assert!(
         detail
             .diagnostics
@@ -265,7 +299,7 @@ async fn unavailable_observation_does_not_claim_services_are_missing() {
 
 #[tokio::test]
 async fn downloaded_manifest_round_trips_saved_configuration_without_docker() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     api.runtime.set_unavailable(true);
     let mut apply = new_application();
@@ -281,7 +315,11 @@ async fn downloaded_manifest_round_trips_saved_configuration_without_docker() {
         path: "infra/app.toml".into(),
         sync: piqueld_core::sync::RepositorySync::Off,
     });
-    let saved = api.client.apply_application(&apply).await.unwrap();
+    let saved = api
+        .client
+        .apply_application(&apply)
+        .await
+        .expect("the application applies");
     let response = api
         .router()
         .send(request(&format!(
@@ -296,14 +334,14 @@ async fn downloaded_manifest_round_trips_saved_configuration_without_docker() {
         response.header("content-disposition"),
         Some("attachment; filename=\"notes.toml\"")
     );
-    let downloaded: ApplicationManifest = toml::from_str(response.text()).unwrap();
+    let downloaded: ApplicationManifest = toml::from_str(response.text()).expect("the toml parses");
     assert_eq!(downloaded, apply.manifest);
     let production = production_through(&api.client, &saved.application_id).await;
     assert!(
         api.client
             .deployments(&production, None, None)
             .await
-            .unwrap()
+            .expect("the deployments list")
             .items
             .is_empty()
     );
@@ -311,14 +349,17 @@ async fn downloaded_manifest_round_trips_saved_configuration_without_docker() {
 
 #[tokio::test]
 async fn application_log_snapshot_validates_bounds_and_preserves_task_identity() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
     let client = server.client();
-    let app = client.apply_and_deploy(&new_application()).await.unwrap();
+    let app = client
+        .apply_and_deploy(&new_application())
+        .await
+        .expect("the application deploys");
     let logs = client
         .environment_logs(&app.environment_id, Some("web"), 5, 60)
         .await
-        .unwrap();
+        .expect("the environment logs load");
     assert_eq!(logs.items[0].task_id, "task-1");
     assert_eq!(logs.items[0].message, "hello");
     assert!(!logs.truncated);
@@ -331,22 +372,32 @@ async fn application_log_snapshot_validates_bounds_and_preserves_task_identity()
             Some(piqueld_client::LogStream::Stderr),
         )
         .await
-        .unwrap();
+        .expect("the filtered logs load");
     assert!(stderr.items.is_empty());
     let error = client
         .environment_logs(&app.environment_id, Some("web"), 0, 60)
         .await
-        .unwrap_err();
+        .expect_err("the logs are rejected");
     assert_eq!(api_error(error).status, 400);
 }
 
 #[tokio::test]
 async fn readiness_distinguishes_engine_reachability_and_does_not_gate_saves() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
-    assert!(api.client.system_readiness().await.unwrap().ready);
+    assert!(
+        api.client
+            .system_readiness()
+            .await
+            .expect("the readiness loads")
+            .ready
+    );
     api.runtime.set_unavailable(true);
-    let readiness = api.client.system_readiness().await.unwrap();
+    let readiness = api
+        .client
+        .system_readiness()
+        .await
+        .expect("the readiness loads");
     assert!(!readiness.ready);
     assert!(matches!(
         readiness.database,
@@ -362,13 +413,20 @@ async fn readiness_distinguishes_engine_reachability_and_does_not_gate_saves() {
     let response = api.router().send(request("/api/v1/system/readiness")).await;
     assert_eq!(response.status, StatusCode::SERVICE_UNAVAILABLE);
     api.save().await;
-    assert_eq!(api.client.system_status().await.unwrap().status, "running");
+    assert_eq!(
+        api.client
+            .system_status()
+            .await
+            .expect("the system status loads")
+            .status,
+        "running"
+    );
 }
 
 #[tokio::test]
 async fn service_and_http_share_acceptance_receipts_and_application_views() {
     use piqueld::api::{Mutation, MutationResponse};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let service = api.state.clone();
     let apply = new_application();
@@ -380,7 +438,11 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
         .accept(
             caller,
             Mutation::save(
-                apply.manifest.clone().validate_template().unwrap(),
+                apply
+                    .manifest
+                    .clone()
+                    .validate_template()
+                    .expect("the template validates"),
                 None,
                 true,
             ),
@@ -389,7 +451,7 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
             Some("shared-command"),
         )
         .await
-        .unwrap()
+        .expect("the connection is accepted")
     else {
         panic!("expected saved configuration")
     };
@@ -399,7 +461,7 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
         .with_request_id("shared-command")
         .apply_and_deploy(&apply)
         .await
-        .unwrap();
+        .expect("the application deploys");
     assert_eq!(saved.operation_id, Some(replay.operation_id));
     assert_eq!(saved.generation, replay.generation);
     let id = production(&service, &saved.application_id).await;
@@ -407,14 +469,14 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
         .clone()
         .environment_detail(&id, &piqueld_core::access::Scope::All)
         .await
-        .unwrap();
+        .expect("the environment detail loads");
     let response = api_router(service.clone(), FakeAuth)
         .send(request(&format!("/api/v1/environments/{id}/detail")))
         .await;
     assert_eq!(response.status, StatusCode::OK);
     assert_eq!(
         response.json()["data"],
-        serde_json::to_value(direct).unwrap()
+        serde_json::to_value(direct).expect("the value serialises")
     );
 
     let mut changed = apply.clone();
@@ -427,12 +489,15 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
         .with_request_id("http-command")
         .apply_application(&changed)
         .await
-        .unwrap();
+        .expect("the application applies");
     let MutationResponse::Saved(replay) = service
         .accept(
             caller,
             Mutation::save(
-                changed.manifest.validate_template().unwrap(),
+                changed
+                    .manifest
+                    .validate_template()
+                    .expect("the template validates"),
                 changed.expected_application_id,
                 false,
             ),
@@ -441,16 +506,19 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
             Some("http-command"),
         )
         .await
-        .unwrap()
+        .expect("the connection is accepted")
     else {
         panic!("expected receipt")
     };
     assert_eq!(replay.generation, saved.generation);
     assert_eq!(
         service
-            .application(&piqueld_core::ApplicationId::parse(&saved.application_id).unwrap())
+            .application(
+                &piqueld_core::ApplicationId::parse(&saved.application_id)
+                    .expect("the application id parses")
+            )
             .await
-            .unwrap()
+            .expect("the application loads")
             .generation,
         saved.generation
     );
@@ -459,11 +527,15 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
 #[tokio::test]
 async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
     use piqueld::api::{ApplicationError, Mutation, MutationResponse};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
-    let manifest = manifest().validate_template().unwrap();
-    let id = piqueld_core::ApplicationId::parse("absent-application").unwrap();
-    let environment = piqueld_core::EnvironmentId::parse("absent-application").unwrap();
+    let manifest = manifest()
+        .validate_template()
+        .expect("the template validates");
+    let id = piqueld_core::ApplicationId::parse("absent-application")
+        .expect("the application id parses");
+    let environment = piqueld_core::EnvironmentId::parse("absent-application")
+        .expect("the environment id parses");
     for mutation in [
         Mutation::save(manifest.clone(), None, false),
         Mutation::deploy(environment.clone()),
@@ -479,7 +551,7 @@ async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
         service
             .applications(&piqueld_core::access::Scope::All, None, None, None)
             .await
-            .unwrap()
+            .expect("the applications list")
             .items
             .is_empty()
     );
@@ -492,7 +564,7 @@ async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
             None,
         )
         .await
-        .unwrap()
+        .expect("the connection is accepted")
     else {
         panic!("expected saved configuration")
     };
@@ -500,7 +572,7 @@ async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
         let listed = service
             .applications(&piqueld_core::access::Scope::All, Some(name), None, None)
             .await
-            .unwrap();
+            .expect("the applications list");
         assert_eq!(listed.items.len(), found, "{name}");
     }
     assert!(matches!(
@@ -539,19 +611,20 @@ async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     service
         .accept(Daemon, Mutation::Reconcile { id }, None, false, None)
         .await
-        .unwrap();
+        .expect("the connection is accepted");
 }
 
 #[tokio::test]
 async fn direct_service_validates_log_bounds_and_deployment_ownership() {
     use piqueld::api::{ApplicationError, Mutation, MutationResponse};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
-    let missing = piqueld_core::EnvironmentId::parse("absent-application").unwrap();
+    let missing = piqueld_core::EnvironmentId::parse("absent-application")
+        .expect("the environment id parses");
     for (name, tail, since) in [
         (None, 0, 60),
         (None, 1001, 60),
@@ -577,17 +650,23 @@ async fn direct_service_validates_log_bounds_and_deployment_ownership() {
     let MutationResponse::Saved(saved) = service
         .accept(
             Daemon,
-            Mutation::save(manifest().validate_template().unwrap(), None, true),
+            Mutation::save(
+                manifest()
+                    .validate_template()
+                    .expect("the template validates"),
+                None,
+                true,
+            ),
             Some(0),
             false,
             None,
         )
         .await
-        .unwrap()
+        .expect("the connection is accepted")
     else {
         panic!("expected deployment")
     };
-    let deployment = saved.operation_id.unwrap();
+    let deployment = saved.operation_id.expect("the operation id is present");
     assert!(matches!(
         service
             .deployment_attempts(&missing, &deployment, None)
@@ -598,12 +677,12 @@ async fn direct_service_validates_log_bounds_and_deployment_ownership() {
     service
         .deployment_attempts(&id, &deployment, None)
         .await
-        .unwrap();
+        .expect("the deployment attempts list");
     assert_eq!(
         service
             .logs(&id, Some("web"), 5, 60, None)
             .await
-            .unwrap()
+            .expect("the logs load")
             .items[0]
             .message,
         "hello"
@@ -615,7 +694,7 @@ async fn direct_service_validates_log_bounds_and_deployment_ownership() {
 #[tokio::test]
 async fn creating_over_a_repository_backed_name_collides() {
     use piqueld_client::{GitRepository, RepositoryManifest, edit::ApplicationEdit};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let repository = ApplicationEdit::Repository(Some(RepositoryManifest {
@@ -631,10 +710,14 @@ async fn creating_over_a_repository_backed_name_collides() {
     api.client
         .edit_application(&saved.application_id, &repository, &options)
         .await
-        .unwrap();
+        .expect("the edit applies");
     let mut request = new_application();
     request.manifest.spec.services[0].replicas = 2.into();
-    let error = api.client.apply_application(&request).await.unwrap_err();
+    let error = api
+        .client
+        .apply_application(&request)
+        .await
+        .expect_err("the apply is rejected");
     assert_eq!(api_error(error).code, "application_name_collision");
 }
 
@@ -642,7 +725,7 @@ async fn creating_over_a_repository_backed_name_collides() {
 /// before the Unix epoch, which the daemon would refuse.
 #[tokio::test]
 async fn analytics_default_window_starts_no_earlier_than_the_epoch() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
     let path = "/api/v1/analytics/deployments?until_ms=1000";
     let response = server.send(Method::GET, path, &[], Vec::new()).await;

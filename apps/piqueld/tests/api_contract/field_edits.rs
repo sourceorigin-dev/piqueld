@@ -5,7 +5,7 @@ use super::*;
 #[tokio::test]
 async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
     use piqueld_core::{edit::ApplicationEdit, manifest::Visibility};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let id = &saved.application_id;
@@ -22,7 +22,7 @@ async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
                     &at_generation(generation),
                 )
                 .await
-                .unwrap()
+                .expect("the edit applies")
         }
     };
     set(Visibility::Private, 1).await;
@@ -30,7 +30,7 @@ async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
         .client
         .application(id)
         .await
-        .unwrap()
+        .expect("the application loads")
         .application
         .to_manifest();
     assert_eq!(
@@ -42,7 +42,7 @@ async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
         .client
         .application(id)
         .await
-        .unwrap()
+        .expect("the application loads")
         .application
         .to_manifest();
     assert_eq!(
@@ -57,7 +57,7 @@ async fn route_field_edits_follow_service_renames_and_removals() {
         Route,
         edit::{ApplicationEdit, ServiceEdit},
     };
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let id = &saved.application_id;
@@ -74,8 +74,12 @@ async fn route_field_edits_follow_service_renames_and_removals() {
             &at_generation(1),
         )
         .await
-        .unwrap();
-    let app = api.client.application(id).await.unwrap();
+        .expect("the edit applies");
+    let app = api
+        .client
+        .application(id)
+        .await
+        .expect("the application loads");
     assert_eq!(app.application.to_manifest().spec.routes, vec![route]);
     api.client
         .edit_application(
@@ -84,8 +88,12 @@ async fn route_field_edits_follow_service_renames_and_removals() {
             &at_generation(2),
         )
         .await
-        .unwrap();
-    let app = api.client.application(id).await.unwrap();
+        .expect("the edit applies");
+    let app = api
+        .client
+        .application(id)
+        .await
+        .expect("the application loads");
     assert_eq!(
         app.application.to_manifest().spec.routes[0]
             .service
@@ -99,12 +107,12 @@ async fn route_field_edits_follow_service_renames_and_removals() {
             &at_generation(3),
         )
         .await
-        .unwrap();
+        .expect("the edit applies");
     assert_eq!(
         api.client
             .application(id)
             .await
-            .unwrap()
+            .expect("the application loads")
             .application
             .to_manifest()
             .spec
@@ -116,7 +124,7 @@ async fn route_field_edits_follow_service_renames_and_removals() {
 #[tokio::test]
 async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
     use piqueld_client::{Job, JobRun, JobVolumeAccess, edit::ApplicationEdit};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let id = &saved.application_id;
@@ -135,12 +143,12 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
     api.client
         .edit_application(id, &ApplicationEdit::Jobs(jobs.clone()), &at_generation(1))
         .await
-        .unwrap();
+        .expect("the edit applies");
     let jobs_of = async || {
         api.client
             .application(id)
             .await
-            .unwrap()
+            .expect("the application loads")
             .application
             .to_manifest()
             .spec
@@ -155,7 +163,7 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
             &at_generation(2),
         )
         .await
-        .unwrap_err();
+        .expect_err("the edit is rejected");
     assert!(
         matches!(&error, ClientError::Api { status, error }
             if *status == StatusCode::UNPROCESSABLE_ENTITY
@@ -167,12 +175,12 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
         .client
         .events(Some(id), None, None, false, None, 100)
         .await
-        .unwrap();
+        .expect("the events list");
     let recorded = events
         .items
         .iter()
         .find(|event| event.kind == "application_edited")
-        .unwrap();
+        .expect("the item exists");
     assert_eq!(
         recorded.detail,
         Some(piqueld_core::EventDetail::Edited {
@@ -184,7 +192,7 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
 #[tokio::test]
 async fn field_edits_save_without_docker_and_deploy_only_the_captured_revision() {
     use piqueld_client::edit::{EditOptions, ServiceEdit};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     api.runtime.set_unavailable(true);
     let saved = api.save().await;
@@ -196,18 +204,22 @@ async fn field_edits_save_without_docker_and_deploy_only_the_captured_revision()
         .client
         .edit_application(id, &edit, &options)
         .await
-        .unwrap();
+        .expect("the edit applies");
     assert_eq!(receipt.generation, 2);
     assert_eq!(receipt.operation_id, None);
     assert!(
         api.client
             .deployments(&production, None, None)
             .await
-            .unwrap()
+            .expect("the deployments list")
             .items
             .is_empty()
     );
-    let app = api.client.application(id).await.unwrap();
+    let app = api
+        .client
+        .application(id)
+        .await
+        .expect("the application loads");
     assert_eq!(
         app.application.to_manifest().spec.services[0].replicas,
         3.into()
@@ -220,7 +232,7 @@ async fn field_edits_save_without_docker_and_deploy_only_the_captured_revision()
         .client
         .edit_application(id, &edit, &options)
         .await
-        .unwrap_err();
+        .expect_err("the edit is rejected");
     assert_eq!(api_error(stale).code, "generation_conflict");
     let deploy = EditOptions {
         expected_generation: Some(2),
@@ -235,14 +247,14 @@ async fn field_edits_save_without_docker_and_deploy_only_the_captured_revision()
         .client
         .edit_application(id, &next, &deploy)
         .await
-        .unwrap();
-    let operation = deployed.operation_id.unwrap();
+        .expect("the edit applies");
+    let operation = deployed.operation_id.expect("the operation id is present");
     let pending = edit_web(ServiceEdit::Replicas(5.into()));
     let options = at_generation(3);
     api.client
         .edit_application(id, &pending, &options)
         .await
-        .unwrap();
+        .expect("the edit applies");
     let snapshot = api.deployed(&production, &operation).await;
     assert_eq!(snapshot.spec().services[0].replicas, 3);
     assert_eq!(
@@ -253,7 +265,7 @@ async fn field_edits_save_without_docker_and_deploy_only_the_captured_revision()
         api.client
             .application(id)
             .await
-            .unwrap()
+            .expect("the application loads")
             .application
             .to_manifest()
             .spec
@@ -269,7 +281,7 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
         GitRepository, RepositoryManifest,
         edit::{ApplicationEdit, EditOptions, ServiceEdit},
     };
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let id = &saved.application_id;
@@ -279,11 +291,18 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
         .client
         .edit_application(id, &invalid, &options)
         .await
-        .unwrap_err();
+        .expect_err("the edit is rejected");
     assert!(
         matches!(error, ClientError::Api { status, error } if status == StatusCode::UNPROCESSABLE_ENTITY && !error.details.is_null())
     );
-    assert_eq!(api.client.application(id).await.unwrap().generation, 1);
+    assert_eq!(
+        api.client
+            .application(id)
+            .await
+            .expect("the application loads")
+            .generation,
+        1
+    );
     let repository = ApplicationEdit::Repository(Some(RepositoryManifest {
         repository: GitRepository {
             url: "https://example.com/infra.git".into(),
@@ -296,7 +315,7 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
     api.client
         .edit_application(id, &repository, &options)
         .await
-        .unwrap();
+        .expect("the edit applies");
     let options = EditOptions {
         expected_generation: Some(2),
         force: true,
@@ -306,7 +325,7 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
     api.client
         .edit_application(id, &edit, &options)
         .await
-        .unwrap();
+        .expect("the edit applies");
     api.client
         .edit_application(
             id,
@@ -314,15 +333,23 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
             &options,
         )
         .await
-        .unwrap();
-    let edited = api.client.application(id).await.unwrap();
+        .expect("the edit applies");
+    let edited = api
+        .client
+        .application(id)
+        .await
+        .expect("the application loads");
     assert_eq!(edited.application.spec().services[0].replicas, 2.into());
     assert!(edited.repository.is_none() && !edited.edited());
     api.client
         .edit_application(id, &ApplicationEdit::Repository(None), &options)
         .await
-        .unwrap();
-    let after = api.client.application(id).await.unwrap();
+        .expect("the edit applies");
+    let after = api
+        .client
+        .application(id)
+        .await
+        .expect("the application loads");
     assert_eq!(
         after.application.spec().services[0].replicas,
         2.into(),
@@ -334,7 +361,7 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
 #[tokio::test]
 async fn concurrent_field_edits_reject_stale_revisions_without_losing_updates() {
     use piqueld_client::edit::ServiceEdit;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let replicas = edit_web(ServiceEdit::Replicas(4.into()));
@@ -353,19 +380,19 @@ async fn concurrent_field_edits_reject_stale_revisions_without_losing_updates() 
     let (retry, error) = if let Err(error) = a {
         (&replicas, error)
     } else {
-        (&env, b.unwrap_err())
+        (&env, b.expect_err("the second edit is rejected"))
     };
     assert_eq!(api_error(error).code, "generation_conflict");
     let options = at_generation(2);
     api.client
         .edit_application(&saved.application_id, retry, &options)
         .await
-        .unwrap();
+        .expect("the edit applies");
     let manifest = api
         .client
         .application(&saved.application_id)
         .await
-        .unwrap()
+        .expect("the application loads")
         .application
         .to_manifest();
     assert_eq!(manifest.spec.services[0].replicas, 4.into());
@@ -375,7 +402,7 @@ async fn concurrent_field_edits_reject_stale_revisions_without_losing_updates() 
 #[tokio::test]
 async fn field_edit_source_endpoints_preserve_other_git_settings() {
     use piqueld_client::{Build, GitRepository, SourceRepository, edit::ServiceEdit};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let id = &saved.application_id;
@@ -419,9 +446,9 @@ async fn field_edit_source_endpoints_preserve_other_git_settings() {
         let service = api.edit_service_field(id, edit).await;
         assert_eq!(
             serde_json::to_value(service)
-                .unwrap()
+                .expect("the value serialises")
                 .pointer(pointer)
-                .unwrap(),
+                .expect("the json pointer resolves"),
             expected
         );
     }
@@ -466,7 +493,7 @@ async fn field_edit_source_endpoints_preserve_other_git_settings() {
 #[tokio::test]
 async fn field_edit_health_process_and_resource_endpoints_clear_optional_values() {
     use piqueld_client::{HealthCheck, edit::ServiceEdit};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let id = &saved.application_id;
@@ -550,7 +577,7 @@ async fn field_edit_health_process_and_resource_endpoints_clear_optional_values(
         .edit_service_field(id, ServiceEdit::Cpu(None))
         .await
         .resources
-        .unwrap();
+        .expect("the resources are present");
     assert_eq!(resources.cpu_millis, None);
     assert_eq!(resources.memory_bytes, Some(1024.into()));
     assert!(
@@ -567,9 +594,13 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
         Mount, Volume,
         edit::{ApplicationEdit, ServiceEdit},
     };
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
-    let saved = api.client.create_application("empty", false).await.unwrap();
+    let saved = api
+        .client
+        .create_application("empty", false)
+        .await
+        .expect("the application is created");
     let id = &saved.application_id;
     assert!(saved.operation_id.is_none());
     api.edit_field(
@@ -593,7 +624,11 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
         .edit_service_field(id, ServiceEdit::Mount(mount.clone()))
         .await;
     assert_eq!(service.mounts, [mount]);
-    let before = api.client.application(id).await.unwrap();
+    let before = api
+        .client
+        .application(id)
+        .await
+        .expect("the application loads");
     let error = api
         .client
         .edit_application(
@@ -602,12 +637,16 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
             &at_generation(before.generation),
         )
         .await
-        .unwrap_err();
+        .expect_err("the edit is rejected");
     assert!(
         matches!(error, ClientError::Api { status, .. } if status == StatusCode::UNPROCESSABLE_ENTITY)
     );
     assert_eq!(
-        api.client.application(id).await.unwrap().generation,
+        api.client
+            .application(id)
+            .await
+            .expect("the application loads")
+            .generation,
         before.generation
     );
     api.edit_service_field(id, ServiceEdit::RemoveMount("/var/lib/data".into()))
@@ -653,7 +692,7 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
 #[tokio::test]
 async fn field_edit_receipts_survive_restart_and_reject_key_reuse() {
     use piqueld_client::edit::ServiceEdit;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let edit = edit_web(ServiceEdit::Replicas(3.into()));
@@ -664,26 +703,26 @@ async fn field_edit_receipts_survive_restart_and_reject_key_reuse() {
         .with_request_id("field-save")
         .edit_application(&saved.application_id, &edit, &options)
         .await
-        .unwrap();
+        .expect("the edit applies");
     drop(api);
     let api = AcceptanceApi::start(&temp).await;
     let keyed = api.client.clone().with_request_id("field-save");
     let replay = keyed
         .edit_application(&saved.application_id, &edit, &options)
         .await
-        .unwrap();
+        .expect("the edit applies");
     assert_eq!(replay.generation, receipt.generation);
     let changed = edit_web(ServiceEdit::Replicas(5.into()));
     let error = keyed
         .edit_application(&saved.application_id, &changed, &options)
         .await
-        .unwrap_err();
+        .expect_err("the edit is rejected");
     assert_eq!(api_error(error).code, "request_id_conflict");
 }
 
 #[tokio::test]
 async fn field_edit_requires_an_explicit_value_and_revision() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let state = state(&temp).await;
     let saved = save(&state, manifest()).await;
     let app = router(state, FakeAuth);
@@ -712,7 +751,7 @@ async fn field_edit_requires_an_explicit_value_and_revision() {
                     .header("host", "localhost")
                     .header("content-type", "application/json")
                     .body(Body::from(body))
-                    .unwrap(),
+                    .expect("the request body builds"),
             )
             .await;
         assert_eq!(response.status, status, "body {body}");
@@ -722,7 +761,7 @@ async fn field_edit_requires_an_explicit_value_and_revision() {
 #[tokio::test]
 async fn typed_edits_record_safe_field_history() {
     use piqueld_client::edit::ServiceEdit;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let edit = edit_web(ServiceEdit::EnvironmentEntry((
@@ -736,17 +775,17 @@ async fn typed_edits_record_safe_field_history() {
             &at_generation(saved.generation),
         )
         .await
-        .unwrap();
+        .expect("the edit applies");
     let events = api
         .client
         .events(Some(&saved.application_id), None, None, false, None, 100)
         .await
-        .unwrap();
+        .expect("the events list");
     let recorded = events
         .items
         .iter()
         .find(|e| e.kind == "application_edited")
-        .unwrap();
+        .expect("the item exists");
     assert_eq!(
         recorded.detail,
         Some(piqueld_core::EventDetail::Edited {
@@ -757,7 +796,7 @@ async fn typed_edits_record_safe_field_history() {
     assert_eq!(recorded.generation, Some(2));
     assert!(
         !serde_json::to_string(recorded)
-            .unwrap()
+            .expect("the value serialises")
             .contains("private-value")
     );
 }

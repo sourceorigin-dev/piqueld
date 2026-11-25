@@ -121,7 +121,7 @@ impl FakeRuntime {
     fn start_container(&self, id: &str, environment: &str, service: &str) {
         self.containers
             .lock()
-            .unwrap()
+            .expect("the containers lock isn't poisoned")
             .push(piqueld_docker::ManagedContainer {
                 id: id.into(),
                 name: id.into(),
@@ -129,14 +129,14 @@ impl FakeRuntime {
                 created: 0,
                 task: Some(format!("task-{id}")),
                 workload: piqueld_docker::Workload::Service {
-                    environment: environment.parse().unwrap(),
+                    environment: environment.parse().expect("the environment ID is valid"),
                     name: service.into(),
                 },
                 receiver: false,
             });
         self.starts
             .lock()
-            .unwrap()
+            .expect("the start watchers lock isn't poisoned")
             .retain(|watcher| watcher.send(id.into()).is_ok());
     }
 
@@ -163,7 +163,7 @@ impl FakeRuntime {
                         image.clone(),
                         format!("{repository}@sha256:{}", "a".repeat(64)),
                     )
-                    .unwrap(),
+                    .expect("the image source parses"),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -257,7 +257,10 @@ impl RuntimeBoundary for FakeRuntime {
             let mut read = 0;
             while let Some(ExecInput::Stdin(data)) = input.recv().await {
                 read += data.len();
-                output.send(ExecOutput::Stdout(data)).await.unwrap();
+                output
+                    .send(ExecOutput::Stdout(data))
+                    .await
+                    .expect("the request is sent");
             }
             if exec.id == "exec-hang" {
                 return std::future::pending().await;
@@ -265,8 +268,8 @@ impl RuntimeBoundary for FakeRuntime {
             output
                 .send(ExecOutput::Stderr(b"closed".to_vec()))
                 .await
-                .unwrap();
-            Ok(i64::try_from(read).unwrap())
+                .expect("the request is sent");
+            Ok(i64::try_from(read).expect("the number fits an i64"))
         };
         let stopped = async {
             if exec.id == "exec-hang" {
@@ -340,7 +343,11 @@ impl RuntimeBoundary for FakeRuntime {
         Ok(ObservedApplication::default())
     }
     async fn containers(&self) -> Result<Vec<piqueld_docker::ManagedContainer>, BoundaryError> {
-        Ok(self.containers.lock().unwrap().clone())
+        Ok(self
+            .containers
+            .lock()
+            .expect("the containers lock isn't poisoned")
+            .clone())
     }
     async fn container_usage(
         &self,
@@ -367,7 +374,10 @@ impl RuntimeBoundary for FakeRuntime {
     }
     fn container_starts(&self, _: i64) -> piqueld_docker::ContainerStarts {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        self.starts.lock().unwrap().push(sender);
+        self.starts
+            .lock()
+            .expect("the start watchers lock isn't poisoned")
+            .push(sender);
         futures_util::stream::unfold(receiver, async |mut receiver| {
             Some((Ok(Some(receiver.recv().await?)), receiver))
         })
@@ -441,7 +451,8 @@ async fn contract_state(
 ) -> (Arc<FakeRuntime>, ApiState) {
     seed_account(&database(temp), "contract-admin", &[("admin", None)]).await;
     let runtime = Arc::new(FakeRuntime::new(&store));
-    let state = ApiState::new(store, runtime.clone(), sources(temp, config).await).unwrap();
+    let state = ApiState::new(store, runtime.clone(), sources(temp, config).await)
+        .expect("the api state builds");
     (runtime, state)
 }
 
@@ -452,23 +463,36 @@ async fn api_state(temp: &TempDir, store: Arc<Store>, runtime: Arc<FakeRuntime>)
         runtime,
         sources(temp, &DaemonConfig::default()).await,
     )
-    .unwrap()
+    .expect("the api state builds")
 }
 
 /// The Git sources in `temp`, limited by `config`.
 async fn sources(temp: &TempDir, config: &DaemonConfig) -> Arc<Sources> {
-    Arc::new(Sources::open(temp.path()).await.unwrap().configured(config))
+    Arc::new(
+        Sources::open(temp.path())
+            .await
+            .expect("the sources open")
+            .configured(config),
+    )
 }
 
 /// The real authenticator of the contract daemon in `temp`.
 async fn auth(temp: &TempDir) -> piqueld::auth::Auth {
-    let store = Store::open_unsynced(database(temp)).await.unwrap();
-    piqueld::auth::Auth::new(&store, "https://piqueld.example").unwrap()
+    let store = Store::open_unsynced(database(temp))
+        .await
+        .expect("the store opens");
+    piqueld::auth::Auth::new(&store, "https://piqueld.example").expect("the auth service builds")
 }
 
 /// Saves `manifest` as a new application, without deploying it.
 async fn save(state: &ApiState, manifest: ApplicationManifest) -> SavedApplication {
-    let mutation = piqueld::api::Mutation::save(manifest.validate_template().unwrap(), None, false);
+    let mutation = piqueld::api::Mutation::save(
+        manifest
+            .validate_template()
+            .expect("the template validates"),
+        None,
+        false,
+    );
     let Ok(piqueld::api::MutationResponse::Saved(saved)) =
         state.accept(Daemon, mutation, Some(0), false, None).await
     else {
@@ -479,15 +503,28 @@ async fn save(state: &ApiState, manifest: ApplicationManifest) -> SavedApplicati
 
 /// The ID of the `production` environment of application `application`.
 async fn production(state: &ApiState, application: &str) -> piqueld_core::EnvironmentId {
-    let application = piqueld_core::ApplicationId::parse(application).unwrap();
-    let view = state.application(&application).await.unwrap();
-    view.environment("production").unwrap().id.clone()
+    let application =
+        piqueld_core::ApplicationId::parse(application).expect("the application id parses");
+    let view = state
+        .application(&application)
+        .await
+        .expect("the application loads");
+    view.environment("production")
+        .expect("the environment loads")
+        .id
+        .clone()
 }
 
 /// [`production`], read through `client`.
 async fn production_through(client: &Client, application: &str) -> String {
-    let view = client.application(application).await.unwrap();
-    view.environment("production").unwrap().id.to_string()
+    let view = client
+        .application(application)
+        .await
+        .expect("the application loads");
+    view.environment("production")
+        .expect("the environment loads")
+        .id
+        .to_string()
 }
 
 /// Seeds an account holding `grants` (permission, optional application ID)
@@ -506,13 +543,13 @@ async fn seed_account(database: &Path, name: &str, grants: &[(&str, Option<&str>
     .bind(name)
     .execute(&mut connection)
     .await
-    .unwrap();
+    .expect("the statement executes");
     sqlx::query("INSERT OR IGNORE INTO auth_credentials(id,user_id,secret_hash,kind,name,created_at,last_used_at) VALUES(?1,?1,?2,'token','test',1,4102444800)")
         .bind(name)
         .bind(hash)
         .execute(&mut connection)
         .await
-        .unwrap();
+        .expect("the statement executes");
     for (permission, application) in grants {
         sqlx::query("INSERT INTO auth_grants(user_id,permission,application_id) VALUES(?1,?2,?3)")
             .bind(name)
@@ -520,7 +557,7 @@ async fn seed_account(database: &Path, name: &str, grants: &[(&str, Option<&str>
             .bind(application)
             .execute(&mut connection)
             .await
-            .unwrap();
+            .expect("the statement executes");
     }
     token
 }
@@ -540,7 +577,7 @@ async fn execute(database: &Path, sql: &str) {
     sqlx::query(sql)
         .execute(&mut sqlite::connect(database).await)
         .await
-        .unwrap();
+        .expect("the statement executes");
 }
 
 /// Edit options that expect revision `generation` and save without
@@ -683,16 +720,17 @@ impl Received {
         );
         let media_type = self
             .header(http::header::CONTENT_TYPE)
-            .unwrap()
+            .expect("the header is present")
             .split(';')
             .next()
-            .unwrap();
+            .expect("the stream yields an item");
         assert!(
             !response["content"][media_type].is_null(),
             "undocumented response media type for {method} {path}: {media_type}"
         );
         if self.status.is_client_error() || self.status.is_server_error() {
-            let error: piqueld_core::api::ErrorBody = serde_json::from_slice(&self.body).unwrap();
+            let error: piqueld_core::api::ErrorBody =
+                serde_json::from_slice(&self.body).expect("the body is valid json");
             assert_ne!(error.code, "");
             assert_ne!(error.message, "");
             let header_id = self.header("x-request-id").expect("request ID header");
@@ -753,7 +791,7 @@ impl InProcess for axum::Router {
             .header("authorization", format!("Bearer {token}"))
             .header("content-type", "application/json")
             .body(Body::from(body.to_string()))
-            .unwrap();
+            .expect("the request body builds");
         let response = self.send(request).await;
         (response.status.as_u16(), response.json())
     }
@@ -809,8 +847,10 @@ impl Server {
 
     fn client(&self) -> Client {
         match &self.endpoint {
-            Endpoint::Tcp(address) => Client::tcp(&format!("http://{address}/")).unwrap(),
-            Endpoint::Unix(path) => Client::unix(path).unwrap(),
+            Endpoint::Tcp(address) => {
+                Client::tcp(&format!("http://{address}/")).expect("the tcp client builds")
+            }
+            Endpoint::Unix(path) => Client::unix(path).expect("the unix client builds"),
         }
     }
 
@@ -841,11 +881,15 @@ impl Server {
             .expect("request builds");
         match &self.endpoint {
             Endpoint::Tcp(address) => {
-                let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+                let stream = tokio::net::TcpStream::connect(address)
+                    .await
+                    .expect("the connection opens");
                 Self::exchange(stream, request).await
             }
             Endpoint::Unix(path) => {
-                let stream = tokio::net::UnixStream::connect(path).await.unwrap();
+                let stream = tokio::net::UnixStream::connect(path)
+                    .await
+                    .expect("the socket connects");
                 Self::exchange(stream, request).await
             }
         }
@@ -893,7 +937,11 @@ struct AcceptanceApi {
 
 impl AcceptanceApi {
     async fn start(temp: &TempDir) -> Self {
-        let store = Arc::new(Store::open_unsynced(database(temp)).await.unwrap());
+        let store = Arc::new(
+            Store::open_unsynced(database(temp))
+                .await
+                .expect("the store opens"),
+        );
         let (runtime, state) =
             contract_state(temp, Arc::clone(&store), &DaemonConfig::default()).await;
         let server = Server::tcp(router(state.clone(), FakeAuth)).await;
@@ -911,7 +959,7 @@ impl AcceptanceApi {
         self.client
             .apply_application(&new_application())
             .await
-            .unwrap()
+            .expect("the application applies")
     }
 
     /// Saves and deploys the contract manifest as a new application.
@@ -919,7 +967,7 @@ impl AcceptanceApi {
         self.client
             .apply_and_deploy(&new_application())
             .await
-            .unwrap()
+            .expect("the application deploys")
     }
 
     /// The same daemon, routed in process.
@@ -933,7 +981,7 @@ impl AcceptanceApi {
         self.store
             .transition_operation(id, OperationState::Requested, OperationState::Running, None)
             .await
-            .unwrap();
+            .expect("the operation transitions");
         let state = if error.is_some() {
             OperationState::Failed
         } else {
@@ -942,7 +990,7 @@ impl AcceptanceApi {
         self.store
             .transition_operation(id, OperationState::Running, state, error)
             .await
-            .unwrap();
+            .expect("the operation transitions");
     }
 
     /// The rendered configuration deployment `operation` of `environment` captured.
@@ -950,7 +998,7 @@ impl AcceptanceApi {
         self.client
             .deployments(environment, None, None)
             .await
-            .unwrap()
+            .expect("the deployments list")
             .items
             .into_iter()
             .find(|deployment| deployment.operation.id == operation)
@@ -968,12 +1016,16 @@ impl AcceptanceApi {
                     None,
                 )
                 .await
-                .unwrap();
-            let operation = self.store.operation(&accepted.operation_id).await.unwrap();
+                .expect("the operation transitions");
+            let operation = self
+                .store
+                .operation(&accepted.operation_id)
+                .await
+                .expect("the operation loads");
             self.store
                 .finish_delete_operation(&operation)
                 .await
-                .unwrap();
+                .expect("the delete operation finishes");
         }
     }
 
@@ -983,11 +1035,16 @@ impl AcceptanceApi {
         id: &str,
         edit: piqueld_client::edit::ApplicationEdit,
     ) -> ApplicationManifest {
-        let generation = self.client.application(id).await.unwrap().generation;
+        let generation = self
+            .client
+            .application(id)
+            .await
+            .expect("the application loads")
+            .generation;
         self.client
             .edit_application(id, &edit, &at_generation(generation))
             .await
-            .unwrap();
+            .expect("the edit applies");
         self.manifest(id).await
     }
 
@@ -1009,7 +1066,7 @@ impl AcceptanceApi {
         self.client
             .application(id)
             .await
-            .unwrap()
+            .expect("the application loads")
             .application
             .to_manifest()
     }
@@ -1096,9 +1153,13 @@ struct GrantFixture {
 
 impl GrantFixture {
     async fn new() -> Self {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new().expect("the temporary directory is created");
         let database = database(&temp);
-        let store = Arc::new(Store::open_unsynced(&database).await.unwrap());
+        let store = Arc::new(
+            Store::open_unsynced(&database)
+                .await
+                .expect("the store opens"),
+        );
         let (runtime, state) =
             contract_state(&temp, Arc::clone(&store), &DaemonConfig::default()).await;
         let mut ids = Vec::new();
@@ -1113,8 +1174,9 @@ impl GrantFixture {
         let creator = seed_account(&database, "creator", &creator).await;
         let lead = seed_account(&database, "lead", &[("accounts:manage", None)]).await;
         let auditor = seed_account(&database, "auditor", &[("audit:read", None)]).await;
-        let auth = piqueld::auth::Auth::new(&store, "https://piqueld.example").unwrap();
-        let [blog, shop] = <[String; 2]>::try_from(ids).unwrap();
+        let auth = piqueld::auth::Auth::new(&store, "https://piqueld.example")
+            .expect("the auth service builds");
+        let [blog, shop] = <[String; 2]>::try_from(ids).expect("the conversion fits");
         let blog_production = production(&state, &blog).await.to_string();
         let shop_production = production(&state, &shop).await.to_string();
         Self {
@@ -1137,8 +1199,9 @@ impl GrantFixture {
     /// Adds environment `name` to `application`, returning its route.
     async fn environment(&self, application: &str, name: &str) -> String {
         let create = piqueld::api::Mutation::CreateEnvironment {
-            application: piqueld_core::ApplicationId::parse(application).unwrap(),
-            name: piqueld_core::EnvironmentName::parse(name).unwrap(),
+            application: piqueld_core::ApplicationId::parse(application)
+                .expect("the application id parses"),
+            name: piqueld_core::EnvironmentName::parse(name).expect("the environment name parses"),
             source: None,
         };
         let Ok(piqueld::api::MutationResponse::Environment(environment)) =
@@ -1158,7 +1221,12 @@ impl GrantFixture {
                 .call(token, "GET", uri, serde_json::Value::Null)
                 .await;
             assert_eq!(status, 200, "{body}");
-            (body["data"]["items"].as_array().unwrap().len() >= count).then_some(body)
+            (body["data"]["items"]
+                .as_array()
+                .expect("the value is an array")
+                .len()
+                >= count)
+                .then_some(body)
         });
         tokio::time::timeout(Duration::from_secs(10), audited)
             .await
@@ -1179,10 +1247,11 @@ async fn two_environments(
     use piqueld::api::{ApplicationError, Mutation, MutationResponse};
     use piqueld_store::StoreError;
     let mut saved = save(service, manifest()).await;
-    let application = piqueld_core::ApplicationId::parse(&saved.application_id).unwrap();
+    let application = piqueld_core::ApplicationId::parse(&saved.application_id)
+        .expect("the application id parses");
     let create = |name: &str| Mutation::CreateEnvironment {
         application: application.clone(),
-        name: piqueld_core::EnvironmentName::parse(name).unwrap(),
+        name: piqueld_core::EnvironmentName::parse(name).expect("the environment name parses"),
         source: None,
     };
     let MutationResponse::Environment(staging) = service
@@ -1194,7 +1263,7 @@ async fn two_environments(
             None,
         )
         .await
-        .unwrap()
+        .expect("the connection is accepted")
     else {
         panic!("environment")
     };

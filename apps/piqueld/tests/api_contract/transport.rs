@@ -20,11 +20,14 @@ async fn typed_client_exercises_the_lifecycle_over_tcp_and_a_unix_socket() {
             client
                 .builds(None, None, None, None)
                 .await
-                .unwrap()
+                .expect("the builds list")
                 .items
                 .is_empty()
         );
-        let missing = client.build_logs(999, None, None).await.unwrap_err();
+        let missing = client
+            .build_logs(999, None, None)
+            .await
+            .expect_err("the logs are rejected");
         assert_eq!(api_error(missing).status, 404);
         assert_lifecycle(&client).await;
     }
@@ -101,14 +104,14 @@ async fn create_and_inspect(client: &Client, manifest: &ApplicationManifest) -> 
         .await
         .expect("apply retry succeeds");
     assert_ne!(created.operation_id, replay.operation_id);
-    let summaries = client.applications().await.unwrap();
+    let summaries = client.applications().await.expect("the applications list");
     assert_eq!(summaries.items.len(), 1);
     assert_eq!(
         summaries.items[0].id,
-        created.application_id.parse().unwrap()
+        created.application_id.parse().expect("the value parses")
     );
     assert_eq!(summaries.items[0].name, "notes");
-    let summary_json = serde_json::to_value(&summaries.items[0]).unwrap();
+    let summary_json = serde_json::to_value(&summaries.items[0]).expect("the value serialises");
     assert!(summary_json.get("application").is_none());
     let application = client
         .application(&created.application_id)
@@ -128,7 +131,11 @@ async fn create_and_inspect(client: &Client, manifest: &ApplicationManifest) -> 
     assert_eq!(detail.environment.resolved_generation, None);
     assert!(detail.diagnostics.is_empty());
     assert_eq!(
-        client.operation(&created.operation_id).await.unwrap().kind,
+        client
+            .operation(&created.operation_id)
+            .await
+            .expect("the operation loads")
+            .kind,
         piqueld_core::OperationKind::Refresh
     );
     replay
@@ -143,7 +150,7 @@ async fn delete(client: &Client, created: &Deployed) {
         client
             .operation(&deleted.operations[0].operation_id)
             .await
-            .unwrap()
+            .expect("the operation loads")
             .kind,
         piqueld_core::OperationKind::Delete
     );
@@ -360,11 +367,13 @@ async fn tcp_rejects_untrusted_authorities() {
 
 #[tokio::test]
 async fn tcp_login_uses_canonical_origin_behind_https_proxy() {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the tempdir opens");
     let state = state(&temp).await;
-    let store = Store::open_unsynced(database(&temp)).await.unwrap();
+    let store = Store::open_unsynced(database(&temp))
+        .await
+        .expect("the store opens");
     let origin = "https://daemon.example.ts.net:8443";
-    let auth = piqueld::auth::Auth::new(&store, origin).unwrap();
+    let auth = piqueld::auth::Auth::new(&store, origin).expect("auth builds");
     let server = Server::tcp(piqueld::api::http::web_router_with_hosts(
         state,
         UiAssets::Disabled,
@@ -439,8 +448,10 @@ async fn tcp_login_uses_canonical_origin_behind_https_proxy() {
             response.assert_error(StatusCode::FORBIDDEN, code);
         } else {
             assert_eq!(response.status, StatusCode::OK, "headers {headers:?}");
-            assert!(response.header("set-cookie").unwrap().contains("Secure"));
-            serde_json::from_value::<piqueld_core::auth::Ceremony>(response.json()).unwrap();
+            let cookie = response.header("set-cookie").expect("the cookie is set");
+            assert!(cookie.contains("Secure"));
+            serde_json::from_value::<piqueld_core::auth::Ceremony>(response.json())
+                .expect("the value deserialises");
         }
     }
     let response = server
@@ -457,7 +468,7 @@ async fn tcp_login_uses_canonical_origin_behind_https_proxy() {
 
 #[tokio::test]
 async fn tcp_rejects_cross_site_mutations_without_creating_deployments() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
     for (headers, expected) in [
         (
@@ -489,7 +500,10 @@ async fn tcp_rejects_cross_site_mutations_without_creating_deployments() {
         assert_eq!(response.status, expected, "headers {headers:?}");
     }
     let client = server.client();
-    let saved = client.apply_application(&new_application()).await.unwrap();
+    let saved = client
+        .apply_application(&new_application())
+        .await
+        .expect("the application applies");
     for action in ["deploy", "reconcile"] {
         let response = server
             .send(
@@ -512,7 +526,7 @@ async fn tcp_rejects_cross_site_mutations_without_creating_deployments() {
         client
             .deployments(&production, None, None)
             .await
-            .unwrap()
+            .expect("the deployments list")
             .items
             .is_empty()
     );
@@ -520,7 +534,7 @@ async fn tcp_rejects_cross_site_mutations_without_creating_deployments() {
 
 #[tokio::test]
 async fn typed_edits_enforce_the_tcp_browser_policy() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let client = &api.client;
     let saved = api.save().await;
@@ -549,7 +563,10 @@ async fn typed_edits_enforce_the_tcp_browser_policy() {
             .await;
         response.assert_error(StatusCode::FORBIDDEN, "browser_access_denied");
     }
-    let unchanged = client.application(&saved.application_id).await.unwrap();
+    let unchanged = client
+        .application(&saved.application_id)
+        .await
+        .expect("the application loads");
     assert_eq!(unchanged.generation, saved.generation);
     assert_eq!(unchanged.application.spec().services.len(), 1);
     let production = production_through(client, &saved.application_id).await;
@@ -557,7 +574,7 @@ async fn typed_edits_enforce_the_tcp_browser_policy() {
         client
             .deployments(&production, None, None)
             .await
-            .unwrap()
+            .expect("the deployments list")
             .items
             .is_empty()
     );
@@ -578,14 +595,17 @@ async fn typed_edits_enforce_the_tcp_browser_policy() {
         )
         .await;
     assert_eq!(edit.status, StatusCode::OK);
-    let edited = client.application(&saved.application_id).await.unwrap();
+    let edited = client
+        .application(&saved.application_id)
+        .await
+        .expect("the application loads");
     assert_eq!(edited.generation, saved.generation + 1);
     assert_eq!(edited.application.spec().services[0].replicas, 3.into());
 }
 
 #[tokio::test]
 async fn diagnostic_ids_correlate_api_failures() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let app = api.deploy().await;
     api.runtime.set_unavailable(true);
@@ -593,12 +613,18 @@ async fn diagnostic_ids_correlate_api_failures() {
         .client
         .environment_logs(&app.environment_id, Some("web"), 5, 60)
         .await
-        .unwrap_err();
+        .expect_err("the logs are rejected");
     let ClientError::Api { error, .. } = error else {
         panic!("API error");
     };
-    let id = error.details["diagnostic_id"].as_str().unwrap();
-    let event = api.client.diagnostic(id).await.unwrap();
+    let id = error.details["diagnostic_id"]
+        .as_str()
+        .expect("the value is a string");
+    let event = api
+        .client
+        .diagnostic(id)
+        .await
+        .expect("the diagnostic is present");
     assert_eq!(event.request_id.as_deref(), Some(error.request_id.as_str()));
     assert_eq!(
         event.environment_id.as_ref().map(ToString::to_string),
@@ -616,21 +642,28 @@ async fn diagnostic_ids_correlate_api_failures() {
             100,
         )
         .await
-        .unwrap();
+        .expect("the filtered events list");
     assert!(
         errors
             .items
             .iter()
             .any(|e| e.diagnostic.as_ref().is_some_and(|d| d.id == id))
     );
-    assert!(api.client.daemon_stats().await.unwrap().diagnostics > 0);
+    assert!(
+        api.client
+            .daemon_stats()
+            .await
+            .expect("the daemon stats load")
+            .diagnostics
+            > 0
+    );
 }
 
 /// Expensive requests beyond their kind's budget answer 503 `server_busy`
 /// at once, without recording a diagnostic, until the budget frees up.
 #[tokio::test]
 async fn expensive_requests_beyond_their_budget_are_refused() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let state = state(&temp).await;
     let server = Server::tcp(router(state.clone(), FakeAuth)).await;
     let analytics = async || {
@@ -648,7 +681,7 @@ async fn expensive_requests_beyond_their_budget_are_refused() {
 
 #[tokio::test]
 async fn invalid_path_parameters_return_correlated_json_errors() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let application = api_router(state(&temp).await, FakeAuth);
     for (method, path) in [
         (Method::GET, "/api/v1/builds/not-a-number/logs"),
@@ -677,7 +710,8 @@ async fn invalid_path_parameters_return_correlated_json_errors() {
         let response = application.send(request_as(method, path)).await;
         assert_eq!(response.status, StatusCode::BAD_REQUEST);
         assert_eq!(response.header("content-type"), Some("application/json"));
-        let error: piqueld_core::api::ErrorBody = serde_json::from_slice(&response.body).unwrap();
+        let error: piqueld_core::api::ErrorBody =
+            serde_json::from_slice(&response.body).expect("the body is valid json");
         assert_eq!(error.code, "path_invalid");
         assert_eq!(
             Some(error.request_id.as_str()),

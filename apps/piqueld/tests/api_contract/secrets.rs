@@ -8,7 +8,7 @@ async fn assert_secret_history(client: &Client, application_id: &str) {
     let history = client
         .events(Some(application_id), None, None, false, None, 100)
         .await
-        .unwrap()
+        .expect("the events list")
         .items;
     let recorded = |kind: &str| {
         history
@@ -27,7 +27,7 @@ async fn assert_secret_history(client: &Client, application_id: &str) {
     );
     assert!(
         !serde_json::to_string(&history)
-            .unwrap()
+            .expect("the value serialises")
             .contains("private-token-value")
     );
 }
@@ -38,7 +38,7 @@ async fn assert_secret_history(client: &Client, application_id: &str) {
 #[tokio::test]
 async fn stored_secret_access_queries_never_widen_environments_implicitly() {
     use piqueld_core::api::{EnvironmentAccess, SecretAccess};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let client = &api.client;
     let app = api.deploy().await;
@@ -56,20 +56,26 @@ async fn stored_secret_access_queries_never_widen_environments_implicitly() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the secret is stored");
     let router = api.router();
     let put = |query: &str| router.send(put_stored_token(&app.application_id, query, 1, "two"));
     put("previews=true")
         .await
         .assert_error(StatusCode::BAD_REQUEST, "query_invalid");
-    let stored = client.stored_secrets(&app.application_id).await.unwrap();
+    let stored = client
+        .stored_secrets(&app.application_id)
+        .await
+        .expect("the stored secrets list");
     assert_eq!(
         (stored[0].metadata.generation, &stored[0].access),
         (1, &none)
     );
     let response = put("environments=all&previews=true").await;
     assert_eq!(response.status, StatusCode::OK);
-    let stored = client.stored_secrets(&app.application_id).await.unwrap();
+    let stored = client
+        .stored_secrets(&app.application_id)
+        .await
+        .expect("the stored secrets list");
     assert_eq!(
         stored[0].access,
         SecretAccess {
@@ -98,25 +104,30 @@ fn put_stored_token(
         .header("content-type", "application/octet-stream")
         .header("x-expected-generation", generation.to_string())
         .body(Body::from(value))
-        .unwrap()
+        .expect("the request body builds")
 }
 
 /// Secret uploads refuse a repeated `X-Expected-Generation` rather than
 /// trusting the first, and the wrong content type before reading the body.
 #[tokio::test]
 async fn stored_secret_uploads_check_their_headers_first() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let app = api.deploy().await;
     let router = api.router();
     let mut repeated = put_stored_token(&app.application_id, "", 0, "value");
     let headers = repeated.headers_mut();
-    headers.append("x-expected-generation", "1".parse().unwrap());
+    headers.append(
+        "x-expected-generation",
+        "1".parse().expect("the value parses"),
+    );
     let response = router.send(repeated).await;
     response.assert_error(StatusCode::BAD_REQUEST, "secret_generation_required");
     let mut text = put_stored_token(&app.application_id, "", 0, "value");
-    text.headers_mut()
-        .insert("content-type", "text/plain".parse().unwrap());
+    text.headers_mut().insert(
+        "content-type",
+        "text/plain".parse().expect("the value parses"),
+    );
     let oversized = vec![b'x'; piqueld_core::api::MAX_REQUEST_BODY_BYTES + 1];
     *text.body_mut() = Body::from(oversized);
     let response = router.send(text).await;
@@ -128,14 +139,14 @@ async fn stored_secret_uploads_check_their_headers_first() {
 /// `secret_access_conflict`.
 #[tokio::test]
 async fn access_changes_from_an_outdated_read_conflict() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let client = &api.client;
     let app = api.deploy().await;
     client
         .put_stored_secret(&app.application_id, "token", 0, b"one".to_vec(), None, None)
         .await
-        .unwrap();
+        .expect("the secret is stored");
     let outdated = piqueld_client::SecretAccess {
         environments: piqueld_client::EnvironmentAccess::All,
         previews: true,
@@ -149,7 +160,7 @@ async fn access_changes_from_an_outdated_read_conflict() {
         )
         .await;
     assert_eq!(
-        api_error(refused.unwrap_err()),
+        api_error(refused.expect_err("the outdated write is rejected")),
         ApiError::new(409, "secret_access_conflict")
     );
     let refused = client
@@ -163,7 +174,7 @@ async fn access_changes_from_an_outdated_read_conflict() {
         )
         .await;
     assert_eq!(
-        api_error(refused.unwrap_err()),
+        api_error(refused.expect_err("the outdated write is rejected")),
         ApiError::new(409, "secret_access_conflict")
     );
 }
@@ -171,7 +182,7 @@ async fn access_changes_from_an_outdated_read_conflict() {
 #[tokio::test]
 async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
     use piqueld_client::edit::ServiceEdit;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let client = &api.client;
     let app = api.deploy().await;
@@ -194,7 +205,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
         client
             .stored_secrets(&app.application_id)
             .await
-            .unwrap()
+            .expect("the stored secrets list")
             .len(),
         1
     );
@@ -204,7 +215,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
         client
             .edit_application(id, &edit, &at_generation(generation))
             .await
-            .unwrap()
+            .expect("the edit applies")
     };
     let mount = piqueld_client::SecretMount {
         name: "token".into(),
@@ -215,7 +226,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
         client
             .application(&app.application_id)
             .await
-            .unwrap()
+            .expect("the application loads")
             .application
             .to_manifest()
             .spec
@@ -224,7 +235,15 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
         vec![mount]
     );
     let referenced = client.delete_stored_secret(&app.application_id, "token", 1);
-    assert_eq!(api_error(referenced.await.unwrap_err()).status, 409);
+    assert_eq!(
+        api_error(
+            referenced
+                .await
+                .expect_err("the referenced secret delete is rejected")
+        )
+        .status,
+        409
+    );
     reference(Vec::new(), saved.generation).await;
     let stale = client.put_stored_secret(
         &app.application_id,
@@ -234,18 +253,24 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
         None,
         None,
     );
-    assert_eq!(api_error(stale.await.unwrap_err()).status, 409);
+    assert_eq!(
+        api_error(stale.await.expect_err("the stale write is rejected")).status,
+        409
+    );
     let absent = client.stored_secrets("app-absent").await;
-    assert_eq!(api_error(absent.unwrap_err()).status, 404);
+    assert_eq!(
+        api_error(absent.expect_err("the absent application is rejected")).status,
+        404
+    );
     client
         .delete_stored_secret(&app.application_id, "token", 1)
         .await
-        .unwrap();
+        .expect("the secret is deleted");
     assert!(
         client
             .stored_secrets(&app.application_id)
             .await
-            .unwrap()
+            .expect("the stored secrets list")
             .is_empty()
     );
     assert_secret_history(client, &app.application_id).await;
@@ -253,7 +278,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
 
 #[tokio::test]
 async fn missing_secret_key_is_a_persisted_daemon_diagnostic() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let client = &api.client;
     let app = api.deploy().await;
@@ -267,8 +292,8 @@ async fn missing_secret_key_is_a_persisted_daemon_diagnostic() {
             None,
         )
         .await
-        .unwrap();
-    std::fs::remove_file(temp.path().join("secrets.key")).unwrap();
+        .expect("the secret is stored");
+    std::fs::remove_file(temp.path().join("secrets.key")).expect("the file is removed");
     let error = client
         .put_stored_secret(
             &app.application_id,
@@ -279,17 +304,21 @@ async fn missing_secret_key_is_a_persisted_daemon_diagnostic() {
             None,
         )
         .await
-        .unwrap_err();
+        .expect_err("the store is rejected");
     let ClientError::Api { status, error, .. } = error else {
         panic!("API error");
     };
     assert_eq!(status.as_u16(), 503);
     assert_eq!(error.code, "secret_storage_unavailable");
     let event = client
-        .diagnostic(error.details["diagnostic_id"].as_str().unwrap())
+        .diagnostic(
+            error.details["diagnostic_id"]
+                .as_str()
+                .expect("the value is a string"),
+        )
         .await
-        .unwrap();
-    let diagnostic = event.diagnostic.unwrap();
+        .expect("the diagnostic is present");
+    let diagnostic = event.diagnostic.expect("the diagnostic is present");
     assert_eq!(diagnostic.code, "secret_storage_unavailable");
     assert_eq!(
         diagnostic.scope,
@@ -303,15 +332,19 @@ async fn missing_secret_key_is_a_persisted_daemon_diagnostic() {
 /// The contract daemon's store in `temp`, holding the contract manifest
 /// saved, without a target, as application `id`.
 async fn saved_store(temp: &TempDir, id: &str) -> (Arc<Store>, ApplicationTemplate) {
-    let store = Arc::new(Store::open_unsynced(database(temp)).await.unwrap());
+    let store = Arc::new(
+        Store::open_unsynced(database(temp))
+            .await
+            .expect("the store opens"),
+    );
     let application = manifest()
         .validate_template()
-        .unwrap()
-        .normalize(piqueld_core::ApplicationId::parse(id).unwrap());
+        .expect("the template validates")
+        .normalize(piqueld_core::ApplicationId::parse(id).expect("the application id parses"));
     store
         .save_application(&application, None, None)
         .await
-        .unwrap();
+        .expect("the application saves");
     (store, application)
 }
 
@@ -320,7 +353,7 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
     use piqueld::api::{ApplicationError, Mutation};
     use piqueld_core::edit::{ApplicationEdit, ServiceEdit};
     use piqueld_store::StoreError;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let (store, app) = saved_store(&temp, "app-cleanup").await;
     let gate = Arc::new(Gate::default());
     let runtime = Arc::new(FakeRuntime {
@@ -333,7 +366,7 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
     store
         .put_secret(Daemon, &environment, "token", 0, b"value".to_vec())
         .await
-        .unwrap();
+        .expect("the secret is stored");
     let cleanup = {
         let service = service.clone();
         let id = environment.clone();
@@ -341,14 +374,14 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
     };
     tokio::time::timeout(Duration::from_secs(2), gate.started.notified())
         .await
-        .unwrap();
+        .expect("the call finishes in time");
     tokio::time::timeout(
         Duration::from_secs(2),
         store.put_secret(Daemon, &environment, "other", 0, b"unrelated".to_vec()),
     )
     .await
-    .unwrap()
-    .unwrap();
+    .expect("the call finishes in time")
+    .expect("the nested value is present");
     let edit = Mutation::Edit {
         id: app.id().clone(),
         edit: Box::new(ApplicationEdit::Service {
@@ -366,7 +399,7 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
     ));
     gate.release.notify_one();
     assert!(matches!(
-        cleanup.await.unwrap(),
+        cleanup.await.expect("the cleanup result is present"),
         Err(ApplicationError::Runtime(_))
     ));
     let failed = store
@@ -380,7 +413,7 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
             100,
         )
         .await
-        .unwrap()
+        .expect("the filtered events list")
         .items;
     assert!(
         failed
@@ -397,10 +430,10 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
         service
             .secrets(&environment)
             .await
-            .unwrap()
+            .expect("the secrets list")
             .iter()
             .find(|s| s.name == "token")
-            .unwrap()
+            .expect("the item exists")
             .deleting
     );
     runtime.set_unavailable(false);
@@ -408,13 +441,20 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
     service
         .delete_secret(Daemon, &environment, "token", 1)
         .await
-        .unwrap();
-    assert_eq!(service.secrets(&environment).await.unwrap().len(), 1);
+        .expect("the secret is deleted");
+    assert_eq!(
+        service
+            .secrets(&environment)
+            .await
+            .expect("the secrets list")
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]
 async fn secret_key_recovery_api_discards_values_only_for_an_unusable_key() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let (store, application) = saved_store(&temp, "app-key-api").await;
     seed_account(&database(&temp), "contract-admin", &[("admin", None)]).await;
     store
@@ -427,7 +467,7 @@ async fn secret_key_recovery_api_discards_values_only_for_an_unusable_key() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the secret is stored");
     let runtime = Arc::new(FakeRuntime::new(&store));
     let server = Server::tcp(router(api_state(&temp, store, runtime).await, FakeAuth)).await;
     let client = server.client();
@@ -435,7 +475,10 @@ async fn secret_key_recovery_api_discards_values_only_for_an_unusable_key() {
     for (kind, step_up) in [("token", false), ("cli", true)] {
         let sql = format!("UPDATE auth_credentials SET kind='{kind}'");
         execute(&database, &sql).await;
-        let ClientError::Api { status, error } = client.recover_secret_key().await.unwrap_err()
+        let ClientError::Api { status, error } = client
+            .recover_secret_key()
+            .await
+            .expect_err("the recovery is rejected")
         else {
             panic!("API error expected");
         };
@@ -447,21 +490,30 @@ async fn secret_key_recovery_api_discards_values_only_for_an_unusable_key() {
         "UPDATE auth_credentials SET authenticated_at=CAST(strftime('%s','now') AS INTEGER)";
     execute(&database, signed_in).await;
     assert_eq!(
-        api_error(client.recover_secret_key().await.unwrap_err()).status,
+        api_error(
+            client
+                .recover_secret_key()
+                .await
+                .expect_err("the recovery is rejected")
+        )
+        .status,
         409
     );
     let unavailable = || async {
         client
             .stored_secrets(application.id().as_str())
             .await
-            .unwrap()[0]
+            .expect("the stored secrets list")[0]
             .metadata
             .unavailable
     };
     assert!(!unavailable().await);
 
-    std::fs::remove_file(temp.path().join("secrets.key")).unwrap();
-    let recovery = client.recover_secret_key().await.unwrap();
+    std::fs::remove_file(temp.path().join("secrets.key")).expect("the file is removed");
+    let recovery = client
+        .recover_secret_key()
+        .await
+        .expect("the secret key recovers");
     assert_eq!(recovery.discarded_versions, 1);
     assert_eq!(recovery.affected_applications, 1);
     assert!(unavailable().await);
@@ -475,14 +527,14 @@ async fn secret_key_recovery_api_discards_values_only_for_an_unusable_key() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the secret is stored");
     assert!(!unavailable().await);
 }
 
 #[tokio::test]
 async fn deploys_and_previews_fail_when_an_environment_may_not_mount_a_stored_secret() {
     use piqueld_core::api::{EnvironmentAccess, SecretAccess};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
     let production = production(&service, &saved.application_id).await;
@@ -502,7 +554,7 @@ async fn deploys_and_previews_fail_when_an_environment_may_not_mount_a_stored_se
             None,
         )
         .await
-        .unwrap();
+        .expect("the secret is stored");
     assert_eq!(stored.access, production_only);
     let mut manifest = manifest();
     manifest.spec.services[0]
@@ -516,7 +568,10 @@ async fn deploys_and_previews_fail_when_an_environment_may_not_mount_a_stored_se
         expected_generation: Some(saved.generation),
         expected_application_id: Some(saved.application_id.clone()),
     };
-    let saved = client.apply_application(&request).await.unwrap();
+    let saved = client
+        .apply_application(&request)
+        .await
+        .expect("the application applies");
     let request = ApplyApplicationRequest {
         expected_generation: None,
         ..request
@@ -536,20 +591,20 @@ async fn deploys_and_previews_fail_when_an_environment_may_not_mount_a_stored_se
         client
             .plan_application(&request, Some(staging.id.as_str()))
             .await
-            .unwrap_err(),
+            .expect_err("the plan is rejected"),
     );
     denied(
         client
             .deploy_environment(staging.id.as_str(), saved.generation, None, false)
             .await
-            .unwrap_err(),
+            .expect_err("the deploy is rejected"),
     );
     client
         .plan_application(&request, Some(production.as_str()))
         .await
-        .unwrap();
+        .expect("the application plans");
     client
         .deploy_environment(production.as_str(), saved.generation, None, false)
         .await
-        .unwrap();
+        .expect("the environment deploys");
 }
