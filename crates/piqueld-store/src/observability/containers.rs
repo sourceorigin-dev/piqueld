@@ -76,7 +76,10 @@ mod tests {
     async fn container_cursors_are_replaced_and_cleared() {
         let (_directory, store) = Store::temporary().await;
         assert_eq!(
-            store.container_cursors().await.unwrap(),
+            store
+                .container_cursors()
+                .await
+                .expect("the store can container cursors"),
             ContainerCursors::default()
         );
         for at in [1, 2] {
@@ -84,12 +87,27 @@ mod tests {
                 watermark: Some(at),
                 containers: [("container".to_owned(), at)].into(),
             };
-            store.save_container_cursors(&cursors).await.unwrap();
-            assert_eq!(store.container_cursors().await.unwrap(), cursors);
+            store
+                .save_container_cursors(&cursors)
+                .await
+                .expect("the store can save container cursors");
+            assert_eq!(
+                store
+                    .container_cursors()
+                    .await
+                    .expect("the store can container cursors"),
+                cursors
+            );
         }
-        store.clear_container_cursors().await.unwrap();
+        store
+            .clear_container_cursors()
+            .await
+            .expect("the store can clear container cursors");
         assert_eq!(
-            store.container_cursors().await.unwrap(),
+            store
+                .container_cursors()
+                .await
+                .expect("the store can container cursors"),
             ContainerCursors::default()
         );
     }

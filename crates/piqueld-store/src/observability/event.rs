@@ -763,9 +763,9 @@ mod tests {
         store
             .save_application(&ApplicationTemplate::from(&app), None, None)
             .await
-            .unwrap();
-        let deleted = EnvironmentId::parse("env-deleted").unwrap();
-        let gone = ApplicationId::parse("app-deleted").unwrap();
+            .expect("the store can save application");
+        let deleted = EnvironmentId::parse("env-deleted").expect("the environment id is valid");
+        let gone = ApplicationId::parse("app-deleted").expect("the application id is valid");
         for application in [app.id(), &gone] {
             store
                 .record_environment_event(
@@ -777,7 +777,7 @@ mod tests {
                     "web",
                 )
                 .await
-                .unwrap();
+                .expect("the store can record environment event");
         }
         let history = store
             .filtered_events(
@@ -790,7 +790,7 @@ mod tests {
                 10,
             )
             .await
-            .unwrap()
+            .expect("the store can filtered events")
             .items;
         assert_eq!(
             history
@@ -846,14 +846,17 @@ mod tests {
                     if descending { i64::MAX } else { 0 },
                     51,
                 )
-                .unwrap();
+                .expect("the query builds");
                 let mut query = query.build();
                 let explain = format!("EXPLAIN QUERY PLAN {}", query.sql());
-                let args = query.take_arguments().unwrap().unwrap();
+                let args = query
+                    .take_arguments()
+                    .expect("the query has arguments")
+                    .expect("the value is present");
                 let rows = sqlx::query_with(&explain, args)
                     .fetch_all(&store.pool)
                     .await
-                    .unwrap();
+                    .expect("the rows load");
                 let plan = rows
                     .iter()
                     .map(|row| row.get::<String, _>("detail"))
@@ -876,7 +879,7 @@ mod tests {
             sqlx::query_as("SELECT tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL")
                 .fetch_all(&store.pool)
                 .await
-                .unwrap();
+                .expect("the rows load");
         let mut kinds = Vec::new();
         for (table, sql) in &objects {
             kinds.extend(event_kinds_in(table, sql));

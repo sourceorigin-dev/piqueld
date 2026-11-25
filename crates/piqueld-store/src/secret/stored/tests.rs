@@ -39,11 +39,11 @@ fn template() -> ApplicationTemplate {
     manifest.spec.secrets = serde_json::from_value(serde_json::json!([
         {"name":"session", "generate":{"type":"random", "bytes":16}}
     ]))
-    .unwrap();
+    .expect("the input deserializes");
     manifest
         .validate_template()
-        .unwrap()
-        .normalize(ApplicationId::parse("app-stored-test").unwrap())
+        .expect("the template validates")
+        .normalize(ApplicationId::parse("app-stored-test").expect("the application id is valid"))
 }
 
 /// Access limited to `environments`, without previews.
@@ -59,13 +59,16 @@ fn only<'a>(environments: impl IntoIterator<Item = &'a EnvironmentId>) -> Secret
 async fn fixture() -> (tempfile::TempDir, Store, EnvironmentId, EnvironmentId) {
     let (temp, store) = Store::temporary().await;
     let template = template();
-    store.save_application(&template, None, None).await.unwrap();
+    store
+        .save_application(&template, None, None)
+        .await
+        .expect("the store can save application");
     let (MutationResponse::Environment(staging), _) = store
         .accept(
             Daemon,
             Mutation::CreateEnvironment {
                 application: template.id().clone(),
-                name: EnvironmentName::parse("staging").unwrap(),
+                name: EnvironmentName::parse("staging").expect("the environment name is valid"),
                 source: None,
             },
             Some(1),
@@ -73,7 +76,7 @@ async fn fixture() -> (tempfile::TempDir, Store, EnvironmentId, EnvironmentId) {
             None,
         )
         .await
-        .unwrap()
+        .expect("the store can accept")
     else {
         panic!("environment")
     };
@@ -91,7 +94,7 @@ async fn deploy(
         .deployment_snapshot(&operation.id)
         .await?
         .rendering
-        .unwrap()
+        .expect("the deployment has a rendering")
         .application;
     store.pin_secrets(&operation, &rendered).await
 }
@@ -110,7 +113,7 @@ async fn environments_mount_the_stored_secret_their_variables_name_where_access_
             Some(&only([&production])),
         )
         .await
-        .unwrap();
+        .expect("the store can put stored secret");
     store
         .put_stored_secret(
             Daemon,
@@ -121,10 +124,14 @@ async fn environments_mount_the_stored_secret_their_variables_name_where_access_
             None,
         )
         .await
-        .unwrap();
+        .expect("the store can put stored secret");
 
-    let production_pins = deploy(&store, &production).await.unwrap();
-    let staging_pins = deploy(&store, &staging).await.unwrap();
+    let production_pins = deploy(&store, &production)
+        .await
+        .expect("the store can deploy");
+    let staging_pins = deploy(&store, &staging)
+        .await
+        .expect("the store can deploy");
     for (environment, pins, value) in [
         (&production, &production_pins, &b"live"[..]),
         (&staging, &staging_pins, &b"test"[..]),
@@ -132,13 +139,23 @@ async fn environments_mount_the_stored_secret_their_variables_name_where_access_
         let stripe = pins
             .iter()
             .find(|(name, _)| name.starts_with("stripe"))
-            .unwrap()
+            .expect("the item is found")
             .1;
         assert_eq!(
-            &*store.secret_plaintext(environment, stripe).await.unwrap(),
+            &*store
+                .secret_plaintext(environment, stripe)
+                .await
+                .expect("the store can secret plaintext"),
             value
         );
-        assert_eq!(store.secrets(environment).await.unwrap()[0].name, "session");
+        assert_eq!(
+            store
+                .secrets(environment)
+                .await
+                .expect("the store can secrets")[0]
+                .name,
+            "session"
+        );
     }
     assert_eq!(
         production_pins.keys().collect::<Vec<_>>(),
@@ -153,7 +170,7 @@ async fn environments_mount_the_stored_secret_their_variables_name_where_access_
     manifest.spec.environments.clear();
     let shared = manifest
         .validate_template()
-        .unwrap()
+        .expect("the template validates")
         .normalize(application.clone());
     store
         .force(Mutation::Save {
@@ -162,14 +179,17 @@ async fn environments_mount_the_stored_secret_their_variables_name_where_access_
             deploy: false,
         })
         .await
-        .unwrap();
-    let production_copy = deploy(&store, &production).await.unwrap()["stripe-dev"].clone();
+        .expect("the save forces");
+    let production_copy = deploy(&store, &production)
+        .await
+        .expect("the store can deploy")["stripe-dev"]
+        .clone();
     assert_ne!(production_copy, staging_pins["stripe-dev"]);
     assert_eq!(
         &*store
             .secret_plaintext(&production, &production_copy)
             .await
-            .unwrap(),
+            .expect("the store can secret plaintext"),
         b"test"
     );
     assert!(
@@ -195,8 +215,11 @@ async fn capture_and_pinning_deny_stored_secrets_outside_the_access_list() {
             None,
         )
         .await
-        .unwrap();
-    let captured = store.request_deploy(&staging, None).await.unwrap();
+        .expect("the store can put stored secret");
+    let captured = store
+        .request_deploy(&staging, None)
+        .await
+        .expect("the store can request deploy");
     store
         .set_secret_access(
             Daemon,
@@ -206,7 +229,7 @@ async fn capture_and_pinning_deny_stored_secrets_outside_the_access_list() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the store can set secret access");
     let denied = |result: Result<_, StoreError>| {
         matches!(
             result,
@@ -220,14 +243,18 @@ async fn capture_and_pinning_deny_stored_secrets_outside_the_access_list() {
     let rendered = store
         .deployment_snapshot(&captured.id)
         .await
-        .unwrap()
+        .expect("the store can deployment snapshot")
         .rendering
-        .unwrap()
+        .expect("the deployment has a rendering")
         .application;
     assert!(denied(
         store.pin_secrets(&captured, &rendered).await.map(|_| ())
     ));
-    let environment = store.get(&staging).await.unwrap().environment;
+    let environment = store
+        .get(&staging)
+        .await
+        .expect("the store can get")
+        .environment;
     assert!(denied(
         store.check_secret_access(&environment, &rendered).await
     ));
@@ -243,13 +270,13 @@ async fn access_changes_from_an_outdated_read_are_refused() {
     store
         .put_stored_secret(Daemon, &application, secret, 0, b"test".to_vec(), None)
         .await
-        .unwrap();
+        .expect("the store can put stored secret");
     let read = SecretAccess::default();
     let theirs = only([&production]);
     store
         .set_secret_access(Daemon, &application, secret, &theirs, Some(&read))
         .await
-        .unwrap();
+        .expect("the store can set secret access");
     let mine = only([&staging]);
     assert!(matches!(
         store
@@ -260,7 +287,7 @@ async fn access_changes_from_an_outdated_read_are_refused() {
     let current = store
         .set_secret_access(Daemon, &application, secret, &mine, Some(&theirs))
         .await
-        .unwrap();
+        .expect("the store can set secret access");
     assert_eq!(current.access, mine);
 }
 
@@ -274,13 +301,13 @@ async fn uploads_from_an_outdated_access_read_are_refused() {
     let read = store
         .put_stored_secret(Daemon, &application, secret, 0, b"one".to_vec(), None)
         .await
-        .unwrap()
+        .expect("the store can put stored secret")
         .access;
     let theirs = only([&production]);
     store
         .set_secret_access(Daemon, &application, secret, &theirs, Some(&read))
         .await
-        .unwrap();
+        .expect("the store can set secret access");
     let mine = only([&staging]);
     let upload = |expected| {
         store.put_stored_secret(
@@ -299,7 +326,13 @@ async fn uploads_from_an_outdated_access_read_are_refused() {
         upload(Some(&read)).await,
         Err(StoreError::SecretAccessConflict)
     ));
-    assert_eq!(upload(Some(&theirs)).await.unwrap().access, mine);
+    assert_eq!(
+        upload(Some(&theirs))
+            .await
+            .expect("the upload succeeds")
+            .access,
+        mine
+    );
 }
 
 #[tokio::test]
@@ -323,14 +356,14 @@ async fn a_name_is_either_declared_and_generated_or_stored() {
     store
         .put_stored_secret(Daemon, &application, "api-key", 0, b"manual".to_vec(), None)
         .await
-        .unwrap();
+        .expect("the store can put stored secret");
     let mut manifest = template().to_manifest();
     manifest.spec.secrets[0].name = "api-key".into();
     manifest.spec.services[0].secrets[1].name = "api-key".into();
     let edit = piqueld_core::edit::ApplicationEdit::GeneratedSecrets(manifest.spec.secrets.clone());
     let declared = manifest
         .validate_template()
-        .unwrap()
+        .expect("the template validates")
         .normalize(application.clone());
     assert!(conflict(
         store
@@ -380,43 +413,64 @@ async fn access_lists_keep_renamed_environments_and_drop_deleted_ones() {
             Some(&only([&staging])),
         )
         .await
-        .unwrap();
+        .expect("the store can put stored secret");
     assert_eq!(stored.access, only([&staging]));
 
     store
         .force(Mutation::RenameEnvironment {
             id: staging.clone(),
-            name: EnvironmentName::parse("qa").unwrap(),
+            name: EnvironmentName::parse("qa").expect("the environment name is valid"),
         })
         .await
-        .unwrap();
-    let access = store.stored_secrets(&application).await.unwrap()[0]
+        .expect("the save forces");
+    let access = store
+        .stored_secrets(&application)
+        .await
+        .expect("the store can stored secrets")[0]
         .access
         .clone();
     assert_eq!(access, only([&staging]));
-    let environments = store.environments(&application).await.unwrap();
+    let environments = store
+        .environments(&application)
+        .await
+        .expect("the store can environments");
     assert_eq!(access.describe(&environments), "qa");
-    deploy(&store, &staging).await.unwrap();
+    deploy(&store, &staging)
+        .await
+        .expect("the store can deploy");
 
     store
         .put_stored_secret(Daemon, &application, "shared", 0, b"all".to_vec(), None)
         .await
-        .unwrap();
-    let deletion = store.request_delete(&staging).await.unwrap();
+        .expect("the store can put stored secret");
+    let deletion = store
+        .request_delete(&staging)
+        .await
+        .expect("the store can request delete");
     sqlx::query!(
         "UPDATE operations SET state='running' WHERE id=?1",
         deletion.id
     )
     .execute(&store.pool)
     .await
-    .unwrap();
-    store.finish_delete_operation(&deletion).await.unwrap();
-    let secrets = store.stored_secrets(&application).await.unwrap();
+    .expect("the statement executes");
+    store
+        .finish_delete_operation(&deletion)
+        .await
+        .expect("the store can finish delete operation");
+    let secrets = store
+        .stored_secrets(&application)
+        .await
+        .expect("the store can stored secrets");
     assert_eq!(secrets[0].metadata.name, "shared");
     assert_eq!(secrets[0].access, SecretAccess::default());
     assert_eq!(secrets[1].access, only([]));
     assert_eq!(secrets[1].access.describe(&[]), "no environment");
-    let production_view = store.get(&production).await.unwrap().environment;
+    let production_view = store
+        .get(&production)
+        .await
+        .expect("the store can get")
+        .environment;
     assert!(!secrets[1].access.allows(&production_view));
     assert!(matches!(
         store
@@ -440,7 +494,9 @@ async fn a_store_holds_at_most_100_secrets() {
         }
     };
     for index in 0..100 {
-        put(format!("secret-{index}")).await.unwrap();
+        put(format!("secret-{index}"))
+            .await
+            .expect("the store can put");
     }
     assert!(matches!(
         put("secret-100".into()).await,
@@ -456,18 +512,21 @@ async fn access_is_fixed_while_a_secret_is_deleted() {
     store
         .put_stored_secret(Daemon, &application, "shared", 0, b"all".to_vec(), None)
         .await
-        .unwrap();
+        .expect("the store can put stored secret");
     store
         .begin_stored_secret_deletion(Daemon, &application, "shared", 1)
         .await
-        .unwrap();
+        .expect("the store can begin stored secret deletion");
     assert!(matches!(
         store
             .set_secret_access(Daemon, &application, "shared", &only([&staging]), None)
             .await,
         Err(StoreError::SecretDeleting)
     ));
-    let secret = &store.stored_secrets(&application).await.unwrap()[0];
+    let secret = &store
+        .stored_secrets(&application)
+        .await
+        .expect("the store can stored secrets")[0];
     assert_eq!(secret.access, SecretAccess::default());
 }
 
@@ -480,10 +539,11 @@ async fn generations(store: &Store, table: &str, name: &str) -> Vec<i64> {
     .bind(name)
     .fetch_all(&store.pool)
     .await
-    .unwrap()
+    .expect("the rows load")
 }
 
 #[tokio::test]
+#[expect(clippy::too_many_lines, reason = "one scenario reads top to bottom")]
 async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
     let (_temp, store, production, _) = fixture().await;
     let (application, access) = (template().id().clone(), only([&production]));
@@ -497,31 +557,45 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
             (expected == 0).then_some(&access),
         )
     };
-    put(0).await.unwrap();
-    let first = deploy(&store, &production).await.unwrap();
-    let pinning = store.deployments(&production, None, 1).await.unwrap().items[0]
+    put(0).await.expect("the store can put");
+    let first = deploy(&store, &production)
+        .await
+        .expect("the store can deploy");
+    let pinning = store
+        .deployments(&production, None, 1)
+        .await
+        .expect("the store can deployments")
+        .items[0]
         .operation
         .id
         .clone();
-    put(1).await.unwrap();
+    put(1).await.expect("the store can put");
     store
         .regenerate_secret(Daemon, &production, "session", 1)
         .await
-        .unwrap();
-    deploy(&store, &production).await.unwrap();
+        .expect("the store can regenerate secret");
+    deploy(&store, &production)
+        .await
+        .expect("the store can deploy");
     store
         .regenerate_secret(Daemon, &production, "session", 2)
         .await
-        .unwrap();
-    put(2).await.unwrap();
-    put(3).await.unwrap();
+        .expect("the store can regenerate secret");
+    put(2).await.expect("the store can put");
+    put(3).await.expect("the store can put");
 
-    assert!(store.unused_secret_versions().await.unwrap().is_empty());
+    assert!(
+        store
+            .unused_secret_versions()
+            .await
+            .expect("the store can unused secret versions")
+            .is_empty()
+    );
     sqlx::query("DELETE FROM operations WHERE id=?1")
         .bind(&pinning)
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("the statement executes");
     let resolved = |names: serde_json::Value| {
         sqlx::query("UPDATE environments SET resolved_json=?1 WHERE id=?2")
             .bind(
@@ -534,13 +608,21 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
     };
     resolved(serde_json::json!({"session": first["session"]}))
         .await
-        .unwrap();
+        .expect("the secrets resolve");
     assert_eq!(
-        store.unused_secret_versions().await.unwrap(),
+        store
+            .unused_secret_versions()
+            .await
+            .expect("the store can unused secret versions"),
         BTreeMap::from([(production.clone(), vec![first["stripe-prod"].clone()])])
     );
-    resolved(serde_json::Value::Null).await.unwrap();
-    let unused = store.unused_secret_versions().await.unwrap();
+    resolved(serde_json::Value::Null)
+        .await
+        .expect("the secrets resolve");
+    let unused = store
+        .unused_secret_versions()
+        .await
+        .expect("the store can unused secret versions");
     let mut expected = vec![first["session"].clone(), first["stripe-prod"].clone()];
     expected.sort();
     assert_eq!(
@@ -551,9 +633,18 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
     store
         .forget_secret_versions(&production, &expected)
         .await
-        .unwrap();
-    store.forget_uncopied_secret_versions().await.unwrap();
-    assert!(store.unused_secret_versions().await.unwrap().is_empty());
+        .expect("the store can forget secret versions");
+    store
+        .forget_uncopied_secret_versions()
+        .await
+        .expect("the store can forget uncopied secret versions");
+    assert!(
+        store
+            .unused_secret_versions()
+            .await
+            .expect("the store can unused secret versions")
+            .is_empty()
+    );
     assert_eq!(
         generations(&store, "secret_versions", "session").await,
         [2, 3]
