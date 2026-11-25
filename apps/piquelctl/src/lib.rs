@@ -387,25 +387,26 @@ mod tests {
 
     #[test]
     fn parser_rejects_conflicting_transports_and_invalid_timeout() {
-        assert!(
-            Cli::try_parse_from([
-                "piquelctl",
-                "--socket",
-                "/tmp/piqueld.sock",
-                "--url",
-                "http://127.0.0.1:8080/",
-                "status",
-            ])
-            .is_err()
-        );
-        assert!(Cli::try_parse_from(["piquelctl", "--timeout", "zero", "status"]).is_err());
-        assert!(Cli::try_parse_from(["piquelctl", "--timeout", "0s", "status"]).is_err());
-        assert!(Cli::try_parse_from(["piquelctl", "app", "plan", "status"]).is_err());
+        Cli::try_parse_from([
+            "piquelctl",
+            "--socket",
+            "/tmp/piqueld.sock",
+            "--url",
+            "http://127.0.0.1:8080/",
+            "status",
+        ])
+        .expect_err("`Cli::try_parse_from` should reject both --socket and --url");
+        Cli::try_parse_from(["piquelctl", "--timeout", "zero", "status"])
+            .expect_err("`Cli::try_parse_from` should be rejected");
+        Cli::try_parse_from(["piquelctl", "--timeout", "0s", "status"])
+            .expect_err("`Cli::try_parse_from` should be rejected");
+        Cli::try_parse_from(["piquelctl", "app", "plan", "status"])
+            .expect_err("`Cli::try_parse_from` should be rejected");
         // Commands follow `--`, and services are validated logical names.
-        assert!(Cli::try_parse_from(["piquelctl", "app", "exec", "notes", "web"]).is_err());
-        assert!(
-            Cli::try_parse_from(["piquelctl", "app", "exec", "notes", "Web", "--", "id"]).is_err()
-        );
+        Cli::try_parse_from(["piquelctl", "app", "exec", "notes", "web"])
+            .expect_err("`Cli::try_parse_from` should be rejected");
+        Cli::try_parse_from(["piquelctl", "app", "exec", "notes", "Web", "--", "id"])
+            .expect_err("`Cli::try_parse_from` should be rejected");
     }
 
     #[test]

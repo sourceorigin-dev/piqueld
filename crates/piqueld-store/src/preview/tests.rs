@@ -313,12 +313,10 @@ async fn previews_mount_shared_secrets_only_when_their_access_allows_previews() 
         environments: EnvironmentAccess::Only([preview.id.clone()].into()),
         previews: false,
     };
-    assert!(
-        store
-            .set_secret_access(Daemon, &application, "stripe", &named, None)
-            .await
-            .is_err()
-    );
+    store
+        .set_secret_access(Daemon, &application, "stripe", &named, None)
+        .await
+        .expect_err("`` should be rejected");
     let previews = SecretAccess {
         environments: EnvironmentAccess::Only([].into()),
         previews: true,

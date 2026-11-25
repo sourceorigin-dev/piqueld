@@ -92,7 +92,8 @@ fn git_resolution_retains_commit_and_local_image_and_rejects_mismatched_inputs()
     };
     repository.commit = Some("c".repeat(40));
     let changed = changed.validate().unwrap().normalize(app.id().clone());
-    assert!(compile_application(&changed, &environment, instance, &resolutions).is_err());
+    compile_application(&changed, &environment, instance, &resolutions)
+        .expect_err("`compile_application` should be rejected");
     assert!(resolved.reusable_resolutions(&changed).sources.is_empty());
 }
 

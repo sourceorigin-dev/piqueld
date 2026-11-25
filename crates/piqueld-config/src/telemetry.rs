@@ -263,7 +263,8 @@ mod tests {
             config.telemetry.headers.unwrap().to_string(),
             format!("from {path}")
         );
-        assert!(crate::DaemonConfig::from_toml(&source("")).is_err());
+        crate::DaemonConfig::from_toml(&source(""))
+            .expect_err("`crate::DaemonConfig::from_toml` should be rejected");
         std::fs::write(file.path(), "authorization Bearer secret\n").unwrap();
         let error = crate::DaemonConfig::from_toml(&source(endpoint)).unwrap_err();
         assert!(!error.to_string().contains("secret"), "{error}");

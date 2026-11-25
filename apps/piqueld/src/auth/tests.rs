@@ -387,18 +387,14 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
         display_name: String::new(),
         passkey_name: "Authenticator".into(),
     };
-    assert!(
-        f.auth
-            .registration_start(input(&bob.account().id), "binding", Some(&alice))
-            .await
-            .is_err()
-    );
-    assert!(
-        f.auth
-            .registration_start(input(&alice.account().id), "binding", Some(&alice))
-            .await
-            .is_ok()
-    );
+    f.auth
+        .registration_start(input(&bob.account().id), "binding", Some(&alice))
+        .await
+        .expect_err("`` should be rejected");
+    f.auth
+        .registration_start(input(&alice.account().id), "binding", Some(&alice))
+        .await
+        .expect("`` should succeed");
     let (_, made) = f
         .token(&bob, create_token(Grants::admin(), "automation", None))
         .await;
@@ -1710,11 +1706,17 @@ async fn device_approval_is_explicit_single_use_and_bound_to_a_live_session() {
         .authenticate(result.token.as_ref().unwrap())
         .await
         .unwrap();
-    assert!(f.auth.device_poll(&start.device_code, None).await.is_err());
+    f.auth
+        .device_poll(&start.device_code, None)
+        .await
+        .expect_err("`device_poll` should be rejected");
     let start = f.auth.device_start(None, None).unwrap();
     f.auth.device_approve(&start.user_code, &identity).unwrap();
     f.auth.logout(&identity, None).await.unwrap();
-    assert!(f.auth.device_poll(&start.device_code, None).await.is_err());
+    f.auth
+        .device_poll(&start.device_code, None)
+        .await
+        .expect_err("`device_poll` should be rejected");
 }
 
 #[tokio::test]
@@ -1803,12 +1805,10 @@ async fn challenges_require_the_original_browser_and_expire() {
         Err(AuthError::Invalid(_))
     ));
     assert!(f.auth.0.ceremonies.lock().await.contains_key(&ceremony.id));
-    assert!(
-        f.auth
-            .login_finish(input.clone(), "browser-one", None)
-            .await
-            .is_err()
-    );
+    f.auth
+        .login_finish(input.clone(), "browser-one", None)
+        .await
+        .expect_err("`` should be rejected");
     assert!(!f.auth.0.ceremonies.lock().await.contains_key(&ceremony.id));
     assert!(matches!(
         f.auth.login_finish(input, "browser-one", None).await,
@@ -2169,9 +2169,13 @@ async fn device_inspection_reports_the_requester_until_approval() {
             .status,
         "authorization_pending"
     );
-    assert!(f.auth.device_inspect("AAAA-AAAA", &identity).is_err());
+    f.auth
+        .device_inspect("AAAA-AAAA", &identity)
+        .expect_err("`device_inspect` should be rejected");
     f.auth.device_approve(&start.user_code, &identity).unwrap();
-    assert!(f.auth.device_inspect(&start.user_code, &identity).is_err());
+    f.auth
+        .device_inspect(&start.user_code, &identity)
+        .expect_err("`device_inspect` should be rejected");
     let local = f.auth.device_start(None, None).unwrap();
     assert!(local.requester.is_none());
     assert!(

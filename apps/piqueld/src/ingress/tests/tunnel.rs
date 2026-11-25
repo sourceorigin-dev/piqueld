@@ -417,13 +417,11 @@ impl Scenario {
             .unwrap()
             .unwrap();
         assert_eq!(cloudflared["HostConfig"]["ReadonlyRootfs"], true);
-        assert!(
-            self.client
-                .get(self.url("one.example.test"))
-                .send()
-                .await
-                .is_err()
-        );
+        self.client
+            .get(self.url("one.example.test"))
+            .send()
+            .await
+            .expect_err("`` should be rejected");
         // Without a real tunnel, cloudflared never connects.
         assert!(!ingress.status().await.healthy);
     }

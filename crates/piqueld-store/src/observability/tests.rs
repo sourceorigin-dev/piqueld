@@ -616,7 +616,10 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
             .unwrap();
         store.prune_events(cutoff).await.unwrap();
         store.prune_daemon_events().await.unwrap();
-        assert!(store.event(failure.event_id).await.is_ok());
+        store
+            .event(failure.event_id)
+            .await
+            .expect("`event` should succeed");
         drop(store);
 
         let store = Store::open_unsynced(&path)
@@ -637,7 +640,10 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
         let (recovery, _) = store.claim_delivery().await.unwrap().unwrap();
         assert_eq!(recovery.category, NotificationCategory::Recovery);
         assert_eq!(recovery.destination, failure.destination);
-        assert!(store.event(failure.event_id).await.is_ok());
+        store
+            .event(failure.event_id)
+            .await
+            .expect("`event` should succeed");
         store
             .complete_delivery(&recovery.id, DeliveryState::Delivered, None, 0)
             .await
@@ -696,12 +702,10 @@ async fn pruning_marks_stream_gaps_and_analytics_coverage() {
             .await,
         Err(StoreError::HistoryExpired)
     ));
-    assert!(
-        store
-            .stream_events(&quiet, &Visibility::ALL, checkpoint, 10)
-            .await
-            .is_ok()
-    );
+    store
+        .stream_events(&quiet, &Visibility::ALL, checkpoint, 10)
+        .await
+        .expect("`` should succeed");
     let analytics = store
         .deployment_analytics(None, &Visibility::ALL, 0, now_ms())
         .await
@@ -765,11 +769,17 @@ async fn recovery_waits_for_its_destination_failure_across_restart_and_pruning()
         .await
         .unwrap();
     store.prune_events(now_ms() + 1).await.unwrap();
-    assert!(store.event(delayed.event_id).await.is_ok());
+    store
+        .event(delayed.event_id)
+        .await
+        .expect("`event` should succeed");
     let (recovery, _) = store.claim_delivery().await.unwrap().unwrap();
     assert_eq!(recovery.category, NotificationCategory::Recovery);
     assert_eq!(recovery.destination, delayed.destination);
-    assert!(store.event(recovery.event_id).await.is_ok());
+    store
+        .event(recovery.event_id)
+        .await
+        .expect("`event` should succeed");
 }
 
 #[tokio::test]
@@ -1212,7 +1222,9 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
     }
     // The anchor is stored whole or not at all.
     let half = sqlx::query("UPDATE audit_chain SET pruned_link=NULL");
-    assert!(half.execute(&store.pool).await.is_err());
+    half.execute(&store.pool)
+        .await
+        .expect_err("`execute` should be rejected");
     let removed = run("DELETE FROM audit_events WHERE peer='c'").await;
     assert_eq!(
         removed.broken_at,
@@ -1588,7 +1600,9 @@ async fn requested_notification_changes_commit_with_their_audit_record() {
             .expect("the destination has an ID");
     // Changes whose record can't be written keep what was there.
     store.refuse_audit(true).await;
-    assert!(put(second, true).await.is_err());
+    put(second, true)
+        .await
+        .expect_err("`put` should be rejected");
     let deleted = store.delete_notification_destination(author, &ops);
     assert!(deleted.await.is_err());
     assert!(store.retry_delivery(author, &failure.id).await.is_err());
@@ -1659,7 +1673,7 @@ async fn requested_webhook_secret_rotations_commit_with_their_audit_record() {
     };
     let kept = rotate().await.expect("the webhook secret is generated");
     store.refuse_audit(true).await;
-    assert!(rotate().await.is_err());
+    rotate().await.expect_err("`rotate` should be rejected");
     store.refuse_audit(false).await;
     let webhook = store
         .webhook_secret(&application)

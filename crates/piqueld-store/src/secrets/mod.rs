@@ -318,10 +318,14 @@ mod tests {
             (owner, "other", 1),
             (owner, "token", 2),
         ] {
-            assert!(cipher.decrypt(owner, name, generation, &encrypted).is_err());
+            cipher
+                .decrypt(owner, name, generation, &encrypted)
+                .expect_err("`decrypt` should be rejected");
         }
         encrypted.ciphertext[0] ^= 1;
-        assert!(cipher.decrypt(owner, "token", 1, &encrypted).is_err());
+        cipher
+            .decrypt(owner, "token", 1, &encrypted)
+            .expect_err("`decrypt` should be rejected");
         std::fs::remove_file(&path).unwrap();
         assert!(SecretCipher::load(&path, true).is_err());
         assert!(

@@ -1473,7 +1473,9 @@ mod tests {
         let before = counts().await;
         store.refuse_audit(true).await;
         let failed = request();
-        assert!(accept(&failed).await.is_err());
+        accept(&failed)
+            .await
+            .expect_err("`accept` should be rejected");
         assert!(!failed.recorded.get());
         store.refuse_audit(false).await;
         assert_eq!(counts().await, before);

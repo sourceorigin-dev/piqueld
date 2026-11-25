@@ -176,7 +176,8 @@ fn wire_list_is_validated_and_canonical() {
         serde_json::json!([{"permission": "apps:read", "applications": []}]),
         serde_json::json!([{"permission": "apps:fly"}]),
     ] {
-        assert!(serde_json::from_value::<Grants>(invalid).is_err());
+        serde_json::from_value::<Grants>(invalid)
+            .expect_err("`serde_json::from_value` should be rejected");
     }
 }
 

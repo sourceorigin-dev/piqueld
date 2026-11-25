@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(form("-1", "not a binding").unwrap_err(), days_error);
         assert_eq!(form("1.5", "").unwrap_err(), days_error);
         assert_eq!(form("0", "").unwrap_err(), days_error);
-        assert!(form("30", "not a binding").is_err());
+        form("30", "not a binding").expect_err("`form` should be rejected");
         let Ok(Manage::CreateToken { days, .. }) = form("30", "") else {
             panic!("a positive lifetime is valid");
         };

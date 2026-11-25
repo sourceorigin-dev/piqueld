@@ -777,13 +777,16 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let parent = tempfile::tempdir().unwrap();
         let root = parent.path().join("root");
-        assert!(Instance::own_private_dir(root.clone()).is_ok());
+        Instance::own_private_dir(root.clone())
+            .expect("`Instance::own_private_dir` should succeed");
         assert_eq!(fs::metadata(&root).unwrap().mode() & 0o777, 0o700);
         fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(Instance::own_private_dir(root).is_err());
+        Instance::own_private_dir(root)
+            .expect_err("`Instance::own_private_dir` should be rejected");
         let link = parent.path().join("link");
         std::os::unix::fs::symlink(parent.path(), &link).unwrap();
-        assert!(Instance::own_private_dir(link).is_err());
+        Instance::own_private_dir(link)
+            .expect_err("`Instance::own_private_dir` should be rejected");
     }
 
     #[tokio::test]
@@ -808,7 +811,8 @@ mod tests {
         let workspace = Workspace {
             root: "/worktrees/a".into(),
         };
-        assert!(Instance::runs_from(&runtime, &workspace).is_err());
+        Instance::runs_from(&runtime, &workspace)
+            .expect_err("`Instance::runs_from` should be rejected");
     }
 
     #[test]

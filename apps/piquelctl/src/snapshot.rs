@@ -1032,7 +1032,9 @@ mod tests {
         };
         let snapshot = worktree.snapshot("feat/x", Some(&roomy)).await.unwrap();
         let bundle = snapshot.bundle(History::Thin).await.unwrap();
-        assert!(bundle.check_size(Some(&roomy)).is_ok());
+        bundle
+            .check_size(Some(&roomy))
+            .expect("`check_size` should succeed");
         let small = SnapshotLimits {
             max_upload_bytes: bundle.length - 1,
             ..roomy
@@ -1071,7 +1073,10 @@ mod tests {
             "echo '*.bin filter=cache' > .gitattributes && echo data > big.bin",
         );
         let worktree = Worktree::at(&work).await.unwrap();
-        assert!(worktree.snapshot("feat/x", None).await.is_ok());
+        worktree
+            .snapshot("feat/x", None)
+            .await
+            .expect("`snapshot` should succeed");
         sh(
             &work,
             "git config filter.cache.clean 'mkdir -p .git/filter-cache && cat'",

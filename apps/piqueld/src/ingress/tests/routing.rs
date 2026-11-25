@@ -461,13 +461,11 @@ impl Scenario {
         let disabled = Arc::new(self.ingress(false));
         disabled.synchronize().await.unwrap();
         assert!(disabled.container().await.unwrap().is_none());
-        assert!(
-            self.client
-                .get(self.url("one.example.test"))
-                .send()
-                .await
-                .is_err()
-        );
+        self.client
+            .get(self.url("one.example.test"))
+            .send()
+            .await
+            .expect_err("`` should be rejected");
         assert!(
             self.directory
                 .path()

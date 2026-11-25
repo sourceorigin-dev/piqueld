@@ -414,7 +414,7 @@ mod tests {
 
         // Nothing was cached: once the socket exists, the client is created.
         let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
-        assert!(docker.client().is_ok());
+        docker.client().expect("`client` should succeed");
     }
 
     #[test]

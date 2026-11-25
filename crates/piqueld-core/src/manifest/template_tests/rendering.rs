@@ -108,7 +108,7 @@ fn variables_without_a_value_fail_only_the_environment_that_needs_them() {
     let template = template(
         "[spec.variables]\nweb_replicas = 1\n[spec.environments.staging.variables]\ntag = \"stable\"\n[spec.environments.production.variables]\ndomain = \"piquel.fr\"\n",
     );
-    assert!(render(&template, "staging").is_ok());
+    render(&template, "staging").expect("`render` should succeed");
     let errors = render(&template, "production").unwrap_err();
     assert_eq!(
         codes_and_paths(&errors),

@@ -151,7 +151,10 @@ async fn regular_files_and_symlinks_at_socket_path_are_preserved() {
     let _listener = tokio::net::UnixListener::bind(&target).unwrap();
     // Relative to the link's own directory.
     std::os::unix::fs::symlink("target.sock", fixture.socket()).unwrap();
-    assert!(runtime.bind_api().await.is_err());
+    runtime
+        .bind_api()
+        .await
+        .expect_err("`bind_api` should be rejected");
     assert!(
         std::fs::symlink_metadata(fixture.socket())
             .unwrap()

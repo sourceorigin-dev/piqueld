@@ -706,7 +706,7 @@ mod tests {
             let kept = snapshots
                 .keep(received, async { Ok::<_, SnapshotError>(()) })
                 .await;
-            assert!(kept.is_ok());
+            kept.expect("`kept` should succeed");
             assert_eq!(permits(), Snapshots::RECEIVING);
             assert!(snapshots.path(&commit).exists());
         }

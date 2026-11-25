@@ -174,12 +174,10 @@ async fn generations_protect_full_replacement_and_deletion_without_merging() {
             }
         ))
     ));
-    assert!(
-        applications
-            .delete(&first.environment_id, Some(1))
-            .await
-            .is_err()
-    );
+    applications
+        .delete(&first.environment_id, Some(1))
+        .await
+        .expect_err("`` should be rejected");
     manifest.spec.services[0].environment.clear();
     let third = harness.apply(manifest.clone(), Some(2)).await;
     assert!(
@@ -209,12 +207,10 @@ async fn generations_protect_full_replacement_and_deletion_without_merging() {
             .id,
         deletion.id
     );
-    assert!(
-        applications
-            .deploy(&first.environment_id, None)
-            .await
-            .is_err()
-    );
+    applications
+        .deploy(&first.environment_id, None)
+        .await
+        .expect_err("`` should be rejected");
     assert!(matches!(
         applications
             .apply(manifest.validate_template().unwrap(), Some(4))
