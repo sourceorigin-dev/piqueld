@@ -7,7 +7,7 @@ A pure Rust infrastructure control plane for a single-node Docker Swarm: the
 ## Glossary
 
 The user guide's [concepts](docs/user/introduction.md#concepts) define the
-terms; these are the easiest to mix up:
+terms; the easiest to mix up:
 
 - **Environment**: a running copy of an application (`production`,
   `staging`), and the unit piqueld deploys. A **preview** is a short-lived
@@ -27,6 +27,23 @@ terms; these are the easiest to mix up:
   daemon's socket acts as without signing in.
 - **Instance**: a running daemon; a development instance is the one
   `just dev` runs for a worktree.
+
+## Crates
+
+- `piqueld` (`apps/piqueld`): the daemon, the binary and the embedded dashboard.
+- `piquelctl` (`apps/piquelctl`) and `piqueld-ui` (`apps/piqueld-ui`): the CLI
+  and the Leptos dashboard.
+- `piqueld-core`: manifest, API and domain contracts, with no I/O.
+- `piqueld-client`: typed HTTP client, with the generated endpoint bindings.
+- `piqueld-config`: configuration, DNS provider accounts and state directories.
+- `piqueld-store`: SQLite state, command acceptance and secret encryption.
+- `piqueld-docker`: the Docker Engine and Swarm boundary, with a fake engine.
+- `piqueld-probe`: the static in-container health probe.
+- `piqueld-build`: nested Cargo builds for build scripts.
+- `piqueld-generated`: writes the files `just generate` produces.
+- `xtask` (`tools/xtask`): development tasks, run as `cargo xtask`.
+
+Boundaries between them: `docs/dev/architecture/dependency-flow.md`.
 
 ## Hazards
 
@@ -61,108 +78,73 @@ recognise a case the list doesn't name.
 
 ## Conventions
 
-Follow the shared engineering standard,
-[sourceorigin-standard](https://crates.io/crates/sourceorigin-standard), and
-`docs/dev/rust-conventions.md`, which applies it to piqueld. `just standard`
-checks its rules (the `standard` skill says what to do when one fails),
-`just lint` its lints, and `just boundary` the crate boundaries.
+Follow [sourceorigin-standard](https://crates.io/crates/sourceorigin-standard)
+and `docs/dev/rust-conventions.md`, which applies it. `just standard` checks its
+rules (the `standard` skill says what to do on a failure), `just lint` its
+lints, and `just boundary` the crate boundaries.
 
 Read a dependency's real source in `~/.cargo/registry/src`, at the version in
 `Cargo.lock`, rather than trusting memory of a fast-moving crate's API, such as
-Leptos, axum or Progenitor.
-
-If a rule in this file fights the task, say so plainly and get the owner's
+Leptos, axum or Progenitor. If a rule in this file fights the task, say so plainly and get the owner's
 sign-off before breaking it.
 
 ## Validation
 
-Run `just check-changed` (or `just` alone) before handing work back. It runs CI's quick checks
-for only what changed since the merge base with `origin/main`, uncommitted and
-untracked files included, deciding from the filters CI uses, and names the
-slow checks it leaves to CI. While iterating, run only the changed crate's
-checks, such as `just test --package <crate>` and
-`just lint --package <crate>`. `just validate` runs every
-local check CI runs, which `docs/dev/validation.md` lists, on the whole
-workspace without modifying files (`just fmt` formats the code): run it when
-a change is workspace-wide or when asked. CI owns the full suite. If a step cannot run, report the exact command and
-why.
-
-`just coverage` measures the native tests' coverage. Under load, the
-`fake_docker` timing tests and Playwright's `branches.spec.ts` flake: rerun
-one once before calling it a failure.
-
-T3 Code prepares a new worktree with `just setup-worktree`; run it yourself if
-the worktree has no `piqueld.local.toml` or build yet.
+Run `just check-changed` (or `just` alone) before handing work back: CI's
+quick checks for what changed since the merge base with `origin/main`,
+uncommitted files included, naming the slow checks it leaves to CI. While
+iterating, run only the changed crate's checks, such as
+`just test --package <crate>` and `just lint --package <crate>`.
+`just validate` runs every local check on the whole workspace
+(`docs/dev/validation.md` lists them; `just fmt` formats): run it for a workspace-wide change or
+when asked. If a step cannot run, report the exact command and why. Under
+load, the `fake_docker` timing tests and Playwright's `branches.spec.ts`
+flake: rerun one once before calling it a failure. `just coverage` measures the
+native tests' coverage. T3 Code prepares a new worktree with
+`just setup-worktree`; run it yourself if the worktree has no
+`piqueld.local.toml` or build yet.
 
 ## Testing
 
 The `piqueld-dev` skill in `.agents/skills` (linked from `.claude/skills`)
-runs this worktree's isolated development instance (`just dev`, see
-`docs/dev/development.md`) on its own localhost port, for testing changes through
-the manifest, CLI, and dashboard preview.
+runs this worktree's isolated development instance (`just dev`, `docs/dev/development.md`) on its own
+localhost port, to test changes through the manifest, CLI and dashboard preview.
 
 ## Issues
 
-Issues live in Linear, in the `PQD` team of the `sourceorigin` workspace, which
-also holds `sourceorigin-dev/infra`. Read, create and update them through the
-Linear MCP server. New issues go to Triage with a Type label (Feature, Bug, Task,
-Security or Epic) and a title following the commit convention below.
-
-GitHub issues are only for outside reports. Linear copies new ones into Triage,
-so never triage or close them on GitHub.
+Issues live in Linear (`PQD` team, `sourceorigin` workspace, which also holds
+`sourceorigin-dev/infra`): use the Linear MCP server. New issues go to Triage
+with a Type label (Feature, Bug, Task, Security or Epic) and a title following
+the commit convention below. GitHub issues are only for outside reports, which
+Linear copies into Triage: never triage or close them on GitHub.
 
 ## Commits & Pull Requests
 
-Titles should follow the `feat(server): add docker swarm reconciliation` convention.
-Keep pull requests small and focused: one change each, which a reviewer can
-read in one sitting. Split refactors from behaviour changes, and stack
-dependent pull requests, each on the last.
-A pull request names its Linear issue in the description: `Fixes PQD-123`
+Titles follow the `feat(server): add docker swarm reconciliation` convention.
+Keep pull requests small and focused: one change a reviewer can read in one
+sitting. Split refactors from behaviour changes, and stack dependent pull
+requests. A pull request names its Linear issue in the description: `Fixes PQD-123`
 closes the issue when it merges, and `Part of PQD-123` only links it.
 
 Open pull requests as drafts and mark them ready for review once the work is
-done. Drafts run only the quick CI jobs; marking a pull request ready runs the
-slow ones (Docker, Playwright, macOS), which it must pass
-before merging. Release builds (Nix, packaging, install) run after merging; see
-"Release checks" in `docs/dev/validation.md` to run them on a branch that
-changes a manifest, build script, the flake or `install.sh`.
+done: drafts run only the quick CI jobs, and ready runs the slow ones (Docker,
+Playwright, macOS), which must pass before merging. Release builds run after
+merging; "Release checks" in `docs/dev/validation.md` says when to run them on
+a branch.
 
 `main` merges through a merge queue: `gh pr merge` adds a pull request to it,
 and the queue reruns CI on top of the latest main. Never merge with `--admin`.
-
-`docs/dev/releasing.md` describes versions and releases.
+`docs/dev/releasing.md` describes releases.
 
 ## Surfaces
 
-A feature reaches every surface it applies to. Before handing back a feature,
-walk this list and say which entries applied:
-
-- **Manifest**: its types in `piqueld-core`.
-- **HTTP API**: the daemon's endpoint, the permission it requires
-  (`docs/dev/architecture/authorization.md`), and the OpenAPI document and
-  generated client.
-- **CLI**: a `piquelctl` command.
-- **Dashboard**: `apps/piqueld-ui`.
-- **Daemon configuration**: `piqueld-config`, and the NixOS module,
-  `nix/module.nix` (`nix/cli-module.nix` for `piquelctl` profiles).
-- **Documentation**: each surface in the user guide, and its screenshots.
-
-`just generate` writes the OpenAPI document, the client, the JSON Schemas and
-the manifest, configuration and command references, and `just openapi-check`
-fails while one is stale.
-
-A way in needs a way out and a way to see it: create needs delete, enable
-needs disable, pause needs resume, and each state shows in `piquelctl` and the
-dashboard.
-
-A refactor changes none of the surfaces: the OpenAPI document, the manifest,
-the CLI's help and output, the NixOS module's options and output, and the
-names and labels of what piqueld creates in Docker stay as they were.
+A feature reaches every surface it applies to (manifest, HTTP API, CLI,
+dashboard, daemon configuration, documentation). Before handing it back, walk
+`docs/dev/surfaces.md` and say which entries applied. A way in needs a way out
+and a way to see it; a refactor changes none of the surfaces.
 
 ## Documentation
 
-The documentation in `docs/` is an mdBook with a user guide (`docs/user`) and a
-developer guide (`docs/dev`). Update it in the same pull request as the change
-it describes, following `docs/dev/documentation.md`, and run `just docs` to
-build it and check its links. The `docs` skill in `.agents/skills` says how
-to write it.
+`docs/` is an mdBook: a user guide (`docs/user`) and a developer guide
+(`docs/dev`). Update it in the same pull request as the change, following
+`docs/dev/documentation.md` and the `docs` skill, and run `just docs`.
