@@ -2,7 +2,6 @@
 //! tailscaled's `LocalAPI`. Each request has a timeout and an
 //! 8 MiB response limit, so an unresponsive API cannot leave its caller
 //! waiting indefinitely.
-use anyhow::{Context, Result};
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Method, Request, StatusCode, body::Bytes};
 use hyper_util::rt::TokioIo;
@@ -46,6 +45,64 @@ impl ResponseError {
     }
 }
 
+/// Why a request to a local HTTP API failed.
+#[derive(Debug, thiserror::Error)]
+pub enum UnixHttpError {
+    /// The socket refused the connection.
+    #[error("connect to {}", socket.display())]
+    Connect {
+        /// The API's socket.
+        socket: PathBuf,
+        /// The connection failure.
+        #[source]
+        source: std::io::Error,
+    },
+    /// The HTTP exchange failed.
+    #[error(transparent)]
+    Exchange(#[from] hyper::Error),
+    /// The request body is not serializable.
+    #[error(transparent)]
+    Encode(#[from] serde_json::Error),
+    /// The request could not be built.
+    #[error(transparent)]
+    Request(#[from] hyper::http::Error),
+    /// The response body failed or exceeded its limit.
+    #[error("read bounded {path} response: {cause}")]
+    Body {
+        /// Request path.
+        path: String,
+        /// The read failure.
+        cause: Box<dyn std::error::Error + Send + Sync>,
+    },
+    /// The request took longer than its timeout.
+    #[error("{path} through {} timed out after {timeout:?}", socket.display())]
+    Timeout {
+        /// Request path.
+        path: String,
+        /// The API's socket.
+        socket: PathBuf,
+        /// The timeout that elapsed.
+        timeout: Duration,
+        /// The elapsed timer.
+        #[source]
+        source: tokio::time::error::Elapsed,
+    },
+    /// The API answered with an error status.
+    #[error(transparent)]
+    Response(#[from] ResponseError),
+}
+
+impl UnixHttpError {
+    /// The error status the API answered with, if that is what failed.
+    #[must_use]
+    pub fn response(&self) -> Option<&ResponseError> {
+        match self {
+            Self::Response(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
 /// Client for one local HTTP API, identified by its Unix socket path.
 /// Opens a fresh connection for each request; constructing it performs no I/O.
 pub struct UnixHttp {
@@ -83,11 +140,14 @@ impl UnixHttp {
         method: Method,
         path: &str,
         value: Option<&Value>,
-    ) -> Result<(StatusCode, Vec<u8>)> {
+    ) -> Result<(StatusCode, Vec<u8>), UnixHttpError> {
         tokio::time::timeout(self.timeout, async {
-            let stream = UnixStream::connect(&self.socket)
-                .await
-                .with_context(|| format!("connect to {}", self.socket.display()))?;
+            let stream = UnixStream::connect(&self.socket).await.map_err(|source| {
+                UnixHttpError::Connect {
+                    socket: self.socket.clone(),
+                    source,
+                }
+            })?;
             let (mut sender, connection) =
                 hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
             let mut drivers = tokio::task::JoinSet::new();
@@ -112,17 +172,19 @@ impl UnixHttp {
             let bytes = Limited::new(response.into_body(), RESPONSE_LIMIT)
                 .collect()
                 .await
-                .map_err(|error| anyhow::anyhow!("read bounded {path} response: {error}"))?
+                .map_err(|cause| UnixHttpError::Body {
+                    path: path.to_owned(),
+                    cause,
+                })?
                 .to_bytes();
             Ok((status, bytes.to_vec()))
         })
         .await
-        .with_context(|| {
-            format!(
-                "{path} through {} timed out after {:?}",
-                self.socket.display(),
-                self.timeout
-            )
+        .map_err(|source| UnixHttpError::Timeout {
+            path: path.to_owned(),
+            socket: self.socket.clone(),
+            timeout: self.timeout,
+            source,
         })?
     }
 
@@ -136,7 +198,7 @@ impl UnixHttp {
         method: Method,
         path: &str,
         value: Option<&Value>,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<Vec<u8>, UnixHttpError> {
         let (status, body) = self.request(method, path, value).await?;
         ResponseError::check(path, status, &body)?;
         Ok(body)
@@ -171,10 +233,6 @@ mod tests {
         .await
         .expect("the supplied 50ms budget must override the usual request budget")
         .unwrap_err();
-        assert!(
-            error
-                .chain()
-                .any(<dyn std::error::Error>::is::<tokio::time::error::Elapsed>)
-        );
+        assert!(matches!(error, UnixHttpError::Timeout { .. }));
     }
 }

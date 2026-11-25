@@ -58,7 +58,7 @@ async fn whois_reads_users_and_treats_tagged_nodes_as_userless() {
         .unwrap();
     assert_eq!(runner.login, None);
     assert_eq!(runner.tags, ["tag:ci"]);
-    let unknown = api.whois("100.64.0.9".parse().unwrap()).await.unwrap_err();
+    let unknown = anyhow::Error::from(api.whois("100.64.0.9".parse().unwrap()).await.unwrap_err());
     assert!(format!("{unknown:#}").contains("HTTP 404"), "{unknown:#}");
     assert!(format!("{unknown:#}").contains("no match"), "{unknown:#}");
 }
@@ -81,7 +81,7 @@ async fn certificates_are_read_as_pem_and_refusals_are_errors() {
     let api = fake.api();
     let pem = api.certificate("piqueld.tail1234.ts.net").await.unwrap();
     assert_eq!(pem, b"-----BEGIN CERTIFICATE-----\n");
-    let refused = api.certificate("other.tail1234.ts.net").await.unwrap_err();
+    let refused = anyhow::Error::from(api.certificate("other.tail1234.ts.net").await.unwrap_err());
     assert!(
         format!("{refused:#}").contains("invalid domain"),
         "{refused:#}"
@@ -120,7 +120,7 @@ async fn reads_fail_when_tailscaled_is_down() {
     drop(std::os::unix::net::UnixListener::bind(&stale).unwrap());
     for socket in [missing, stale] {
         let api = LocalApi::new(socket.clone(), Duration::from_secs(5));
-        let error = format!("{:#}", api.status().await.unwrap_err());
+        let error = format!("{:#}", anyhow::Error::from(api.status().await.unwrap_err()));
         assert!(error.contains(&socket.display().to_string()), "{error}");
         assert!(error.contains("connect"), "{error}");
     }

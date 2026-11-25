@@ -17,6 +17,7 @@ mod view;
 pub use build::BuildConfig;
 use credential::Resolution;
 pub use credential::{Credential, CredentialError, CredentialFile};
+pub use listeners::ListenError;
 // The retention tables live in core so the store can read them without
 // depending on this crate.
 pub use piqueld_core::{BuildHistoryConfig, ImagesConfig, RetentionConfig};

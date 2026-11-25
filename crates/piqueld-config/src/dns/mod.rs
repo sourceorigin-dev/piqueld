@@ -12,6 +12,7 @@ mod propagation;
 pub mod provider;
 mod zones;
 
+pub use propagation::PropagationError;
 pub use zones::ZoneError;
 
 use piqueld_core::{api::DnsProviderStatus, manifest::Hostname};
@@ -61,7 +62,14 @@ impl Discovery {
             }
             Err(error) => {
                 tracing::warn!(error = format!("{error:#}"), "DNS zone discovery failed");
-                self.error = Some(format!("{:#}", anyhow::Error::from(error)));
+                self.error = Some(
+                    std::iter::successors(Some(&error as &dyn std::error::Error), |error| {
+                        error.source()
+                    })
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(": "),
+                );
                 let wait = Self::RETRY.saturating_mul(1 << self.failures.min(4));
                 self.failures += 1;
                 self.due = Some(now + wait.min(Self::MAX_RETRY));

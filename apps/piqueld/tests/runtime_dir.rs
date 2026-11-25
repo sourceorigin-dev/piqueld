@@ -50,7 +50,7 @@ impl Fixture {
     }
 
     async fn acquire_at(path: &Path) -> anyhow::Result<RuntimeDir> {
-        RuntimeDir::acquire(fixture_dir::relative(path)).await
+        Ok(RuntimeDir::acquire(fixture_dir::relative(path)).await?)
     }
 
     /// Asserts acquiring `path` fails with an error mentioning `message`.
@@ -118,7 +118,7 @@ async fn active_listener_without_a_directory_lock_is_preserved() {
     let listener = tokio::net::UnixListener::bind(fixture.socket()).unwrap();
     let inode = fixture.socket_inode();
     let runtime = fixture.acquire().await.unwrap();
-    let error = runtime.bind_api().await.unwrap_err();
+    let error = anyhow::Error::from(runtime.bind_api().await.unwrap_err());
     assert!(format!("{error:#}").contains("active listener"));
     assert_eq!(fixture.socket_inode(), inode);
     let _probe = listener.accept().await.unwrap();
@@ -143,7 +143,7 @@ async fn regular_files_and_symlinks_at_socket_path_are_preserved() {
     let fixture = Fixture::new(0o700);
     let runtime = fixture.acquire().await.unwrap();
     std::fs::write(fixture.socket(), b"keep this").unwrap();
-    let error = runtime.bind_api().await.unwrap_err();
+    let error = anyhow::Error::from(runtime.bind_api().await.unwrap_err());
     assert!(format!("{error:#}").contains("refusing to replace non-socket"));
     assert_eq!(std::fs::read(fixture.socket()).unwrap(), b"keep this");
     std::fs::remove_file(fixture.socket()).unwrap();

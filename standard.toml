@@ -23,7 +23,7 @@ paths = ["Cargo.toml"]
 
 [deviations.anyhow-edges]
 reason = "3 findings: these libraries return anyhow errors; typed errors in a follow-up"
-crates = ["piqueld", "piqueld-config", "piqueld-docker"]
+crates = ["piqueld", "piqueld-docker"]
 
 [deviations.generated-lints]
 reason = "160 findings: progenitor writes the `allow`s into the generated client; fixed in a follow-up"

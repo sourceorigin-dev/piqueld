@@ -10,8 +10,7 @@
 //! serve config  GET /localapi/v0/serve-config
 //! ```
 
-use crate::unix_http::UnixHttp;
-use anyhow::{Context, Result};
+use crate::unix_http::{UnixHttp, UnixHttpError};
 use hyper::Method;
 use piqueld_core::tailnet::TailnetPeer;
 use serde::{Deserialize, de::DeserializeOwned};
@@ -21,10 +20,34 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+use thiserror::Error;
 
 /// The socket of the host's `tailscaled` on Linux, which the `tailscale` CLI
 /// uses unless told otherwise.
 pub const HOST_SOCKET: &str = "/var/run/tailscale/tailscaled.sock";
+
+/// Why a `LocalAPI` read failed.
+#[derive(Debug, Error)]
+pub enum LocalApiError {
+    /// `tailscaled` didn't answer, or answered with an error.
+    #[error("failed to ask tailscaled at {}", socket.display())]
+    Ask {
+        /// The `tailscaled`'s socket.
+        socket: PathBuf,
+        /// The failed request.
+        #[source]
+        source: UnixHttpError,
+    },
+    /// The answer is not the expected JSON.
+    #[error("invalid tailscale {what}")]
+    Invalid {
+        /// What was read, such as `status`.
+        what: &'static str,
+        /// The decoding failure.
+        #[source]
+        source: serde_json::Error,
+    },
+}
 
 /// Client for one `tailscaled`'s `LocalAPI`. Constructing it performs no I/O.
 pub struct LocalApi {
@@ -48,24 +71,31 @@ impl LocalApi {
     }
 
     /// Reads `/localapi/v0/<path>`, requiring a successful status.
-    async fn read(&self, path: &str) -> Result<Vec<u8>> {
+    async fn read(&self, path: &str) -> Result<Vec<u8>, LocalApiError> {
         self.http
             .checked(Method::GET, &format!("/localapi/v0/{path}"), None)
             .await
-            .with_context(|| format!("failed to ask tailscaled at {}", self.socket().display()))
+            .map_err(|source| LocalApiError::Ask {
+                socket: self.socket().to_owned(),
+                source,
+            })
     }
 
     /// Reads and decodes `/localapi/v0/<path>`; `what` names it in errors.
-    async fn get<T: DeserializeOwned>(&self, path: &str, what: &str) -> Result<T> {
+    async fn get<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        what: &'static str,
+    ) -> Result<T, LocalApiError> {
         serde_json::from_slice(&self.read(path).await?)
-            .with_context(|| format!("invalid tailscale {what}"))
+            .map_err(|source| LocalApiError::Invalid { what, source })
     }
 
     /// The node's own status, without its peers.
     ///
     /// # Errors
     /// Fails when `tailscaled` doesn't answer or answers with an error.
-    pub async fn status(&self) -> Result<Status> {
+    pub async fn status(&self) -> Result<Status, LocalApiError> {
         self.get("status?peers=false", "status").await
     }
 
@@ -73,7 +103,7 @@ impl LocalApi {
     ///
     /// # Errors
     /// Fails when `tailscaled` doesn't answer, or knows no node there.
-    pub async fn whois(&self, address: IpAddr) -> Result<TailnetPeer> {
+    pub async fn whois(&self, address: IpAddr) -> Result<TailnetPeer, LocalApiError> {
         let response: WhoIs = self.get(&format!("whois?addr={address}"), "whois").await?;
         Ok(response.into_peer())
     }
@@ -84,7 +114,7 @@ impl LocalApi {
     ///
     /// # Errors
     /// Fails when `tailscaled` doesn't answer or can't issue the certificate.
-    pub async fn certificate(&self, name: &str) -> Result<Vec<u8>> {
+    pub async fn certificate(&self, name: &str) -> Result<Vec<u8>, LocalApiError> {
         self.read(&format!("cert/{name}?type=cert")).await
     }
 
@@ -92,7 +122,7 @@ impl LocalApi {
     ///
     /// # Errors
     /// Fails when `tailscaled` doesn't answer or answers with an error.
-    pub async fn serve_config(&self) -> Result<ServeConfig> {
+    pub async fn serve_config(&self) -> Result<ServeConfig, LocalApiError> {
         // `null` means nothing is served.
         let config: Option<ServeConfig> = self.get("serve-config", "serve config").await?;
         Ok(config.unwrap_or_default())
