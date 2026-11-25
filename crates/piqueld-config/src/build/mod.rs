@@ -47,8 +47,6 @@ impl Default for BuildConfig {
 /// this host's Docker Engine pulls it from. Set `builder` and `repository`
 /// together, or neither: without them, images build on this host's Docker
 /// Engine.
-//
-// The TOML form of [`BuildConfig`].
 #[derive(Default, Deserialize, utoipa::ToSchema)]
 #[serde(default, deny_unknown_fields)]
 struct RawBuildConfig {

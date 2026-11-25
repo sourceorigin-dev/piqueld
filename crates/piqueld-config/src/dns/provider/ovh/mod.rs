@@ -97,8 +97,6 @@ impl PartialEq for Clock {
 impl Eq for Clock {}
 
 /// An OVH account.
-//
-// The TOML form of [`Ovh`], before its credential files are read.
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 struct RawOvh {
@@ -228,8 +226,6 @@ impl Provider for Ovh {
     ) -> Result<Vec<Found>, ApiError> {
         let subdomain = zone.relative(name);
         let list = format!("/domain/zone/{}/record?subDomain={subdomain}", zone.id);
-        // An empty `subDomain` filter may match every record of the zone, so
-        // the apex is listed by type, leaving out types piqueld never reads.
         let lists = if subdomain.is_empty() {
             APEX_TYPES
                 .map(|kind| format!("{list}&fieldType={kind}"))
@@ -254,7 +250,6 @@ impl Provider for Ovh {
                     None,
                 )
                 .await?;
-            // The filter may still let other names through.
             if record.sub_domain != subdomain {
                 continue;
             }

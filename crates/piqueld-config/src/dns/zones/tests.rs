@@ -26,7 +26,6 @@ fn longest_zone_wins_and_shared_zones_conflict() {
             Err(ZoneError::Conflict(host("shared.com"))),
         ),
         ("other.com", Err(ZoneError::NoZone(host("other.com")))),
-        // Label boundaries: `notpiquel.fr` is not inside `piquel.fr`.
         ("notpiquel.fr", Err(ZoneError::NoZone(host("notpiquel.fr")))),
     ] {
         let found = providers

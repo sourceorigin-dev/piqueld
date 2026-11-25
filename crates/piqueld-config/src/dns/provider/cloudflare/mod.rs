@@ -27,8 +27,6 @@ pub struct Cloudflare {
 }
 
 /// A Cloudflare account.
-//
-// The TOML form of [`Cloudflare`], before its token file is read.
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 struct RawCloudflare {

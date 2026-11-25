@@ -132,15 +132,14 @@ impl RuntimeDir {
     ///
     /// An existing socket is probed first: a refused connection means it is stale
     /// and is removed, a live listener is an error, and a probe error or timeout
-    /// leaves it untouched. Non-socket paths are never replaced.
+    /// leaves it untouched. Non-socket paths are never replaced. The socket is
+    /// bound under a restrictive umask, restored before yielding, and its group
+    /// is set explicitly, as a setgid directory could assign another.
     async fn bind_at(path: &Path) -> Result<UnixListener, BindError> {
         match tokio::fs::symlink_metadata(path).await {
             Ok(metadata) if metadata.file_type().is_socket() => {
                 match tokio::time::timeout(Self::PROBE_TIMEOUT, UnixStream::connect(path)).await {
                     Ok(Err(error)) if error.kind() == io::ErrorKind::ConnectionRefused => {
-                        // Writers must honor the runtime-directory lock. A separate
-                        // inode check before unlink would still race with an
-                        // uncooperative process sharing the daemon's identity.
                         tokio::fs::remove_file(path)
                             .await
                             .map_err(BindError::RemoveStale)?;
@@ -154,15 +153,11 @@ impl RuntimeDir {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(BindError::Inspect(error)),
         }
-        // Bind synchronously while the umask is restrictive, then restore it
-        // before yielding. Other threads can only receive stricter permissions.
         let previous_umask =
             rustix::process::umask(rustix::fs::Mode::RWXG | rustix::fs::Mode::RWXO);
         let bound = UnixListener::bind(path);
         rustix::process::umask(previous_umask);
         let listener = bound.map_err(BindError::Listen)?;
-        // A setgid directory can otherwise assign a different group, including
-        // in a private development directory where its group is unrestricted.
         rustix::fs::chown(path, None, Some(rustix::process::getegid()))
             .map_err(BindError::Group)?;
         tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o660))

@@ -18,8 +18,6 @@ pub use build::BuildConfig;
 use credential::Resolution;
 pub use credential::{Credential, CredentialError, CredentialFile};
 pub use listeners::ListenError;
-// The retention tables live in core so the store can read them without
-// depending on this crate.
 pub use piqueld_core::{BuildHistoryConfig, ImagesConfig, RetentionConfig};
 pub use telemetry::{Headers, HeadersError, OtlpEndpoint, TelemetryConfig};
 pub use tunnel::{TunnelConfig, TunnelConfigError, TunnelCredentials};
@@ -63,11 +61,6 @@ pub(crate) use schema_from_raw;
 /// `piqueld --config` selects another. Every setting is optional unless it
 /// says otherwise. The daemon reads the file once at startup, so restart it
 /// to apply a change.
-//
-// Each table documents its own settings and defaults. Tables are defaulted
-// field by field: a container `#[serde(default)]` would make utoipa repeat
-// each whole table as its field's default, which needs every table to be
-// `Serialize` and hides the table's own schema behind a `oneOf`.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DaemonConfig {
@@ -212,8 +205,6 @@ impl DaemonConfig {
                 format!("{name} must name a directory"),
             )?;
         }
-        // Ingress bind-mounts directories below it as Docker's
-        // `source:target:mode` strings, which these would split.
         ConfigError::require(
             !self.server.data_dir.to_string_lossy().contains([':', ',']),
             "server.data_dir must not contain ':' or ','",
@@ -415,7 +406,6 @@ fn dns_label(name: &str, value: &str) -> Result<(), ConfigError> {
 }
 
 /// The managed Caddy gateway that serves applications' routes.
-// Defaulted field by field, like `DaemonConfig`, for its subtables.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IngressConfig {
@@ -445,9 +435,6 @@ pub struct IngressConfig {
     /// for applications whose repository syncs with `webhook`, while
     /// `ingress.enabled` is set. No application may route it or its
     /// subdomains.
-    //
-    // The daemon serves webhooks on a socket in the gateway's control mount,
-    // which the public listener or the tunnel forwards the webhook path to.
     #[serde(default)]
     pub webhook_hostname: Option<piqueld_core::manifest::Hostname>,
     /// Count the requests each route serves, for each environment's
@@ -456,9 +443,6 @@ pub struct IngressConfig {
     /// daemon isn't connected to the gateway, such as while it restarts, the
     /// gateway writes its requests, visitors' addresses and paths included, to
     /// its own Docker log, which keeps up to 30 MB.
-    //
-    // Caddy writes an access log line per request to a socket in the
-    // gateway's control mount, which the daemon counts (`ingress::traffic`).
     #[serde(default = "enabled")]
     #[schema(default = true)]
     pub traffic: bool,
@@ -536,8 +520,6 @@ impl Default for PrivateIngressConfig {
 /// beside the gateway, that carries private routes' traffic to the
 /// gateway's private listener. It is separate from the daemon's own node
 /// (`[tailscale]`), so it can have its own ACLs and tags.
-//
-// The table as written: the auth key is given only as a file.
 #[derive(Deserialize, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 struct RawPrivateIngressConfig {
@@ -642,15 +624,12 @@ impl AcmeConfig {
 pub struct DnsConfig {
     /// DNS provider accounts, one `[[dns.providers]]` table each, selected by
     /// `kind`.
-    // Defaulted alone, like `DaemonConfig`'s tables: providers aren't
-    // `Serialize`, which utoipa needs to document a container default.
     #[serde(default)]
     #[schema(default = json!([]))]
     pub providers: Vec<dns::provider::DnsProviderConfig>,
 }
 
 /// Uploads of local worktrees by `piquelctl preview deploy --local`.
-// Kept apart from `[previews]`, whose limits the API also reports.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct SnapshotsConfig {

@@ -229,7 +229,6 @@ impl DirectoryKind {
         }
 
         let mut current = PathBuf::new();
-        // Relative paths start from the working directory.
         let mut parent: Option<File> = None;
         let mut components = path.components().peekable();
         let expected_uid = rustix::process::geteuid().as_raw();
@@ -444,7 +443,6 @@ mod tests {
         let path = directory.path().join("autosave.json");
         let victim = directory.path().join("piqueld.db");
         std::fs::write(&victim, "database").unwrap();
-        // The fixed temporary name earlier versions wrote through.
         std::os::unix::fs::symlink(&victim, path.with_extension("tmp")).unwrap();
 
         PrivateFile::at(&path).write("secret").await.unwrap();
@@ -458,7 +456,6 @@ mod tests {
     #[tokio::test]
     async fn private_files_may_use_the_longest_file_name() {
         let directory = tempfile::tempdir().unwrap();
-        // 255 bytes, Linux's limit, like a certificate for a long hostname.
         let path = directory.path().join(format!("{}.pem", "a".repeat(251)));
 
         PrivateFile::at(&path).write("secret").await.unwrap();
@@ -499,10 +496,8 @@ mod tests {
                 let directory = tempfile::tempdir_in(&cwd).unwrap();
                 let path = directory.path();
                 std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
-                // Validate only the owned fixture tree, including in Nix's user namespace.
                 let result = kind.prepare(path.strip_prefix(&cwd).unwrap()).await;
                 let actual_mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
-                // Restore access before assertions so the fixture can always be cleaned up.
                 std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
 
                 let error = result.unwrap_err();

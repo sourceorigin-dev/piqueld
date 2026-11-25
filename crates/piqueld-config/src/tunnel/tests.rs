@@ -25,7 +25,6 @@ fn credentials_are_read_once_enabled() {
     let credentials = tunnel.credentials.unwrap();
     assert_eq!(credentials.id.to_string(), ID);
     assert_eq!(credentials.hostname(), format!("{ID}.cfargotunnel.com"));
-    // Disabled, the file is not read at all.
     let disabled = DaemonConfig::from_toml(
         "[ingress.tunnel]\nenabled = false\ncredentials_file = '/missing/credentials.json'",
     )
