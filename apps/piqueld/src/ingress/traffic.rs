@@ -37,6 +37,8 @@ pub(super) const TRAFFIC_SOCKET: &str = "traffic.sock";
 pub(super) const ACCESS_LOGGER: &str = "http.log.access.traffic";
 /// How often counts are added to the store.
 const FLUSH_INTERVAL: Duration = Duration::from_mins(1);
+/// Pause before accepting again after the gateway's access log socket fails.
+const ACCEPT_RETRY: Duration = Duration::from_secs(1);
 /// The longest access log line read; longer ones, with huge headers, are
 /// skipped.
 const MAX_LINE: u64 = 1024 * 1024;
@@ -108,7 +110,7 @@ impl Traffic {
                     }
                     Err(error) => {
                         tracing::warn!(?error, "could not accept the gateway's access log");
-                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        tokio::time::sleep(ACCEPT_RETRY).await;
                     }
                 }
             }

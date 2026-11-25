@@ -71,6 +71,9 @@ const SHUTDOWN: &str = "cancelled by daemon shutdown";
 /// Longest wait for one ACME step, polling included: instant-acme's HTTP
 /// client has no deadline of its own.
 const ACME_TIMEOUT: Duration = Duration::from_mins(2);
+/// Longest a DNS-01 record may take to become visible before the challenge is
+/// given up.
+const PROPAGATION_TIMEOUT: Duration = Duration::from_mins(10);
 
 /// The single name a certificate covers.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -275,7 +278,7 @@ impl Certificates {
             account: tokio::sync::Mutex::new(None),
             entries: parking_lot::RwLock::new(entries),
             challenge_backoff: parking_lot::Mutex::default(),
-            propagation_timeout: Duration::from_mins(10),
+            propagation_timeout: PROPAGATION_TIMEOUT,
             #[cfg(test)]
             acme_root: None,
         }

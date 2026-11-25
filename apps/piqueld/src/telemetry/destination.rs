@@ -31,6 +31,8 @@ const BATCH_WINDOW: Duration = Duration::from_secs(1);
 const FAILING_AFTER_MS: i64 = 60_000;
 /// The longest one export may take, response included.
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
+/// The longest connecting to the collector may take.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A log record as queued for export.
 pub(super) enum LogItem {
@@ -164,7 +166,7 @@ impl Destination {
         };
         let mut builder = tonic::transport::Endpoint::from_shared(uri)
             .context("invalid telemetry endpoint")?
-            .connect_timeout(Duration::from_secs(5))
+            .connect_timeout(CONNECT_TIMEOUT)
             .timeout(EXPORT_TIMEOUT);
         if matches!(endpoint, OtlpEndpoint::Tcp(url) if url.scheme() == "https") {
             builder = builder

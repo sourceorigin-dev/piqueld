@@ -62,6 +62,17 @@ const AVAILABILITY_PERIOD: Duration = Duration::from_secs(15);
 const UNAVAILABLE_GAP_MS: i64 = 45_000;
 /// How long relaying Caddy's logs may stretch a gateway pass.
 const LOG_RELAY_TIMEOUT: Duration = Duration::from_secs(5);
+/// Longest one route probe's HTTPS request may take.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+/// How often [`Ingress::run_certificates`] issues and renews certificates.
+const CERTIFICATE_PERIOD: Duration = Duration::from_mins(1);
+/// How often [`Ingress::run_gateway`] reconciles the gateway.
+const GATEWAY_PERIOD: Duration = Duration::from_secs(10);
+/// How often [`Ingress::run_probes`] probes acknowledged routes.
+const PROBE_PERIOD: Duration = Duration::from_secs(15);
+/// Longest a probe's DNS lookup and request may take together; lookups run
+/// outside the probe client's own timeout.
+const PROBE_LOOKUP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Socket in the control mount that the gateway forwards webhook deliveries to.
 const WEBHOOK_SOCKET: &str = "webhooks.sock";
@@ -380,7 +391,7 @@ impl Ingress {
     /// redirects or proxies.
     fn probe_client() -> reqwest::ClientBuilder {
         reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
+            .timeout(PROBE_TIMEOUT)
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
     }
@@ -492,7 +503,7 @@ impl Ingress {
     /// Every minute, issues and renews the DNS-01 certificates deployed routes
     /// need. The gateway loop loads new certificates into Caddy.
     async fn run_certificates(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticker::new(Duration::from_mins(1));
+        let mut ticks = Ticker::new(CERTIFICATE_PERIOD);
         while ticks.tick(cancellation).await {
             let desired = if self.enabled {
                 match self.store.routing_table().await {
@@ -515,7 +526,7 @@ impl Ingress {
     /// Every 10s, reconciles the gateway (see [`Self::refresh`]) and relays
     /// Caddy logs. Failures are logged and retried on the next tick.
     async fn run_gateway(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticker::new(Duration::from_secs(10));
+        let mut ticks = Ticker::new(GATEWAY_PERIOD);
         while ticks.tick(cancellation).await {
             let pass = async {
                 if let Err(error) = self.refresh().await {
@@ -537,7 +548,7 @@ impl Ingress {
 
     /// Every 15s, refreshes route status by probing HTTPS for acknowledged routes.
     async fn run_probes(&self, cancellation: &CancellationToken) {
-        let mut ticks = Ticker::new(Duration::from_secs(15));
+        let mut ticks = Ticker::new(PROBE_PERIOD);
         while ticks.tick(cancellation).await {
             // Slow public DNS/TLS must never delay gateway drift repair or disablement.
             let probes = cancellation.run_until_cancelled(self.probe_routes());
@@ -868,8 +879,7 @@ impl Ingress {
         if is_private && !private.healthy {
             return ("pending", private.message.clone());
         }
-        // DNS lookups run outside the probe client's own timeout.
-        let result = tokio::time::timeout(Duration::from_secs(10), async {
+        let result = tokio::time::timeout(PROBE_LOOKUP_TIMEOUT, async {
             let hostname = route
                 .hostname
                 .served(exact)

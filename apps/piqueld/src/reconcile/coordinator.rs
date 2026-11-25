@@ -18,6 +18,8 @@ type Discovered = (bool, Vec<(StoredEnvironment, Operation)>);
 type ScanFailures = Arc<tokio::sync::Mutex<HashSet<(EnvironmentId, String)>>>;
 /// Time running operations get on shutdown to record their outcome.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+/// Longest interval between coordinator ticks, whatever the scan interval.
+const MAX_TICK: Duration = Duration::from_secs(1);
 
 impl<D: DockerApi> Controller<D> {
     /// One event loop polls environment futures and discovery concurrently. No
@@ -50,7 +52,7 @@ impl<D: DockerApi> Controller<D> {
         let mut health_active = HashSet::new();
         let mut health_jobs = FuturesUnordered::new();
         let mut discovery: Option<BoxFuture<'_, Option<Discovered>>> = None;
-        let mut tick = tokio::time::interval(Duration::from_secs(1).min(interval));
+        let mut tick = tokio::time::interval(MAX_TICK.min(interval));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut next_scan = tokio::time::Instant::now();
         let mut recovered = false;

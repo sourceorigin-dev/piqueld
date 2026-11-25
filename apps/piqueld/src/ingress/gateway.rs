@@ -51,6 +51,12 @@ pub(super) const CONFIGURATION_LABEL: &str = "io.piqueld.ingress-configuration";
 pub(super) const TMPFS: &str = "rw,noexec,nosuid,size=16777216";
 /// Log lines read from each container per relay.
 const LOG_LINES: u16 = 100;
+/// Longest a pinned image pull may take.
+const PULL_TIMEOUT: Duration = Duration::from_mins(3);
+/// Longest Caddy may take after container start to open its admin socket.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
+/// Pause between attempts to reach Caddy's admin socket during startup.
+const STARTUP_POLL: Duration = Duration::from_millis(100);
 
 impl Ingress {
     /// Ownership labels applied to the gateway container, the apps node,
@@ -593,7 +599,7 @@ impl Ingress {
         let journal = self.journal(Phase::IngressPullImage, image).await?;
         let result = journal
             .change(|docker| async move {
-                let pulled = tokio::time::timeout(Duration::from_mins(3), docker.pull_image(image));
+                let pulled = tokio::time::timeout(PULL_TIMEOUT, docker.pull_image(image));
                 Ok::<_, anyhow::Error>(
                     pulled
                         .await
@@ -896,15 +902,13 @@ impl Ingress {
                     error
                 }
             })?;
-        // Docker reports a running process before Caddy opens its admin socket.
-        // Wait for startup here instead of failing an otherwise healthy deployment.
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(STARTUP_TIMEOUT, async {
             loop {
                 match self.caddy.get("/config/").await {
                     Ok(_) => return,
                     Err(error) => tracing::debug!(?error, "waiting for Caddy administration"),
                 }
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(STARTUP_POLL).await;
             }
         })
         .await
