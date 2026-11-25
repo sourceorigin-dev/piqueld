@@ -119,33 +119,15 @@ async fn authenticate(
     }
     authorize(&auth, request, next).await
 }
-/// Authenticates one API request before running the handler. On TCP, the
-/// browser trust policy has already refused untrusted hosts and cross-site
-/// fetches (see `browser`). Refusals come before anything is spent on the
-/// request:
-///
-/// 1. Takes the credential from `Authorization: Bearer`, else the session cookie.
-/// 2. Blocks cross-site mutations and upgrades: any mismatched `Origin` is
-///    rejected, and cookie-authenticated mutations, and ceremony mutations
-///    without a bearer token that authenticates, must send the configured
-///    origin.
-/// 3. Throttles ceremony start endpoints and host operator sign-in link
-///    redemption per peer IP (429 with `Retry-After`), counting only
-///    requests that passed the checks before.
-/// 4. Without any `Authorization` or `Cookie` header, a Unix socket request
-///    from root or the daemon's own user acts as the host operator (see
-///    `UnixPeer`), also in refusals before this. Any such header, even one
-///    that is unusable or cannot be parsed, rules it out.
-/// 5. On the tailnet node's listener, looks the peer up once: afresh for a
-///    token bound to a tailnet identity, which is refused unless the peer
-///    matches it (see [`FreshTailnet::verify`]), and from the cache otherwise,
-///    only to describe the request. Bound tokens are refused on other
-///    listeners, too.
-/// 6. Inserts the resolved `Identity` and tailnet peer as extensions, on the
-///    request for handlers and on the response for outer layers, like the
-///    audit trail. Missing or invalid credentials leave the identity out; the
-///    route's access requirement then decides whether the request needs one
-///    (see `access::enforce`).
+/// Authenticates one API request before running the handler, after the browser
+/// trust policy (see `browser`) refused untrusted hosts. In order: takes the
+/// credential from `Authorization: Bearer`, else the session cookie; blocks
+/// cross-site mutations and upgrades by `Origin`; throttles ceremony starts and
+/// host operator link redemption per peer IP (429 with `Retry-After`); lets a
+/// header-less Unix socket request from root or the daemon's user act as the host
+/// operator (see `UnixPeer`); looks up the tailnet peer (see
+/// [`FreshTailnet::verify`]); and inserts the resolved `Identity` and peer as
+/// extensions, leaving `access::enforce` to decide whether one is needed.
 async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
     let authorization = request.headers().get(header::AUTHORIZATION);
     // The scheme is case-insensitive (RFC 9110).

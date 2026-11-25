@@ -259,22 +259,13 @@ impl ApplicationService {
     }
     /// Previews validated intent without pulling images or saving configuration.
     ///
-    /// Checks the generation and identity preconditions when supplied (unlike
-    /// apply, they are optional). For `environment`, or the application's only
-    /// environment when it is omitted, renders the manifest for it at its
-    /// branch (see [`RenderContext::preview`]) and, for a preview, bounds it by
-    /// `[previews]` with a warning per bound, builds a runtime plan against its
-    /// current observation, and diffs it against its latest deployment's rendered
-    /// manifest (no baseline after a delete). Without an environment and with
-    /// several, diffs the saved manifest without rendering or a runtime plan,
-    /// since apply deploys none of them. A new application renders for its
-    /// first environment that builds. An `environment` of another application
-    /// is `NotFound`. Lists how saving it would change the application's
-    /// environments, and the ones it no longer declares. Like a deployment, the rendering fails with
-    /// `secret_access_denied` when it mounts a stored secret the environment
-    /// may not use.
+    /// Checks the generation and identity preconditions when supplied. Renders the
+    /// manifest for `environment` (or the only one) at its branch, bounds a preview
+    /// by `[previews]`, plans it against its observation, and diffs it against its
+    /// latest deployment; with several environments and none given, diffs the saved
+    /// manifest only. Lists how saving would change the environments.
     /// # Errors
-    /// Returns precondition, rendering, secret access, storage, or runtime errors.
+    /// Returns precondition, rendering, `secret_access_denied`, storage, or runtime errors.
     /// # Panics
     /// Panics if the built-in preview application ID is invalid.
     #[expect(

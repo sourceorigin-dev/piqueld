@@ -1655,20 +1655,13 @@ impl Client {
     /*Deploys a snapshot of a local worktree to a preview
 
     The body is a Git bundle of one snapshot commit, at most `[snapshots]
-    max_upload_bytes`: either thin, needing commits the application's
-    repository has (its base and, for merges, ancestors of it), which the
-    daemon fetches, or complete.
-    It is verified and unbundled into a repository of its own. The preview
-    of `branch` and `slot` is created first if needed, as `createPreview`
-    does, and deploys the snapshot's manifest, building `"self"` sources from
-    it. Fails with 409 `preview_requires_repository` or
-    `preview_limit_reached`; 413 `snapshot_too_large` when the bundle exceeds
-    the upload limit or the snapshot, or the history it needs, exceeds
-    `[checkouts] max_bytes`; 422 `snapshot_invalid`; or 422
-    `snapshot_base_unavailable`, whose `details.prerequisites` names the
-    commits it needs; upload a complete bundle then. A body that stalls for
-    30 seconds, or an upload not received within 10 minutes, fails with 408
-    `snapshot_timed_out`. Needs no application revision.
+    max_upload_bytes`, thin or complete. It is verified and unbundled into a
+    repository of its own. The preview of `branch` and `slot` is created first if
+    needed, as `createPreview` does, and deploys the snapshot's manifest. Fails
+    with 409 `preview_requires_repository` or `preview_limit_reached`; 413
+    `snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,
+    whose `details.prerequisites` names the commits a complete bundle must
+    contain; or 408 `snapshot_timed_out`. Needs no application revision.
 
     Sends a `POST` request to `/api/v1/applications/{id}/previews/local`
 
@@ -2541,19 +2534,14 @@ impl Client {
     /*Creates or replaces a value in an application's secret store
 
     The body is the raw value (`application/octet-stream`, 1–512000 bytes);
-    another content type fails with 415 and a body over the 2 MiB request
-    limit with 413. `X-Expected-Generation` must be 0 to create a secret, or its current
-    generation to replace it; a mismatch fails with 409. Running services keep
-    their value until the next deployment. Supplying `environments` (`all`, or
-    environment IDs) replaces the access list, with `previews` (default
-    `false`); `previews` alone fails with 400. Without them, a new secret
-    allows every environment and no previews, and an existing one keeps its
-    list. `expected_environments` and `expected_previews`, the access the
-    caller read, fail the upload with 409 `secret_access_conflict` once
-    someone changed it. Names the
-    saved manifest or an environment's last fetched one declares as generated
-    secrets fail with 422 `manifest_validation_failed` and `secret_name_conflict`
-    in `details.errors`. The response carries metadata only.
+    another content type fails with 415 and a body over the request limit with
+    413. `X-Expected-Generation` must be 0 to create a secret, or its current
+    generation to replace it (409 otherwise). Running services keep their value
+    until the next deployment. `environments` (`all`, or IDs) with `previews`
+    replaces the access list; a new secret otherwise allows every environment and
+    no previews. `expected_environments` and `expected_previews` fail with 409
+    `secret_access_conflict` once someone changed the access. Names a manifest
+    generates fail with 422. The response carries metadata only.
 
     Sends a `PUT` request to `/api/v1/applications/{id}/secrets/{name}`
 
@@ -8844,17 +8832,12 @@ impl Client {
     configuration, or the repository manifest at the environment's branch (or
     the one-time `branch`/`commit`)
 
-    A Git source whose commit and build settings an earlier build of the
-    application already built reuses that build's image while it is still
-    present; `rebuild=true` builds every Git source again.
-
-    Returns 202 with the accepted durable operation. Requires
-    `expected_generation` unless `force=true`; a stale generation fails with 409.
-    A promoted environment fails with 409 `environment_promoted`; it deploys
-    only by promotion. `branch` or `commit` for an environment without a
-    repository branch fails with 422.
-    Repeating a request with the same `Idempotency-Key` returns the original
-    response.
+    A Git source an earlier build already built reuses that image while it is
+    present; `rebuild=true` builds every Git source again. Returns 202 with the
+    accepted operation. Requires `expected_generation` unless `force=true` (stale:
+    409). A promoted environment fails with 409 `environment_promoted`; `branch`
+    or `commit` without a repository branch fails with 422. Repeating an
+    `Idempotency-Key` returns the original response.
 
     Sends a `POST` request to `/api/v1/environments/{id}/deploy`
 
@@ -9289,17 +9272,13 @@ impl Client {
     }
     /*Promotes a release into a promoted environment
 
-    Deploys the release of the source environment's current deployment
-    (which must be `deployment` when given), or an earlier `release`, without
-    building or fetching. The release is pinned at acceptance: its own
-    manifest is rendered with this environment's `[spec.environments.<name>]`
-    block and variables, and its images deployed as recorded. Refused unless
-    the source deployment is current and succeeded and its services are
-    healthy now (`promotion_source_not_ready`, `promotion_source_changed`),
-    the release's build inputs render as they did for it
-    (`release_incompatible`), its images are present or can be pulled again
-    (`image_unavailable`), and every secret it mounts exists and allows this
-    environment (`secrets_unavailable`, listing all of them). The inspected
+    Deploys the release of the source environment's current deployment (which
+    must be `deployment` when given), or an earlier `release`, without building
+    or fetching. The release's manifest is rendered with this environment's
+    `[spec.environments.<name>]` block and variables, and its images deployed as
+    recorded. Refused with `promotion_source_not_ready`, `promotion_source_changed`,
+    `release_incompatible`, `image_unavailable` or `secrets_unavailable` when the
+    source, build inputs, images or mounted secrets do not allow it. The inspected
     application `expected_generation` goes in the JSON body.
 
     Sends a `POST` request to `/api/v1/environments/{id}/promote`
@@ -9642,16 +9621,13 @@ impl Client {
     }
     /*Restores an earlier deployment of an environment exactly
 
-    Deploys `deployment` again as it ran: its rendered manifest, its images
-    and the secret versions it pinned, recorded as a new deployment whose
-    origin names it, which becomes the maintained target. Nothing is rendered,
-    fetched or built, and jobs never run. Volume contents and migrations are
-    not reverted. Refused unless it succeeded (`deployment_not_restorable`),
-    its images are present or can be pulled again by digest
-    (`image_unavailable`), and the secret versions it pinned still exist
-    (`restore_secrets_unavailable`, listing them). Needs no application
-    revision. Previews restore through `restorePreviewDeployment`. Repeating a
-    request with the same `Idempotency-Key` returns the original response.
+    Deploys `deployment` again as it ran: its rendered manifest, images and pinned
+    secret versions, recorded as a new deployment that becomes the maintained
+    target. Nothing is rendered, fetched or built, and jobs never run. Volumes are
+    not reverted. Refused unless it succeeded (`deployment_not_restorable`), its
+    images are available (`image_unavailable`) and its secret versions still exist
+    (`restore_secrets_unavailable`). Needs no application revision. Previews
+    restore through `restorePreviewDeployment`.
 
     Sends a `POST` request to `/api/v1/environments/{id}/restore`
 
@@ -10650,14 +10626,10 @@ impl Client {
     400 and pruned history with 410 before the stream opens. The stream emits:
     - `event` messages with `id: v1:<event-id>` for each matching event;
     - ID-only messages that advance the resume position past filtered-out events;
-    - a final `history_expired` or `stream_error` message, after which the
-      stream ends and history must be reloaded before reconnecting;
-    - a final `access_ended` message whose data is the `ErrorBody` of the
-      request that would now be refused, once the caller loses access (see
-      docs/user/accounts/permissions.md#when-access-changes-take-effect for
-      how soon).
-
-    The stream also ends, without a message, when the daemon shuts down.
+    - a final `history_expired`, `stream_error` or `access_ended` message (the
+      last carries the `ErrorBody` the caller would now get), after which the
+      client reloads history before reconnecting. It also ends, without a
+      message, when the daemon shuts down.
 
     Sends a `GET` request to `/api/v1/events/stream`
 
@@ -11893,22 +11865,15 @@ impl Client {
     }
     /*Recovers from a lost secret master key
 
-    Discards every application's stored secret values, every environment's
-    generated secret values, and the repository webhook secrets (applications
-    generate new ones), and deletes the notification destinations, whose URLs
-    it encrypts; metadata and running services are kept. Only a lost key
-    is recovered: while something is encrypted (the key verifier, a value or a
-    webhook secret), one that is missing, does not hold 32 bytes, or decrypts
-    none of it. Fails with 409 while the key decrypts the verifier, when there
-    is no verifier but it decrypts a value or webhook secret, or when nothing
-    is encrypted and the key file is missing or loads. When nothing is
-    encrypted but the key file does not hold 32 bytes, moves it aside and
-    succeeds with nothing discarded. Fails with 503 `secret_storage_unavailable`, discarding
-    nothing, when it decrypts a value or webhook secret but not a corrupt
-    verifier, or can't be read for another reason, such as an I/O error or a
-    key file that is not private.
-    The next value write generates a new key. Accounts need a passkey
-    sign-in within the last 2 minutes; API tokens cannot recover the key.
+    Discards every stored and generated secret value and the repository webhook
+    secrets, and deletes the notification destinations, whose URLs the key
+    encrypts; metadata and running services are kept. Only a lost key is
+    recovered: while something is encrypted, one that is missing, not 32 bytes, or
+    decrypts none of it. Fails with 409 otherwise, and with 503
+    `secret_storage_unavailable`, discarding nothing, when the key cannot be read.
+    When nothing is encrypted and the key file is not 32 bytes, moves it aside.
+    The next value write generates a new key. Accounts need a passkey sign-in
+    within the last 2 minutes; API tokens cannot recover the key.
 
     Sends a `POST` request to `/api/v1/system/secrets/recover-key`
 

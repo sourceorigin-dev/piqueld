@@ -1,18 +1,11 @@
-//! Control-plane backups. Migrations only go forward, so before the daemon
-//! migrates its database it writes the state it is about to change into
-//! `<data_dir>/backups/pre-<schema>-<ms>`, a directory holding:
+//! Control-plane backups. Before the daemon migrates its database it writes the
+//! state it is about to change into `<data_dir>/backups/pre-<schema>-<ms>`:
 //!
-//! - `piqueld.db`, a consistent snapshot of the database that passes its
-//!   integrity check;
+//! - `piqueld.db`, a consistent snapshot that passes its integrity check;
 //! - `secrets.key`, when present, proven to decrypt the snapshot's secrets;
-//! - `tailscale/` and `ingress/`, the tailnet node's and the ingress
-//!   gateway's state, as regular files and directories, without the
-//!   gateway's runtime sockets in `ingress/control`;
+//! - `tailscale/` and `ingress/`, the tailnet node's and gateway's state, without
+//!   the gateway's runtime sockets;
 //! - `backup.json`, the [`Manifest`] describing it.
-//!
-//! Everything else in the data directory is left out: caches recreated on
-//! start, local-preview bundles in `snapshots/`, retired keys, and earlier
-//! backups.
 //!
 //! `piqueld restore` puts a backup back into an empty data directory (see
 //! [`Backups::restore`]).

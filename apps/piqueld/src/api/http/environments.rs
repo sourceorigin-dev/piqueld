@@ -336,17 +336,13 @@ fn selection(request: &PromoteRequest) -> Result<PromotionSelection, ApiError> {
 
 /// Promotes a release into a promoted environment.
 ///
-/// Deploys the release of the source environment's current deployment
-/// (which must be `deployment` when given), or an earlier `release`, without
-/// building or fetching. The release is pinned at acceptance: its own
-/// manifest is rendered with this environment's `[spec.environments.<name>]`
-/// block and variables, and its images deployed as recorded. Refused unless
-/// the source deployment is current and succeeded and its services are
-/// healthy now (`promotion_source_not_ready`, `promotion_source_changed`),
-/// the release's build inputs render as they did for it
-/// (`release_incompatible`), its images are present or can be pulled again
-/// (`image_unavailable`), and every secret it mounts exists and allows this
-/// environment (`secrets_unavailable`, listing all of them). The inspected
+/// Deploys the release of the source environment's current deployment (which
+/// must be `deployment` when given), or an earlier `release`, without building
+/// or fetching. The release's manifest is rendered with this environment's
+/// `[spec.environments.<name>]` block and variables, and its images deployed as
+/// recorded. Refused with `promotion_source_not_ready`, `promotion_source_changed`,
+/// `release_incompatible`, `image_unavailable` or `secrets_unavailable` when the
+/// source, build inputs, images or mounted secrets do not allow it. The inspected
 /// application `expected_generation` goes in the JSON body.
 #[utoipa::path(post,path="/api/v1/environments/{id}/promote",operation_id="promoteEnvironment",
     params(("id"=String,Path),ForceQuery,IdempotencyKey),
@@ -496,16 +492,13 @@ pub(super) async fn start(
 
 /// Restores an earlier deployment of an environment exactly.
 ///
-/// Deploys `deployment` again as it ran: its rendered manifest, its images
-/// and the secret versions it pinned, recorded as a new deployment whose
-/// origin names it, which becomes the maintained target. Nothing is rendered,
-/// fetched or built, and jobs never run. Volume contents and migrations are
-/// not reverted. Refused unless it succeeded (`deployment_not_restorable`),
-/// its images are present or can be pulled again by digest
-/// (`image_unavailable`), and the secret versions it pinned still exist
-/// (`restore_secrets_unavailable`, listing them). Needs no application
-/// revision. Previews restore through `restorePreviewDeployment`. Repeating a
-/// request with the same `Idempotency-Key` returns the original response.
+/// Deploys `deployment` again as it ran: its rendered manifest, images and pinned
+/// secret versions, recorded as a new deployment that becomes the maintained
+/// target. Nothing is rendered, fetched or built, and jobs never run. Volumes are
+/// not reverted. Refused unless it succeeded (`deployment_not_restorable`), its
+/// images are available (`image_unavailable`) and its secret versions still exist
+/// (`restore_secrets_unavailable`). Needs no application revision. Previews
+/// restore through `restorePreviewDeployment`.
 #[utoipa::path(post,path="/api/v1/environments/{id}/restore",operation_id="restoreDeployment",
     params(("id"=String,Path),IdempotencyKey),
     request_body=RestoreRequest,

@@ -519,15 +519,13 @@ impl ApplicationService {
         Ok(())
     }
 
-    /// Accepts a mutation from `author` and records its receipt, and its
-    /// audit record when it comes from an API request, in the same
-    /// transaction.
+    /// Accepts a mutation from `author` and records its receipt, and its audit
+    /// record when it comes from an API request, in the same transaction.
     /// `expected_generation` is the last inspected intent revision: zero requires
-    /// absence. Mutations other than reconcile require a revision; saves
-    /// also require the inspected identity when the revision is nonzero. An
-    /// explicit force override bypasses revision and name-based identity checks.
-    /// `request_id` is the caller's idempotency key, not an operation ID: replay
-    /// returns the original response, including for changes that start no operation.
+    /// absence. Mutations other than reconcile require a revision; saves also
+    /// require the inspected identity when the revision is nonzero. A force override
+    /// bypasses both checks. `request_id` is the caller's idempotency key: replay
+    /// returns the original response.
     /// # Errors
     /// Returns validation, conflict, or persistence errors.
     pub async fn accept(

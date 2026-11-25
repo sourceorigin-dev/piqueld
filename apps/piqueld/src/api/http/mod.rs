@@ -441,18 +441,15 @@ async fn record_latency(
 /// Middleware that runs the request inside a `request_context` span and
 /// post-processes JSON error responses.
 ///
-/// 1. Extracts the environment ID from `/api/v1/environments/{id}` and
-///    `/api/v1/previews/{id}` routes.
+/// 1. Extracts the environment ID from environment and preview routes.
 /// 2. Runs the inner handler.
-/// 3. For 4xx/5xx JSON `ErrorBody` responses, rewrites `request_id` to the
+/// 3. Rewrites the `request_id` of 4xx/5xx `ErrorBody` responses to the
 ///    `x-request-id` value.
-/// 4. For 5xx responses (except `configuration_unavailable`, `server_busy` and
-///    `tailnet_unavailable`), records a
-///    diagnostic (the handler's, or a synthesized one) and exposes its ID as
-///    `details.diagnostic_id`. Storage failures (`storage_unavailable`,
-///    `schema_mismatch`) are only logged, since the store cannot persist them.
+/// 4. Records a diagnostic for 5xx responses, except `configuration_unavailable`,
+///    `server_busy`, `tailnet_unavailable` and storage failures, and exposes its
+///    ID as `details.diagnostic_id`.
 ///
-/// Non-error and non-JSON responses pass through untouched.
+/// Other responses pass through untouched.
 async fn bind_error_request_id(
     axum::extract::State(state): axum::extract::State<ApiState>,
     matched: Option<MatchedPath>,

@@ -93,17 +93,12 @@ impl DeployQuery {
 /// configuration, or the repository manifest at the environment's branch (or
 /// the one-time `branch`/`commit`).
 ///
-/// A Git source whose commit and build settings an earlier build of the
-/// application already built reuses that build's image while it is still
-/// present; `rebuild=true` builds every Git source again.
-///
-/// Returns 202 with the accepted durable operation. Requires
-/// `expected_generation` unless `force=true`; a stale generation fails with 409.
-/// A promoted environment fails with 409 `environment_promoted`; it deploys
-/// only by promotion. `branch` or `commit` for an environment without a
-/// repository branch fails with 422.
-/// Repeating a request with the same `Idempotency-Key` returns the original
-/// response.
+/// A Git source an earlier build already built reuses that image while it is
+/// present; `rebuild=true` builds every Git source again. Returns 202 with the
+/// accepted operation. Requires `expected_generation` unless `force=true` (stale:
+/// 409). A promoted environment fails with 409 `environment_promoted`; `branch`
+/// or `commit` without a repository branch fails with 422. Repeating an
+/// `Idempotency-Key` returns the original response.
 #[utoipa::path(post,path="/api/v1/environments/{id}/deploy",operation_id="deployEnvironment",
     params(("id"=String,Path),DeployQuery,IdempotencyKey),
     responses((status=202,description="Deployment accepted",body=Envelope<AcceptedOperation>),

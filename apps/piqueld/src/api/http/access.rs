@@ -2,18 +2,13 @@
 //!
 //! Every API route is registered through `public!`, `authenticated!`, or
 //! `granted!`, which record the requirement on its `OpenAPI` operation as
-//! `x-piqueld-access`. Building the router fails for any operation without
-//! one, so routes are denied unless they declare who may call them, and the
-//! published contract documents each requirement. [`enforce`] checks every
-//! API request against the resulting table after authentication.
+//! `x-piqueld-access`. Building the router fails for any operation without one.
+//! [`enforce`] checks every API request against that table after authentication.
 //!
-//! On `/api/v1/applications/{id}` routes, application permissions are checked
-//! on that application. On `/api/v1/environments/{id}`, `/api/v1/previews/{id}`
-//! and `/api/v1/builds/{id}` routes they are checked on the application owning
-//! the environment, preview or build's environment, where previews
-//! permissions also apply when it is a preview (see `Target::Preview`):
-//! callers who cannot read it get 404, as if it did not exist. Elsewhere they only require the permission on some application,
-//! and handlers narrow results to the applications the caller may see.
+//! Application permissions are checked on the application a route names, or
+//! owning the environment, preview or build it names (callers who cannot read it
+//! get 404). Elsewhere they require the permission on some application, and
+//! handlers narrow results to the applications the caller may see.
 use super::{ApiError, ApiState, ui};
 use crate::auth::{AuthError, Identity};
 use axum::{

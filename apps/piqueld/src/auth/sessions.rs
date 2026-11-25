@@ -645,17 +645,10 @@ impl Auth {
     /// token once approved. Completion removes the request so it cannot be reused;
     /// expired or unknown codes are unauthorized.
     ///
-    /// Issuing does not hold the pending logins while storage writes: the
-    /// login stays in place, marked as issuing, so a concurrent poll answers
-    /// `authorization_pending`, and only the issuing poll completes it.
-    ///
-    /// The first poll after approval prepares the session (see [`Prepared`])
-    /// and stores it. A poll that fails or is cancelled leaves the login to
-    /// the next one, which stores nothing: it answers the prepared session
-    /// if it is stored and live, e.g. committed just before the cancellation.
-    /// Otherwise it cannot tell a session never stored from one revoked since,
-    /// so it refuses the login (401) rather than resurrect a revoked one; the
-    /// CLI then signs in again.
+    /// The first poll after approval prepares the session (see [`Prepared`]) and
+    /// stores it, while concurrent polls answer `authorization_pending`. After a
+    /// failed or cancelled poll, the next answers the prepared session if it is
+    /// stored and live, else refuses the login (401) and the CLI signs in again.
     pub(crate) async fn device_poll(
         &self,
         code: &str,
