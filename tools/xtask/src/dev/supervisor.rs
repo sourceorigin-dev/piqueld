@@ -28,6 +28,12 @@ use crate::process::{Job, Shutdown};
 /// The daemon allows ten seconds to finish in-flight requests.
 const GRACE: Duration = Duration::from_secs(11);
 
+/// How often a launch or a pid-file lock attempt checks dev.pid again.
+const PID_POLL: Duration = Duration::from_millis(50);
+
+/// How often a stop checks whether the supervisor has exited.
+const STOP_POLL: Duration = Duration::from_millis(100);
+
 /// Who holds an instance's dev.pid, as [`Supervisor::holder`] reads it.
 pub(super) enum Holder {
     /// No supervisor runs.
@@ -124,7 +130,7 @@ impl Supervisor {
                     return Ok(file);
                 }
                 Err(TryLockError::WouldBlock) => {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    tokio::time::sleep(PID_POLL).await;
                 }
                 Err(TryLockError::Error(error)) => {
                     return Err(error).with_context(|| format!("lock {}", path.display()));
@@ -157,7 +163,7 @@ impl Supervisor {
                 }
                 bail!("the supervisor exited ({status})");
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(PID_POLL).await;
         }
         Ok(())
     }
@@ -172,7 +178,7 @@ impl Supervisor {
             if self.running().is_none() {
                 return Ok(());
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(STOP_POLL).await;
         }
         bail!("the instance did not stop within 15 seconds")
     }

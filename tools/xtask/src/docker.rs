@@ -28,6 +28,18 @@ const DIND_IMAGE: &str = "mirror.gcr.io/library/docker:29.6.2-dind@sha256:bfec1f
 /// Hub when it lacks an image.
 const REGISTRY_MIRROR: &str = "https://mirror.gcr.io";
 
+/// How often to check that the Docker-in-Docker engine answers.
+const DIND_POLL: Duration = Duration::from_secs(1);
+
+/// How often to check that a container accepts connections on its port.
+const PORT_POLL: Duration = Duration::from_millis(250);
+
+/// How long a container may take to become ready, requests included.
+const READY_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long reading a container's output may take after it failed to become ready.
+const LOGS_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Where a Docker-in-Docker engine listens inside its container, onto which
 /// [`Engine::dind_container`] bind-mounts a private host directory.
 const DIND_SOCKET_DIR: &str = "/piqueld-socket";
@@ -227,12 +239,9 @@ impl Engine {
              && chown {uid} {DIND_SOCKET_DIR}/docker.sock",
             uid = rustix::process::getuid().as_raw()
         );
-        self.wait_until(
-            container,
-            "the Docker daemon",
-            Duration::from_secs(1),
-            || async { self.exec(container, &["sh", "-c", &ready]).await.ok() == Some(0) },
-        )
+        self.wait_until(container, "the Docker daemon", DIND_POLL, || async {
+            self.exec(container, &["sh", "-c", &ready]).await.ok() == Some(0)
+        })
         .await
     }
 
@@ -240,7 +249,7 @@ impl Engine {
     /// connections on `port` on loopback.
     pub(crate) async fn wait_for_port(&self, container: &str, port: u16) -> Result<()> {
         let what = format!("a listener on port {port}");
-        self.wait_until(container, &what, Duration::from_millis(250), || async {
+        self.wait_until(container, &what, PORT_POLL, || async {
             TcpStream::connect((Ipv4Addr::LOCALHOST, port))
                 .await
                 .is_ok()
@@ -270,14 +279,14 @@ impl Engine {
                 tokio::time::sleep(interval).await;
             }
         };
-        let failure = match tokio::time::timeout(Duration::from_secs(60), poll).await {
+        let failure = match tokio::time::timeout(READY_TIMEOUT, poll).await {
             Ok(Ok(true)) => return Ok(()),
             Ok(Ok(false)) => format!("container {container} exited before {what} was ready"),
             Ok(Err(error)) => return Err(error),
             Err(_) => format!("{what} in container {container} was not ready within 60 seconds"),
         };
         // The engine may be what stalled, so reading the output is bounded too.
-        if tokio::time::timeout(Duration::from_secs(10), self.print_logs(container))
+        if tokio::time::timeout(LOGS_TIMEOUT, self.print_logs(container))
             .await
             .is_err()
         {

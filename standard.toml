@@ -113,11 +113,6 @@ paths = [
   "apps/piqueld/src/reconcile/mod.rs",
   "apps/piqueld/src/tailnet/node.rs",
   "apps/piqueld/src/telemetry/destination.rs",
-  "tools/xtask/src/dev/mod.rs",
-  "tools/xtask/src/dev/supervisor.rs",
-  "tools/xtask/src/docker.rs",
-  "tools/xtask/src/docker_test.rs",
-  "tools/xtask/src/process.rs",
 ]
 
 [deviations.recipes]

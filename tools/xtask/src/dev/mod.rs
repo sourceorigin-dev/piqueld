@@ -27,6 +27,12 @@ use crate::Workspace;
 use crate::docker::Engine;
 use supervisor::{Holder, Supervisor};
 
+/// How long a query of the daemon's API may take.
+const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How often `just dev wait` checks the instance.
+const WAIT_POLL: Duration = Duration::from_secs(2);
+
 const CONFIG_FILE: &str = "piqueld.local.toml";
 /// Held every user's runtime directories before [`Instance::runtime_root`];
 /// `just dev config --force` moves a configuration that still uses it.
@@ -516,7 +522,7 @@ auto_initialize_swarm = true
     /// status is served before initial setup, unlike the socket's /health.
     async fn public_url(&self) -> Option<String> {
         let client = match piqueld_client::Client::unix(self.socket()) {
-            Ok(client) => client.with_timeout(Duration::from_secs(2)),
+            Ok(client) => client.with_timeout(QUERY_TIMEOUT),
             Err(error) => {
                 eprintln!(
                     "could not query the development instance: {:#}",
@@ -558,7 +564,7 @@ auto_initialize_swarm = true
                     }
                 }
             }
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            tokio::time::sleep(WAIT_POLL).await;
         }
         bail!("not ready after {timeout} seconds; see `just dev status`")
     }
