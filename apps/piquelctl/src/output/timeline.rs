@@ -13,7 +13,7 @@
 
 use super::{
     Escaped, Event, HumanWriter,
-    progress::{Backend, Output, Progress, ProgressOutput, TaskOutcome},
+    progress::{Backend, Output, Progress, ProgressOutput, Row, SPINNER_TICK, TaskOutcome},
 };
 use crate::support::now_ms;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
@@ -44,13 +44,12 @@ pub(crate) struct TimelineProgress {
     /// What the terminal row draws, shared with its draw callback.
     view: Arc<Mutex<View>>,
     /// The redrawn row, on terminals only.
-    bar: Option<ProgressBar>,
+    row: Row,
     /// In line modes, the operation's state last printed.
     printed_state: Option<OperationState>,
     /// In line modes, how each started step, by its action, was last
     /// printed.
     printed: HashMap<String, Printed>,
-    finished: bool,
 }
 
 impl TimelineProgress {
@@ -86,7 +85,7 @@ impl TimelineProgress {
                         .expect("the literal template uses only its own key")
                         .with_key("timeline", draw),
                 );
-                bar.enable_steady_tick(Duration::from_millis(100));
+                bar.enable_steady_tick(SPINNER_TICK);
                 Some(bar)
             }
             _ => None,
@@ -94,10 +93,9 @@ impl TimelineProgress {
         Self {
             output,
             view,
-            bar,
+            row: Row::new(bar),
             printed_state: None,
             printed: HashMap::new(),
-            finished: false,
         }
     }
 
@@ -106,7 +104,7 @@ impl TimelineProgress {
     /// changed since last printed: its state, retries, or a rollout's new
     /// tasks running.
     pub(crate) fn update(&mut self, timeline: &Timeline) {
-        if self.finished {
+        if self.row.is_finished() {
             return;
         }
         if matches!(self.output.backend, Backend::Plain | Backend::Json) {
@@ -164,14 +162,10 @@ impl TimelineProgress {
     /// operation-01: succeeded · 52.3 s (usual 48.0 s)
     /// ```
     pub(crate) fn finish(&mut self, outcome: TaskOutcome, failure: Option<&str>) {
-        if self.finished {
+        if self.row.is_finished() {
             return;
         }
-        self.finished = true;
-        // Cleared before the view is locked: clearing draws the row.
-        if let Some(bar) = &self.bar {
-            bar.finish_and_clear();
-        }
+        self.row.finish();
         let now_ms = now_ms();
         let (label, total, rows) = {
             let view = self.view.lock();
@@ -204,7 +198,7 @@ impl TimelineProgress {
 impl Progress for TimelineProgress {
     fn show(&self, message: &str) {
         let mut view = self.view.lock();
-        if self.finished || view.waiting.as_deref() == Some(message) {
+        if self.row.is_finished() || view.waiting.as_deref() == Some(message) {
             return;
         }
         view.waiting = Some(message.to_owned());
@@ -212,16 +206,6 @@ impl Progress for TimelineProgress {
         drop(view);
         if !matches!(self.output.backend, Backend::Terminal(_)) {
             self.output.line(&label, message, None);
-        }
-    }
-}
-
-impl Drop for TimelineProgress {
-    fn drop(&mut self) {
-        if !self.finished
-            && let Some(bar) = &self.bar
-        {
-            bar.finish_and_clear();
         }
     }
 }

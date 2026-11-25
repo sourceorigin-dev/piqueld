@@ -92,7 +92,7 @@ impl ProgressOutput {
                     ),
                 );
                 bar.set_prefix(Escaped(label).to_string());
-                bar.enable_steady_tick(Duration::from_millis(100));
+                bar.enable_steady_tick(SPINNER_TICK);
                 Some(bar)
             }
             Backend::Plain | Backend::Json => {
@@ -105,10 +105,9 @@ impl ProgressOutput {
             state: Arc::new(Mutex::new(Task {
                 output: Arc::clone(&self.inner),
                 label: label.to_owned(),
-                bar,
+                row: Row::new(bar),
                 started: Instant::now(),
                 last: None,
-                finished: false,
             })),
         }
     }
@@ -186,13 +185,13 @@ impl ProgressTask {
     /// mode prints only transitions. No-op after finish or when hidden.
     pub(crate) fn update(&self, message: &str) {
         let mut task = self.state.lock();
-        if task.finished || matches!(task.output.backend, Backend::Hidden) {
+        if task.row.is_finished() || matches!(task.output.backend, Backend::Hidden) {
             return;
         }
         if task.last.as_deref() == Some(message) {
             return;
         }
-        if let Some(bar) = &task.bar {
+        if let Some(bar) = task.row.bar() {
             bar.set_message(Escaped(message).to_string());
         } else {
             task.output.line(&task.label, message, None);
@@ -207,13 +206,10 @@ impl ProgressTask {
     /// ```
     pub(crate) fn finish(&self, outcome: TaskOutcome, message: &str) {
         let mut task = self.state.lock();
-        if task.finished {
+        if task.row.is_finished() {
             return;
         }
-        task.finished = true;
-        if let Some(bar) = &task.bar {
-            bar.finish_and_clear();
-        }
+        task.row.finish();
         task.output.line(
             &task.label,
             &format!("{message} [{}s]", task.started.elapsed().as_secs()),
@@ -226,7 +222,7 @@ impl ProgressTask {
     #[cfg(test)]
     pub(super) fn stop_ticking(&self) {
         let task = self.state.lock();
-        if let Some(bar) = &task.bar {
+        if let Some(bar) = task.row.bar() {
             bar.disable_steady_tick();
         }
     }
@@ -246,24 +242,56 @@ impl ProgressTask {
     }
 }
 
+/// How often a terminal spinner row redraws.
+pub(super) const SPINNER_TICK: Duration = Duration::from_millis(100);
+
+/// A terminal row that clears itself when finished or dropped unfinished.
+pub(super) struct Row {
+    /// The spinner, present only on the terminal backend.
+    bar: Option<ProgressBar>,
+    finished: bool,
+}
+
+impl Row {
+    pub(super) fn new(bar: Option<ProgressBar>) -> Self {
+        Self {
+            bar,
+            finished: false,
+        }
+    }
+
+    pub(super) fn bar(&self) -> Option<&ProgressBar> {
+        self.bar.as_ref()
+    }
+
+    pub(super) fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    /// Clears the row; later calls do nothing.
+    pub(super) fn finish(&mut self) {
+        if !self.finished {
+            self.finished = true;
+            if let Some(bar) = &self.bar {
+                bar.finish_and_clear();
+            }
+        }
+    }
+}
+
+impl Drop for Row {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
 /// Shared state behind every clone of one `ProgressTask`.
 struct Task {
     output: Arc<Output>,
     /// Task label, escaped when rendered for humans.
     label: String,
-    /// Spinner row, present only on the terminal backend.
-    bar: Option<ProgressBar>,
+    row: Row,
     started: Instant,
     /// Last message, used to suppress duplicate updates.
     last: Option<String>,
-    finished: bool,
-}
-impl Drop for Task {
-    fn drop(&mut self) {
-        if !self.finished
-            && let Some(bar) = &self.bar
-        {
-            bar.finish_and_clear();
-        }
-    }
 }
