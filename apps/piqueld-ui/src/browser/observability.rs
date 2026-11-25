@@ -752,7 +752,6 @@ fn check_row(check: SystemCheck) -> AnyView {
 
 /// Metric tiles and counters of the daemon process.
 fn resource_stats(stats: &DaemonStats) -> AnyView {
-    // How long the oldest of a queue has waited, or `empty`.
     let waited = |age: Option<i64>, empty: &str| {
         age.map_or_else(
             || empty.to_owned(),

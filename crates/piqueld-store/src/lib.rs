@@ -959,10 +959,10 @@ impl Default for Writers {
 
 impl Writers {
     /// Waits for this writer's turn. A writer that finds the queue busy is
-    /// counted as waiting until its turn, and its wait is recorded.
+    /// counted as waiting until its turn, and its wait is recorded. The queue
+    /// is fair, so it is free only when nobody waits for it.
     async fn lock(&self) -> Writer<'_> {
         let written = &self.written;
-        // The queue is fair: it is free only when nobody waits for it.
         if let Ok(turn) = self.queue.try_lock() {
             return Writer {
                 _turn: turn,

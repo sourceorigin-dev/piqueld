@@ -1656,7 +1656,8 @@ async fn requested_webhook_secret_rotations_commit_with_their_audit_record() {
 }
 
 /// Statistics count the writes that waited for their turn and how long, and
-/// how long the oldest queued operation has waited.
+/// how long the oldest queued operation, which a deploy queues once the held
+/// turn is released, has waited.
 #[tokio::test]
 async fn daemon_stats_report_write_waits_and_queue_ages() {
     let (_temp, store) = Store::temporary().await;
@@ -1666,7 +1667,6 @@ async fn daemon_stats_report_write_waits_and_queue_ages() {
         tokio::time::sleep(Duration::from_millis(20)).await;
         drop(writer);
     };
-    // Deploying queues its operation, once the held turn is released.
     let (saved, ()) = tokio::join!(
         store.save_template(template("queued", "[spec]"), true),
         release

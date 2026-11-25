@@ -328,7 +328,6 @@ report!(DaemonStats, self, out, {
         "Retained build output",
         Bytes::from_i64(self.build_output_bytes),
     )?;
-    // How long the oldest of a queue has waited, when one waits.
     let oldest = |age: Option<i64>| {
         age.map_or_else(String::new, |age| {
             format!("; the oldest has waited {}", Elapsed::from_millis(age))

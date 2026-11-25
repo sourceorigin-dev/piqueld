@@ -287,7 +287,6 @@ impl Instruments {
                 stat(s, |stats| vec![(stats.write_waits, vec![])])
             }))
             .build();
-        // Durations in seconds, from the statistics' milliseconds.
         let seconds = |read: ReadMillis| {
             let snapshot = Arc::clone(snapshot);
             move |observer: &dyn opentelemetry::metrics::AsyncInstrument<f64>| {
