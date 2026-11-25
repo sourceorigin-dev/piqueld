@@ -1,7 +1,7 @@
 The font in this directory is licensed under the SIL Open Font License,
 Version 1.1, reproduced below.
 
-Copyright 2021 The Overpass Project Authors (https://github.com/RedHatOfficial/Overpass)
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

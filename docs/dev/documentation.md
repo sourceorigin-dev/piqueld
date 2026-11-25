@@ -177,6 +177,10 @@ guide. `screenshots/docs.ts` holds the helpers:
   loading, so a busy machine doesn't save it half drawn. Then it replaces IDs and digests with fixed ones, and moves every
   date by the same amount, the earliest to a fixed one, so the images don't
   change from run to run.
+- `shootForSite(page, only)`, which saves the element `only` for
+  [piqueld.dev](publishing.md), the same way and three times as sharp: as
+  `apps/site/dashboard.png`, and as `apps/site/dashboard-narrow.png` in a
+  window as narrow as a phone's.
 
 ```typescript
 await newApplication(page, 'hello');
