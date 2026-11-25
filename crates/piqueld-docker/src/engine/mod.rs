@@ -12,6 +12,8 @@ use tokio::net::UnixStream;
 // A valid API request may be 2 MiB; Docker adds service metadata around that
 // specification when it is inspected.
 const MAX_SERVICE_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+/// Pause before resubmitting a service update Docker answered out of sequence.
+const SERVICE_UPDATE_RETRY_DELAY: Duration = Duration::from_millis(250);
 /// Complete budget for one raw Engine request, from connect to last byte.
 const SERVICE_REQUEST_TIMEOUT: Duration = super::DockerTimeout::Request.duration();
 
@@ -430,7 +432,7 @@ impl BollardDocker {
                     if Self::update_out_of_sequence(&error)
                         && tokio::time::Instant::now() < deadline =>
                 {
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    tokio::time::sleep(SERVICE_UPDATE_RETRY_DELAY).await;
                     let refreshed =
                         tokio::time::timeout_at(deadline, self.inspect_service_wire(id))
                             .await
