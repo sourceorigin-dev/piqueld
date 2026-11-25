@@ -142,7 +142,6 @@ async fn toml_adapter_preserves_headers_and_unsigned_revisions() {
     assert_eq!(request.headers["idempotency-key"], "fallback-key");
     assert_eq!(request.body, manifest.as_bytes());
 
-    // Creating from TOML requires the name to be absent.
     let created = client.apply_application_toml(manifest).await.unwrap();
     assert_eq!(created.operation_id.as_deref(), Some("op-1"));
     let request = server.requests.recv().await.unwrap();

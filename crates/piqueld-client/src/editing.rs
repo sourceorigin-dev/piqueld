@@ -15,13 +15,12 @@ use piqueld_core::{
     manifest::{Mount, Service, ServiceFile, Volume},
 };
 
-// The generated client owns paths, encoding, request bodies, and response
-// types. For each entry of `piqueld_core::field_endpoints!` this builds a
-// `Client` method taking the path parameters, the body if any, and
-// `EditOptions` (deploy, revision, force), and `edit_application`, which
-// matches an edit against every entry's edit to send it through its endpoint.
-// Like every other wrapper, a method sends `force` only when set; the server
-// reads absence as false.
+/// Builds, for each entry of `piqueld_core::field_endpoints!`, a `Client`
+/// method taking the path parameters, the body if any, and `EditOptions`
+/// (deploy, revision, force), and `edit_application`, which matches an edit
+/// against every entry's edit to send it through its endpoint. The generated
+/// client owns paths, encoding, request bodies and response types. A method
+/// sends `force` only when set.
 macro_rules! edit_methods {
     ($($(#[$doc:meta])* $name:ident: $method:ident $path:literal ($($param:ident = $label:literal),*) $body:tt => { $($edit:tt)* };)*) => {
         $(edit_methods!(@method $name ($($param),*) $body);)*
@@ -43,19 +42,15 @@ macro_rules! edit_methods {
             }
         }
     };
-    // Without a body.
     (@method $name:ident ($($param:ident),*) []) => {
         edit_methods!(@method $name ($($param),*) ());
     };
-    // A `{ "value": ... }` body.
     (@method $name:ident ($($param:ident),*) [$body:ident { $value:ident }]) => {
         edit_methods!(@method $name ($($param),*) (request: &$body));
     };
-    // A boxed whole body, taken unboxed as the generated method does.
     (@method $name:ident ($($param:ident),*) [$binding:ident: Box<$body:ty>]) => {
         edit_methods!(@method $name ($($param),*) (request: &$body));
     };
-    // A whole body.
     (@method $name:ident ($($param:ident),*) [$binding:ident: $body:ty]) => {
         edit_methods!(@method $name ($($param),*) (request: &$body));
     };

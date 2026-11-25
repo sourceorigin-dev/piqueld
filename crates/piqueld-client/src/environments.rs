@@ -307,7 +307,6 @@ impl Client {
                 .await?
             {
                 DeploymentPage::Summary(page) => page,
-                // An empty page decodes as whole snapshots.
                 DeploymentPage::Full(page) => Page {
                     items: page
                         .items

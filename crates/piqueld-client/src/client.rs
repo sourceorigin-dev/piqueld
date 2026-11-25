@@ -284,7 +284,6 @@ impl Client {
 }
 
 impl ClientHooks<ClientState> for generated::Client {
-    // Request preparation is synchronous, so the hook returns a ready future.
     fn pre<E>(
         &self,
         request: &mut reqwest::Request,
@@ -293,7 +292,6 @@ impl ClientHooks<ClientState> for generated::Client {
         std::future::ready(self.inner().prepare(request).map_err(Error::InvalidRequest))
     }
 
-    // Header observation is synchronous as well.
     fn post<E>(
         &self,
         result: &reqwest::Result<reqwest::Response>,
@@ -313,7 +311,6 @@ impl ClientState {
     /// Shared by the generated `pre` hook and `Client::execute`.
     fn prepare(&self, request: &mut reqwest::Request) -> Result<(), String> {
         self.validate_auth_transport(request.url())?;
-        // reqwest passes this duration to the signed 32-bit browser timer.
         #[cfg(target_arch = "wasm32")]
         if let Some(timeout) = self.timeout {
             i32::try_from(timeout.as_millis()).map_err(|error| {
@@ -505,8 +502,8 @@ impl ApiErrorPayload for () {
     }
 }
 
-// Readiness documents its 503 as a normal readiness payload; `Client::system_readiness`
-// handles it before this conversion is reached.
+/// Readiness documents its 503 as a normal readiness payload, which
+/// `Client::system_readiness` handles before this conversion is reached.
 impl ApiErrorPayload for Envelope<piqueld_core::api::ReadinessStatus> {
     fn into_error_body(self) -> Option<ErrorBody> {
         None
