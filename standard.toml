@@ -17,7 +17,6 @@ cargo-in-ci = [
 [deviations]
 t3-setup = { reason = "allowed from sourceorigin-standard 0.1.1", paths = ["t3.json"] }
 rust-comments = "1934 findings in 390 files, fixed in a follow-up; the 25 `// wall-clock:` markers among them are allowed from sourceorigin-standard 0.1.1"
-skills-synced = "7 findings: the next pull request of the stack syncs the skills"
 
 [deviations.workspace-lints]
 reason = "4675 findings of `clippy::unwrap_used` in 207 files, most of them tests, fixed in a follow-up (PQD-124)"
@@ -28,7 +27,7 @@ reason = "3 findings: these libraries return anyhow errors; typed errors in a fo
 crates = ["piqueld", "piqueld-config", "piqueld-docker"]
 
 [deviations.agents-md]
-reason = "8 findings: AGENTS.md has no map of the crates and holds 159 lines; fixed in a follow-up"
+reason = "8 findings: AGENTS.md has no map of the crates and holds 168 lines; fixed in a follow-up"
 paths = ["AGENTS.md"]
 
 [deviations.duplicate-items]
