@@ -17,14 +17,14 @@ impl BollardDocker {
     /// it is `None` when the task has no healthcheck, has not converged to a
     /// verdict yet, or its container could not be inspected. `updated` is
     /// when the service's latest update started, if it was ever updated.
+    /// A failure's reason comes from the task's `err` only: its `message` is
+    /// the last step it reached, such as "started".
     pub(super) fn observe_task(
         task: &bollard::models::Task,
         updated: Option<&str>,
         healthy: Option<bool>,
     ) -> ObservedTask {
         let state = Self::task_state(task);
-        // Only `err` explains a failure: a failed task's `message` is the
-        // last step it reached, such as "started".
         let reason = task
             .status
             .as_ref()
