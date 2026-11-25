@@ -70,7 +70,11 @@ impl Store {
             FROM notification_deliveries
             WHERE state='pending') AS pending,(SELECT COUNT(*)
             FROM notification_deliveries
-            WHERE state='failed') AS failed"
+            WHERE state='failed') AS failed,(SELECT MIN(updated_at_ms)
+            FROM operations
+            WHERE state='requested') AS \"oldest_queued: i64\",(SELECT MIN(created_at_ms)
+            FROM notification_deliveries
+            WHERE state='pending') AS \"oldest_pending: i64\""
         )
         .fetch_one(&self.pool)
         .await
@@ -92,6 +96,7 @@ impl Store {
             Err(e) => return Err(StoreError::path(e)),
         };
         let (memory_bytes, cpu_seconds) = Self::process_usage().await;
+        let (waiting_writes, write_waits, write_wait_ms) = self.writers.stats();
         let cpu_percent = cache.as_ref().and_then(|old| {
             Some(
                 ((cpu_seconds? - old.cpu_seconds?).max(0.0)
@@ -123,6 +128,11 @@ impl Store {
             queued_operations: row.queued,
             pending_deliveries: row.pending,
             failed_deliveries: row.failed,
+            oldest_queued_operation_ms: row.oldest_queued.map(|at| now.saturating_sub(at)),
+            oldest_pending_delivery_ms: row.oldest_pending.map(|at| now.saturating_sub(at)),
+            waiting_writes,
+            write_waits,
+            write_wait_ms,
         };
         *cache = Some(stats.clone());
         Ok(stats)

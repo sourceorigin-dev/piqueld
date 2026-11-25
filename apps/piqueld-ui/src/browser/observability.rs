@@ -752,6 +752,12 @@ fn check_row(check: SystemCheck) -> AnyView {
 
 /// Metric tiles and counters of the daemon process.
 fn resource_stats(stats: &DaemonStats) -> AnyView {
+    let waited = |age: Option<i64>, empty: &str| {
+        age.map_or_else(
+            || empty.to_owned(),
+            |age| Elapsed::from_millis(age).to_string(),
+        )
+    };
     let unavailable = || "Unavailable".to_owned();
     let bytes = |value| Bytes(value).to_string();
     let counters = [
@@ -765,6 +771,23 @@ fn resource_stats(stats: &DaemonStats) -> AnyView {
         ("Queued operations", stats.queued_operations.to_string()),
         ("Pending deliveries", stats.pending_deliveries.to_string()),
         ("Failed deliveries", stats.failed_deliveries.to_string()),
+        (
+            "Oldest queued operation",
+            waited(stats.oldest_queued_operation_ms, "None queued"),
+        ),
+        (
+            "Oldest pending delivery",
+            waited(stats.oldest_pending_delivery_ms, "None pending"),
+        ),
+        ("Waiting database writes", stats.waiting_writes.to_string()),
+        (
+            "Database writes that waited",
+            format!(
+                "{}, for {} in all",
+                stats.write_waits,
+                Elapsed(Duration::from_millis(stats.write_wait_ms))
+            ),
+        ),
     ];
     view! {
         <div class="metrics">

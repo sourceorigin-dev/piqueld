@@ -1654,3 +1654,55 @@ async fn requested_webhook_secret_rotations_commit_with_their_audit_record() {
             .any(|action| { action.contains(kept.as_str()) || action.contains(secret.as_str()) })
     );
 }
+
+/// Statistics count the writes that waited for their turn and how long, and
+/// how long the oldest queued operation, which a deploy queues once the held
+/// turn is released, has waited.
+#[tokio::test]
+async fn daemon_stats_report_write_waits_and_queue_ages() {
+    let (_temp, store) = Store::temporary().await;
+    let writer = store.hold_writer().await;
+    let release = async {
+        store.writer_waiting().await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        drop(writer);
+    };
+    let (saved, ()) = tokio::join!(
+        store.save_template(template("queued", "[spec]"), true),
+        release
+    );
+    assert!(saved.operation_id.is_some());
+    let stats = store.daemon_stats().await.unwrap();
+    assert_eq!((stats.waiting_writes, stats.write_waits), (0, 1));
+    assert!(stats.write_wait_ms >= 20, "{stats:?}");
+    assert!(
+        stats.oldest_queued_operation_ms.is_some_and(|age| age >= 0),
+        "{stats:?}"
+    );
+    assert_eq!(stats.oldest_pending_delivery_ms, None);
+}
+
+/// A retried operation has waited since its retry, not since it was first
+/// created.
+#[tokio::test]
+async fn a_retried_operation_waits_from_its_retry() {
+    let (_temp, store) = Store::temporary().await;
+    let op = application(&store).await;
+    fail(&store, &op).await;
+    let three_days_ago = now_ms() - 3 * 86_400_000;
+    sqlx::query("UPDATE operations SET created_at_ms=?1,updated_at_ms=?1 WHERE id=?2")
+        .bind(three_days_ago)
+        .bind(&op.id)
+        .execute(&store.pool)
+        .await
+        .unwrap();
+    let failed = store.operation(&op.id).await.unwrap();
+    store.retry_operation(&failed).await.unwrap();
+    let stats = store.daemon_stats().await.unwrap();
+    assert!(
+        stats
+            .oldest_queued_operation_ms
+            .is_some_and(|age| (0..60_000).contains(&age)),
+        "{stats:?}"
+    );
+}

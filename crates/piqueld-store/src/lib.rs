@@ -934,9 +934,14 @@ impl Store {
 /// leaves it.
 struct Writers {
     queue: tokio::sync::Mutex<()>,
-    /// How many writers wait for their turn, so a test holding the queue
-    /// knows when another writer queued behind it.
+    /// How many writers wait for their turn: reported in the daemon's
+    /// statistics, and so a test holding the queue knows when another
+    /// writer queued behind it.
     waiting: tokio::sync::watch::Sender<usize>,
+    /// Writers that had to wait for their turn since the store opened.
+    waits: std::sync::atomic::AtomicU64,
+    /// How long, in all, those writers waited, in nanoseconds.
+    waited_ns: std::sync::atomic::AtomicU64,
     written: tokio::sync::watch::Sender<()>,
 }
 
@@ -945,19 +950,46 @@ impl Default for Writers {
         Self {
             queue: tokio::sync::Mutex::default(),
             waiting: tokio::sync::watch::Sender::new(0),
+            waits: std::sync::atomic::AtomicU64::new(0),
+            waited_ns: std::sync::atomic::AtomicU64::new(0),
             written: tokio::sync::watch::Sender::new(()),
         }
     }
 }
 
 impl Writers {
-    /// Waits for this writer's turn.
+    /// Waits for this writer's turn. A writer that finds the queue busy is
+    /// counted as waiting until its turn, and its wait is recorded. The queue
+    /// is fair, so it is free only when nobody waits for it.
     async fn lock(&self) -> Writer<'_> {
-        let _waiting = Waiting::new(&self.waiting);
-        Writer {
-            _turn: self.queue.lock().await,
-            written: &self.written,
+        let written = &self.written;
+        if let Ok(turn) = self.queue.try_lock() {
+            return Writer {
+                _turn: turn,
+                written,
+            };
         }
+        let _waiting = Waiting::new(&self.waiting);
+        let started = std::time::Instant::now();
+        let turn = self.queue.lock().await;
+        let waited = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        self.waits.fetch_add(1, Ordering::Relaxed);
+        self.waited_ns.fetch_add(waited, Ordering::Relaxed);
+        Writer {
+            _turn: turn,
+            written,
+        }
+    }
+
+    /// Writers waiting now, writers that waited since the store opened, and
+    /// how long they waited in all, in milliseconds.
+    fn stats(&self) -> (u64, u64, u64) {
+        let load = |counter: &std::sync::atomic::AtomicU64| counter.load(Ordering::Relaxed);
+        (
+            u64::try_from(*self.waiting.borrow()).unwrap_or(u64::MAX),
+            load(&self.waits),
+            load(&self.waited_ns) / 1_000_000,
+        )
     }
 }
 
