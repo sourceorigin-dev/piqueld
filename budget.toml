@@ -10,7 +10,7 @@ piqueld-config = 6
 piqueld-core = 23
 piqueld-docker = 10
 piqueld-probe = 2
-piqueld-store = 17
+piqueld-store = 21
 piqueld-ui = 60
 xtask = 4
 
