@@ -58,7 +58,6 @@ impl LocalApi {
     /// The `LocalAPI` on `socket`, bounding each request by `timeout`.
     #[must_use]
     pub fn new(socket: PathBuf, timeout: Duration) -> Self {
-        // tailscaled refuses requests for any other host.
         Self {
             http: UnixHttp::new(socket, "local-tailscaled.sock", timeout),
         }
@@ -123,7 +122,6 @@ impl LocalApi {
     /// # Errors
     /// Fails when `tailscaled` doesn't answer or answers with an error.
     pub async fn serve_config(&self) -> Result<ServeConfig, LocalApiError> {
-        // `null` means nothing is served.
         let config: Option<ServeConfig> = self.get("serve-config", "serve config").await?;
         Ok(config.unwrap_or_default())
     }
@@ -288,7 +286,6 @@ impl FakeLocalApi {
         let mut server = tokio::task::JoinSet::new();
         server.spawn(async move {
             while let Ok((mut stream, _)) = listener.accept().await {
-                // Requests are bodiless GETs: read up to the end of the head.
                 let mut head = Vec::new();
                 while !head.ends_with(b"\r\n\r\n") {
                     let mut byte = [0];

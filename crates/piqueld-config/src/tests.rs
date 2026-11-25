@@ -325,15 +325,12 @@ fn checks_locate_credential_files_without_reading_them() {
         std::fs::write(&path, document).unwrap();
         DaemonConfig::check(&path)
     };
-    // Relative names resolve against systemd's $CREDENTIALS_DIRECTORY only
-    // at startup, and absent files are not read.
     let credentials = "[telemetry]\nendpoint = 'unix:///run/otel/otlp.sock'\nheaders_file = 'otlp-headers'\n\
          [ingress.private]\nauth_key_file = 'ts-apps-auth-key'\n\
          [ingress.tunnel]\nenabled = true\ncredentials_file = 'cloudflared-tunnel'\n\
          [[dns.providers]]\nkind = 'cloudflare'\napi_token_file = '/missing/token'";
     check(credentials).unwrap();
     DaemonConfig::load(&path).expect_err("`DaemonConfig::load` should be rejected");
-    // Everything else is validated as at startup.
     for invalid in [
         "[server]\nport = 0",
         "[ingress.tunnel]\nenabled = true",
@@ -342,7 +339,6 @@ fn checks_locate_credential_files_without_reading_them() {
     ] {
         assert!(check(invalid).is_err(), "accepted {invalid}");
     }
-    // Even after a failed check, startup reads credential files.
     std::fs::write(
         &path,
         "[[dns.providers]]\nkind = 'cloudflare'\napi_token_file = '/missing/token'",

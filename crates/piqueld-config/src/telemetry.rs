@@ -38,8 +38,6 @@ impl Default for TelemetryConfig {
 
 /// Export of the daemon's traces, metrics and logs
 /// over OTLP/gRPC to a collector. Export is off until `endpoint` is set.
-//
-// The TOML form of [`TelemetryConfig`], before its headers file is read.
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(default, deny_unknown_fields)]
 struct RawTelemetryConfig {
@@ -125,7 +123,6 @@ impl TryFrom<String> for OtlpEndpoint {
         }
         let url = url::Url::parse(&value)
             .map_err(|error| format!("invalid telemetry endpoint: {error}"))?;
-        // gRPC ignores paths, and credentials belong in `headers_file`.
         if !matches!(url.scheme(), "http" | "https")
             || url.host_str().is_none()
             || !url.username().is_empty()

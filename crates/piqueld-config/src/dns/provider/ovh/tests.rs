@@ -12,9 +12,10 @@ fn ovh(api: String) -> Ovh {
     }
 }
 
+/// The expected signature was computed independently: `printf
+/// 'as+ck+GET+https://eu.api.ovh.com/1.0/domain/zone++1700000000' | sha1sum`.
 #[test]
 fn signature_covers_method_url_body_and_time() {
-    // Computed independently: printf 'as+ck+GET+https://eu.api.ovh.com/1.0/domain/zone++1700000000' | sha1sum
     assert_eq!(
         ovh(OvhEndpoint::OvhEu.url().into()).signature(
             &Method::GET,
@@ -35,7 +36,6 @@ async fn records_are_listed_by_name_and_cnames_are_absolute() {
             r#"{"id":1,"zone":"piquel.fr","fieldType":"CNAME","subDomain":"www","target":"web.example.com.","ttl":300}"#),
         (Method::GET, "/domain/zone/piquel.fr/record/2", 200,
             r#"{"id":2,"zone":"piquel.fr","fieldType":"TXT","subDomain":"www","target":"\"owner\"","ttl":60}"#),
-        // Another name, as an empty filter returns for the apex.
         (Method::GET, "/domain/zone/piquel.fr/record/3", 200,
             r#"{"id":3,"zone":"piquel.fr","fieldType":"A","subDomain":"api","target":"192.0.2.1","ttl":300}"#),
         (Method::PUT, "/domain/zone/piquel.fr/record/1", 200, "null"),
@@ -82,7 +82,6 @@ async fn records_are_listed_by_name_and_cnames_are_absolute() {
         .await
         .unwrap();
     assert_eq!(id, RecordId("4".into()));
-    // OVH cannot proxy, so nothing is sent.
     let error = provider
         .upsert(
             &http,
@@ -206,7 +205,6 @@ async fn records_are_relative_to_their_zone_and_published_by_refresh() {
     provider.publish(&http, &zones[0]).await.unwrap();
     provider.delete_record(&http, &zones[0], &id).await.unwrap();
     provider.publish(&http, &zones[0]).await.unwrap();
-    // A record that is already gone counts as deleted.
     provider
         .delete_record(&http, &zones[0], &RecordId("1".into()))
         .await

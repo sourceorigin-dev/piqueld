@@ -127,7 +127,6 @@ async fn records_follow_pages_and_upserts_create_or_replace() {
         requests[2].body,
         json!({"type":"AAAA","name":"www.piquel.fr","content":"2001:db8::1","ttl":300,"proxied":false})
     );
-    // Proxied records use Cloudflare's automatic TTL.
     assert_eq!(
         requests[3].body,
         json!({"type":"CNAME","name":"www.piquel.fr","content":"t.cfargotunnel.com","ttl":1,"proxied":true})
@@ -156,14 +155,11 @@ async fn discovery_is_reused_for_an_hour_and_failures_back_off() {
             failing.requests().await.len(),
         )
     };
-    // A failing provider waits out its backoff instead of making every
-    // refresh rediscover every provider.
     dns.refresh().await;
     dns.refresh().await;
     assert_eq!(calls().await, (1, 1));
     dns.discover().await;
     assert_eq!(calls().await, (1, 1));
-    // A failed discovery keeps the zones.
     dns.providers[0] = provider(failing.url.clone()).into();
     dns.discover().await;
     let status = &dns.status().await[0];
@@ -174,7 +170,6 @@ async fn discovery_is_reused_for_an_hour_and_failures_back_off() {
     dns.providers[0] = provider(working.url.clone()).into();
     dns.refresh().await;
     assert_eq!(calls().await, (0, 2));
-    // Once its backoff has elapsed, the next refresh retries it alone.
     dns.discovered.write().await[0].due = Some(std::time::Instant::now());
     dns.refresh().await;
     assert_eq!(calls().await, (1, 0));
@@ -185,7 +180,6 @@ async fn discovery_is_reused_for_an_hour_and_failures_back_off() {
 async fn lists_stop_at_unrequested_pages_and_large_bodies() {
     let large: &'static str = format!("[{}]", "0,".repeat(2 << 20) + "0").leak();
     let recorded = Recorded::serve(vec![
-        // A server that ignores `page` answers page 1 again.
         (Method::GET, "/zones?per_page=50&page=1", 200,
             r#"{"success":true,"errors":[],"result":[{"id":"z1","name":"piquel.fr"}],"result_info":{"page":1,"per_page":50,"total_pages":2}}"#),
         (Method::GET, "/zones?per_page=50&page=2", 200,

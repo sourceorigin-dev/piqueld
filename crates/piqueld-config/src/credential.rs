@@ -63,9 +63,6 @@ pub struct Credential {
 /// `LoadCredential=` puts credentials, and may not contain `.` or `..`.
 /// Errors and the settings shown by the dashboard name the file, never its
 /// contents.
-//
-// The absolute location of a credential file: relative paths resolve while
-// the configuration loads.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(try_from = "PathBuf")]
 #[schema(value_type = String)]
