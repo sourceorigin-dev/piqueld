@@ -112,7 +112,7 @@ async fn verify_key_accepts_only_the_key_the_snapshot_was_bound_to() {
         .verify_key(key)
         .await
     {
-        Err(StoreError::SecretSource(error)) => KeyFailure::of(&error),
+        Err(StoreError::SecretSource(error)) => error.key_failure(),
         other => panic!("expected a key failure, got {other:?}"),
     };
     assert!(matches!(

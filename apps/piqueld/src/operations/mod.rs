@@ -362,7 +362,10 @@ impl OperationError {
                         .push(format!("Docker operation: {operation}"));
                 }
             }
-            if let Some(failure) = error.downcast_ref::<piqueld_store::secrets::KeyFailure>() {
+            if let Some(failure) = error
+                .downcast_ref::<piqueld_store::secrets::SecretError>()
+                .and_then(piqueld_store::secrets::SecretError::key_failure)
+            {
                 diagnostic.causes.push(failure.fact().into());
             }
             if let Some(error) = error.downcast_ref::<piqueld_docker::ErrorResponse>() {

@@ -1,6 +1,6 @@
 //! Authenticate the database's key before accepting any new ciphertext.
 use super::{Envelope, SecretCipher, SecretOwner, Store, StoreError};
-use crate::secrets::KeyFailure;
+use crate::secrets::{KeyFailure, SecretError};
 use piqueld_core::EventKind;
 use piqueld_core::api::{CheckStatus, SecretKeyRecovery, SystemCheck, SystemCheckId};
 
@@ -71,7 +71,7 @@ impl Store {
                 format!("{path} is private and matches the database"),
             ),
             Err(error) => {
-                let step = match KeyFailure::of(&error) {
+                let step = match error.key_failure() {
                     Some(KeyFailure::NotPrivate) => format!(
                         "Make {path} a regular file owned by the daemon user with mode 0600."
                     ),
@@ -82,7 +82,7 @@ impl Store {
                         "Restore the original {path} from backup, or discard every stored value with `piquelctl secrets recover-key`."
                     ),
                 };
-                check(CheckStatus::Fail, format!("{error:#}")).next_step(step)
+                check(CheckStatus::Fail, error.chain()).next_step(step)
             }
         })
     }
@@ -98,7 +98,7 @@ impl Store {
     pub(crate) async fn key_binding_on(
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         key: Option<&std::path::Path>,
-    ) -> Result<anyhow::Result<KeyBinding>, StoreError> {
+    ) -> Result<Result<KeyBinding, SecretError>, StoreError> {
         let verifier = Self::secret_key_verifier_on(&mut **tx).await?;
         // Values stored without a verifier still need their key, as in
         // `verified_secret_cipher`.
@@ -276,7 +276,7 @@ impl Store {
         let verifier = Self::secret_key_verifier_on(&mut *tx).await?;
         let key = match SecretCipher::load(&self.secret_key_path, true) {
             Ok(cipher) => Ok(cipher),
-            Err(error) => match KeyFailure::of(&error) {
+            Err(error) => match error.key_failure() {
                 Some(failure) if failure.lost() => Err(failure),
                 _ => return Err(StoreError::SecretSource(error)),
             },

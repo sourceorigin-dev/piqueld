@@ -1,5 +1,7 @@
 //! Authenticated encryption for application secrets. Values never enter API metadata.
+mod error;
 mod generate;
+pub use error::SecretError;
 pub(crate) use generate::Generate;
 
 use chacha20poly1305::{
@@ -44,11 +46,6 @@ pub enum KeyFailure {
 }
 
 impl KeyFailure {
-    /// The failure `error` carries, if it is one.
-    pub(crate) fn of(error: &anyhow::Error) -> Option<Self> {
-        error.downcast_ref().copied()
-    }
-
     /// Whether loading the key failed for good, so that only discarding the
     /// values it encrypted recovers: it is missing or the wrong length. A key
     /// that is merely not private is fixed on the host instead. A key that
@@ -121,11 +118,13 @@ impl SecretCipher {
     /// access, holding exactly 32 bytes.
     ///
     /// Called under the store writer lock; a key bound to the database is never regenerated.
-    pub(crate) fn load(path: &Path, bound: bool) -> anyhow::Result<Self> {
-        use anyhow::{Context, bail};
-        if !path.try_exists().context("inspect secret master key")? {
+    pub(crate) fn load(path: &Path, bound: bool) -> Result<Self, SecretError> {
+        if !path
+            .try_exists()
+            .map_err(SecretError::io("inspect secret master key"))?
+        {
             if bound {
-                bail!(KeyFailure::Missing);
+                return Err(KeyFailure::Missing.into());
             }
             Self::generate(path)?;
         }
@@ -133,23 +132,21 @@ impl SecretCipher {
     }
 
     /// Writes a new key to `path`, which must not exist yet.
-    fn generate(path: &Path) -> anyhow::Result<()> {
-        use anyhow::Context;
-        let parent = path.parent().context("locate secret key directory")?;
-        let mut temporary =
-            tempfile::NamedTempFile::new_in(parent).context("create private secret key file")?;
+    fn generate(path: &Path) -> Result<(), SecretError> {
+        let parent = path.parent().ok_or(SecretError::NoKeyDirectory)?;
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)
+            .map_err(SecretError::io("create private secret key file"))?;
         let mut key = XChaCha20Poly1305::generate_key(&mut OsRng);
         let result = temporary.write_all(key.as_slice());
         key.zeroize();
-        result.context("write secret master key")?;
+        result.map_err(SecretError::io("write secret master key"))?;
         temporary
             .as_file()
             .sync_all()
-            .context("sync secret master key")?;
+            .map_err(SecretError::io("sync secret master key"))?;
         temporary
             .persist_noclobber(path)
-            .map_err(|e| e.error)
-            .context("install secret master key")?;
+            .map_err(|e| SecretError::io("install secret master key")(e.error))?;
         Self::sync_directory(path)
     }
 
@@ -159,55 +156,58 @@ impl SecretCipher {
         clippy::map_err_ignore,
         reason = "the error is a key-length marker with no detail"
     )]
-    pub(crate) fn open(path: &Path) -> anyhow::Result<Self> {
-        use anyhow::{Context, bail};
+    pub(crate) fn open(path: &Path) -> Result<Self, SecretError> {
         let descriptor = rustix::fs::open(
             path,
             rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::CLOEXEC | rustix::fs::OFlags::NOFOLLOW,
             rustix::fs::Mode::empty(),
         )
-        .context("open secret master key without following symlinks")?;
+        .map_err(|source| SecretError::Open {
+            action: "open secret master key without following symlinks",
+            source,
+        })?;
         let file = File::from(descriptor);
-        let metadata = file.metadata()?;
+        let metadata = file
+            .metadata()
+            .map_err(SecretError::io("inspect secret master key"))?;
         if !metadata.is_file()
             || metadata.mode() & 0o077 != 0
             || metadata.uid() != rustix::process::geteuid().as_raw()
         {
-            bail!(KeyFailure::NotPrivate);
+            return Err(KeyFailure::NotPrivate.into());
         }
         // One byte more than a key tells a longer file apart.
         let mut bytes = Zeroizing::new(Vec::with_capacity(KEY_BYTES + 1));
         file.take(KEY_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
-            .context("read secret master key")?;
+            .map_err(SecretError::io("read secret master key"))?;
         if bytes.len() != KEY_BYTES {
-            bail!(KeyFailure::InvalidLength);
+            return Err(KeyFailure::InvalidLength.into());
         }
-        Ok(Self(XChaCha20Poly1305::new_from_slice(&bytes).map_err(
-            |_| anyhow::anyhow!("invalid secret key length"),
-        )?))
+        Ok(Self(
+            XChaCha20Poly1305::new_from_slice(&bytes).map_err(|_| KeyFailure::InvalidLength)?,
+        ))
     }
     /// Moves an unusable key aside after its values were discarded, so the next value
     /// write generates a fresh key. The file is kept rather than deleted: it may belong
     /// to a different database backup. A missing key needs nothing.
-    pub(crate) fn retire(path: &Path, now_ms: i64) -> anyhow::Result<()> {
-        use anyhow::Context;
+    pub(crate) fn retire(path: &Path, now_ms: i64) -> Result<(), SecretError> {
         let mut retired = path.as_os_str().to_owned();
         retired.push(format!(".retired-{now_ms}"));
         match std::fs::rename(path, &retired) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            result => result.context("move unusable secret master key aside")?,
+            result => result.map_err(SecretError::io("move unusable secret master key aside"))?,
         }
         Self::sync_directory(path)
     }
 
     /// Syncs the directory holding the key at `path`, so that installing or
     /// moving the key survives a crash.
-    fn sync_directory(path: &Path) -> anyhow::Result<()> {
-        use anyhow::Context;
-        File::open(path.parent().context("locate secret key directory")?)?
+    fn sync_directory(path: &Path) -> Result<(), SecretError> {
+        File::open(path.parent().ok_or(SecretError::NoKeyDirectory)?)
+            .map_err(SecretError::io("open secret key directory"))?
             .sync_all()
-            .context("sync secret key directory")
+            .map_err(SecretError::io("sync secret key directory"))
     }
     /// Associated data binding a ciphertext to its owner, secret name, and
     /// generation, so a value cannot be moved to another secret or version.
@@ -231,7 +231,7 @@ impl SecretCipher {
         name: &str,
         generation: i64,
         plaintext: &[u8],
-    ) -> anyhow::Result<Envelope> {
+    ) -> Result<Envelope, SecretError> {
         let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
         let aad = Self::context(owner, name, generation);
         let ciphertext = self
@@ -243,7 +243,7 @@ impl SecretCipher {
                     aad: &aad,
                 },
             )
-            .map_err(|_| anyhow::anyhow!("secret encryption failed"))?;
+            .map_err(|_| SecretError::Encryption)?;
         Ok(Envelope {
             nonce: nonce.to_vec(),
             ciphertext,
@@ -261,9 +261,9 @@ impl SecretCipher {
         name: &str,
         generation: i64,
         envelope: &Envelope,
-    ) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    ) -> Result<Zeroizing<Vec<u8>>, SecretError> {
         if envelope.nonce.len() != NONCE_BYTES {
-            anyhow::bail!("invalid encrypted secret nonce");
+            return Err(SecretError::InvalidNonce);
         }
         let aad = Self::context(owner, name, generation);
         let plaintext = self
@@ -279,7 +279,7 @@ impl SecretCipher {
         Ok(Zeroizing::new(plaintext))
     }
     /// Proves this key matches the database by decrypting its stored verifier.
-    pub(crate) fn verify(&self, verifier: &Envelope) -> anyhow::Result<()> {
+    pub(crate) fn verify(&self, verifier: &Envelope) -> Result<(), SecretError> {
         self.decrypt(SecretOwner::KeyVerifier, "key-verification", 1, verifier)
             .map(drop)
     }

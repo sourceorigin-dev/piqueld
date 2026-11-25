@@ -472,7 +472,7 @@ async fn key_recovery_keeps_values_behind_a_corrupt_verifier() {
             panic!("recovery refused expected");
         };
         assert!(matches!(
-            crate::secrets::KeyFailure::of(&error),
+            error.key_failure(),
             Some(crate::secrets::KeyFailure::VerifierCorrupt)
         ));
         assert!(key.exists());
@@ -523,7 +523,7 @@ async fn writes_bind_only_the_key_of_values_without_a_verifier() {
         panic!("a wrong key must not be bound");
     };
     assert!(matches!(
-        crate::secrets::KeyFailure::of(&error),
+        error.key_failure(),
         Some(crate::secrets::KeyFailure::AuthenticationFailed)
     ));
     std::fs::remove_file(&key).unwrap();
