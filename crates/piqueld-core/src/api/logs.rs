@@ -88,13 +88,12 @@ pub struct LogTime(pub i64);
 
 impl LogTime {
     /// Reads a UTC RFC 3339 timestamp; `None` for any other text, or one
-    /// out of range.
+    /// out of range. Its fields are widened before the calendar arithmetic,
+    /// Howard Hinnant's `days_from_civil`, so malformed input can't overflow.
     #[must_use]
     pub fn parse(timestamp: &str) -> Option<Self> {
         let (date, time) = timestamp.strip_suffix('Z')?.split_once('T')?;
         let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
-        // Widen parsed i64 fields before calendar arithmetic, so malformed
-        // input cannot overflow before the final nanosecond range check.
         let numbers = |text: &str, separator| -> Option<[i128; 3]> {
             text.split(separator)
                 .map(|part| part.parse::<i64>().ok().map(i128::from))
@@ -112,8 +111,6 @@ impl LogTime {
             return None;
         }
         let nanos: i128 = format!("{fraction:0<9}").parse().ok()?;
-        // Days since 1970-01-01 in the proleptic Gregorian calendar, after
-        // Howard Hinnant's `days_from_civil`.
         let year = if month <= 2 { year - 1 } else { year };
         let era = year.div_euclid(400);
         let year_of_era = year - era * 400;
@@ -132,7 +129,6 @@ impl std::fmt::Display for LogTime {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let seconds =
             crate::observability::UtcTime(self.0.div_euclid(1_000_000_000) * 1_000).rfc3339();
-        // `2026-01-01T00:00:00`, without the milliseconds.
         let seconds = seconds.get(..19).unwrap_or(&seconds);
         write!(
             formatter,

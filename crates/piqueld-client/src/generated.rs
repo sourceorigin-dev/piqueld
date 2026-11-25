@@ -9271,21 +9271,14 @@ impl Client {
         }
     }
     /*Follows container output of an environment's services as server-sent
-    events
-
-    Sends a `log` message for each line as Docker writes it, its data a
-    `LogRecord` and its ID the newest timestamp sent so far, which a
-    reconnecting client resumes after. Each container's lines come in order;
-    lines of several containers interleave as they arrive. A resume never
-    repeats a line, but skips those another container wrote before the
-    newest one sent and hadn't delivered yet: usually a moment's worth, more
-    if the stream dropped while first replaying output. Tasks that start
-    while the stream is open, such as a rollout's, are followed too.
-    Malformed parameters and timestamps fail with 400 `logs_query_invalid`.
-    The stream ends with a `stream_error` message once Docker can no longer
-    be read, with an `access_ended` message whose data is the `ErrorBody` of
-    the request that would now be refused once the caller loses access, and
-    without a message when the daemon shuts down.
+    events: a `log` message per line, its data a `LogRecord` and its ID the
+    newest timestamp sent, which a reconnecting client resumes after. Lines of
+    several containers interleave, so a resume can skip lines another
+    container hadn't delivered yet, but never repeats one. Tasks that start
+    meanwhile are followed too. Malformed parameters fail with 400
+    `logs_query_invalid`. The stream ends with `stream_error` once Docker can't
+    be read, with `access_ended`, an `ErrorBody`, once the caller loses access,
+    and without a message when the daemon shuts down
 
     Sends a `GET` request to `/api/v1/environments/{id}/logs/stream`
 

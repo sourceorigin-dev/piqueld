@@ -117,7 +117,7 @@ impl FakeRuntime {
     }
 
     /// Starts container `id`, a task of `environment`'s `service`, telling
-    /// everyone watching starts.
+    /// everyone watching starts and dropping those whose stream ended.
     fn start_container(&self, id: &str, environment: &str, service: &str) {
         self.containers
             .lock()
@@ -134,7 +134,6 @@ impl FakeRuntime {
                 },
                 receiver: false,
             });
-        // A watcher whose stream ended is dropped.
         self.starts
             .lock()
             .unwrap()

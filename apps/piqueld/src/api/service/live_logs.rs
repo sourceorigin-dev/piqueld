@@ -47,7 +47,8 @@ pub struct LogFollower {
 impl ApplicationService {
     /// Follows environment `id`'s output written after `after`, in Unix
     /// nanoseconds, or from now; at most a day back. `service` and `stream`
-    /// narrow it as they do a snapshot.
+    /// narrow it as they do a snapshot. Starts are watched before the
+    /// containers are listed, so none starts unseen.
     /// # Errors
     /// Returns an invalid query, a missing environment, or runtime errors.
     pub async fn follow_logs(
@@ -62,7 +63,6 @@ impl ApplicationService {
         let now = now_ns();
         let after = after.unwrap_or(now).max(now - MAX_REPLAY_NS);
         let mut follower = LogFollower {
-            // Subscribed before the containers are listed, so none starts unseen.
             starts: self
                 .runtime
                 .container_starts(after.div_euclid(1_000_000_000)),
@@ -115,10 +115,11 @@ impl LogFollower {
     }
 
     /// Lists the containers and follows those of the environment's services
-    /// it doesn't follow yet.
+    /// it doesn't follow yet. A container still being created is skipped,
+    /// as its start brings it back; one that vanishes, or can no longer be
+    /// read, ends its output.
     async fn discover(&mut self) -> Result<(), BoundaryError> {
         for container in self.runtime.containers().await? {
-            // Not started yet: its start brings it back.
             if container.state == ContainerState::Created {
                 continue;
             }
@@ -141,8 +142,6 @@ impl LogFollower {
             self.followers.push(
                 self.runtime
                     .container_logs(&container.id, since)
-                    // A container that vanished, or can no longer be
-                    // read, ends its output.
                     .take_while(|lines| std::future::ready(lines.is_ok()))
                     .filter_map(|lines| std::future::ready(lines.ok()))
                     .map(move |lines| Self::records(lines, &name, &task, after, stream))
