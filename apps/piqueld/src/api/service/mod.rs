@@ -549,31 +549,21 @@ impl ApplicationService {
                     .accept(author, mutation, expected_generation, force, request_id),
             )
             .await?;
-        if stops && let Some(ingress) = &self.ingress {
-            // Withdraws its routes before answering, so they no longer
-            // reach services about to stop; the gateway retries failures.
-            if let Err(error) = ingress.refresh().await {
-                tracing::warn!(?error, "withdrawing a stopped environment's routes failed");
-            }
+        if stops
+            && let Some(ingress) = &self.ingress
+            && let Err(error) = ingress.refresh().await
+        {
+            tracing::warn!(?error, "withdrawing a stopped environment's routes failed");
         }
         if wake {
             self.runtime.trigger_reconciliation();
         }
-        // Sync skips a stopped environment, and webhooks don't come again:
-        // list its repository now, so a start deploys the head it missed.
-        // The worker coalesces hints, so reconciling an environment that
-        // wasn't stopped costs at most one listing. Best effort: it was
-        // accepted already.
         if let Some(id) = started
             && let Ok(stored) = self.store.get(&id).await
         {
             self.hints.hint(stored.environment.application_id);
         }
         if receivers {
-            // Stops export to a revoked or deleted receiver before
-            // answering, then lets the controller mount or unmount sockets.
-            // Best effort like the ingress refresh: the change is committed,
-            // and the periodic receiver refresh retries.
             if let Err(error) = self.receive_telemetry().await {
                 tracing::warn!(error = %error, "updating telemetry receivers failed");
             }

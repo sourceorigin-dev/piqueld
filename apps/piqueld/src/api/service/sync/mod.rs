@@ -159,9 +159,6 @@ impl ApplicationService {
         schedule: &mut Schedule,
         now: Instant,
     ) {
-        // Taken first, so a hint given while applications are read, e.g.
-        // by an environment that just started, waits for the next pass,
-        // which sees that environment follow its branch.
         let hinted = self.hints.take();
         let applications = match self.store.sync_applications().await {
             Ok(applications) => applications,
@@ -194,8 +191,6 @@ impl ApplicationService {
             Some((url, applications, trigger))
         });
         let due: Vec<_> = due.collect();
-        // Deadlines count from when each repository's turn ended, not from
-        // the pass's start, which may be long before with many repositories.
         let started = Instant::now();
         let mut listings = stream::iter(due)
             .map(|(url, applications, trigger)| async move {

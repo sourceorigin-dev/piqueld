@@ -35,8 +35,8 @@ pub struct ApplicationRuntime<D> {
     rescan: Arc<Notify>,
     /// Upper bound for resolving every source and compiling one application.
     prepare_timeout: Duration,
-    // Set only for execution, never API previews. Records the source-preparation
-    // phase and service names, and journals each source-preparation action.
+    /// Set only for execution, never API previews. Records the source-preparation
+    /// phase and service names, and journals each source-preparation action.
     progress: Option<(Arc<piqueld_store::Store>, String)>,
     /// The build queue its Git sources wait in.
     priority: BuildPriority,
@@ -281,7 +281,6 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
         sources: &std::collections::BTreeMap<piqueld_core::ServiceName, ResolvedSource>,
     ) -> Result<ImagesInUse, BoundaryError> {
         let in_use = ImagesInUse::hold(Arc::clone(&self.images)).await;
-        // Bounded like preparation: a hung pull would hold cleanup off.
         tokio::time::timeout(self.prepare_timeout, in_use.ensure(&*self.docker, sources))
             .await
             .map_err(|source| {
@@ -384,7 +383,6 @@ impl<D: DockerApi> ApplicationRuntime<D> {
                 })
             }
             Source::Git { repository, build } => {
-                // Deployments pin "self" before preparation; see `pin_manifest_sources`.
                 let SourceRepository::Git(repository) = repository else {
                     return Err(BoundaryError::GitBuild(anyhow::anyhow!(
                         "the manifest repository source has no fetched manifest commit"
@@ -393,7 +391,6 @@ impl<D: DockerApi> ApplicationRuntime<D> {
                 let (commit, image_id) = self
                     .prepare_git(environment, name, &source, repository, build)
                     .await
-                    // An unreachable build machine is not a failed build.
                     .map_err(|error| {
                         if matches!(
                             error.downcast_ref(),
@@ -478,7 +475,6 @@ impl<D: DockerApi> ApplicationRuntime<D> {
                 Ok((commit, earlier.image))
             }
             Err(error) => {
-                // An unreachable build machine said so already, and built nothing.
                 if !matches!(
                     error.downcast_ref(),
                     Some(DockerError::BuilderUnavailable(_))

@@ -112,7 +112,6 @@ impl Heads {
         .await
         .context("git ls-remote timed out")?
         .map_err(|error| {
-            // Git may echo the URL, credentials included, so details stay in logs.
             tracing::warn!(?error, "git ls-remote failed");
             match error.failure() {
                 Some(failure) => anyhow::anyhow!("git ls-remote failed ({})", failure.status),
@@ -253,8 +252,6 @@ impl Reader<'_> {
 impl Drop for Reader<'_> {
     fn drop(&mut self) {
         let mut repositories = self.listings.repositories.lock();
-        // Readers take and drop their handle under this lock, so the last
-        // to finish sees only the map's and its own, and removes it.
         if let Some(repository) = self.repository.take()
             && Arc::strong_count(&repository) == 2
         {
@@ -462,8 +459,6 @@ impl Checkouts {
     /// Returns a Git failure, or [`TreeTooLarge`] when it takes more than
     /// `[checkouts] max_bytes` or has more than [`Self::FILES`] files.
     pub(crate) async fn measure(&self, repository: &Path, revision: &str) -> anyhow::Result<u64> {
-        // A line is at most a type, 20 digits, and two separators, so a
-        // larger output has more than `FILES` lines.
         let mut command = Checkout::command_in(repository);
         command.args([
             "ls-tree",
@@ -486,7 +481,6 @@ impl Checkouts {
         let output = String::from_utf8(output).context("decode Git tree sizes")?;
         let mut bytes = 0_u64;
         for (files, entry) in output.lines().enumerate() {
-            // Directories and submodules take a block, whatever their size.
             let size = match entry.split_once(' ') {
                 Some(("blob", size)) => size.parse().context("parse a Git blob size")?,
                 _ => 0,
@@ -507,7 +501,6 @@ impl Checkouts {
         root: &Path,
         log: Option<&dyn piqueld_docker::command::OutputLog>,
     ) -> anyhow::Result<()> {
-        // `--no-local` keeps `--depth` for repository paths too.
         let mut clone = Checkout::command();
         clone.args([
             "clone",
@@ -581,8 +574,6 @@ impl Checkouts {
             result = transfer => result?,
             too_large = watch => return Err(too_large.into()),
         };
-        // A transfer may finish between checks; one that can't be measured
-        // fails too.
         match Self::measured(directory).await {
             Some(bytes) if bytes <= limit => Ok(transferred),
             _ => Err(TreeTooLarge { limit }.into()),
@@ -618,7 +609,6 @@ impl Checkouts {
                             metadata => metadata?,
                         };
                     let (path, metadata) = metadata;
-                    // `blocks` counts 512-byte units, whatever the block size.
                     bytes = bytes.saturating_add(metadata.blocks().saturating_mul(512));
                     if metadata.is_dir() {
                         directories.push(path);
@@ -683,11 +673,6 @@ impl Checkout {
     /// [`Self::ALLOC_LIMIT`], and killed if the future is dropped.
     fn command() -> Command {
         let mut command = Command::new("git");
-        // Inherit the daemon user's credentials while excluding executable transport
-        // helpers, even when its configuration enables them or rewrites a URL to use
-        // one. Ignore the host-wide `/etc/gitconfig`: it holds operator settings,
-        // such as rewriting GitHub URLs to SSH, that the daemon user cannot satisfy.
-        // Never hang waiting for a password prompt.
         command
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_ALLOW_PROTOCOL", "file:git:http:https:ssh")
@@ -913,7 +898,6 @@ mod tests {
     async fn checkout_pins_commits_and_confines_paths() {
         let repository = tempfile::tempdir().unwrap();
         let mut source = fixture(repository.path()).await;
-        // Outside the fixture, so its next commit cannot take in a checkout.
         let store = tempfile::tempdir().unwrap();
         let checkouts = checkouts(store.path(), 1 << 30).await;
         let checkout = checkouts.checkout(&source, None).await.unwrap();
@@ -922,7 +906,6 @@ mod tests {
         {
             let latest = checkouts.checkout(&source, None).await.unwrap();
             assert_eq!(latest.commit, second);
-            // The tree is only what the fixture wrote.
             let tree = Checkout::command_in(&latest.root())
                 .args(["ls-tree", "-r", "--name-only", "HEAD"])
                 .output()
@@ -955,7 +938,6 @@ mod tests {
                 .unwrap(),
             "FROM scratch\n"
         );
-        // Clones are shallow, and their directory goes with them.
         let depth = Checkout::command_in(&checkout.root())
             .args(["rev-list", "--count", "HEAD"])
             .output()
@@ -973,7 +955,6 @@ mod tests {
     async fn checkouts_wait_for_room_and_refuse_trees_that_never_fit() {
         let repository = tempfile::tempdir().unwrap();
         let source = fixture(repository.path()).await;
-        // One MiB permit: the fixture's tree takes all of it.
         let checkouts = checkouts(repository.path(), 1 << 20).await;
         let held = checkouts.checkout(&source, None).await.unwrap();
         let waiting = checkouts.checkout(&source, None);
@@ -1010,7 +991,6 @@ mod tests {
         assert!(first.as_ref().as_ref().unwrap().head("main").is_some());
         let later = listings.list(&url).await;
         assert!(!Arc::ptr_eq(&first, &later));
-        // Nothing is kept once no read waits, even a cancelled one.
         let cancelled = listings.list(&url);
         drop(tokio::time::timeout(Duration::ZERO, cancelled).await);
         assert!(listings.repositories.lock().is_empty());
@@ -1052,7 +1032,6 @@ mod tests {
         let checkouts = checkouts(repository.path(), 1 << 30).await;
         let checkout = checkouts.checkout(&source, None).await.unwrap();
         let root = checkout.root();
-        // As `UMask=0077` checks them out.
         for (path, mode) in [("Dockerfile", 0o600), ("bin", 0o700), ("bin/run", 0o700)] {
             std::fs::set_permissions(root.join(path), std::fs::Permissions::from_mode(mode))
                 .unwrap();
@@ -1084,7 +1063,6 @@ mod tests {
             .measure(Path::new(&source.url), &head)
             .await
             .unwrap();
-        // 51 files and 200 directories, a block each and their index share.
         assert_eq!(tree, 251 * (4096 + 256));
     }
 

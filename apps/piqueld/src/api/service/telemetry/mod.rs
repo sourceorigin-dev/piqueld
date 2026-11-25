@@ -91,7 +91,6 @@ impl ApplicationService {
         let mut daemon_tick = Ticker::new(GAUGE_INTERVAL);
         let mut services_tick = Ticker::new(GAUGE_INTERVAL);
         let mut receivers_tick = Ticker::new(RECEIVERS_INTERVAL);
-        // A failure left open while an endpoint was configured closes.
         let mut exported = HashSet::from([None]);
         tokio::join!(
             async {
@@ -139,7 +138,6 @@ impl ApplicationService {
                 )
                 .await
             {
-                // Pruning overtook the exporter; carry on from the present.
                 Err(StoreError::HistoryExpired) => {
                     tail.cursor = self.store.journal_position().await?.event;
                     return Ok(());
@@ -268,7 +266,6 @@ impl ApplicationService {
             if stored.resolved.is_none() || stored.delete_intent() {
                 continue;
             }
-            // An environment the runtime cannot observe reports no replicas.
             let Ok(observed) = self.runtime.observe(&stored).await else {
                 continue;
             };

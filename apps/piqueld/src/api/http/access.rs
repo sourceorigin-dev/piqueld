@@ -309,8 +309,6 @@ pub(super) async fn audit(
             .and_then(|id| id.header_value().to_str().ok().map(str::to_owned)),
         recorded: Recorded::default(),
     };
-    // Handlers that refuse after responding, like exec, record it themselves,
-    // and changes record their own success (see `Audited`).
     request.extensions_mut().insert(audit.clone());
     let response = next.run(request).await;
     let extensions = response.extensions();
@@ -645,8 +643,6 @@ impl From<Denied> for ApiError {
                 ApiErrorCode::CredentialScoped,
                 "Credentials with limited access, like API tokens, cannot create credentials or change their account",
             ),
-            // Clients confirm with a passkey and retry only when `step_up` is
-            // set: no passkey can make an API token fresh.
             Denied::Reauthenticate(reason) => Self::new(
                 StatusCode::FORBIDDEN,
                 ApiErrorCode::ReauthenticationRequired,

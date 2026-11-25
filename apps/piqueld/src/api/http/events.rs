@@ -116,8 +116,6 @@ pub(super) async fn kinds(
     let kinds = state.event_kinds(&visible).await?;
     Ok(ok(EventKinds { kinds }))
 }
-// The first batch is read before responding so request errors are still plain
-// JSON; afterwards the stream reads the store again after each write to it.
 /// Streams structured events as server-sent events.
 ///
 /// Events arrive oldest first, resuming after the `Last-Event-ID` header or
@@ -163,9 +161,7 @@ pub(super) async fn stream(
     let filter = query.filter();
     let batch_size = query.limit.unwrap_or(piqueld_store::MAX_PAGE_SIZE);
     let admitted = state.admit(Expensive::EventStream)?;
-    // Subscribed first, so a write during the first read wakes the stream.
     let written = state.written();
-    // Validate before sending headers; all later errors explicitly terminate the stream.
     let (initial, checkpoint) = state
         .stream_events(&filter, &visible, after, batch_size)
         .await?;
@@ -229,7 +225,6 @@ impl Follow for FollowEvents {
                     .await;
                 match checked {
                     Ok(visible) if visible != self.visible => {
-                        // Events read with the previous visibility are read again.
                         self.visible = visible;
                         self.pending.clear();
                         self.checkpoint = self.after;
@@ -248,13 +243,9 @@ impl Follow for FollowEvents {
                 return Some(live::json(message, StreamMessage::Event, event));
             }
             if self.checkpoint > self.after {
-                // An ID-only message moves Last-Event-ID past events the filter
-                // excluded without dispatching an event to the client.
                 self.after = self.checkpoint;
                 return Some(ServerEvent::default().id(format!("v1:{}", self.after)));
             }
-            // Woken for a recheck, the read is cheap; the loop rechecks
-            // before sending anything it reads.
             self.pace.wait(&self.lease, self.behind).await;
             match self
                 .state

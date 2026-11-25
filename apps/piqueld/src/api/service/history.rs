@@ -182,8 +182,6 @@ impl ApplicationService {
         cursor: Option<&str>,
     ) -> Result<Page<Operation>, ApplicationError> {
         let operation = self.store.operation(deployment).await?;
-        // Hide other environments' operations, and reject operations that are
-        // not deployments (they have no captured manifest).
         if operation.environment_id != *id {
             return Err(StoreError::NotFound.into());
         }
@@ -270,7 +268,6 @@ impl ApplicationService {
         since_seconds: u32,
         stream: Option<LogStream>,
     ) -> Result<ApplicationLogs, ApplicationError> {
-        // Service names follow the 63-character DNS label limit.
         if !(1..=1000).contains(&tail)
             || !(1..=86400).contains(&since_seconds)
             || service.is_some_and(|name| name.is_empty() || name.len() > 63)

@@ -9,8 +9,6 @@ use std::collections::BTreeMap;
 use utoipa::openapi::{RefOr, Response};
 use utoipa::{OpenApi, ToResponse};
 
-// Base document: API metadata plus explicitly registered component schemas.
-// Paths are merged in by `documented_router`.
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -21,7 +19,6 @@ use utoipa::{OpenApi, ToResponse};
     ),
     components(schemas(
         ErrorBody,
-        // The values of `ErrorBody.code`, which stays an open string.
         piqueld_core::api::ApiErrorCode,
         piqueld_core::auth::User,
         piqueld_core::auth::Session,
@@ -55,11 +52,8 @@ use utoipa::{OpenApi, ToResponse};
         Envelope<bool>,
         Route,
         RoutesValue,
-        // `details` of `preview_limit_reached`.
         piqueld_core::api::PreviewLimitReached,
-        // The first message of the exec WebSocket.
         piqueld_core::exec::ExecRequest,
-        // `view` of `listDeployments`.
         piqueld_core::api::DeploymentListView
     ))
 )]
@@ -73,7 +67,6 @@ pub(super) fn base_document() -> utoipa::openapi::OpenApi {
 /// What the structured error response every operation documents says.
 const GENERIC_ERROR: &str = "Structured, sanitized error";
 
-// The structured error response every operation documents.
 #[expect(
     dead_code,
     reason = "Utoipa reads the field's type as the body schema; no value is ever built"
@@ -118,7 +111,6 @@ impl<
 > utoipa::IntoResponses for ApiErrors<A, B, C, D, E, F, G, H, I, J>
 {
     fn responses() -> BTreeMap<String, RefOr<Response>> {
-        // The documented statuses, followed by zeros.
         let statuses = const {
             let statuses = [A, B, C, D, E, F, G, H, I, J];
             let mut index = 0;
@@ -146,7 +138,6 @@ impl<
     }
 }
 
-// The refusal of a sensitive action without a recent passkey sign-in.
 #[expect(
     dead_code,
     reason = "Utoipa reads the field's type as the body schema; no value is ever built"
@@ -157,7 +148,6 @@ impl<
 )]
 pub(super) struct ReauthenticationResponse(ErrorBody);
 
-// Serves the precomputed `OpenAPI` 3.0 document installed by `finish_router`.
 #[utoipa::path(
     get,
     path = "/api/v1/openapi.json",
@@ -254,8 +244,6 @@ fn convert_to_openapi_30(value: &mut Value) {
             for value in object.values_mut() {
                 convert_to_openapi_30(value);
             }
-            // OpenAPI 3.0 supports `additionalProperties`, but not JSON
-            // Schema's separate constraints on property names.
             object.remove("propertyNames");
 
             if let Some(Value::Array(types)) = object.get("type") {

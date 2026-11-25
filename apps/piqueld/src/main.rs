@@ -29,7 +29,6 @@ const SHUTDOWN_DEADLINE: std::time::Duration = std::time::Duration::from_mins(1)
 /// Time queued telemetry gets to reach its collectors on exit.
 const TELEMETRY_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
-// Command-line arguments. Doc comments on fields become CLI help text.
 #[derive(Debug, Parser)]
 #[command(
     name = "piqueld",
@@ -157,7 +156,6 @@ async fn main() -> Result<()> {
                 .init_tracing(args.open_log_file()?)
                 .context("failed to initialize tracing")?;
             let result = serve(config, telemetry.clone()).await;
-            // Send what the daemon recorded last, including a startup failure.
             telemetry.shutdown(TELEMETRY_GRACE).await;
             result
         }
@@ -191,20 +189,16 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
                 config.server.data_dir.display()
             )
         })?;
-    // Bind all endpoints before opening state or starting background work.
     let runtime_dir =
         piqueld_config::runtime_dir::RuntimeDir::acquire(&config.server.runtime_dir).await?;
     let listeners = Listeners::bind(&config, &runtime_dir).await?;
     let backups = Backups::new(&config.server.data_dir);
     backups.ensure_restore_complete()?;
-    // Migrations can't be undone, so state the store is about to migrate is
-    // backed up first, before the tailnet node writes to it.
     if let Some(backup) = backups.before_migration().await.context(
         "failed to back up the data directory before migrating its database; nothing was migrated",
     )? {
         info!(backup = %backup.display(), "backed up the data directory before migrating its database");
     }
-    // The node may fill auth.public_url, so it joins before authentication starts.
     let tailnet = Node::join(&mut config).await?;
 
     let cancellation = CancellationToken::new();
@@ -220,8 +214,6 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
         };
     let state = state.with_tailnet(tailnet.as_ref().map(Node::status));
 
-    // OS signal handling. The handler only returns if it cannot be
-    // installed, which stops the daemon too.
     let signal_cancellation = cancellation.clone();
     let signal_task = tokio::spawn(async move {
         let result = piqueld::handle_shutdown_signals(signal_cancellation.clone()).await;
@@ -234,8 +226,6 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
 
     piqueld::run_until_cancelled(cancellation).await;
 
-    // Every task is joined, even after one failed, before the first failure
-    // is reported.
     let shutdown = async {
         let mut results = Vec::new();
         for api in apis {
@@ -265,8 +255,6 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
         results.into_iter().collect::<Result<()>>()
     };
     let Ok(result) = tokio::time::timeout(SHUTDOWN_DEADLINE, shutdown).await else {
-        // Returning would release the directory locks while unfinished
-        // workers still write, so exit while this process holds them.
         tracing::error!(
             deadline_seconds = SHUTDOWN_DEADLINE.as_secs(),
             "shutdown did not finish in time; exiting with tasks still running"
@@ -274,8 +262,6 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
         telemetry.shutdown(TELEMETRY_GRACE).await;
         std::process::exit(1);
     };
-    // A running handler stays active, so a second signal still exits during
-    // the final telemetry flush; the process ends it.
     let signals = if signal_task.is_finished() {
         signal_task
             .await
@@ -337,8 +323,6 @@ impl Listeners {
                 )
             })
             .collect();
-        // Only requests through the tailnet node, or the apps node's dashboard
-        // hostname, carry a tailnet identity, looked up through that node.
         let tailnet_router = |host: String, whois: Arc<dyn TailnetLookup>| {
             let mut hosts = config.server.allowed_hosts.clone();
             hosts.push(host);
@@ -439,8 +423,6 @@ where
                 .with_graceful_shutdown(async move { shutdown.cancelled().await }),
         );
         tokio::pin!(serve);
-        // The grace period starts only once shutdown has been requested; a
-        // healthy server must never be torn down by an elapsed deadline.
         let grace = async {
             cancellation.cancelled().await;
             tokio::time::sleep(SHUTDOWN_GRACE).await;

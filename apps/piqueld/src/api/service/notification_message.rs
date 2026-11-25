@@ -127,8 +127,6 @@ impl Notification<'_> {
         if let Some(path) = self.link() {
             embed["url"] = json!(format!("{dashboard}{path}"));
         }
-        // Only the content pings: it is the category message alone, the
-        // operator's own text. Mentions in embeds never notify.
         json!({
             "content": self.message.unwrap_or_default(),
             "embeds": [embed],

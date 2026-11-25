@@ -27,7 +27,6 @@ impl ApplicationService {
         let (id, deployment) = (id.clone(), deployment.to_owned());
         let request = Mutation::Restore(restore);
         Self::check_submission(&request, None, false, request_id)?;
-        // A repeated request returns what it got, whatever changed since.
         if let Some(response) = self
             .store
             .replay(author.actor, &request, false, request_id)
@@ -41,7 +40,6 @@ impl ApplicationService {
             .map(|(service, source)| (service.clone(), source.clone()))
             .collect();
         let _in_use = self.runtime.reuse_images(&sources).await?;
-        // Boxed: acceptance would otherwise make every restore future large.
         let response = Box::pin(self.accept(author, request, None, false, request_id)).await?;
         Self::restore_response(response)
     }

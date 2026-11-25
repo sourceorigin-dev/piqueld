@@ -481,7 +481,6 @@ impl From<BoundaryError> for ApiError {
     /// boundary diagnostic so it is recorded with the request.
     fn from(value: BoundaryError) -> Self {
         let diagnostic = value.diagnostic();
-        // Storage conversion handles its own logging, including expected client errors.
         if !matches!(&value, BoundaryError::Store(_)) {
             tracing::error!(error = ?value, "runtime boundary request failed");
         }

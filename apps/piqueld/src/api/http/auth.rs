@@ -43,7 +43,6 @@ impl From<AuthError> for ApiError {
     fn from(error: AuthError) -> Self {
         match error {
             AuthError::Webauthn(ref source) => {
-                // Includes counter regressions that can indicate a cloned authenticator.
                 tracing::warn!(error = %source, "passkey verification failed");
                 Self::from(AuthError::Unauthorized)
             }
@@ -130,7 +129,6 @@ async fn authenticate(
 /// extensions, leaving `access::enforce` to decide whether one is needed.
 async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
     let authorization = request.headers().get(header::AUTHORIZATION);
-    // The scheme is case-insensitive (RFC 9110).
     let bearer = authorization
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.split_once(' '))
@@ -182,9 +180,6 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
             Err(error) => return ApiError::from(error).into_response(),
         }
     }
-    // A bound token works only from a matching tailnet peer, checked with a
-    // fresh lookup, which then also describes the request. Others are only
-    // described, from the cache.
     let source = TailnetSource::of(request.extensions());
     let fresh = match &identity {
         Some(resolved) => FreshTailnet::check(resolved, source.as_ref()).await,
@@ -192,8 +187,6 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
     };
     let tailnet = match (&fresh, &source) {
         (Some(fresh), _) => fresh.peer().cloned(),
-        // The cached identity only describes the request, so a lookup that
-        // timed out leaves it undescribed.
         (None, Some(source)) => source.whois(false).await.ok().flatten(),
         (None, None) => None,
     };
@@ -214,7 +207,6 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
         request.extensions_mut().insert(identity.clone());
     }
     let mut response = next.run(request).await;
-    // Outer layers, like the audit trail, see who made the request.
     if let Some(identity) = identity {
         response.extensions_mut().insert(identity);
     }
@@ -236,15 +228,11 @@ async fn cross_site(
     session: Option<&str>,
 ) -> bool {
     let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
-    // A WebSocket opens with GET, but browsers send cookies on cross-site
-    // handshakes, so it is checked like a mutation.
     let mutation = !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
         || headers.contains_key(header::UPGRADE);
     if !mutation || origin == Some(auth.origin()) {
         return false;
     }
-    // Confirming a session with a passkey is no exception: it needs the
-    // session cookie, so the cookie rule already asks for the Origin.
     let ceremony = path.contains("/auth/register/") || path.contains("/auth/login/");
     origin.is_some()
         || (bearer.is_none() && session.is_some())
@@ -452,7 +440,6 @@ pub(super) async fn setup_link(
     Extension(auth): Extension<Auth>,
     unix: Option<Extension<super::UnixSocket>>,
 ) -> Result<Json<SetupLink>, ApiError> {
-    // Looks absent over TCP, but the audit trail records the refusal.
     if unix.is_none() {
         return Err(hidden());
     }
@@ -669,8 +656,6 @@ pub(super) async fn manage(
     audited: Audited,
     ApiJson(input): ApiJson<Manage>,
 ) -> Response {
-    // A change records what it changed itself; the background record of a
-    // refused, failed or unchanged one names what it attempted.
     let detail = super::access::AuditDetail(input.describe());
     let mut response = match auth.manage(&identity, audited.request(), input).await {
         Ok(managed) => Json(managed).into_response(),

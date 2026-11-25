@@ -173,8 +173,6 @@ impl ApplicationService {
         connection: Option<&RepositoryManifest>,
         heads: &Result<Heads, anyhow::Error>,
     ) -> Result<PreviewView, ApplicationError> {
-        // Deployed routes include hostnames that only render when deploying,
-        // such as `${{ git.sha }}`.
         let hostnames = self
             .store
             .get(&preview.id)

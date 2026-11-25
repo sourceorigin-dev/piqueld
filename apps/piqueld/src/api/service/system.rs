@@ -18,8 +18,6 @@ impl ApplicationService {
     /// and telemetry receivers, naming only `readable` applications, and the
     /// built images.
     pub async fn system_status(&self, readable: &Scope) -> SystemStatus {
-        // Status reports storage outages instead of failing, so preview
-        // counts that cannot be read are absent rather than zero.
         let previews = self
             .store
             .preview_usage(readable)
@@ -95,8 +93,6 @@ impl ApplicationService {
         let database = database.is_ok_and(|result| result.is_ok());
         let (docker, swarm) = runtime.unwrap_or((false, false));
         let mut ingress = self.ingress_status().await;
-        // Readiness reports storage outages instead of failing, so routes
-        // whose applications cannot be looked up are hidden.
         ingress.routes = self
             .store
             .readable_routes(readable, ingress.routes)

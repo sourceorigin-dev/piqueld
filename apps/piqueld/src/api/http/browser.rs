@@ -63,7 +63,6 @@ impl BrowserPolicy {
         {
             return Err(denied());
         }
-        // Absolute-form targets must agree with Host, including the port.
         if request
             .uri()
             .authority()
@@ -71,8 +70,6 @@ impl BrowserPolicy {
         {
             return Err(denied());
         }
-        // Authentication checks API mutation origins against auth.public_url.
-        // The upstream HTTP scheme/Host can differ behind a private TLS proxy.
         if !request.method().is_safe()
             && request
                 .headers()
@@ -84,8 +81,8 @@ impl BrowserPolicy {
         Ok(())
     }
 
-    // `Authority` alone accepts suffixes after IPv6 brackets and nonnumeric
-    // ports. Reject those rather than trusting only its extracted host.
+    /// `Authority` alone accepts suffixes after IPv6 brackets and nonnumeric
+    /// ports. Reject those rather than trusting only its extracted host.
     fn valid_authority(authority: &Authority) -> bool {
         let host = authority.host();
         let Some(suffix) = authority.as_str().strip_prefix(host) else {

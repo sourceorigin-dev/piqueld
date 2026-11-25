@@ -212,7 +212,6 @@ pub(super) async fn put_stored(
 ) -> Result<impl IntoResponse, ApiError> {
     let generation = expected(request.headers())?;
     let (access, expected_access) = query.into_parts()?;
-    // Checked before the body is read, which then need not be.
     if request
         .headers()
         .get(header::CONTENT_TYPE)

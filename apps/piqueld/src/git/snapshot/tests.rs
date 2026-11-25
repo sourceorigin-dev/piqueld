@@ -115,7 +115,6 @@ async fn receives_thin_and_complete_bundles() {
             .unwrap(),
         "local\n"
     );
-    // Only the snapshot of the same repository and commit is replaced.
     let pinned = GitRepository {
         url: remote.display().to_string(),
         branch: "main".into(),
@@ -130,7 +129,6 @@ async fn receives_thin_and_complete_bundles() {
         &source.repository
     );
     assert_eq!(SnapshotSource::checkout(Some(&source), &other), &other);
-    // Nothing staged is left behind.
     let staged = std::fs::read_dir(root.path().join("snapshots/staging")).unwrap();
     assert_eq!(staged.count(), 0);
 }
@@ -147,7 +145,6 @@ async fn refuses_oversized_invalid_and_unfetchable_bundles() {
     let thin = bundle(root.path(), &format!("^{base}"));
     let length = thin.len() as u64;
 
-    // Announced, and only found while streaming.
     let announced = snapshots
         .receive(
             body(&thin),
@@ -162,7 +159,6 @@ async fn refuses_oversized_invalid_and_unfetchable_bundles() {
 
     let garbage = receive(&snapshots, b"not a bundle\n\n".to_vec(), 1 << 20, &remote).await;
     assert!(matches!(garbage, Err(SnapshotError::Invalid(_))));
-    // `git bundle verify` accepts a truncated pack; unbundling does not.
     let truncated = receive(
         &snapshots,
         thin[..thin.len() - 40].to_vec(),
@@ -171,7 +167,6 @@ async fn refuses_oversized_invalid_and_unfetchable_bundles() {
     );
     assert!(matches!(truncated.await, Err(SnapshotError::Invalid(_))));
 
-    // A snapshot whose acceptance is refused is not kept.
     let received = receive(&snapshots, thin.clone(), 1 << 20, &remote)
         .await
         .unwrap();
@@ -184,7 +179,6 @@ async fn refuses_oversized_invalid_and_unfetchable_bundles() {
     assert!(refused.is_err());
     assert!(!snapshots.path(&commit).exists());
 
-    // Its files must fit a checkout: `local.txt` and `app.toml` take 10 bytes.
     let url = remote.display().to_string();
     let expands = snapshots
         .receive(body(&thin), (None, 1 << 20), &url, &checkouts(9))
@@ -224,7 +218,6 @@ async fn thin_bundles_of_merges_need_their_base_and_its_ancestors() {
     let merged = bundle(root.path(), &format!("^{base}"));
     let received = receive(&snapshots, merged, 1 << 20, &remote).await.unwrap();
     assert_eq!((received.commit, received.base), (commit, Some(base)));
-    // Excluding both parents of the merge leaves two unrelated bases.
     let unrelated = bundle(root.path(), "^HEAD^1 ^HEAD^2");
     let refused = receive(&snapshots, unrelated, 1 << 20, &remote).await;
     assert!(matches!(refused, Err(SnapshotError::Invalid(_))));

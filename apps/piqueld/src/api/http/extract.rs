@@ -128,7 +128,6 @@ impl Mutator {
             MutationResponse::Operation(operation) => reply(started, operation),
             MutationResponse::Promotion(promotion) => reply(started, promotion),
             MutationResponse::Deleted(deleted) => reply(started, deleted),
-            // Only sync submits the mutations answered with this.
             MutationResponse::Synced(_) => return Err(piqueld_store::StoreError::Corrupt.into()),
         })
     }

@@ -99,9 +99,6 @@ pub(super) async fn get(
     Ok(ok(state.environment(&EnvironmentId::parse(id)?).await?))
 }
 
-// Combines saved intent with a live runtime observation; runtime outages are
-// reported as diagnostics rather than failing the request. Links list only
-// importers the caller can read.
 #[utoipa::path(
     get,
     path = "/api/v1/environments/{id}/detail",
@@ -389,7 +386,6 @@ pub(super) async fn plan_promotion(
         .await?))
 }
 
-// Accepts a deletion operation; named volumes are retained.
 #[utoipa::path(
     delete, path = "/api/v1/environments/{id}", operation_id = "deleteEnvironment",
     summary = "Delete an environment's services and networks, retaining volumes",

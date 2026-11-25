@@ -180,7 +180,6 @@ impl Lister for Fake {
 async fn polling_lists_a_repository_once_for_every_application_and_deploys_only_what_moved() {
     let fixture = Fixture::new("{mode='poll',interval_seconds=60}").await;
     let production = fixture.production().await;
-    // Another application reading the same repository, polling slower.
     let wiki = Fixture::save(
         &fixture.service,
         "wiki",
@@ -202,7 +201,6 @@ async fn polling_lists_a_repository_once_for_every_application_and_deploys_only_
         .accept(Actor::Daemon, pin, None, true, None)
         .await
         .unwrap();
-    // Deployed from `main` too, but never opted in.
     let manual = fixture.environment("manual", "main").await;
     let opt_out = Mutation::SetSync {
         id: manual.clone(),
@@ -228,7 +226,6 @@ async fn polling_lists_a_repository_once_for_every_application_and_deploys_only_
     for unchanged in [&staging, &pinned, &manual, &gone] {
         assert_eq!(fixture.synced(unchanged).await, []);
     }
-    // A gone branch keeps its preview.
     fixture
         .service
         .store
@@ -236,8 +233,6 @@ async fn polling_lists_a_repository_once_for_every_application_and_deploys_only_
         .await
         .expect("`get` should succeed");
 
-    // Nothing is listed again before the interval elapses, counted from
-    // when the pass ended.
     fixture
         .service
         .sync_due(&lister, &mut schedule, now + Duration::from_secs(59))
@@ -270,8 +265,6 @@ async fn failed_listings_deploy_nothing_and_back_off() {
         .unwrap();
     assert!(check.error.unwrap().contains("ls-remote failed"));
 
-    // Retried after 60 s, then after 120 s more. Deadlines count from
-    // when a pass ended, so the checks after them leave slack for slow runs.
     fixture
         .service
         .sync_due(&lister, &mut schedule, now + Duration::from_secs(59))

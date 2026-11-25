@@ -32,7 +32,6 @@ impl ApplicationService {
         request_id: Option<&str>,
     ) -> Result<AcceptedPromotion, ApplicationError> {
         let author = author.into();
-        // A repeated request returns what it got, whatever changed since.
         let request = |promotion| {
             Mutation::Promotion(PromotionMutation::Promote {
                 id: id.clone(),
@@ -66,7 +65,6 @@ impl ApplicationService {
             .runtime
             .reuse_images(candidate.release.sources())
             .await?;
-        // Generated off the writer lock, stored only if accepted.
         let generated = self
             .store
             .generated_secrets(id, &rendering.application)
@@ -75,7 +73,6 @@ impl ApplicationService {
             generated,
             ..candidate.promotion
         };
-        // Boxed: acceptance would otherwise make every promotion future large.
         let response = Box::pin(self.accept(
             author,
             request(Some(promotion)),
@@ -147,7 +144,6 @@ impl ApplicationService {
         plan.add_jobs(app, target.id());
         plan.warn_telemetry(app, granted);
         let spec = app.spec();
-        // Plans only warn about imports, so list no importers.
         plan.warn_links(
             &self
                 .store
@@ -158,7 +154,6 @@ impl ApplicationService {
                 )
                 .await?,
         );
-        // Compare with what runs, not with a later attempt that never published.
         let operation = self
             .store
             .latest_operation_for_environment(target.id())
@@ -214,8 +209,6 @@ impl ApplicationService {
             return Ok(());
         };
         let observed = self.runtime.observe(source).await?;
-        // Network attachments include ingress's and links', projected as the
-        // controller does.
         let routes = self.store.applied_routes(source.id()).await?;
         if let Some(target) = &source.resolved
             && self
@@ -253,8 +246,6 @@ impl ApplicationService {
         let target: &StoredEnvironment = &candidate.target;
         let rendering = target.render_release(&candidate.release, PREVIEW_DEPLOYMENT_ID.into())?;
         let app = &rendering.application;
-        // Unchanged versions keep the Swarm secret services run; new ones
-        // stand in by name.
         let current = self.store.current_secret_names(target.id()).await?;
         let pins = app
             .spec()

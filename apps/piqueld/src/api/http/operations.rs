@@ -31,7 +31,6 @@ async fn authorize(state: &ApiState, grants: &Grants, id: &str) -> Result<Operat
     Ok(operation)
 }
 
-// Returns one durable operation, as identified by a 202 mutation response.
 #[utoipa::path(
     get,
     path = "/api/v1/operations/{id}",
@@ -104,7 +103,6 @@ pub(super) async fn stream_timeline(
 ) -> Result<impl IntoResponse, ApiError> {
     authorize(&state, &identity.grants, &id).await?;
     let admitted = state.admit(Expensive::EventStream)?;
-    // Subscribed first, so a write while the timeline is read wakes the stream.
     let written = state.written();
     let timeline = state.timeline(&id).await?;
     let follow = FollowTimeline {

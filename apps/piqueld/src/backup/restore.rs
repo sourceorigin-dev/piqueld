@@ -74,8 +74,6 @@ impl Backups {
             return Ok(manifest);
         }
         let data_dir = &self.data_dir;
-        // The directories `prepare_data_dir` creates, whose entries in their
-        // parents are synced once it has.
         let missing: Vec<PathBuf> = data_dir
             .ancestors()
             .take_while(|directory| fs::symlink_metadata(directory).is_err())
@@ -157,7 +155,6 @@ impl Backups {
                     .with_context(|| format!("read {}", source.display()))?
                     .file_name();
                 let (from, to) = (source.join(&name), target.join(&name));
-                // Neither copy follows a symlink.
                 match name.to_str() {
                     Some(MANIFEST) => {}
                     Some(DATABASE | SECRET_KEY) => {

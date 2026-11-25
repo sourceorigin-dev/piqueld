@@ -243,7 +243,6 @@ impl Snapshots {
                 .map_err(SnapshotError::internal)?;
         }
         let accepted = accept.await;
-        // The refusal is what the caller needs; pruning retries a failed removal.
         if accepted.is_err()
             && installed
             && let Err(error) = tokio::fs::remove_dir_all(&path).await
@@ -365,7 +364,6 @@ impl Staged {
         if matches!(fetched, Ok(Ok(_))) {
             return Ok(());
         }
-        // Git may echo the URL, credentials included, so details stay in logs.
         tracing::warn!(?fetched, "snapshot prerequisite fetch failed");
         Err(SnapshotError::BaseUnavailable {
             prerequisites: prerequisites.to_vec(),
@@ -390,7 +388,6 @@ impl Staged {
         .await
         .map_err(invalid("verification failed"))?;
         let refspec = format!("{}:refs/heads/{SNAPSHOT_BRANCH}", header.reference);
-        // One thread resolves deltas, so one object at most is inflated.
         let unbundle = [
             "-c",
             "transfer.fsckObjects=true",

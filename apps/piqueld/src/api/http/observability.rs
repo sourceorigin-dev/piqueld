@@ -27,9 +27,6 @@ pub(super) async fn diagnostic(
     ApiPath(id): ApiPath<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     let event = state.diagnostic(&id).await?;
-    // Application diagnostics need `events:read` there, like other history of
-    // a readable application. Daemon diagnostics need `system:read`; without
-    // it they do not exist for the caller.
     match (&event.scope, &event.application_id) {
         (piqueld_core::observability::EventScope::Application, Some(application)) => identity
             .grants
@@ -134,7 +131,6 @@ pub(super) async fn destinations(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Managers read destinations to change them, without other daemon state.
     if !identity
         .grants
         .has_global(GlobalPermission::NotificationsManage)
@@ -241,8 +237,6 @@ pub(super) async fn audit(
         outcome: query.outcome,
     };
     if !identity.grants.has_global(GlobalPermission::AuditRead) {
-        // Only accounts lack `audit:read`; the host operator holds `admin`.
-        // Scoped credentials, like API tokens, see only their own requests.
         let own = identity.user().map(|user| user.id.clone());
         let credential = identity
             .scoped

@@ -110,8 +110,6 @@ impl Backups {
             .await
             .context("read the database's schema")?;
         live.close().await.context("close the database")?;
-        // A new database has nothing to lose, and the store refuses a newer
-        // one.
         if identity.is_none_or(|identity| identity.schema_version >= SCHEMA_VERSION) {
             return Ok(None);
         }
@@ -125,10 +123,7 @@ impl Backups {
                 _ => Err(error),
             })
             .with_context(|| format!("create {}", directory.display()))?;
-        // The backups directory's own entry must survive a crash too.
         sync(&self.data_dir)?;
-        // Written under a temporary name, so an unfinished backup never looks
-        // like a finished one, and is removed if it fails.
         let staging = tempfile::Builder::new()
             .prefix(PreMigration::PARTIAL)
             .tempdir_in(&directory)
@@ -137,7 +132,6 @@ impl Backups {
         let backup = directory.join(PreMigration::from(&manifest).name());
         fs::rename(staging.path(), &backup)
             .with_context(|| format!("move the backup to {}", backup.display()))?;
-        // Moved, so dropping the staging directory removes nothing.
         drop(staging);
         sync(&directory)?;
         PreMigration::prune(&directory, PRE_MIGRATION_KEEP)?;
@@ -321,7 +315,6 @@ fn copy_tree(
         }
         let (from, to) = (shown.join(name), target.join(name));
         let kind = match entry.file_type() {
-            // Some filesystems don't say; ask without following a symlink.
             FileType::Unknown => {
                 match rustix::fs::statat(&directory, name, AtFlags::SYMLINK_NOFOLLOW) {
                     Err(rustix::io::Errno::NOENT) => continue,

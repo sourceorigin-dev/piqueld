@@ -61,7 +61,6 @@ async fn outdated(data_dir: &Path) -> String {
     write("snapshots/preview.bundle", b"bundle");
     std::os::unix::net::UnixListener::bind(data_dir.join("tailscale/tailscaled.sock"))
         .expect("a socket is created");
-    // A link the gateway could plant, to state that isn't the daemon's.
     std::os::unix::fs::symlink(
         data_dir.join("snapshots"),
         data_dir.join("ingress/data/elsewhere"),

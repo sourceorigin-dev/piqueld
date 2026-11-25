@@ -310,7 +310,6 @@ impl KnownAddresses {
     /// Remembers `pair`, returning whether it was new.
     fn insert(&self, pair: &(String, IpAddr)) -> bool {
         let mut known = self.0.lock();
-        // Bounded: forgetting pairs only repeats an idempotent write.
         if known.len() >= 10_000 {
             known.clear();
         }

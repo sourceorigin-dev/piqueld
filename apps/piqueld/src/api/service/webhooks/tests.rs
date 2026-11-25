@@ -42,7 +42,6 @@ async fn only_signed_deliveries_hint_sync_which_deploys_the_head_it_lists() {
         .secret;
     let router = crate::api::http::webhook_router(fixture.service.clone());
     let path = format!("{WEBHOOK_PATH}{}", fixture.application);
-    // The payload names a commit the branch does not have.
     let forged = "dddddddddddddddddddddddddddddddddddddddd";
     let body = format!(r#"{{"ref":"refs/heads/main","after":"{forged}"}}"#).into_bytes();
     let valid = sign(secret.as_bytes(), &body);
@@ -71,8 +70,6 @@ async fn only_signed_deliveries_hint_sync_which_deploys_the_head_it_lists() {
         deliver(&router, "/api/v1/applications", Some(&valid), body.clone()).await,
         http::StatusCode::NOT_FOUND
     );
-    // Webhook repositories are listed once at startup, then never polled:
-    // refused deliveries list nothing.
     let lister = Fake::with(vec![("main", OLD)]);
     let mut schedule = Schedule::default();
     let start = tokio::time::Instant::now();

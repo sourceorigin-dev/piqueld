@@ -90,8 +90,6 @@ impl Exported {
         {
             self.follower = None;
             match result {
-                // A follower ends once its container stops, having read all
-                // its output unless it started again since.
                 Ok(Ok(())) => {
                     self.done = self.container.state == ContainerState::Stopped && !self.restarted;
                 }
@@ -153,8 +151,6 @@ impl ApplicationService {
                     }
                 }
             }
-            // Export stops between discoveries, its last cursor save done,
-            // so clearing them afterwards is never undone.
             let exporting = cancellation.child_token();
             let unreceived = async {
                 while self.telemetry.exporting() {
@@ -231,22 +227,18 @@ impl ApplicationService {
                 () = tick.next() => true,
                 event = started => {
                     match event {
-                        // It may have stopped already, with new output.
                         Some(Ok(Some(id))) => {
                             if let Some(exported) = exports.lock().get_mut(&id) {
                                 exported.started();
                             }
                         }
                         Some(Ok(None)) => {}
-                        // Resubscribed at the next interval.
                         Some(Err(_)) | None => starts = None,
                     }
                     false
                 }
             };
             if interval && starts.is_none() {
-                // Starts while unsubscribed went unseen, so every container
-                // may have new output; Docker replays those from now on.
                 let since = now_ns().div_euclid(1_000_000_000);
                 exports.lock().values_mut().for_each(Exported::started);
                 starts = Some(self.runtime.container_starts(since));
