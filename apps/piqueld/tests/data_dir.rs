@@ -139,7 +139,6 @@ async fn unsafe_data_dirs_are_rejected() {
             ErrorKind::InvalidInput,
             "",
         ),
-        // Paths without a dedicated directory.
         (|_| PathBuf::from("/"), ErrorKind::InvalidInput, ""),
         (|_| PathBuf::new(), ErrorKind::InvalidInput, ""),
         (|_| PathBuf::from("."), ErrorKind::InvalidInput, ""),

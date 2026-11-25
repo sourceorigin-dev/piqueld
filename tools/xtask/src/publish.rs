@@ -59,7 +59,6 @@ impl Release<'_> {
                     "state=closed",
                 ],
             )?,
-            // A patch release finds its minor version's milestone closed.
             None => println!("no open GitHub milestone named {milestone} to close"),
         }
         Ok(ExitCode::SUCCESS)

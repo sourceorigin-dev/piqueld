@@ -19,14 +19,11 @@ pub(crate) async fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCo
     let version = package["devDependencies"]["@playwright/test"]
         .as_str()
         .context("package.json does not pin @playwright/test")?;
-    // Only the browser server listens here, on loopback.
     let port = std::net::TcpListener::bind("127.0.0.1:0")?
         .local_addr()?
         .port();
     let engine = Engine::host().await?;
     let mut shutdown = Shutdown::listen()?;
-    // The host network keeps WebAuthn on the secure-context localhost. There
-    // is no implicit browser download: `just setup-playwright` pulls the image.
     let browser = ContainerCreateBody {
         image: Some(format!("mcr.microsoft.com/playwright:v{version}-noble")),
         cmd: Some(
@@ -66,9 +63,6 @@ pub(crate) async fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCo
                     "PW_TEST_CONNECT_WS_ENDPOINT",
                     format!("ws://127.0.0.1:{port}/"),
                 )
-                // Times the specs format, like the browser's, are UTC, as
-                // on CI, so a screenshot records the same fingerprint on
-                // every machine.
                 .env("TZ", "UTC")
                 .current_dir(&tests),
         )?

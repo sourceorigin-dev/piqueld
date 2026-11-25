@@ -106,7 +106,6 @@ impl AddAssign for Count {
 
 impl fmt::Display for Count {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // In tenths of a percent, so it needs no lossy float conversion.
         let permille = (self.covered * 1000).checked_div(self.count).unwrap_or(0);
         let percent = format!("{}.{}%", permille / 10, permille % 10);
         f.pad(&format!("{}/{} {percent:>6}", self.covered, self.count))

@@ -160,8 +160,6 @@ async fn operation_traces_correlate_outcomes_without_configuration_values() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
-    // Cargo runs these tests concurrently in one process. Install capture
-    // globally and select this operation's events from the shared stream.
     tracing::subscriber::set_global_default(subscriber).unwrap();
     let (environment_id, operation_id) = {
         let mut harness = ControllerHarness::new().await;

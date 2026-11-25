@@ -107,7 +107,6 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
     assert!(production.as_str().starts_with("env-"), "{production}");
     assert_eq!(view.sole_environment().unwrap_err().len(), 2);
 
-    // Saving with a deployment never picks one of several environments.
     assert!(matches!(
         service
             .accept(Daemon,
@@ -158,7 +157,6 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
         deployed.operation_id
     );
 
-    // Deleting the application names every environment.
     let delete = |names: &[&str]| Mutation::DeleteApplication {
         id: application.clone(),
         environments: names
@@ -240,8 +238,6 @@ async fn application_history_spans_its_environments() {
         }
     };
 
-    // Application-wide events are recorded once, without an environment, and
-    // the application's history includes every environment's events.
     let history = events(EventFilter {
         application_id: Some(application.to_string()),
         ..EventFilter::default()
@@ -301,7 +297,6 @@ async fn previews_compare_with_the_selected_environment() {
         }
     };
 
-    // Without a selection, several environments leave no runtime baseline.
     let unselected = plan(None).await.unwrap();
     assert!(unselected.operation.is_none() && unselected.plan.actions.is_empty());
     assert_eq!(unselected.runtime_coverage, RuntimeCoverage::Omitted);
@@ -316,14 +311,12 @@ async fn previews_compare_with_the_selected_environment() {
             .any(|action| matches!(action.kind, ActionKind::ResolveImage { .. }))
     };
     assert!(resolves_image(&deployed));
-    // The image tag must be resolved before the rest can be planned.
     assert_eq!(deployed.runtime_coverage, RuntimeCoverage::Resolution);
 
     let undeployed = plan(Some(production)).await.unwrap();
     assert!(!undeployed.identical && undeployed.operation.is_none());
     assert!(!undeployed.changes.is_empty() && resolves_image(&undeployed));
 
-    // An environment of another application is never used as a baseline.
     let mut other = manifest();
     other.metadata.name = "other".into();
     save(&service, other).await;
@@ -391,8 +384,6 @@ async fn previews_render_variables_for_the_selected_environment() {
         rendered.variables["env.name"],
         VariableValue::String("staging".into())
     );
-    // Blocks declare environments: saving it would create `preview`, and
-    // `production` would no longer be declared.
     let name = |name: &str| piqueld_core::EnvironmentName::parse(name).unwrap();
     assert_eq!(
         rendered.environments,
@@ -409,7 +400,6 @@ async fn previews_render_variables_for_the_selected_environment() {
     );
     assert!(!rendered.plan.is_blocked());
 
-    // Production has no value for `level`.
     let Err(ApplicationError::Store(StoreError::Validation(errors))) = plan(production).await
     else {
         panic!("missing value expected")

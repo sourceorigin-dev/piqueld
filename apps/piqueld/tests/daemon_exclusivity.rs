@@ -19,9 +19,8 @@ use std::{
     time::Duration,
 };
 
-// A concurrent spawn can inherit another test's flock until exec closes the
-// descriptor. Keep process spawning separate from assertions about immediate
-// lock release; the competing threads within the acquisition test still race.
+/// Serialises tests that spawn a process, so none inherits another test's flock
+/// until exec closes the descriptor.
 static PROCESS_TEST: Mutex<()> = Mutex::new(());
 
 #[test]
@@ -67,14 +66,11 @@ fn competing_daemon_preserves_database_and_live_socket() {
     let database = path.join("piqueld.db");
     std::fs::write(&database, b"untouched database").unwrap();
     let socket = path.join("piqueld.sock");
-    // Bound relative to the working directory, so its path fits a socket
-    // address even in deeply nested checkouts.
     let cwd = std::env::current_dir().unwrap();
     let _listener =
         std::os::unix::net::UnixListener::bind(socket.strip_prefix(cwd).unwrap()).unwrap();
     let inode = std::fs::metadata(&socket).unwrap().ino();
     let config = path.join("config.toml");
-    // HTTP is disabled so TCP binding cannot accidentally provide exclusivity.
     std::fs::write(
         &config,
         format!("[server]\ndata_dir={:?}\n", path.to_str().unwrap()),
@@ -129,7 +125,7 @@ fn process_death_releases_the_directory_lock() {
         DirectoryLock::acquire(directory.path()).unwrap_err().kind(),
         std::io::ErrorKind::WouldBlock
     );
-    drop(process); // Kill and reap the owner, without a graceful unlock.
+    drop(process);
     DirectoryLock::acquire(directory.path()).unwrap();
 }
 
@@ -178,13 +174,11 @@ fn unix_request(socket: &std::path::Path, request: &str) -> String {
 #[test]
 fn the_api_serves_without_docker_and_stops_on_sigterm() {
     let _process_test = PROCESS_TEST.lock();
-    // Not below the working directory: the socket address must stay short.
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path();
     let runtime = path.join("run");
     std::fs::create_dir(&runtime).unwrap();
     std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
-    // Docker has not started: its socket does not exist.
     let docker = path.join("docker.sock");
     let config = path.join("config.toml");
     std::fs::write(

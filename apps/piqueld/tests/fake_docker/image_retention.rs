@@ -53,7 +53,6 @@ impl ControllerHarness {
             ..FakeDocker::default()
         })
         .await;
-        // Until the build ran: it checks the fixture's repository out.
         let fixture = git_fixture::GitBuildFixture::new();
         let operation = harness.deploy_git_build(&fixture).await;
         harness.finish(&operation).await;
@@ -97,18 +96,15 @@ async fn cleanup_removes_only_this_installations_unretained_builds() {
     };
     harness.docker.local_images.lock().await.extend([
         image('c', &owned),
-        // Another installation or development instance on the same engine.
         image(
             'd',
             &[(MANAGED_LABEL, "true"), (INSTANCE_LABEL, "instance-other")],
         ),
-        // Built by hand, or by piqueld before builds were labelled.
         image('e', &[]),
         used,
     ]);
 
     assert!(harness.controller.clean_images().await.unwrap());
-    // `b` runs in production; `f` is a stopped container's.
     assert_eq!(harness.image_ids().await, ['b', 'd', 'e', 'f']);
     let status = harness.controller.image_status().borrow().clone();
     assert_eq!((status.images, status.reclaimed_bytes), (2, 10));
@@ -137,7 +133,6 @@ async fn an_image_built_for_a_deployment_in_preparation_survives_cleanup() {
         () = gate.entered.notified() => {}
         result = &mut scan => panic!("scan finished before building: {result:?}"),
     }
-    // Built, but no retention root records it yet: cleanup waits.
     assert_eq!(harness.image_ids().await, ['b']);
     assert!(!harness.controller.clean_images().await.unwrap());
     assert_eq!(harness.image_ids().await, ['b']);
@@ -190,7 +185,6 @@ async fn missing_images_are_pulled_again_by_digest_or_reported_unavailable() {
             "c".repeat(64)
         )
     );
-    // `web` was present this time.
     assert_eq!(harness.docker.registry.lock().await.pulls[&digest], 1);
 }
 
@@ -198,9 +192,6 @@ async fn missing_images_are_pulled_again_by_digest_or_reported_unavailable() {
 async fn cleanup_deletes_unretained_pushed_images_from_a_reachable_registry() {
     let repository = build_repository();
     let harness = ControllerHarness::with_build_machine(&repository).await;
-    // Earlier builds pushed `c` and `d`, which no deployment uses any more,
-    // but a stopped container still uses `d` on the host, so a deployment
-    // may reuse it. Another installation pushed `e` to the same repository.
     let [running, unused, on_host, others] = pushed(&repository, ['b', 'c', 'd', 'e']);
     harness.push(&[&unused, &on_host]).await;
     let docker = &harness.docker;
@@ -217,7 +208,6 @@ async fn cleanup_deletes_unretained_pushed_images_from_a_reachable_registry() {
         used: true,
         ..image('d', &owned)
     });
-    // While the registry is unreachable, cleanup leaves it alone.
     docker.registry_unreachable.store(true, Ordering::SeqCst);
     assert!(harness.controller.clean_images().await.unwrap());
     let all = [
@@ -269,7 +259,6 @@ async fn registry_cleanup_goes_past_one_images_failure_but_stops_at_the_registry
         }
     };
 
-    // A failure of `c`'s own keeps it, and the others are deleted.
     refuse(&c, 500).await;
     assert!(harness.controller.clean_images().await.unwrap());
     assert_eq!(
@@ -285,8 +274,6 @@ async fn registry_cleanup_goes_past_one_images_failure_but_stops_at_the_registry
             .contains("500 Internal Server Error")
     );
 
-    // Deletes being disabled stops the pass at `c`: `d`, after it, isn't
-    // tried.
     harness.push(&[&d]).await;
     refuse(&c, 405).await;
     assert!(harness.controller.clean_images().await.unwrap());
@@ -302,8 +289,6 @@ async fn registry_cleanup_goes_past_one_images_failure_but_stops_at_the_registry
         .await;
     assert_eq!(failed, [c.as_str(), c.as_str()]);
 
-    // Three images failing in a row count as the registry's failure: `f`,
-    // after them, isn't tried.
     harness.push(&[&e, &f]).await;
     for image in [&c, &d, &e] {
         refuse(image, 500).await;

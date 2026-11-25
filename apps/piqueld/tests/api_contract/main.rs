@@ -392,8 +392,6 @@ async fn contract_state(
     store: Arc<Store>,
     config: &DaemonConfig,
 ) -> (Arc<FakeRuntime>, ApiState) {
-    // `FakeAuth` signs requests in with this administrator's credential,
-    // which mutations re-read from the database.
     seed_account(&database(temp), "contract-admin", &[("admin", None)]).await;
     let runtime = Arc::new(FakeRuntime::new(&store));
     let state = ApiState::new(store, runtime.clone(), sources(temp, config).await).unwrap();
@@ -970,8 +968,8 @@ impl AcceptanceApi {
     }
 }
 
-// Existing lifecycle scenarios explicitly request deployment; save-only behavior
-// is exercised separately below.
+/// Applies a request and deploys it in one call; save-only behaviour is exercised
+/// separately.
 trait DeployFixture {
     async fn apply_and_deploy(
         &self,
@@ -1053,8 +1051,6 @@ impl GrantFixture {
     async fn new() -> Self {
         let temp = TempDir::new().unwrap();
         let database = database(&temp);
-        // Authentication shares the store, which tells connections that
-        // access changed.
         let store = Arc::new(Store::open_unsynced(&database).await.unwrap());
         let (runtime, state) =
             contract_state(&temp, Arc::clone(&store), &DaemonConfig::default()).await;

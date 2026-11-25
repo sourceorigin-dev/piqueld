@@ -190,9 +190,6 @@ impl Backend {
         let notifications = state.clone();
         let run = tokio::spawn(async move {
             let cancellation = tokio_util::sync::CancellationToken::new();
-            // Image cleanup and notification delivery run until cancelled:
-            // stop them once the reconciler stops, so its error ends the
-            // fixture.
             let reconcile = async {
                 let result = controller
                     .run(
@@ -226,8 +223,6 @@ async fn main() -> anyhow::Result<()> {
     let auth = piqueld::auth::Auth::new(&store, &origin)?;
     let setup = dir.join("setup-link");
     auth.prepare_setup(&setup).await?;
-    // Installation checks inspect these settings; the fixture serves no
-    // runtime socket, so its API socket check fails, as a real failure would.
     let config = piqueld_config::DaemonConfig::from_toml(&format!(
         "[server]\ndata_dir = '{}'\nruntime_dir = '{}'\n[auth]\npublic_url = '{origin}'",
         dir.join("data").display(),
@@ -267,7 +262,6 @@ async fn main() -> anyhow::Result<()> {
         serde_json::json!({"origin": origin, "setup": std::fs::read_to_string(setup)?.trim(), "socket": socket})
     );
     std::io::Write::flush(&mut std::io::stdout())?;
-    // The parent closes stdin in fixture teardown, including after a failed test.
     let (shutdown, stopped) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
         let result = std::io::Read::read_to_end(&mut std::io::stdin(), &mut Vec::new());

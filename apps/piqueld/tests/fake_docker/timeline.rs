@@ -32,8 +32,6 @@ async fn deployments_record_their_steps_and_forecast_the_next_one() {
         assert!(phases.contains(&phase), "{phases:?}");
     }
 
-    // The next deployment starts from the steps the first one ran, each
-    // expected to take as long as it did.
     let second = harness.apply(manifest(), Some(1)).await;
     let forecast = harness.applications().timeline(&second.id).await.unwrap();
     assert_eq!(
@@ -66,7 +64,6 @@ async fn a_timeline_followed_across_a_rerun_shows_what_a_new_read_does() {
     let harness = ControllerHarness::new().await;
     let first = harness.apply(manifest(), Some(0)).await;
     harness.finish(&first).await;
-    // Its rollout fails, leaving the rest of its plan, if any, never run.
     harness
         .docker
         .fail_convergence
@@ -104,7 +101,6 @@ async fn waiting_for_a_rollout_records_its_tasks_as_they_start_and_run() {
         .slow_services
         .lock()
         .await
-        // The convergence loop observes once before it waits.
         .insert("web".into(), 3);
     let operation = harness.apply(manifest(), Some(0)).await;
     harness.finish(&operation).await;
@@ -125,6 +121,5 @@ async fn waiting_for_a_rollout_records_its_tasks_as_they_start_and_run() {
         assert_eq!(states, [TaskState::Starting, TaskState::Running]);
     }
     assert!(wait.monitor_seconds.is_some());
-    // A new service has nothing to replace, so nothing stopped serving.
     assert_eq!(wait.gaps(), []);
 }

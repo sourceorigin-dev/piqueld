@@ -130,7 +130,6 @@ async fn saved_configuration_preview_and_deployment_are_separate_even_offline() 
         history.items[1].operation.state,
         piqueld_core::OperationState::Superseded
     );
-    // `limit` sizes the page: one per page here, and 0 is refused.
     let page = api
         .client
         .deployments(&production, None, Some(1))
@@ -332,7 +331,6 @@ async fn application_log_snapshot_validates_bounds_and_preserves_task_identity()
         .await
         .unwrap();
     assert!(stderr.items.is_empty());
-    // The service checks every bound; HTTP answers a refused one with 400.
     let error = client
         .environment_logs(&app.environment_id, Some("web"), 0, 60)
         .await
@@ -372,7 +370,6 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
     let api = AcceptanceApi::start(&temp).await;
     let service = api.state.clone();
     let apply = new_application();
-    // The same account as the HTTP client, since receipts replay only for theirs.
     let caller = piqueld::api::Actor::Account(piqueld_store::Caller {
         credential_id: "contract-admin",
         user_id: "contract-admin",
@@ -497,7 +494,6 @@ async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
     else {
         panic!("expected saved configuration")
     };
-    // The list finds an application by its exact name.
     for (name, found) in [("notes", 1), ("note", 0)] {
         let listed = service
             .applications(&piqueld_core::access::Scope::All, Some(name), None, None)
@@ -532,7 +528,6 @@ async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
             piqueld_store::StoreError::IdentityConflict
         ))
     ));
-    // An explicit override uses the same path for every transport.
     service
         .accept(
             Daemon,
@@ -635,7 +630,6 @@ async fn creating_over_a_repository_backed_name_collides() {
         .edit_application(&saved.application_id, &repository, &options)
         .await
         .unwrap();
-    // A runtime change, which would be an edit of the existing application.
     let mut request = new_application();
     request.manifest.spec.services[0].replicas = 2.into();
     let error = api.client.apply_application(&request).await.unwrap_err();

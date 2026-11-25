@@ -15,7 +15,6 @@ cargo-in-ci = [
 ]
 
 [deviations]
-rust-comments = "1934 findings in 390 files, fixed in a follow-up"
 
 [deviations.workspace-lints]
 reason = "4675 findings of `clippy::unwrap_used` in 207 files, most of them tests, fixed in a follow-up (PQD-124)"

@@ -217,11 +217,9 @@ async fn dashboard_cache_policy_tracks_content_hashing_and_shell_fallbacks() {
     );
     assert_eq!(unhashed.header("cache-control"), Some("no-cache"));
 
-    // A short all-hex stem is an ordinary name, not a content digest.
     let hex_stemmed = application.send(request("/dashboard/added.css")).await;
     assert_eq!(hex_stemmed.header("cache-control"), Some("no-cache"));
 
-    // The shell, also served for deep links, is never cached.
     for path in ["/dashboard/", "/dashboard/applications/notes"] {
         let shell = application.send(request(path)).await;
         assert_eq!(shell.header("cache-control"), Some("no-store"), "{path}");

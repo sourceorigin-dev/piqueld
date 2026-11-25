@@ -52,7 +52,6 @@ async fn secret_rotation_requires_deploy_and_service_references_follow_pinned_ve
         target.services[0].secrets
     );
 
-    // Historical completed deployments must not block deletion forever.
     let clean = harness.apply(manifest(), Some(2)).await;
     harness.finish(&clean).await;
     applications
@@ -290,14 +289,12 @@ impl Rotation {
 async fn history_passes_remove_versions_no_deployment_pins_from_docker_then_the_store() {
     let harness = ControllerHarness::new().await;
     let rotation = Rotation::new(&harness).await;
-    // As if deployment history pruned the deployment pinning the old version.
     sqlx::query("DELETE FROM operations WHERE id=?1")
         .bind(&rotation.pinning.id)
         .execute(&mut harness.database().await)
         .await
         .unwrap();
 
-    // A failed removal keeps the records, so the next pass retries it.
     harness
         .docker
         .fail_secret_removal
@@ -330,7 +327,6 @@ async fn history_passes_remove_versions_no_deployment_pins_from_docker_then_the_
 async fn pruned_deployments_release_old_versions_unless_a_service_still_mounts_them() {
     let mut harness = ControllerHarness::new().await;
     let mut config = piqueld_config::DaemonConfig::default();
-    // Only the latest deployment is kept by count, and as the newest success.
     config.retention.deployments_per_environment = 1;
     config.images.keep_deployments = 1;
     harness.retain(&config).await;
@@ -338,15 +334,12 @@ async fn pruned_deployments_release_old_versions_unless_a_service_still_mounts_t
     let Rotation {
         environment, old, ..
     } = &rotation;
-    // Every deployment but the latest finished before the 90-day window.
     sqlx::query("UPDATE operations SET finished_at_ms=0 WHERE id!=?1")
         .bind(&rotation.next.id)
         .execute(&mut harness.database().await)
         .await
         .unwrap();
 
-    // A service left on the old version keeps it, and its record, without
-    // failing the removal.
     harness.docker.observed.lock().await.services[0]
         .secrets
         .push(piqueld_core::resource::SecretFile {
@@ -356,7 +349,6 @@ async fn pruned_deployments_release_old_versions_unless_a_service_still_mounts_t
     harness
         .run_until(async || harness.removals(environment, "action_succeeded").await > 0)
         .await;
-    // The deployment pinning it was pruned.
     assert!(matches!(
         harness.store.operation(&rotation.pinning.id).await,
         Err(piqueld_store::StoreError::NotFound)
@@ -365,7 +357,6 @@ async fn pruned_deployments_release_old_versions_unless_a_service_still_mounts_t
     assert!(harness.docker.secrets.lock().await.contains_key(old));
     assert_eq!(harness.removals(environment, "action_failed").await, 0);
 
-    // Once nothing mounts it, the next pass removes it.
     for service in &mut harness.docker.observed.lock().await.services {
         service.secrets.retain(|secret| &secret.secret_name != old);
     }

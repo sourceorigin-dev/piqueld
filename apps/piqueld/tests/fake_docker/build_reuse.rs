@@ -25,7 +25,6 @@ async fn a_deployment_reuses_the_image_of_an_unchanged_build_unless_it_rebuilds_
     let environment = &first.environment_id;
     assert_eq!(harness.image_builds().await, 1);
 
-    // The same commit and build settings: nothing is built.
     harness.redeploy(environment, false).await;
     assert_eq!(harness.image_builds().await, 1);
     let builds = harness.builds(environment).await;
@@ -36,7 +35,6 @@ async fn a_deployment_reuses_the_image_of_an_unchanged_build_unless_it_rebuilds_
         (built.reused_build, &reused.image_id),
         (None, &built.image_id)
     );
-    // Only a build that built an image ran somewhere.
     assert_eq!(
         (built.built_on, reused.built_on),
         (Some(BuiltOn::Host), None)
@@ -57,7 +55,6 @@ async fn a_deployment_reuses_the_image_of_an_unchanged_build_unless_it_rebuilds_
     assert_eq!(harness.image_builds().await, 2);
     assert_eq!(harness.builds(environment).await[0].reused_build, None);
 
-    // An image cleanup removed, or someone pruned, has to be built again.
     harness.docker.local_images.lock().await.clear();
     harness.redeploy(environment, false).await;
     assert_eq!(harness.image_builds().await, 3);
@@ -100,7 +97,6 @@ async fn a_build_machine_image_runs_by_its_repository_digest_and_is_reused() {
     };
     assert_eq!(running().await, pushed);
 
-    // The engine has it under its repository digest, so it is reused.
     harness.redeploy(environment, false).await;
     assert_eq!(harness.image_builds().await, 1);
     assert_eq!(

@@ -30,7 +30,6 @@ async fn exec_rechecks_grants_when_the_command_starts() {
         .exec(caller, &environment, &request, "operator")
         .await
         .unwrap();
-    // The start is recorded once the command runs; without input it exits.
     let (_, input) = tokio::sync::mpsc::channel(1);
     let (output, _output) = tokio::sync::mpsc::channel(1);
     let io = piqueld_docker::ExecIo {
@@ -110,7 +109,6 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
         assert!(matches!(output.next().await, Ok(Some(ExecOutput::Exit(5)))));
         assert!(matches!(output.next().await, Ok(None)));
 
-        // Start failures arrive after the handshake, with their HTTP status.
         let (mut output, _input) = client
             .exec(&app.environment_id, &request("worker"))
             .await
@@ -121,7 +119,6 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
                 if error.code == "service_not_running" && !error.request_id.is_empty()
         ));
     }
-    // Completion is recorded before the final frame is sent.
     let commands = unix
         .client()
         .events(None, Some(&app.environment_id), None, false, None, 100)
@@ -141,7 +138,6 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
         Some("Command in task task-1 exited with code 5")
     );
 
-    // A client detaching from a quiet session gets a clean Close reply.
     let url = format!(
         "ws://{}/api/v1/environments/{}/exec",
         tcp.address(),
@@ -385,8 +381,6 @@ async fn exec_sessions_end_once_access_is_lost() {
     use tokio_tungstenite::tungstenite::Message;
     let f = GrantFixture::new().await;
     let database = database(&f.temp);
-    // Access changes are noticed, and a runtime that never stops is given
-    // up on, within milliseconds.
     let timing = piqueld::api::http::ConnectionTiming {
         tick: Duration::from_millis(10),
         close: Duration::from_millis(100),
@@ -395,7 +389,6 @@ async fn exec_sessions_end_once_access_is_lost() {
     let state = f.state.clone().with_connection_timing(timing);
     let server = Server::tcp(api_router(state, f.auth.clone())).await;
     let admin = admin_token();
-    // Deleting an account needs another administrator able to sign in.
     execute(&database, "INSERT INTO auth_passkeys(id,user_id,name,credential,created_at) VALUES('key','contract-admin','key','{}',1)").await;
     let reader = json!([{"permission": "apps:read", "applications": [f.blog]}]);
     let changes = [
@@ -442,7 +435,6 @@ async fn exec_sessions_end_once_access_is_lost() {
             200,
             "{name}"
         );
-        // A runtime that never stops gets `timing.close` to wind down.
         let last = tokio::time::timeout(Duration::from_secs(10), next())
             .await
             .expect("the session ends promptly");
@@ -465,7 +457,6 @@ async fn exec_rechecks_access_once_the_command_is_created() {
     let token = seed_account(&database(&f.temp), "operator", &grants).await;
     let server = f.serve().await;
     let mut socket = open_exec(server.address(), &f.blog_production, Some(&token), "held").await;
-    // Input that would let the command finish as soon as it runs.
     for input in [ExecInput::Stdin(b"hi".to_vec()), ExecInput::CloseStdin] {
         socket.send(Message::binary(input.encode())).await.unwrap();
     }
@@ -487,7 +478,6 @@ async fn exec_rechecks_access_once_the_command_is_created() {
         matches!(&outputs[..], [ExecOutput::Failed { status: 401, .. }]),
         "{outputs:?}"
     );
-    // History does not claim the command started.
     let filter = piqueld_core::observability::EventFilter {
         kind: Some("command_started".into()),
         ..Default::default()
@@ -512,7 +502,6 @@ async fn exec_notices_a_client_that_left_behind_unread_input() {
     let state = state(&temp).await;
     let saved = save(&state, manifest()).await;
     let environment = production(&state, &saved.application_id).await;
-    // Pings notice the client is gone within milliseconds.
     let timing = piqueld::api::http::ConnectionTiming {
         ping: Duration::from_millis(50),
         ..Default::default()
@@ -520,7 +509,6 @@ async fn exec_notices_a_client_that_left_behind_unread_input() {
     let paced = state.clone().with_connection_timing(timing);
     let server = Server::tcp(router(paced, FakeAuth)).await;
     let mut socket = open_exec(server.address(), environment.as_str(), None, "block").await;
-    // More input than the relay buffers, so it stops reading the connection.
     for _ in 0..32 {
         let input = ExecInput::Stdin(vec![0; 1024]).encode();
         socket.send(Message::binary(input)).await.unwrap();
@@ -586,7 +574,6 @@ async fn event_streams_end_once_access_is_lost_or_the_daemon_stops() {
     };
     let mut revoked = open(&reader).await;
     let mut stopped = open(&admin_token()).await;
-    // The first event leaves the rest of the batch read but not yet sent.
     read_stream(&mut revoked, Some("event: event")).await;
     let revoke = serde_json::json!({"action": "revoke_credential", "id": "reader"});
     let manage = "/api/v1/auth/manage";

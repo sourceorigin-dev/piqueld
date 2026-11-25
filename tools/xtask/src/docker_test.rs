@@ -21,7 +21,7 @@ use crate::process::{Job, Shutdown, exit_code};
 pub(crate) enum Suite {
     /// The daemon library's `ingress_caddy` tests, against Caddy, Pebble and
     /// challtestsrv in the engine.
-    // They reach them on the ports of `PUBLISHED`.
+    /// They reach them on the ports of `PUBLISHED`.
     Ingress,
     /// `apps/piqueld/tests/docker_integration.rs`, against the engine's Swarm.
     Engine,
@@ -109,10 +109,6 @@ const PUBLISHED: [(&str, &str); 6] = [
 fn dind(image: String, runtime: &Path, store: Store) -> ContainerCreateBody {
     let runtime = runtime.display();
     let mut body = Engine::dind_container(image, &runtime, [format!("{runtime}:{runtime}")]);
-    // The image keeps /var/lib/docker in a volume on the host's filesystem,
-    // where overlay2 works. vfs copies every layer, which made the image-heavy
-    // tests several times slower. Naming a graph driver selects the classic
-    // image store; without one, the engine uses the containerd image store.
     if store == Store::Classic {
         body.cmd
             .get_or_insert_default()
@@ -127,7 +123,6 @@ fn dind(image: String, runtime: &Path, store: Store) -> ContainerCreateBody {
         .into();
     body.exposed_ports = Some(exposed_ports);
     let host = body.host_config.get_or_insert_default();
-    // Pre-mount /tmp so the entrypoint does not hide the data bind.
     host.tmpfs = Some(HashMap::from([(
         "/tmp".to_owned(),
         "rw,exec,dev".to_owned(),
@@ -188,7 +183,6 @@ async fn test(
         command
     };
     let limit = Some(limit()?);
-    // Tests share one engine and mutate its Swarm state, so they run serially.
     for &suite in suites {
         let mut command = nextest(suite.filter());
         if let Some(partition) = partition {

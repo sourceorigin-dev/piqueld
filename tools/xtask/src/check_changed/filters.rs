@@ -122,8 +122,6 @@ impl Filters {
                     Self::add_globs(item, globs)?;
                 }
             }
-            // paths-filter also takes a map from change types to globs,
-            // such as `added: '**'`, which this doesn't need yet.
             other => bail!("expected a glob or a list of them, found {other:?}"),
         }
         Ok(())
@@ -134,8 +132,6 @@ impl Filters {
     /// dotfiles. picomatch also matches a directory itself against `dir/**`,
     /// which is moot here: git lists only files.
     fn glob(pattern: &str) -> Result<Glob> {
-        // picomatch negates a pattern starting with `!`; globset reads it as
-        // a literal `!`, which would silently match nothing.
         ensure!(
             !pattern.starts_with('!'),
             "negated pattern `{pattern}`: check-changed doesn't support them"

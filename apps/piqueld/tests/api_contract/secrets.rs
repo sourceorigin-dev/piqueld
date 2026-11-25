@@ -114,7 +114,6 @@ async fn stored_secret_uploads_check_their_headers_first() {
     headers.append("x-expected-generation", "1".parse().unwrap());
     let response = router.send(repeated).await;
     response.assert_error(StatusCode::BAD_REQUEST, "secret_generation_required");
-    // A body over the request limit would fail with 413 once read.
     let mut text = put_stored_token(&app.application_id, "", 0, "value");
     text.headers_mut()
         .insert("content-type", "text/plain".parse().unwrap());
@@ -432,8 +431,6 @@ async fn secret_key_recovery_api_discards_values_only_for_an_unusable_key() {
     let runtime = Arc::new(FakeRuntime::new(&store));
     let server = Server::tcp(router(api_state(&temp, store, runtime).await, FakeAuth)).await;
     let client = server.client();
-    // Recovery needs a passkey sign-in within the last two minutes: a token
-    // is told it never can, a CLI login to confirm first.
     let database = database(&temp);
     for (kind, step_up) in [("token", false), ("cli", true)] {
         let sql = format!("UPDATE auth_credentials SET kind='{kind}'");

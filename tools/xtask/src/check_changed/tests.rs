@@ -34,8 +34,6 @@ fn paths(paths: &[&str]) -> BTreeSet<String> {
 
 #[test]
 fn globs_match_as_picomatch_does() {
-    // Each checked against picomatch 2.3.1, which paths-filter uses, with
-    // `{ dot: true }`.
     let cases = [
         ("crates/**", "crates/piqueld-core/src/lib.rs", true),
         ("crates/**", "crates/piqueld-core/.env", true),
@@ -254,7 +252,6 @@ fn checks_run_on_the_workspace_when_a_change_reaches_it() {
 fn git(dir: &Path, args: &[&str]) {
     let status = Command::new("git")
         .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
-        // Neither sign nor run hooks, whatever the developer's configuration says.
         .args([
             "-c",
             "commit.gpgsign=false",
@@ -280,7 +277,6 @@ fn changed_paths_count_every_change_since_the_merge_base() {
     std::fs::write(root.join(".gitignore"), "ignored\n").expect("the file is written");
     git(root, &["add", "."]);
     git(root, &["commit", "--quiet", "--message=base"]);
-    // A later commit on main isn't part of the change.
     write("on-main");
     git(root, &["add", "on-main"]);
     git(root, &["commit", "--quiet", "--message=main"]);

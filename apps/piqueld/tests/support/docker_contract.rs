@@ -389,12 +389,7 @@ impl<D: DockerApi> Contract<D> {
             })
             .await;
         };
-        // Swarm releases a removed service's networks once it has marked its
-        // tasks for removal, shortly after removing it.
         remove("the network is removed").await;
-        // Swarm removes the network in the background, and still inspects it
-        // meanwhile, but fails deleting it again until it is gone; the fake
-        // removes it at once.
         remove("the network is gone").await;
         let observed = self.observe().await;
         assert!(

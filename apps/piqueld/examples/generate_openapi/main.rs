@@ -134,8 +134,6 @@ impl Generator {
             .generate_tokens(&spec)
             .context("generate Progenitor client")?;
         let syntax = syn::parse2(tokens).context("parse generated Rust")?;
-        // The generated operations are private implementation details, and
-        // Progenitor's indented prose is otherwise interpreted as doctest code.
         let source = prettyplease::unparse(&syntax).replace("/**", "/*");
         let decoder = "ResponseValue::from_response(response).await";
         ensure!(
@@ -190,12 +188,10 @@ impl Generator {
                     .get("operationId")
                     .and_then(Value::as_str)
                     .with_context(|| format!("{method} {path} has no operation ID"))?;
-                // Progenitor names its methods with heck's snake case too.
                 let name = id.to_snake_case();
                 let mut template = String::new();
                 let mut parameters = Vec::new();
                 let mut arguments = String::new();
-                // Placeholders are the odd parts between braces.
                 for (index, part) in path.split(['{', '}']).enumerate() {
                     if index % 2 == 0 {
                         template.push_str(part);
@@ -217,7 +213,6 @@ impl Generator {
                                 schema.get("format").and_then(Value::as_str),
                             )
                         });
-                    // Strings are percent-encoded; integers need no encoding.
                     let kind = match format {
                         Some((Some("string"), _)) => {
                             write!(arguments, ", {part} = encode_path({part})")?;
@@ -292,17 +287,10 @@ impl Generator {
             .get_mut("paths")
             .and_then(Value::as_object_mut)
             .context("OpenAPI document has no paths object")?;
-        // Generated WebSocket methods return `reqwest::Upgraded`, which WASM
-        // builds lack, so the exec WebSocket is written by hand in
-        // `piqueld_client::exec` for native targets.
         ensure!(
             paths.remove("/api/v1/environments/{id}/exec").is_some(),
             "missing exec operation"
         );
-        // Readiness uses a typed readiness body for 503. Progenitor cannot
-        // generate two different error-body types for one operation; preserve
-        // its existing readiness decoder and let middleware errors use the
-        // unexpected-response path. The published contract retains both.
         if let Some(responses) = paths
             .get_mut("/api/v1/system/readiness")
             .and_then(|path| path.get_mut("get"))

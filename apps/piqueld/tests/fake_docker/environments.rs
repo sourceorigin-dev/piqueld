@@ -27,7 +27,6 @@ impl EnvironmentHarness {
             .await
             .unwrap();
         let production = harness.environment().await;
-        // Boxed: accepting a mutation holds a whole manifest across awaits.
         let MutationResponse::Environment(staging) = Box::pin(applications.accept(
             Daemon,
             Mutation::CreateEnvironment {
@@ -43,9 +42,7 @@ impl EnvironmentHarness {
         .unwrap() else {
             panic!("created staging")
         };
-        // Creating an environment bumps the application generation.
         let generation = saved.generation + 1;
-        // One stored value; each environment mounts its own Docker copy.
         harness.store_token(&production, 0, b"shared token").await;
         for id in [&production, &staging.id] {
             applications.deploy(id, Some(generation)).await.unwrap();
@@ -152,7 +149,6 @@ async fn deleting_staging_preserves_production_runtime_secrets_and_history() {
             .iter()
             .all(|old| events.items.iter().any(|event| event.id == old.id))
     );
-    // Staging's events stay in the application's history until it is deleted.
     let staging_events = store.events(Some(staging), None, 100).await.unwrap();
     assert!(
         staging_events
@@ -324,7 +320,6 @@ async fn deleting_an_exporter_removes_networks_its_deleted_importers_left() {
         .unwrap();
     harness.store.request_delete(&notes).await.unwrap();
     scan().await;
-    // As if auth's deletion came before the full scan that removes it.
     harness.docker.observed.lock().await.networks.push(leftover);
     harness.store.request_delete(&auth).await.unwrap();
     scan().await;

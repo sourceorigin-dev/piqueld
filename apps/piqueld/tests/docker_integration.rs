@@ -6,8 +6,6 @@
     reason = "Integration tests and their helpers fail the test by panicking."
 )]
 
-// Each test binary compiles the support modules on its own; this one builds
-// from Git but never fails a build, clones, or bundles, as fake_docker does.
 #[path = "support/docker_contract.rs"]
 mod docker_contract;
 #[expect(dead_code, reason = "this binary never calls failing_source")]
@@ -58,10 +56,6 @@ impl IsolatedDocker {
         );
         let socket = std::env::var("PIQUELD_DOCKER_SOCKET")
             .expect("PIQUELD_DOCKER_SOCKET must point at an isolated privileged daemon");
-        // Defense in depth: the default host socket is refused even when the
-        // isolation attestation variable is set. Canonicalize first, because
-        // /var/run is normally a symlink to /run and the configured value may be
-        // relative.
         let resolved = std::fs::canonicalize(&socket).unwrap_or_else(|_| PathBuf::from(&socket));
         for forbidden in ["/var/run/docker.sock", "/run/docker.sock"] {
             let forbidden =
@@ -164,7 +158,6 @@ impl IsolatedDocker {
                     self.docker.remove_service(name, &ownership).await.unwrap();
                 }
                 ActionKind::RemoveNetwork { name } => {
-                    // The other side may still be leaving the network.
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "the other side may still be leaving the network"
@@ -345,11 +338,9 @@ impl SwarmScenario {
     async fn assert_files(&self) {
         use base64::Engine as _;
         use piqueld_core::manifest::ServiceFile;
-        // Labelled as piqueld labels the environment's file configs.
         let mut labels = self.environment.labels.clone();
         labels.remove("io.piqueld.spec-hash");
         labels.insert("io.piqueld.file".into(), "true".into());
-        // 12 full-size generations list as more than 8 MiB of base64.
         for generation in 0..12 {
             let content = format!("{generation:x}").repeat(ServiceFile::MAX_BYTES);
             self.docker_api_with(
@@ -542,13 +533,10 @@ impl SwarmScenario {
         assert_eq!(String::from_utf8(stdout).unwrap().trim(), "17 91");
         assert_eq!(stderr, b"");
         assert_eq!(code, 0);
-        // Unread input must not stop output from draining.
         let (stdout, _, code) = self
             .exec("head -c 8388608 /dev/zero", &vec![0; 8 << 20], None)
             .await;
         assert_eq!((stdout.len(), code), (8 << 20, 0));
-        // Stopping ends a silent session, even while its unread input blocks
-        // the command's standard input.
         let exec = self.create_exec("sleep 300", None).await;
         let (input, input_rx) = tokio::sync::mpsc::channel(1);
         let (output, _output_rx) = tokio::sync::mpsc::channel(1);
@@ -562,7 +550,6 @@ impl SwarmScenario {
             output,
             stop: stop.clone(),
         };
-        // Stop only once the 8 MiB write is blocked on the unread pipe.
         let disconnect = async {
             // wall-clock: the write blocks inside Docker's exec stream, which
             // signals nothing; give it time to fill the pipe.
@@ -580,8 +567,6 @@ impl SwarmScenario {
 
     async fn add_http_service(&self) -> DesiredService {
         let mut http_service = self.derived_service("http");
-        // A scratch image without a shell, wget, C library, or dynamic
-        // loader, which serves 200 on /health.
         let reference = "traefik/whoami:v1.11.0";
         let image = self.engine.docker.resolve_image(reference).await.unwrap();
         http_service.source = ResolvedSource::parse_image(reference, image.clone()).unwrap();
@@ -617,9 +602,6 @@ impl SwarmScenario {
             "HTTP health check survives complete service inspection"
         );
 
-        // Tasks of health-checked services must surface the live container
-        // healthcheck verdict once the probe has run at least once. The HTTP
-        // check runs piqueld-probe, mounted as a Swarm config.
         for service in [&self.service, http_service] {
             let mut healthy = None;
             let observed = eventually(Duration::from_secs(30), POLL, async || {
@@ -641,9 +623,6 @@ impl SwarmScenario {
             assert_eq!(observed.drift(service), [] as [&str; 0]);
         }
 
-        // The probe is mounted as a Swarm config, beside the service's files,
-        // and pruning removes only this installation's probe configs, and
-        // unlabelled ones older daemons published, that no service mounts.
         let spec = self
             .docker_api("GET", &format!("/services/{}", http_service.name))
             .await;
@@ -702,7 +681,6 @@ impl SwarmScenario {
     async fn scale_and_reconnect(&mut self) {
         self.service.replicas = 2;
         self.engine.ensure_service_eventually(&self.service).await;
-        // Reconnecting exercises the same observation/recovery seam used after daemon restart.
         self.engine.docker = BollardDocker::connect(&self.engine.socket).unwrap();
         let scaled = eventually(Duration::from_mins(1), POLL, async || {
             self.observed_service(&self.service)
@@ -744,7 +722,6 @@ impl SwarmScenario {
             "a matching reconcile must not update the Docker service"
         );
 
-        // Make an owned service drift through the raw API, then verify the adapter repairs it.
         let mut drifted_spec = matching.spec.unwrap();
         drifted_spec.task_template.as_mut().unwrap().placement = None;
         drifted_spec
@@ -854,8 +831,6 @@ impl SwarmScenario {
         );
         assert_eq!(docker.job_status(&first).await.unwrap(), JobStatus::Missing);
         docker.start_job(&first).await.unwrap();
-        // Bollard's typed model misses Docker's `Healthcheck` key, so the
-        // stored specification is read as raw JSON.
         let spec = self
             .docker_api("GET", &format!("/services/{}", first.container.name))
             .await["Spec"]
@@ -882,8 +857,6 @@ impl SwarmScenario {
                 error: None
             }
         );
-        // Docker copies stdout and stderr independently, so their relative
-        // order is not guaranteed.
         let mut output = docker.job_output(&first).await.unwrap();
         assert!(!output.truncated);
         output
@@ -897,7 +870,6 @@ impl SwarmScenario {
             ]
         );
 
-        // Another operation's run of the same job replaces this one.
         let second = self.job("operation-2", "exit 3");
         assert_eq!(
             docker.job_status(&second).await.unwrap(),
@@ -1133,7 +1105,6 @@ impl SwarmScenario {
         })
         .await
         .expect("services are removed");
-        // Swarm removes service objects before their tasks release the network.
         let mut in_use = None;
         eventually(Duration::from_mins(1), POLL, async || {
             match self
@@ -1235,7 +1206,6 @@ async fn git_build_runs_as_a_local_swarm_image() {
         .unwrap()
         .normalize(ApplicationId::parse("git-local-build").unwrap());
     let environment = EnvironmentId::parse("env-git-local-build").unwrap();
-    // The store gives the build its owner, the sources its checkout admission.
     let state = tempfile::tempdir().unwrap();
     let store = piqueld_store::Store::open_unsynced(state.path().join("state.db"))
         .await
@@ -1275,8 +1245,6 @@ async fn git_build_runs_as_a_local_swarm_image() {
         .await
         .unwrap();
 
-    // The build carries its installation's labels: another installation
-    // can't remove it, and its own can once no container uses it.
     let id = piqueld_core::Sha256Digest::parse(target.services[0].image.as_str()).unwrap();
     let built = || async {
         docker
@@ -1289,7 +1257,6 @@ async fn git_build_runs_as_a_local_swarm_image() {
     let other = InstanceId::parse("another-installation").unwrap();
     let image = built().await.expect("the build is listed by its ID");
     assert!(image.built_by(&owner) && !image.built_by(&other));
-    // Tagged, so `docker image prune` keeps it; cleanup still removes it by ID.
     let tags = std::process::Command::new("docker")
         .arg("--host")
         .arg(format!("unix://{}", engine.socket.display()))
@@ -1388,8 +1355,6 @@ async fn links_reach_only_the_imported_service_until_removed() {
         ]),
     );
     let admin = exporter.services[0].name.to_string();
-    // Each shell exits on SIGTERM, so deleting it doesn't wait for Docker to
-    // kill it after the grace period.
     let shell = |script: String| serde_json::json!([{"name": "web", "source": {"type": "image", "image": "alpine:3.20"}, "command": ["/bin/sh", "-c", format!("trap 'exit 0' TERM; {script}")]}]);
     let importer = compile(
         &format!("notes-{suffix}"),
@@ -1417,7 +1382,6 @@ async fn links_reach_only_the_imported_service_until_removed() {
 
     engine.converge(&reconcile(&exporter), &[]).await;
     engine.converge(&reconcile(&unlinked), &[]).await;
-    // The importer creates the network the exporter's `api` then joins.
     engine
         .converge(&reconcile(&importer), std::slice::from_ref(&link))
         .await;
@@ -1433,8 +1397,6 @@ async fn links_reach_only_the_imported_service_until_removed() {
     let unlinked_logs = engine.logged(&unlinked.id, "web", "api-hidden").await;
     assert!(!unlinked_logs.contains(&"api-visible".to_owned()));
 
-    // Removing the link revokes the exporter's attachment without its plan,
-    // keeping the rest of the service, then removes the network.
     let network = piqueld_core::DockerNetworkName::for_link(&importer.id, &exporter.id);
     engine.converge(&reconcile(&importer), &[]).await;
     let api = exporter

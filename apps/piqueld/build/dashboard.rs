@@ -149,7 +149,6 @@ impl Dashboard {
     /// Builds the bundle into `OUT_DIR/dashboard-dist`, replacing any earlier one.
     fn build(&self) -> Result<PathBuf, Box<dyn Error>> {
         self.track_inputs()?;
-        // `cargo xtask publish` copies the bundle from here.
         let dist = self.out_dir.join("dashboard-dist");
         if dist.exists() {
             fs::remove_dir_all(&dist)?;
@@ -157,15 +156,11 @@ impl Dashboard {
         fs::create_dir_all(&dist)?;
 
         let wasm = self.compile()?;
-        // The bindings are a pure function of the module and the pinned
-        // wasm-bindgen version, so the module's digest names both.
         let bindings = format!("piqueld-ui-{}", digest(&fs::read(&wasm)?));
         wasm_bindgen_cli_support::Bindgen::new()
             .input_path(&wasm)
             .web(true)?
             .typescript(false)
-            // Unlike the CLI, the library omits the bindings' default module
-            // path unless asked; the loader relies on it to find the module.
             .omit_default_module_path(false)
             .out_name(&bindings)
             .generate(&dist)?;

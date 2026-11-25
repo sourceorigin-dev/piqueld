@@ -26,7 +26,6 @@ async fn grants_hide_applications_and_name_missing_permissions() {
         .map(|item| item["id"].as_str().unwrap())
         .collect();
     assert_eq!(listed, [f.blog.as_str()]);
-    // Filtering by a hidden application's name finds nothing either.
     let (status, body) = f
         .router
         .call(
@@ -122,8 +121,6 @@ async fn audit_trail_records_callers_and_outcomes() {
         assert_eq!(f.router.status(&f.deployer, method, &uri).await, status);
     }
     let body = f.audit(&f.deployer, "/api/v1/audit", 5).await;
-    // Most records are written in the background, so their order is not asserted.
-    // Requests about an environment also name its application.
     let trail: std::collections::BTreeSet<_> = body["data"]["items"]
         .as_array()
         .unwrap()
@@ -134,7 +131,6 @@ async fn audit_trail_records_callers_and_outcomes() {
             if !event["environment_id"].is_null() {
                 assert_eq!(event["application_id"], f.blog.as_str());
             }
-            // Changes add what they started after the route.
             let action = event["action"].as_str().unwrap().split(' ').take(2);
             (
                 event["outcome"].as_str().unwrap().to_owned(),
@@ -165,14 +161,12 @@ async fn audit_trail_records_callers_and_outcomes() {
     );
     let others = "/api/v1/audit?user_id=creator";
     assert_eq!(f.router.status(&f.deployer, "GET", others).await, 403);
-    // A cross-site write is refused, yet still names its valid caller.
     let foreign = Request::post("/api/v1/applications")
         .header("authorization", format!("Bearer {}", f.deployer))
         .header("origin", "https://attacker.example")
         .body(Body::empty())
         .unwrap();
     assert_eq!(f.router.send(foreign).await.status, 403);
-    // So is a throttled one, once the peer's sign-in start allowance is spent.
     let mut status = 0;
     for _ in 0..31 {
         let start = serde_json::json!({});
@@ -254,7 +248,6 @@ async fn own_audit_trails_reveal_nothing_hidden() {
     let f = GrantFixture::new().await;
     let hidden = format!("/api/v1/environments/{}", f.shop_production);
     assert_eq!(f.router.status(&f.deployer, "GET", &hidden).await, 404);
-    // Refusals before authorization, like a cross-site request, are no hint.
     let foreign = Request::delete(&hidden)
         .header("authorization", format!("Bearer {}", f.deployer))
         .header("origin", "https://attacker.example")
@@ -266,7 +259,6 @@ async fn own_audit_trails_reveal_nothing_hidden() {
         assert_eq!(event["environment_id"], f.shop_production.as_str());
         assert!(event["application_id"].is_null(), "{event}");
     }
-    // Usernames match regardless of case, like accounts' own.
     f.audit(&f.auditor, "/api/v1/audit?username=DEPLOYER", 2)
         .await;
     sign_in_with_passkey(&database(&f.temp), "deployer").await;
@@ -281,8 +273,6 @@ async fn own_audit_trails_reveal_nothing_hidden() {
         .call(&f.deployer, "POST", "/api/v1/auth/manage", create)
         .await;
     assert_eq!(status, 200, "{created}");
-    // The trail records what an account action changed: the token it
-    // created, never its secret.
     let body = f.audit(&f.deployer, "/api/v1/audit", 3).await;
     let deploy = format!("apps:deploy on {}", f.blog);
     let secret = created["token"].as_str().expect("the token is answered");
@@ -464,7 +454,6 @@ async fn notification_destinations_need_their_permissions_and_hide_urls() {
         "<@&1234>"
     );
     assert!(!listed.to_string().contains("private-token"), "{listed}");
-    // Managers list destinations to change them, without `system:read`.
     let (status, _) = f
         .router
         .call(&manager, "GET", list, serde_json::Value::Null)

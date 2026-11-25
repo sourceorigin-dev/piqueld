@@ -326,8 +326,6 @@ impl Instance {
         let name = Self::name_for(workspace)?;
         let data = Self::state_root()?.join(&name);
         let runtime = Self::runtime_root()?.join(&name);
-        // Held until the configuration is written, so a concurrent setup of
-        // another worktree cannot pick the same port.
         let _lock = Self::lock_ports()?;
         let port = Self::free_port(workspace)?;
         let quote = |path: &Path| toml::Value::from(path.display().to_string()).to_string();
@@ -398,9 +396,7 @@ auto_initialize_swarm = true
         slug.truncate(40);
         let mut hasher = DefaultHasher::new();
         workspace.root().hash(&mut hasher);
-        // The low 32 bits are plenty to tell a few checkouts apart.
         let hash = hasher.finish() & 0xffff_ffff;
-        // The name is also a DNS label, which cannot start with a hyphen.
         Ok(format!("{}-{hash:08x}", slug.trim_matches('-'))
             .trim_start_matches('-')
             .to_owned())
@@ -675,8 +671,6 @@ impl Engine {
         let runtime_root =
             fs::canonicalize(Instance::runtime_root()?).context("resolve the runtime root")?;
         for dir in dirs {
-            // Checking the resolved path keeps symbolic links from redirecting
-            // the deletion. A missing directory has nothing to delete.
             let Ok(dir) = fs::canonicalize(dir) else {
                 continue;
             };
@@ -686,8 +680,6 @@ impl Engine {
             if parent.file_name() != Some("piqueld-dev".as_ref()) && parent != runtime_root {
                 eprintln!("kept {}", dir.display());
             } else if fs::remove_dir_all(&dir).is_err() && dir.exists() {
-                // Containers may have left root-owned files behind, which only
-                // a container can remove.
                 self.run_once(ContainerCreateBody {
                     image: Some(Self::dind_image()),
                     entrypoint: Some(vec!["rm".to_owned()]),
@@ -723,7 +715,6 @@ impl Engine {
             if Path::new(worktree).is_dir() {
                 continue;
             }
-            // A supervisor from before its worktree was removed may still run.
             if let Some(runtime) = labels.get(RUNTIME_LABEL).map(Path::new)
                 && Instance::private_runtime_dir(runtime)
             {
@@ -799,7 +790,6 @@ mod tests {
     async fn config_force_only_waits_for_this_worktrees_instance() {
         let temporary = tempfile::tempdir().unwrap();
         let root = Instance::own_private_dir(temporary.path().join("root")).unwrap();
-        // A custom runtime_dir, not named after the instance.
         let runtime = Instance::own_private_dir(root.join("rt")).unwrap();
         let mine = instance_in(Path::new("/worktrees/a"), &runtime);
         let runs_from = |root: &str| {
@@ -809,10 +799,8 @@ mod tests {
         assert!(!runs_from("/worktrees/a"));
         let claim = mine.claim().await.unwrap();
         assert!(runs_from("/worktrees/a"));
-        // A configuration copied from another worktree names its instance.
         assert!(!runs_from("/worktrees/b"));
         drop(claim);
-        // A supervisor that records no worktree, as older xtask builds did.
         let _claim = Supervisor::in_dir(&runtime).claim().await.unwrap();
         let workspace = Workspace {
             root: "/worktrees/a".into(),
@@ -826,8 +814,6 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("crates/piqueld-store/migrations")).unwrap();
         let instance = instance(root.path());
-        // Builds an hour ahead, and files set to change after them, so the
-        // clock's resolution never makes a change look older than a build.
         let built = SystemTime::now() + Duration::from_hours(1);
         let change = |path: &str, modified: SystemTime| {
             let file = fs::File::create(root.path().join(path)).unwrap();

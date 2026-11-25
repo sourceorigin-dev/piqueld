@@ -86,7 +86,6 @@ impl Workspace {
             Self::git(&self.root, &["merge-base", base, "HEAD"]).with_context(|| {
                 format!("find the merge base of HEAD and {base}: fetch it, or name another branch")
             })?;
-        // Against the working tree, so it includes uncommitted changes.
         let diff = Self::git(
             &self.root,
             &["diff", "--name-only", "--no-renames", "-z", &merge_base],
@@ -209,7 +208,6 @@ impl Scope {
                 None => return Self::Workspace { path: path.clone() },
             };
         }
-        // Until no crate depends on one reached but unreached itself.
         while let Some(dependent) = metadata.packages.iter().find(|package| {
             !reached.contains(package.name.as_str())
                 && (package
