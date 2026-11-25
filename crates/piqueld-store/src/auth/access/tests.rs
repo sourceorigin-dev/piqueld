@@ -108,7 +108,6 @@ async fn operations_and_their_events_record_the_caller() {
         .begin_action(Some(id), piqueld_core::Phase::EnsureService, None)
         .await;
     let action = action.unwrap();
-    // Shared gateway work a deployment needs stays daemon-scoped.
     let shared = store
         .begin_daemon_action(Some(id), piqueld_core::Phase::IngressConfigureRoutes, None)
         .await;
@@ -141,7 +140,6 @@ async fn operations_and_their_events_record_the_caller() {
         .await
         .unwrap()
         .items;
-    // The transition wrote at least one event after acceptance.
     assert!(events.len() > accepted, "{events:?}");
     for event in events {
         assert_eq!(event.actor, Some(alice()), "{}", event.kind);

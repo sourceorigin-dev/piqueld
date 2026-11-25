@@ -79,8 +79,6 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let mut deploying = false;
         let environments = Self::environments_on(tx, application.as_str()).await?;
-        // Live environments by name, including those created here, which
-        // later declarations may promote from.
         let mut live = environments
             .iter()
             .filter(|environment| !environment.delete_intent)
@@ -120,8 +118,6 @@ impl Store {
                     };
                     let current = Self::live_on(tx, &live, &environment).await?;
                     if let Some(from) = source.promoted_from() {
-                        // Declarations are acyclic, so a cycle only goes through
-                        // a change still waiting: this one waits too.
                         match Self::check_promotion_source_on(
                             tx,
                             application,

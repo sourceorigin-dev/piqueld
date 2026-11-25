@@ -61,7 +61,6 @@ async fn installation_hostnames_and_subdomains_are_never_routed() {
         .await
         .unwrap();
 
-    // Routes saved before the website hostname was configured are withheld.
     let website = Hostname::parse("piqueld.example.com").unwrap();
     let conflicts = store
         .reserve_installation_hostnames(std::slice::from_ref(&website))
@@ -70,7 +69,6 @@ async fn installation_hostnames_and_subdomains_are_never_routed() {
     assert_eq!(conflicts, [early.spec().routes[0].hostname.clone()]);
     let table = store.routing_table().await.unwrap();
     assert_eq!(table[&id], []);
-    // The gateway can still acknowledge the table without them.
     store.acknowledge_routes(&table).await.unwrap();
 
     for hostname in ["piqueld.example.com", "api.piqueld.example.com"] {
@@ -91,7 +89,6 @@ async fn installation_hostnames_and_subdomains_are_never_routed() {
 #[tokio::test]
 async fn wildcards_keep_the_names_they_serve_from_other_applications() {
     let (_directory, store) = Store::temporary().await;
-    // An exact name claimed first stays its owner's, and wins.
     save(
         &store,
         app("exact", Some("early.tenants.example.com")),
@@ -106,8 +103,6 @@ async fn wildcards_keep_the_names_they_serve_from_other_applications() {
         save(&store, app("other", Some("late.tenants.example.com")), false).await,
         Err(StoreError::HostnameConflict { hostname }) if hostname == "late.tenants.example.com"
     ));
-    // Names it does not match are free, and its own application may
-    // route exact names below it.
     save(
         &store,
         app("other", Some("a.late.tenants.example.com")),
@@ -155,7 +150,6 @@ async fn environments_render_their_own_hostnames_from_variables() {
     );
     let saved = store.save_template(template, false).await;
     let application = piqueld_core::ApplicationId::parse(&saved.application_id).unwrap();
-    // The manifest declares both environments.
     let staging = store
         .environments(&application)
         .await
@@ -193,7 +187,6 @@ async fn environments_render_their_own_hostnames_from_variables() {
         Err(StoreError::HostnameConflict { .. })
     ));
 
-    // Environments that render the same hostname still conflict.
     let same = piqueld_core::edit::Variables {
         defaults: [("domain".into(), Variable::String("piquel.fr".into()))].into(),
         ..Default::default()
@@ -219,8 +212,6 @@ async fn replacing_pending_deployment_releases_only_superseded_hostnames() {
     save(&store, app("one", Some("new.example.com")), true)
         .await
         .unwrap();
-    // Commit validates the final snapshot, after the new deployment has
-    // replaced the old captured input, rather than the intermediate save.
     save(&store, app("two", Some("old.example.com")), false)
         .await
         .unwrap();
@@ -273,7 +264,6 @@ async fn hostname_conflict_rolls_back_deployment_and_replay_receipt() {
             .unwrap()
             .is_none()
     );
-    // The rejected request must not consume the replay key.
     store
         .accept(
             crate::Actor::Daemon,
@@ -374,7 +364,6 @@ async fn one_hostnames_routes_match_the_tables() {
         tracked: true,
     };
     assert_eq!(store.hostname_routes(&hostname).await.unwrap(), applied);
-    // The installation's own hostnames are never desired routes.
     let installation = Hostname::parse("example.com").unwrap();
     store
         .reserve_installation_hostnames(std::slice::from_ref(&installation))
@@ -423,8 +412,6 @@ async fn concurrent_acknowledgements_end_with_the_later_table() {
     let earlier = RoutingTable::from([(one.clone(), one_routes), (two.clone(), vec![])]);
     let later = RoutingTable::from([(one, vec![]), (two, two_routes)]);
 
-    // Both queue behind a held acknowledgement, the earlier first: each
-    // is polled until it waits for the lock.
     let held = store.acknowledgements.lock().await;
     let mut first = std::pin::pin!(store.acknowledge_routes(&earlier));
     assert!(futures_util::poll!(first.as_mut()).is_pending());
@@ -566,8 +553,6 @@ async fn changing_visibility_withdraws_the_route_until_backends_are_ready() {
     let mut public = input.spec().routes.clone();
     public[0].visibility = piqueld_core::manifest::Visibility::Public;
     store.stage_routes(&id, &public, true, None).await.unwrap();
-    // Public -> private leaves the public listener as the deployment
-    // starts; the private route joins once backends are ready.
     let private = input.spec().routes.clone();
     store
         .stage_routes(&id, &private, false, None)

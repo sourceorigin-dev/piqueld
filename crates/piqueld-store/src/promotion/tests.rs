@@ -116,7 +116,6 @@ async fn sources_are_other_live_environments_without_cycles() {
             Err(StoreError::Promotion(PromotionError::SourceInvalid { .. }))
         ));
     }
-    // Nothing was changed by the refusals.
     assert_eq!(
         store.get(&staging).await.unwrap().environment.source,
         EnvironmentSource::select(

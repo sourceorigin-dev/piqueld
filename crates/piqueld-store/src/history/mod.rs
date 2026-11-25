@@ -93,7 +93,6 @@ impl Store {
             .fetch_all(&mut *tx)
             .await
             .map_err(StoreError::database)?;
-            // Analytics count deployments by their attempts, which went too.
             if let Some(last) = finished.into_iter().max() {
                 sqlx::query!(
                     "UPDATE history_coverage SET pruned_through_ms=MAX(COALESCE(pruned_through_ms,0),?1) WHERE singleton=1",

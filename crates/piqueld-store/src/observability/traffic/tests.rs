@@ -53,11 +53,9 @@ async fn tallies_add_up_into_hourly_and_daily_points() {
         .insert((route(&id, "b.example.com"), day + 30 * HOUR_MS), failure);
     let page = (route(&id, "a.example.com"), day, RankKind::Page, "/".into());
     tally.ranks.insert(page, 2);
-    // A second flush adds to the first.
     store.record_traffic(&tally).await.unwrap();
     store.record_traffic(&tally).await.unwrap();
 
-    // A window ending within an hour includes that hour whole.
     let partial = store
         .traffic(&id, window(day, day + HOUR_MS + 1))
         .await
@@ -66,7 +64,6 @@ async fn tallies_add_up_into_hourly_and_daily_points() {
         (partial.until_ms, partial.totals.requests),
         (day + 2 * HOUR_MS, 6)
     );
-    // The latest end the API accepts still rounds to a whole hour.
     let latest = store
         .traffic(&id, window(i64::MAX - DAY_MS, i64::MAX))
         .await
@@ -96,7 +93,6 @@ async fn tallies_add_up_into_hourly_and_daily_points() {
     };
     assert_eq!(report.pages, [viewed]);
 
-    // Longer windows have daily points, from the start of a day.
     let only_b = TrafficQuery {
         hostname: Some("b.example.com"),
         ..window(day + 5, day + 7 * DAY_MS)
@@ -120,7 +116,6 @@ async fn ranks_stop_growing_at_their_limit_and_old_counts_are_pruned() {
         tally.ranks.insert(page(format!("/{index}")), 1);
     }
     store.record_traffic(&tally).await.unwrap();
-    // A page already counted still counts once the day is full.
     let mut again = TrafficTally::default();
     again.ranks.insert(page("/0".into()), 5);
     store.record_traffic(&again).await.unwrap();

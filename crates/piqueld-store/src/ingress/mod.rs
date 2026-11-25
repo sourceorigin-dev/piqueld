@@ -223,9 +223,6 @@ impl Store {
         "#, environment_id).fetch_all(&mut *connection).await.map_err(StoreError::database)?
             .into_iter()
             .collect::<BTreeSet<_>>();
-        // Each environment's own manifest renders its routes, so environments
-        // of one application can serve different hostnames, and environments
-        // following different branches never reserve each other's.
         if let Some(environment) = Self::environment_on(&mut *connection, environment_id).await?
             && let Some(manifest) = environment.manifest()
         {
@@ -517,8 +514,6 @@ impl Store {
         .fetch_one(&self.pool)
         .await
         .map_err(StoreError::database)?;
-        // The routing table leaves out routes the installation's own
-        // hostnames cover.
         let desired = desired > 0
             && !Self::installation_hostnames(&self.pool)
                 .await?

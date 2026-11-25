@@ -164,7 +164,6 @@ impl Store {
         target: ResolvedApplication,
         observed: &ObservedApplication,
     ) -> Result<ResolvedApplication, StoreError> {
-        // Boxed: the read would otherwise grow every planning future.
         let links = Box::pin(self.links_of(&target)).await?;
         Ok(target.with_links(&links, observed))
     }

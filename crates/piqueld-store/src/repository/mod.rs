@@ -198,16 +198,12 @@ impl Store {
             .await?
             .ok_or(StoreError::NotFound)?;
         let application = &stored.application;
-        // A secret stored since the manifest was fetched may now share a name
-        // with one of its declarations.
         Self::check_declared_against_store_on(
             tx,
             application.id().as_str(),
             &deployed.spec().secrets,
         )
         .await?;
-        // A retry may accept a manifest fetched before a rename. The
-        // deployment keeps the files it captured.
         let deployed = deployed
             .with_name(application.metadata().name.clone())
             .without_files();
@@ -227,8 +223,6 @@ impl Store {
         if let Some(connection) =
             Self::reads_connection_on(tx, operation, fetching, &deployed, application).await?
         {
-            // Without the files a deployment captured, which the spec hash
-            // covers, as the application keeps the one it last read.
             let hash = |json: Option<&str>| {
                 json.map(|json| {
                     serde_json::from_str::<ApplicationTemplate>(json)

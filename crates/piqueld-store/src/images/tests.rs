@@ -105,16 +105,12 @@ async fn each_root_keeps_its_deployments_and_previews_keep_no_history() {
     let images = |bytes: &str| bytes.chars().map(image).collect::<BTreeSet<_>>();
     assert_eq!(kept(&store, RetentionRoot::Current, 2).await, images("ce"));
     assert_eq!(kept(&store, RetentionRoot::Latest, 2).await, images("df"));
-    // The last two successful production deployments; the preview's success
-    // counts for nothing, and `d` hasn't succeeded.
     assert_eq!(kept(&store, RetentionRoot::Recent, 2).await, images("bc"));
     assert_eq!(kept(&store, RetentionRoot::Recent, 0).await, images(""));
     assert_eq!(
         kept(&store, RetentionRoot::PromotionSource, 2).await,
         images("")
     );
-    // Once another environment promotes from production, what production
-    // runs is what promoting it deploys.
     let create = Mutation::CreateEnvironment {
         application: store
             .get(&production)

@@ -18,8 +18,6 @@ async fn terminal_job_failure_keeps_cleanup_atomic_and_retained() {
         .unwrap();
     store.mark_running(&operation.id).await;
 
-    // A terminal failure cannot commit without its cleanup request, even
-    // if the earlier request from job execution could not be persisted.
     sqlx::query("CREATE TRIGGER reject_cleanup BEFORE INSERT ON job_cleanup BEGIN SELECT RAISE(FAIL,'cleanup storage unavailable'); END")
         .execute(&store.pool).await.unwrap();
     assert!(
@@ -68,8 +66,6 @@ async fn terminal_job_failure_keeps_cleanup_atomic_and_retained() {
         )
         .await
         .unwrap();
-    // Model expiry of the old deployment snapshot; operation retention
-    // must still preserve the cleanup request and its journal context.
     sqlx::query("DELETE FROM deployments WHERE id=?1")
         .bind(&operation.id)
         .execute(&store.pool)

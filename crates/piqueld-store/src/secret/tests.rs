@@ -238,7 +238,6 @@ async fn retained_version_quota_rejects_writes_without_removing_values() {
         .put_secret(Daemon, &env, "token", 0, b"x".to_vec())
         .await
         .unwrap();
-    // Existing ciphertext is 17 bytes; the incoming value adds its own 16-byte tag.
     Store::check_secret_quota(1, 17, 100 * 1024 * 1024 - 33).unwrap();
     assert!(matches!(
         Store::check_secret_quota(1, 17, 100 * 1024 * 1024 - 32),
@@ -384,7 +383,6 @@ async fn lost_key_recovery_discards_values_until_replacements_are_deployed() {
         .find(|path| path.to_string_lossy().contains("secrets.key.retired-"))
         .expect("the unusable key is kept aside");
     assert_eq!(std::fs::read(retired).unwrap(), [42; 32]);
-    // Repeating it finds nothing that needs a key, and creates none.
     assert!(matches!(
         store.recover_secret_key(Daemon).await,
         Err(StoreError::SecretKeyUsable)
@@ -547,7 +545,6 @@ async fn mounted_declared_secrets_are_generated_once_until_regenerated() {
         name: "manual".into(),
         target: "/run/secrets/manual".into(),
     });
-    // "unused" is declared but not mounted, so it is not generated.
     for name in ["token", "manual", "unused"] {
         manifest.spec.secrets.push(SecretDeclaration {
             name: name.into(),
@@ -588,7 +585,6 @@ async fn mounted_declared_secrets_are_generated_once_until_regenerated() {
         .collect::<Vec<_>>();
     assert_eq!(generations, [("manual".into(), 1), ("token".into(), 1)]);
 
-    // Regenerating adds a version for later deployments; pins keep theirs.
     let token = store
         .regenerate_secret(Daemon, &env, "token", 1)
         .await
@@ -605,7 +601,6 @@ async fn mounted_declared_secrets_are_generated_once_until_regenerated() {
         .await
         .unwrap();
     assert_ne!(&*new_value, &*value);
-    // Only secrets the saved manifest declares can be regenerated.
     assert!(matches!(
         store.regenerate_secret(Daemon, &env, "undeclared", 0).await,
         Err(StoreError::NotFound)
@@ -676,8 +671,6 @@ async fn sibling_environment_deletions_do_not_block_another_environments_deploym
             .await
             .unwrap();
     }
-    // Production captures a deployment that mounts the secret, then the shared
-    // configuration stops mounting it.
     let deployment = store.request_deploy(&production, Some(2)).await.unwrap();
     save(&store, &app, 2).await.unwrap();
     store
@@ -692,7 +685,6 @@ async fn sibling_environment_deletions_do_not_block_another_environments_deploym
             .len(),
         1
     );
-    // Shared configuration still cannot start using the secret being deleted.
     assert!(matches!(
         save(&store, &captured, 3).await,
         Err(StoreError::SecretDeleting)
@@ -851,7 +843,6 @@ async fn secret_key_check_reports_the_key_without_changing_it() {
     let (temp, store) = Store::temporary().await;
     let key = temp.path().join("secrets.key");
     let status = async || store.secret_key_check().await.status;
-    // A new installation has no key yet, and checking does not create one.
     assert_eq!(status().await, CheckStatus::Pass);
     assert!(!key.exists());
 
@@ -881,7 +872,6 @@ async fn secret_key_check_reports_the_key_without_changing_it() {
         "a key bound to stored values is never regenerated"
     );
 
-    // Without a verifier, the stored values decide, and none is stored.
     sqlx::query("DELETE FROM secret_key_verification")
         .execute(&store.pool)
         .await
@@ -928,9 +918,6 @@ async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
         .await
         .expect("the stored secret to discard is stored");
     let route = "DELETE /api/v1/environments/{id}/secrets/{name}";
-    // Runtime cleanup failed after the first reservation, so a retry resumes
-    // it, and a late retry then completes a deletion already done. Each
-    // stage runs under its own request, which only a recorded change marks.
     macro_rules! stages {
         ($begin:ident, $finish:ident, $owner:expr, $name:literal) => {{
             let requests = [(); 4].map(|()| crate::testing::audit_request(route));

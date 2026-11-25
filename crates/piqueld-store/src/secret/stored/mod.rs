@@ -516,7 +516,6 @@ impl Store {
         let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
         let id = application.as_str();
-        // The reservation token keeps late retries away from a new secret of the same name.
         sqlx::query!("DELETE FROM deployment_stored_secret_pins WHERE name=?2 AND environment_id IN (SELECT id FROM environments WHERE application_id=?1) AND EXISTS(SELECT 1 FROM application_secrets WHERE application_id=?1 AND name=?2 AND deletion_id=?3)",id,name,deletion_id)
             .execute(&mut *tx).await.map_err(StoreError::database)?;
         let deleted = sqlx::query!("DELETE FROM application_secrets WHERE application_id=?1 AND name=?2 AND deletion_id=?3",id,name,deletion_id)

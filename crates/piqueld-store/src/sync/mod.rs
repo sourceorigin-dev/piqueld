@@ -99,7 +99,6 @@ impl Store {
         now: i64,
     ) -> Result<Accepted, StoreError> {
         let outcome = Self::sync_outcome_on(tx, &listed, now).await?;
-        // Sync acts for no request, so nothing reads whether it changed.
         Ok(Accepted {
             changed: true,
             wake: matches!(outcome, SyncOutcome::Deployed(_)),
@@ -135,10 +134,6 @@ impl Store {
         if !following {
             return Ok(SyncOutcome::Current);
         }
-        // A running deployment may still record another head, so a push
-        // waits for it, even before its first deployment.
-        // A deployment that finished since the listing started, even of the
-        // same commit, may be newer than the head listed: list again.
         if current.environment.synced != *since
             || Self::latest_operation_on(tx, id)
                 .await?
@@ -184,7 +179,6 @@ impl Store {
         environment: &StoredEnvironment,
         revision: Option<&ManifestRevision>,
     ) -> Result<super::Operation, StoreError> {
-        // Only the captured snapshot changes; the fetched manifest replaces it.
         let application = environment.tracking()?.candidate(revision)?;
         let operation = Self::request_deploy_on(tx, environment).await?;
         Self::insert_deployment_on(tx, &operation, &application).await?;
@@ -203,7 +197,6 @@ impl Store {
         let Some(current) = Self::environment_on(tx, id.as_str()).await? else {
             return Ok(());
         };
-        // A promoted environment follows no branch.
         let repository = current
             .tracking()
             .ok()
@@ -228,7 +221,6 @@ impl Store {
         &self,
         operation: &super::Operation,
     ) -> Result<bool, StoreError> {
-        // An operation pruned since was not.
         match Self::requested_by_sync_on(&mut *self.connection().await?, operation).await {
             Err(StoreError::DatabaseSource(sqlx::Error::RowNotFound)) => Ok(false),
             requested => requested,
@@ -548,7 +540,6 @@ impl Store {
             .unwrap();
         tx.commit().await.unwrap();
         drop(writer);
-        // As fetching its own branch's head does.
         if let Some(repository) = current.tracking().unwrap().repository() {
             let head = BranchHead {
                 url: repository.repository.url,

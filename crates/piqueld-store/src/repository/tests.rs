@@ -176,7 +176,6 @@ async fn rendered(
     let op = store.operation(id).await.unwrap();
     store.mark_running(&op.id).await;
     let current = store.get(environment).await.unwrap();
-    // As fetching does, the connection replaces the file's own before validation.
     let mut fetched = piqueld_core::manifest::ApplicationManifest::decode_toml(&format!(
         "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='notes'\n{spec}"
     ))
@@ -246,7 +245,6 @@ async fn fetched_manifests_keep_the_current_name() {
         )
         .await
         .unwrap();
-    // Repository-backed applications are renamed while disconnected.
     let repository = |repository| Mutation::Edit {
         id: application.clone(),
         edit: Box::new(piqueld_core::edit::ApplicationEdit::Repository(repository)),
@@ -484,7 +482,6 @@ async fn environments_reserve_and_rename_by_their_own_fetched_manifest() {
         &format!("{service}\n[[spec.routes]]\nhostname='notes.example.com'\nservice='web'\nport=80\n[spec.environments.production.variables]\nlevel='debug'"),
     )
     .await;
-    // Staging has fetched nothing yet, so it reserves nothing.
     assert_eq!(reserved(&production).await, ["notes.example.com"]);
     assert_eq!(reserved(&staging.id).await, Vec::<String>::new());
     let before = store.get(&production).await.unwrap().own;
@@ -499,7 +496,6 @@ async fn environments_reserve_and_rename_by_their_own_fetched_manifest() {
     assert_eq!(reserved(&production).await, ["notes.example.com"]);
     assert_eq!(reserved(&staging.id).await, ["staging.example.com"]);
     assert_eq!(store.get(&production).await.unwrap().own, before);
-    // Only production's own manifest configures `production`.
     let rename = |id: &EnvironmentId| Mutation::RenameEnvironment {
         id: id.clone(),
         name: piqueld_core::EnvironmentName::parse("qa").unwrap(),
@@ -569,10 +565,8 @@ async fn fetches_of_the_connection_branch_converge_declared_environments() {
         Some(&staging.id)
     );
 
-    // A manifest on another branch declares nothing.
     fetch(&store, &canary.id, &token_spec(false)).await;
     assert_eq!(store.environments(&application).await.unwrap().len(), 3);
-    // Sync pins the head it listed, and still fetches `main`.
     let id = staging.id.as_str();
     let first = "a".repeat(40);
     sqlx::query!(
@@ -611,8 +605,6 @@ async fn fetches_of_the_connection_branch_converge_declared_environments() {
     .await;
     store.save_prepared(&op, &target).await.unwrap();
     assert_eq!(store.environments(&application).await.unwrap().len(), 4);
-    // The next one from `main` stops staging syncing, and leaves canary
-    // and qa, no longer declared, as they are.
     fetch(
         &store,
         &staging.id,
@@ -643,8 +635,6 @@ async fn fetches_resolve_their_environment_at_the_revision_they_save() {
         current.environment.resolved_generation,
         Some(current.application.generation)
     );
-    // Unless the manifest moves the fetching environment elsewhere: it
-    // deployed its former branch.
     let moved = format!(
         "[spec.environments.production]\nbranch='release'\n{}",
         token_spec(false)
@@ -751,7 +741,6 @@ async fn accepting_a_fetched_manifest_rejects_declarations_stored_meanwhile() {
     let application = saved_connection(&store).await;
     let production = store.production(&application).await;
     let (op, target) = fetched(&store, &production, &token_spec(true)).await;
-    // The saved manifest does not declare `token` yet, so storing it succeeds.
     store
         .put_stored_secret(Daemon, &application, "token", 0, b"value".to_vec(), None)
         .await

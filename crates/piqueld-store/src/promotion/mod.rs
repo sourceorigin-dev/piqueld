@@ -159,7 +159,6 @@ impl Store {
                 .into());
             }
             if !visited.insert(id.clone()) {
-                // Sources are checked on every change, so chains never loop.
                 return Err(StoreError::Corrupt);
             }
             let current = Self::environment_on(connection, id.as_str())
@@ -414,9 +413,6 @@ impl Store {
                 environment,
                 deployment,
             } => {
-                // The target promotes from another environment since, or the
-                // source is gone: either way the reviewed deployment no
-                // longer applies. Name the source while it exists.
                 let source = Self::environment_on(tx, environment.as_str()).await?;
                 let source = match source {
                     Some(source) if *environment == from.environment => source,
@@ -521,7 +517,6 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         let id = target.id().as_str();
-        // The release keeps the files it captured.
         let saved = release.template().clone().without_files();
         let saved = saved.canonical_json().map_err(StoreError::corrupt)?;
         sqlx::query!(

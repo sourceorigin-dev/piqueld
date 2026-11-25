@@ -118,9 +118,6 @@ async fn only_the_applications_builds_of_the_same_commit_and_settings_are_reusab
     let release = git_source("main", "release");
     let ours = &fixture.environment;
     let built = record(&fixture, ours, &release, 'c', succeeded(&image('a'))).await;
-    // Other build settings, another commit, a failed build, a record
-    // that no longer decodes, and another application's build of the
-    // same inputs.
     let debug = git_source("main", "debug");
     record(&fixture, ours, &debug, 'c', succeeded(&image('b'))).await;
     record(&fixture, ours, &release, 'd', succeeded(&image('b'))).await;
@@ -133,7 +130,6 @@ async fn only_the_applications_builds_of_the_same_commit_and_settings_are_reusab
         .await;
     record(&fixture, &theirs, &release, 'c', succeeded(&image('b'))).await;
 
-    // The branch a commit was built from doesn't matter.
     let preview = git_source("feat/notes", "release");
     let reusable = |source| async move {
         store
@@ -147,7 +143,6 @@ async fn only_the_applications_builds_of_the_same_commit_and_settings_are_reusab
     };
     assert_eq!(reusable(&preview).await, std::slice::from_ref(&original));
 
-    // A build that reused the image names the build that produced it.
     let reused = BuildOutcome {
         reused_build: Some(built),
         ..succeeded(&image('a'))
@@ -431,7 +426,6 @@ async fn output_filters_before_paging_backwards() {
             .is_empty()
     );
 
-    // A sparse stream must be filtered before the 16-chunk page limit.
     let id = fixture.start().await;
     store
         .append_build_log(id, b"error output", LogStream::Stderr)
@@ -453,7 +447,6 @@ async fn structured_chunks_preserve_multibyte_output() {
     let fixture = Fixture::new().await;
     let store = &fixture.store;
     for (repeats, retained, truncated) in [(3000, 9000, false), (25000, 69999, true)] {
-        // Each case writes a build of its own.
         let id = fixture.start().await;
         let text = "€".repeat(repeats);
         store
@@ -461,7 +454,6 @@ async fn structured_chunks_preserve_multibyte_output() {
             .await
             .unwrap();
         if truncated {
-            // The unused byte at the cap must not admit output after a gap.
             store
                 .append_build_log(id, b"x", LogStream::Stdout)
                 .await

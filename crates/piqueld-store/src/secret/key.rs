@@ -100,8 +100,6 @@ impl Store {
         key: Option<&std::path::Path>,
     ) -> Result<Result<KeyBinding, SecretError>, StoreError> {
         let verifier = Self::secret_key_verifier_on(&mut **tx).await?;
-        // Values stored without a verifier still need their key, as in
-        // `verified_secret_cipher`.
         let bound = verifier.is_some()
             || !matches!(Self::probe_ciphertext_on(tx, None).await?, Ciphertext::None);
         let Some(key) = key else {
@@ -137,8 +135,6 @@ impl Store {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     ) -> Result<SecretCipher, StoreError> {
-        // Without a verifier, the database is new, lost-key recovery discarded
-        // every value, or, after outside damage, values still need their key.
         let Some(verifier) = Self::secret_key_verifier_on(&mut **tx).await? else {
             let encrypted = !matches!(Self::probe_ciphertext_on(tx, None).await?, Ciphertext::None);
             let cipher = SecretCipher::load(&self.secret_key_path, encrypted)
@@ -284,19 +280,13 @@ impl Store {
             verifier.is_some(),
             key,
         ) {
-            // A key that decrypts what is stored is not lost: only the
-            // verifier is corrupt.
             (Ciphertext::Decrypts, true, _) => {
                 Err(StoreError::SecretSource(KeyFailure::VerifierCorrupt.into()))
             }
-            // Nothing encrypted needs a key the next write could not use or
-            // generate.
             (Ciphertext::Decrypts, false, _)
             | (Ciphertext::None, false, Ok(_) | Err(KeyFailure::Missing)) => {
                 Err(StoreError::SecretKeyUsable)
             }
-            // Nothing stored decrypts, or nothing is stored but a key a crash
-            // left unusable before it was moved aside.
             _ => self.discard_secret_values(tx, author).await,
         }
     }
@@ -316,8 +306,6 @@ impl Store {
         let by = author.actor.attribution();
         let operator = by.operator_uid();
         let discarded = EventKind::SecretValuesDiscarded.as_str();
-        // Each affected environment's and application's history explains why
-        // its values need replacing.
         sqlx::query!("INSERT INTO events(application_id,environment_id,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid) SELECT (SELECT application_id FROM environments WHERE id=secret_versions.environment_id),environment_id,?5,'Secret key recovery discarded '||COUNT(*)||' stored values; store replacements, then deploy',?1,?2,?3,?4 FROM secret_versions WHERE available=1 GROUP BY environment_id",now,by.user_id,by.credential_id,operator,discarded)
             .execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!("INSERT INTO events(application_id,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid) SELECT application_id,?5,'Secret key recovery discarded '||COUNT(*)||' stored values; store replacements, then deploy',?1,?2,?3,?4 FROM application_secret_versions WHERE available=1 GROUP BY application_id",now,by.user_id,by.credential_id,operator,discarded)
@@ -334,13 +322,11 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        // Webhook secrets are encrypted too; applications generate new ones.
         let webhooks = sqlx::query!("DELETE FROM webhook_secrets")
             .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?
             .rows_affected();
-        // So are notification destinations' URLs; they are created again.
         let destinations = sqlx::query_scalar!("SELECT COUNT(*) FROM notification_destinations")
             .fetch_one(&mut *tx)
             .await

@@ -42,7 +42,6 @@ impl Store {
             )
             .fetch_all(&mut *connection)
             .await,
-            // Only environments: previews are never restored.
             RetentionRoot::Recent => sqlx::query_scalar!(
                 r#"SELECT json AS "json!" FROM (SELECT o.target_json AS json,ROW_NUMBER() OVER (PARTITION BY d.environment_id ORDER BY d.created_at_ms DESC,d.id DESC) AS rank FROM deployments d JOIN operations o ON o.id=d.id JOIN environments e ON e.id=d.environment_id WHERE e.kind='environment' AND d.succeeded_at_ms IS NOT NULL AND o.target_json IS NOT NULL) WHERE rank<=?1"#,
                 keep

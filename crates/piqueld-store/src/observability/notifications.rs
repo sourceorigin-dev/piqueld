@@ -73,8 +73,6 @@ impl Store {
             items: rows
                 .into_iter()
                 .filter_map(|r| {
-                    // Deliveries of a category this version does not know,
-                    // such as one added by a newer version, are left out.
                     let Some(category) = NotificationCategory::parse(&r.category) else {
                         tracing::warn!(delivery_id = %r.id, category = %r.category, "delivery of an unknown category is not listed");
                         return None;
@@ -148,13 +146,11 @@ impl Store {
         if state != DeliveryState::Failed {
             return Err(RetryError::NotFailed(state).into());
         }
-        // A category this version does not know cannot be delivered.
         let category =
             NotificationCategory::parse(&row.category).ok_or(RetryError::UnknownCategory)?;
         if !row.delivers {
             return Err(RetryError::NotReceived.into());
         }
-        // Never replay an old failure after its destination acknowledged recovery.
         let recovered = sqlx::query_scalar!(
             "SELECT COUNT(*) FROM notification_recovery_sources s
             JOIN notification_deliveries recovery ON recovery.id=s.recovery_id
@@ -168,7 +164,6 @@ impl Store {
             return Err(RetryError::Recovered.into());
         }
         match category {
-            // A recovery is stale once its incident has opened again.
             NotificationCategory::Recovery => {
                 let reopened = sqlx::query_scalar!(
                     "SELECT COUNT(*) FROM notification_recovery_sources s
@@ -183,12 +178,9 @@ impl Store {
                     return Err(RetryError::Reopened.into());
                 }
             }
-            // Security events, daemon starts and deployments report one
-            // occurrence, not an incident that closes, so they stay retryable.
             NotificationCategory::Security
             | NotificationCategory::DaemonStarted
             | NotificationCategory::DeploymentSucceeded => {}
-            // A closed incident cannot be announced again without a matching recovery.
             _ => {
                 let open = sqlx::query_scalar!(
                     "SELECT COUNT(*) FROM notification_conditions WHERE event_id=?1",
@@ -242,7 +234,6 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub async fn process_notifications(&self) -> Result<(), StoreError> {
-        // Read events outside the writer transaction, then compare the cursor under the lock.
         let cursor =
             sqlx::query_scalar!("SELECT event_id FROM notification_cursor WHERE singleton=1")
                 .fetch_one(&self.pool)
@@ -264,7 +255,6 @@ impl Store {
             return Ok(());
         }
         for event in &events.items {
-            // Deletion may have removed an event between the read and this transaction.
             if sqlx::query_scalar!("SELECT id FROM events WHERE id=?1", event.id,)
                 .fetch_optional(&mut *tx)
                 .await
@@ -329,8 +319,6 @@ impl Store {
                 return Self::enqueue(tx, event.id, deployed).await;
             }
         }
-        // Security events and daemon starts each notify; neither is a
-        // condition that recovers.
         if crate::SecurityEvent::parse(&event.kind).is_some() {
             let security = NotificationCategory::Security;
             return Self::enqueue(tx, event.id, security).await;
@@ -457,7 +445,6 @@ impl Store {
         .execute(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        // Multiple conditions may clear in one event; they share a recovery delivery.
         sqlx::query_scalar!(
             "SELECT id AS \"id!\" FROM notification_deliveries
             WHERE event_id=?1 AND destination=?2 AND category=?3",
@@ -541,8 +528,6 @@ impl Store {
         failed: bool,
         observed: i64,
     ) -> Result<i64, StoreError> {
-        // An environment's keys are its ID, or `<code>:<ID>` for a
-        // dependency of the daemon it hosts, like a telemetry receiver.
         let code = match (application, key.split_once(':')) {
             (Some(_), Some((code, _))) => {
                 DiagnosticCode::parse(code).ok_or(StoreError::InvalidInput)?
@@ -550,7 +535,6 @@ impl Store {
             (Some(_), None) => DiagnosticCode::ServiceDegraded,
             (None, _) => DiagnosticCode::parse(key).ok_or(StoreError::InvalidInput)?,
         };
-        // Environments are named as `application / environment`.
         let environment = match application {
             Some(id) => sqlx::query_scalar!(
                 "SELECT a.name||' / '||v.name AS \"name!: String\" FROM environments v
@@ -831,7 +815,6 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
             let Some(row) = row else {
-                // Expiration/cancellation still needs committing when nothing is due.
                 tx.commit().await.map_err(StoreError::database)?;
                 return Ok(None);
             };
@@ -846,8 +829,6 @@ impl Store {
                 .await?;
                 continue;
             };
-            // A destination detached, deleted, disabled or no longer
-            // receiving the category cannot be sent to.
             let (Some(id), Some(kind), Some(nonce), Some(ciphertext), true) = (
                 row.destination_id.clone(),
                 row.kind.as_deref(),
@@ -907,9 +888,6 @@ impl Store {
         now: i64,
     ) -> Result<(), StoreError> {
         let expired = now.saturating_sub(RETRY_WINDOW_MS);
-        // A recovery's retry window starts when it can first be sent, not while
-        // it is waiting for acknowledgement of the original failure; so does
-        // a deployment's, waiting for the recovery it brought.
         sqlx::query!(
             "UPDATE notification_deliveries
             SET state='failed',last_error='Delivery retry window expired',updated_at_ms=?1
@@ -935,8 +913,6 @@ impl Store {
         .execute(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        // A deployment that cleared a failure is announced by its recovery
-        // when that is delivered, and on its own otherwise.
         sqlx::query!(
             "UPDATE notification_deliveries
             SET state='cancelled',last_error='Its recovery was delivered instead',updated_at_ms=?1

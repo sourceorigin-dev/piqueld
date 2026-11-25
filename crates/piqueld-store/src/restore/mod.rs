@@ -244,7 +244,6 @@ impl Store {
         .fetch_one(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        // Access narrowed since applies: only versions are kept as they were.
         let rendered: NormalizedApplication =
             serde_json::from_str(&row.manifest_json).map_err(StoreError::corrupt)?;
         Self::check_secret_access_on(tx, &environment.environment, &rendered).await?;
@@ -260,7 +259,6 @@ impl Store {
         .map_err(StoreError::corrupt)?;
         sqlx::query!("INSERT INTO deployments(id,environment_id,manifest_json,template_json,variables_json,warnings_json,generation,created_at_ms,release_id,origin_json) SELECT o.id,o.environment_id,d.manifest_json,d.template_json,d.variables_json,d.warnings_json,o.generation,o.created_at_ms,d.release_id,?3 FROM operations o JOIN deployments d ON d.id=?2 WHERE o.id=?1",operation.id,deployment,origin)
             .execute(&mut **tx).await.map_err(StoreError::database)?;
-        // The revision its manifest was fetched at, for branch state.
         sqlx::query!("INSERT INTO deployment_inputs(operation_id,application_json,repository_commit,fetched,tracked_branch) SELECT ?1,application_json,repository_commit,fetched,tracked_branch FROM deployment_inputs WHERE operation_id=?2",operation.id,deployment)
             .execute(&mut **tx).await.map_err(StoreError::database)?;
         let target = serde_json::to_string(&target).map_err(StoreError::corrupt)?;
@@ -272,7 +270,6 @@ impl Store {
         .execute(&mut **tx)
         .await
         .map_err(StoreError::database)?;
-        // The deployment keeps the files it captured.
         let template = serde_json::from_str::<ApplicationTemplate>(&row.template_json)
             .map_err(StoreError::corrupt)?
             .with_name(name)

@@ -584,7 +584,6 @@ impl Store {
     /// Enforces the per-store limits of 1000 available versions and 100 MiB
     /// of ciphertext, given a store's current usage and the incoming value.
     fn check_secret_quota(versions: i64, bytes: i64, incoming: usize) -> Result<(), StoreError> {
-        // Include the 16-byte authentication tag in the persisted-byte limit.
         if versions >= 1000
             || bytes + i64::try_from(incoming + 16).map_err(StoreError::invalid_input)?
                 > 100 * 1024 * 1024

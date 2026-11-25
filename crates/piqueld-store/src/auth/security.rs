@@ -182,11 +182,6 @@ impl Store {
         now: i64,
     ) -> Result<(), StoreError> {
         let (window, cooldown) = (now - 60_000, now - DENIAL_BURST_COOLDOWN_MS);
-        // Runs under the writer lock on every refusal, so it stays bounded:
-        // the cooldown only reads this address and account's recent bursts
-        // (`security_denial_bursts`), and the count stops at the threshold
-        // (`audit_refusals`). The host operator, which has no account, is
-        // told apart from anonymous callers by its Unix user.
         let operator = actor.operator_uid();
         let event_kind = EventKind::AccessDenialBurst.as_str();
         let burst = sqlx::query_scalar!(

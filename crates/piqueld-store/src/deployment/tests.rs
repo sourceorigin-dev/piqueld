@@ -274,7 +274,6 @@ async fn current_deployment_is_the_newest_by_creation_time_not_by_id() {
         .await;
     let id = store.saved_production(&saved).await;
     let alpha = saved.operation_id.unwrap();
-    // Published and succeeded, as a finished rollout leaves it.
     sqlx::query("UPDATE operations SET promoted=1,state='succeeded',finished_at_ms=created_at_ms WHERE id=?1")
         .bind(&alpha)
         .execute(&store.pool)
@@ -285,8 +284,6 @@ async fn current_deployment_is_the_newest_by_creation_time_not_by_id() {
         .execute(&store.pool)
         .await
         .unwrap();
-    // An already-published deployment from before the restart: its ID
-    // sorts above alpha's, but it was created a minute earlier.
     let older = format!("operation-{}", "f".repeat(32));
     sqlx::query("INSERT INTO operations(id,environment_id,kind,state,generation,promoted,created_at_ms,updated_at_ms,finished_at_ms) SELECT ?1,environment_id,kind,'succeeded',generation,1,created_at_ms-60000,created_at_ms-60000,created_at_ms-60000 FROM operations WHERE id=?2")
         .bind(&older)
@@ -306,7 +303,6 @@ async fn current_deployment_is_the_newest_by_creation_time_not_by_id() {
         store.current_deployment(&id).await.unwrap().unwrap().id,
         alpha
     );
-    // Paging stays in ID order, so the older deployment lists first.
     let deployments = store.deployments(&id, None, 2).await.unwrap().items;
     let flags = deployments
         .iter()

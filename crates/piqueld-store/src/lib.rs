@@ -726,15 +726,6 @@ impl Store {
             .acquire_timeout(durability.acquire_timeout())
             .after_release(|connection, _| {
                 Box::pin(async move {
-                    // A write dropped after SQLite ran its `BEGIN IMMEDIATE`
-                    // but before SQLx built the `Transaction`, while it checks
-                    // the custom statement began one (on shutdown, or by a
-                    // timeout or `select!` around it), leaves the transaction
-                    // to no one: returned to the pool, the connection would
-                    // hold the write lock until every other writer times out.
-                    // The ping lets the rollback of a dropped `Transaction`
-                    // finish first; a connection still in a transaction after
-                    // it is closed, rolling it back.
                     connection.ping().await?;
                     Ok(!connection.is_in_transaction())
                 })
@@ -797,8 +788,6 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError::SchemaMismatch`] when the two disagree.
     async fn schema_version_on(connection: &mut sqlx::SqliteConnection) -> Result<u64, StoreError> {
-        // SQLite does not expose PRAGMA assignment through bind parameters.
-        // The assigned version comes only from the embedded migrations.
         let version: i64 = sqlx::query_scalar!("PRAGMA user_version")
             .fetch_one(&mut *connection)
             .await
@@ -840,8 +829,6 @@ impl Store {
         let generated = new_id("instance");
         let schema_version = i64::try_from(version).map_err(StoreError::schema_mismatch)?;
         let now = now_ms();
-        // Every committed boundary is independently reopenable. The first
-        // migration creates identity; later migrations preserve it.
         sqlx::query!(
             "INSERT INTO instance_metadata(singleton,instance_id,schema_version,created_at_ms)
              VALUES(1,?1,?2,?3)
@@ -862,7 +849,6 @@ impl Store {
         version: usize,
     ) -> Result<(), StoreError> {
         let statement = format!("PRAGMA user_version = {version}");
-        // SQLx cannot construct queries for this statement with bindings.
         sqlx::query(&statement)
             .execute(&mut **tx)
             .await
@@ -1200,7 +1186,6 @@ impl EnvironmentRow {
             (None, None) => EnvironmentSource::Saved,
             (Some(_), Some(_)) => return Err(StoreError::Corrupt),
         };
-        // A preview is named by its slug and deploys an unpinned branch.
         let kind = match (self.kind.as_str(), source.branch()) {
             ("environment", _) => EnvironmentKind::Environment,
             ("preview", Some(branch)) => EnvironmentKind::Preview(Box::new(Preview {
@@ -1225,7 +1210,6 @@ impl EnvironmentRow {
             sync: self.sync != 0,
             telemetry: self.telemetry != 0,
             run_state: piqueld_core::api::RunState::new(self.stopped != 0),
-            // An empty commit records that the branch was absent.
             synced: match (self.synced_commit, self.synced_at_ms) {
                 (Some(commit), Some(at_ms)) => Some(piqueld_core::sync::SyncedHead {
                     commit: Some(commit).filter(|commit| !commit.is_empty()),
@@ -1307,7 +1291,6 @@ impl StoredEnvironmentRow {
             updated_at_ms: self.updated_at_ms,
         }
         .decode()?;
-        // Renames change display identity without rewriting own manifests.
         let own = self
             .manifest_json
             .as_deref()
@@ -1415,8 +1398,6 @@ mod tests {
     #[tokio::test]
     async fn every_committed_migration_reopens_after_a_later_migration_fails() {
         let directory = tempfile::tempdir().unwrap();
-        // Migrated one version further each round, then copied as an older
-        // daemon left it, rather than migrated again from scratch.
         let base = Store::migrated(&directory.path().join("base.db"), 0).await;
         for committed in 0..=MIGRATIONS.len() {
             if let Some(migration) = committed.checked_sub(1).map(|index| MIGRATIONS[index]) {
