@@ -14,18 +14,13 @@ use piqueld_client::{
     access::AppPermission,
 };
 
-/// "Preview" and "Deploy" buttons for the editor's target environment. Preview
-/// asks the daemon to plan the manifest that environment deploys (its last
-/// fetched one when it follows a branch; cleared whenever the saved view or
-/// target changes); Deploy starts a deployment of the saved
-/// generation, then shows the environment's deployments. A target following
-/// a branch also offers Deploy revision (see `DeployRevision`). Without a single target
-/// (an application with several environments or none), Deploy lists the
-/// environments to choose one. A promoted target, which never builds,
-/// offers Promote from its source instead. Either also offers Promote,
-/// before its own action, into the environments promoted from it. On its own page, Deploy
-/// doesn't name the environment. Preview is shown with `apps:write`, the
-/// others with `apps:deploy`.
+/// "Preview" and "Deploy" buttons for the editor's target environment.
+/// Preview plans the manifest that environment deploys; Deploy starts a
+/// deployment of the saved generation. Without a single target, Deploy lists
+/// the environments to choose from; a promoted target offers Promote from its
+/// source instead, and Promote into its dependents comes first. A branch
+/// target also offers Deploy revision (see `DeployRevision`). Preview needs
+/// `apps:write`, the others `apps:deploy`.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {

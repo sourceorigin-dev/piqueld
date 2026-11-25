@@ -34,7 +34,6 @@ reason = "74 findings in 60 files, fixed in a follow-up"
 paths = [
   "apps/piquelctl/src/secrets.rs",
   "apps/piquelctl/src/snapshot/mod.rs",
-  "apps/piqueld-ui/src/browser/management/deployments/actions.rs",
   "apps/piqueld/examples/generate_openapi/settings_reference.rs",
   "apps/piqueld/src/api/http/access.rs",
   "apps/piqueld/src/api/http/auth.rs",
