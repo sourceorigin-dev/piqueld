@@ -1,10 +1,10 @@
 //! Reading a database file without opening it as a [`Store`], for
 //! control-plane backups: the daemon snapshots the database before it
 //! migrates it, and `piqueld restore` verifies a backup before using it.
-use super::{Store, StoreError, ensure_database_target};
+use super::{BUSY_TIMEOUT, Store, StoreError, ensure_database_target};
 use piqueld_core::InstanceId;
 use sqlx::{Connection as _, SqliteConnection, sqlite::SqliteConnectOptions};
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 /// One database file opened read-only, without creating, migrating or
 /// changing its journal mode.
@@ -37,7 +37,7 @@ impl DatabaseFile {
         let options = SqliteConnectOptions::new()
             .filename(path)
             .read_only(read_only)
-            .busy_timeout(Duration::from_secs(5));
+            .busy_timeout(BUSY_TIMEOUT);
         SqliteConnection::connect_with(&options)
             .await
             .map(Self)

@@ -117,8 +117,6 @@ paths = [
   "crates/piqueld-config/src/dns/propagation.rs",
   "crates/piqueld-config/src/runtime_dir.rs",
   "crates/piqueld-docker/src/engine/mod.rs",
-  "crates/piqueld-store/src/backup/mod.rs",
-  "crates/piqueld-store/src/lib.rs",
   "tools/xtask/src/dev/mod.rs",
   "tools/xtask/src/dev/supervisor.rs",
   "tools/xtask/src/docker.rs",
