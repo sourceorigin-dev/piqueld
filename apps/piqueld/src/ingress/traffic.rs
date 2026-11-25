@@ -332,10 +332,14 @@ impl AccessLine {
     }
 
     /// The hostname of the site whose link led here, from `Referer`, unless
-    /// it is this request's own host.
+    /// it is this request's own host or an IP address. Browsers don't land on
+    /// sites by bare address, so those are bots spoofing the header.
     fn referrer(&self) -> Option<String> {
         let referrer = url::Url::parse(self.request.headers.get("Referer")?).ok()?;
-        let host = referrer.host_str()?.to_ascii_lowercase();
+        let url::Host::Domain(host) = referrer.host()? else {
+            return None;
+        };
+        let host = host.to_ascii_lowercase();
         let own = self.request.host.split(':').next().unwrap_or_default();
         (!host.eq_ignore_ascii_case(own)).then_some(host)
     }
@@ -393,6 +397,8 @@ mod tests {
         assert_eq!(access.referrer().as_deref(), Some("news.example.org"));
         assert_eq!(referred("https://app.example.com/other").referrer(), None);
         assert_eq!(referred("not a url").referrer(), None);
+        assert_eq!(referred("https://104.21.6.75/").referrer(), None);
+        assert_eq!(referred("http://[2606:4700::1]/").referrer(), None);
     }
 
     #[test]

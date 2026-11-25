@@ -86,8 +86,8 @@ routes. Add `--json` for the full report.
   same browser count once.
 - **Top pages** count page views by path, without the query string. **Referring
   sites** count them by the hostname of the `Referer` header, unless it is the
-  route's own. Both are counted per UTC day, so they cover the whole days a
-  period touches.
+  route's own or an IP address, which bots fake. Both are counted per UTC day,
+  so they cover the whole days a period touches.
 
 Requests from bots, crawlers, scripts such as `curl`, and uptime monitors
 count as requests, but never as page views or visitors. The gateway's own
