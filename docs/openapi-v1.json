@@ -17591,7 +17591,7 @@
     },
     "/api/v1/applications/{id}/previews/local": {
       "post": {
-        "description": "The body is a Git bundle of one snapshot commit, at most `[snapshots]\nmax_upload_bytes`: either thin, needing commits the application's\nrepository has (its base and, for merges, ancestors of it), which the\ndaemon fetches, or complete.\nIt is verified and unbundled into a repository of its own. The preview\nof `branch` and `slot` is created first if needed, as `createPreview`\ndoes, and deploys the snapshot's manifest, building `\"self\"` sources from\nit. Fails with 409 `preview_requires_repository` or\n`preview_limit_reached`; 413 `snapshot_too_large` when the bundle exceeds\nthe upload limit or the snapshot, or the history it needs, exceeds\n`[checkouts] max_bytes`; 422 `snapshot_invalid`; or 422\n`snapshot_base_unavailable`, whose `details.prerequisites` names the\ncommits it needs; upload a complete bundle then. A body that stalls for\n30 seconds, or an upload not received within 10 minutes, fails with 408\n`snapshot_timed_out`. Needs no application revision.",
+        "description": "The body is a Git bundle of one snapshot commit, at most `[snapshots]\nmax_upload_bytes`, thin or complete. It is verified and unbundled into a\nrepository of its own. The preview of `branch` and `slot` is created first if\nneeded, as `createPreview` does, and deploys the snapshot's manifest. Fails\nwith 409 `preview_requires_repository` or `preview_limit_reached`; 413\n`snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,\nwhose `details.prerequisites` names the commits a complete bundle must\ncontain; or 408 `snapshot_timed_out`. Needs no application revision.",
         "operationId": "deployLocalPreview",
         "parameters": [
           {
@@ -19194,7 +19194,7 @@
         "x-piqueld-access": "secrets:write"
       },
       "put": {
-        "description": "The body is the raw value (`application/octet-stream`, 1–512000 bytes);\nanother content type fails with 415 and a body over the 2 MiB request\nlimit with 413. `X-Expected-Generation` must be 0 to create a secret, or its current\ngeneration to replace it; a mismatch fails with 409. Running services keep\ntheir value until the next deployment. Supplying `environments` (`all`, or\nenvironment IDs) replaces the access list, with `previews` (default\n`false`); `previews` alone fails with 400. Without them, a new secret\nallows every environment and no previews, and an existing one keeps its\nlist. `expected_environments` and `expected_previews`, the access the\ncaller read, fail the upload with 409 `secret_access_conflict` once\nsomeone changed it. Names the\nsaved manifest or an environment's last fetched one declares as generated\nsecrets fail with 422 `manifest_validation_failed` and `secret_name_conflict`\nin `details.errors`. The response carries metadata only.",
+        "description": "The body is the raw value (`application/octet-stream`, 1–512000 bytes);\nanother content type fails with 415 and a body over the request limit with\n413. `X-Expected-Generation` must be 0 to create a secret, or its current\ngeneration to replace it (409 otherwise). Running services keep their value\nuntil the next deployment. `environments` (`all`, or IDs) with `previews`\nreplaces the access list; a new secret otherwise allows every environment and\nno previews. `expected_environments` and `expected_previews` fail with 409\n`secret_access_conflict` once someone changed the access. Names a manifest\ngenerates fail with 422. The response carries metadata only.",
         "operationId": "putApplicationSecret",
         "parameters": [
           {
@@ -29655,7 +29655,7 @@
     },
     "/api/v1/environments/{id}/deploy": {
       "post": {
-        "description": "A Git source whose commit and build settings an earlier build of the\napplication already built reuses that build's image while it is still\npresent; `rebuild=true` builds every Git source again.\n\nReturns 202 with the accepted durable operation. Requires\n`expected_generation` unless `force=true`; a stale generation fails with 409.\nA promoted environment fails with 409 `environment_promoted`; it deploys\nonly by promotion. `branch` or `commit` for an environment without a\nrepository branch fails with 422.\nRepeating a request with the same `Idempotency-Key` returns the original\nresponse.",
+        "description": "A Git source an earlier build already built reuses that image while it is\npresent; `rebuild=true` builds every Git source again. Returns 202 with the\naccepted operation. Requires `expected_generation` unless `force=true` (stale:\n409). A promoted environment fails with 409 `environment_promoted`; `branch`\nor `commit` without a repository branch fails with 422. Repeating an\n`Idempotency-Key` returns the original response.",
         "operationId": "deployEnvironment",
         "parameters": [
           {
@@ -30352,7 +30352,7 @@
     },
     "/api/v1/environments/{id}/promote": {
       "post": {
-        "description": "Deploys the release of the source environment's current deployment\n(which must be `deployment` when given), or an earlier `release`, without\nbuilding or fetching. The release is pinned at acceptance: its own\nmanifest is rendered with this environment's `[spec.environments.<name>]`\nblock and variables, and its images deployed as recorded. Refused unless\nthe source deployment is current and succeeded and its services are\nhealthy now (`promotion_source_not_ready`, `promotion_source_changed`),\nthe release's build inputs render as they did for it\n(`release_incompatible`), its images are present or can be pulled again\n(`image_unavailable`), and every secret it mounts exists and allows this\nenvironment (`secrets_unavailable`, listing all of them). The inspected\napplication `expected_generation` goes in the JSON body.",
+        "description": "Deploys the release of the source environment's current deployment (which\nmust be `deployment` when given), or an earlier `release`, without building\nor fetching. The release's manifest is rendered with this environment's\n`[spec.environments.<name>]` block and variables, and its images deployed as\nrecorded. Refused with `promotion_source_not_ready`, `promotion_source_changed`,\n`release_incompatible`, `image_unavailable` or `secrets_unavailable` when the\nsource, build inputs, images or mounted secrets do not allow it. The inspected\napplication `expected_generation` goes in the JSON body.",
         "operationId": "promoteEnvironment",
         "parameters": [
           {
@@ -30904,7 +30904,7 @@
     },
     "/api/v1/environments/{id}/restore": {
       "post": {
-        "description": "Deploys `deployment` again as it ran: its rendered manifest, its images\nand the secret versions it pinned, recorded as a new deployment whose\norigin names it, which becomes the maintained target. Nothing is rendered,\nfetched or built, and jobs never run. Volume contents and migrations are\nnot reverted. Refused unless it succeeded (`deployment_not_restorable`),\nits images are present or can be pulled again by digest\n(`image_unavailable`), and the secret versions it pinned still exist\n(`restore_secrets_unavailable`, listing them). Needs no application\nrevision. Previews restore through `restorePreviewDeployment`. Repeating a\nrequest with the same `Idempotency-Key` returns the original response.",
+        "description": "Deploys `deployment` again as it ran: its rendered manifest, images and pinned\nsecret versions, recorded as a new deployment that becomes the maintained\ntarget. Nothing is rendered, fetched or built, and jobs never run. Volumes are\nnot reverted. Refused unless it succeeded (`deployment_not_restorable`), its\nimages are available (`image_unavailable`) and its secret versions still exist\n(`restore_secrets_unavailable`). Needs no application revision. Previews\nrestore through `restorePreviewDeployment`.",
         "operationId": "restoreDeployment",
         "parameters": [
           {
@@ -32348,7 +32348,7 @@
     },
     "/api/v1/events/stream": {
       "get": {
-        "description": "Events arrive oldest first, resuming after the `Last-Event-ID` header or\n`cursor` (from the beginning when both are absent). Invalid cursors fail with\n400 and pruned history with 410 before the stream opens. The stream emits:\n- `event` messages with `id: v1:<event-id>` for each matching event;\n- ID-only messages that advance the resume position past filtered-out events;\n- a final `history_expired` or `stream_error` message, after which the\n  stream ends and history must be reloaded before reconnecting;\n- a final `access_ended` message whose data is the `ErrorBody` of the\n  request that would now be refused, once the caller loses access (see\n  docs/user/accounts/permissions.md#when-access-changes-take-effect for\n  how soon).\n\nThe stream also ends, without a message, when the daemon shuts down.",
+        "description": "Events arrive oldest first, resuming after the `Last-Event-ID` header or\n`cursor` (from the beginning when both are absent). Invalid cursors fail with\n400 and pruned history with 410 before the stream opens. The stream emits:\n- `event` messages with `id: v1:<event-id>` for each matching event;\n- ID-only messages that advance the resume position past filtered-out events;\n- a final `history_expired`, `stream_error` or `access_ended` message (the\n  last carries the `ErrorBody` the caller would now get), after which the\n  client reloads history before reconnecting. It also ends, without a\n  message, when the daemon shuts down.",
         "operationId": "streamEvents",
         "parameters": [
           {
@@ -33849,7 +33849,7 @@
     },
     "/api/v1/system/secrets/recover-key": {
       "post": {
-        "description": "Discards every application's stored secret values, every environment's\ngenerated secret values, and the repository webhook secrets (applications\ngenerate new ones), and deletes the notification destinations, whose URLs\nit encrypts; metadata and running services are kept. Only a lost key\nis recovered: while something is encrypted (the key verifier, a value or a\nwebhook secret), one that is missing, does not hold 32 bytes, or decrypts\nnone of it. Fails with 409 while the key decrypts the verifier, when there\nis no verifier but it decrypts a value or webhook secret, or when nothing\nis encrypted and the key file is missing or loads. When nothing is\nencrypted but the key file does not hold 32 bytes, moves it aside and\nsucceeds with nothing discarded. Fails with 503 `secret_storage_unavailable`, discarding\nnothing, when it decrypts a value or webhook secret but not a corrupt\nverifier, or can't be read for another reason, such as an I/O error or a\nkey file that is not private.\nThe next value write generates a new key. Accounts need a passkey\nsign-in within the last 2 minutes; API tokens cannot recover the key.",
+        "description": "Discards every stored and generated secret value and the repository webhook\nsecrets, and deletes the notification destinations, whose URLs the key\nencrypts; metadata and running services are kept. Only a lost key is\nrecovered: while something is encrypted, one that is missing, not 32 bytes, or\ndecrypts none of it. Fails with 409 otherwise, and with 503\n`secret_storage_unavailable`, discarding nothing, when the key cannot be read.\nWhen nothing is encrypted and the key file is not 32 bytes, moves it aside.\nThe next value write generates a new key. Accounts need a passkey sign-in\nwithin the last 2 minutes; API tokens cannot recover the key.",
         "operationId": "recoverSecretKey",
         "responses": {
           "200": {

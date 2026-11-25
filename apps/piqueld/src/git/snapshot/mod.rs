@@ -1,30 +1,12 @@
 //! Snapshots of local worktrees, uploaded by `preview deploy --local` as Git
-//! bundles. Bundles are untrusted: each is streamed to disk within
-//! `[snapshots] max_upload_bytes`, then received into a new private
-//! repository of its own, never one shared with checkouts or other uploads:
-//!
-//! 1. its header must name one snapshot ref, and the commits it needs, its
-//!    prerequisites, are fetched from the application's repository;
-//! 2. `git bundle verify` checks it applies, and unbundling checks every
-//!    object (`transfer.fsckObjects`);
-//! 3. the prerequisites must all be ancestors of one of them, the base, and
-//!    the snapshot commit must descend from it. A thin bundle of a history
-//!    with merges needs the base and some of its ancestors;
-//! 4. its working tree must fit `[checkouts] max_bytes` (see
-//!    [`Checkouts::measure`]), or no deployment could check it out.
-//!
-//! Fetching the prerequisites is stopped once the staging directory takes
-//! more than `[checkouts] max_bytes` (see [`Checkouts::bounded`]).
-//!
-//! Unbundling keeps the pack as uploaded, so it takes about as much disk as
-//! the upload; Git's allocations are bounded (see [`Checkout`]), so a small
-//! pack of huge objects cannot exhaust memory.
-//! An upload holds its permit until it is accepted or refused, so at most
-//! [`Snapshots::RECEIVING`] uploads are on disk unaccepted.
-//!
-//! The repository then moves to `<commit>.git`, from which deployments of
-//! that snapshot read their manifest and build `"self"` sources. Snapshots
-//! no preview's latest deployment uses are removed (see [`Snapshots::prune`]).
+//! bundles. Each untrusted bundle is streamed to disk within `[snapshots]
+//! max_upload_bytes`, then received into a private repository of its own: its
+//! header must name one snapshot ref, `git bundle verify` and
+//! `transfer.fsckObjects` check it, its prerequisites (fetched from the
+//! application's repository) must share one base the snapshot descends from, and
+//! its tree must fit `[checkouts] max_bytes` (see [`Checkouts::measure`]). The
+//! repository then moves to `<commit>.git`, from which deployments read their
+//! manifest. Unused snapshots are removed (see [`Snapshots::prune`]).
 use super::{Checkout, Checkouts, TreeTooLarge};
 use axum::body::Bytes;
 use futures_util::{Stream, StreamExt};
@@ -131,18 +113,17 @@ impl Snapshots {
         })
     }
 
-    /// Streams `body`, which announced `length` bytes, to a staging file of
-    /// at most `limit` bytes, then receives it as described in the module
-    /// documentation, fetching its prerequisites from `url` and measuring
-    /// its tree against `checkouts`. At most [`Self::RECEIVING`] uploads are
-    /// received, or wait to be kept, at once; others wait. Each gets
-    /// [`Self::RECEIVE_TIMEOUT`], and its body [`Self::IDLE_TIMEOUT`]
-    /// between chunks.
+    /// Streams `body`, which announced `length` bytes, to a staging file of at most
+    /// `limit` bytes, then receives it as described in the module documentation,
+    /// fetching its prerequisites from `url` and measuring its tree against
+    /// `checkouts`. At most [`Self::RECEIVING`] uploads are received at once; each
+    /// gets [`Self::RECEIVE_TIMEOUT`], and its body [`Self::IDLE_TIMEOUT`] between
+    /// chunks.
     ///
     /// # Errors
-    /// Returns [`SnapshotError`] for an oversized, malformed, or unverifiable
-    /// bundle, an unavailable base, a tree too large to check out, a
-    /// timeout, or a storage failure.
+    /// Returns [`SnapshotError`] for an oversized, malformed, or unverifiable bundle,
+    /// an unavailable base, a tree too large to check out, a timeout, or a storage
+    /// failure.
     #[expect(
         clippy::map_err_ignore,
         reason = "`Elapsed` carries nothing the timeout variant does not already say"

@@ -105,15 +105,11 @@ impl ApplicationService {
             .await
     }
 
-    /// Deletes each of `confirmed` that is a preview of `application` whose
-    /// branch the repository confirms is gone, and keeps the others,
-    /// including all of them when the application's repository changes
-    /// meanwhile, and those running or deploying a local snapshot, whose
-    /// branch may never have been pushed. Fails with
-    /// `repository_unavailable`, deleting nothing, when the repository
-    /// cannot be read: an unreadable repository never makes a branch gone.
-    /// Each deletion commits, and records itself, on its own, so one that
-    /// fails leaves the earlier ones deleted.
+    /// Deletes each of `confirmed` that is a preview of `application` whose branch
+    /// the repository confirms is gone, and keeps the others, including those
+    /// running a local snapshot. Fails with `repository_unavailable`, deleting
+    /// nothing, when the repository cannot be read. Each deletion commits on its
+    /// own, so one that fails leaves the earlier ones deleted.
     ///
     /// # Errors
     /// Returns absence, repository, authorization, or storage errors.

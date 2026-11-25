@@ -193,19 +193,14 @@ impl AccessQuery {
 /// Creates or replaces a value in an application's secret store.
 ///
 /// The body is the raw value (`application/octet-stream`, 1–512000 bytes);
-/// another content type fails with 415 and a body over the 2 MiB request
-/// limit with 413. `X-Expected-Generation` must be 0 to create a secret, or its current
-/// generation to replace it; a mismatch fails with 409. Running services keep
-/// their value until the next deployment. Supplying `environments` (`all`, or
-/// environment IDs) replaces the access list, with `previews` (default
-/// `false`); `previews` alone fails with 400. Without them, a new secret
-/// allows every environment and no previews, and an existing one keeps its
-/// list. `expected_environments` and `expected_previews`, the access the
-/// caller read, fail the upload with 409 `secret_access_conflict` once
-/// someone changed it. Names the
-/// saved manifest or an environment's last fetched one declares as generated
-/// secrets fail with 422 `manifest_validation_failed` and `secret_name_conflict`
-/// in `details.errors`. The response carries metadata only.
+/// another content type fails with 415 and a body over the request limit with
+/// 413. `X-Expected-Generation` must be 0 to create a secret, or its current
+/// generation to replace it (409 otherwise). Running services keep their value
+/// until the next deployment. `environments` (`all`, or IDs) with `previews`
+/// replaces the access list; a new secret otherwise allows every environment and
+/// no previews. `expected_environments` and `expected_previews` fail with 409
+/// `secret_access_conflict` once someone changed the access. Names a manifest
+/// generates fail with 422. The response carries metadata only.
 #[utoipa::path(put,path="/api/v1/applications/{id}/secrets/{name}",operation_id="putApplicationSecret",params(("id"=String,Path),("name"=String,Path),("X-Expected-Generation"=i64,Header),AccessQuery),request_body(content=inline(SecretValue),content_type="application/octet-stream"),responses((status=200,description="Updated metadata; no secret value",body=Envelope<StoredSecret>),ApiErrors<400, 404, 409, 413, 415, 422, 503>))]
 pub(super) async fn put_stored(
     State(state): State<ApiState>,
@@ -315,22 +310,15 @@ pub(super) async fn delete_stored(
 
 /// Recovers from a lost secret master key.
 ///
-/// Discards every application's stored secret values, every environment's
-/// generated secret values, and the repository webhook secrets (applications
-/// generate new ones), and deletes the notification destinations, whose URLs
-/// it encrypts; metadata and running services are kept. Only a lost key
-/// is recovered: while something is encrypted (the key verifier, a value or a
-/// webhook secret), one that is missing, does not hold 32 bytes, or decrypts
-/// none of it. Fails with 409 while the key decrypts the verifier, when there
-/// is no verifier but it decrypts a value or webhook secret, or when nothing
-/// is encrypted and the key file is missing or loads. When nothing is
-/// encrypted but the key file does not hold 32 bytes, moves it aside and
-/// succeeds with nothing discarded. Fails with 503 `secret_storage_unavailable`, discarding
-/// nothing, when it decrypts a value or webhook secret but not a corrupt
-/// verifier, or can't be read for another reason, such as an I/O error or a
-/// key file that is not private.
-/// The next value write generates a new key. Accounts need a passkey
-/// sign-in within the last 2 minutes; API tokens cannot recover the key.
+/// Discards every stored and generated secret value and the repository webhook
+/// secrets, and deletes the notification destinations, whose URLs the key
+/// encrypts; metadata and running services are kept. Only a lost key is
+/// recovered: while something is encrypted, one that is missing, not 32 bytes, or
+/// decrypts none of it. Fails with 409 otherwise, and with 503
+/// `secret_storage_unavailable`, discarding nothing, when the key cannot be read.
+/// When nothing is encrypted and the key file is not 32 bytes, moves it aside.
+/// The next value write generates a new key. Accounts need a passkey sign-in
+/// within the last 2 minutes; API tokens cannot recover the key.
 #[utoipa::path(post,path="/api/v1/system/secrets/recover-key",operation_id="recoverSecretKey",
     responses((status=200,description="Values discarded; the next value write generates a new key",body=Envelope<piqueld_core::api::SecretKeyRecovery>),
     (status=403,response=inline(super::openapi::ReauthenticationResponse)),ApiErrors<409, 503>))]

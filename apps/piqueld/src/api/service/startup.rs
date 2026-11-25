@@ -22,34 +22,14 @@ const INITIAL_SWARM_RETRY_DELAY: Duration = Duration::from_secs(1);
 const MAX_SWARM_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 impl ApplicationService {
-    /// Opens persistence, initializes authentication, and starts
-    /// reconciliation and ingress once Docker is a Swarm manager, serving
-    /// without it until then.
+    /// Opens persistence, initializes authentication, and starts reconciliation and
+    /// ingress once Docker is a Swarm manager, serving without it until then.
     ///
     /// The process must hold its data-directory lock and bind its listeners first.
-    /// Cancelling the supplied token stops both workers; the returned task must
-    /// be joined before releasing the lock. Caddy keeps serving after normal shutdown.
-    /// A controller failure cancels the token so all transports shut down together.
-    ///
-    /// Steps, in order:
-    /// 1. Open the store, start `telemetry` export, noting where the journal
-    ///    stands so it exports what this start journals, and initialize
-    ///    authentication.
-    /// 2. Reserve the website's and webhooks' hostnames so applications
-    ///    cannot route them.
-    /// 3. Create the Docker client, which needs neither Docker nor its socket
-    ///    yet, register the build machine if one is configured, and
-    ///    interrupt stale actions.
-    /// 4. Build the ingress, reconciliation controller, and service.
-    /// 5. Bind the webhook listener and the gateway's traffic socket, then
-    ///    record the daemon start, which notifies as `daemon_started`.
-    /// 6. Spawn one task joining notification observation, notification
-    ///    webhook delivery, sync, the listener receiving GitHub webhooks,
-    ///    telemetry export from the journal, traffic counting, and, once `establish_swarm`
-    ///    reaches a Swarm manager, reconciliation, image cleanup and ingress.
-    ///    Until then requested operations wait. Readiness probes Docker
-    ///    directly, so it reports ready up to `MAX_SWARM_RETRY_DELAY` before
-    ///    the next attempt starts them.
+    /// Cancelling the token stops both workers; join the returned task before
+    /// releasing the lock. A controller failure cancels the token. Operations wait
+    /// until `establish_swarm` reaches a manager; readiness reports ready up to
+    /// `MAX_SWARM_RETRY_DELAY` before then.
     /// # Errors
     /// Returns contextual storage, authentication, or client initialization errors.
     pub async fn start(

@@ -164,20 +164,16 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Starts the daemon with loaded configuration and runs until a shutdown
-/// signal. Tracing is already initialized, exporting through `telemetry`.
+/// Starts the daemon with loaded configuration and runs until a shutdown signal.
+/// Tracing is already initialized, exporting through `telemetry`.
 ///
-/// 1. Prepares and locks the data directory, then validates and locks the runtime
-///    directory and binds every listener, so misconfiguration fails before any
-///    state is opened. Then refuses a data directory an unfinished restore
-///    left, and backs it up if its database needs migrating
-///    ([`Backups::before_migration`]).
+/// 1. Prepares and locks the data directory and runtime directory and binds every
+///    listener, then refuses a data directory an unfinished restore left, and
+///    backs it up if its database needs migrating ([`Backups::before_migration`]).
 /// 2. Starts the application service and reconciliation controller.
 /// 3. Serves the dashboard/API over TCP and the Unix API socket.
-/// 4. After cancellation, waits up to `SHUTDOWN_DEADLINE` for every task and
-///    pending audit record, and surfaces the first failure. Past the
-///    deadline, it exits the process instead, while it still holds the
-///    directory locks. A second shutdown signal exits at once.
+/// 4. After cancellation, waits up to `SHUTDOWN_DEADLINE` for every task, then
+///    exits the process; a second shutdown signal exits at once.
 async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
     piqueld_config::directories::prepare_data_dir(&config.server.data_dir)
         .await

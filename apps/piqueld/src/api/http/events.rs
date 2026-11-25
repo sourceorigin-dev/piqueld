@@ -125,14 +125,10 @@ pub(super) async fn kinds(
 /// 400 and pruned history with 410 before the stream opens. The stream emits:
 /// - `event` messages with `id: v1:<event-id>` for each matching event;
 /// - ID-only messages that advance the resume position past filtered-out events;
-/// - a final `history_expired` or `stream_error` message, after which the
-///   stream ends and history must be reloaded before reconnecting;
-/// - a final `access_ended` message whose data is the `ErrorBody` of the
-///   request that would now be refused, once the caller loses access (see
-///   docs/user/accounts/permissions.md#when-access-changes-take-effect for
-///   how soon).
-///
-/// The stream also ends, without a message, when the daemon shuts down.
+/// - a final `history_expired`, `stream_error` or `access_ended` message (the
+///   last carries the `ErrorBody` the caller would now get), after which the
+///   client reloads history before reconnecting. It also ends, without a
+///   message, when the daemon shuts down.
 #[utoipa::path(get,path="/api/v1/events/stream",operation_id="streamEvents",params(EventQuery),responses((status=200,description="Resumable SSE; IDs are v1:<event-id>",body=String,content_type="text/event-stream"),ApiErrors<400, 410, 503>))]
 pub(super) async fn stream(
     State(state): State<ApiState>,

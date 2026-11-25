@@ -14,25 +14,12 @@ use piqueld_core::{
 use piqueld_store::{Promotion, PromotionCandidate, PromotionError, StoreError, StoredEnvironment};
 
 impl ApplicationService {
-    /// Promotes `selection` into the promoted environment `id`, pinning its
-    /// release at acceptance. Every precondition is checked before anything
-    /// is captured, after the caller's: its revision precondition, idempotency
-    /// key and permission, then the environment's revision, as acceptance
-    /// checks them:
-    ///
-    /// 1. When promoting from the source, its current deployment is the one
-    ///    requested, succeeded, and is observed healthy now.
-    /// 2. The release renders for the environment and its build inputs render
-    ///    as they did for it (`release_incompatible`).
-    /// 3. Every secret it mounts exists and allows the environment, all
-    ///    reported at once (`secrets_unavailable`).
-    /// 4. Its images are present, pulled again by digest when they can be;
-    ///    cleanup is held off from then until the target is saved.
-    ///
-    /// Acceptance checks the source again in its transaction, so a source
-    /// that moves on meanwhile fails with `promotion_source_changed` rather
-    /// than retargeting the request.
-    ///
+    /// Promotes `selection` into the promoted environment `id`, pinning its release
+    /// at acceptance. Checks first that a source's current deployment is the
+    /// requested one, succeeded and healthy; that the release renders for the
+    /// environment (`release_incompatible`); that every secret it mounts exists and
+    /// allows it (`secrets_unavailable`); and that its images are present or pulled
+    /// by digest. A source that moved on fails with `promotion_source_changed`.
     /// # Errors
     /// Returns those failures, precondition, conflict, runtime, or storage errors.
     pub async fn promote(
@@ -110,18 +97,16 @@ impl ApplicationService {
         }
     }
 
-    /// Plans deploying `selection` into environment `id` without changing
-    /// anything: the release and its provenance and image availability, the
-    /// rendered diff against the environment's current deployment, the
-    /// runtime plan, new (empty) volumes, and every missing or inaccessible
-    /// secret. Images that are missing and can't be pulled again block the
-    /// plan, as they fail the promotion. The source must be promotable, as
-    /// for [`Self::promote`]; an
-    /// earlier release may be planned for any environment.
+    /// Plans deploying `selection` into environment `id` without changing anything:
+    /// the release, its images, the rendered diff against the current deployment,
+    /// the runtime plan, new volumes, and every missing or inaccessible secret.
+    /// Missing images that can't be pulled again block the plan. The source must be
+    /// promotable, as for [`Self::promote`]; an earlier release may be planned for
+    /// any environment.
     ///
     /// # Errors
-    /// Returns the source, rendering, `release_incompatible`, runtime, or
-    /// storage errors of a promotion.
+    /// Returns the source, rendering, `release_incompatible`, runtime, or storage
+    /// errors of a promotion.
     pub async fn plan_release(
         &self,
         id: &EnvironmentId,
