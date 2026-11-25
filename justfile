@@ -218,7 +218,7 @@ setup-playwright:
 test-playwright *ARGS: build-playwright
     @cargo xtask playwright "$@"
 
-# Regenerates the dashboard screenshots in docs/images.
+# Regenerates the dashboard screenshots in docs/images and apps/site.
 [positional-arguments]
 docs-screenshots *ARGS: build-playwright
     @cargo xtask playwright --config screenshots.config.ts "$@"

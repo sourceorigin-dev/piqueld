@@ -156,10 +156,10 @@ export async function shoot(page: Page, name: string, through?: Locator, from?: 
 /** Saves `only`, a part of the page, for piqueld.dev, with 12 pixels around
  * it, twice: as apps/site/dashboard.png, in a window 912 pixels wide, and as
  * apps/site/dashboard-narrow.png, in one 340 wide, as on a phone. The page's
- * main region is then as wide as the site draws each image, 680 and 340
- * pixels, so the dashboard shows at its real size. Both are saved as `shoot`
- * saves a page, at three device pixels per CSS pixel, which stays sharp where
- * the site draws them a little larger. */
+ * main region is then 680 and 340 pixels wide, about what the site draws
+ * each image at: the narrow one at its real size, the other a little larger.
+ * Both are saved the way `shoot` saves a page, but at three device pixels per
+ * CSS pixel, so they stay sharp. */
 export async function shootForSite(page: Page, only: Locator) {
   const size = page.viewportSize();
   if (!size) throw new Error('the page has no fixed window size to restore');

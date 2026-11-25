@@ -22,8 +22,11 @@ The other files:
   [release checks](https://github.com/sourceorigin-dev/piqueld/blob/main/docs/dev/validation.md#release-checks)
   runs it against binaries built from `main`.
 - `dashboard.png` is the dashboard's list of an application's environments,
-  and `dashboard-narrow.png` the same list as a phone shows it. Each is as
-  wide as the page draws it, so the dashboard shows at its real size.
+  and `dashboard-narrow.png` the same list as a phone shows it. The page
+  draws the narrow one at its real size and the other a little larger, so
+  both are saved at three device pixels per CSS pixel. The `width` and
+  `height` the page gives them, and the width it caps the narrow one at, are
+  their sizes divided by three: change them when a picture changes size.
   `just docs-screenshots` generates them with the documentation's
   screenshots, and CI fails when one shows an older version of that list;
   see [screenshots](../../docs/dev/documentation.md#screenshots).
