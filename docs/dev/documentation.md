@@ -25,8 +25,11 @@ root, configures it.
   build history and image tables in `crates/piqueld-core/src/retention.rs`),
   through their JSON Schemas. To change them, change the `///` doc comments, which are also
   `piquelctl --help` and the schemas' descriptions that editors show, keeping
-  them about what the reader can see and do, then run `just generate`. Notes
-  for developers go in `//` comments, which stay out of the schemas. The
+  them about what the reader can see and do, then run `just generate`. They
+  hold no notes for developers, and nor do `//` comments, which the
+  standard's
+  [`rust-comments`](https://crates.io/crates/sourceorigin-standard)
+  rule limits to its markers. The
   command reference's layout and introduction are in
   `apps/piquelctl/examples/cli_reference.rs`, the settings references' in
   `apps/piqueld/examples/generate_openapi`. `just openapi-check`, which CI
