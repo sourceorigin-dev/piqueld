@@ -35,7 +35,9 @@ use tokio::time;
 /// supervisor starts.
 pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Result<()> {
     match &cli.command {
-        Command::Login { .. } => unreachable!("login has its own interactive deadline"),
+        Command::Login { .. } => Err(CliError::misrouted(
+            "login has its own interactive deadline",
+        )),
         Command::Logout => crate::auth::logout(cli, client, console).await,
         Command::Whoami => console.emit(&crate::accounts::SessionReport {
             session: client.auth_me().await?,
@@ -47,14 +49,18 @@ pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Re
         Command::SetupLink { open } => crate::auth::setup_link(cli, client, console, *open).await,
         Command::RecoverAdmin => crate::auth::recover_admin(cli, client, console).await,
         Command::SignInLink => crate::auth::sign_in_link(cli, client, console).await,
-        Command::Profiles => unreachable!("profiles are listed before connecting"),
-        Command::Completions { .. } => unreachable!("completions are printed before connecting"),
+        Command::Profiles => Err(CliError::misrouted("profiles are listed before connecting")),
+        Command::Completions { .. } => Err(CliError::misrouted(
+            "completions are printed before connecting",
+        )),
         Command::Secrets { action } => action.run(client, console).await,
         Command::Notification { command } => command.run(client, console).await,
         Command::Status => status(cli, client, console).await,
         Command::Resources => console.emit(&client.daemon_stats().await?),
         Command::Settings => console.emit(&client.system_configuration().await?),
-        Command::Doctor => unreachable!("doctor runs without the command timeout"),
+        Command::Doctor => Err(CliError::misrouted(
+            "doctor runs without the command timeout",
+        )),
         Command::Dns {
             command: DnsCommand::Refresh,
         } => refresh_dns(client, console).await,
@@ -120,13 +126,17 @@ async fn app(
             let (_, environment) = environments::select(client, name_or_id, None).await?;
             environments::logs(console, client, &environment, window).await
         }
-        AppCommand::Exec(_) => unreachable!("exec sessions run without the command timeout"),
+        AppCommand::Exec(_) => Err(CliError::misrouted(
+            "exec sessions run without the command timeout",
+        )),
         AppCommand::Secret {
             application,
             action,
         } => action.run(client, console, application).await,
         AppCommand::GeneratedSecret { command } => command.run(client, console).await,
-        AppCommand::Validate { .. } => unreachable!("validation runs before connecting"),
+        AppCommand::Validate { .. } => {
+            Err(CliError::misrouted("validation runs before connecting"))
+        }
         AppCommand::Plan(args) => args.run(client, console).await,
         AppCommand::Apply(args) => args.run(client, console).await,
         AppCommand::Delete(args) => args.run(client, console).await,

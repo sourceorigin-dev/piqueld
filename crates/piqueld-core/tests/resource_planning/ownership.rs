@@ -244,7 +244,7 @@ fn planner_rejects_wrong_resource_roles_before_use_or_deletion() {
                 service.name = docker_resource_name(&desired.id, role, Some("INVALID"));
             }
             ResourceKind::Job | ResourceKind::File => {
-                unreachable!("observation never reports jobs or configs")
+                panic!("observation never reports jobs or configs")
             }
         }
         let deletion = Plan::from_request(

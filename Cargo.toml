@@ -158,6 +158,7 @@ panic = "warn"
 todo = "warn"
 unimplemented = "warn"
 unused_result_ok = "warn"
+unreachable = "warn"
 dbg_macro = "warn"
 # Every exception names its lint with `#[expect]` and says why.
 allow_attributes = "warn"

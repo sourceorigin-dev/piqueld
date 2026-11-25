@@ -221,6 +221,12 @@ impl CliError {
         }
     }
 
+    /// A command that reached a handler it should never get to, because `main`
+    /// or an earlier step deals with it: `reason` says where it is handled.
+    pub(crate) fn misrouted(reason: &str) -> Self {
+        Self::new(ErrorKind::General, format!("internal error: {reason}"))
+    }
+
     /// An application that neither its ID nor its name finds.
     pub(crate) fn application_not_found(name_or_id: &str) -> Self {
         Self::new(

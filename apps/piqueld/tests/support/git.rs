@@ -39,7 +39,7 @@ impl GitBuildFixture {
     pub fn failing_source(&self) -> piqueld_core::Source {
         let mut source = self.source.clone();
         let piqueld_core::Source::Git { build, .. } = &mut source else {
-            unreachable!("the fixture builds from Git")
+            panic!("the fixture builds from Git")
         };
         let piqueld_core::manifest::Build::Docker { dockerfile, .. } = build;
         *dockerfile = "Failfile".into();

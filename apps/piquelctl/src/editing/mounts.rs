@@ -88,6 +88,10 @@ impl SecretMountCommand {
             .secrets
             .clone();
         match self {
+            #[expect(
+                clippy::unreachable,
+                reason = "`run` returns the listing before this match, which only edits"
+            )]
             Self::List(_) => unreachable!("listing returned above"),
             Self::Add(args) => {
                 let mount = SecretMount {
@@ -173,7 +177,12 @@ impl FileSourceArgs {
                 FileSource::Content(read_text(local, "file", ServiceFile::MAX_BYTES as u64).await?)
             }
             (.., Some(path)) => FileSource::Path(path.clone()),
-            (None, None, None) => unreachable!("Clap requires one file source"),
+            (None, None, None) => {
+                return Err(CliError::new(
+                    ErrorKind::Input,
+                    "give the file's content with --content, --from or --path",
+                ));
+            }
         })
     }
 }

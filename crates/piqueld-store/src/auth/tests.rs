@@ -229,7 +229,7 @@ async fn pruning_deletes_unusable_auth_state() {
 async fn confirming_a_login_keeps_its_latest_proof() {
     let (_dir, store) = Store::temporary().await;
     let Actor::Account(alice) = store.seed_caller("alice", &Grants::admin()).await else {
-        unreachable!("seeded an account caller")
+        panic!("seeded an account caller")
     };
     let laptop = credential("laptop", CredentialKind::Cli);
     let inserted = store.insert_credential("alice", &laptop).await;

@@ -272,7 +272,9 @@ impl PreviewCommand {
             Self::Restore(args) => args.run(console, client).await,
             Self::Wait(args) => args.run(console, client).await,
             Self::Url(args) => args.run(console, client).await,
-            Self::Exec(_) => unreachable!("exec sessions run without the command timeout"),
+            Self::Exec(_) => Err(CliError::misrouted(
+                "exec sessions run without the command timeout",
+            )),
             Self::Delete { target, flags } => delete(client, console, target, flags).await,
             Self::Prune {
                 application, flags, ..

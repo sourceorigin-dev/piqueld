@@ -656,7 +656,11 @@ impl ServiceEdit {
                     "command requires a command health check",
                 ));
             }
-            _ => unreachable!("only health check field edits are applied to a check"),
+            _ => {
+                return Err(EditError::Incompatible(
+                    "only health check fields edit a health check",
+                ));
+            }
         }
         Ok(())
     }

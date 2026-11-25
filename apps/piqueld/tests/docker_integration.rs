@@ -129,7 +129,7 @@ impl IsolatedDocker {
                 environment_id.clone(),
                 piqueld_core::resource::Ownership::scope(instance_id, environment_id),
             ),
-            PlanRequest::Preview { .. } => unreachable!("previews are never applied"),
+            PlanRequest::Preview { .. } => panic!("previews are never applied"),
         };
         let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
         loop {
@@ -1336,7 +1336,7 @@ fn compile_images(
         .iter()
         .map(|service| {
             let piqueld_core::manifest::ValidatedSource::Image { image } = &service.source else {
-                unreachable!("image sources only")
+                panic!("image sources only")
             };
             let digest = images[image.as_str()].clone();
             (
