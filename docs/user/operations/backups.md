@@ -165,9 +165,11 @@ updated the database.
    sudo -u piqueld piqueld --config /etc/piqueld/config.toml roll-back
    ```
 
-   On NixOS, with [`rollBack`](#roll-back-on-every-start) set, skip this
-   step: the daemon does it as it starts. Without it, the configuration is in
-   the Nix store: use the `--config` path `systemctl cat piqueld` shows.
+   On NixOS, skip this step and set
+   [`rollBack`](#roll-back-on-every-start) instead: the daemon does it as it
+   starts. The command reads the configuration's credential files, which on
+   NixOS only the unit receives. Without `rollBack`,
+   [roll back by hand](#roll-back-by-hand).
 
    It prints where the state it replaced went:
 
@@ -191,19 +193,22 @@ database, or there is none. Otherwise it:
 2. stops this installation's [ingress](../networking/routes.md#enable-the-gateway)
    containers, which use the data directory. Your applications' routes stay
    unreachable until the daemon starts again, and starts them;
-3. moves everything in the data directory into
+3. moves the data directory's contents into
    `/var/lib/piqueld/rolled-back-<time>`, where `<time>` is when it rolled
-   back, in Unix milliseconds;
-4. restores the backup, and puts back the directory telemetry collectors
-   [listen in](telemetry.md#receive-telemetry-in-an-application), so they keep
-   receiving.
+   back, in Unix milliseconds. The backups, earlier `rolled-back-<time>`
+   directories, and the directory telemetry collectors
+   [listen in](telemetry.md#receive-telemetry-in-an-application) stay where
+   they are, so collectors keep receiving, and a later roll-back still finds
+   the backups;
+4. restores the backup.
 
 If no backup fits, or the one it picked fails a check, it fails before it
-stops or moves anything.
+stops or moves anything. If it fails after stopping the ingress containers,
+it moves back what it moved, and they stay stopped until the daemon starts.
 
 It never deletes the state it replaced: the database, with every change since
-the backup, the daemon's backups, and everything else stay in
-`rolled-back-<time>`. Delete that directory once you no longer need it.
+the backup, and everything else stay in `rolled-back-<time>`. Delete that
+directory once you no longer need it.
 
 piqueld then compares what Docker runs with the deployments in the restored
 database, and repairs the difference, as it repairs any drift.
@@ -278,7 +283,8 @@ backup you [took yourself](#back-up), restore it by hand:
    Use the upgraded version's `piqueld`: the previous one may not have this
    command. It runs the same checks as `piqueld roll-back`, and restores
    nothing if one fails. Add `--check` to run the checks only. The data
-   directory must be empty, but for `rolled-back-<time>` directories.
+   directory must be empty, but for `backups`, `telemetry` and
+   `rolled-back-<time>` directories.
 
    To restore a backup you [took yourself](#back-up) instead, copy it in
    place, without the upgraded database's `-wal` and `-shm` files, then give
@@ -329,8 +335,14 @@ backup you [took yourself](#back-up), restore it by hand:
   [restore a backup you took yourself](#roll-back-by-hand).
 - **The daemon refuses to start because of an unfinished restore.** A
   `piqueld restore` or `piqueld roll-back` was interrupted, or failed and
-  couldn't undo what it had done. A roll-back leaves the state it replaced in
-  `rolled-back-<time>`. Move everything else in the data directory aside,
-  then restore again.
+  couldn't undo what it had done. The `.restore-<time>` directory the error
+  names only holds a copy of the backup, so nothing is lost by removing it:
+
+  1. Remove the `.restore-<time>` directory.
+  2. Move the data directory's other contents, but for `backups`,
+     `telemetry` and `rolled-back-<time>` directories, into a new directory,
+     without deleting them. A roll-back already moved most of the state it
+     replaced into the newest `rolled-back-<time>`.
+  3. [Restore the backup again](#roll-back-by-hand), with `piqueld restore`.
 - **The daemon can't write to a restored database.** Its files must belong to
   the daemon's user: run `sudo chown -R piqueld:piqueld /var/lib/piqueld`.

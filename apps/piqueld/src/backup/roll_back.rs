@@ -4,25 +4,14 @@
 //! the daemon's state.
 //!
 //! The data directory itself is the unit's `StateDirectory`, so it stays:
-//! its contents move into a `rolled-back-<ms>` directory inside it, which
-//! `piqueld restore` and later roll-backs leave alone, then the backup is
-//! restored around it.
+//! its contents but [`Backups::kept`] ones move into a `rolled-back-<ms>`
+//! directory inside it, then the backup is restored around them.
 
-use super::{Backups, Manifest, Moved, PreMigration, Refusal, entries, move_entries, sync};
+use super::{Backups, Manifest, Moved, PreMigration, Refusal, entries, move_entries};
 use anyhow::{Context, Result, bail};
 use piqueld_core::InstanceId;
 use piqueld_store::SCHEMA_VERSION;
-use std::{
-    ffi::{OsStr, OsString},
-    fs,
-    os::unix::fs::DirBuilderExt,
-    path::{Path, PathBuf},
-};
-
-/// Directories that hold no state, only what services listening in them
-/// use, which go back in place after a roll-back: the telemetry receivers'
-/// sockets, which their collectors keep listening on.
-const RUNTIME: [&str; 1] = ["telemetry"];
+use std::{ffi::OsStr, fs, os::unix::fs::DirBuilderExt, path::PathBuf};
 
 /// A directory a roll-back moved the state it replaced into,
 /// `rolled-back-<ms>`, which nothing deletes.
@@ -64,9 +53,9 @@ impl Backups {
     /// Rolls the data directory back to the newest pre-migration backup this
     /// binary opens, once a newer piqueld migrated its database: verifies it
     /// as [`Self::restore`] does, calls `stop_ingress` with the instance,
-    /// moves the contents into a [`RolledBack`] directory, publishes the
-    /// backup, and moves [`RUNTIME`] directories back. Does nothing when this
-    /// binary opens the database, or there is none.
+    /// moves the state into a [`RolledBack`] directory, and publishes the
+    /// backup. Does nothing when this binary opens the database, or there is
+    /// none.
     ///
     /// # Errors
     /// [`Refusal::NoBackup`] when no backup fits, before anything changes, or
@@ -107,70 +96,51 @@ impl Backups {
         if manifest.instance_id != live.instance_id.as_str() {
             bail!(Refusal::OtherInstance(manifest.instance_id));
         }
-        let staging = self.staging()?;
-        Self::stage_restore(&backup, staging.path(), &manifest).await?;
+        let staged = self.copy_verified(&backup, &manifest).await?;
         stop_ingress(&live.instance_id).await?;
 
         let aside = data_dir.join(RolledBack::name(piqueld_store::now_ms()));
-        let staged = staging.path().file_name().map(OsStr::to_owned);
-        let state = entries(data_dir, |name| {
-            Some(name) != staged.as_deref() && !RolledBack::is(name)
-        })?;
         fs::DirBuilder::new()
             .mode(0o700)
             .create(&aside)
             .with_context(|| format!("create {}", aside.display()))?;
-        sync(data_dir)?;
-        if let Err(Moved { error, undo }) = move_entries(data_dir, &aside, &state) {
-            return Err(self.unmoved(error, undo, Some(staging), &aside));
-        }
-        if let Err(error) = self.publish(staging) {
-            if self.ensure_restore_complete().is_err() {
-                return Err(
-                    error.context(format!("the state it replaced is in {}", aside.display()))
-                );
-            }
-            let undo = move_entries(&aside, data_dir, &state)
-                .err()
-                .map(|moved| moved.error);
-            return Err(self.unmoved(error, undo, None, &aside));
-        }
-        let runtime: Vec<OsString> = RUNTIME
-            .iter()
-            .map(OsString::from)
-            .filter(|name| aside.join(name).exists())
-            .collect();
-        move_entries(&aside, data_dir, &runtime)
-            .map_err(|moved| moved.error)
-            .with_context(|| format!("restored {}, then", backup.display()))?;
+        let staging = self.mark(staged)?;
+        let state = entries(data_dir, |name| {
+            Some(name) != staging.file_name() && !Self::kept(name)
+        })?;
+        let published = move_entries(data_dir, &aside, &state).and_then(|()| {
+            self.publish(&staging).map_err(|failed| match failed.undo {
+                Some(_) => failed,
+                None => Moved {
+                    undo: move_entries(&aside, data_dir, &state)
+                        .err()
+                        .map(Moved::into_error),
+                    ..failed
+                },
+            })
+        });
+        let (removed, context) = if published
+            .as_ref()
+            .is_err_and(|failed| failed.undo.is_none())
+        {
+            let removed =
+                fs::remove_dir(&aside).with_context(|| format!("remove {}", aside.display()));
+            (removed, format!("roll back to {}", backup.display()))
+        } else {
+            let context = format!(
+                "roll back to {}, with the state it replaced in {}",
+                backup.display(),
+                aside.display()
+            );
+            (Ok(()), context)
+        };
+        self.finish(&staging, published)
+            .and(removed)
+            .context(context)?;
         Ok(RollBack::Restored {
             backup,
             manifest,
             aside,
         })
-    }
-
-    /// The error of a roll-back that failed once it started moving the
-    /// state into `aside`. When the state couldn't all move back, as `undo`
-    /// says, `staging`, or a new staging directory, stays as the
-    /// unfinished-restore marker, so the daemon doesn't start on part of it.
-    fn unmoved(
-        &self,
-        error: anyhow::Error,
-        undo: Option<anyhow::Error>,
-        staging: Option<tempfile::TempDir>,
-        aside: &Path,
-    ) -> anyhow::Error {
-        let Some(undo) = undo else {
-            return error;
-        };
-        let marker = staging.map_or_else(|| self.staging(), Ok);
-        let error = error
-            .context(format!("{undo:#}"))
-            .context(format!("part of the state is still in {}", aside.display()));
-        match marker {
-            Ok(marker) => error.context(Refusal::Unfinished(self.data_dir.clone(), marker.keep())),
-            Err(marker) => error.context(format!("{marker:#}")),
-        }
     }
 }

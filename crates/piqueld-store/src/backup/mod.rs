@@ -46,7 +46,8 @@ impl DatabaseFile {
 
     /// The database's schema version and instance, or `None` before its
     /// first migration. It may be newer than this binary's
-    /// [`crate::SCHEMA_VERSION`].
+    /// [`crate::SCHEMA_VERSION`]: `piqueld roll-back` reads it with an older
+    /// binary, so migrations keep `instance_metadata`'s columns.
     ///
     /// # Errors
     /// Returns [`StoreError::SchemaMismatch`] when `PRAGMA user_version` and

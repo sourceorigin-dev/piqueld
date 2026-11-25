@@ -52,6 +52,10 @@ const TREES: [&str; 2] = ["tailscale", "ingress"];
 const INGRESS_CONTROL: &str = "ingress/control";
 /// The data directory's subdirectory holding pre-migration backups.
 const BACKUPS: &str = "backups";
+/// The data directory's entries that restores and roll-backs leave in place:
+/// the backups, and the telemetry receivers' sockets, which their collectors
+/// keep listening on.
+const KEPT: [&str; 2] = [BACKUPS, "telemetry"];
 /// How many pre-migration backups the daemon keeps.
 const PRE_MIGRATION_KEEP: usize = 3;
 
@@ -381,6 +385,24 @@ struct Moved {
     error: anyhow::Error,
     /// Why the entries already moved didn't all go back, if they didn't.
     undo: Option<anyhow::Error>,
+}
+
+impl Moved {
+    /// The failure as one error, with why it couldn't be undone, if it
+    /// couldn't.
+    fn into_error(self) -> anyhow::Error {
+        match self.undo {
+            None => self.error,
+            Some(undo) => self.error.context(format!("{undo:#}")),
+        }
+    }
+}
+
+impl From<anyhow::Error> for Moved {
+    /// A failure before anything moved.
+    fn from(error: anyhow::Error) -> Self {
+        Self { error, undo: None }
+    }
 }
 
 /// Moves the entries `names` of the directory `from` into the directory

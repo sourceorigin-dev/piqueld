@@ -407,33 +407,48 @@ fn an_unfinished_restore_blocks_startup() {
 #[test]
 fn a_failed_publish_moves_back_what_it_moved() {
     let data_dir = tempfile::tempdir().expect("a data directory is created");
-    let staging = tempfile::Builder::new()
-        .prefix(restore::STAGING)
-        .tempdir_in(data_dir.path())
-        .expect("a staging directory is created");
-    fs::write(staging.path().join("a"), b"restored").expect("a file is staged");
-    fs::create_dir(staging.path().join("b")).expect("a directory is staged");
+    let staging = data_dir.path().join(format!("{}1", restore::STAGING));
+    fs::create_dir(&staging).expect("a staging directory is created");
+    fs::write(staging.join("a"), b"restored").expect("a file is staged");
+    fs::create_dir(staging.join("b")).expect("a directory is staged");
     fs::create_dir(data_dir.path().join("b")).expect("a directory is in the way");
     fs::write(data_dir.path().join("b/kept"), b"").expect("it isn't empty");
 
-    let error = Backups::new(data_dir.path())
-        .publish(staging)
+    let backups = Backups::new(data_dir.path());
+    let error = backups
+        .finish(&staging, backups.publish(&staging))
         .expect_err("the publish fails");
     assert!(error.downcast_ref::<Refusal>().is_none(), "{error:#}");
     assert_eq!(files(data_dir.path()), ["b/kept"]);
 }
 
-/// Rolls `data_dir` back, returning what it did and the instance whose
-/// ingress it stopped, if it did.
-async fn roll_back(data_dir: &Path) -> (Result<RollBack>, Option<String>) {
-    let mut stopped = None;
+/// Rolls `data_dir` back, with ingress stopping as `stopped` says,
+/// returning what it did and the instance whose ingress it stopped, if any.
+async fn roll_back_stopping(
+    data_dir: &Path,
+    stopped: Result<()>,
+) -> (Result<RollBack>, Option<String>) {
+    let mut instance = None;
     let result = Backups::new(data_dir)
-        .roll_back(async |instance| {
-            stopped = Some(instance.as_str().to_owned());
-            Ok(())
+        .roll_back(async |stopping| {
+            instance = Some(stopping.as_str().to_owned());
+            stopped
         })
         .await;
-    (result, stopped)
+    (result, instance)
+}
+
+/// Rolls `data_dir` back, as [`roll_back_stopping`] does when ingress stops.
+async fn roll_back(data_dir: &Path) -> (Result<RollBack>, Option<String>) {
+    roll_back_stopping(data_dir, Ok(())).await
+}
+
+/// A data directory a newer daemon migrated after backing it up, its backup
+/// and its instance ID.
+async fn migrated_by_a_newer_daemon() -> (tempfile::TempDir, PathBuf, String) {
+    let (data_dir, backup, instance) = backed_up().await;
+    set_schema(data_dir.path(), SCHEMA_VERSION + 1).await;
+    (data_dir, backup, instance)
 }
 
 /// The names in the directory `path`, sorted.
@@ -445,16 +460,27 @@ fn names(path: &Path) -> Vec<String> {
         .collect()
 }
 
-/// A roll-back touches nothing while this binary opens the database, or
-/// there is none.
+/// The files under `data_dir`, but for the `-wal` and `-shm` files SQLite
+/// may leave when it reads the database.
+fn state(data_dir: &Path) -> Vec<String> {
+    let mut files = files(data_dir);
+    files.retain(|file| !file.ends_with("-wal") && !file.ends_with("-shm"));
+    files
+}
+
+/// A roll-back of a missing data directory does nothing.
 #[tokio::test]
-async fn roll_back_leaves_a_database_this_binary_opens() {
+async fn roll_back_leaves_a_missing_data_directory() {
     let target = tempfile::tempdir().expect("a directory is created");
     let missing = target.path().join("data");
     let (result, stopped) = roll_back(&missing).await;
     assert!(matches!(result, Ok(RollBack::Unneeded)), "{result:?}");
     assert!(!missing.exists() && stopped.is_none());
+}
 
+/// A roll-back touches nothing while this binary opens the database.
+#[tokio::test]
+async fn roll_back_leaves_a_database_this_binary_opens() {
     let (data_dir, _, _) = backed_up().await;
     let before = files(data_dir.path());
     let (result, stopped) = roll_back(data_dir.path()).await;
@@ -465,15 +491,14 @@ async fn roll_back_leaves_a_database_this_binary_opens() {
 
 /// After a newer daemon migrated the database, a roll-back stops the
 /// instance's ingress, moves the state aside and restores the newest backup
-/// this binary opens, past one the newer daemon took, then puts the
-/// telemetry sockets back.
+/// this binary opens, past one the newer daemon took, leaving the backups
+/// and telemetry sockets in place.
 #[tokio::test]
 async fn roll_back_restores_the_newest_backup_this_binary_opens() {
-    let (data_dir, backup, instance) = backed_up().await;
+    let (data_dir, backup, instance) = migrated_by_a_newer_daemon().await;
     let data_dir = data_dir.path();
     fs::create_dir_all(data_dir.join("telemetry/env")).expect("a receiver's directory is created");
     fs::write(data_dir.join("telemetry/env/otlp.sock"), b"").expect("its socket is created");
-    set_schema(data_dir, SCHEMA_VERSION + 1).await;
     let newer = PreMigration {
         created_at_ms: i64::MAX,
         schema_version: SCHEMA_VERSION + 1,
@@ -500,6 +525,7 @@ async fn roll_back_restores_the_newest_backup_this_binary_opens() {
     assert_eq!(
         names(data_dir),
         [
+            BACKUPS,
             "ingress",
             DATABASE,
             aside_name,
@@ -512,7 +538,6 @@ async fn roll_back_restores_the_newest_backup_this_binary_opens() {
     assert_eq!(
         names(&aside),
         [
-            BACKUPS,
             "ingress",
             DATABASE,
             "piqueld.db-shm",
@@ -528,25 +553,35 @@ async fn roll_back_restores_the_newest_backup_this_binary_opens() {
         .expect("the database reads")
         .expect("it has a schema");
     assert_eq!(identity.schema_version, SCHEMA_VERSION - 1);
+}
+
+/// A rolled-back data directory keeps its backups, so going back further
+/// rolls it back again.
+#[tokio::test]
+async fn a_rolled_back_data_directory_rolls_back_again() {
+    let (data_dir, backup, _) = migrated_by_a_newer_daemon().await;
+    let data_dir = data_dir.path();
+    let (result, _) = roll_back(data_dir).await;
+    assert!(
+        matches!(result, Ok(RollBack::Restored { .. })),
+        "{result:?}"
+    );
+    set_schema(data_dir, SCHEMA_VERSION + 1).await;
 
     let (result, _) = roll_back(data_dir).await;
-    assert!(matches!(result, Ok(RollBack::Unneeded)), "{result:?}");
+    assert!(
+        matches!(&result, Ok(RollBack::Restored { backup: again, .. }) if *again == backup),
+        "{result:?}"
+    );
 }
 
 /// Without a backup this binary opens, a roll-back fails before it touches
-/// anything, but for the `-wal` and `-shm` files SQLite may leave when it
-/// reads the database.
+/// anything.
 #[tokio::test]
 async fn roll_back_without_a_fitting_backup_changes_nothing() {
-    let (data_dir, backup, _) = backed_up().await;
+    let (data_dir, backup, _) = migrated_by_a_newer_daemon().await;
     let data_dir = data_dir.path();
-    set_schema(data_dir, SCHEMA_VERSION + 1).await;
     fs::remove_dir_all(&backup).expect("the backup is removed");
-    let state = |data_dir| {
-        let mut files = files(data_dir);
-        files.retain(|file| !file.ends_with("-wal") && !file.ends_with("-shm"));
-        files
-    };
     let before = state(data_dir);
 
     let (result, stopped) = roll_back(data_dir).await;
@@ -557,4 +592,37 @@ async fn roll_back_without_a_fitting_backup_changes_nothing() {
     );
     assert!(stopped.is_none());
     assert_eq!(state(data_dir), before);
+}
+
+/// A roll-back whose ingress doesn't stop fails before it moves anything,
+/// and leaves no copy of the backup behind.
+#[tokio::test]
+async fn roll_back_fails_unchanged_when_ingress_does_not_stop() {
+    let (data_dir, _, _) = migrated_by_a_newer_daemon().await;
+    let data_dir = data_dir.path();
+    let before = state(data_dir);
+
+    let (result, _) = roll_back_stopping(data_dir, Err(anyhow::anyhow!("Docker is down"))).await;
+    result.expect_err("the roll-back fails");
+    assert_eq!(state(data_dir), before);
+}
+
+/// A copy of a backup left by a restore stopped while verifying it blocks
+/// nothing: the next restore removes it.
+#[tokio::test]
+async fn a_copy_left_while_verifying_is_removed() {
+    let (_source, backup, _) = backed_up().await;
+    let target = tempfile::tempdir().expect("a directory is created");
+    let data_dir = target.path().join("data");
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .recursive(true)
+        .create(data_dir.join(".staged-1"))
+        .expect("a stale copy is left");
+
+    Backups::new(&data_dir)
+        .restore(&backup, false)
+        .await
+        .expect("the backup restores");
+    assert!(!data_dir.join(".staged-1").exists());
 }

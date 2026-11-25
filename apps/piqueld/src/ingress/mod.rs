@@ -22,12 +22,13 @@ use piqueld_config::{
     AcmeConfig, DnsConfig, PrivateIngressConfig, TunnelConfig, TunnelCredentials,
 };
 use piqueld_core::{
-    EnvironmentId,
+    EnvironmentId, InstanceId,
     api::{
         DnsRecordState, DnsRecords, IngressStatus, PrivateIngressStatus, PublicIngressStatus,
         RouteStatus,
     },
     manifest::{Hostname, RouteHostname, ValidatedRoute, Visibility},
+    resource::{INGRESS_LABEL, INSTANCE_LABEL},
 };
 use piqueld_store::{Store, ingress::RoutingTable, now_ms};
 use std::{
@@ -259,8 +260,7 @@ impl Ingress {
     ///
     /// # Errors
     /// Returns the failed Docker request.
-    pub async fn stop_offline(socket: &Path, instance: &piqueld_core::InstanceId) -> Result<usize> {
-        use piqueld_core::resource::{INGRESS_LABEL, INSTANCE_LABEL};
+    pub async fn stop_offline(socket: &Path, instance: &InstanceId) -> Result<usize> {
         let docker = piqueld_docker::Infrastructure::connect(socket)
             .context("Docker socket is not UTF-8")?;
         let running = docker

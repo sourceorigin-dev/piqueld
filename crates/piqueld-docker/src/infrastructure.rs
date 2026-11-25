@@ -190,7 +190,7 @@ impl Infrastructure {
     /// each a `key=value`.
     ///
     /// # Errors
-    /// The failed request.
+    /// The failed request, or a list it can't decode.
     pub async fn running_containers(
         &self,
         labels: Vec<String>,
@@ -203,12 +203,17 @@ impl Infrastructure {
             url::form_urlencoded::byte_serialize(filters.as_bytes()).collect::<String>()
         );
         let containers = self.send(operation, Method::GET, &path, None).await?;
-        Ok(containers
+        containers
             .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|container| container["Id"].as_str().map(str::to_owned))
-            .collect())
+            .ok_or(DockerError::Request("decode the container list"))?
+            .iter()
+            .map(|container| {
+                container["Id"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or(DockerError::Request("decode a listed container's ID"))
+            })
+            .collect()
     }
 
     /// Inspects the network `name`, if it exists.
