@@ -25,9 +25,12 @@ A feature reaches every surface it applies to, from the checklist in
 ## Errors
 
 Library crates return explicit `thiserror` errors, with their source kept by
-`#[source]` or `#[from]`. `anyhow` stays in the applications (`apps/`) and in
-`tools/`, with `.context` on each step. Don't drop a source with
-`map_err(|_| ...)` unless it could hold a secret, and say so in a comment.
+`#[source]` or `#[from]`. Only a crate without a library, such as `xtask`,
+uses `anyhow`, with `.context` on each step, as the standard's
+[`anyhow-edges`](https://crates.io/crates/sourceorigin-standard)
+rule says. Don't drop a source with `map_err(|_| ...)` unless it could hold a
+secret, and say so in the reason of its
+`#[expect(clippy::map_err_ignore, reason = "...")]`.
 Log an error with `error = %error`, its `Display`, as the daemon does.
 
 Every machine-readable code the API returns is a variant of
@@ -87,11 +90,14 @@ helpers with no owner.
 Tests prove one behaviour each, named for it, and assert the outcome;
 [automated validation](validation.md) lists the suites and what each covers.
 
-Every item has a doc comment. Public items' `///` comments on the manifest,
-configuration and CLI types are also the generated references, so keep them
-about what the reader can see and do, and put notes for developers in `//`
-comments ([changing the documentation](documentation.md)). `just doc` builds
-the docs, private items included, with warnings denied.
+Every item has a doc comment, which says what goes in and what comes out or
+happens. Public items' `///` comments on the manifest, configuration and CLI
+types are also the generated references, so keep them about what the reader
+can see and do ([changing the documentation](documentation.md)). The only `//`
+comments are the markers the standard's
+[`rust-comments`](https://crates.io/crates/sourceorigin-standard) rule
+allows. `just doc` builds the docs, private items included, with warnings
+denied.
 
 ## Deviations
 
