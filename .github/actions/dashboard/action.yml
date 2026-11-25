@@ -1,19 +1,7 @@
 # Builds the dashboard's wasm module once per version of its sources, and
 # points the daemon's build script at it through PIQUELD_DASHBOARD_WASM, so the
-# jobs that embed the dashboard skip its nested build. That build compiles
-# piqueld-ui with the size-optimized `dashboard` profile before the daemon can
-# start compiling, which takes minutes even with its dependencies cached.
-#
-# The cache key covers everything the module is compiled from: piqueld-ui and
-# the workspace crates it depends on, the manifests, the lockfile, the Cargo
-# configuration, this build command and the Rust version. The build script
-# still reads the stylesheets and assets themselves.
-#
-# Unlike the Rust caches, this one is saved from pull requests too: entries are
-# a few megabytes, and keyed by content, so a later push that leaves the
-# dashboard alone restores its own. On main,
-# .github/workflows/dashboard-cache.yml saves it after each merge that changes
-# it.
+# jobs that embed the dashboard skip the minutes-long nested build. The cache
+# key and policy are in docs/dev/validation.md.
 
 name: Prebuilt dashboard
 description: Restores or builds the dashboard's wasm module, and sets PIQUELD_DASHBOARD_WASM to it.

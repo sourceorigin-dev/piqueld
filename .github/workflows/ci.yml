@@ -1,44 +1,6 @@
-# Continuous integration for piqueld.
-#
-# Jobs group the `just` validation recipes by what they compile, so each
-# compilation happens once per job instead of once per recipe:
-#
-#   checks             -> fmt-check, lint-ci, audit, unused
-#   standard           -> standard, on every change
-#   rust (lint)        -> lint, doc, openapi-check, boundary
-#   rust (test)        -> test, doc-test
-#   msrv               -> the published crates on the Rust their `rust-version` names
-#   wasm-ui            -> ui-check, check-wasm, test-wasm
-#   docker-integration -> docker-test, in three shards
-#   browser-playwright -> test-playwright
-#   cli (macOS)        -> validate-cli
-#   docs               -> docs
-#
-# Release builds (Nix packages, publish --dry-run, dist and install.sh) take
-# too long to gate merges: release-checks.yml runs them after merging.
-#
-# Pull requests run only the jobs whose inputs changed (see `changes`). Draft
-# pull requests run only the quick jobs (checks, rust, msrv, wasm-ui): the slower
-# ones (Docker, Playwright, macOS) wait until the pull request is marked
-# ready, so iterating on a draft stays cheap. `docs` runs on every pull
-# request, as its links point all over the repository and any change can
-# break one. Merge queue entries run every job but macOS: the queue tests
-# each pull request on top of the latest main before it merges, and macOS
-# runners are scarce enough to hold up the queue. The commit the queue tested
-# is the one that lands, so pushes to main don't run CI again. Nightly and
-# manual runs on main run everything, macOS included.
-# `ci` is the single status to require: it fails if any job failed and passes
-# when the rest succeeded or were skipped.
-# In the merge queue, `fail-fast` cancels the run at the first failed job:
-# `ci` runs even after a cancel, so it reports the failure without waiting for
-# the slowest job.
-#
-# Caches are saved from main only, by the nightly run. The small prebuilt
-# dashboard (.github/actions/dashboard) is also saved by pull requests, and on
-# main by dashboard-cache.yml after each merge that changes it. Pull requests
-# and the merge queue restore main's caches, so a branch never evicts them
-# with copies no other branch can read. While the nightly run fails, the
-# `report` job keeps an issue open.
+# Continuous integration: jobs group the `just` recipes by what they compile.
+# The job table, the draft, merge queue and cache policy and the `ci` status to
+# require are in docs/dev/validation.md; release builds run in release-checks.yml.
 
 name: CI
 
@@ -46,7 +8,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
-  # Refreshes main's caches, and runs the macOS job the queue leaves out.
+  # Nightly: refreshes main's caches and runs macOS.
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
@@ -60,22 +22,18 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # Incremental artifacts only bloat CI caches; restored dependency builds
-  # make up for the lost reuse.
+  # Incremental artifacts only bloat CI caches.
   CARGO_INCREMENTAL: "0"
   RUST_BACKTRACE: short
   NEXTEST_PROFILE: ci
 
 jobs:
-  # Decides which jobs a pull request needs from the paths it changes, and
-  # holds the slow ones back while it is a draft. The filters live in
-  # .github/filters.yml.
+  # Picks the jobs a pull request needs: filters in .github/filters.yml.
   changes:
     name: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      # Checking out the filters file needs it in a private repository.
       contents: read
       pull-requests: read
     outputs:
@@ -87,8 +45,7 @@ jobs:
       docker: ${{ github.event_name != 'pull_request' || (steps.filter.outputs.docker == 'true' && !github.event.pull_request.draft) }}
       playwright: ${{ github.event_name != 'pull_request' || (steps.filter.outputs.playwright == 'true' && !github.event.pull_request.draft) }}
     steps:
-      # The filters file only: the action lists the changed paths through
-      # the GitHub API.
+      # The filters file only; the changed paths come from the GitHub API.
       - if: github.event_name == 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -112,8 +69,7 @@ jobs:
       - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
         with:
           tool: just,cargo-deny,cargo-machete,shellcheck
-      # install-action has no actionlint, so this checks its release archive
-      # against the SHA-256 pinned here.
+      # Not in install-action: checked against the pinned SHA-256.
       - name: Install actionlint
         env:
           VERSION: 1.7.12
@@ -130,8 +86,7 @@ jobs:
       - run: just audit
       - run: just unused
 
-  # The engineering standard's rules read more than the Rust sources, so they
-  # run on every change.
+  # Reads more than the Rust sources, so it runs on every change.
   standard:
     name: standard
     runs-on: ubuntu-latest
@@ -149,12 +104,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: just standard
 
-  # Two parallel halves, so neither waits on the other's compilation: `lint`
-  # type-checks the workspace and builds the generators, `test` builds and
-  # runs the tests. Each keeps its own cache, as one holds Clippy metadata and
-  # the other compiled code. Both embed the prebuilt dashboard instead of
-  # compiling it. `just lint` also lints the dashboard and client as wasm32,
-  # using the target from rust-toolchain.toml.
+  # Two parallel halves with a cache each: `lint` and `test`. Both embed the
+  # prebuilt dashboard.
   rust:
     name: rust (${{ matrix.name }})
     needs: changes
@@ -196,10 +147,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # Builds the published crates, as `cargo install` and their dependents do,
-  # with the oldest Rust the workspace's `rust-version` promises. Warnings
-  # aren't errors here: lints differ between Rust versions, and `rust` lints
-  # with the pinned one.
+  # The published crates on the oldest Rust `rust-version` promises; warnings
+  # aren't errors here.
   msrv:
     name: msrv
     needs: changes
@@ -210,8 +159,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml for every later step,
-      # including the cache key and piqueld-docker's nested health-probe build.
+      # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml for every later step.
       - name: Install the minimum supported Rust
         run: |
           msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
@@ -245,9 +193,7 @@ jobs:
       - name: Run browser transport tests
         run: CHROMEDRIVER="${CHROMEWEBDRIVER:?}/chromedriver" just test-wasm
 
-  # Three shards, each against an engine of its own, so the serial suites run
-  # side by side: the ingress suite, and the engine suite in two halves.
-  # Each compiles only the test binary it runs.
+  # Three shards, each against an engine of its own.
   docker-integration:
     name: docker-integration (${{ matrix.name }})
     needs: changes
@@ -270,9 +216,7 @@ jobs:
             binary: --test docker_integration
             partition: --partition count:2/2
     env:
-      # `just docker-test` bounds each test run, within the job's timeout so
-      # its cleanup and the test report still run; compilation is already
-      # warm through the prebuild below.
+      # Within the job's timeout, so cleanup and the test report still run.
       PIQUELD_DOCKER_TEST_TIMEOUT: 20m
       NEXTEST_PROFILE: docker-ci
     steps:
@@ -284,9 +228,7 @@ jobs:
         with:
           key: ${{ matrix.suite }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Compile everything `just docker-test` runs before the isolated
-      # Docker-in-Docker daemon starts, so its inner cargo invocations are
-      # instant: the xtask runner and the shard's test binary.
+      # Prebuilds what `just docker-test` runs, before its Docker-in-Docker starts.
       - name: Compile Docker integration tests
         run: |
           cargo build --locked --package xtask
@@ -357,9 +299,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: just validate-cli
 
-  # Builds the documentation book and checks its links. The flake's `docs`
-  # shell provides the tools at the versions flake.lock pins, as in
-  # `nix develop`.
+  # The flake's `docs` shell provides the tools at flake.lock's versions.
   docs:
     name: docs
     runs-on: ubuntu-latest
@@ -367,19 +307,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Nothing here pushes or fetches with the token.
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
       - run: nix develop .#docs --command just docs
 
-  # In the merge queue, stops the run at the first failed job. The only job
-  # with `actions: write`; it checks out nothing, so no repository code holds
-  # that token. It keeps a runner busy while the run lasts.
+  # Merge queue: cancels the run at the first failed job. The only job with
+  # `actions: write`, so it checks out nothing.
   fail-fast:
     name: fail-fast
     if: github.event_name == 'merge_group'
     runs-on: ubuntu-latest
-    # `changes` and the slowest job, with time to wait for runners.
     timeout-minutes: 45
     permissions:
       actions: write
@@ -390,11 +327,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.run_id }}
           JOBS: repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}/jobs?per_page=100
-        # `ci` appears once every job it needs has finished, so the watch ends
-        # there, without cancelling a run that is already reporting. A job
-        # that hits its time limit reports `cancelled`. Failed API calls are
-        # retried on the next round; every 30 seconds keeps the token's rate
-        # limit clear with several queue entries building.
+        # Ends when `ci` appears, so a run already reporting isn't cancelled;
+        # polls every 30 seconds to stay under the token's rate limit.
         run: |
           while sleep 30; do
             jobs=$(gh api "$JOBS" --jq '.jobs[] | "\(.name)\t\(.conclusion)"') || continue
@@ -428,8 +362,7 @@ jobs:
           allowed-skips: checks, rust, msrv, wasm-ui, docker-integration, browser-playwright, macos-cli
           jobs: ${{ toJSON(needs) }}
 
-  # The nightly run is the only one after merging, and the only one with macOS
-  # once a pull request is queued, so its failures keep an issue open.
+  # The nightly run's failures keep an issue open.
   report:
     name: report
     needs: ci

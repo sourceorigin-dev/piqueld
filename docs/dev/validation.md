@@ -51,6 +51,48 @@ per version of its sources, instead of compiling it each time; see
 *Dashboard cache* workflow builds main's module as soon as a merge changes its
 sources, so the merge queue and pull requests find it.
 
+## CI workflow details
+
+`ci` is the single status to require: it fails if any job failed, and passes
+when the rest succeeded or were skipped. Behind it:
+
+- `rust (lint)` type-checks the workspace and builds the generators, and
+  `rust (test)` builds and runs the tests. They run in parallel, each with a
+  cache of its own, as one holds Clippy metadata and the other compiled code.
+  `just lint` also lints the dashboard and client as wasm32, using the target
+  from `rust-toolchain.toml`.
+- `msrv` builds the published crates, as `cargo install` and their dependents
+  do, with the oldest Rust `rust-version` promises. Warnings aren't errors
+  there, as lints differ between Rust versions and `rust (lint)` lints with
+  the pinned one. `RUSTUP_TOOLCHAIN` overrides `rust-toolchain.toml` for every
+  later step, including the cache key and `piqueld-docker`'s nested
+  health-probe build.
+- `docker-integration` compiles everything `just docker-test` runs, the xtask
+  runner and the shard's test binary, before the isolated Docker-in-Docker
+  daemon starts, so its inner Cargo invocations are instant. Its
+  `PIQUELD_DOCKER_TEST_TIMEOUT` bounds each test run within the job's timeout,
+  so cleanup and the test report still run.
+- `docs` runs the flake's `docs` shell, which provides the tools at the
+  versions `flake.lock` pins, as in `nix develop`.
+- `fail-fast` is the only job with `actions: write`, and it checks out nothing,
+  so no repository code holds that token. It watches the run's jobs every 30
+  seconds, which keeps the token's rate limit clear with several queue entries
+  building, and cancels the run at the first failed job. It ends when `ci`
+  appears, so it never cancels a run that is already reporting, and a job that
+  hits its time limit reports `cancelled`. It keeps a runner busy while the run
+  lasts.
+- The `changes` job checks out only the filters file, as the changed paths come
+  through the GitHub API; a private repository needs `contents: read` for that.
+- `CARGO_INCREMENTAL` is `0`: incremental artifacts only bloat CI caches, and
+  restored dependency builds make up for the lost reuse.
+- The prebuilt dashboard (`.github/actions/dashboard`) is cached by the
+  content of everything its module is compiled from: `piqueld-ui` and the
+  workspace crates it depends on, the manifests, the lockfile, the Cargo
+  configuration, the action itself and the Rust version. The build script
+  still reads the stylesheets and assets themselves. Unlike the Rust caches,
+  pull requests save it too: entries are a few megabytes, and keyed by
+  content, so a later push that leaves the dashboard alone restores its own.
+
 `just` alone runs `check-changed`; `just validate` runs the full validation
 set, including a single check of the generated files, and never modifies a
 file. Both local
@@ -64,6 +106,52 @@ interactive processes and are not finite validation commands. `publish` and
 `release` [release piqueld](releasing.md). `coverage`
 measures the tests without checking a minimum; see
 [test coverage](#test-coverage).
+
+## Recipe notes
+
+- `lint` runs Clippy with warnings denied on the workspace, then on the
+  dashboard and client as wasm32, since the native build compiles the browser
+  code out, and then on each crate alone. The wasm32 pass lints with
+  `--no-deps`, as without it the workspace dependencies (`piqueld-core`) would
+  be linted as wasm32 too. The workspace pass unifies features across crates,
+  so a crate can compile there only because another crate enables a feature it
+  needs; linting each crate alone catches that. `--package <crate>` (or `-p`)
+  narrows it: the workspace pass lints those crates together, each is linted
+  alone, and the wasm32 pass runs only if they include the dashboard or the
+  client.
+- `test` runs with all features, like `lint`, so the daemon tests run against
+  the real embedded bundle, and `lint`, `test` and `doc-test` share one build.
+  Its arguments go on to nextest in place of `--workspace`.
+- `doc` documents private items, since most of the code is internal and its
+  docs link to it, and denies rustdoc warnings such as broken intra-doc links.
+- `ui-check` and the embedded builds need only the `wasm32-unknown-unknown`
+  target from `rust-toolchain.toml`: the daemon build script compiles and binds
+  the dashboard itself, as the all-feature Clippy of `lint` and the Playwright
+  recipes' Rust fixture do too.
+- `build-embedded` builds the daemon and CLI together, so Cargo shares
+  dependencies and schedules both. It names the daemon's feature,
+  `embedded-ui`: `piqueld/embedded-ui` would name the feature of the daemon's
+  dev-dependency on itself, which this build leaves out.
+- `test-wasm` needs `wasm-bindgen-test-runner` and a supported WebDriver, which
+  the development shell provides.
+- `test-playwright` serves the embedded dashboard and API from a Rust fixture
+  with isolated state and no Docker backend. `docs-screenshots` regenerates the
+  screenshots in `docs/images` whose page changed, through the same fixture
+  with deployments to its fake Docker engine; with
+  `--update-snapshots=none` it fails on an outdated one instead. See
+  [documentation](documentation.md).
+- `docs` fails on any mdBook warning, then checks every link and heading anchor
+  in the book and in the repository's Markdown files, offline (see
+  `lychee.toml`). Links to this repository on GitHub are checked against the
+  checkout; the second remap fails those that don't point at main, which
+  would otherwise go unchecked.
+- `setup-worktree` runs when T3 Code creates a worktree. As it often creates
+  several at once, it builds at low priority on half the CPUs the process may
+  use (`nproc`, else the online ones, as on macOS), unless Cargo's `build.jobs`
+  or `CARGO_BUILD_JOBS` says otherwise. `cargo config get` is unstable, hence
+  `RUSTC_BOOTSTRAP`; if it fails, the default applies.
+- `docker-test` arguments select a suite, a shard of it and the engine's image
+  store; see [Docker test suites](#docker-test-suites).
 
 ## Checking a change
 
@@ -154,7 +242,31 @@ gh workflow run release-checks.yml --ref <branch>
 ```
 
 The Nix job caches the store, including crane's dependency builds and the
-dashboard. The `install` job's Rust cache is also the release workflow's.
+dashboard. It roots the dependency builds with out-links, so the cache
+action's garbage collection keeps them: without roots it deletes them, and
+every run rebuilds every dependency. Cache keys are immutable, so each build of
+`main` saves a fresh one, and the newest with the same lockfiles restores
+first. Superseded caches are purged, but only those no run restored for a day,
+so a failed save never purges the last usable cache. The NixOS VM tests boot
+through the runner's KVM.
+
+The `package` job packages every published crate with the dashboard the daemon
+ships, and builds each from its package, as `cargo install` would: everything
+`just publish` does except uploading. The `install` job builds the release
+archive as the release workflow does, then runs `install.sh` on the runner,
+which has systemd and Docker Engine like a user's host. The script runs as the
+runner's user, as users run it, with `sudo` for the steps that need root, and
+`--yes` also adds that user to the `piqueld` group, so `sg` runs the checks with
+that group and reaches the daemon without an account to print the setup link.
+The second run is an update, which must leave the daemon running too. Its Rust
+cache is also the release workflow's.
+
+A branch's latest commit contains every earlier one, so only it is checked;
+runs on other branches, started by hand, leave main's runs and the issue alone.
+The three workflows (CI, release checks and release) restore each other's Rust
+caches only while the `CARGO*`, `RUST*` and `CC*` variables that `rust-cache`'s
+key hashes match. A job that hits its timeout reports `cancelled`, which the
+issue-reporting job counts as a failure; cancelling the run itself skips it.
 
 ## Docker test suites
 
