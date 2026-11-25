@@ -2,4 +2,4 @@
 # Not quiet, so a wait for the build lock (such as `just dev` rebuilding the
 # daemon) or a rebuild of xtask shows up instead of looking like a hang.
 [alias]
-xtask = "run --package xtask --"
+xtask = "run --locked --package xtask --"

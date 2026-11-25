@@ -7,11 +7,11 @@ run only the jobs whose inputs changed, as the path filters in
 Playwright, and macOS jobs wait until a pull request is marked ready. Release
 builds take too long to gate a merge, so they run after it, in the
 [release checks](#release-checks).
-The `docs` job runs on every pull request. Pull requests merge through a merge
-queue, which tests each one on top of the latest main; merge queue entries run
-every job but macOS, whose scarce runners would hold up the queue. The commit
-the queue tested is the one that lands, so pushes to main run no CI. A nightly
-run on main runs every job, macOS included; while it fails, an issue titled
+The `standard` and `docs` jobs run on every pull request. Pull requests merge
+through a merge queue, which tests each one on top of the latest main; merge
+queue entries run every job but macOS, whose scarce runners would hold up the
+queue. The commit the queue tested is the one that lands, so pushes to main
+run no CI. A nightly run on main runs every job, macOS included; while it fails, an issue titled
 *Nightly CI fails on main* stays open, as for the
 [release checks](#release-checks). The `ci` job summarizes them: it fails if
 any job failed. In the merge queue, the first failed job cancels the rest of
@@ -29,6 +29,7 @@ by version.
 | Workflows, with shellcheck over their `run` steps, and shell scripts | `lint-ci` | `checks` |
 | Dependency policy and advisories | `audit` | `checks` |
 | Unused dependencies | `unused` | `checks` |
+| The [engineering standard](https://crates.io/crates/sourceorigin-standard)'s rules, as `standard.toml` and `budget.toml` apply them | `standard` | `standard` |
 | All-target, all-feature compilation and Clippy, plus wasm32 Clippy of the dashboard, client, and core, and Clippy of each crate alone | `lint` | `rust (lint)` |
 | Rust documentation, private items included, with warnings denied | `doc` | `rust (lint)` |
 | Native workspace tests, against the real embedded dashboard | `test` | `rust (test)` |

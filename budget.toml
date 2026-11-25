@@ -1,0 +1,14 @@
+# Each crate's number of `#[expect]` lints; every new one raises it, which
+# the owner reviews. `just standard` fails until a count equals its budget.
+[expect]
+piquelctl = 24
+piqueld = 65
+piqueld-build = 1
+piqueld-client = 15
+piqueld-config = 4
+piqueld-core = 19
+piqueld-docker = 10
+piqueld-probe = 2
+piqueld-store = 11
+piqueld-ui = 60
+xtask = 4

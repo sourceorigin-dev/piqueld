@@ -1,8 +1,9 @@
 //! Development tasks for the piqueld workspace, run with `cargo xtask`: this
 //! worktree's development instance (`just dev`, see docs/dev/development.md), the
 //! isolated Docker integration tests, the Playwright browser suite, the
-//! crates' dependency boundaries, CI's quick checks for what changed, test
-//! coverage, the release binaries, and releases.
+//! crates' dependency boundaries, CI's quick checks for what changed, the
+//! engineering standard's rules, test coverage, the release binaries, and
+//! releases.
 #![expect(
     clippy::print_stdout,
     clippy::print_stderr,
@@ -20,6 +21,7 @@ mod metadata;
 mod playwright;
 mod process;
 mod publish;
+mod standard;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -76,6 +78,8 @@ enum Task {
         #[arg(default_value = "origin/main")]
         base: String,
     },
+    /// Check the engineering standard's rules, or run one of its commands.
+    Standard(standard::Standard),
     /// Measure which code the native workspace tests run, as an HTML report
     /// and a summary per crate.
     #[command(disable_help_flag = true)]
@@ -119,6 +123,7 @@ async fn main() -> Result<ExitCode> {
         Task::Playwright { args } => playwright::run(&workspace, &args).await,
         Task::Boundary => boundary::check(&workspace),
         Task::CheckChanged { base } => check_changed::run(&workspace, &base),
+        Task::Standard(standard) => standard.run(&workspace),
         Task::Coverage { args } => coverage::run(&workspace, &args),
         Task::Dist => dist::run(&workspace),
         Task::Publish { args } => publish::run(&workspace, &args),

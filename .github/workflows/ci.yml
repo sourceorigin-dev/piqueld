@@ -4,6 +4,7 @@
 # compilation happens once per job instead of once per recipe:
 #
 #   checks             -> fmt-check, lint-ci, audit, unused
+#   standard           -> standard, on every change
 #   rust (lint)        -> lint, doc, openapi-check, boundary
 #   rust (test)        -> test, doc-test
 #   msrv               -> the published crates on the Rust their `rust-version` names
@@ -128,6 +129,25 @@ jobs:
       - run: just lint-ci
       - run: just audit
       - run: just unused
+
+  # The engineering standard's rules read more than the Rust sources, so they
+  # run on every change.
+  standard:
+    name: standard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
+        with:
+          tool: just
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: standard
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: just standard
 
   # Two parallel halves, so neither waits on the other's compilation: `lint`
   # type-checks the workspace and builds the generators, `test` builds and
@@ -392,6 +412,7 @@ jobs:
     needs:
       - changes
       - checks
+      - standard
       - rust
       - msrv
       - wasm-ui

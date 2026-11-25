@@ -1,0 +1,172 @@
+# How piqueld applies the engineering standard, sourceorigin-standard: its
+# settings, and the rules piqueld departs from, each with its reason. The
+# crate's README lists the rules; `just standard` checks them.
+
+# The lines of workflows' `run:` that run Cargo rather than a recipe: the
+# prebuilt dashboard, the minimum supported Rust, the Docker tests' prebuild,
+# and the release jobs, which install no `just`.
+cargo-in-ci = [
+  "cargo build --locked --package piqueld-ui --profile dashboard --target wasm32-unknown-unknown --target-dir target-ui",
+  "cargo check --locked --package piqueld --package piquelctl --package piqueld-client",
+  "cargo build --locked --package xtask",
+  "cargo nextest run --locked -p piqueld ${{ matrix.binary }} --no-run",
+  "cargo xtask publish --dry-run",
+  "cargo xtask dist",
+]
+
+[deviations]
+t3-setup = { reason = "allowed from sourceorigin-standard 0.1.1", paths = ["t3.json"] }
+rust-comments = "1934 findings in 390 files, fixed in a follow-up; the 25 `// wall-clock:` markers among them are allowed from sourceorigin-standard 0.1.1"
+skills-synced = "7 findings: the next pull request of the stack syncs the skills"
+
+[deviations.workspace-lints]
+reason = "4675 findings of `clippy::unwrap_used` in 207 files, most of them tests, fixed in a follow-up (PQD-124)"
+paths = ["Cargo.toml"]
+
+[deviations.anyhow-edges]
+reason = "3 findings: these libraries return anyhow errors; typed errors in a follow-up"
+crates = ["piqueld", "piqueld-config", "piqueld-docker"]
+
+[deviations.agents-md]
+reason = "8 findings: AGENTS.md has no map of the crates and holds 159 lines; fixed in a follow-up"
+paths = ["AGENTS.md"]
+
+[deviations.duplicate-items]
+reason = "2 findings, fixed in a follow-up"
+paths = ["apps/piquelctl/src/output/timeline.rs", "crates/piqueld-store/build.rs"]
+
+[deviations.generated-lints]
+reason = "160 findings: progenitor writes the `allow`s into the generated client; fixed in a follow-up"
+paths = ["crates/piqueld-client/src/generated.rs"]
+
+[deviations.config-comments]
+reason = "8 findings in 5 files, fixed in a follow-up"
+paths = [
+  ".github/actions/dashboard/action.yml",
+  ".github/workflows/ci.yml",
+  ".github/workflows/release-checks.yml",
+  "Cargo.toml",
+  "justfile",
+]
+
+[deviations.doc-length]
+reason = "74 findings in 60 files, fixed in a follow-up"
+paths = [
+  "apps/piquelctl/src/secrets.rs",
+  "apps/piquelctl/src/snapshot/mod.rs",
+  "apps/piqueld-ui/src/browser/management/deployments/actions.rs",
+  "apps/piqueld/examples/generate_openapi/settings_reference.rs",
+  "apps/piqueld/src/api/http/access.rs",
+  "apps/piqueld/src/api/http/auth.rs",
+  "apps/piqueld/src/api/http/deployments.rs",
+  "apps/piqueld/src/api/http/environments.rs",
+  "apps/piqueld/src/api/http/events.rs",
+  "apps/piqueld/src/api/http/mod.rs",
+  "apps/piqueld/src/api/http/previews.rs",
+  "apps/piqueld/src/api/http/secrets.rs",
+  "apps/piqueld/src/api/service/mod.rs",
+  "apps/piqueld/src/api/service/previews.rs",
+  "apps/piqueld/src/api/service/promotions.rs",
+  "apps/piqueld/src/api/service/queries.rs",
+  "apps/piqueld/src/api/service/startup.rs",
+  "apps/piqueld/src/auth/sessions.rs",
+  "apps/piqueld/src/backup/mod.rs",
+  "apps/piqueld/src/git/snapshot/mod.rs",
+  "apps/piqueld/src/ingress/certificates.rs",
+  "apps/piqueld/src/ingress/configuration.rs",
+  "apps/piqueld/src/ingress/gateway.rs",
+  "apps/piqueld/src/ingress/mod.rs",
+  "apps/piqueld/src/ingress/node.rs",
+  "apps/piqueld/src/ingress/records/mod.rs",
+  "apps/piqueld/src/ingress/traffic.rs",
+  "apps/piqueld/src/ingress/tunnel.rs",
+  "apps/piqueld/src/main.rs",
+  "apps/piqueld/src/reconcile/controller.rs",
+  "apps/piqueld/src/reconcile/coordinator.rs",
+  "apps/piqueld/src/reconcile/deployment.rs",
+  "apps/piqueld/src/reconcile/images.rs",
+  "apps/piqueld/src/tailnet/node.rs",
+  "apps/piqueld/src/telemetry/mod.rs",
+  "crates/piqueld-build/src/lib.rs",
+  "crates/piqueld-config/src/lib.rs",
+  "crates/piqueld-core/src/edit.rs",
+  "crates/piqueld-core/src/manifest/declaration/mod.rs",
+  "crates/piqueld-core/src/manifest/validation/mod.rs",
+  "crates/piqueld-core/src/resource/application.rs",
+  "crates/piqueld-core/src/retention.rs",
+  "crates/piqueld-docker/src/logs/mod.rs",
+  "crates/piqueld-docker/src/policy/mod.rs",
+  "crates/piqueld-docker/src/spec.rs",
+  "crates/piqueld-store/src/acceptance.rs",
+  "crates/piqueld-store/src/auth/mod.rs",
+  "crates/piqueld-store/src/environment/declaration.rs",
+  "crates/piqueld-store/src/history/mod.rs",
+  "crates/piqueld-store/src/ingress/mod.rs",
+  "crates/piqueld-store/src/observability/destinations.rs",
+  "crates/piqueld-store/src/observability/notifications.rs",
+  "crates/piqueld-store/src/promotion/mod.rs",
+  "crates/piqueld-store/src/repository/mod.rs",
+  "crates/piqueld-store/src/restore/mod.rs",
+  "crates/piqueld-store/src/secret/key.rs",
+  "crates/piqueld-store/src/secret/mod.rs",
+  "crates/piqueld-store/src/secret/stored/mod.rs",
+  "crates/piqueld-store/src/status.rs",
+  "crates/piqueld-store/src/sync/mod.rs",
+]
+
+[deviations.inline-limits]
+reason = "56 findings in 32 files, fixed in a follow-up"
+paths = [
+  "apps/piquelctl/src/auth.rs",
+  "apps/piquelctl/src/output/progress.rs",
+  "apps/piquelctl/src/output/timeline.rs",
+  "apps/piquelctl/src/support.rs",
+  "apps/piqueld-ui/src/browser/observability.rs",
+  "apps/piqueld/src/api/http/lease.rs",
+  "apps/piqueld/src/api/service/notification_worker.rs",
+  "apps/piqueld/src/api/service/startup.rs",
+  "apps/piqueld/src/api/service/system.rs",
+  "apps/piqueld/src/api/service/telemetry/mod.rs",
+  "apps/piqueld/src/application/runtime.rs",
+  "apps/piqueld/src/auth/mod.rs",
+  "apps/piqueld/src/ingress/certificates.rs",
+  "apps/piqueld/src/ingress/gateway.rs",
+  "apps/piqueld/src/ingress/mod.rs",
+  "apps/piqueld/src/ingress/records/mod.rs",
+  "apps/piqueld/src/ingress/traffic.rs",
+  "apps/piqueld/src/reconcile/coordinator.rs",
+  "apps/piqueld/src/reconcile/mod.rs",
+  "apps/piqueld/src/tailnet/node.rs",
+  "apps/piqueld/src/telemetry/destination.rs",
+  "crates/piqueld-config/src/dns/mod.rs",
+  "crates/piqueld-config/src/dns/propagation.rs",
+  "crates/piqueld-config/src/runtime_dir.rs",
+  "crates/piqueld-docker/src/engine/mod.rs",
+  "crates/piqueld-store/src/backup/mod.rs",
+  "crates/piqueld-store/src/lib.rs",
+  "tools/xtask/src/dev/mod.rs",
+  "tools/xtask/src/dev/supervisor.rs",
+  "tools/xtask/src/docker.rs",
+  "tools/xtask/src/docker_test.rs",
+  "tools/xtask/src/process.rs",
+]
+
+[deviations.recipes]
+reason = "rule challenge: `just validate` checks without modifying files, as AGENTS.md and docs/dev/validation.md say, so it runs `fmt-check` instead of `fmt`"
+paths = ["justfile"]
+
+[deviations.ci-shape]
+reason = "rule challenge: `report` runs after `ci`, on the nightly run's result, and `fail-fast` watches for `ci` to start, so `ci` can't need either"
+paths = [".github/workflows/ci.yml"]
+
+[deviations.cache-saves]
+reason = "rule challenge: pull requests save the small prebuilt dashboard on purpose, so the next one finds it before dashboard-cache.yml runs on main (see ci.yml)"
+paths = [".github/actions/dashboard/action.yml"]
+
+[deviations.nextest-config]
+reason = "rule challenge: `just docker-test` bounds the Docker integration tests' run as a whole, so their override sets no `terminate-after`"
+paths = [".config/nextest.toml"]
+
+[deviations.workspace-dependencies]
+reason = "rule challenge: `piqueld-generated` isn't published, so the crates that use it as a development dependency publish without it; and the daemon's tests depend on its own crate with the `fake-docker` feature"
+paths = ["Cargo.toml", "apps/piqueld/Cargo.toml"]
