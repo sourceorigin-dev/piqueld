@@ -161,9 +161,9 @@ exits.
 
 `just setup-worktree` prepares a new worktree: it runs `just dev config`, then
 `just build`. T3 Code runs it when it creates a worktree, often several at
-once, so the build runs at low priority (`nice -n 10`) on half the machine's
-cores unless `CARGO_BUILD_JOBS` is set. Run it yourself to prepare a worktree
-T3 Code didn't create.
+once, so the build runs at low priority (`nice -n 10`) on half the CPUs it may
+use, unless Cargo's `build.jobs` setting or `CARGO_BUILD_JOBS` is set. Run it
+yourself to prepare a worktree T3 Code didn't create.
 
 ## Logs
 
