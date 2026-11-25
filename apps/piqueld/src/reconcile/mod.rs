@@ -2,7 +2,7 @@
 
 use crate::operations::OperationError;
 use piqueld_core::{
-    ApiErrorCode, Plan, PlanRequest,
+    ApiErrorCode, Plan, PlanDiagnostic, PlanRequest,
     planner::ActionKind,
     resource::{APPLICATION_LABEL, Convergence},
 };
@@ -243,30 +243,31 @@ impl<D: DockerApi> Controller<D> {
 }
 
 /// Why a plan is blocked: its first recognized blocking diagnostic, in
-/// priority order.
+/// priority order. A failed service update keeps its diagnostic, whose
+/// message says which service failed and why.
 #[derive(Clone, Copy)]
-enum BlockedPlan {
+enum BlockedPlan<'a> {
     OwnershipConflict,
     ImmutableConfiguration,
-    ServiceUpdateFailed,
+    ServiceUpdateFailed(&'a PlanDiagnostic),
     Unclassified,
 }
 
-impl BlockedPlan {
+impl<'a> BlockedPlan<'a> {
     /// Classifies a blocked `plan`: ownership first, then immutable
     /// configuration, then a failed service update.
-    fn of(plan: &Plan) -> Self {
-        let has = |code: ApiErrorCode| {
+    fn of(plan: &'a Plan) -> Self {
+        let find = |code: ApiErrorCode| {
             plan.diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == code)
+                .find(|diagnostic| diagnostic.code == code)
         };
-        if has(ApiErrorCode::UnownedNameCollision) {
+        if find(ApiErrorCode::UnownedNameCollision).is_some() {
             Self::OwnershipConflict
-        } else if has(ApiErrorCode::ImmutableConfigurationDrift) {
+        } else if find(ApiErrorCode::ImmutableConfigurationDrift).is_some() {
             Self::ImmutableConfiguration
-        } else if has(ApiErrorCode::ServiceUpdateFailed) {
-            Self::ServiceUpdateFailed
+        } else if let Some(diagnostic) = find(ApiErrorCode::ServiceUpdateFailed) {
+            Self::ServiceUpdateFailed(diagnostic)
         } else {
             Self::Unclassified
         }
@@ -277,7 +278,9 @@ impl BlockedPlan {
         match self {
             Self::OwnershipConflict => OperationError::OwnershipConflict,
             Self::ImmutableConfiguration => OperationError::DockerConfigurationConflict,
-            Self::ServiceUpdateFailed => OperationError::ServiceUpdateFailed,
+            Self::ServiceUpdateFailed(diagnostic) => {
+                OperationError::ServiceUpdateFailed(diagnostic.message.clone())
+            }
             Self::Unclassified => {
                 OperationError::PlanBlocked("an unclassified blocking diagnostic")
             }
@@ -291,7 +294,7 @@ impl BlockedPlan {
             Self::ImmutableConfiguration => {
                 "runtime reconciliation is blocked by immutable Docker configuration"
             }
-            Self::ServiceUpdateFailed => {
+            Self::ServiceUpdateFailed(_) => {
                 "runtime reconciliation is blocked by a failed service update"
             }
             Self::Unclassified => "runtime reconciliation is blocked",

@@ -926,7 +926,7 @@ impl Plan {
                                 ApiErrorCode::ServiceUpdateFailed,
                                 DiagnosticSeverity::Error,
                                 service.name.as_str(),
-                                "service update failed; inspect the operation and Docker task state",
+                                found.rollout_failure(),
                             ));
                         }
                     }

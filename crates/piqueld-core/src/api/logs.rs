@@ -41,12 +41,51 @@ pub struct LogRecord {
 }
 
 impl LogRecord {
+    /// Whether `character` could hide or reorder the text around it: a
+    /// control character, or one of the common invisible Unicode format
+    /// characters, such as a bidirectional override (U+202A–U+202E,
+    /// U+2066–U+2069), a direction mark (U+200E, U+200F, U+061C), a
+    /// zero-width one, a Hangul filler, or the line and paragraph separators
+    /// (U+2028, U+2029). `piquelctl` escapes these in its output.
+    #[must_use]
+    pub const fn hidden(character: char) -> bool {
+        character.is_control()
+            || matches!(
+                character,
+                '\u{00AD}'
+                    | '\u{034F}'
+                    | '\u{061C}'
+                    | '\u{115F}'
+                    | '\u{1160}'
+                    | '\u{180E}'
+                    | '\u{200B}'..='\u{200F}'
+                    | '\u{2028}'..='\u{202E}'
+                    | '\u{2060}'..='\u{2064}'
+                    | '\u{2066}'..='\u{206F}'
+                    | '\u{3164}'
+                    | '\u{FEFF}'
+                    | '\u{FFA0}'
+                    | '\u{FFF9}'..='\u{FFFB}'
+                    | '\u{E0001}'
+                    | '\u{E0020}'..='\u{E007F}'
+            )
+    }
+
+    /// Whether log text keeps `character`: anything not [`Self::hidden`],
+    /// and tabs, newlines and the zero-width (non-)joiners U+200C and
+    /// U+200D, which emoji sequences and Persian text need.
+    #[must_use]
+    pub const fn kept(character: char) -> bool {
+        !Self::hidden(character) || matches!(character, '\t' | '\n' | '\u{200C}' | '\u{200D}')
+    }
+
     /// Removes terminal control sequences, including CSI colors and OSC titles/links.
-    /// Other control characters are dropped too, except tabs and newlines.
+    /// Other characters log text doesn't [keep](Self::kept) are dropped too.
     ///
     /// ```text
     /// "\x1b[31mred\x1b[0m\r\ttext\n"                -> "red\ttext\n"
     /// "\x1b]0;title\x07text \x1b]8;;url\x1b\\link" -> "text link"
+    /// "evil\u{202E}gpj.exe"                     -> "evilgpj.exe"
     /// ```
     #[must_use]
     pub fn clean_message(value: &str) -> String {
@@ -72,7 +111,7 @@ impl LogRecord {
                     }
                     _ => {}
                 }
-            } else if !ch.is_control() || matches!(ch, '\t' | '\n') {
+            } else if Self::kept(ch) {
                 output.push(ch);
             }
         }

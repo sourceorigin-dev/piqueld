@@ -364,7 +364,7 @@ impl<D: DockerApi> Controller<D> {
                 }
                 Some(s) if !removed && s.convergence == Convergence::Converged => return Ok(()),
                 Some(s) if !removed && s.convergence == Convergence::Failed => {
-                    return Err(OperationError::ServiceUpdateFailed);
+                    return Err(OperationError::ServiceUpdateFailed(s.rollout_failure()));
                 }
                 _ => {}
             }

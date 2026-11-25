@@ -576,10 +576,8 @@ impl<D: DockerApi> Controller<D> {
         let stopped = self.store.is_stopped(&target.id).await?;
         let desired = self.runtime_target(target, &[], observed, stopped).await?;
         let plan = Plan::from_request(&PlanRequest::Reconcile { desired }, observed);
-        Ok(
-            plan.is_blocked()
-                && !matches!(BlockedPlan::of(&plan), BlockedPlan::ServiceUpdateFailed),
-        )
+        Ok(plan.is_blocked()
+            && !matches!(BlockedPlan::of(&plan), BlockedPlan::ServiceUpdateFailed(_)))
     }
 
     /// Records a diagnostic at most once per environment and code within a pass.

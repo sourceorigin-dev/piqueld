@@ -8,7 +8,7 @@ use super::{
 };
 use bollard::models::{HealthStatusEnum, ServiceSpecUpdateConfigOrderEnum};
 use piqueld_core::manifest::{HealthTiming, RolloutOrder, RolloutPolicy, ServiceSecurity};
-use piqueld_core::resource::{TELEMETRY_TARGET, TelemetryMount};
+use piqueld_core::resource::{RuntimeMessage, TELEMETRY_TARGET, TelemetryMount};
 
 impl BollardDocker {
     /// Converts one Docker task into the backend-neutral observation contract.
@@ -17,12 +17,19 @@ impl BollardDocker {
     /// it is `None` when the task has no healthcheck, has not converged to a
     /// verdict yet, or its container could not be inspected. `updated` is
     /// when the service's latest update started, if it was ever updated.
+    /// A failure's reason comes from the task's `err` only: its `message` is
+    /// the last step it reached, such as "started".
     pub(super) fn observe_task(
         task: &bollard::models::Task,
         updated: Option<&str>,
         healthy: Option<bool>,
     ) -> ObservedTask {
         let state = Self::task_state(task);
+        let reason = task
+            .status
+            .as_ref()
+            .and_then(|status| status.err.as_deref())
+            .and_then(RuntimeMessage::new);
         let diagnostic = match state {
             TaskState::Failed => Some(TaskDiagnostic::Failed {
                 exit_code: task
@@ -30,8 +37,9 @@ impl BollardDocker {
                     .as_ref()
                     .and_then(|status| status.container_status.as_ref())
                     .and_then(|status| status.exit_code),
+                reason,
             }),
-            TaskState::Rejected => Some(TaskDiagnostic::Rejected),
+            TaskState::Rejected => Some(TaskDiagnostic::Rejected { reason }),
             _ => None,
         };
         ObservedTask {
@@ -185,6 +193,7 @@ impl BollardDocker {
             runtime_configuration_matches,
             tasks,
             convergence,
+            update_message: None,
         })
     }
 
@@ -414,6 +423,25 @@ impl BollardDocker {
         }
     }
 
+    /// Keeps the message of a paused update or rollback, which says why
+    /// Swarm stopped it; other states' messages, such as "update completed",
+    /// explain no failure.
+    pub(super) fn paused_update_message(
+        update: bollard::models::ServiceUpdateStatus,
+    ) -> Option<RuntimeMessage> {
+        let paused = matches!(
+            update.state,
+            Some(
+                bollard::models::ServiceUpdateStatusStateEnum::PAUSED
+                    | bollard::models::ServiceUpdateStatusStateEnum::ROLLBACK_PAUSED
+            )
+        );
+        update
+            .message
+            .filter(|_| paused)
+            .and_then(|message| RuntimeMessage::new(&message))
+    }
+
     /// Returns whether a health config is active, i.e. not Docker's `["NONE"]`
     /// sentinel that disables an image-defined healthcheck.
     fn healthcheck_configured(health: &HealthConfig) -> bool {
@@ -530,112 +558,4 @@ impl<'a> SwarmTime<'a> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn running(healthy: Option<bool>) -> ObservedTask {
-        ObservedTask {
-            state: TaskState::Running,
-            healthy,
-            desired_running: true,
-            diagnostic: None,
-            ..ObservedTask::default()
-        }
-    }
-
-    /// Tasks created since the service's latest update started run its
-    /// specification, and so do all tasks of a service never updated.
-    #[test]
-    fn tasks_created_since_the_latest_update_are_current() {
-        let current = |created: &str, updated: Option<&str>| {
-            let task = bollard::models::Task {
-                created_at: Some(created.into()),
-                ..Default::default()
-            };
-            BollardDocker::observe_task(&task, updated, None).current
-        };
-        let updated = Some("2026-11-10T16:11:28.5Z");
-        assert!(current("2026-11-10T16:11:28.500000001Z", updated));
-        assert!(current("2026-11-10T16:11:29Z", updated));
-        assert!(!current("2026-11-10T16:11:28.38968Z", updated));
-        assert!(!current("2026-11-10T16:11:28Z", updated));
-        assert!(current("2026-11-10T16:11:28Z", None));
-        assert!(!current("yesterday", updated));
-    }
-
-    /// Swarm reports rejected tasks with an empty container ID; reading
-    /// `/containers//logs` for one failed every log request with a 301.
-    #[test]
-    fn tasks_without_a_container_have_no_container_id() {
-        let task = |container_id: Option<&str>| bollard::models::Task {
-            status: Some(bollard::models::TaskStatus {
-                container_status: Some(bollard::models::ContainerStatus {
-                    container_id: container_id.map(Into::into),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        assert_eq!(BollardDocker::task_container(&task(Some(""))), None);
-        assert_eq!(BollardDocker::task_container(&task(None)), None);
-        assert_eq!(
-            BollardDocker::task_container(&task(Some("9472413"))),
-            Some("9472413")
-        );
-    }
-
-    #[test]
-    fn stale_ingress_proxies_are_drift() {
-        let spec = ServiceSpec {
-            name: Some("app-web".into()),
-            task_template: Some(bollard::models::TaskSpec {
-                container_spec: Some(TaskSpecContainerSpec {
-                    env: Some(vec![format!("{INGRESS_PROXIES_ENV}=10.0.1.0/24")]),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let observe = |expected| {
-            let mut service = BollardDocker::observe_service(&spec, "node", Vec::new(), None)
-                .expect("observed service");
-            service.runtime_configuration_matches = true;
-            BollardDocker::observe_ingress_proxies(&mut service, expected);
-            assert!(service.environment.is_empty());
-            service.runtime_configuration_matches
-        };
-        assert!(observe(BollardDocker::spec_ingress_proxies(&spec)));
-        assert!(!observe(Some("10.0.2.0/24")));
-        assert!(!observe(None));
-    }
-
-    /// Running tasks converge once healthy when a health check is
-    /// configured, and a service scaled to zero once its tasks stopped.
-    #[test]
-    fn convergence_follows_task_states_and_health() {
-        let stopping = ObservedTask {
-            desired_running: false,
-            ..running(None)
-        };
-        for (tasks, replicas, healthcheck, expected) in [
-            (vec![running(None)], 1, true, Convergence::Updating),
-            (vec![running(Some(true))], 1, true, Convergence::Converged),
-            (vec![running(None)], 1, false, Convergence::Converged),
-            (vec![stopping], 0, false, Convergence::Updating),
-            (vec![], 0, false, Convergence::Converged),
-        ] {
-            assert_eq!(
-                BollardDocker::convergence(&tasks, replicas, None, healthcheck),
-                expected,
-                "{tasks:?} {healthcheck}"
-            );
-        }
-        let disabled = HealthConfig {
-            test: Some(vec!["NONE".into()]),
-            ..Default::default()
-        };
-        assert!(!BollardDocker::healthcheck_configured(&disabled));
-    }
-}
+mod tests;

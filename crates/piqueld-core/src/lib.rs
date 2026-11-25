@@ -63,8 +63,8 @@ pub use resource::{
     DesiredNetwork, DesiredService, DesiredVolume, InstanceId, InstanceIdError,
     ObservedApplication, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume, Ownership,
     OwnershipState, ResolutionRequirement, ResolutionSet, ResolvedApplication, ResolvedSource,
-    Sha256Digest, Sha256DigestError, TaskDiagnostic, TaskState, compile_application,
-    compile_release, image_repository, preview_resolution, valid_logical_name,
+    RuntimeMessage, Sha256Digest, Sha256DigestError, TaskDiagnostic, TaskState,
+    compile_application, compile_release, image_repository, preview_resolution, valid_logical_name,
 };
 pub use retention::{
     BuildHistoryConfig, ImagesConfig, LocalImages, ReleaseAvailability, RetentionConfig,

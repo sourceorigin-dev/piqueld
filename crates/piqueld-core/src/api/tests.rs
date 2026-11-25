@@ -115,6 +115,8 @@ generate={type='random',bytes=16}
     );
 }
 
+/// Terminal controls, bidirectional overrides and zero-width characters go,
+/// while text, lines and an emoji sequence's joiner stay.
 #[test]
 fn terminal_controls_are_removed_but_text_and_lines_survive() {
     assert_eq!(
@@ -126,6 +128,10 @@ fn terminal_controls_are_removed_but_text_and_lines_survive() {
             "\x1b]0;hidden title\x07text \x1b]8;;https://example.test\x1b\\link\x1b]8;;\x1b\\"
         ),
         "text link"
+    );
+    assert_eq!(
+        LogRecord::clean_message("evil\u{202E}gpj.exe\u{200B}\u{FEFF} 👩\u{200D}💻"),
+        "evilgpj.exe 👩\u{200D}💻"
     );
 }
 
