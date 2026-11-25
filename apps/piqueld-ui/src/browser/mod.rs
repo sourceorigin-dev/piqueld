@@ -2,6 +2,7 @@
 
 mod access;
 mod auth;
+mod backups;
 mod builds;
 mod dashboard;
 mod format;
@@ -377,6 +378,7 @@ fn App() -> impl IntoView {
                     <Route path={path!("system")} view={observability::SystemPage} />
                     <Route path={path!("analytics")} view={observability::AnalyticsPage} />
                     <Route path={path!("notifications")} view={notifications::NotificationsPage} />
+                    <Route path={path!("backups")} view={backups::BackupsPage} />
                     <Route path={path!("audit")} view={observability::AuditPage} />
                     <Route path={path!("applications/:id")} view={ApplicationDetailPage} />
                     <Route

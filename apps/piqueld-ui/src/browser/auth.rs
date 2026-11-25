@@ -60,7 +60,7 @@ extern "C" {
 
 /// Why a sign-in or account action failed; its notice shows the message.
 #[derive(Debug, thiserror::Error)]
-enum ActionError {
+pub(super) enum ActionError {
     /// The daemon refused the request, or could not be reached.
     #[error(transparent)]
     Client(#[from] ClientError),
@@ -71,6 +71,16 @@ enum ActionError {
     /// message for the person.
     #[error("{0}")]
     Message(String),
+}
+
+impl<T> super::UserError<T> for Result<T, ActionError> {
+    /// The daemon's refusal as people read it, or the action's own message.
+    fn user_error(self) -> Result<T, String> {
+        self.map_err(|error| match error {
+            ActionError::Client(error) => error.user_message(),
+            error => error.to_string(),
+        })
+    }
 }
 
 /// A value thrown by the browser's passkey ceremony, by its message.
@@ -149,7 +159,7 @@ async fn reauthenticate() -> Result<(), ActionError> {
 ///
 /// It runs in a task spawned by [`Feedback::run`], which keeps the reactive
 /// owner, so it can reach the prompt `Gate` provides.
-async fn confirmed<T, E, F>(request: impl Fn() -> F) -> Result<T, ActionError>
+pub(super) async fn confirmed<T, E, F>(request: impl Fn() -> F) -> Result<T, ActionError>
 where
     E: Into<ActionError>,
     F: Future<Output = Result<T, E>>,

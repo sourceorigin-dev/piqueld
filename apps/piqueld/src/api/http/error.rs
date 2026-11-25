@@ -395,6 +395,7 @@ impl From<StoreError> for ApiError {
                 lockout.message(),
             ),
             StoreError::Destination(error) => error.into(),
+            StoreError::Repository(error) => error.into(),
             StoreError::Retry(error) => error.into(),
             StoreError::Denied(denied) => denied.into(),
             StoreError::CredentialRevoked => crate::auth::AuthError::Unauthorized.into(),
@@ -444,6 +445,38 @@ impl From<piqueld_store::DestinationError> for ApiError {
             DestinationError::UnknownApplication(_) => ApiErrorCode::DestinationApplicationUnknown,
         };
         Self::new(StatusCode::BAD_REQUEST, code, error.to_string())
+    }
+}
+
+impl From<piqueld_store::RepositoryError> for ApiError {
+    /// Refuses a backup repository whose name or location is taken with 409.
+    fn from(error: piqueld_store::RepositoryError) -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            ApiErrorCode::BackupRepositoryExists,
+            error.to_string(),
+        )
+    }
+}
+
+impl From<crate::backup::EngineError> for ApiError {
+    /// Refuses a directory holding files with 409; a repository piqueld
+    /// can't create, such as in a directory it can't write, is 503.
+    fn from(error: crate::backup::EngineError) -> Self {
+        use crate::backup::EngineError;
+        if let EngineError::NotEmpty(_) = error {
+            return Self::new(
+                StatusCode::CONFLICT,
+                ApiErrorCode::BackupRepositoryNotEmpty,
+                error.to_string(),
+            );
+        }
+        tracing::warn!(error = %anyhow::Error::from(error), "backup repository unavailable");
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            ApiErrorCode::BackupRepositoryUnavailable,
+            "the backup repository could not be created; the daemon's log says why",
+        )
     }
 }
 
@@ -541,6 +574,7 @@ invalid_input! {
     GitBranchError => ApiErrorCode::GitBranchInvalid, |error| error.to_string();
     PreviewSlotError => ApiErrorCode::PreviewSlotInvalid, |error| error.to_string();
     piqueld_core::observability::DestinationNameError => ApiErrorCode::DestinationNameInvalid, |error| error.to_string();
+    piqueld_core::backup::BackupRepositoryNameError => ApiErrorCode::BackupRepositoryNameInvalid, |error| error.to_string();
 }
 
 impl From<piqueld_core::ValidationErrors> for ApiError {
@@ -669,6 +703,7 @@ impl From<ApplicationError> for ApiError {
                 )
             }
             ApplicationError::Snapshot(error) => error.into(),
+            ApplicationError::Backup(error) => error.into(),
             ApplicationError::Busy(_) => Self::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 ApiErrorCode::ServerBusy,

@@ -1112,7 +1112,8 @@ async fn requested_secret_deletions_and_recovery_record_each_committed_stage() {
             format!("{route} secret \"stripe\" deletion {stripe} completed"),
             format!(
                 "{route} secret key recovery discarded 1 values across 0 environments \
-                and 1 applications, 0 webhook secrets, and 0 notification destinations"
+                and 1 applications, 0 webhook secrets, 0 notification destinations, \
+                and 0 backup repositories"
             ),
         ]
     );
@@ -1150,7 +1151,8 @@ async fn key_recovery_records_the_webhook_secrets_it_deletes() {
         store.audit_actions().await,
         [format!(
             "{route} secret key recovery discarded 0 values across 0 environments \
-            and 0 applications, 1 webhook secrets, and 0 notification destinations"
+            and 0 applications, 1 webhook secrets, 0 notification destinations, \
+            and 0 backup repositories"
         )]
     );
 }

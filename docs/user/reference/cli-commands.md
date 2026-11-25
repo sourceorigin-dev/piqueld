@@ -75,6 +75,7 @@ Commands:
 - [`piquelctl completions`](#piquelctl-completions): Print the completion script of a shell.
 - [`piquelctl secrets`](#piquelctl-secrets): Manage the daemon's encryption key for secrets.
 - [`piquelctl notification`](#piquelctl-notification): Manage notification destinations and their deliveries.
+- [`piquelctl backup`](#piquelctl-backup): Manage where backups are written.
 - [`piquelctl status`](#piquelctl-status): Show whether the daemon responds, its version, and the health of its subsystems.
 - [`piquelctl resources`](#piquelctl-resources): Show the daemon process's resource usage, storage, retained history, and queues, measured at most every 5 seconds (requires system:read).
 - [`piquelctl settings`](#piquelctl-settings): Show the daemon's effective host settings, read-only (requires system:read). Change them in its TOML configuration and restart it.
@@ -129,6 +130,7 @@ Options:
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
   - `notifications:manage`: Manage notification destinations.
+  - `backups:manage`: Manage backup repositories.
 - `--app <APPLICATION_ID>`: Limit the application permissions to this application.
 
   Repeat it to allow several applications. Without it, the permissions apply to every application. Installation-wide permissions, such as `system:read`, are never limited.
@@ -222,6 +224,7 @@ Options:
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
   - `notifications:manage`: Manage notification destinations.
+  - `backups:manage`: Manage backup repositories.
 - `--app <NAME_OR_ID>`: Limit the application permissions to this application.
 
   Repeat it to allow several applications. Without it, the permissions apply to every application. Installation-wide permissions, such as `system:read`, are never limited.
@@ -265,6 +268,7 @@ Options:
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
   - `notifications:manage`: Manage notification destinations.
+  - `backups:manage`: Manage backup repositories.
 - `--app <NAME_OR_ID>`: Limit the application permissions to this application.
 
   Repeat it to allow several applications. Without it, the permissions apply to every application. Installation-wide permissions, such as `system:read`, are never limited.
@@ -482,6 +486,7 @@ Options:
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
   - `notifications:manage`: Manage notification destinations.
+  - `backups:manage`: Manage backup repositories.
 - `--app <NAME_OR_ID>`: Limit the application permissions to this application.
 
   Repeat it to allow several applications. Without it, the permissions apply to every application. Installation-wide permissions, such as `system:read`, are never limited.
@@ -786,6 +791,108 @@ piquelctl notification retry [OPTIONS] <ID>
 Arguments:
 
 - `<ID>`: Delivery ID, from `notification deliveries`.
+
+## `piquelctl backup`
+
+Manage where backups are written.
+
+```text
+piquelctl backup [OPTIONS] <COMMAND>
+```
+
+Commands:
+
+- [`piquelctl backup repository`](#piquelctl-backup-repository): Manage the repositories backups are written to.
+
+## `piquelctl backup repository`
+
+Manage the repositories backups are written to.
+
+```text
+piquelctl backup repository [OPTIONS] <COMMAND>
+```
+
+Commands:
+
+- [`piquelctl backup repository list`](#piquelctl-backup-repository-list): List backup repositories and their latest check.
+- [`piquelctl backup repository show`](#piquelctl-backup-repository-show): Show a backup repository and its latest check.
+- [`piquelctl backup repository create`](#piquelctl-backup-repository-create): Create a backup repository in a directory on the daemon's host.
+- [`piquelctl backup repository check`](#piquelctl-backup-repository-check): Check a backup repository's structure.
+- [`piquelctl backup repository delete`](#piquelctl-backup-repository-delete): Remove a backup repository from piqueld.
+
+## `piquelctl backup repository list`
+
+List backup repositories and their latest check.
+
+Needs `system:read` or `backups:manage`.
+
+```text
+piquelctl backup repository list [OPTIONS]
+```
+
+## `piquelctl backup repository show`
+
+Show a backup repository and its latest check.
+
+Needs `system:read` or `backups:manage`.
+
+```text
+piquelctl backup repository show [OPTIONS] <NAME>
+```
+
+Arguments:
+
+- `<NAME>`: Repository name.
+
+## `piquelctl backup repository create`
+
+Create a backup repository in a directory on the daemon's host.
+
+The directory must be missing or empty, and writable by the daemon's user. The repository uses restic's format, with two keys: one piqueld keeps, and a recovery key printed once. Keep the recovery key and the directory's path somewhere other than the host: with them, `restic` opens the repository without piqueld. Needs `backups:manage` and a recent passkey sign-in.
+
+```text
+piquelctl backup repository create [OPTIONS] --path <PATH> <NAME>
+```
+
+Arguments:
+
+- `<NAME>`: Repository name, such as `local`.
+
+Options:
+
+- `--path <PATH>`: The directory, as an absolute path on the daemon's host. Required.
+
+## `piquelctl backup repository check`
+
+Check a backup repository's structure.
+
+Opens it with piqueld's key and checks that its index, packs and snapshots agree, without reading their data. Needs `backups:manage`.
+
+```text
+piquelctl backup repository check [OPTIONS] <NAME>
+```
+
+Arguments:
+
+- `<NAME>`: Repository name.
+
+## `piquelctl backup repository delete`
+
+Remove a backup repository from piqueld.
+
+Its backups stay where they are, and its recovery key still opens them. Needs `backups:manage`.
+
+```text
+piquelctl backup repository delete [OPTIONS] <NAME>
+```
+
+Arguments:
+
+- `<NAME>`: Repository name.
+
+Options:
+
+- `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl status`
 

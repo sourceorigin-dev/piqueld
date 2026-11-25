@@ -86,6 +86,8 @@ pub(crate) enum SecretOwner<'a> {
     Webhook(&'a ApplicationId),
     /// A notification destination's URL, by destination ID.
     NotificationDestination(&'a str),
+    /// The key piqueld opens a backup repository with, by repository ID.
+    BackupRepository(&'a str),
 }
 
 impl<'a> SecretOwner<'a> {
@@ -97,6 +99,7 @@ impl<'a> SecretOwner<'a> {
             Self::KeyVerifier => ("piqueld-secret-v1", "piqueld"),
             Self::Webhook(id) => ("piqueld-webhook-secret-v1", id.as_str()),
             Self::NotificationDestination(id) => ("piqueld-notification-destination-v1", id),
+            Self::BackupRepository(id) => ("piqueld-backup-repository-v1", id),
         }
     }
 }

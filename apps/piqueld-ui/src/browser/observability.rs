@@ -25,6 +25,48 @@ use std::time::Duration;
 /// How often [`Refresh::new`] bumps the revision.
 const REFRESH_PERIOD: Duration = Duration::from_secs(5);
 
+/// Outcome of the last action on a page: an error or a success notice.
+#[derive(Clone, Copy)]
+pub(super) struct Outcome {
+    pub(super) busy: RwSignal<bool>,
+    pub(super) message: RwSignal<Option<(Tone, String)>>,
+}
+
+impl Outcome {
+    /// No action yet.
+    pub(super) fn new() -> Self {
+        Self {
+            busy: RwSignal::new(false),
+            message: RwSignal::new(None),
+        }
+    }
+
+    /// Runs `request` unless another is running, then shows `success` or
+    /// its error, as people read it, and runs `refresh`. It keeps the view's
+    /// reactive owner, so `request` can ask for a passkey confirmation.
+    pub(super) fn run<T: 'static>(
+        self,
+        request: impl Future<Output = Result<T, String>> + 'static,
+        success: impl FnOnce(T) -> String + 'static,
+        refresh: Refresh,
+    ) {
+        if self.busy.get_untracked() {
+            return;
+        }
+        self.busy.set(true);
+        self.message.set(None);
+        leptos::task::spawn_local_scoped(async move {
+            let message = match request.await {
+                Ok(value) => (Tone::Ok, success(value)),
+                Err(error) => (Tone::Bad, error),
+            };
+            self.message.try_set(Some(message));
+            self.busy.try_set(false);
+            refresh.request();
+        });
+    }
+}
+
 /// Revision counter that observability resources track to refetch.
 /// Bumped every 5 seconds while the tab is visible, or on demand.
 #[derive(Clone, Copy)]

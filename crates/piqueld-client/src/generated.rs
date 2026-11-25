@@ -8403,6 +8403,240 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
+    /*Lists backup repositories by name
+
+    Needs `system:read` or `backups:manage`. Keys are never returned.
+
+    Sends a `GET` request to `/api/v1/backup/repositories`
+
+    */
+    pub async fn backup_repositories<'a>(
+        &'a self,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<Vec<piqueld_core::backup::BackupRepository>>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!("{}/api/v1/backup/repositories", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .get(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "backup_repositories",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            503u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Creates a backup repository
+
+    Creates it at its location, which must be missing or empty, with two keys:
+    one piqueld keeps, encrypted with the secret master key, and a recovery
+    key returned only in this response. Needs a recent passkey sign-in. A taken
+    name or location fails with 409 `backup_repository_exists`, a directory
+    holding files with 409 `backup_repository_not_empty`, and one piqueld
+    can't write with 503 `backup_repository_unavailable`.
+
+    Sends a `POST` request to `/api/v1/backup/repositories/{name}`
+
+    */
+    pub async fn create_backup_repository<'a>(
+        &'a self,
+        name: &'a str,
+        body: &'a piqueld_core::backup::RepositoryRequest,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::backup::RecoveryKit>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!(
+            "{}/api/v1/backup/repositories/{}",
+            self.baseurl,
+            encode_path(&name.to_string()),
+        );
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .json(&body)
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "create_backup_repository",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            400u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            408u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            409u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            415u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            503u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Removes a backup repository from piqueld
+
+    Its backups stay where they are, and its recovery key still opens them.
+
+    Sends a `DELETE` request to `/api/v1/backup/repositories/{name}`
+
+    */
+    pub async fn delete_backup_repository<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> Result<ResponseValue<piqueld_core::api::Envelope<bool>>, Error<piqueld_core::api::ErrorBody>>
+    {
+        let url = format!(
+            "{}/api/v1/backup/repositories/{}",
+            self.baseurl,
+            encode_path(&name.to_string()),
+        );
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .delete(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "delete_backup_repository",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            400u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            404u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            503u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Checks a backup repository's structure
+
+    Opens it with piqueld's key and checks that its index, packs and
+    snapshots agree, without reading their data, then records the result. A
+    repository that can't be opened fails the check.
+
+    Sends a `POST` request to `/api/v1/backup/repositories/{name}/check`
+
+    */
+    pub async fn check_backup_repository<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::backup::BackupRepository>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!(
+            "{}/api/v1/backup/repositories/{}/check",
+            self.baseurl,
+            encode_path(&name.to_string()),
+        );
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "check_backup_repository",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            400u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            404u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            503u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
     /*Lists Git source builds and job runs, newest first
 
     Optionally filtered to one application or environment. Follow `next_cursor` to load older

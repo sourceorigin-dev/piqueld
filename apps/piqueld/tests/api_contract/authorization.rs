@@ -484,6 +484,91 @@ async fn notification_destinations_need_their_permissions_and_hide_urls() {
     assert_eq!(f.router.status(&manager, "DELETE", uri).await, 404);
 }
 
+/// Backup repositories are listed with `system:read` and managed with
+/// `backups:manage`; creating one also needs a recent passkey sign-in, which
+/// is checked before anything is written, and returns its recovery key once.
+/// Removing one keeps it on disk.
+#[tokio::test]
+async fn backup_repositories_need_their_permissions_and_a_recent_passkey() {
+    let f = GrantFixture::new().await;
+    let database = database(&f.temp);
+    let manager = seed_account(&database, "keeper", &[("backups:manage", None)]).await;
+    let reader = seed_account(&database, "reader", &[("system:read", None)]).await;
+    let directory = f.temp.path().join("backups");
+    let path = directory
+        .to_str()
+        .expect("the temporary path is UTF-8")
+        .to_owned();
+    let body = |path: &str| serde_json::json!({"location": {"kind": "local", "path": path}});
+    let uri = "/api/v1/backup/repositories/local";
+    let call = async |account: &str, method: &str, uri: &str, body: serde_json::Value| {
+        f.router.call(account, method, uri, body).await
+    };
+    assert_eq!(call(&reader, "POST", uri, body(&path)).await.0, 403);
+    let (status, error) = call(&manager, "POST", uri, body(&path)).await;
+    assert_eq!(
+        (status, &error["code"]),
+        (403, &"reauthentication_required".into())
+    );
+    assert!(!directory.exists());
+    let signed_in = "UPDATE auth_credentials SET kind='cli',authenticated_at=CAST(strftime('%s','now') AS INTEGER) WHERE id='keeper'";
+    execute(&database, signed_in).await;
+    let (status, created) = call(&manager, "POST", uri, body(&path)).await;
+    assert_eq!(status, 200, "{created}");
+    let recovery_key = created["data"]["recovery_key"]
+        .as_str()
+        .expect("the response holds the recovery key")
+        .to_owned();
+    assert!(directory.join("config").is_file());
+    let (status, error) = call(&manager, "POST", uri, body("/srv/elsewhere")).await;
+    assert_eq!(
+        (status, &error["code"]),
+        (409, &"backup_repository_exists".into())
+    );
+    let other = "/api/v1/backup/repositories/other";
+    let (status, error) = call(
+        &manager,
+        "POST",
+        other,
+        body(f.temp.path().to_str().expect("the temporary path is UTF-8")),
+    )
+    .await;
+    assert_eq!(
+        (status, &error["code"]),
+        (409, &"backup_repository_not_empty".into())
+    );
+    let (status, listed) = call(
+        &reader,
+        "GET",
+        "/api/v1/backup/repositories",
+        serde_json::Value::Null,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(listed["data"][0]["location"]["path"], path.as_str());
+    assert!(!listed.to_string().contains(&recovery_key), "{listed}");
+    let check = "/api/v1/backup/repositories/local/check";
+    assert_eq!(
+        call(&reader, "POST", check, serde_json::Value::Null)
+            .await
+            .0,
+        403
+    );
+    let (status, checked) = call(&manager, "POST", check, serde_json::Value::Null).await;
+    assert_eq!(status, 200, "{checked}");
+    assert!(
+        checked["data"]["last_check"]["checked_at_ms"].is_i64(),
+        "{checked}"
+    );
+    assert!(
+        checked["data"]["last_check"].get("problem").is_none(),
+        "{checked}"
+    );
+    assert_eq!(f.router.status(&manager, "DELETE", uri).await, 200);
+    assert_eq!(f.router.status(&manager, "DELETE", uri).await, 404);
+    assert!(directory.join("config").is_file());
+}
+
 /// Deliveries are listed with `system:read` and retried with
 /// `system:operate`; a delivery that has not failed is refused with 409,
 /// naming why.

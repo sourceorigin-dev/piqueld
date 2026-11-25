@@ -1,6 +1,7 @@
 //! Shared daemon operations, independent of transport adapters.
 
 mod admission;
+mod backups;
 mod checks;
 mod exec;
 mod history;
@@ -73,6 +74,9 @@ pub enum ApplicationError {
     /// An uploaded local snapshot was refused.
     #[error(transparent)]
     Snapshot(#[from] crate::git::snapshot::SnapshotError),
+    /// A backup repository couldn't be created.
+    #[error(transparent)]
+    Backup(#[from] crate::backup::EngineError),
     /// As much of this kind of expensive work already runs as it may.
     #[error("too much {0:?} work is running")]
     Busy(Expensive),

@@ -146,10 +146,25 @@ pub fn auth_status() -> String {
     String::from("/api/v1/auth/status")
 }
 
+/// `GET /api/v1/backup/repositories`
+#[must_use]
+pub fn backup_repositories() -> String {
+    String::from("/api/v1/backup/repositories")
+}
+
 /// `GET /api/v1/builds/{id}/logs`
 #[must_use]
 pub fn build_logs(id: i64) -> String {
     format!("/api/v1/builds/{id}/logs")
+}
+
+/// `POST /api/v1/backup/repositories/{name}/check`
+#[must_use]
+pub fn check_backup_repository(name: &str) -> String {
+    format!(
+        "/api/v1/backup/repositories/{name}/check",
+        name = encode_path(name)
+    )
 }
 
 /// `POST /api/v1/system/builder/check`
@@ -162,6 +177,15 @@ pub fn check_builder() -> String {
 #[must_use]
 pub fn create_application() -> String {
     String::from("/api/v1/applications")
+}
+
+/// `POST /api/v1/backup/repositories/{name}`
+#[must_use]
+pub fn create_backup_repository(name: &str) -> String {
+    format!(
+        "/api/v1/backup/repositories/{name}",
+        name = encode_path(name)
+    )
 }
 
 /// `POST /api/v1/applications/{id}/environments`
@@ -191,6 +215,15 @@ pub fn delete_application_secret(id: &str, name: &str) -> String {
     format!(
         "/api/v1/applications/{id}/secrets/{name}",
         id = encode_path(id),
+        name = encode_path(name)
+    )
+}
+
+/// `DELETE /api/v1/backup/repositories/{name}`
+#[must_use]
+pub fn delete_backup_repository(name: &str) -> String {
+    format!(
+        "/api/v1/backup/repositories/{name}",
         name = encode_path(name)
     )
 }

@@ -5,6 +5,7 @@
 mod accounts;
 mod analytics;
 mod auth;
+mod backups;
 mod cli;
 mod commands;
 mod deployments;

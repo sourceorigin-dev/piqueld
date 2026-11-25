@@ -68,6 +68,8 @@ string_enum! {
         PreviewSlotInvalid => "preview_slot_invalid",
         /// 400: a notification destination name is malformed.
         DestinationNameInvalid => "destination_name_invalid",
+        /// 400: a backup repository name is malformed.
+        BackupRepositoryNameInvalid => "backup_repository_name_invalid",
         /// 400: an environment pins a commit without following a branch.
         RevisionInvalid => "revision_invalid",
         /// 400: a promoted environment also names a branch or commit.
@@ -230,6 +232,13 @@ string_enum! {
         DestinationApplicationUnknown => "destination_application_unknown",
         /// 409: the delivery can't be retried.
         DeliveryNotRetryable => "delivery_not_retryable",
+        /// 409: another backup repository has this name or location.
+        BackupRepositoryExists => "backup_repository_exists",
+        /// 409: a new repository's directory holds files already.
+        BackupRepositoryNotEmpty => "backup_repository_not_empty",
+        /// 503: the repository couldn't be created or opened, such as when the
+        /// daemon's user can't write its directory.
+        BackupRepositoryUnavailable => "backup_repository_unavailable",
 
         /// 503: the effective host configuration is unavailable.
         ConfigurationUnavailable => "configuration_unavailable",

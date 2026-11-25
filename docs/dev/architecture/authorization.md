@@ -73,7 +73,7 @@ narrow their results to `Grants::app_scope`. The OpenAPI document names each
 operation's requirement in its `x-piqueld-access` extension: `public`,
 `authenticated`, or one permission. `authenticated` operations check
 permissions in their handlers: apply and plan, events and the event stream,
-diagnostics, notification destinations, the audit trail, builds, and the
+diagnostics, notification destinations, backup repositories, the audit trail, builds, and the
 account directory, management and device approval. The extension names a
 single permission, so it omits combined checks: granting telemetry also needs
 `apps:read`, and saving with `deploy=true` also needs `apps:deploy`.

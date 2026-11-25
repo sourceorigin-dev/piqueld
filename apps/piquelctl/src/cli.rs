@@ -362,6 +362,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: crate::notifications::NotificationCommand,
     },
+    /// Manage where backups are written.
+    Backup {
+        #[command(subcommand)]
+        command: crate::backups::BackupCommand,
+    },
     /// Show whether the daemon responds, its version, and the health of its subsystems.
     Status,
     /// Show the daemon process's resource usage, storage, retained history,

@@ -189,7 +189,8 @@ Before the first account exists, there's nothing to recover:
 ## A lost secret key
 
 The daemon's secret key, `secrets.key` in its data directory, encrypts the
-values of stored secrets and the addresses of notification destinations.
+values of stored secrets, the addresses of notification destinations, and the
+keys piqueld opens [backup repositories](../operations/backup-repositories.md) with.
 Accounts, passkeys, sessions and tokens don't depend on it, so losing it
 doesn't stop anyone signing in.
 [Secret storage](../reference/configuration.md#secret-storage) explains what

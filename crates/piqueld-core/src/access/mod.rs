@@ -125,6 +125,9 @@ permissions! {
         /// Create, change, test and delete notification destinations, which
         /// receive notifications about every application.
         NotificationsManage => "notifications:manage", "Manage notification destinations",
+        /// Create, check and remove backup repositories. Creating one shows
+        /// its recovery key, which opens every backup in it.
+        BackupsManage => "backups:manage", "Manage backup repositories",
     }
 }
 
@@ -592,14 +595,15 @@ impl Grants {
     }
 
     /// Whether these grants, replacing `before`, add privileged access:
-    /// `admin` on an application `before` lacks it on, or `accounts:manage`
-    /// or `system:operate`, which `before` lacks. Handing that out needs a
+    /// `admin` on an application `before` lacks it on, or `accounts:manage`,
+    /// `system:operate` or `backups:manage`, which `before` lacks. Handing that out needs a
     /// recent passkey sign-in; removing access never does.
     #[must_use]
     pub fn escalates(&self, before: &Self) -> bool {
         let privileged = [
             GlobalPermission::AccountsManage,
             GlobalPermission::SystemOperate,
+            GlobalPermission::BackupsManage,
         ];
         !before.admin_scope().covers(&self.admin_scope())
             || privileged

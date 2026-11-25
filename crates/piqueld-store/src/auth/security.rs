@@ -26,10 +26,13 @@ pub enum SecurityEvent {
     /// A notification destination was created, changed or deleted, which
     /// could silence notifications.
     DestinationChanged,
+    /// A backup repository was created or removed, which changes where
+    /// backups, and the secrets in them, are copied to.
+    BackupRepositoryChanged,
 }
 
 impl SecurityEvent {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::AdminGranted,
         Self::PrivilegedToken,
         Self::DenialBurst,
@@ -38,6 +41,7 @@ impl SecurityEvent {
         Self::NewAddress,
         Self::SecretKeyRecovered,
         Self::DestinationChanged,
+        Self::BackupRepositoryChanged,
     ];
 
     /// Event kind in daemon history.
@@ -52,6 +56,7 @@ impl SecurityEvent {
             Self::NewAddress => EventKind::CredentialNewAddress,
             Self::SecretKeyRecovered => EventKind::SecretKeyRecovered,
             Self::DestinationChanged => EventKind::NotificationDestinationChanged,
+            Self::BackupRepositoryChanged => EventKind::BackupRepositoryChanged,
         }
     }
 

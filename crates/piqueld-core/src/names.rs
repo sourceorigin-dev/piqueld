@@ -332,6 +332,12 @@ logical_name!(
     DestinationNameError,
     "destination names"
 );
+logical_name!(
+    /// Unique name of a backup repository, such as `offsite`.
+    BackupRepositoryName,
+    BackupRepositoryNameError,
+    "backup repository names"
+);
 
 #[cfg(test)]
 mod tests {

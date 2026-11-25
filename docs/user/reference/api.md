@@ -852,6 +852,10 @@ caller holds `events:read` on, and daemon history requires `system:read`. See th
 | `POST /api/v1/notifications/destinations/{name}/test` | Send a test notification now |
 | `GET /api/v1/notifications/deliveries` | Credential-free delivery history |
 | `POST /api/v1/notifications/deliveries/{id}/retry` | Retry a failed delivery under current policy; `system:operate`. 409 `delivery_not_retryable` names why one cannot be |
+| `GET /api/v1/backup/repositories` | [Backup repositories](../operations/backup-repositories.md) and their latest check, without keys; `system:read` or `backups:manage` |
+| `POST /api/v1/backup/repositories/{name}` | Create a repository; `backups:manage` and a recent passkey sign-in. Returns its recovery key, once |
+| `POST /api/v1/backup/repositories/{name}/check` | Check a repository's structure and record the result; `backups:manage` |
+| `DELETE /api/v1/backup/repositories/{name}` | Remove a repository from piqueld, keeping its backups; `backups:manage` |
 
 Event filters: `application_id` (application-wide events and those of all its
 environments), `environment_id`, `operation_id`, `attempt`, `action_id`, `kind`,
@@ -1078,12 +1082,13 @@ retry the request that failed). Discarded versions are
 marked unavailable; metadata, running Docker services and their secrets are
 preserved. Every application's [webhook secret](../networking/webhooks.md) is deleted
 too; generate a new one. So is every [notification destination](../operations/notifications.md);
-create them again. Supplying replacement stored values creates new versions, and an
+create them again. Every [backup repository](../operations/backup-repositories.md) is
+removed from piqueld, keeping its backups, which its recovery key still opens. Supplying replacement stored values creates new versions, and an
 explicit new deployment is required to adopt them; that deployment also generates
 new values for discarded generated secrets it mounts. Deployments that need
 discarded stored values fail with `secret_unavailable` and the logical names. The response contains
 `affected_environments`, `affected_applications`, `affected_secrets`,
-`discarded_versions` and `deleted_destinations`; no key or
+`discarded_versions`, `deleted_destinations` and `deleted_backup_repositories`; no key or
 secret value is returned. Repeating the request after a lost response returns
 `secret_key_usable`, because no stored value then needs the old key; it never
 creates a key.

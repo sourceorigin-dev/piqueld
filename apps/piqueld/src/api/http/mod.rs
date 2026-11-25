@@ -26,6 +26,7 @@ use utoipa_axum::router::OpenApiRouter;
 mod access;
 mod applications;
 mod auth;
+mod backups;
 pub use auth::Authenticator;
 mod browser;
 mod builds;
@@ -369,6 +370,9 @@ fn documented_router() -> OpenApiRouter<ApiState> {
         .routes(authenticated!(observability::destinations))
         .routes(granted!(Global(NotificationsManage) => observability::put_destination, observability::delete_destination))
         .routes(granted!(Global(NotificationsManage) => observability::test_destination))
+        .routes(authenticated!(backups::repositories))
+        .routes(granted!(Global(BackupsManage) => backups::create_repository, backups::delete_repository))
+        .routes(granted!(Global(BackupsManage) => backups::check_repository))
         .routes(authenticated!(observability::audit))
         .routes(granted!(Global(AuditRead) => observability::verify_audit))
         .routes(granted!(App(LogsRead) => logs::get))

@@ -505,6 +505,8 @@ pub enum SensitiveAction {
     SetGrants,
     /// Recovering a lost secret key, discarding stored values.
     RecoverSecretKey,
+    /// Creating a backup repository, which shows its recovery key.
+    CreateBackupRepository,
 }
 
 impl SensitiveAction {
@@ -518,6 +520,7 @@ impl SensitiveAction {
             Self::CreateEnrollment => "create an enrollment link",
             Self::SetGrants => "change an account's grants",
             Self::RecoverSecretKey => "recover the secret key, discarding stored secret values",
+            Self::CreateBackupRepository => "create a backup repository and show its recovery key",
         }
     }
 }

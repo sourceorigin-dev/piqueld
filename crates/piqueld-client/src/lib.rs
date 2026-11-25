@@ -29,6 +29,8 @@ compile_error!("Windows is not supported by piqueld-client");
 pub mod applications;
 /// Passkey login and account management.
 pub mod auth;
+/// Backup repositories.
+pub mod backup;
 /// Environment lifecycle, deployment, and observation contracts.
 pub mod environments;
 /// One-off commands in running service tasks.

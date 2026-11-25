@@ -69,6 +69,7 @@ pub(super) fn Sidebar() -> impl IntoView {
         opened.set(false);
     });
     let system = can(Permission::Global(GlobalPermission::SystemRead));
+    let backups = can(Permission::Global(GlobalPermission::BackupsManage));
     let display_name = move || who.get().map(|who| who.name().to_owned());
     let initial = move || {
         who.get()
@@ -125,6 +126,9 @@ pub(super) fn Sidebar() -> impl IntoView {
                                 "Host settings",
                                 false,
                             )}
+                        </Show>
+                        <Show when={move || system.get() || backups.get()}>
+                            {nav_link("/dashboard/backups", Icon::Archive, "Backups", false)}
                         </Show>
                         {nav_link("/dashboard/accounts", Icon::Accounts, "Accounts", false)}
                         {nav_link("/dashboard/audit", Icon::Events, "Audit", false)}

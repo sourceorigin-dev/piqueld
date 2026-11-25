@@ -10,6 +10,7 @@
 //! [`Backups::restore`] puts a backup back into an empty data directory, and
 //! [`Backups::roll_back`] the newest one this binary opens.
 
+mod engine;
 mod restore;
 mod roll_back;
 mod rotation;
@@ -18,6 +19,7 @@ mod staging;
 mod tests;
 
 use anyhow::{Context, Result, bail};
+pub use engine::{EngineError, RepositoryAccess};
 use piqueld_store::{DatabaseCopy, DatabaseFile, DatabaseIdentity, SCHEMA_VERSION};
 pub use restore::Refusal;
 use roll_back::RolledBack;

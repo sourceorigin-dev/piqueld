@@ -29,7 +29,7 @@ pub use auth::{
     Cascade, CredentialKind, DirectoryView, Invitation, Lockout, NewCredential, NewInvitation,
     NewPasskey, PasskeyOwner, Proof, SecurityEvent,
 };
-pub use backup::{DatabaseCopy, DatabaseFile, DatabaseIdentity};
+pub use backup::{DatabaseCopy, DatabaseFile, DatabaseIdentity, RepositoryError};
 pub use build::{BuildOutcome, LogAppend, LogEnding, ReusableBuild};
 pub use journal::JournalAction;
 pub(crate) use observability::DESTINATION_CHANGED;
@@ -280,6 +280,9 @@ pub enum StoreError {
     /// A notification destination change was refused.
     #[error(transparent)]
     Destination(#[from] DestinationError),
+    /// A backup repository change was refused.
+    #[error(transparent)]
+    Repository(#[from] RepositoryError),
     /// A delivery retry was refused.
     #[error(transparent)]
     Retry(#[from] RetryError),

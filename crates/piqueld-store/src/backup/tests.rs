@@ -1,6 +1,10 @@
 use super::*;
 use crate::{SCHEMA_VERSION, secrets::KeyFailure};
+use piqueld_core::backup::{
+    BackupRepositoryName, RepositoryCheck, RepositoryLocation, RepositoryPath,
+};
 use std::os::unix::fs::PermissionsExt;
+use zeroize::Zeroizing;
 
 /// Snapshots the store's database in `directory` into `name` and opens
 /// the copy.
@@ -174,4 +178,119 @@ async fn older_binaries_read_the_identity_of_the_latest_schema() {
             .unwrap_or_else(|error| panic!("{statement} fails: {error}"));
         assert!(row.is_some(), "{statement} returns nothing");
     }
+}
+
+/// The repository `name` at the local directory `path`.
+fn local(name: &str, path: &str) -> (BackupRepositoryName, RepositoryLocation) {
+    let name = BackupRepositoryName::parse(name).expect("the name is valid");
+    let path = RepositoryPath::parse(path).expect("the path is valid");
+    (name, RepositoryLocation::Local { path })
+}
+
+/// A repository's key is stored encrypted and read back whole; a second
+/// repository can't take its name or location; checks and removal are
+/// recorded, and the audit trail never holds the key.
+#[tokio::test]
+async fn backup_repositories_keep_their_key_and_their_name_and_location_unique() {
+    let (_directory, store) = Store::temporary().await;
+    let route = "POST /api/v1/backup/repositories";
+    let request = crate::testing::audit_request(route);
+    let author = crate::Author {
+        actor: crate::Actor::Daemon,
+        request: Some(&request),
+    };
+    let (name, location) = local("offsite", "/srv/backups");
+    let key = Zeroizing::new("daemon-key".to_owned());
+    let added = store
+        .add_backup_repository(author, &name, &location, &key)
+        .await
+        .expect("the repository is added");
+    let id: String = sqlx::query_scalar("SELECT id FROM backup_repositories")
+        .fetch_one(&store.pool)
+        .await
+        .expect("the repository has an ID");
+    let ciphertext: Vec<u8> = sqlx::query_scalar("SELECT ciphertext FROM backup_repositories")
+        .fetch_one(&store.pool)
+        .await
+        .expect("the key is stored");
+    assert!(
+        !ciphertext
+            .windows(key.len())
+            .any(|bytes| bytes == key.as_bytes())
+    );
+    let (read, read_key) = store
+        .backup_repository_key(&name)
+        .await
+        .expect("the key decrypts");
+    assert_eq!((read, read_key.as_str()), (added.clone(), "daemon-key"));
+
+    let (other, elsewhere) = local("other", "/srv/elsewhere");
+    let taken = store.add_backup_repository(author, &name, &elsewhere, &key);
+    assert!(matches!(
+        taken.await,
+        Err(StoreError::Repository(RepositoryError::NameTaken(_)))
+    ));
+    let taken = store.check_new_backup_repository(&other, &location);
+    assert!(matches!(
+        taken.await,
+        Err(StoreError::Repository(RepositoryError::LocationTaken(taken))) if taken == name
+    ));
+
+    let check = RepositoryCheck {
+        checked_at_ms: 7,
+        problem: Some("pack abc is missing".to_owned()),
+    };
+    store
+        .record_backup_repository_check(author, &name, &check)
+        .await
+        .expect("the check is recorded");
+    let listed = store
+        .backup_repositories()
+        .await
+        .expect("repositories are listed");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].last_check, Some(check));
+    store
+        .delete_backup_repository(author, &name)
+        .await
+        .expect("the repository is removed");
+    assert!(matches!(
+        store.backup_repository(&name).await,
+        Err(StoreError::NotFound)
+    ));
+    assert_eq!(
+        store.audit_actions().await,
+        [
+            format!("{route} backup repository \"offsite\" {id} created at local \"/srv/backups\""),
+            format!("{route} backup repository \"offsite\" {id} check failed"),
+            format!("{route} backup repository \"offsite\" {id} removed"),
+        ]
+    );
+}
+
+/// Recovering a lost master key removes the repositories whose keys it
+/// encrypted, and counts them.
+#[tokio::test]
+async fn key_recovery_removes_backup_repositories() {
+    let (directory, store) = Store::temporary().await;
+    let (name, location) = local("offsite", "/srv/backups");
+    let key = Zeroizing::new("daemon-key".to_owned());
+    store
+        .add_backup_repository(crate::Actor::Daemon, &name, &location, &key)
+        .await
+        .expect("the repository is added");
+    std::fs::write(directory.path().join("secrets.key"), [42; 32])
+        .expect("the lost key is written");
+    let recovery = store
+        .recover_secret_key(crate::Actor::Daemon)
+        .await
+        .expect("the lost key is recovered");
+    assert_eq!(recovery.deleted_backup_repositories, 1);
+    assert_eq!(
+        store
+            .backup_repositories()
+            .await
+            .expect("repositories are listed"),
+        []
+    );
 }

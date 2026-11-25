@@ -21,8 +21,9 @@ holds everything piqueld needs: the database `piqueld.db`, the secret key
 `secrets.key`, and the state of its tailnet nodes and ingress gateway. Back it
 up whole:
 
-- Without `secrets.key`, the secrets, webhook secrets and notification
-  destinations in the database can't be decrypted (see
+- Without `secrets.key`, the secrets, webhook secrets, notification
+  destinations and [backup repository](backup-repositories.md) keys in the
+  database can't be decrypted (see
   [secret storage](../reference/configuration.md#secret-storage)).
 - Without the tailnet state, the daemon joins the tailnet as a new node, which
   may get another name, and passkeys registered for the

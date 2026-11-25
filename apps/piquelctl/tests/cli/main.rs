@@ -708,6 +708,7 @@ fn detail(latest: &str, healthy: bool, url_state: &str) -> Value {
 
 mod accounts;
 mod applications;
+mod backups;
 mod builds;
 mod editing;
 mod environments;

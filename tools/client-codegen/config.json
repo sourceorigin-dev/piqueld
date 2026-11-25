@@ -646,6 +646,26 @@
       "rustType": "piqueld_core::observability::DestinationRequest"
     },
     {
+      "schema": "Envelope_Vec_BackupRepository",
+      "name": "EnvelopeVecBackupRepository",
+      "rustType": "piqueld_core::api::Envelope<Vec<piqueld_core::backup::BackupRepository>>"
+    },
+    {
+      "schema": "Envelope_BackupRepository",
+      "name": "EnvelopeBackupRepository",
+      "rustType": "piqueld_core::api::Envelope<piqueld_core::backup::BackupRepository>"
+    },
+    {
+      "schema": "Envelope_RecoveryKit",
+      "name": "EnvelopeRecoveryKit",
+      "rustType": "piqueld_core::api::Envelope<piqueld_core::backup::RecoveryKit>"
+    },
+    {
+      "schema": "RepositoryRequest",
+      "name": "RepositoryRequest",
+      "rustType": "piqueld_core::backup::RepositoryRequest"
+    },
+    {
       "schema": "Envelope_DestinationTest",
       "name": "EnvelopeDestinationTest",
       "rustType": "piqueld_core::api::Envelope<piqueld_core::observability::DestinationTest>"

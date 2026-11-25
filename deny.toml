@@ -30,15 +30,17 @@ skip = [
 
 [licenses]
 confidence-threshold = 0.8
-# Native HTTPS uses rustls/ring and Mozilla root-certificate data, and Leptos
-# 0.8 always links wasm_split_macros (base16, public-domain CC0). Keep these
-# additional licenses scoped to the dependencies that require them.
+# Native HTTPS uses rustls/ring and Mozilla root-certificate data, Leptos 0.8
+# always links wasm_split_macros (base16, public-domain CC0), and backups
+# compress with the zstd C library (BSD). Keep these additional licenses
+# scoped to the dependencies that require them.
 exceptions = [
   { crate = "base16", allow = ["CC0-1.0"] },
   { crate = "ring", allow = ["ISC"] },
   { crate = "rustls-webpki", allow = ["ISC"] },
   { crate = "untrusted", allow = ["ISC"] },
   { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+  { crate = "zstd-sys", allow = ["BSD-2-Clause", "BSD-3-Clause"] },
 ]
 allow = [
   "Apache-2.0",

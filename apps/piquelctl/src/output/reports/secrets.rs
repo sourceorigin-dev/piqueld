@@ -89,5 +89,11 @@ report!(piqueld_client::SecretKeyRecovery, self, out, {
             self.deleted_destinations
         ))?;
     }
+    if self.deleted_backup_repositories > 0 {
+        out.line(format_args!(
+            "{} backup repositories were removed with their keys; their backups remain, and their recovery keys still open them.",
+            self.deleted_backup_repositories
+        ))?;
+    }
     out.line("The next stored value generates a new key; back it up with the database.")
 });
