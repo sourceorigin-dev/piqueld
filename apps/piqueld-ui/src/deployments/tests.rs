@@ -17,7 +17,9 @@ fn template() -> Value {
 fn operation(id: &str, attempt: u64, state: OperationState) -> Operation {
     Operation {
         id: id.into(),
-        environment_id: "env-0123456789abcdef0123456789abcdef".parse().unwrap(),
+        environment_id: "env-0123456789abcdef0123456789abcdef"
+            .parse()
+            .expect("the environment id parses"),
         kind: OperationKind::Refresh,
         generation: 1,
         attempt,
@@ -45,7 +47,7 @@ fn deployment(id: &str, current: bool, successful: bool) -> DeploymentView {
         "current_target": current,
         "last_successful": successful,
     }))
-    .unwrap()
+    .expect("the deployment parses")
 }
 
 /// Deployment `id`'s summary, with its flags.
@@ -65,7 +67,7 @@ fn a_row_names_the_commit_deployed_and_how_long_it_ran() {
         "git.branch": "main",
         "git.sha": "0123456789abcdef0123456789abcdef01234567",
     }))
-    .unwrap();
+    .expect("the variables parse");
     built.operation.created_at_ms = 1_000;
     built.operation.finished_at_ms = Some(39_000);
     assert_eq!(built.commit().as_deref(), Some("main @ 0123456789ab"));
@@ -87,7 +89,9 @@ fn only_the_latest_deployment_of_its_environment_supersedes_one() {
     };
     assert!(!current.superseded_by(Some(&deletion)));
     let elsewhere = Operation {
-        environment_id: "env-fedcba9876543210fedcba9876543210".parse().unwrap(),
+        environment_id: "env-fedcba9876543210fedcba9876543210"
+            .parse()
+            .expect("the environment id parses"),
         ..failed
     };
     assert!(!current.superseded_by(Some(&elsewhere)));
@@ -189,7 +193,7 @@ fn plan(origin: &Value, availability: &Value, secrets: &Value) -> PlanView {
             "secrets": secrets,
         },
     }))
-    .unwrap()
+    .expect("the plan parses")
 }
 
 #[test]
@@ -202,7 +206,7 @@ fn a_promotion_confirms_exactly_the_reviewed_source_and_revision() {
     let (present, none) = (json!({ "state": "present" }), json!([]));
     let request = Promotion::new(None)
         .confirmed(&plan(&promoted, &present, &none))
-        .unwrap();
+        .expect("the promotion confirms");
     assert_eq!(request.deployment.as_deref(), Some("operation-1"));
     assert_eq!(request.expected_generation, Some(7));
     assert_eq!(request.release, None);
@@ -210,7 +214,7 @@ fn a_promotion_confirms_exactly_the_reviewed_source_and_revision() {
     let id = "rel-0123456789abcdef0123456789abcdef";
     let release = Promotion::new(Some(id.into()))
         .confirmed(&plan(&json!({ "type": "release" }), &present, &none))
-        .unwrap();
+        .expect("the promotion confirms");
     assert_eq!(release.deployment, None);
     assert_eq!(release.release.as_deref(), Some(id));
 

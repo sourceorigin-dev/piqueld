@@ -439,33 +439,52 @@ mod tests {
 
     #[tokio::test]
     async fn private_writes_never_follow_a_planted_temporary() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let path = directory.path().join("autosave.json");
         let victim = directory.path().join("piqueld.db");
-        std::fs::write(&victim, "database").unwrap();
-        std::os::unix::fs::symlink(&victim, path.with_extension("tmp")).unwrap();
+        std::fs::write(&victim, "database").expect("the file is written");
+        std::os::unix::fs::symlink(&victim, path.with_extension("tmp"))
+            .expect("the symlink is created");
 
-        PrivateFile::at(&path).write("secret").await.unwrap();
+        PrivateFile::at(&path)
+            .write("secret")
+            .await
+            .expect("the file is written");
 
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "database");
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "secret");
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(
+            std::fs::read_to_string(&victim).expect("the file is read"),
+            "database"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("the file is read"),
+            "secret"
+        );
+        let mode = std::fs::metadata(&path)
+            .expect("the metadata is read")
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
 
     #[tokio::test]
     async fn private_files_may_use_the_longest_file_name() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let path = directory.path().join(format!("{}.pem", "a".repeat(251)));
 
-        PrivateFile::at(&path).write("secret").await.unwrap();
+        PrivateFile::at(&path)
+            .write("secret")
+            .await
+            .expect("the file is written");
 
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "secret");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("the file is read"),
+            "secret"
+        );
     }
 
     #[tokio::test]
     async fn removing_a_private_file_removes_temporaries_a_crash_left() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let path = directory.path().join("credentials.json");
         let prefix = PrivateFile::at(&path).temporary_prefix();
         let leftovers = [
@@ -476,31 +495,42 @@ mod tests {
             .iter()
             .chain([&path, &directory.path().join("config.json")])
         {
-            std::fs::write(file, "secret").unwrap();
+            std::fs::write(file, "secret").expect("the file is written");
         }
 
-        PrivateFile::at(&path).remove().await.unwrap();
+        PrivateFile::at(&path)
+            .remove()
+            .await
+            .expect("the file is removed");
 
         let remaining: Vec<_> = std::fs::read_dir(directory.path())
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
+            .expect("the directory is read")
+            .map(|entry| entry.expect("the directory is read").file_name())
             .collect();
         assert_eq!(remaining, ["config.json"]);
     }
 
     #[tokio::test]
     async fn unusable_owner_permissions_are_rejected_without_modification() {
-        let cwd = std::env::current_dir().unwrap();
+        let cwd = std::env::current_dir().expect("the current directory exists");
         for kind in [DirectoryKind::Data, DirectoryKind::Runtime] {
             for mode in [0o000, 0o300, 0o500, 0o600] {
-                let directory = tempfile::tempdir_in(&cwd).unwrap();
+                let directory = tempfile::tempdir_in(&cwd).expect("the temp dir is created");
                 let path = directory.path();
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
-                let result = kind.prepare(path.strip_prefix(&cwd).unwrap()).await;
-                let actual_mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+                    .expect("the permissions are set");
+                let result = kind
+                    .prepare(path.strip_prefix(&cwd).expect("the path has the prefix"))
+                    .await;
+                let actual_mode = std::fs::metadata(path)
+                    .expect("the metadata is read")
+                    .permissions()
+                    .mode()
+                    & 0o777;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+                    .expect("the permissions are set");
 
-                let error = result.unwrap_err();
+                let error = result.expect_err("the preparation fails");
                 assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
                 assert!(
                     error

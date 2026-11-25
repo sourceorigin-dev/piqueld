@@ -749,7 +749,7 @@ mod tests {
             workspace: Workspace {
                 root: root.to_owned(),
             },
-            config: toml::from_str(&config).unwrap(),
+            config: toml::from_str(&config).expect("the config parses"),
         }
     }
 
@@ -772,36 +772,45 @@ mod tests {
     #[test]
     fn runtime_root_is_a_private_directory() {
         use std::os::unix::fs::PermissionsExt;
-        let parent = tempfile::tempdir().unwrap();
+        let parent = tempfile::tempdir().expect("the temp dir is created");
         let root = parent.path().join("root");
         Instance::own_private_dir(root.clone())
             .expect("`Instance::own_private_dir` should succeed");
-        assert_eq!(fs::metadata(&root).unwrap().mode() & 0o777, 0o700);
-        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            fs::metadata(&root).expect("the metadata is read").mode() & 0o777,
+            0o700
+        );
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755))
+            .expect("the permissions are set");
         Instance::own_private_dir(root)
             .expect_err("`Instance::own_private_dir` should be rejected");
         let link = parent.path().join("link");
-        std::os::unix::fs::symlink(parent.path(), &link).unwrap();
+        std::os::unix::fs::symlink(parent.path(), &link).expect("the symlink is created");
         Instance::own_private_dir(link)
             .expect_err("`Instance::own_private_dir` should be rejected");
     }
 
     #[tokio::test]
     async fn config_force_only_waits_for_this_worktrees_instance() {
-        let temporary = tempfile::tempdir().unwrap();
-        let root = Instance::own_private_dir(temporary.path().join("root")).unwrap();
-        let runtime = Instance::own_private_dir(root.join("rt")).unwrap();
+        let temporary = tempfile::tempdir().expect("the temp dir is created");
+        let root = Instance::own_private_dir(temporary.path().join("root"))
+            .expect("the private dir is owned");
+        let runtime = Instance::own_private_dir(root.join("rt")).expect("the private dir is owned");
         let mine = instance_in(Path::new("/worktrees/a"), &runtime);
         let runs_from = |root: &str| {
             let workspace = Workspace { root: root.into() };
-            Instance::runs_from(&runtime, &workspace).unwrap()
+            Instance::runs_from(&runtime, &workspace)
+                .expect("the instance runs from the runtime dir")
         };
         assert!(!runs_from("/worktrees/a"));
-        let claim = mine.claim().await.unwrap();
+        let claim = mine.claim().await.expect("the claim is taken");
         assert!(runs_from("/worktrees/a"));
         assert!(!runs_from("/worktrees/b"));
         drop(claim);
-        let _claim = Supervisor::in_dir(&runtime).claim().await.unwrap();
+        let _claim = Supervisor::in_dir(&runtime)
+            .claim()
+            .await
+            .expect("the claim is taken");
         let workspace = Workspace {
             root: "/worktrees/a".into(),
         };
@@ -811,13 +820,15 @@ mod tests {
 
     #[test]
     fn migrations_and_configuration_are_sources() {
-        let root = tempfile::tempdir().unwrap();
-        fs::create_dir_all(root.path().join("crates/piqueld-store/migrations")).unwrap();
+        let root = tempfile::tempdir().expect("the temp dir is created");
+        fs::create_dir_all(root.path().join("crates/piqueld-store/migrations"))
+            .expect("the directory is created");
         let instance = instance(root.path());
         let built = SystemTime::now() + Duration::from_hours(1);
         let change = |path: &str, modified: SystemTime| {
-            let file = fs::File::create(root.path().join(path)).unwrap();
-            file.set_modified(modified).unwrap();
+            let file = fs::File::create(root.path().join(path)).expect("the file is created");
+            file.set_modified(modified)
+                .expect("the modified time is set");
         };
         assert!(!instance.sources_changed_since(built));
         change(

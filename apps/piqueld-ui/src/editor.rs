@@ -666,7 +666,9 @@ mod tests {
         draft.image = "nginx:new".into();
         draft.environment.push(("UNSAVED".into(), "value".into()));
         saved.arguments.push("saved elsewhere".into());
-        draft.patch(Section::General, &mut saved).unwrap();
+        draft
+            .patch(Section::General, &mut saved)
+            .expect("the section patches");
         assert!(saved.environment.is_empty());
         assert_eq!(
             saved.arguments,
@@ -686,14 +688,18 @@ mod tests {
         edited.cpu = "500".into();
         for section in Section::ALL {
             let (mut expected, mut taken) = (service(), service());
-            edited.patch(section, &mut expected).unwrap();
+            edited
+                .patch(section, &mut expected)
+                .expect("the section patches");
             let form = base.with_section(section, &edited);
-            form.patch(section, &mut taken).unwrap();
+            form.patch(section, &mut taken)
+                .expect("the section patches");
             assert_eq!(taken, expected, "{section:?}");
             for other in Section::ALL.into_iter().filter(|other| *other != section) {
                 let (mut untouched, mut kept) = (service(), service());
-                base.patch(other, &mut untouched).unwrap();
-                form.patch(other, &mut kept).unwrap();
+                base.patch(other, &mut untouched)
+                    .expect("the section patches");
+                form.patch(other, &mut kept).expect("the section patches");
                 assert_eq!(kept, untouched, "{section:?} changed {other:?}");
             }
         }
@@ -721,7 +727,9 @@ mod tests {
             saved.healthcheck = Some(check.clone());
             let draft = ServiceForm::from(&saved);
             saved.healthcheck = None;
-            draft.patch(Section::Health, &mut saved).unwrap();
+            draft
+                .patch(Section::Health, &mut saved)
+                .expect("the section patches");
             assert_eq!(saved.healthcheck, Some(check));
         }
     }
@@ -744,13 +752,17 @@ mod tests {
         let source = saved.source.clone();
         let mut draft = ServiceForm::from(&saved);
         draft.replicas = "3".into();
-        draft.patch(Section::General, &mut saved).unwrap();
+        draft
+            .patch(Section::General, &mut saved)
+            .expect("the section patches");
         assert_eq!(saved.source, source);
         assert_eq!(saved.replicas, 3.into());
 
         draft.build_args.clear();
         draft.target.clear();
-        draft.patch(Section::General, &mut saved).unwrap();
+        draft
+            .patch(Section::General, &mut saved)
+            .expect("the section patches");
         assert!(matches!(
             &saved.source,
             Source::Git { build: Build::Docker { args, target: None, .. }, .. } if args.is_empty()
@@ -773,7 +785,9 @@ mod tests {
         let mut draft = ServiceForm::from(&saved);
         draft.security.user = "1000:1000".into();
         draft.security.settings.read_only_root = true;
-        draft.patch(Section::Security, &mut saved).unwrap();
+        draft
+            .patch(Section::Security, &mut saved)
+            .expect("the section patches");
         assert_eq!(ServiceForm::from(&saved).security, draft.security);
         for invalid in ["nginx", "2147483648", "1000:2147483648"] {
             draft.security.user = invalid.into();
@@ -783,7 +797,9 @@ mod tests {
             );
         }
         draft.security.user.clear();
-        draft.patch(Section::Security, &mut saved).unwrap();
+        draft
+            .patch(Section::Security, &mut saved)
+            .expect("the section patches");
         assert_eq!(saved.security.user, None);
         assert!(saved.security.read_only_root);
     }

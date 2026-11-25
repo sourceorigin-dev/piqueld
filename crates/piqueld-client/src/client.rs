@@ -678,10 +678,12 @@ mod wasm_tests {
     #[wasm_bindgen_test]
     async fn oversized_timeout_is_rejected_before_fetch() {
         let error = Client::browser()
-            .with_timeout(Duration::from_millis(u64::try_from(i32::MAX).unwrap() + 1))
+            .with_timeout(Duration::from_millis(
+                u64::try_from(i32::MAX).expect("i32::MAX fits u64") + 1,
+            ))
             .system_status()
             .await
-            .unwrap_err();
+            .expect_err("the oversized timeout is rejected");
         assert!(matches!(
             error,
             ClientError::Endpoint { message } if message.contains("timeout exceeds")
@@ -706,14 +708,16 @@ mod tests {
         ] {
             for opt_in in [false, true] {
                 let mut client = Client::tcp(endpoint)
-                    .unwrap()
+                    .expect("the client builds")
                     .with_bearer("secret")
-                    .unwrap();
+                    .expect("the bearer token is valid");
                 if opt_in {
                     client = client.with_insecure_http();
                 }
-                let mut request =
-                    reqwest::Request::new(reqwest::Method::GET, url::Url::parse(endpoint).unwrap());
+                let mut request = reqwest::Request::new(
+                    reqwest::Method::GET,
+                    url::Url::parse(endpoint).expect("the url parses"),
+                );
                 let allowed = opt_in
                     || endpoint.starts_with("https:")
                     || endpoint.contains("localhost")
@@ -727,14 +731,18 @@ mod tests {
             }
         }
         let client = Client::unix("/tmp/piqueld-test.sock")
-            .unwrap()
+            .expect("the unix client builds")
             .with_bearer("secret")
-            .unwrap();
+            .expect("the bearer token is valid");
         let mut request = reqwest::Request::new(
             reqwest::Method::GET,
-            url::Url::parse("http://localhost/api/v1/auth/me").unwrap(),
+            url::Url::parse("http://localhost/api/v1/auth/me").expect("the url parses"),
         );
-        client.generated.inner.prepare(&mut request).unwrap();
+        client
+            .generated
+            .inner
+            .prepare(&mut request)
+            .expect("the directory is prepared");
         assert!(request.headers().contains_key("authorization"));
     }
 
@@ -747,7 +755,7 @@ mod tests {
                 .min_tls_version(reqwest::tls::Version::TLS_1_3)
                 .max_tls_version(reqwest::tls::Version::TLS_1_2)
         })
-        .unwrap_err();
+        .expect_err("the tls versions conflict");
         let ClientError::Configuration { source } = error else {
             panic!("client initialization must retain the reqwest error");
         };
@@ -758,7 +766,7 @@ mod tests {
     #[test]
     fn localhost_subdomains_are_pinned_to_loopback() {
         let pinned = |url: &str| {
-            Client::pinned_loopback(&url::Url::parse(url).unwrap())
+            Client::pinned_loopback(&url::Url::parse(url).expect("the url parses"))
                 .map(|(host, addresses)| (host.to_owned(), addresses.map(|a| a.to_string())))
         };
         assert_eq!(

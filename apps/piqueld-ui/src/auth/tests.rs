@@ -5,7 +5,7 @@ use piqueld_client::{
 };
 
 fn app(id: &str) -> ApplicationId {
-    ApplicationId::parse(id).unwrap()
+    ApplicationId::parse(id).expect("the application id parses")
 }
 
 fn session(principal: Principal) -> Session {
@@ -27,7 +27,9 @@ fn alice() -> Session {
 fn grants(list: &[(Permission, Scope)]) -> Grants {
     let mut grants = Grants::default();
     for (permission, scope) in list {
-        grants.grant(*permission, scope).unwrap();
+        grants
+            .grant(*permission, scope)
+            .expect("the permission is granted");
     }
     grants
 }
@@ -171,12 +173,21 @@ fn token_form_validates_lifetime_before_tailnet() {
     };
     assert_eq!(
         (days, tailnet),
-        (None, Some(TailnetBinding::parse("tag:ci").unwrap()))
+        (
+            None,
+            Some(TailnetBinding::parse("tag:ci").expect("the tailnet binding parses"))
+        )
     );
     let days_error = "Enter a positive number of days, or leave blank";
-    assert_eq!(form("-1", "not a binding").unwrap_err(), days_error);
-    assert_eq!(form("1.5", "").unwrap_err(), days_error);
-    assert_eq!(form("0", "").unwrap_err(), days_error);
+    assert_eq!(
+        form("-1", "not a binding").expect_err("the binding is invalid"),
+        days_error
+    );
+    assert_eq!(
+        form("1.5", "").expect_err("the days are invalid"),
+        days_error
+    );
+    assert_eq!(form("0", "").expect_err("the days are invalid"), days_error);
     form("30", "not a binding").expect_err("`form` should be rejected");
     let Ok(Manage::CreateToken { days, .. }) = form("30", "") else {
         panic!("a positive lifetime is valid");

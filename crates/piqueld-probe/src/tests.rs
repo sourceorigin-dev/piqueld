@@ -7,19 +7,22 @@ fn arguments(values: &[&str]) -> Vec<String> {
 
 /// Answers one connection on a free loopback port with `response`.
 fn serve(response: &'static [u8]) -> u16 {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("the listener binds");
+    let port = listener
+        .local_addr()
+        .expect("the listener has an address")
+        .port();
     thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let (mut stream, _) = listener.accept().expect("the connection is accepted");
         let mut request = Vec::new();
         let mut buffer = [0; 256];
         while !request.ends_with(b"\r\n\r\n") {
-            let read = stream.read(&mut buffer).unwrap();
+            let read = stream.read(&mut buffer).expect("the request is read");
             assert_ne!(read, 0, "the request ended early");
             request.extend_from_slice(&buffer[..read]);
         }
         for chunk in response.chunks(5) {
-            stream.write_all(chunk).unwrap();
+            stream.write_all(chunk).expect("the response is written");
         }
     });
     port
@@ -91,11 +94,20 @@ fn parse_rejects_malformed_arguments() {
 #[test]
 fn success_and_redirect_statuses_are_healthy() {
     let port = serve(b"HTTP/1.1 204 No Content\r\n\r\n");
-    assert_eq!(probe(port).check().unwrap(), 204);
+    assert_eq!(
+        probe(port).check().expect("the probe reaches the server"),
+        204
+    );
     let port = serve(b"HTTP/1.0 302 Found\r\nLocation: /\r\n\r\n");
-    assert_eq!(probe(port).check().unwrap(), 302);
+    assert_eq!(
+        probe(port).check().expect("the probe reaches the server"),
+        302
+    );
     let port = serve(b"HTTP/1.1 103 Early Hints\r\nLink: </a>\r\n\r\nHTTP/1.1 200 OK\r\n\r\n");
-    assert_eq!(probe(port).check().unwrap(), 200);
+    assert_eq!(
+        probe(port).check().expect("the probe reaches the server"),
+        200
+    );
 }
 
 #[test]
@@ -107,8 +119,11 @@ fn failures_are_unhealthy() {
     let port = serve(b"HTTP/1.1 200 OK\r\n");
     assert!(matches!(probe(port).check(), Err(ProbeError::Malformed(_))));
 
-    let silent = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let port = silent.local_addr().unwrap().port();
+    let silent = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("the listener binds");
+    let port = silent
+        .local_addr()
+        .expect("the listener has an address")
+        .port();
     assert!(matches!(probe(port).check(), Err(ProbeError::Timeout(1))));
 
     drop(silent);

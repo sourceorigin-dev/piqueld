@@ -8,9 +8,9 @@ const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
 fn environment(id: &str, name: &str, source: EnvironmentSource) -> EnvironmentView {
     EnvironmentView {
-        id: EnvironmentId::parse(id).unwrap(),
-        application_id: ApplicationId::parse("app-00000001").unwrap(),
-        name: EnvironmentName::parse(name).unwrap(),
+        id: EnvironmentId::parse(id).expect("the environment id parses"),
+        application_id: ApplicationId::parse("app-00000001").expect("the application id parses"),
+        name: EnvironmentName::parse(name).expect("the environment name parses"),
         source,
         kind: EnvironmentKind::Environment,
         sync: false,
@@ -26,7 +26,7 @@ fn environment(id: &str, name: &str, source: EnvironmentSource) -> EnvironmentVi
 
 /// An application at generation 3 with `environments`.
 fn application(environments: Vec<EnvironmentView>) -> ApplicationView {
-    let id = ApplicationId::parse("app-00000001").unwrap();
+    let id = ApplicationId::parse("app-00000001").expect("the application id parses");
     let application = ApplicationManifest {
         api_version: "piqueld.dev/v1alpha1".into(),
         kind: "Application".into(),
@@ -36,7 +36,7 @@ fn application(environments: Vec<EnvironmentView>) -> ApplicationView {
         spec: ApplicationSpec::default(),
     }
     .validate_template()
-    .unwrap()
+    .expect("the template is valid")
     .normalize(id);
     ApplicationView {
         spec_hash: application.spec_hash(),
@@ -62,12 +62,12 @@ fn names(saved: &ApplicationView) -> Vec<&str> {
 }
 
 fn branch(branch: &str, commit: Option<&str>) -> TrackedBranch {
-    TrackedBranch::new(branch.into(), commit.map(Into::into)).unwrap()
+    TrackedBranch::new(branch.into(), commit.map(Into::into)).expect("the branch is valid")
 }
 
 fn promoted(from: &str) -> EnvironmentSource {
     EnvironmentSource::Promoted(PromotedFrom {
-        environment: EnvironmentId::parse(from).unwrap(),
+        environment: EnvironmentId::parse(from).expect("the environment id parses"),
     })
 }
 

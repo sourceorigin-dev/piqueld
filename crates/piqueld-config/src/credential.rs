@@ -261,11 +261,12 @@ mod tests {
 
     #[test]
     fn relative_files_resolve_against_the_credentials_directory() {
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::write(directory.path().join("webhook"), "https://example.com/x\n").unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
+        std::fs::write(directory.path().join("webhook"), "https://example.com/x\n")
+            .expect("the file is written");
         let file = CredentialFile::resolve("webhook".into(), Some(directory.path().to_path_buf()))
-            .unwrap();
-        let credential = Credential::read("url", file).unwrap();
+            .expect("the credential resolves");
+        let credential = Credential::read("url", file).expect("the credential resolves");
         assert_eq!(credential.expose(), "https://example.com/x");
         assert_eq!(
             credential.to_string(),
@@ -279,7 +280,7 @@ mod tests {
 
     #[test]
     fn files_must_be_regular_and_inside_the_credentials_directory() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         assert!(matches!(
             CredentialFile::resolve("../webhook".into(), Some(directory.path().to_path_buf())),
             Err(CredentialError::OutsideDirectory { .. })
@@ -292,11 +293,14 @@ mod tests {
             rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
             0,
         )
-        .unwrap();
-        let error = Credential::read("url", CredentialFile::resolve(fifo, None).unwrap());
+        .expect("the fifo is created");
+        let error = Credential::read(
+            "url",
+            CredentialFile::resolve(fifo, None).expect("the credential resolves"),
+        );
         assert!(
             error
-                .unwrap_err()
+                .expect_err("the fifo cannot be read")
                 .to_string()
                 .contains("not a regular file")
         );
@@ -304,10 +308,10 @@ mod tests {
 
     #[test]
     fn unreadable_files_are_refused_without_their_contents() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(file.path(), " \n").unwrap();
+        let file = tempfile::NamedTempFile::new().expect("the temp file is created");
+        std::fs::write(file.path(), " \n").expect("the file is written");
         for path in [file.path().to_path_buf(), file.path().join("missing")] {
-            let file = CredentialFile::resolve(path, None).unwrap();
+            let file = CredentialFile::resolve(path, None).expect("the credential resolves");
             Credential::read("headers", file).expect_err("`Credential::read` should be rejected");
         }
         let inline = Credential::from("secret");

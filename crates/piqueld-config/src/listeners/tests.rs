@@ -4,8 +4,8 @@ use crate::tailscale::FakeLocalApi;
 #[test]
 fn modes_select_only_the_requested_interfaces() {
     let tailscale = vec![
-        "100.100.1.2".parse().unwrap(),
-        "fd7a:115c:a1e0::2".parse().unwrap(),
+        "100.100.1.2".parse().expect("the address parses"),
+        "fd7a:115c:a1e0::2".parse().expect("the address parses"),
     ];
     for (mode, expected) in [
         (ListenMode::Off, vec![]),
@@ -32,7 +32,7 @@ fn modes_select_only_the_requested_interfaces() {
             config.listen_addresses(tailscale.clone()),
             expected
                 .iter()
-                .map(|s| s.parse::<SocketAddr>().unwrap())
+                .map(|s| s.parse::<SocketAddr>().expect("the socket address parses"))
                 .collect::<Vec<_>>()
         );
         let unavailable = config.listen_addresses(Vec::new());
@@ -60,7 +60,7 @@ fn discovery_requires_running_state_and_valid_addresses() {
         "Running",
         r#"["100.100.1.2","fd7a:115c:a1e0::2","100.100.1.2"]"#,
     );
-    assert_eq!(parse(&valid).unwrap().len(), 2);
+    assert_eq!(parse(&valid).expect("the listeners parse").len(), 2);
     for output in [
         status("Stopped", r#"["100.100.1.2"]"#),
         r#"{"BackendState":"NeedsLogin","Self":null}"#.to_owned(),
@@ -80,22 +80,32 @@ fn discovery_requires_running_state_and_valid_addresses() {
 #[tokio::test]
 async fn discovery_reads_the_local_api_and_reports_failures() {
     let running = status("Running", r#"["100.100.1.2","fd7a:115c:a1e0::2"]"#);
-    let fake = FakeLocalApi::serve(&[("/localapi/v0/status?peers=false", 200, &running)]).unwrap();
+    let fake = FakeLocalApi::serve(&[("/localapi/v0/status?peers=false", 200, &running)])
+        .expect("the fake local api starts");
     assert_eq!(
-        Status::discover(&fake.api()).await.unwrap(),
+        Status::discover(&fake.api())
+            .await
+            .expect("the status is discovered"),
         vec![
-            "100.100.1.2".parse::<IpAddr>().unwrap(),
-            "fd7a:115c:a1e0::2".parse().unwrap()
+            "100.100.1.2".parse::<IpAddr>().expect("the address parses"),
+            "fd7a:115c:a1e0::2".parse().expect("the address parses")
         ]
     );
     let stopped = status("Stopped", "[]");
-    let fake = FakeLocalApi::serve(&[("/localapi/v0/status?peers=false", 200, &stopped)]).unwrap();
-    let error = Status::discover(&fake.api()).await.unwrap_err();
+    let fake = FakeLocalApi::serve(&[("/localapi/v0/status?peers=false", 200, &stopped)])
+        .expect("the fake local api starts");
+    let error = Status::discover(&fake.api())
+        .await
+        .expect_err("the status request fails");
     assert_eq!(error.to_string(), "Tailscale is Stopped");
     let api = LocalApi::new("/nonexistent/tailscaled.sock".into(), DISCOVERY_TIMEOUT);
     let error = format!(
         "{:#}",
-        anyhow::Error::from(Status::discover(&api).await.unwrap_err())
+        anyhow::Error::from(
+            Status::discover(&api)
+                .await
+                .expect_err("the status request fails")
+        )
     );
     assert!(error.contains("/nonexistent/tailscaled.sock"), "{error}");
 }
@@ -103,29 +113,38 @@ async fn discovery_reads_the_local_api_and_reports_failures() {
 /// A `tailscaled` that accepts but never answers is given up on.
 #[tokio::test(start_paused = true)]
 async fn discovery_timeout_stops_waiting_for_tailscaled() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     let socket = directory.path().join("tailscaled.sock");
-    let _stuck = tokio::net::UnixListener::bind(&socket).unwrap();
+    let _stuck = tokio::net::UnixListener::bind(&socket).expect("the listener binds");
     let api = LocalApi::new(socket, DISCOVERY_TIMEOUT);
     let error = format!(
         "{:#}",
-        anyhow::Error::from(Status::discover(&api).await.unwrap_err())
+        anyhow::Error::from(
+            Status::discover(&api)
+                .await
+                .expect_err("the status request fails")
+        )
     );
     assert!(error.contains("timed out after 5s"), "{error}");
 }
 
 #[tokio::test]
 async fn bind_conflict_is_fatal_and_releases_previous_listeners() {
-    let occupied = TcpListener::bind("[::1]:0").await.unwrap();
-    let port = occupied.local_addr().unwrap().port();
+    let occupied = TcpListener::bind("[::1]:0")
+        .await
+        .expect("the listener binds");
+    let port = occupied
+        .local_addr()
+        .expect("the listener has an address")
+        .port();
     let config = ServerConfig {
         listen_mode: ListenMode::Localhost,
         port,
         ..ServerConfig::default()
     };
-    let error = config.bind_tcp().await.unwrap_err();
+    let error = config.bind_tcp().await.expect_err("the tcp bind fails");
     assert!(error.to_string().contains(&format!("[::1]:{port}")));
     TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .await
-        .unwrap();
+        .expect("the listener binds");
 }

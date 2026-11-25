@@ -250,13 +250,17 @@ mod tests {
             "target/debug/build/piqueld/0123/out",
             "target/debug/build/piqueld-0123/out",
         ] {
-            let root = tempfile::tempdir().unwrap();
+            let root = tempfile::tempdir().expect("the temp dir is created");
             let out_dir = root.path().join(layout);
-            std::fs::create_dir_all(&out_dir).unwrap();
-            let nested = NestedCargo::sibling_target_dir(&out_dir, "ui").unwrap();
+            std::fs::create_dir_all(&out_dir).expect("the directory is created");
+            let nested =
+                NestedCargo::sibling_target_dir(&out_dir, "ui").expect("the target dir resolves");
             assert_eq!(
                 nested,
-                root.path().canonicalize().unwrap().join("target-ui"),
+                root.path()
+                    .canonicalize()
+                    .expect("the path canonicalizes")
+                    .join("target-ui"),
                 "{layout}"
             );
         }
@@ -265,7 +269,8 @@ mod tests {
     /// An `OUT_DIR` with no `build` directory above it has no target directory.
     #[test]
     fn rejects_an_out_dir_outside_a_build_directory() {
-        let error = NestedCargo::sibling_target_dir(Path::new("/"), "ui").unwrap_err();
+        let error = NestedCargo::sibling_target_dir(Path::new("/"), "ui")
+            .expect_err("the root has no sibling target dir");
         assert!(matches!(error, BuildError::OutDirLayout(_)), "{error:?}");
     }
 

@@ -238,7 +238,7 @@ mod tests {
         }
         assert_eq!(
             OtlpEndpoint::try_from("http://collector:4317/".to_owned())
-                .unwrap()
+                .expect("the endpoint parses")
                 .to_string(),
             "http://collector:4317"
         );
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn headers_come_from_a_file_and_need_an_endpoint() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let file = tempfile::NamedTempFile::new().expect("the temp file is created");
         let path = file.path().display().to_string();
         let source = |endpoint: &str| format!("[telemetry]\n{endpoint}headers_file = '{path}'");
         let endpoint = "endpoint = 'unix:///run/otel/otlp.sock'\n";
@@ -254,25 +254,42 @@ mod tests {
             file.path(),
             "authorization: Bearer secret\n\nx-scope-orgid: piqueld\n",
         )
-        .unwrap();
-        let config = crate::DaemonConfig::from_toml(&source(endpoint)).unwrap();
+        .expect("the headers file is written");
+        let config = crate::DaemonConfig::from_toml(&source(endpoint)).expect("the config parses");
         assert_eq!(
-            config.telemetry.headers.unwrap().to_string(),
+            config
+                .telemetry
+                .headers
+                .expect("the headers are set")
+                .to_string(),
             format!("from {path}")
         );
         crate::DaemonConfig::from_toml(&source(""))
             .expect_err("`crate::DaemonConfig::from_toml` should be rejected");
-        std::fs::write(file.path(), "authorization Bearer secret\n").unwrap();
-        let error = crate::DaemonConfig::from_toml(&source(endpoint)).unwrap_err();
+        std::fs::write(file.path(), "authorization Bearer secret\n").expect("the file is written");
+        let error =
+            crate::DaemonConfig::from_toml(&source(endpoint)).expect_err("the config is invalid");
         assert!(!error.to_string().contains("secret"), "{error}");
     }
 
     #[test]
     fn headers_are_ascii_name_value_lines() {
-        let headers =
-            Headers::parse("Authorization: Bearer token\n\nx-scope-orgid:piqueld\n").unwrap();
-        assert_eq!(headers.0.get("authorization").unwrap(), "Bearer token");
-        assert_eq!(headers.0.get("x-scope-orgid").unwrap(), "piqueld");
+        let headers = Headers::parse("Authorization: Bearer token\n\nx-scope-orgid:piqueld\n")
+            .expect("the headers parse");
+        assert_eq!(
+            headers
+                .0
+                .get("authorization")
+                .expect("the header is present"),
+            "Bearer token"
+        );
+        assert_eq!(
+            headers
+                .0
+                .get("x-scope-orgid")
+                .expect("the header is present"),
+            "piqueld"
+        );
         for invalid in [
             "no separator",
             "bad name: x",

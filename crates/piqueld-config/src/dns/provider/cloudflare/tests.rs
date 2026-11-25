@@ -23,7 +23,7 @@ async fn zones_follow_pages_and_records_round_trip() {
     ]).await;
     let provider = provider(recorded.url.clone());
     let http = reqwest::Client::new();
-    let zones = provider.zones(&http).await.unwrap();
+    let zones = provider.zones(&http).await.expect("the zones are listed");
     assert_eq!(
         zones
             .iter()
@@ -40,9 +40,12 @@ async fn zones_follow_pages_and_records_round_trip() {
             &Record::Txt("v".into()),
         )
         .await
-        .unwrap();
+        .expect("the record is written");
     assert_eq!(id, RecordId("r1".into()));
-    provider.delete_record(&http, &zones[0], &id).await.unwrap();
+    provider
+        .delete_record(&http, &zones[0], &id)
+        .await
+        .expect("the record is deleted");
     let requests = recorded.requests().await;
     assert!(
         requests
@@ -71,21 +74,24 @@ async fn records_follow_pages_and_upserts_create_or_replace() {
     let provider = provider(recorded.url.clone());
     let http = reqwest::Client::new();
     let zone = Zone {
-        name: Hostname::parse("piquel.fr").unwrap(),
+        name: Hostname::parse("piquel.fr").expect("the hostname parses"),
         id: "z1".into(),
     };
     let found = provider
         .records(&http, &zone, "www.piquel.fr")
         .await
-        .unwrap();
-    let tunnel = Hostname::parse("t.cfargotunnel.com").unwrap();
+        .expect("the records are listed");
+    let tunnel = Hostname::parse("t.cfargotunnel.com").expect("the hostname parses");
     assert_eq!(
         found
             .iter()
             .map(|f| (f.id.0.as_str(), f.record.clone()))
             .collect::<Vec<_>>(),
         [
-            ("r1", Record::A("192.0.2.1".parse().unwrap())),
+            (
+                "r1",
+                Record::A("192.0.2.1".parse().expect("the address parses"))
+            ),
             (
                 "r3",
                 Record::Cname {
@@ -102,10 +108,10 @@ async fn records_follow_pages_and_upserts_create_or_replace() {
             &zone,
             "www.piquel.fr",
             Some(&found[0].id),
-            &Record::Aaaa("2001:db8::1".parse().unwrap()),
+            &Record::Aaaa("2001:db8::1".parse().expect("the address parses")),
         )
         .await
-        .unwrap();
+        .expect("the record is updated");
     assert_eq!(replaced, RecordId("r1".into()));
     let created = provider
         .upsert(
@@ -119,7 +125,7 @@ async fn records_follow_pages_and_upserts_create_or_replace() {
             },
         )
         .await
-        .unwrap();
+        .expect("the record is written");
     assert_eq!(created, RecordId("r5".into()));
     let requests = recorded.requests().await;
     assert!(requests[0].path.starts_with(LIST));
@@ -148,7 +154,7 @@ async fn discovery_is_reused_for_an_hour_and_failures_back_off() {
         provider(working.url.clone()).into(),
         provider(failing.url.clone()).into(),
     ])
-    .unwrap();
+    .expect("the providers are valid");
     let calls = async || {
         (
             working.requests().await.len(),
@@ -188,20 +194,23 @@ async fn lists_stop_at_unrequested_pages_and_large_bodies() {
     ]).await;
     let provider = provider(recorded.url.clone());
     let http = reqwest::Client::new();
-    let error = provider.zones(&http).await.unwrap_err();
+    let error = provider
+        .zones(&http)
+        .await
+        .expect_err("the zone listing fails");
     assert!(error.to_string().contains("list zones"), "{error}");
     assert!(matches!(
         std::error::Error::source(&error).and_then(|source| source.downcast_ref()),
         Some(ApiError::Pagination(2))
     ));
     let zone = Zone {
-        name: Hostname::parse("piquel.fr").unwrap(),
+        name: Hostname::parse("piquel.fr").expect("the hostname parses"),
         id: "z1".into(),
     };
     let error = provider
         .records(&http, &zone, "piquel.fr")
         .await
-        .unwrap_err();
+        .expect_err("the record listing fails");
     assert!(matches!(
         std::error::Error::source(&error).and_then(|source| source.downcast_ref()),
         Some(ApiError::TooLarge(_))
@@ -217,7 +226,7 @@ async fn a_last_page_that_was_not_asked_for_fails() {
     let error = provider(recorded.url.clone())
         .zones(&reqwest::Client::new())
         .await
-        .unwrap_err();
+        .expect_err("the zone listing fails");
     assert!(matches!(
         std::error::Error::source(&error).and_then(|source| source.downcast_ref()),
         Some(ApiError::Pagination(1))
@@ -229,7 +238,7 @@ async fn api_errors_name_the_provider_and_zone_but_not_the_token() {
     let recorded = Recorded::serve(vec![(Method::POST, "/zones/z1/dns_records", 403,
         r#"{"success":false,"errors":[{"code":10000,"message":"Authentication error"}],"result":null}"#)]).await;
     let zone = Zone {
-        name: Hostname::parse("piquel.fr").unwrap(),
+        name: Hostname::parse("piquel.fr").expect("the hostname parses"),
         id: "z1".into(),
     };
     let error = provider(recorded.url.clone())
@@ -241,7 +250,7 @@ async fn api_errors_name_the_provider_and_zone_but_not_the_token() {
             &Record::Txt("v".into()),
         )
         .await
-        .unwrap_err();
+        .expect_err("the record write fails");
     let message = format!("{:#}", anyhow::Error::from(error));
     assert!(
         message.starts_with("cloudflare write record in zone piquel.fr: HTTP 403"),

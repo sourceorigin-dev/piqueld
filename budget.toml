@@ -5,8 +5,8 @@
 piquelctl = 24
 piqueld = 65
 piqueld-build = 1
-piqueld-client = 15
-piqueld-config = 4
+piqueld-client = 17
+piqueld-config = 6
 piqueld-core = 19
 piqueld-docker = 10
 piqueld-probe = 2
