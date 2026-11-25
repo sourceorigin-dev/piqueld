@@ -11,8 +11,6 @@ fn serve(response: &'static [u8]) -> u16 {
     let port = listener.local_addr().unwrap().port();
     thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        // Read the whole request: closing with unread data resets the
-        // connection, which may discard the response.
         let mut request = Vec::new();
         let mut buffer = [0; 256];
         while !request.ends_with(b"\r\n\r\n") {
@@ -20,7 +18,6 @@ fn serve(response: &'static [u8]) -> u16 {
             assert_ne!(read, 0, "the request ended early");
             request.extend_from_slice(&buffer[..read]);
         }
-        // Split writes exercise reading the status line in pieces.
         for chunk in response.chunks(5) {
             stream.write_all(chunk).unwrap();
         }
@@ -107,11 +104,9 @@ fn failures_are_unhealthy() {
     assert!(matches!(probe(port).check(), Err(ProbeError::Status(503))));
     let port = serve(b"SSH-2.0-OpenSSH\r\n");
     assert!(matches!(probe(port).check(), Err(ProbeError::Malformed(_))));
-    // A head cut off before its blank line is not a response.
     let port = serve(b"HTTP/1.1 200 OK\r\n");
     assert!(matches!(probe(port).check(), Err(ProbeError::Malformed(_))));
 
-    // A listener that never answers runs into the timeout.
     let silent = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let port = silent.local_addr().unwrap().port();
     assert!(matches!(probe(port).check(), Err(ProbeError::Timeout(1))));

@@ -181,7 +181,6 @@ impl HttpProbe {
         stream
             .set_write_timeout(Some(remaining()?))
             .and_then(|()| {
-                // One write, so the request leaves in as few segments as possible.
                 let request = format!(
                     "GET {} HTTP/1.1\r\nHost: {address}\r\nUser-Agent: piqueld-probe\r\nConnection: close\r\n\r\n",
                     self.path
@@ -190,8 +189,6 @@ impl HttpProbe {
             })
             .map_err(ProbeError::Exchange)?;
 
-        // Interim 1xx responses precede the final one; skip their heads. Only
-        // a complete head counts, so a truncated response is never healthy.
         let mut response = Vec::new();
         loop {
             let end = response
