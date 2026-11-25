@@ -15,6 +15,15 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+/// Longest preparing an operation's sources and images may take.
+const PREPARE_TIMEOUT: Duration = Duration::from_mins(5);
+/// [`RetryPolicy::default`]'s delay before the first retry.
+const DEFAULT_INITIAL_DELAY: Duration = Duration::from_millis(100);
+/// [`RetryPolicy::default`]'s longest delay between retries.
+const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(2);
+/// [`RetryPolicy::default`]'s longest wait for an environment to converge.
+const DEFAULT_CONVERGENCE_TIMEOUT: Duration = Duration::from_mins(2);
+
 /// Executes durable operations against `Docker` and `SQLite`.
 pub struct Controller<D> {
     /// Docker client with concurrency limits shared by API observation and preview.
@@ -55,7 +64,7 @@ impl<D> Controller<D> {
                 std::num::NonZeroU8::MIN,
             )),
             mutations: Arc::default(),
-            prepare_timeout: Duration::from_mins(5),
+            prepare_timeout: PREPARE_TIMEOUT,
             store,
             sources,
             ingress: None,
@@ -207,9 +216,9 @@ impl Default for RetryPolicy {
     fn default() -> Self {
         Self {
             attempts: 4,
-            initial_delay: Duration::from_millis(100),
-            max_delay: Duration::from_secs(2),
-            convergence_timeout: Duration::from_mins(2),
+            initial_delay: DEFAULT_INITIAL_DELAY,
+            max_delay: DEFAULT_MAX_DELAY,
+            convergence_timeout: DEFAULT_CONVERGENCE_TIMEOUT,
         }
     }
 }

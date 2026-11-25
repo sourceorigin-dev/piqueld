@@ -32,6 +32,8 @@ use tokio_util::sync::CancellationToken;
 const REFRESH_INTERVAL: Duration = Duration::from_mins(1);
 /// tailscaled normally opens its socket well within a second.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Pause between checks for tailscaled's socket during startup.
+const STARTUP_POLL: Duration = Duration::from_millis(100);
 /// How long after tailscaled exits a shutdown still explains the exit.
 const SHUTDOWN_RACE: Duration = Duration::from_secs(1);
 
@@ -226,7 +228,7 @@ impl Node {
                 "tailscaled did not open {} within {STARTUP_TIMEOUT:?}",
                 socket.display()
             );
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(STARTUP_POLL).await;
         }
         Ok(daemon)
     }

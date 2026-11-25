@@ -62,6 +62,8 @@ use tokio_util::sync::CancellationToken;
 
 /// Passes run at least this often, repairing drift.
 const REPAIR: Duration = Duration::from_mins(5);
+/// How often [`Ingress::run_records`] checks which records are due.
+const RECORDS_PERIOD: Duration = Duration::from_secs(10);
 /// Retries of a hostname whose records failed to change.
 const RETRY: BackoffPolicy = BackoffPolicy {
     first_ms: 60 * 1000,
@@ -244,7 +246,7 @@ impl Ingress {
         if !dns.manages_any_records() {
             return;
         }
-        let mut ticks = Ticker::new(Duration::from_secs(10));
+        let mut ticks = Ticker::new(RECORDS_PERIOD);
         let mut schedule = Schedule::default();
         while ticks.tick(cancellation).await {
             if cancellation

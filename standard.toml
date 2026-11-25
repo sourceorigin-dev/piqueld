@@ -94,20 +94,6 @@ paths = [
   "crates/piqueld-store/src/sync/mod.rs",
 ]
 
-[deviations.inline-limits]
-reason = "56 findings in 32 files, fixed in a follow-up"
-paths = [
-  "apps/piqueld/src/ingress/certificates.rs",
-  "apps/piqueld/src/ingress/gateway.rs",
-  "apps/piqueld/src/ingress/mod.rs",
-  "apps/piqueld/src/ingress/records/mod.rs",
-  "apps/piqueld/src/ingress/traffic.rs",
-  "apps/piqueld/src/reconcile/coordinator.rs",
-  "apps/piqueld/src/reconcile/mod.rs",
-  "apps/piqueld/src/tailnet/node.rs",
-  "apps/piqueld/src/telemetry/destination.rs",
-]
-
 [deviations.recipes]
 reason = "rule challenge: `just validate` checks without modifying files, as AGENTS.md and docs/dev/validation.md say, so it runs `fmt-check` instead of `fmt`"
 paths = ["justfile"]
