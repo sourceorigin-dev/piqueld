@@ -106,6 +106,33 @@ A promoted environment can also
 [deploy an earlier release](environments.md#deploy-an-earlier-release),
 rendered with its current variables and secrets instead.
 
+## Stop a rollout in progress
+
+To abandon a deployment while it rolls out, restore the environment's last
+successful deployment. The restore stops the rollout and returns the
+environment to that deployment.
+
+- **In the dashboard**, open the deployment tagged **Last successful** on the
+  environment's **Deployments** tab, and select **Restore**.
+- **With `piquelctl`**, restore the deployment `env history` marks
+  `last successful`:
+
+  ```console
+  piquelctl env restore hello production <last-successful-deployment-id>
+  ```
+
+- **With the API**, post its ID to the
+  [restore endpoint](../reference/api.md#restoring-a-deployment).
+
+There is no separate cancel. Any new deployment, restore or promotion of the
+environment supersedes the rollout in progress: piqueld stops its work, and
+its history records it as `superseded`.
+
+When no deployment has succeeded yet, there is nothing to restore.
+[Stop](environments.md#stop-an-environment) the environment instead: the
+deployment in progress carries on with no replicas, so its services scale to
+zero.
+
 ## Roll back failed rollouts automatically
 
 A rollout fails when Docker pauses it because a new container exited, or
