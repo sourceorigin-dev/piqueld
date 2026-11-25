@@ -96,6 +96,28 @@ recipes they run, so change it together with `ci.yml`. A filter added to
 `just validate` builds the whole workspace: run it when a change is
 workspace-wide, or when asked. CI owns the full suite.
 
+## Pull request checks
+
+The *PR* workflow (`.github/workflows/pr.yml`) runs the engineering
+standard's checks of the pull request itself, beside `ci`:
+
+- The title is a Conventional Commit whose scope, if any, is one of
+  `scopes` under `[pr-checks]` in `standard.toml`.
+- The description has every heading of the pull request template, each filled
+  in, and a pull request that adds a workspace dependency has a
+  `## Dependencies` section saying why.
+- No description or commit has a `Co-authored-by` trailer.
+- A `fix` changes a test, or carries the `visual` label and images in its
+  description.
+- A change to `standard.toml`, `clippy.toml`, `deny.toml` or
+  `.cargo/config.toml`, or a raised budget in `budget.toml`, waits for the
+  owner's `approved-exception` label, added after the latest push.
+
+They run from `main`, on `pull_request_target`, so a pull request is checked
+by the checks and settings of the branch it merges into. The
+[sourceorigin-standard README](https://crates.io/crates/sourceorigin-standard)
+describes each check.
+
 ## Release checks
 
 The [release checks workflow](https://github.com/sourceorigin-dev/piqueld/blob/main/.github/workflows/release-checks.yml)

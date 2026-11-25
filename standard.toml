@@ -170,3 +170,17 @@ paths = [".config/nextest.toml"]
 [deviations.workspace-dependencies]
 reason = "rule challenge: `piqueld-generated` isn't published, so the crates that use it as a development dependency publish without it; and the daemon's tests depend on its own crate with the `fake-docker` feature"
 paths = ["Cargo.toml", "apps/piqueld/Cargo.toml"]
+
+# The pull request checks' settings, which they read at a pull request's base.
+[pr-checks]
+# The title scopes recent history uses; a title may also take none.
+scopes = [
+  "accounts", "agents", "api", "auth", "build", "builds", "ci", "cli",
+  "client", "config", "core", "daemon", "deploy", "deps", "dev", "dns",
+  "docker", "docs", "git", "ingress", "just", "lints", "logs", "manifest",
+  "nix", "notifications", "observability", "packaging", "piquelctl",
+  "playwright", "previews", "probe", "reconcile", "secrets", "server", "site",
+  "standard", "store", "tailnet", "tests", "ui", "user", "web", "xtask",
+]
+issue-prefix = "PQD-"
+approvers = ["PiquelChips"]

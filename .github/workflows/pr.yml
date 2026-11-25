@@ -1,0 +1,26 @@
+# The engineering standard's checks of the pull request itself: its title,
+# description, commits and exceptions. On `pull_request_target`, GitHub runs
+# this file and its checks from `main`, and no step runs the pull request's
+# code. Their settings are `[pr-checks]` in standard.toml.
+
+name: PR
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  standard:
+    uses: sourceorigin-dev/standard/.github/workflows/pr-checks.yml@6b0f54830796ab2c2487a269cd82d6fd22a4ead4 # v0.1.0
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
