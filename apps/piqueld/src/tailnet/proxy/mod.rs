@@ -89,6 +89,10 @@ impl ProxyListener {
                 match checked.await {
                     Ok(Some(client)) => {
                         // A closed queue means the server is shutting down.
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "a closed queue means the server is shutting down"
+                        )]
                         let _ = connections.send((stream, client)).await;
                     }
                     Ok(None) => {}
@@ -207,18 +211,17 @@ impl ProxyListener {
     /// word of the address in native byte order, then the port, all in
     /// uppercase hex.
     fn proc_address(address: SocketAddr) -> String {
-        use std::fmt::Write as _;
         let octets = match address.ip() {
             IpAddr::V4(ip) => ip.octets().to_vec(),
             IpAddr::V6(ip) => ip.octets().to_vec(),
         };
-        let mut text = String::new();
-        // Writing to a `String` cannot fail.
-        for word in octets.as_chunks::<4>().0 {
-            let _ = write!(text, "{:08X}", u32::from_ne_bytes(*word));
-        }
-        let _ = write!(text, ":{:04X}", address.port());
-        text
+        let words: Vec<u8> = octets
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|word| u32::from_ne_bytes(*word).to_be_bytes())
+            .collect();
+        format!("{}:{:04X}", hex::encode_upper(words), address.port())
     }
 }
 

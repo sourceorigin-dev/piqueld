@@ -41,6 +41,10 @@ impl LogPreferences {
             let current = value.get();
             if let Some(storage) = &storage {
                 // Browser privacy settings may disable preference persistence.
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "storage may be full or blocked, and the setting then lasts only this session"
+                )]
                 let _ = storage.set_item(&key, &current.to_string());
             }
         });

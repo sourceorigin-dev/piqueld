@@ -1,7 +1,6 @@
 //! Terminal emulation for dashboard exec sessions: parsing command lines,
 //! encoding keystrokes, and rendering the screen as HTML.
 use piqueld_client::exec::{ExecCommand, ExecCommandError, TerminalSize};
-use std::fmt::Write as _;
 use vt100::Color;
 
 /// Lines of history kept above the screen.
@@ -352,7 +351,7 @@ fn push_run(html: &mut String, (classes, text): &(String, String)) {
     if classes.is_empty() {
         html.push_str(text);
     } else {
-        let _ = write!(html, r#"<span class="{classes}">{text}</span>"#);
+        html.extend([r#"<span class=""#, classes, r#"">"#, text, "</span>"]);
     }
 }
 
@@ -586,7 +585,7 @@ mod tests {
     #[test]
     fn output_renders_as_escaped_styled_html() {
         let mut terminal = Terminal::new(SIZE, true);
-        let _ = terminal.write(b"\x1b[31m<a>\x1b[0m&\x1b[?25l");
+        drop(terminal.write(b"\x1b[31m<a>\x1b[0m&\x1b[?25l"));
         assert_eq!(
             terminal.html(),
             "<span class=\"tf-1\">&lt;a&gt;</span>&amp;      \n          \n"
@@ -597,7 +596,7 @@ mod tests {
     fn colors_beyond_the_named_ones_show_as_the_nearest() {
         let mut terminal = Terminal::new(SIZE, true);
         // 256-color red, RGB green on default, then the cursor in inverse video.
-        let _ = terminal.write(b"\x1b[38;5;196ma\x1b[38;2;0;250;10mb\x1b[0m");
+        drop(terminal.write(b"\x1b[38;5;196ma\x1b[38;2;0;250;10mb\x1b[0m"));
         assert_eq!(
             terminal.html().lines().next().unwrap(),
             r#"<span class="tf-9">a</span><span class="tf-10">b</span><span class="tf-bg tb-fg"> </span>       "#
@@ -607,7 +606,7 @@ mod tests {
     #[test]
     fn output_without_a_terminal_returns_to_the_line_start() {
         let mut terminal = Terminal::new(SIZE, false);
-        let _ = terminal.write(b"ab\ncd");
+        drop(terminal.write(b"ab\ncd"));
         assert!(terminal.html().starts_with("ab        \ncd"));
     }
 
@@ -625,7 +624,7 @@ mod tests {
     fn pastes_are_bracketed_on_request() {
         let mut terminal = Terminal::new(SIZE, true);
         assert_eq!(terminal.paste("a\nb"), b"a\rb");
-        let _ = terminal.write(b"\x1b[?2004h");
+        drop(terminal.write(b"\x1b[?2004h"));
         assert_eq!(terminal.paste("a"), b"\x1b[200~a\x1b[201~");
         // A pasted end marker would run the rest as typed commands.
         assert_eq!(

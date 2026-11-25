@@ -1080,7 +1080,9 @@ mod tests {
         let mut wait = Wait::new(Quiet);
         let started = time::Instant::now();
         // Cut short, as a wait that checks every second cuts a longer pause.
-        let _ = time::timeout(POLL_INTERVAL / 2, wait.pause()).await;
+        time::timeout(POLL_INTERVAL / 2, wait.pause())
+            .await
+            .expect_err("the pause outlasts the timeout");
         wait.resume().await;
         let paused = started.elapsed();
         assert!(paused >= POLL_INTERVAL, "{paused:?}");

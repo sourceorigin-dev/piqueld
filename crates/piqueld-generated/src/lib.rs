@@ -4,7 +4,6 @@
 //! and render the documentation's reference pages with [`Page`].
 
 use std::{
-    fmt::Write as _,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -138,19 +137,35 @@ impl Page {
 
     /// Adds a heading of `level` (2 for `##`).
     pub fn heading(&mut self, level: usize, text: &str) {
-        let _ = write!(self.text, "\n{} {text}\n", "#".repeat(level));
+        self.text.extend([
+            "
+",
+            &"#".repeat(level),
+            " ",
+            text,
+            "
+",
+        ]);
         self.in_list = false;
     }
 
     /// Adds doc-comment or help `text` as paragraphs, see [`Self::prose`].
     pub fn paragraphs(&mut self, text: &str) {
-        let _ = write!(self.text, "\n{}\n", Self::prose(text));
+        self.text.extend(["\n", &Self::prose(text), "\n"]);
         self.in_list = false;
     }
 
     /// Adds `text` verbatim in a `text` code block.
     pub fn code(&mut self, text: &str) {
-        let _ = write!(self.text, "\n```text\n{}\n```\n", text.trim_end());
+        self.text.extend([
+            "
+```text
+",
+            text.trim_end(),
+            "
+```
+",
+        ]);
         self.in_list = false;
     }
 
@@ -162,12 +177,13 @@ impl Page {
             self.text.push('\n');
         }
         let indent = "  ".repeat(depth);
-        let _ = write!(self.text, "{indent}- ");
+        self.text.extend([indent.as_str(), "- "]);
         for (index, line) in text.lines().enumerate() {
             if index > 0 && !line.is_empty() {
-                let _ = write!(self.text, "{indent}  ");
+                self.text.extend([indent.as_str(), "  "]);
             }
-            let _ = writeln!(self.text, "{line}");
+            self.text.push_str(line);
+            self.text.push('\n');
         }
         self.in_list = true;
     }

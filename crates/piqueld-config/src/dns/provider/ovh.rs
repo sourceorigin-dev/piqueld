@@ -13,7 +13,6 @@ use reqwest::Method;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::{
-    fmt::Write as _,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -154,13 +153,7 @@ impl Ovh {
             self.application_secret.expose(),
             self.consumer_key.expose()
         );
-        openssl::sha::sha1(payload.as_bytes()).iter().fold(
-            String::from("$1$"),
-            |mut signature, byte| {
-                let _ = write!(signature, "{byte:02x}");
-                signature
-            },
-        )
+        format!("$1${}", hex::encode(openssl::sha::sha1(payload.as_bytes())))
     }
 
     /// The API's current time, read from `/auth/time` at most once per

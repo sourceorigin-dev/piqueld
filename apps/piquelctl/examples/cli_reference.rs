@@ -6,7 +6,6 @@
 
 use clap::{Arg, ArgAction, Command};
 use piqueld_generated::{ArtifactError, Artifacts, Page};
-use std::fmt::Write as _;
 
 /// The page's introduction, after its title.
 const INTRO: &str = "\
@@ -124,7 +123,7 @@ impl CliReference {
             .map(|value| format!("`{}`", value.to_string_lossy()))
             .collect();
         if takes_values && !defaults.is_empty() {
-            let _ = write!(text, " Default: {}.", defaults.join(", "));
+            text.extend([" Default: ", &defaults.join(", "), "."]);
         }
         let values: Vec<_> = argument
             .get_possible_values()
@@ -139,7 +138,7 @@ impl CliReference {
                 .iter()
                 .map(|value| format!("`{}`", value.get_name()))
                 .collect();
-            let _ = write!(text, " Values: {}.", names.join(", "));
+            text.extend([" Values: ", &names.join(", "), "."]);
         }
         self.page.item(0, &text);
         if takes_values && values.iter().any(|value| value.get_help().is_some()) {

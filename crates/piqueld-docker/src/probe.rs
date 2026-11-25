@@ -11,7 +11,7 @@ use piqueld_core::{
     resource::{INSTANCE_LABEL, MANAGED_LABEL},
 };
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, fmt::Write as _, sync::LazyLock};
+use std::{collections::BTreeMap, sync::LazyLock};
 
 /// The probe the build script compiled for the daemon's architecture.
 const BINARY: &[u8] = include_bytes!(env!("PIQUELD_PROBE_BINARY"));
@@ -35,16 +35,12 @@ impl HealthProbe {
     /// 64 characters, too long to spell out within Swarm's name limit.
     fn name(instance: &str) -> String {
         static BINARY_DIGEST: LazyLock<[u8; 32]> = LazyLock::new(|| Sha256::digest(BINARY).into());
-        Sha256::new()
+        let digest = Sha256::new()
             .chain_update(instance)
             .chain_update([0])
             .chain_update(*BINARY_DIGEST)
-            .finalize()[..8]
-            .iter()
-            .fold(String::from("piqueld-health-probe-"), |mut name, byte| {
-                let _ = write!(name, "{byte:02x}");
-                name
-            })
+            .finalize();
+        format!("piqueld-health-probe-{}", hex::encode(&digest[..8]))
     }
 
     /// The reference mounting `instance`'s probe config `id` at the

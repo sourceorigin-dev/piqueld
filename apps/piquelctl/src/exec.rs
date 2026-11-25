@@ -197,6 +197,10 @@ fn read_stdin() -> mpsc::Receiver<std::io::Result<Vec<u8>>> {
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
                 Err(error) => {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the receiver is gone once the session ended, and nobody is left to tell"
+                    )]
                     let _ = sender.blocking_send(Err(error));
                     return;
                 }

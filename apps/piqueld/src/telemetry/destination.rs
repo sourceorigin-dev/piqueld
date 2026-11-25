@@ -452,6 +452,10 @@ impl StaleSocket {
         match *since {
             Some((first, at)) if first == inode => {
                 if at.elapsed() >= Self::AFTER {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the socket may already be gone, and a stale one is retried on the next sweep"
+                    )]
                     let _ = rustix::fs::unlinkat(directory, socket, rustix::fs::AtFlags::empty());
                     *since = None;
                 }

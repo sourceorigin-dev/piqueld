@@ -146,12 +146,20 @@ pub(super) async fn exec(
             };
             // Closing also sends the reply to a client's Close. It is bounded
             // so a client that stopped reading cannot hold the connection.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a client that stopped reading cannot be told, and the bound below ends the wait"
+            )]
             let finish = async {
                 if let Some(last) = last {
                     let _ = writer.send(Message::Binary(last.encode().into())).await;
                 }
                 let _ = writer.close().await;
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the close is best effort; the connection ends either way"
+            )]
             let _ = tokio::time::timeout(timing.close, finish).await;
         }))
 }

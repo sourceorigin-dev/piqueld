@@ -168,7 +168,7 @@ impl Harness {
 
     /// Forgets the changes made at the provider so far.
     fn forget_changes(&self) {
-        let _ = self.provider.changes();
+        drop(self.provider.changes());
     }
 
     /// Changes the address of `host` by hand, as drift piqueld must notice.

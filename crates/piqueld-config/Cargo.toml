@@ -19,6 +19,7 @@ testing = []
 
 [dependencies]
 anyhow.workspace = true
+hex.workspace = true
 hickory-resolver.workspace = true
 http-body-util.workspace = true
 hyper.workspace = true

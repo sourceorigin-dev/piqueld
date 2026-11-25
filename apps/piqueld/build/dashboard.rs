@@ -279,12 +279,7 @@ fn write_hashed(
 /// Short content digest for asset names: the first 8 bytes of SHA-256 in hex.
 #[cfg(feature = "embedded-ui")]
 fn digest(contents: &[u8]) -> String {
-    Sha256::digest(contents)[..8]
-        .iter()
-        .fold(String::with_capacity(16), |mut hex, byte| {
-            let _ = write!(hex, "{byte:02x}");
-            hex
-        })
+    hex::encode(&Sha256::digest(contents)[..8])
 }
 
 /// Collects every regular file below `directory` in deterministic order.

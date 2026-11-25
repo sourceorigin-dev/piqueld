@@ -58,6 +58,7 @@ axum = { version = "0.8.4", default-features = false, features = ["json", "query
 base64 = "0.22.1"
 getrandom = "0.3.4"
 # DNS-01: authoritative TXT propagation checks without a TLS stack.
+hex = "0.4.3"
 hickory-resolver = { version = "0.26.3", default-features = false, features = ["system-config", "tokio"] }
 # ACME on ring, matching reqwest's rustls provider; rcgen generates keys and CSRs.
 instant-acme = { version = "0.8.5", default-features = false, features = ["hyper-rustls", "rcgen", "ring"] }
@@ -161,6 +162,7 @@ todo = "warn"
 unimplemented = "warn"
 unused_result_ok = "warn"
 unreachable = "warn"
+let_underscore_must_use = "warn"
 dbg_macro = "warn"
 # Every exception names its lint with `#[expect]` and says why.
 allow_attributes = "warn"

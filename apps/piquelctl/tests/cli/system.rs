@@ -97,6 +97,10 @@ fn doctor_reports_the_connection_when_the_daemon_times_out() {
     // test drops `release`, or for `READ_TIMEOUT` if the CLI never does.
     let (release, pending) = mpsc::channel::<()>();
     let server = start_server(true, 1, move |_| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the reply is only held back until the CLI gives up or the test releases it"
+        )]
         let _ = pending.recv_timeout(READ_TIMEOUT);
         Reply::json(json!({"checks": []}))
     });
