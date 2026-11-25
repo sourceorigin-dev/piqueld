@@ -244,23 +244,15 @@ impl Store {
     }
 
     /// Recovers from a lost master key by discarding every stored value, then
-    /// moving the old key aside; the next value write generates a new key.
-    /// The key is lost when it is missing or has the wrong length (see
-    /// [`KeyFailure::lost`]) while something is encrypted, or decrypts
-    /// neither the stored verifier nor any stored value or webhook secret. A
-    /// key that decrypts the verifier, or that nothing encrypted needs, is
-    /// [`StoreError::SecretKeyUsable`]; one that decrypts a stored value or
-    /// webhook secret but not the verifier is [`KeyFailure::VerifierCorrupt`];
-    /// other failures, such as I/O errors or a key that is not private, are
-    /// returned too, all without discarding anything. Repeating it, also after
-    /// a crash, never creates a key.
-    /// The author's actor needs `system:operate` and a recent passkey sign-in
-    /// (see [`crate::Actor::require_fresh`]), checked in the recovering
-    /// transaction, which also records the request's discard, even if
-    /// moving the key aside then fails.
+    /// moving the old key aside; the next value write generates a new key. The key
+    /// is lost when it is missing or has the wrong length (see
+    /// [`KeyFailure::lost`]) while something is encrypted, or decrypts nothing
+    /// stored. A usable key is [`StoreError::SecretKeyUsable`]; one decrypting a
+    /// value but not the verifier is [`KeyFailure::VerifierCorrupt`]. The author's
+    /// actor needs `system:operate` and a recent passkey sign-in (see
+    /// [`crate::Actor::require_fresh`]), checked in the transaction.
     /// # Errors
-    /// Returns [`StoreError::SecretKeyUsable`] for a usable key,
-    /// [`StoreError::SecretSource`] for a key that is not lost, or persistence errors.
+    /// Returns [`StoreError::SecretKeyUsable`] for a usable key or persistence errors.
     pub async fn recover_secret_key(
         &self,
         author: impl Into<crate::Author<'_>>,

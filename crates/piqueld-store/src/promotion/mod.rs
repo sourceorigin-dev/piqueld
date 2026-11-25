@@ -447,18 +447,15 @@ impl Store {
         Ok(())
     }
 
-    /// Accepts `promotion` in `tx`. Everything checked before acceptance is
-    /// checked again here, where nothing can change underneath: the target
-    /// still promotes from the source, and the source deployment is still
-    /// current and succeeded. Then it starts a deployment, renders the
-    /// release with the target's block and variables from the release's own
-    /// manifest, refuses it while any secret it mounts is unusable (listing
-    /// them all), stores the values generated for its declared secrets,
-    /// pins secret versions, compiles the
-    /// release with its own images (`release_incompatible` when a build
-    /// input renders differently), and saves the prepared target with the
-    /// deployment. Its images are then retention roots, so callers holding
-    /// cleanup off may let go once this commits.
+    /// Accepts `promotion` in `tx`. Rechecks what acceptance checked, where nothing
+    /// can change underneath: the target still promotes from the source, and the
+    /// source deployment is still current and succeeded. Then it starts a
+    /// deployment, renders the release with the target's block and variables,
+    /// refuses it while any secret it mounts is unusable (listing them all),
+    /// stores generated secret values, pins secret versions, compiles the release
+    /// with its own images (`release_incompatible` when a build input renders
+    /// differently), and saves the prepared target. Its images are then retention
+    /// roots, so callers holding cleanup off may let go once this commits.
     pub(super) async fn accept_promotion_on(
         &self,
         tx: &mut Transaction<'_, Sqlite>,

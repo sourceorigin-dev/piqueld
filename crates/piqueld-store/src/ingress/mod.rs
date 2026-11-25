@@ -201,19 +201,13 @@ impl Store {
 
     /// Recomputes reservations inside the transaction changing their source.
     /// Captured deployments also reserve names while a newer save is pending.
-    ///
-    /// Collects every hostname the environment could still serve (the routes
-    /// of the manifest it deploys, rendered for this environment, its resolved
-    /// spec, its latest operation's target and rendered deployment manifest,
-    /// desired and applied gateway routes), rejects any newly within an
-    /// installation hostname or exactly below another application's
-    /// wildcard, then replaces the environment's
-    /// `hostname_reservations` rows. Names it reserved before the installation
-    /// claimed them stay reserved, though never routed, so the gateway's
-    /// acknowledgements and the environment's operations keep working until
-    /// its routes change.
-    /// A unique violation means another environment owns the name. Sibling
-    /// conflicts identify that environment of the same application.
+    /// Collects every hostname the environment could still serve, rejects any
+    /// newly within an installation hostname or exactly below another
+    /// application's wildcard, then replaces the environment's
+    /// `hostname_reservations` rows. Names reserved before the installation
+    /// claimed them stay reserved, though never routed. A unique violation means
+    /// another environment owns the name; sibling conflicts identify that
+    /// environment of the same application.
     async fn reserve_hostnames_on(
         connection: &mut SqliteConnection,
         environment_id: &str,

@@ -84,26 +84,15 @@ impl Store {
     }
 
     /// Deploys `head`, the commit sync found at `branch` of `repository`, to
-    /// environment or preview `id` (see [`ListedHead`]), once the branch
-    /// moved past the head of its last deployment:
-    ///
-    /// 1. Anything not following that branch of that repository (re-pointed,
-    ///    reconnected, pinned, not opted in, stopped, its application's sync
-    ///    off, or being deleted) is `Current`.
-    /// 2. While a deployment runs without failing, or once one recorded a head
-    ///    since the listing started, `Busy`, since it may still record, or
-    ///    recorded, a newer head. The caller tries again once it finished, so
-    ///    pushes during a deployment coalesce into one follow-up that deploys
-    ///    the head of then. A failing deployment is superseded instead, since
-    ///    the push may fix it.
-    /// 3. The head of its last deployment (see [`Self::save_deployment_input`]),
-    ///    and anything before its first, is `Current`. A one-off deployment,
-    ///    or a local snapshot's, records the branch's head then, so it stays
-    ///    until the branch moves; a rollback is a move, and so is a branch
-    ///    first pushed after a local snapshot of it was deployed.
-    /// 4. Otherwise deploys exactly `head` and records it: `Deployed`,
-    ///    waking the controller. A failed one is not retried until the
-    ///    branch moves again.
+    /// environment or preview `id` (see [`ListedHead`]), once the branch moved past
+    /// its last deployment's head:
+    /// 1. `Current` when it doesn't follow that branch of that repository
+    ///    (re-pointed, pinned, not opted in, stopped, sync off, being deleted).
+    /// 2. `Busy` while a deployment runs without failing, or once one recorded a
+    ///    head since the listing started; the caller retries, so pushes coalesce.
+    /// 3. `Current` for its last deployment's head, or anything before its first.
+    /// 4. Otherwise deploys exactly `head` and records it: `Deployed`, waking the
+    ///    controller.
     pub(super) async fn sync_on(
         tx: &mut Transaction<'_, Sqlite>,
         listed: ListedHead,

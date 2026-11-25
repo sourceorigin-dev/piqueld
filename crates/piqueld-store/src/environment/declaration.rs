@@ -61,16 +61,12 @@ impl Store {
     }
 
     /// Converges `application`'s environments to `declarations` (see
-    /// [`EnvironmentChange::between`]): creates missing ones, not deployed,
-    /// and changes the source and sync of the others, deploying nothing.
-    /// Environments it no longer declares are left alone. A change that
-    /// can't apply yet waits for the next convergence: making an environment
-    /// promoted while a deployment of it is in progress (except `accepting`'s,
-    /// past fetching and building), and creating one whose name or promotion
-    /// source is still held by an environment being deleted. Never advances the
-    /// application revision; returns whether it changed the source of an
-    /// environment with a deployment in progress, for which the caller must
-    /// (see `write_source_on`). Saving the manifest always does.
+    /// [`EnvironmentChange::between`]): creates missing ones, not deployed, and
+    /// changes the source and sync of the others, deploying nothing. Environments
+    /// no longer declared are left alone; a change that can't apply yet waits for
+    /// the next convergence. Never advances the application revision; returns
+    /// whether it changed the source of an environment with a deployment in
+    /// progress, for which the caller must (see `write_source_on`).
     ///
     /// # Errors
     /// Returns a storage error.
@@ -193,16 +189,12 @@ impl Store {
         Self::existing_environment_on(tx, id.as_str()).await
     }
 
-    /// Blocks declare environments, so an edit through the CLI or dashboard
-    /// configures existing environments only: one adding a block for a name no
-    /// environment has, or naming one (`named`) even without adding a block,
-    /// fails with `EnvironmentUnknown`, rather than creating an environment no
-    /// edit could remove or silently configuring nothing. An edit that
-    /// declares the application's first environment declares every existing
-    /// one too, with a block that leaves its source as it is: editing
-    /// configuration never changes which environments the manifest reports,
-    /// or where they deploy from. `before` is the saved manifest, `after` the
-    /// edited one.
+    /// Declares the environments an edit through the CLI or dashboard configures,
+    /// which must exist already: a block for a name no environment has, or a name
+    /// in `named`, fails with `EnvironmentUnknown`. An edit declaring the
+    /// application's first environment declares every existing one too, with a
+    /// block that leaves its source as it is. `before` is the saved manifest,
+    /// `after` the edited one.
     ///
     /// # Errors
     /// Returns a storage error.

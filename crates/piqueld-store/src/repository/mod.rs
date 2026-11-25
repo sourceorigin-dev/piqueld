@@ -1,15 +1,11 @@
 //! Durable candidate manifests for manual deployments.
 //!
-//! `deployment_inputs` starts with the configuration captured by Deploy. After
-//! fetching, it holds the validated manifest and repository commit; `fetched`
-//! tells retries to reuse that snapshot instead of reading a moving branch again.
-//! Deployments without repository backing also become fetched, with no commit.
-//! The candidate, its rendering, and any warnings are copied to deployment
-//! history when fetched, but the candidate only becomes its environment's last
-//! fetched manifest after source preparation succeeds. The input also
-//! captures the manifest the application last read from its repository, and
-//! records the one it fetched: a deployment of the branch `spec.manifest`
-//! names deploys the saved manifest while the two are the same.
+//! `deployment_inputs` starts with the configuration captured by Deploy, then
+//! holds the validated manifest and repository commit once fetched, which
+//! retries reuse. The candidate becomes its environment's last fetched
+//! manifest only after source preparation succeeds. The input also captures
+//! the manifest the application last read from its repository and records
+//! the one it fetched.
 use super::{Operation, Store, StoreError, now_ms};
 use piqueld_core::EventKind;
 use piqueld_core::{
@@ -109,14 +105,12 @@ impl Store {
     }
 
     /// Stores the fetched manifest and commit for the latest running operation,
-    /// with `fetched`, the manifest as read from the repository, which the
-    /// saved one may replace, copying it, its rendering, and
-    /// `warnings` into deployment history,
-    /// storing values generated for its secrets and pinning their versions
-    /// (see `pin_secrets_on`), recording the `branch_head` sync follows
-    /// from (see `record_branch_head_on`), and re-checking hostname
-    /// reservations. Fetching happens once: a second save, or one for
-    /// superseded work, fails with `StoreError::IllegalTransition`.
+    /// with `fetched`, the manifest as read from the repository, which the saved
+    /// one may replace. Copies the manifest, its rendering and `warnings` into
+    /// deployment history, stores generated secret values and pins their versions
+    /// (see `pin_secrets_on`), records the `branch_head` sync follows from (see
+    /// `record_branch_head_on`) and rechecks hostname reservations. A second save,
+    /// or one for superseded work, fails with `StoreError::IllegalTransition`.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -174,20 +168,15 @@ impl Store {
     }
 
     /// Records a fetched repository manifest, under the application's current
-    /// name, as its environment's last fetched one, while the environment
-    /// still follows a branch. Other environments keep their own.
-    ///
-    /// While the application is still repository-backed, a deployment of an
-    /// environment that fetched from the path, branch and commit
+    /// name, as its environment's last fetched one, while the environment still
+    /// follows a branch; others keep their own. While the application is
+    /// repository-backed, a deployment from the path, branch and commit
     /// `spec.manifest` names (see `reads_connection_on`) also converges the
-    /// environments the saved manifest declares, and saves the manifest a
-    /// push changed (see `read_repository_on`). Other paths, branches,
-    /// one-off revisions and previews never do, so a manifest fetched before
-    /// the connection changed never replaces it. Records `application_applied`
-    /// when any manifest changed.
-    /// Fails with `secret_name_conflict` when the application's store now holds
-    /// a name the fetched manifest declares.
-    /// Called in the same transaction that saves the fully prepared runtime target.
+    /// declared environments and saves a manifest a push changed (see
+    /// `read_repository_on`). Records `application_applied` when any manifest
+    /// changed. Fails with `secret_name_conflict` when the application's store
+    /// holds a name the manifest declares. Called in the transaction that saves
+    /// the prepared runtime target.
     pub(super) async fn accept_deployment_on(
         tx: &mut Transaction<'_, Sqlite>,
         operation: &Operation,
@@ -269,18 +258,14 @@ impl Store {
     }
 
     /// Converges the environments of `stored` to the ones its saved manifest
-    /// declares, retrying changes that had to wait, after saving `deployed`,
-    /// which `operation` deployed from its connection, when a push changed
-    /// the manifest. `read` holds the spec hashes of the manifest the
-    /// application had last read when `operation` was requested and of the
-    /// one it fetched: a push changed it when the fetched one differs from
-    /// that one, so `deployed` is the fetched one, and from the one the
-    /// application read last. It then becomes both the saved manifest, as
-    /// saving it would, and the one last read. Advances the revision when the
-    /// saved manifest changes, resolving `operation`, which deploys it, at
-    /// the new one unless its environment's source changed, or when
-    /// converging changed the source of an environment with a deployment in
-    /// progress, which then leaves it unresolved. Returns the rows changed.
+    /// declares, retrying changes that waited, after saving `deployed`, which
+    /// `operation` deployed from its connection, when a push changed the manifest.
+    /// `read` holds the spec hashes of the manifest last read when `operation`
+    /// was requested and of the one it fetched; a push changed it when they
+    /// differ. `deployed` then becomes both the saved and the last-read manifest.
+    /// Advances the revision when the saved manifest changes, resolving
+    /// `operation` at the new one unless its environment's source changed. Returns
+    /// the rows changed.
     async fn read_repository_on(
         tx: &mut Transaction<'_, Sqlite>,
         operation: &Operation,
