@@ -89,6 +89,10 @@ pub struct RuntimeDir {
 }
 
 impl RuntimeDir {
+    /// Longest an existing socket may take to accept a connection before it
+    /// counts as unresponsive.
+    const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
+
     /// Validates and locks a runtime directory prepared by the service manager.
     ///
     /// # Errors
@@ -132,8 +136,7 @@ impl RuntimeDir {
     async fn bind_at(path: &Path) -> Result<UnixListener, BindError> {
         match tokio::fs::symlink_metadata(path).await {
             Ok(metadata) if metadata.file_type().is_socket() => {
-                match tokio::time::timeout(Duration::from_secs(1), UnixStream::connect(path)).await
-                {
+                match tokio::time::timeout(Self::PROBE_TIMEOUT, UnixStream::connect(path)).await {
                     Ok(Err(error)) if error.kind() == io::ErrorKind::ConnectionRefused => {
                         // Writers must honor the runtime-directory lock. A separate
                         // inode check before unlink would still race with an

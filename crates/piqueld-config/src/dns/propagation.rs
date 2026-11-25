@@ -97,6 +97,9 @@ impl From<NetError> for PropagationError {
 }
 
 impl Dns {
+    /// Pause between checks that a record is visible.
+    const POLL_INTERVAL: Duration = Duration::from_secs(5);
+
     /// Polls every 5s until every authoritative nameserver of `zone` serves
     /// `value` in a TXT record at `name`, failing after `timeout`.
     ///
@@ -118,7 +121,7 @@ impl Dns {
                         tracing::debug!(%zone, name, error = format!("{error:#}"), "TXT propagation check failed");
                     }
                 }
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                tokio::time::sleep(Self::POLL_INTERVAL).await;
             }
         })
         .await

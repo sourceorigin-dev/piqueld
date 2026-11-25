@@ -105,6 +105,9 @@ pub struct Dns {
 }
 
 impl Dns {
+    /// Longest a provider API request may take.
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
     /// Creates the inert integration; zones are discovered by [`Self::refresh`].
     ///
     /// # Errors
@@ -114,7 +117,7 @@ impl Dns {
             discovered: RwLock::new(providers.iter().map(|_| Discovery::default()).collect()),
             providers,
             http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
+                .timeout(Self::REQUEST_TIMEOUT)
                 .redirect(reqwest::redirect::Policy::none())
                 .no_proxy()
                 .build()?,
