@@ -330,8 +330,6 @@ impl Auth {
     /// minute.
     pub(crate) async fn authenticate(&self, secret: &str) -> Result<Identity> {
         let (identity, last_used_at) = self.identify(secret).await?;
-        // Keep ordinary requests read-only. A refresh queues with reconciliation
-        // writers and rechecks validity after waiting, so revocation still wins.
         if let Credential::Account { id, .. } = &identity.credential
             && last_used_at <= now_secs() - TOUCH_INTERVAL
             && self.claim_touch(id)
@@ -730,8 +728,6 @@ impl Auth {
             let issued = self.0.store.issue_for_credential_owner(author, &credential);
             match issued.await {
                 Ok(user) => user.ok_or(AuthError::Unauthorized)?,
-                // Refused for good, e.g. an approval older than its passkey
-                // proof allows: the CLI signs in again for a new approval.
                 Err(error @ StoreError::Denied(_)) => {
                     issuing.finish();
                     return Err(error.into());

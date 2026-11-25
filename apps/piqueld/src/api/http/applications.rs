@@ -33,7 +33,7 @@ pub(super) struct ListQuery {
 }
 
 impl QueryParams for ListQuery {
-    // The same error as an out-of-range `limit`.
+    /// The same error as an out-of-range `limit`.
     const INVALID_CODE: ApiErrorCode = ApiErrorCode::PaginationInvalid;
     const INVALID_MESSAGE: &'static str = "pagination parameters are invalid";
 }
@@ -84,8 +84,6 @@ pub(super) async fn get(
     Ok(ok(state.application(&ApplicationId::parse(id)?).await?))
 }
 
-// Saves a whole manifest (JSON or TOML, see `ManifestUpload`) by name,
-// optionally accepting a deployment of it in the same transaction.
 #[utoipa::path(
     post, path = "/api/v1/applications/apply", operation_id = "applyApplication",
     summary = "Apply an application manifest",
@@ -151,8 +149,6 @@ impl QueryParams for DeleteApplicationQuery {
         "expected_generation must be an integer and force must be true or false";
 }
 
-// Accepts a deletion operation for every environment, whose named volumes are
-// retained, and every preview, whose volumes are removed.
 #[utoipa::path(
     delete, path = "/api/v1/applications/{id}", operation_id = "deleteApplication",
     summary = "Delete an application with its environments, retaining their volumes, and its previews",
@@ -185,8 +181,6 @@ pub(super) async fn delete(
         .await
 }
 
-// Dry-runs `apply` with the same body; supplied preconditions are checked, but
-// none are required and nothing is saved.
 #[utoipa::path(
     post, path = "/api/v1/applications/plan", operation_id = "planApplication",
     summary = "Preview an application manifest",

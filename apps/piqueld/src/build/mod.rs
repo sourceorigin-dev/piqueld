@@ -19,7 +19,7 @@ use std::{collections::VecDeque, sync::Arc};
 pub struct BuildLog {
     store: Arc<Store>,
     id: i64,
-    // Held across store writes, so output is stored in the order it arrived.
+    /// Held across store writes, so output is stored in the order it arrived.
     output: Arc<tokio::sync::Mutex<Kept>>,
 }
 impl BuildLog {

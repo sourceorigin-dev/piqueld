@@ -9,7 +9,6 @@ use super::{
 use crate::api::Mutation;
 use axum::response::Response;
 use piqueld_core::ApiErrorCode;
-// The field endpoint table names its edit and body types unqualified.
 use piqueld_core::{
     ApplicationId,
     api::{Envelope, SavedApplication},
@@ -50,12 +49,8 @@ async fn submit(
     mutator.accept(mutation, expected, force).await
 }
 
-// Builds one handler per entry of `piqueld_core::field_endpoints!`, with its
-// route metadata, submitting its edit through `submit`, and `field_routes`,
-// which registers them all behind `apps:write` on the application.
 macro_rules! edit_endpoints {
     ($($(#[$doc:meta])* $name:ident: $method:ident $path:literal ($($param:ident = $label:literal),*) $body:tt => { $($edit:tt)* };)*) => {
-        // Every path parameter is a string.
         $(edit_endpoints!(@handler $(#[$doc])* $name $method $path ($($param: String = $label),*) $body { $($edit)* });)*
 
         /// Registers every field endpoint, each requiring `apps:write` on its
@@ -64,7 +59,6 @@ macro_rules! edit_endpoints {
             router $(.routes(granted!(App(Write) => $name)))*
         }
     };
-    // Without a body.
     (@handler $(#[$doc:meta])* $name:ident $method:ident $path:literal ($($param:ident: $param_ty:ty = $label:literal),*) [] { $($edit:tt)* }) => {
         $(#[$doc])*
         #[utoipa::path($method, path = $path, operation_id = stringify!($name),
@@ -76,15 +70,12 @@ macro_rules! edit_endpoints {
             submit(&mutator, id, $($edit)*, options).await
         }
     };
-    // A `{ "value": ... }` body.
     (@handler $(#[$doc:meta])* $name:ident $method:ident $path:literal ($($param:ident: $param_ty:ty = $label:literal),*) [$body:ident { $value:ident }] { $($edit:tt)* }) => {
         edit_endpoints!(@handler $(#[$doc])* $name $method $path ($($param: $param_ty = $label),*) ($body, $body { $value }) { $($edit)* });
     };
-    // A whole body.
     (@handler $(#[$doc:meta])* $name:ident $method:ident $path:literal ($($param:ident: $param_ty:ty = $label:literal),*) [$binding:ident: $body:ty] { $($edit:tt)* }) => {
         edit_endpoints!(@handler $(#[$doc])* $name $method $path ($($param: $param_ty = $label),*) ($body, $binding) { $($edit)* });
     };
-    // Any body: its type, then the pattern binding it.
     (@handler $(#[$doc:meta])* $name:ident $method:ident $path:literal ($($param:ident: $param_ty:ty = $label:literal),*) ($body:ty, $($bind:tt)*) { $($edit:tt)* }) => {
         $(#[$doc])*
         #[utoipa::path($method, path = $path, operation_id = stringify!($name),

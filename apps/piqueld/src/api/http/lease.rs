@@ -92,7 +92,6 @@ impl Lease {
     /// Waits until `ready` resolves or a recheck is due: the daemon shuts
     /// down, access changes, or [`RECHECK`] passes.
     pub(super) async fn wait(&self, ready: impl Future) {
-        // A clone, so the change stays unseen for `due`.
         let mut changes = self.changes.clone();
         tokio::select! {
             _ = ready => {}
@@ -112,7 +111,6 @@ impl Lease {
         if self.state.shutdown().is_cancelled() {
             return Err(Ended::Shutdown);
         }
-        // Changes committed before this are seen by the check below.
         self.changes.borrow_and_update();
         self.next = Instant::now() + RECHECK;
         if let Some(fresh) = FreshTailnet::check(&self.identity, self.source.as_ref()).await {

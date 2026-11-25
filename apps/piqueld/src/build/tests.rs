@@ -21,7 +21,6 @@ fn completion_retry_preserves_pending_terminal_result() {
 /// tail follows a note of what was dropped between them.
 #[test]
 fn kept_output_is_cut_on_characters() {
-    // A 150-byte head leaves 153 bytes: 64 for the note and 89 of tail.
     let mut kept = Kept::new(303);
     let text = "€".repeat(60);
     assert_eq!(kept.head(text.as_bytes()).len(), 150);
@@ -65,8 +64,6 @@ fn a_small_cap_keeps_what_fits_and_a_tail_without_the_note() {
         through(128, &"x".repeat(100)),
         (64, ending(&"x".repeat(36), false))
     );
-    // 64 bytes of head leave 64: 32 for the note, which is longer, and 32
-    // of tail.
     let text = ["x".repeat(100), "y".repeat(100)].concat();
     assert_eq!(through(128, &text), (64, ending(&"y".repeat(32), true)));
     assert_eq!(through(1, "abcde"), (0, ending("e", true)));
@@ -204,7 +201,6 @@ async fn a_failed_finish_keeps_the_ending_for_its_retry() {
         .execute(&mut database)
         .await
         .unwrap();
-    // Nothing of the failed finish was written.
     assert_eq!(stored(&log).await, (expected[..35_000].to_owned(), false));
     log.finish(&failed).await.unwrap();
     assert_eq!(stored(&log).await, (expected, true));

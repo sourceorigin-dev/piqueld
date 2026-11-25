@@ -9,7 +9,6 @@ fn isolates_peers_without_a_shared_cap_and_recovers_after_window() {
         throttle.admit(a, now).unwrap();
     }
     assert!(throttle.admit(a, now).is_err());
-    // Exhausted peers never consume anyone else's allowance.
     for host in 2..10 {
         let peer = Some(format!("192.0.2.{host}").parse().unwrap());
         for _ in 0..PER_PEER {

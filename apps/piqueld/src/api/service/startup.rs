@@ -44,7 +44,6 @@ impl ApplicationService {
             tracing::error!(%hostname, "route hostname is reserved for the piqueld website or its webhooks; the gateway will not publish it");
         }
         let docker = Arc::new(Self::connect_docker(config).await?);
-        // Actions left open by a previous process can never finish; close them first.
         store.interrupt_actions(None).await?;
         store.restart_failure_windows().await?;
         let ingress = Arc::new(crate::ingress::Ingress::from_config(
@@ -80,7 +79,6 @@ impl ApplicationService {
             .await
             .context("failed to bind the webhook socket")?;
         let traffic = ingress.bind_traffic().await?;
-        // Every listener is bound, so the daemon can serve.
         service
             .store
             .record_daemon_started(env!("CARGO_PKG_VERSION"))
@@ -92,10 +90,7 @@ impl ApplicationService {
         let auto_initialize_swarm = config.docker.auto_initialize_swarm;
         let background = service.clone();
         let controller = tokio::spawn(async move {
-            // Also cancel on panic so callers cannot wait forever on a failed worker.
             let _cancel_on_drop = cancellation.clone().drop_guard();
-            // Workers driving Docker start once it is a Swarm manager; until
-            // then the API, notifications and sync already serve.
             let runtime = async {
                 let ready = background
                     .establish_swarm(&docker, auto_initialize_swarm, &cancellation)
@@ -235,8 +230,6 @@ impl ApplicationService {
         info!(path = %config.server.database_path().display(), "opened control-plane state");
         telemetry.start(store.instance_id());
         let journaled = store.journal_position().await?;
-        // A daemon stopped as a deletion ended may have left the deleted
-        // environment's socket directories behind.
         if let Some(sockets) = telemetry.sockets() {
             for id in sockets.environments() {
                 if matches!(store.get(&id).await, Err(StoreError::NotFound)) {
@@ -258,7 +251,6 @@ impl ApplicationService {
             .and_then(|host| Hostname::parse(host.trim_end_matches('.')).ok());
         let dashboard = config.ingress.private.dashboard_hostname.clone();
         let webhooks = config.ingress.webhook_hostname.clone();
-        // The website is usually the dashboard hostname too.
         let hostnames: std::collections::BTreeSet<_> = website
             .into_iter()
             .chain(dashboard)

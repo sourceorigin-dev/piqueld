@@ -39,7 +39,6 @@ impl PreMigration {
     /// The backup named `name`, if it is a generated name.
     fn parse(name: &str) -> Option<Self> {
         let (schema, created) = name.strip_prefix("pre-")?.split_once('-')?;
-        // Only plain decimals, without a sign.
         let digits = |text: &str| text.bytes().all(|byte| byte.is_ascii_digit());
         if !digits(schema) || !digits(created) {
             return None;

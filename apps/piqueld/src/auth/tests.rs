@@ -193,7 +193,7 @@ impl Fixture {
             .unwrap()
     }
 
-    // Management tests only need a stored key; no WebAuthn ceremony reads it.
+    /// Management tests only need a stored key; no WebAuthn ceremony reads it.
     async fn passkey(&self, owner: &Identity) -> String {
         let id = Auth::id();
         let passkey = NewPasskey {
@@ -308,7 +308,6 @@ async fn sessions_expire_revoke_and_survive_restart_without_storing_secrets() {
     let identity = f.auth.authenticate(&token).await.unwrap();
     assert_eq!(identity.account().id, id);
     assert_eq!(identity.grants, Grants::admin());
-    // Only the hash is stored, so the secret itself finds nothing.
     assert!(
         f.auth
             .0
@@ -379,7 +378,6 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
         .await
         .unwrap();
     assert_eq!(f.reload(&bob).await.user.username, "robert");
-    // Passkeys are only added to one's own account, even by administrators.
     let input = |user_id: &str| RegistrationStart {
         invitation: None,
         user_id: Some(user_id.into()),
@@ -478,7 +476,6 @@ async fn managers_change_only_accounts_and_grants_they_cover() {
             Denied::Exceeds
         );
     }
-    // Without `accounts:manage`, the directory shows only the caller.
     let directory = f.auth.directory(&dev).await.unwrap();
     assert_eq!(directory.users.len(), 1);
     assert_eq!(directory.users[0].user.id, dev.account().id);
@@ -510,9 +507,7 @@ async fn invitations_carry_grants_and_enrollment_targets_an_account() {
         f.auth.invitation(&secret).await.unwrap(),
         Some(Invitation::Enrollment(user)) if user.id == bob.account().id
     ));
-    // Enrollment links add a passkey only to their own account.
     assert!(!f.redeem(&carol, &secret).await);
-    // Only managers covering the account may create its enrollment link.
     assert_eq!(
         denied(
             f.auth
@@ -536,7 +531,6 @@ async fn changes_use_the_callers_current_grants() {
     let f = Fixture::new().await;
     let root = f.identity("root", &Grants::admin()).await;
     f.passkey(&root).await;
-    // Alice authenticated as an administrator, then was demoted.
     let alice = f.identity("alice", &Grants::admin()).await;
     f.auth
         .manage(&root, None, set_grants(&alice, developer()))
@@ -589,7 +583,6 @@ async fn changes_use_the_callers_current_grants() {
             .await,
         Err(AuthError::Store(StoreError::CredentialRevoked))
     ));
-    // Nor can it add a passkey to regain access.
     let passkey = NewPasskey {
         id: "revoked-key",
         name: "Key",
@@ -600,7 +593,6 @@ async fn changes_use_the_callers_current_grants() {
         f.auth.0.store.add_passkey(None, owner, passkey).await,
         Err(StoreError::CredentialRevoked)
     ));
-    // Browser sessions idle past their limit since authenticating are refused too.
     let (_, bob) = f
         .signed_in(
             "bob",
@@ -660,7 +652,6 @@ async fn links_are_revalidated_when_redeemed_and_revoked() {
         ),
         Denied::Exceeds
     );
-    // Dev is promoted beyond the lead, then the lead loses accounts:manage.
     f.auth
         .manage(&admin, None, set_grants(&dev, Grants::admin()))
         .await
@@ -694,7 +685,6 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
     assert!(secret.starts_with("pqd_"));
     assert!(ci.scoped);
     assert_eq!(ci.grants, deploy);
-    // The owner's current access limits the token.
     let read_only = Preset::ReadOnly.grants(&Scope::All);
     f.auth
         .manage(&root, None, set_grants(&alice, read_only.clone()))
@@ -704,7 +694,6 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
         f.auth.authenticate(&secret).await.unwrap().grants,
         read_only.intersection(&deploy)
     );
-    // No credential can be created through a token, even within its grants.
     for command in [
         token(Grants::default()),
         Manage::CreateEnrollment {
@@ -734,8 +723,6 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
         f.auth.device_approve(&start.user_code, &ci),
         Err(AuthError::Denied(Denied::Scoped))
     ));
-    // Nor can it change its own account, which needs no permission, but it
-    // can revoke itself.
     let own = || alice.id();
     for command in [
         Manage::UpdateUser {
@@ -784,7 +771,6 @@ async fn tokens_see_only_themselves_in_the_directory() {
     assert_eq!(seen.passkeys, []);
     let credentials: Vec<_> = seen.credentials.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(credentials, [ci.credential_id().unwrap()]);
-    // Her own CLI session still sees her whole account.
     let own = f.auth.directory(&alice).await.unwrap();
     assert_eq!(own.users[0].grants, developer());
     assert_eq!((own.passkeys.len(), own.credentials.len()), (1, 2));
@@ -800,7 +786,6 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
     f.passkey(&root).await;
     let alice = f.identity("alice", &Grants::admin()).await;
     let bob = f.identity("bob", &developer()).await;
-    // Authenticated as an administrator's token, then the owner is demoted.
     let (_, ops) = f
         .token(&alice, create_token(Grants::admin(), "ops", None))
         .await;
@@ -823,8 +808,6 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
         ),
         Denied::Missing(Permission::Global(GlobalPermission::AccountsManage))
     );
-    // A limited CLI login hands out no lasting access, even within its
-    // grants, like a token.
     let read_only = Preset::ReadOnly.grants(&Scope::All);
     let admin = Grants::admin();
     let (secret, credential) =
@@ -938,7 +921,6 @@ async fn only_browser_sessions_start_a_passkey_confirmation() {
     let cli = f.identity("alice", &Grants::admin()).await;
     let (_, browser) = f.stale_session(&cli).await;
     let operator = Identity::operator(HostOperator { uid: 0 }, None);
-    // Alice has no passkey yet, so her browser session cannot confirm either.
     for identity in [&cli, &operator, &browser] {
         assert!(matches!(
             f.auth.reauthenticate_start(identity, "browser").await,
@@ -957,7 +939,6 @@ async fn failed_passkey_confirmations_keep_the_session() {
     let (_, session) = f.stale_session(&alice).await;
     let (_, other) = f.stale_session(&alice).await;
     let id = session.credential_id().expect("a session has an ID");
-    // No passkey is offered: the test's passkeys hold no real credential.
     let start = || f.auth.remember_reauthentication("browser", id, Vec::new());
     let assertion = serde_json::json!({
         "id": "AA",
@@ -1088,7 +1069,6 @@ async fn minting_and_privileged_grants_need_a_recent_sign_in() {
         denied_auth(f.auth.device_approve(&start.user_code, &stale)),
         refused
     );
-    // Narrowing or widening ordinary access needs no passkey.
     let read_only = Preset::ReadOnly.grants(&Scope::All);
     f.auth
         .manage(&stale, None, grants(read_only))
@@ -1123,7 +1103,6 @@ async fn minting_and_privileged_grants_need_a_recent_sign_in() {
 async fn device_logins_inherit_their_approvals_passkey_proof() {
     let f = Fixture::new().await;
     let alice = f.identity("alice", &Grants::admin()).await;
-    // A browser session of alice's that a passkey proved at `proved`.
     let approver = async |proved: i64| {
         let session = Auth::new_credential(CredentialKind::Browser, "Browser", None, None);
         let (secret, mut session) = session.expect("the system RNG yields a credential secret");
@@ -1139,7 +1118,6 @@ async fn device_logins_inherit_their_approvals_passkey_proof() {
             .await
             .expect("the stored credential authenticates")
     };
-    // Proved 100 seconds ago: recent, but about to lapse before the poll.
     let lapsing = approver(now_secs() - 100).await;
     let start = f
         .auth
@@ -1150,7 +1128,6 @@ async fn device_logins_inherit_their_approvals_passkey_proof() {
         denied_auth(f.auth.device_approve(&start.user_code, &lapsing)),
         refused
     );
-    // Proved a minute ago: never the time the CLI polls.
     let proved = now_secs() - 60;
     let approver = approver(proved).await;
     f.auth
@@ -1246,8 +1223,6 @@ async fn cli_logins_confirm_with_a_passkey_through_the_device_flow() {
     f.auth
         .device_approve(code, &alice)
         .expect("the approver may approve the request");
-    // A poll cancelled while the store is busy leaves the request to the
-    // next one.
     let writer = f.auth.0.store.hold_writer().await;
     let cancelled = tokio::spawn({
         let auth = f.auth.clone();
@@ -1305,7 +1280,6 @@ async fn device_confirmations_revive_nothing_and_only_serve_cli_logins() {
         f.auth.device_poll(&start.device_code, None).await,
         Err(AuthError::Unauthorized)
     ));
-    // Only CLI logins confirm this way.
     let (_, token) = f
         .account("ci", CredentialKind::Token, None, &Grants::admin())
         .await;
@@ -1400,7 +1374,6 @@ async fn device_logins_can_request_limited_sessions() {
         .unwrap();
     assert!(session.scoped);
     assert_eq!(session.grants, read_only);
-    // Issuance re-checks the approver, who may have lost the access since.
     let root = f.identity("root", &Grants::admin()).await;
     f.passkey(&root).await;
     let start = f.auth.device_start(None, Some(read_only.clone())).unwrap();
@@ -1474,7 +1447,6 @@ async fn changes_keep_an_admin_with_a_passkey() {
         assert_eq!(directory.passkeys[0].id, key);
         assert_eq!(f.reload(&alice).await.grants, Grants::admin());
     }
-    // An administrator may have no passkey, provided another one keeps theirs.
     f.auth
         .manage(
             &alice,
@@ -1619,8 +1591,6 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
             async move { auth.device_poll(&code, None).await }
         });
         f.auth.0.store.writer_waiting().await;
-        // Other logins proceed; the pending logins are not locked meanwhile,
-        // and a concurrent poll waits.
         f.auth.device_start(None, None).unwrap();
         f.allow_poll(&start.device_code);
         let concurrent = f.auth.device_poll(&start.device_code, None).await.unwrap();
@@ -1733,7 +1703,6 @@ async fn setup_link_is_private_stable_and_never_reopens() {
     f.auth.prepare_setup(&path).await.unwrap();
     assert_eq!(link, std::fs::read_to_string(&path).unwrap());
     assert_eq!(f.auth.setup_link().await.unwrap().url, link.trim());
-    // A link from a previous public_url keeps its secret under the current one.
     let (_, secret) = link.split_once("#invite=").unwrap();
     std::fs::write(
         &path,
@@ -1915,7 +1884,6 @@ async fn middleware_authenticates_api_and_enforces_cookie_csrf() {
             .unwrap();
         assert_eq!(response.status(), expected, "{method} {path}");
     }
-    // Browsers send cookies on cross-site WebSocket handshakes, which use GET.
     for (origin, expected) in [
         ("https://evil.example", StatusCode::FORBIDDEN),
         (ORIGIN, StatusCode::OK),
@@ -1988,7 +1956,6 @@ async fn login_start_limits_share_listeners_ignore_forwarded_ips_and_leave_sessi
             assert_eq!(response.headers()["retry-after"], "60");
         }
     }
-    // Another router/listener must use the same budget.
     let other = f
         .auth
         .guard(Router::new().route("/api/v1/auth/device/start", post(|| async { "ok" })));
@@ -2160,7 +2127,6 @@ async fn device_inspection_reports_the_requester_until_approval() {
     assert_eq!(request.user_code, start.user_code);
     assert_eq!(request.requester.as_deref(), Some("192.0.2.7"));
     assert!(request.age <= 1 && (599..=600).contains(&request.expires_in));
-    // Inspection does not approve anything.
     assert_eq!(
         f.auth
             .device_poll(&start.device_code, None)
@@ -2263,7 +2229,6 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     assert_eq!(signed_in, operator);
     let again = f.auth.operator_sign_in(&link, None).await;
     assert!(matches!(again, Err(AuthError::Unauthorized)));
-    // Unusable links are turned away without waiting for the writer.
     let writer = f.auth.0.store.hold_writer().await;
     let guess = f.auth.operator_sign_in(&link, None);
     let guess = tokio::time::timeout(Duration::from_secs(1), guess).await;
@@ -2382,13 +2347,11 @@ async fn unreadable_setup_link_is_an_error_and_left_alone() {
     f.auth.prepare_setup(&path).await.unwrap();
     let link = std::fs::read_to_string(&path).unwrap();
     let (_, secret) = link.trim().split_once("#invite=").unwrap();
-    // A file without read permission.
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
     let result = f.auth.prepare_setup(&path).await;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     assert!(result.is_err());
     assert_eq!(link, std::fs::read_to_string(&path).unwrap());
-    // A directory in the link's place.
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
     assert!(f.auth.prepare_setup(&path).await.is_err());

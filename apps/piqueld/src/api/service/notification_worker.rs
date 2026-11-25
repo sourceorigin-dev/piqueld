@@ -126,14 +126,12 @@ impl ApplicationService {
                 self.store
                     .observe_condition("docker_unavailable", None, !docker_ready, now, 45_000)
                     .await?;
-                // Swarm cannot be observed while its Engine is unreachable.
                 if docker_ready {
                     let failed = !ready(readiness.swarm);
                     self.store
                         .observe_condition("swarm_manager_unavailable", None, failed, now, 45_000)
                         .await?;
                 }
-                // Service health older than three scan intervals is treated as stale.
                 self.store
                     .observe_services(
                         i64::try_from(scan_seconds.max(15).saturating_mul(3000))
@@ -163,7 +161,6 @@ impl ApplicationService {
                 () = cancellation.cancelled() => return,
                 result = self.deliver_next_notification() => result,
             };
-            // A failure waits for the next tick, like an empty outbox.
             idle = !result.unwrap_or_else(|error| {
                 tracing::error!(error=?error, "notification delivery failed");
                 false
@@ -178,7 +175,6 @@ impl ApplicationService {
     /// the receiver's `Retry-After`, or with exponential backoff (5 s
     /// doubling, at most an hour); one the receiver rejects fails for good.
     async fn deliver_next_notification(&self) -> Result<bool, StoreError> {
-        // Queued deliveries, retries and recoveries must not wait on new-event ingestion.
         if let Err(error) = self.store.process_notifications().await {
             tracing::error!(error=?error, "notification event processing failed");
         }
@@ -187,10 +183,9 @@ impl ApplicationService {
         };
         let event = match self.store.event(delivery.event_id).await {
             Ok(event) => event,
-            Err(StoreError::NotFound) => return Ok(true), // Application deletion removed the outbox row too.
+            Err(StoreError::NotFound) => return Ok(true),
             Err(error) => return Err(error),
         };
-        // Backoff: 5 s, 10 s, 20 s, ... capped at one hour.
         let exponent = u32::try_from(delivery.attempts.saturating_sub(1).min(10)).unwrap_or(10);
         let backoff = 5_u64.saturating_mul(1_u64 << exponent).min(3600);
         let url = match self.store.destination_url(&destination) {

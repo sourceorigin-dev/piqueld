@@ -74,7 +74,6 @@ impl ApplicationService {
             .is_some_and(|connection| !connection.sync.is_off());
         let sync_check = self.store.sync_check(id).await?.filter(|_| syncs);
         let repository = self.store.repository_manifest(&stored).await?;
-        // Saved manifests were validated, declarations included, when saved.
         let declarations = stored
             .application
             .spec()
@@ -282,7 +281,6 @@ impl ApplicationService {
     ) -> Result<PlanView, ApplicationError> {
         let current = self.store.find_by_name(manifest.name().as_str()).await?;
         Self::check_plan(grants, current.as_ref(), expected, expected_id)?;
-        // New applications and their environment are previewed under placeholder IDs.
         let id = current.as_ref().map_or_else(
             || ApplicationId::parse("preview-application").expect("valid preview ID"),
             |app| app.application.id().clone(),
@@ -340,7 +338,6 @@ impl ApplicationService {
                 None,
             )
         } else {
-            // What `apply --deploy` deploys first.
             let first = Declaration::first_building(&declarations);
             let rendering = render(RenderTarget::Environment(first), None)?;
             let environment = EnvironmentId::parse("preview-environment").expect("valid ID");
@@ -506,7 +503,6 @@ impl ApplicationService {
         plan.warn_telemetry(app, granted);
         if current.is_some() {
             let spec = app.spec();
-            // Plans only warn about imports, so list no importers.
             plan.warn_links(
                 &self
                     .store

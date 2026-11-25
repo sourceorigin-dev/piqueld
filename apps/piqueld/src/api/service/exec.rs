@@ -94,7 +94,6 @@ impl ExecSession {
             &format!("{} started a command in task {}", self.who, self.exec.task),
         )
         .await?;
-        // A stop noticed while the start was recorded never starts it.
         let result = if io.stop.is_cancelled() {
             Err(DockerError::Request("exec stopped before it started").into())
         } else {

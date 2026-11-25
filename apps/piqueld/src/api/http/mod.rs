@@ -206,9 +206,6 @@ fn finish_router(
     browser_policy: Option<browser::BrowserPolicy>,
 ) -> Router {
     let request_id = header::HeaderName::from_static("x-request-id");
-    // 405 responses must advertise exactly the methods each matched endpoint
-    // registers, so the values are derived from the OpenAPI document itself,
-    // as is every route's access requirement.
     let allow_routes = AllowRoutes::build(openapi);
     let route_access = access::RouteAccess::build(openapi);
     let openapi = openapi::PublishedDocument::new(openapi);
@@ -216,12 +213,6 @@ fn finish_router(
         let allow_routes = Arc::clone(&allow_routes);
         async move { method_not_allowed(&allow_routes, matched.as_ref()) }
     });
-    // Authorization runs after authentication, which may reject requests
-    // without reaching a handler. The browser trust policy runs before both,
-    // so untrusted requests are refused before they spend sign-in allowance
-    // or tailnet lookups. Auditing wraps all three to record their refusals.
-    // Keep them inside the shared request tracing and error/diagnostic
-    // response layers.
     let router = router.layer(middleware::from_fn_with_state(
         (Arc::clone(&route_access), state.clone()),
         access::enforce,
@@ -242,13 +233,9 @@ fn finish_router(
         .layer(middleware::from_fn(no_store))
         .with_state(state.clone())
         .layer(Extension(openapi))
-        // The propagator stamps errors with their request ID, and the binder
-        // echoes that same identifier in every structured error body.
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), bind_error_request_id))
         .layer(SetRequestIdLayer::new(request_id.clone(), MakeRequestUuid))
-        // Request IDs are always the daemon's own: one a client supplied
-        // could pose as another request in logs and the audit trail.
         .layer(middleware::map_request(move |mut request: Request| {
             request.headers_mut().remove(&request_id);
             std::future::ready(request)
@@ -260,8 +247,6 @@ fn finish_router(
         .layer(middleware::from_fn_with_state(state, record_latency))
         .layer(
             TraceLayer::new_for_http()
-                // The `otel.*` and `http.*` fields shape the span telemetry
-                // exports; see `crate::telemetry`.
                 .make_span_with(|request: &Request| {
                     let method = request.method();
                     let route = request.extensions().get::<MatchedPath>().map(MatchedPath::as_str);
@@ -281,8 +266,6 @@ fn finish_router(
                     }
                     span
                 })
-                // Successful requests (dashboard assets, polling) are routine,
-                // so only failures are logged at the default level.
                 .on_response(
                     |response: &Response, latency: std::time::Duration, span: &tracing::Span| {
                         let (status, latency_ms) = (
@@ -303,9 +286,9 @@ fn finish_router(
         )
 }
 
-// Endpoints must be registered here through `public!`, `authenticated!`, or
-// `granted!` (see `access`), so Axum, the generated OpenAPI document, and the
-// access table receive the same method, path, and requirement together.
+/// Endpoints must be registered here through `public!`, `authenticated!`, or
+/// `granted!` (see `access`), so Axum, the generated `OpenAPI` document, and the
+/// access table receive the same method, path, and requirement together.
 fn documented_router() -> OpenApiRouter<ApiState> {
     OpenApiRouter::with_openapi(openapi::base_document())
         .merge(editing::router())
@@ -552,8 +535,6 @@ impl ApiState {
                 error.message.clone(),
             )
         });
-        // Storage failures are not written back to the failing store: retrying the
-        // write would only queue behind the global writer during the outage.
         if !matches!(
             code,
             Some(ApiErrorCode::StorageUnavailable | ApiErrorCode::SchemaMismatch)
@@ -597,8 +578,6 @@ fn method_not_allowed(allow_routes: &AllowRoutes, matched: Option<&MatchedPath>)
         ApiErrorCode::MethodNotAllowed,
         "HTTP method is not allowed",
     );
-    // The header advertises only methods registered for the matched route;
-    // when no documented route matches, the header is omitted.
     error.allow = if matched.is_some_and(|path| path.as_str() == "/health") {
         Some("GET, HEAD".into())
     } else {

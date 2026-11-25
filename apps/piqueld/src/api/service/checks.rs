@@ -131,7 +131,6 @@ impl CheckSettings {
                     body.extend_from_slice(&chunk);
                 }
                 Ok(None) => break,
-                // Too long, or the body broke off before its end.
                 Ok(Some(_)) | Err(_) => return false,
             }
         }
@@ -311,7 +310,6 @@ mod tests {
             let response = reqwest::Response::from(http::Response::new(body));
             assert_eq!(CheckSettings::is_liveness(response).await, expected);
         }
-        // A body that breaks off after the expected JSON is not complete.
         let truncated = futures_util::stream::iter([
             Ok(br#"{"status":"ok"}"#.to_vec()),
             Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset)),

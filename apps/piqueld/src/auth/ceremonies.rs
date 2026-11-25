@@ -211,8 +211,6 @@ impl Auth {
         };
         let redeemed = invitation.is_some();
         let (owner, token) = if let Some(invitation_hash) = &invitation {
-            // Registering a passkey proves nothing yet: the session becomes
-            // fresh once the new passkey signs in or steps up.
             let (token, session) = Self::browser_session(None)?;
             let owner = PasskeyOwner::Redeem {
                 user: &user,
@@ -287,10 +285,7 @@ impl Auth {
             .ok_or(AuthError::Unauthorized)?;
         let user_id = std::str::from_utf8(handle).map_err(|_| AuthError::Unauthorized)?;
         let credential_id = super::URL_SAFE_NO_PAD.encode(response.get_credential_id());
-        // Proof time is taken before verification, so it never postdates it.
         let (token, session) = Self::browser_session(Some(now_secs()))?;
-        // The store verifies the assertion and updates its signature counter
-        // under the writer lock, then opens the session in the same transaction.
         let verify = self.assertion(&mut state, &response);
         let user = self
             .0
@@ -399,8 +394,6 @@ impl Auth {
         else {
             return Err(AuthError::stale_ceremony());
         };
-        // Refusals here keep the session: a 401 would tell the dashboard it
-        // had signed out. Only a session that ended answers 401.
         let caller = caller.caller()?;
         if caller.credential_id != credential_id {
             return Err(AuthError::stale_ceremony());
@@ -421,7 +414,6 @@ impl Auth {
             Ok(true) => {}
             Ok(false) => return Err(AuthError::Invalid(NOT_CONFIRMED)),
             Err(AuthError::Webauthn(source)) => {
-                // Includes counter regressions that can indicate a cloned authenticator.
                 tracing::warn!(error = %source, "passkey confirmation failed");
                 return Err(AuthError::Invalid(NOT_CONFIRMED));
             }

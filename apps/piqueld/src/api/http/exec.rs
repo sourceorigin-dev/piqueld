@@ -82,21 +82,14 @@ pub(super) async fn exec(
         .max_message_size(MAX_MESSAGE_BYTES)
         .on_failed_upgrade(|error| tracing::warn!(?error, "exec connection upgrade failed"))
         .on_upgrade(move |socket| async move {
-            // The command's share of the exec budget, while it runs.
             let _admitted = admitted;
             let (mut writer, mut reader) = socket.split();
             let result = async {
                 let request = read_request(&mut reader).await?;
-                // Like grants, a tailnet binding is rechecked once the command
-                // arrives, against the peer as it is now.
                 if let Some(fresh) = FreshTailnet::check(&identity, source.as_ref()).await {
                     tailnet = fresh.peer().cloned();
                     fresh.verify(&identity)?;
                 }
-                // The command ends as soon as its caller may no longer start
-                // it. Watching starts before the command is created, and
-                // access is checked again before it runs, so a change while
-                // it is created is not missed.
                 let mut lease = Lease::new(state.clone(), identity.clone(), source);
                 let environment = &id;
                 let mut check = move |state: ApiState, identity: Identity| async move {
@@ -113,13 +106,10 @@ pub(super) async fn exec(
                 Ok(relay(session, reader, &mut writer, ended, timing).await)
             }
             .await;
-            // `None` means the client left, so there is nothing to report.
             let last = match result.unwrap_or_else(|error| Some(Err(error))) {
                 None => None,
                 Some(Ok(code)) => Some(ExecOutput::Exit(code)),
                 Some(Err(error)) => {
-                    // Access is rechecked once the command arrives, after
-                    // the upgrade was audited as allowed.
                     if error.denied.is_some() || error.status == StatusCode::UNAUTHORIZED {
                         let tailnet = tailnet.as_ref();
                         audit.refused_later(&state, identity.clone(), tailnet, &error);
@@ -145,8 +135,6 @@ pub(super) async fn exec(
                     })
                 }
             };
-            // Closing also sends the reply to a client's Close. It is bounded
-            // so a client that stopped reading cannot hold the connection.
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "a client that stopped reading cannot be told, and the bound below ends the wait"
@@ -207,11 +195,7 @@ async fn relay(
 ) -> Option<Result<i64, ApiError>> {
     let (input, input_rx) = mpsc::channel(16);
     let (output_tx, mut output) = mpsc::channel::<ExecOutput>(16);
-    // Cancelled to stop the command: the client left, could not be written
-    // to, or lost access, or the daemon is shutting down.
     let stop = CancellationToken::new();
-    // Input is read independently so a quiet client never blocks output.
-    // The read returns whether the client ended it, which stops the command.
     let reading = tokio::spawn({
         let stop = stop.clone();
         async move {
@@ -222,9 +206,6 @@ async fn relay(
             left
         }
     });
-    // Input the command does not read stops the reading above, so pings
-    // notice a client that left while it waits. Returns whether every frame
-    // was delivered.
     let writing = async {
         let mut ping = tokio::time::interval_at(Instant::now() + timing.ping, timing.ping);
         loop {
@@ -263,9 +244,6 @@ async fn relay(
         }
         () = stop.cancelled() => None,
     };
-    // Once stopped, the client's input is no longer read, and the command
-    // gets a bounded time to wind down and record its completion; the
-    // runtime may still be starting or inspecting it.
     reading.abort();
     if finished.is_none() {
         stop.cancel();
@@ -276,7 +254,6 @@ async fn relay(
         Some(Ended::Shutdown) => return None,
         None => {}
     }
-    // A runtime that did not stop in time leaves nobody to report to.
     let (result, delivered) = finished?;
     let left = !delivered || matches!(reading.await, Ok(true));
     match result {
