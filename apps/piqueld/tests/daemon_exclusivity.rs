@@ -26,7 +26,7 @@ static PROCESS_TEST: Mutex<()> = Mutex::new(());
 #[test]
 fn simultaneous_acquisition_has_one_owner() {
     let _process_test = PROCESS_TEST.lock();
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temporary directory is created");
     let barrier = Arc::new(Barrier::new(2));
     let successes = std::thread::scope(|scope| {
         let jobs: Vec<_> = (0..2)
@@ -48,55 +48,70 @@ fn simultaneous_acquisition_has_one_owner() {
             })
             .collect();
         jobs.into_iter()
-            .map(|job| job.join().unwrap())
+            .map(|job| job.join().expect("join succeeds"))
             .filter(|acquired| *acquired)
             .count()
     });
     assert_eq!(successes, 1);
-    DirectoryLock::acquire(directory.path()).unwrap();
+    DirectoryLock::acquire(directory.path()).expect("the directory lock is acquired");
 }
 
 #[test]
 fn competing_daemon_preserves_database_and_live_socket() {
     let _process_test = PROCESS_TEST.lock();
-    let directory = tempfile::tempdir_in(".").unwrap();
-    let path = directory.path().canonicalize().unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let _owner = DirectoryLock::acquire(&path).unwrap();
+    let directory = tempfile::tempdir_in(".").expect("the temporary directory is created");
+    let path = directory
+        .path()
+        .canonicalize()
+        .expect("canonicalize succeeds");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+        .expect("set permissions succeeds");
+    let _owner = DirectoryLock::acquire(&path).expect("the directory lock is acquired");
     let database = path.join("piqueld.db");
-    std::fs::write(&database, b"untouched database").unwrap();
+    std::fs::write(&database, b"untouched database").expect("write succeeds");
     let socket = path.join("piqueld.sock");
-    let cwd = std::env::current_dir().unwrap();
-    let _listener =
-        std::os::unix::net::UnixListener::bind(socket.strip_prefix(cwd).unwrap()).unwrap();
-    let inode = std::fs::metadata(&socket).unwrap().ino();
+    let cwd = std::env::current_dir().expect("current dir succeeds");
+    let _listener = std::os::unix::net::UnixListener::bind(
+        socket.strip_prefix(cwd).expect("the prefix is present"),
+    )
+    .expect("the unix listener binds");
+    let inode = std::fs::metadata(&socket).expect("metadata succeeds").ino();
     let config = path.join("config.toml");
     std::fs::write(
         &config,
-        format!("[server]\ndata_dir={:?}\n", path.to_str().unwrap()),
+        format!(
+            "[server]\ndata_dir={:?}\n",
+            path.to_str().expect("the path is utf-8")
+        ),
     )
-    .unwrap();
+    .expect("write succeeds");
     let error = daemon::refused_start(&config);
     assert!(error.contains("directory already in use"), "{error}");
-    assert_eq!(std::fs::read(database).unwrap(), b"untouched database");
-    assert_eq!(std::fs::metadata(socket).unwrap().ino(), inode);
+    assert_eq!(
+        std::fs::read(database).expect("read succeeds"),
+        b"untouched database"
+    );
+    assert_eq!(
+        std::fs::metadata(socket).expect("metadata succeeds").ino(),
+        inode
+    );
 }
 
 struct LockProcess(Child);
 
 impl LockProcess {
     fn start(path: &std::path::Path) -> Self {
-        let mut child = Command::new(std::env::current_exe().unwrap())
+        let mut child = Command::new(std::env::current_exe().expect("current exe succeeds"))
             .args(["--exact", "lock_holder_process", "--nocapture"])
             .env("PIQUELD_TEST_LOCK_DIRECTORY", path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .unwrap();
-        let stdout = child.stdout.take().unwrap();
+            .expect("spawn succeeds");
+        let stdout = child.stdout.take().expect("take succeeds");
         let mut ready = false;
         for line in BufReader::new(stdout).lines() {
-            if line.unwrap() == "lock acquired" {
+            if line.expect("the line is present") == "lock acquired" {
                 ready = true;
                 break;
             }
@@ -109,24 +124,26 @@ impl LockProcess {
 
 impl Drop for LockProcess {
     fn drop(&mut self) {
-        if self.0.try_wait().unwrap().is_none() {
-            self.0.kill().unwrap();
+        if self.0.try_wait().expect("try wait succeeds").is_none() {
+            self.0.kill().expect("kill succeeds");
         }
-        self.0.wait().unwrap();
+        self.0.wait().expect("wait succeeds");
     }
 }
 
 #[test]
 fn process_death_releases_the_directory_lock() {
     let _process_test = PROCESS_TEST.lock();
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temporary directory is created");
     let process = LockProcess::start(directory.path());
     assert_eq!(
-        DirectoryLock::acquire(directory.path()).unwrap_err().kind(),
+        DirectoryLock::acquire(directory.path())
+            .expect_err("the second lock is refused")
+            .kind(),
         std::io::ErrorKind::WouldBlock
     );
     drop(process);
-    DirectoryLock::acquire(directory.path()).unwrap();
+    DirectoryLock::acquire(directory.path()).expect("the directory lock is acquired");
 }
 
 #[test]
@@ -134,11 +151,14 @@ fn lock_holder_process() {
     let Some(path) = std::env::var_os("PIQUELD_TEST_LOCK_DIRECTORY") else {
         return;
     };
-    let _lock = DirectoryLock::acquire(std::path::Path::new(&path)).unwrap();
+    let _lock = DirectoryLock::acquire(std::path::Path::new(&path))
+        .expect("the directory lock is acquired");
     println!("lock acquired");
-    std::io::stdout().flush().unwrap();
+    std::io::stdout().flush().expect("flush succeeds");
     let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
+    std::io::stdin()
+        .read_line(&mut input)
+        .expect("read line succeeds");
 }
 
 /// Waits for `daemon`'s log to say its API listens on its Unix socket, then
@@ -164,21 +184,27 @@ fn await_listening(daemon: &mut Child) {
 
 /// Sends `request` to the Unix API `socket` and returns the whole response.
 fn unix_request(socket: &std::path::Path, request: &str) -> String {
-    let mut stream = std::os::unix::net::UnixStream::connect(socket).unwrap();
-    stream.write_all(request.as_bytes()).unwrap();
+    let mut stream =
+        std::os::unix::net::UnixStream::connect(socket).expect("the unix stream connects");
+    stream
+        .write_all(request.as_bytes())
+        .expect("write all succeeds");
     let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
+    stream
+        .read_to_string(&mut response)
+        .expect("read to string succeeds");
     response
 }
 
 #[test]
 fn the_api_serves_without_docker_and_stops_on_sigterm() {
     let _process_test = PROCESS_TEST.lock();
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temporary directory is created");
     let path = directory.path();
     let runtime = path.join("run");
-    std::fs::create_dir(&runtime).unwrap();
-    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::create_dir(&runtime).expect("create dir succeeds");
+    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700))
+        .expect("set permissions succeeds");
     let docker = path.join("docker.sock");
     let config = path.join("config.toml");
     std::fs::write(
@@ -188,7 +214,7 @@ fn the_api_serves_without_docker_and_stops_on_sigterm() {
             path.join("state")
         ),
     )
-    .unwrap();
+    .expect("write succeeds");
     let mut daemon = Command::new(env!("CARGO_BIN_EXE_piqueld"))
         .arg("--config")
         .arg(&config)
@@ -196,7 +222,7 @@ fn the_api_serves_without_docker_and_stops_on_sigterm() {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .unwrap();
+        .expect("spawn succeeds");
 
     await_listening(&mut daemon);
     let response = unix_request(
@@ -204,7 +230,8 @@ fn the_api_serves_without_docker_and_stops_on_sigterm() {
         "GET /api/v1/system/readiness HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
     );
     let pid = rustix::process::Pid::from_child(&daemon);
-    rustix::process::kill_process(pid, rustix::process::Signal::TERM).unwrap();
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM)
+        .expect("kill process succeeds");
     let (exited, exit) = mpsc::channel();
     std::thread::spawn(move || exited.send(daemon.wait()));
     let Ok(status) = exit.recv_timeout(Duration::from_secs(30)) else {
@@ -215,7 +242,7 @@ fn the_api_serves_without_docker_and_stops_on_sigterm() {
         let _ = rustix::process::kill_process(pid, rustix::process::Signal::KILL);
         panic!("the daemon did not stop on SIGTERM");
     };
-    let status = status.unwrap();
+    let status = status.expect("the status is present");
 
     assert!(
         response.starts_with("HTTP/1.1 503"),

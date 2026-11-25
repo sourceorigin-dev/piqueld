@@ -82,15 +82,20 @@ impl Environment {
     /// The environment `app`, whose services run [`IMAGE`] as `docker`
     /// resolves it.
     async fn named(docker: &impl DockerApi, app: String) -> Self {
-        let app = EnvironmentId::parse(app).unwrap();
-        let mut labels =
-            Ownership::scope(&InstanceId::parse("integration-instance").unwrap(), &app);
+        let app = EnvironmentId::parse(app).expect("the environment id parses");
+        let mut labels = Ownership::scope(
+            &InstanceId::parse("integration-instance").expect("the instance id parses"),
+            &app,
+        );
         labels.insert(
             piqueld_core::resource::SPEC_HASH_LABEL.into(),
             format!("sha256:{}", "a".repeat(64)),
         );
         Self {
-            image: docker.resolve_image(IMAGE).await.unwrap(),
+            image: docker
+                .resolve_image(IMAGE)
+                .await
+                .expect("resolve image succeeds"),
             app,
             labels,
         }
@@ -98,7 +103,8 @@ impl Environment {
 
     /// The installation that owns its resources.
     pub(crate) fn instance(&self) -> InstanceId {
-        InstanceId::parse(&self.labels[piqueld_core::resource::INSTANCE_LABEL]).unwrap()
+        InstanceId::parse(&self.labels[piqueld_core::resource::INSTANCE_LABEL])
+            .expect("the instance id parses")
     }
 
     /// The labels secrets of the environment carry.
@@ -119,7 +125,7 @@ impl Environment {
                 ResourceKind::Network,
                 None,
             ))
-            .unwrap(),
+            .expect("the docker network name parses"),
             labels: self.labels.clone(),
         }
     }
@@ -127,13 +133,13 @@ impl Environment {
     /// Its `data` volume.
     pub(crate) fn volume(&self) -> DesiredVolume {
         DesiredVolume {
-            logical_name: piqueld_core::VolumeName::parse("data").unwrap(),
+            logical_name: piqueld_core::VolumeName::parse("data").expect("the volume name parses"),
             name: piqueld_core::DockerVolumeName::parse(docker_resource_name(
                 &self.app,
                 ResourceKind::Volume,
                 Some("data"),
             ))
-            .unwrap(),
+            .expect("the docker volume name parses"),
             labels: self.labels.clone(),
         }
     }
@@ -156,15 +162,17 @@ impl Environment {
             link_aliases: BTreeMap::new(),
             secrets: Vec::new(),
             files: Vec::new(),
-            logical_name: piqueld_core::ServiceName::parse(name).unwrap(),
+            logical_name: piqueld_core::ServiceName::parse(name).expect("the service name parses"),
             name: piqueld_core::DockerServiceName::parse(docker_resource_name(
                 &self.app,
                 ResourceKind::Service,
                 Some(name),
             ))
-            .unwrap(),
-            source: ResolvedSource::parse_image(IMAGE, self.image.clone()).unwrap(),
-            image: piqueld_core::ImmutableImage::parse(self.image.clone()).unwrap(),
+            .expect("the docker service name parses"),
+            source: ResolvedSource::parse_image(IMAGE, self.image.clone())
+                .expect("the image source parses"),
+            image: piqueld_core::ImmutableImage::parse(self.image.clone())
+                .expect("the immutable image parses"),
             replicas: 1,
             environment: BTreeMap::new(),
             command: vec!["/bin/sh".into()],
@@ -205,7 +213,7 @@ impl Environment {
         volume_access: JobVolumeAccess,
         stop_service: bool,
     ) -> piqueld_core::DesiredJobRun {
-        let name = piqueld_core::JobName::parse("migrate").unwrap();
+        let name = piqueld_core::JobName::parse("migrate").expect("the job name parses");
         let mut container = service.clone();
         container.mounts = vec![self.data_mount()];
         container.name = piqueld_core::DockerServiceName::for_job(&self.app, &name);
@@ -272,9 +280,18 @@ impl<D: DockerApi> Contract<D> {
                 && observed.runtime_configuration_matches
         }));
 
-        self.docker.ensure_network(&network).await.unwrap();
-        self.docker.ensure_volume(&volume).await.unwrap();
-        self.docker.ensure_service(&service).await.unwrap();
+        self.docker
+            .ensure_network(&network)
+            .await
+            .expect("ensure network succeeds");
+        self.docker
+            .ensure_volume(&volume)
+            .await
+            .expect("ensure volume succeeds");
+        self.docker
+            .ensure_service(&service)
+            .await
+            .expect("ensure service succeeds");
         assert_eq!(self.observe().await, observed);
     }
 
@@ -285,7 +302,10 @@ impl<D: DockerApi> Contract<D> {
         let mut updated = service.clone();
         updated.replicas = 2;
         updated.environment = BTreeMap::from([("MODE".into(), "updated".into())]);
-        self.docker.ensure_service(&updated).await.unwrap();
+        self.docker
+            .ensure_service(&updated)
+            .await
+            .expect("ensure service succeeds");
         let observed = self.converged(&updated).await;
         assert_eq!(
             Self::service(&observed, &updated).drift(&service),
@@ -299,14 +319,17 @@ impl<D: DockerApi> Contract<D> {
         let plain = self.ensure_web(&self.environment).await;
         let hardened = DesiredService {
             security: piqueld_core::manifest::ServiceSecurity {
-                user: Some("65534:65534".parse().unwrap()),
+                user: Some("65534:65534".parse().expect("the value parses")),
                 read_only_root: true,
                 drop_capabilities: true,
                 no_new_privileges: true,
             },
             ..plain.clone()
         };
-        self.docker.ensure_service(&hardened).await.unwrap();
+        self.docker
+            .ensure_service(&hardened)
+            .await
+            .expect("ensure service succeeds");
         let observed = self.converged(&hardened).await;
         assert_eq!(
             Self::service(&observed, &hardened).drift(&plain),
@@ -324,7 +347,7 @@ impl<D: DockerApi> Contract<D> {
             self.docker
                 .detach_network(service, network, &self.environment.labels)
                 .await
-                .unwrap();
+                .expect("detach network succeeds");
         };
         let drift = async || {
             let observed = self.observe().await;
@@ -367,11 +390,11 @@ impl<D: DockerApi> Contract<D> {
         self.docker
             .remove_service(service.name.as_str(), labels)
             .await
-            .unwrap();
+            .expect("remove service succeeds");
         self.docker
             .remove_service(service.name.as_str(), labels)
             .await
-            .unwrap();
+            .expect("remove service succeeds");
         let remove = async |expected: &str| {
             self.until(expected, async || {
                 match self
@@ -399,7 +422,7 @@ impl<D: DockerApi> Contract<D> {
         self.docker
             .remove_network(network.name.as_str(), labels)
             .await
-            .unwrap();
+            .expect("remove network succeeds");
     }
 
     /// A secret keeps its owner: another environment can neither take it
@@ -410,17 +433,17 @@ impl<D: DockerApi> Contract<D> {
         let names = std::slice::from_ref(&name);
         let owner = self.environment.secret_labels();
         let foreign = Ownership::scope(
-            &InstanceId::parse("another-instance").unwrap(),
+            &InstanceId::parse("another-instance").expect("the instance id parses"),
             &self.environment.app,
         );
         self.docker
             .ensure_secret(&name, b"one", &owner)
             .await
-            .unwrap();
+            .expect("ensure secret succeeds");
         self.docker
             .ensure_secret(&name, b"two", &owner)
             .await
-            .unwrap();
+            .expect("ensure secret succeeds");
         assert!(matches!(
             self.docker.ensure_secret(&name, b"one", &foreign).await,
             Err(DockerError::OwnershipConflict)
@@ -429,13 +452,22 @@ impl<D: DockerApi> Contract<D> {
             self.docker.remove_secrets(names, &foreign).await,
             Err(DockerError::OwnershipConflict)
         ));
-        self.docker.remove_secrets(names, &owner).await.unwrap();
-        self.docker.remove_secrets(names, &owner).await.unwrap();
+        self.docker
+            .remove_secrets(names, &owner)
+            .await
+            .expect("remove secrets succeeds");
+        self.docker
+            .remove_secrets(names, &owner)
+            .await
+            .expect("remove secrets succeeds");
         self.docker
             .ensure_secret(&name, b"one", &foreign)
             .await
-            .unwrap();
-        self.docker.remove_secrets(names, &foreign).await.unwrap();
+            .expect("ensure secret succeeds");
+        self.docker
+            .remove_secrets(names, &foreign)
+            .await
+            .expect("remove secrets succeeds");
     }
 
     /// Resolving a tag the registry doesn't have is rejected, so the
@@ -457,17 +489,33 @@ impl<D: DockerApi> Contract<D> {
     /// pulls a stored digest again.
     pub(crate) async fn pinned_references_resolve_to_their_digest(&self) {
         let image = &self.environment.image;
-        assert_eq!(self.docker.resolve_image(image).await.unwrap(), *image);
+        assert_eq!(
+            self.docker
+                .resolve_image(image)
+                .await
+                .expect("resolve image succeeds"),
+            *image
+        );
         let aliased = self.aliased();
-        assert_eq!(self.docker.resolve_image(&aliased).await.unwrap(), aliased);
+        assert_eq!(
+            self.docker
+                .resolve_image(&aliased)
+                .await
+                .expect("resolve image succeeds"),
+            aliased
+        );
     }
 
     /// An image pulled from two repositories is listed once, with both
     /// repositories' digests, from either image store.
     pub(crate) async fn an_image_in_two_repositories_lists_both_digests(&self) {
-        let aliased = self.docker.resolve_image(&self.aliased()).await.unwrap();
+        let aliased = self
+            .docker
+            .resolve_image(&self.aliased())
+            .await
+            .expect("resolve image succeeds");
         let resolved = [self.environment.image.as_str(), aliased.as_str()];
-        let images = self.docker.images().await.unwrap();
+        let images = self.docker.images().await.expect("images succeeds");
         let listed = images
             .iter()
             .map(|image| {
@@ -492,16 +540,22 @@ impl<D: DockerApi> Contract<D> {
         let second = self.environment.migration("operation-2");
         self.missing(&first).await;
 
-        self.docker.start_job(&first).await.unwrap();
+        self.docker
+            .start_job(&first)
+            .await
+            .expect("start job succeeds");
         self.succeeded(&first).await;
 
-        self.docker.start_job(&second).await.unwrap();
+        self.docker
+            .start_job(&second)
+            .await
+            .expect("start job succeeds");
         self.missing(&first).await;
         self.succeeded(&second).await;
         self.docker
             .remove_jobs(&self.environment.labels, JobRuns::All)
             .await
-            .unwrap();
+            .expect("remove jobs succeeds");
         self.missing(&second).await;
     }
 
@@ -515,14 +569,23 @@ impl<D: DockerApi> Contract<D> {
         let theirs = other.migration("operation-1");
         for (environment, run) in [(&self.environment, &ours), (&other, &theirs)] {
             self.ensure_storage(environment).await;
-            self.docker.start_job(run).await.unwrap();
+            self.docker
+                .start_job(run)
+                .await
+                .expect("start job succeeds");
         }
         let labels = &self.environment.labels;
         for unselected in [JobRuns::Of("operation-2"), JobRuns::Except("operation-1")] {
-            self.docker.remove_jobs(labels, unselected).await.unwrap();
+            self.docker
+                .remove_jobs(labels, unselected)
+                .await
+                .expect("remove jobs succeeds");
             self.succeeded(&ours).await;
         }
-        self.docker.remove_jobs(labels, JobRuns::All).await.unwrap();
+        self.docker
+            .remove_jobs(labels, JobRuns::All)
+            .await
+            .expect("remove jobs succeeds");
         self.missing(&ours).await;
         self.succeeded(&theirs).await;
     }
@@ -576,10 +639,16 @@ impl<D: DockerApi> Contract<D> {
             output,
             stop: tokio_util::sync::CancellationToken::new(),
         };
-        assert_eq!(self.docker.run_exec(&exec, io).await.unwrap(), 0);
+        assert_eq!(
+            self.docker
+                .run_exec(&exec, io)
+                .await
+                .expect("run exec succeeds"),
+            0
+        );
         assert!(printed.recv().await.is_none(), "true prints nothing");
         assert!(self.create_exec(&instance, "missing").await.is_none());
-        let other = InstanceId::parse("another-instance").unwrap();
+        let other = InstanceId::parse("another-instance").expect("the instance id parses");
         assert!(self.create_exec(&other, "web").await.is_none());
     }
 
@@ -589,7 +658,10 @@ impl<D: DockerApi> Contract<D> {
         let mut service = self.ensure_web(&self.environment).await;
         self.converged(&service).await;
         service.replicas = 0;
-        self.docker.ensure_service(&service).await.unwrap();
+        self.docker
+            .ensure_service(&service)
+            .await
+            .expect("ensure service succeeds");
         let instance = self.environment.instance();
         self.until("web has no running task", async || {
             self.create_exec(&instance, "web")
@@ -604,15 +676,15 @@ impl<D: DockerApi> Contract<D> {
     /// installation `instance` runs it.
     async fn create_exec(&self, instance: &InstanceId, service: &str) -> Option<Exec> {
         let request = ExecRequest {
-            service: piqueld_core::ServiceName::parse(service).unwrap(),
-            command: ExecCommand::parse(vec!["true".into()]).unwrap(),
+            service: piqueld_core::ServiceName::parse(service).expect("the service name parses"),
+            command: ExecCommand::parse(vec!["true".into()]).expect("the exec command parses"),
             stdin: false,
             tty: None,
         };
         self.docker
             .create_exec(instance, &self.environment.app, &request)
             .await
-            .unwrap()
+            .expect("create exec succeeds")
     }
 
     /// Ensures the network and volume of `environment`.
@@ -620,18 +692,21 @@ impl<D: DockerApi> Contract<D> {
         self.docker
             .ensure_network(&environment.network())
             .await
-            .unwrap();
+            .expect("ensure network succeeds");
         self.docker
             .ensure_volume(&environment.volume())
             .await
-            .unwrap();
+            .expect("ensure volume succeeds");
     }
 
     /// Ensures the network, volume, and `web` service of `environment`.
     async fn ensure_web(&self, environment: &Environment) -> DesiredService {
         let service = environment.service("web");
         self.ensure_storage(environment).await;
-        self.docker.ensure_service(&service).await.unwrap();
+        self.docker
+            .ensure_service(&service)
+            .await
+            .expect("ensure service succeeds");
         service
     }
 
@@ -665,7 +740,12 @@ impl<D: DockerApi> Contract<D> {
     async fn succeeded(&self, job: &piqueld_core::DesiredJobRun) {
         let status = self
             .until("the job finishes", async || {
-                match self.docker.job_status(job).await.unwrap() {
+                match self
+                    .docker
+                    .job_status(job)
+                    .await
+                    .expect("job status succeeds")
+                {
                     JobStatus::Running { .. } => None,
                     JobStatus::Missing => panic!("{} has no run", job.operation()),
                     status @ JobStatus::Finished { .. } => Some(status),
@@ -680,7 +760,10 @@ impl<D: DockerApi> Contract<D> {
             }
         );
         assert_eq!(
-            self.docker.job_output(job).await.unwrap(),
+            self.docker
+                .job_output(job)
+                .await
+                .expect("job output succeeds"),
             JobOutput {
                 chunks: vec![(LogStream::Stdout, b"migrated\n".to_vec())],
                 truncated: false,
@@ -691,11 +774,17 @@ impl<D: DockerApi> Contract<D> {
     /// Checks that `job` has no run, and so no output.
     async fn missing(&self, job: &piqueld_core::DesiredJobRun) {
         assert_eq!(
-            self.docker.job_status(job).await.unwrap(),
+            self.docker
+                .job_status(job)
+                .await
+                .expect("job status succeeds"),
             JobStatus::Missing
         );
         assert_eq!(
-            self.docker.job_output(job).await.unwrap(),
+            self.docker
+                .job_output(job)
+                .await
+                .expect("job output succeeds"),
             JobOutput::default()
         );
     }
@@ -711,13 +800,20 @@ impl<D: DockerApi> Contract<D> {
 
     /// The environment's image, pinned in [`HUB_ALIAS`].
     fn aliased(&self) -> String {
-        let (_, digest) = self.environment.image.split_once('@').unwrap();
+        let (_, digest) = self
+            .environment
+            .image
+            .split_once('@')
+            .expect("the separator is present");
         format!("{HUB_ALIAS}@{digest}")
     }
 
     /// The environment as Docker reports it.
     async fn observe(&self) -> ObservedApplication {
-        self.docker.observe(&self.environment.app).await.unwrap()
+        self.docker
+            .observe(&self.environment.app)
+            .await
+            .expect("observe succeeds")
     }
 
     /// The names of the services, networks, and volumes in `observed`.

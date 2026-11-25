@@ -25,9 +25,9 @@ impl Fixture {
     /// A runtime directory with permissions `mode`, below the working
     /// directory, see [`fixture_dir::relative`].
     fn new(mode: u32) -> Self {
-        let directory = tempfile::tempdir_in(".").unwrap();
+        let directory = tempfile::tempdir_in(".").expect("the temporary directory is created");
         let runtime = directory.path().join("run");
-        std::fs::create_dir(&runtime).unwrap();
+        std::fs::create_dir(&runtime).expect("create dir succeeds");
         fixture_dir::set_mode(&runtime, mode);
         Self {
             _directory: directory,
@@ -42,7 +42,9 @@ impl Fixture {
     }
 
     fn socket_inode(&self) -> u64 {
-        std::fs::metadata(self.socket()).unwrap().ino()
+        std::fs::metadata(self.socket())
+            .expect("metadata succeeds")
+            .ino()
     }
 
     async fn acquire(&self) -> anyhow::Result<RuntimeDir> {
@@ -55,7 +57,9 @@ impl Fixture {
 
     /// Asserts acquiring `path` fails with an error mentioning `message`.
     async fn assert_refused(path: &Path, message: &str) {
-        let error = Self::acquire_at(path).await.unwrap_err();
+        let error = Self::acquire_at(path)
+            .await
+            .expect_err("the lock is refused");
         assert!(format!("{error:#}").contains(message), "{error:#}");
     }
 }
@@ -64,16 +68,16 @@ impl Fixture {
 async fn socket_uses_effective_group_and_0660_in_shared_and_private_directories() {
     for mode in [0o750, 0o700] {
         let fixture = Fixture::new(mode);
-        let runtime = fixture.acquire().await.unwrap();
-        let _listener = runtime.bind_api().await.unwrap();
-        let socket = std::fs::metadata(fixture.socket()).unwrap();
+        let runtime = fixture.acquire().await.expect("acquire succeeds");
+        let _listener = runtime.bind_api().await.expect("bind api succeeds");
+        let socket = std::fs::metadata(fixture.socket()).expect("metadata succeeds");
         assert_eq!(fixture_dir::mode(&fixture.socket()), 0o660);
         assert_eq!(socket.uid(), rustix::process::geteuid().as_raw());
         assert_eq!(socket.gid(), rustix::process::getegid().as_raw());
         assert_eq!(fixture_dir::mode(&fixture.runtime), mode);
         tokio::net::UnixStream::connect(fixture.socket())
             .await
-            .unwrap();
+            .expect("the socket connects");
     }
 }
 
@@ -102,10 +106,10 @@ async fn unsafe_permissions_are_rejected_without_modification() {
 async fn symlinks_and_unsafe_ancestors_are_rejected() {
     let fixture = Fixture::new(0o700);
     let link = fixture.runtime.with_file_name("link");
-    std::os::unix::fs::symlink(&fixture.runtime, &link).unwrap();
+    std::os::unix::fs::symlink(&fixture.runtime, &link).expect("symlink succeeds");
     Fixture::assert_refused(&link, "not a real directory").await;
     let child = fixture.runtime.join("child");
-    std::fs::create_dir(&child).unwrap();
+    std::fs::create_dir(&child).expect("create dir succeeds");
     fixture_dir::set_mode(&child, 0o700);
     Fixture::assert_refused(&link.join("child"), "not a real directory").await;
     fixture_dir::set_mode(&fixture.runtime, 0o777);
@@ -115,48 +119,62 @@ async fn symlinks_and_unsafe_ancestors_are_rejected() {
 #[tokio::test]
 async fn active_listener_without_a_directory_lock_is_preserved() {
     let fixture = Fixture::new(0o700);
-    let listener = tokio::net::UnixListener::bind(fixture.socket()).unwrap();
+    let listener =
+        tokio::net::UnixListener::bind(fixture.socket()).expect("the unix listener binds");
     let inode = fixture.socket_inode();
-    let runtime = fixture.acquire().await.unwrap();
-    let error = anyhow::Error::from(runtime.bind_api().await.unwrap_err());
+    let runtime = fixture.acquire().await.expect("acquire succeeds");
+    let error = anyhow::Error::from(
+        runtime
+            .bind_api()
+            .await
+            .expect_err("the second bind is refused"),
+    );
     assert!(format!("{error:#}").contains("active listener"));
     assert_eq!(fixture.socket_inode(), inode);
-    let _probe = listener.accept().await.unwrap();
+    let _probe = listener.accept().await.expect("the connection is accepted");
 }
 
 #[tokio::test]
 async fn stale_socket_is_recovered_after_owner_exits() {
     let fixture = Fixture::new(0o700);
-    let runtime = fixture.acquire().await.unwrap();
-    let listener = runtime.bind_api().await.unwrap();
+    let runtime = fixture.acquire().await.expect("acquire succeeds");
+    let listener = runtime.bind_api().await.expect("bind api succeeds");
     drop(listener);
     drop(runtime);
-    let runtime = fixture.acquire().await.unwrap();
-    let _listener = runtime.bind_api().await.unwrap();
+    let runtime = fixture.acquire().await.expect("acquire succeeds");
+    let _listener = runtime.bind_api().await.expect("bind api succeeds");
     tokio::net::UnixStream::connect(fixture.socket())
         .await
-        .unwrap();
+        .expect("the socket connects");
 }
 
 #[tokio::test]
 async fn regular_files_and_symlinks_at_socket_path_are_preserved() {
     let fixture = Fixture::new(0o700);
-    let runtime = fixture.acquire().await.unwrap();
-    std::fs::write(fixture.socket(), b"keep this").unwrap();
-    let error = anyhow::Error::from(runtime.bind_api().await.unwrap_err());
+    let runtime = fixture.acquire().await.expect("acquire succeeds");
+    std::fs::write(fixture.socket(), b"keep this").expect("write succeeds");
+    let error = anyhow::Error::from(
+        runtime
+            .bind_api()
+            .await
+            .expect_err("the second bind is refused"),
+    );
     assert!(format!("{error:#}").contains("refusing to replace non-socket"));
-    assert_eq!(std::fs::read(fixture.socket()).unwrap(), b"keep this");
-    std::fs::remove_file(fixture.socket()).unwrap();
+    assert_eq!(
+        std::fs::read(fixture.socket()).expect("read succeeds"),
+        b"keep this"
+    );
+    std::fs::remove_file(fixture.socket()).expect("the file is removed");
     let target = fixture.socket().with_file_name("target.sock");
-    let _listener = tokio::net::UnixListener::bind(&target).unwrap();
-    std::os::unix::fs::symlink("target.sock", fixture.socket()).unwrap();
+    let _listener = tokio::net::UnixListener::bind(&target).expect("the unix listener binds");
+    std::os::unix::fs::symlink("target.sock", fixture.socket()).expect("symlink succeeds");
     runtime
         .bind_api()
         .await
         .expect_err("`bind_api` should be rejected");
     assert!(
         std::fs::symlink_metadata(fixture.socket())
-            .unwrap()
+            .expect("symlink metadata succeeds")
             .is_symlink()
     );
 }
@@ -164,8 +182,8 @@ async fn regular_files_and_symlinks_at_socket_path_are_preserved() {
 #[tokio::test]
 async fn competing_daemon_with_different_state_cannot_replace_socket_or_open_database() {
     let fixture = Fixture::new(0o700);
-    let runtime = fixture.acquire().await.unwrap();
-    let _listener = runtime.bind_api().await.unwrap();
+    let runtime = fixture.acquire().await.expect("acquire succeeds");
+    let _listener = runtime.bind_api().await.expect("bind api succeeds");
     let inode = fixture.socket_inode();
     let state = fixture.runtime.with_file_name("different-state");
     let config = fixture.runtime.with_file_name("config.toml");
@@ -176,7 +194,7 @@ async fn competing_daemon_with_different_state_cannot_replace_socket_or_open_dat
             fixture.runtime
         ),
     )
-    .unwrap();
+    .expect("write succeeds");
     let error = daemon::refused_start(&config);
     assert!(
         error.contains("failed to lock runtime directory"),

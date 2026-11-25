@@ -97,14 +97,18 @@ async fn jobs_of_a_deployment_stopped_before_them_still_reach_their_dependencies
     let harness = ControllerHarness::new().await;
     let operation = harness.apply(manifest_with_job_dependencies(), None).await;
     let id = &operation.environment_id;
-    harness.applications().stop(id).await.unwrap();
+    harness
+        .applications()
+        .stop(id)
+        .await
+        .expect("stop succeeds");
     harness.finish(&operation).await;
     assert_eq!(
         harness.docker.job_starts.lock().await[0].services,
         2,
         "the migration's dependencies run"
     );
-    let observed = harness.docker.observe(id).await.unwrap();
+    let observed = harness.docker.observe(id).await.expect("observe succeeds");
     assert!(
         observed
             .services
@@ -148,7 +152,7 @@ async fn failed_or_timed_out_job_dependencies_prevent_jobs_and_other_services() 
                 .store
                 .get(&operation.environment_id)
                 .await
-                .unwrap()
+                .expect("the item exists")
                 .resolved
                 .is_none()
         );
@@ -219,7 +223,7 @@ async fn failed_migration_rolls_back_prerequisites_and_repairs_active_services()
                 .store
                 .get(&operation.environment_id)
                 .await
-                .unwrap()
+                .expect("the item exists")
                 .environment
                 .resolved_generation,
             Some(1)
@@ -445,7 +449,7 @@ async fn resumed_job_keeps_the_deadline_of_its_start() {
         harness.wait_for_job_starts(1).await;
         shutdown.cancel();
     });
-    scanned.unwrap();
+    scanned.expect("the scanned is present");
     for run in harness.docker.jobs.lock().await.values_mut() {
         run.deadline = std::time::SystemTime::now() - Duration::from_secs(1);
     }
@@ -462,10 +466,14 @@ async fn before_rollout_jobs_gate_service_changes_and_record_output() {
     let harness = ControllerHarness::new().await;
     let mut input = migration();
     let first = harness.apply(input.clone(), None).await;
-    let stored = harness.store.get(&first.environment_id).await.unwrap();
+    let stored = harness
+        .store
+        .get(&first.environment_id)
+        .await
+        .expect("the item exists");
     let earlier = manifest_with_jobs(&["seed"], 300)
         .validate()
-        .unwrap()
+        .expect("the value validates")
         .normalize(stored.application.application.id().clone());
     let leftover = prebuilt::resolve(&earlier, &first.environment_id, harness.store.instance_id())
         .jobs[0]
@@ -515,7 +523,7 @@ async fn before_rollout_jobs_gate_service_changes_and_record_output() {
             .store
             .get(&first.environment_id)
             .await
-            .unwrap()
+            .expect("the item exists")
             .environment
             .resolved_generation,
         Some(1)
@@ -571,13 +579,17 @@ async fn failed_job_keeps_an_unchanged_application_degraded() {
     let redeploy = applications
         .deploy(&first.environment_id, None)
         .await
-        .unwrap();
+        .expect("deploy succeeds");
     assert_eq!(
         harness.scan_result(&redeploy).await,
         (OperationState::Failed, Some("job_failed".into()))
     );
     harness.scan_result(&redeploy).await;
-    let status = harness.store.status(&first.environment_id).await.unwrap();
+    let status = harness
+        .store
+        .status(&first.environment_id)
+        .await
+        .expect("status succeeds");
     assert_eq!(status.state, piqueld_store::ApplicationState::Degraded);
     assert_eq!(harness.started_jobs().await, ["migrate", "migrate"]);
 }
@@ -622,7 +634,7 @@ async fn waiting_for_job_runs_to_stop_leaves_docker_mutations_free() {
             .expect("the mutation lock is free while job runs stop"),
     );
     drop(held);
-    scan.await.unwrap();
+    scan.await.expect("the scan is present");
     assert_eq!(
         harness.operation(&operation.id).await.state,
         OperationState::Succeeded
@@ -652,7 +664,7 @@ async fn shutdown_lets_a_running_job_record_its_interruption() {
         tokio::time::timeout(Duration::from_secs(20), async { tokio::join!(run, stop) })
             .await
             .expect("shutdown finishes within its grace period");
-    result.unwrap();
+    result.expect("the result is present");
     let (run, _) = harness.latest_run(&operation.environment_id).await;
     assert_eq!(run.state, piqueld_core::api::BuildState::Interrupted);
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
@@ -706,7 +718,7 @@ async fn restarted_daemon_resumes_a_running_job() {
         harness.wait_for_job_starts(1).await;
         shutdown.cancel();
     });
-    scanned.unwrap();
+    scanned.expect("the scanned is present");
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
 
     harness.reopen().await;
@@ -729,7 +741,7 @@ async fn superseded_job_run_is_stopped() {
         harness.wait_for_job_starts(1).await;
         harness.apply(manifest(), None).await
     });
-    scanned.unwrap();
+    scanned.expect("the scanned is present");
     assert!(harness.docker.jobs.lock().await.is_empty());
     let (run, _) = harness.latest_run(&first.environment_id).await;
     assert_eq!(run.state, piqueld_core::api::BuildState::Interrupted);
@@ -747,11 +759,23 @@ async fn image_cleanup_waits_for_a_running_operation() {
     let cancellation = CancellationToken::new();
     let (scanned, ()) = tokio::join!(harness.controller.scan(&cancellation), async {
         harness.wait_for_job_starts(1).await;
-        assert!(!harness.controller.clean_images().await.unwrap());
+        assert!(
+            !harness
+                .controller
+                .clean_images()
+                .await
+                .expect("clean images succeeds")
+        );
         harness.apply(manifest(), None).await;
     });
-    scanned.unwrap();
-    assert!(harness.controller.clean_images().await.unwrap());
+    scanned.expect("the scanned is present");
+    assert!(
+        harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
 }
 
 #[tokio::test]
@@ -809,7 +833,7 @@ async fn timed_out_job_cleanup_retries_after_restart_without_rerunning() {
             .store
             .get(&operation.environment_id)
             .await
-            .unwrap()
+            .expect("the item exists")
             .resolved
             .is_none()
     );
@@ -826,7 +850,10 @@ async fn job_cleanup_still_runs_when_outcome_recording_fails() {
     ] {
         let harness = ControllerHarness::new().await;
         let mut connection = harness.database().await;
-        sqlx::query(trigger).execute(&mut connection).await.unwrap();
+        sqlx::query(trigger)
+            .execute(&mut connection)
+            .await
+            .expect("the statement executes");
         harness.docker.hold_jobs.store(true, Ordering::SeqCst);
         let operation = harness
             .apply(manifest_with_jobs(&["migrate"], 1), None)
@@ -839,7 +866,7 @@ async fn job_cleanup_still_runs_when_outcome_recording_fails() {
         sqlx::query("DROP TRIGGER reject_job_outcome")
             .execute(&mut connection)
             .await
-            .unwrap();
+            .expect("the statement executes");
         harness.scan().await;
         assert_eq!(harness.started_jobs().await, ["migrate"]);
     }
@@ -966,7 +993,7 @@ async fn retry_reruns_a_failed_run_left_in_place() {
         .applications()
         .reconcile(&operation.environment_id, None)
         .await
-        .unwrap();
+        .expect("reconcile succeeds");
     assert_eq!(retry.id, operation.id);
     harness.finish(&operation).await;
     assert_eq!(harness.started_jobs().await, ["migrate", "migrate"]);

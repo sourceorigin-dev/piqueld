@@ -43,7 +43,7 @@ async fn a_deployment_reuses_the_image_of_an_unchanged_build_unless_it_rebuilds_
         .store
         .build_logs(reused.id, None, None)
         .await
-        .unwrap();
+        .expect("build logs succeeds");
     assert!(
         output
             .items
@@ -66,7 +66,7 @@ async fn a_build_machine_image_runs_by_its_repository_digest_and_is_reused() {
     let repository = piqueld_core::build_machine::BuildRepository::try_from(
         "build.example.ts.net:5000/piqueld".to_owned(),
     )
-    .unwrap();
+    .expect("the build repository converts");
     let harness = ControllerHarness::with_docker(FakeDocker {
         build_repository: Some(repository),
         ..FakeDocker::default()
@@ -88,9 +88,9 @@ async fn a_build_machine_image_runs_by_its_repository_digest_and_is_reused() {
             .store
             .get(environment)
             .await
-            .unwrap()
+            .expect("the item exists")
             .resolved
-            .unwrap()
+            .expect("the resolved is present")
             .services[0]
             .image
             .to_string()

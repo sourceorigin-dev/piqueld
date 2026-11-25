@@ -38,20 +38,24 @@ struct Shop {
 impl Shop {
     async fn new(manifest: &str) -> Self {
         let harness = ControllerHarness::new().await;
-        let saved = Box::pin(
-            harness
-                .applications()
-                .save(parse_template_toml(manifest).unwrap(), Some(0)),
-        )
+        let saved = Box::pin(harness.applications().save(
+            parse_template_toml(manifest).expect("parse template toml succeeds"),
+            Some(0),
+        ))
         .await
-        .unwrap();
-        let application = ApplicationId::parse(saved.application_id).unwrap();
-        let environments = harness.store.environments(&application).await.unwrap();
+        .expect("pin succeeds");
+        let application =
+            ApplicationId::parse(saved.application_id).expect("the application id parses");
+        let environments = harness
+            .store
+            .environments(&application)
+            .await
+            .expect("environments succeeds");
         let named = |name: &str| {
             environments
                 .iter()
                 .find(|environment| environment.name.as_str() == name)
-                .unwrap()
+                .expect("the item exists")
                 .id
                 .clone()
         };
@@ -76,11 +80,12 @@ impl Shop {
         self.harness
             .applications()
             .save(
-                parse_template_toml(&shop_toml("", "", IMAGE)).unwrap(),
+                parse_template_toml(&shop_toml("", "", IMAGE))
+                    .expect("parse template toml succeeds"),
                 None,
             )
             .await
-            .unwrap();
+            .expect("save succeeds");
     }
 
     /// Requests a deployment of `production`, without running it.
@@ -89,7 +94,7 @@ impl Shop {
             .applications()
             .deploy(&self.production, None)
             .await
-            .unwrap()
+            .expect("deploy succeeds")
     }
 
     /// Retries `production`'s failed deployment `requested` and asserts it
@@ -100,7 +105,7 @@ impl Shop {
             .applications()
             .reconcile(&self.production, None)
             .await
-            .unwrap();
+            .expect("reconcile succeeds");
         assert_eq!(retried.id, requested.id);
         self.harness.scan().await;
         let failed = self.harness.operation(&requested.id).await;
@@ -115,7 +120,7 @@ impl Shop {
             .applications()
             .deploy(&self.staging, None)
             .await
-            .unwrap();
+            .expect("deploy succeeds");
         self.harness.finish(&operation).await;
         operation
     }
@@ -139,7 +144,10 @@ impl Shop {
 
     /// Promotes the source's current release and runs it until it succeeds.
     async fn promoted(&self) -> AcceptedPromotion {
-        let accepted = self.promote_current().await.unwrap();
+        let accepted = self
+            .promote_current()
+            .await
+            .expect("promote current succeeds");
         let operation = self
             .harness
             .operation(&accepted.operation.operation_id)
@@ -162,7 +170,10 @@ impl Shop {
     }
 
     async fn release(&self, deployment: &str) -> ReleaseId {
-        self.deployment(deployment).await.release.unwrap()
+        self.deployment(deployment)
+            .await
+            .release
+            .expect("the release is present")
     }
 }
 
@@ -212,7 +223,7 @@ async fn promotes_the_source_release_rendered_for_the_target_without_building() 
         .store
         .release(&shop.application, &release)
         .await
-        .unwrap()
+        .expect("release succeeds")
         .release
         .template()
         .clone();
@@ -221,13 +232,16 @@ async fn promotes_the_source_release_rendered_for_the_target_without_building() 
         .applications()
         .environment_detail(&shop.production, &piqueld_core::access::Scope::All)
         .await
-        .unwrap();
+        .expect("the environment detail loads");
     assert_eq!(detail.manifest, Some(next));
     let pulls = shop.harness.pulls().await;
     shop.harness.docker.local_images.lock().await.clear();
     stale().await;
     let generation = shop.harness.store.get(&shop.production).await;
-    let generation = generation.unwrap().application.generation;
+    let generation = generation
+        .expect("the generation is present")
+        .application
+        .generation;
     assert!(matches!(
         promote(generation, Some("not a key")).await,
         Err(ApplicationError::Store(StoreError::InvalidInput))
@@ -264,7 +278,7 @@ async fn promotes_the_source_release_rendered_for_the_target_without_building() 
         .store
         .releases(&shop.application, None, 20)
         .await
-        .unwrap();
+        .expect("releases succeeds");
     let [listed] = releases.items.as_slice() else {
         panic!("one release expected, got {releases:?}")
     };
@@ -299,7 +313,7 @@ async fn the_release_is_pinned_at_acceptance() {
             Some(request),
         )
     };
-    let accepted = promote("promote-first").await.unwrap();
+    let accepted = promote("promote-first").await.expect("promote succeeds");
 
     shop.harness
         .docker
@@ -335,7 +349,7 @@ async fn the_release_is_pinned_at_acceptance() {
         ),
         PromotionError::SourceChanged { deployment, .. } if deployment == first.id
     ));
-    let repeated = promote("promote-first").await.unwrap();
+    let repeated = promote("promote-first").await.expect("promote succeeds");
     assert_eq!(
         repeated.operation.operation_id,
         accepted.operation.operation_id
@@ -346,7 +360,7 @@ async fn the_release_is_pinned_at_acceptance() {
             release: release.clone(),
         })
         .await
-        .unwrap();
+        .expect("promote succeeds");
     let operation = shop.harness.operation(&again.operation.operation_id).await;
     shop.harness.finish(&operation).await;
     assert_eq!(again.origin, DeploymentOrigin::Release);
@@ -393,7 +407,7 @@ async fn preconditions_are_checked_before_anything_is_captured() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the secret is stored");
     let staging_only = SecretAccess {
         environments: EnvironmentAccess::Only([shop.staging.clone()].into()),
         previews: false,
@@ -408,7 +422,7 @@ async fn preconditions_are_checked_before_anything_is_captured() {
             Some(&staging_only),
         )
         .await
-        .unwrap();
+        .expect("the secret is stored");
     shop.deploy_staging().await;
 
     let expected = [
@@ -429,8 +443,11 @@ async fn preconditions_are_checked_before_anything_is_captured() {
             &PromotionSelection::Source { deployment: None },
         )
         .await
-        .unwrap();
-    assert_eq!(plan.release.unwrap().secrets, expected);
+        .expect("plan release succeeds");
+    assert_eq!(
+        plan.release.expect("the release is present").secrets,
+        expected
+    );
 
     shop.harness.docker.observed.lock().await.services[0].convergence = Convergence::Degraded;
     assert!(matches!(
@@ -452,7 +469,7 @@ async fn preconditions_are_checked_before_anything_is_captured() {
             .store
             .latest_operation_for_environment(&shop.production)
             .await
-            .unwrap()
+            .expect("latest operation for environment succeeds")
             .is_none()
     );
 }
@@ -493,11 +510,16 @@ async fn generated_secrets_are_stored_with_the_accepted_promotion() {
             .store
             .secrets(&shop.production)
             .await
-            .unwrap()
+            .expect("the secrets list")
             .is_empty()
     );
     shop.promoted().await;
-    let stored = shop.harness.store.secrets(&shop.production).await.unwrap();
+    let stored = shop
+        .harness
+        .store
+        .secrets(&shop.production)
+        .await
+        .expect("the secrets list");
     assert_eq!(
         stored
             .iter()
@@ -508,7 +530,7 @@ async fn generated_secrets_are_stored_with_the_accepted_promotion() {
     let plan = applications
         .plan_release(&shop.production, &current)
         .await
-        .unwrap();
+        .expect("plan release succeeds");
     assert!(plan.identical, "{:?}", plan.changes);
     assert!(
         !plan
@@ -559,7 +581,7 @@ async fn a_promoted_environment_never_builds_a_deployment_requested_before() {
             .store
             .get(&shop.production)
             .await
-            .unwrap()
+            .expect("the item exists")
             .environment
             .source
             .promoted_from()
@@ -602,7 +624,7 @@ async fn a_promoted_environment_repairs_the_build_it_runs() {
             .services
             .iter_mut()
             .find(|service| service.labels.get(APPLICATION_LABEL) == Some(&production))
-            .unwrap();
+            .expect("the item exists");
         let replicas = web.replicas;
         web.replicas = 0;
         web.convergence = Convergence::Degraded;
@@ -635,7 +657,7 @@ async fn a_promoted_environment_never_rolls_out_a_build_prepared_before() {
             .store
             .prepared_target(&requested.id)
             .await
-            .unwrap()
+            .expect("prepared target succeeds")
             .is_some()
     );
     shop.harness
@@ -650,7 +672,7 @@ async fn a_promoted_environment_never_rolls_out_a_build_prepared_before() {
             .store
             .get(&shop.production)
             .await
-            .unwrap()
+            .expect("the item exists")
             .resolved
             .is_none()
     );

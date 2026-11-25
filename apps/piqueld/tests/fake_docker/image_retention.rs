@@ -11,7 +11,8 @@ use std::collections::BTreeSet;
 /// A local image with ID `byte`s and `labels`.
 fn image(byte: char, labels: &[(&str, &str)]) -> LocalImage {
     LocalImage {
-        id: Sha256Digest::parse(format!("sha256:{}", byte.to_string().repeat(64))).unwrap(),
+        id: Sha256Digest::parse(format!("sha256:{}", byte.to_string().repeat(64)))
+            .expect("the sha256 digest parses"),
         repo_digests: Vec::new(),
         labels: labels
             .iter()
@@ -30,14 +31,26 @@ impl ControllerHarness {
             .lock()
             .await
             .iter()
-            .map(|image| image.id.as_str().chars().last().unwrap())
+            .map(|image| {
+                image
+                    .id
+                    .as_str()
+                    .chars()
+                    .last()
+                    .expect("the last item exists")
+            })
             .collect()
     }
 
     /// The resources of the daemon actions in `phase` that ended as `kind`,
     /// such as `action_succeeded`.
     async fn actions(&self, phase: piqueld_core::Phase, kind: &str) -> Vec<String> {
-        let events = self.store.events(None, None, 100).await.unwrap().items;
+        let events = self
+            .store
+            .events(None, None, 100)
+            .await
+            .expect("the events list")
+            .items;
         events
             .into_iter()
             .filter(|event| event.phase == Some(phase) && event.kind == kind)
@@ -78,7 +91,7 @@ impl ControllerHarness {
     /// The registry's status as of the last cleanup.
     fn registry_status(&self) -> RegistryImageStatus {
         let status = self.controller.image_status().borrow().clone();
-        status.registry.unwrap()
+        status.registry.expect("the registry is present")
     }
 }
 
@@ -104,7 +117,13 @@ async fn cleanup_removes_only_this_installations_unretained_builds() {
         used,
     ]);
 
-    assert!(harness.controller.clean_images().await.unwrap());
+    assert!(
+        harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
     assert_eq!(harness.image_ids().await, ['b', 'd', 'e', 'f']);
     let status = harness.controller.image_status().borrow().clone();
     assert_eq!((status.images, status.reclaimed_bytes), (2, 10));
@@ -134,7 +153,13 @@ async fn an_image_built_for_a_deployment_in_preparation_survives_cleanup() {
         result = &mut scan => panic!("scan finished before building: {result:?}"),
     }
     assert_eq!(harness.image_ids().await, ['b']);
-    assert!(!harness.controller.clean_images().await.unwrap());
+    assert!(
+        !harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
     assert_eq!(harness.image_ids().await, ['b']);
     assert_eq!(
         harness.controller.image_status().borrow().clone(),
@@ -142,12 +167,18 @@ async fn an_image_built_for_a_deployment_in_preparation_survives_cleanup() {
     );
 
     gate.release.notify_one();
-    scan.await.unwrap();
+    scan.await.expect("the scan is present");
     assert_eq!(
         harness.operation(&operation.id).await.state,
         OperationState::Succeeded
     );
-    assert!(harness.controller.clean_images().await.unwrap());
+    assert!(
+        harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
     assert_eq!(harness.image_ids().await, ['b']);
 }
 
@@ -155,17 +186,20 @@ async fn an_image_built_for_a_deployment_in_preparation_survives_cleanup() {
 async fn missing_images_are_pulled_again_by_digest_or_reported_unavailable() {
     let harness = ControllerHarness::new().await;
     let in_use: ImagesInUse = harness.controller.images_in_use().await;
-    let web = ServiceName::parse("web").unwrap();
+    let web = ServiceName::parse("web").expect("the service name parses");
     let pulled = prebuilt::resolutions(&harness.application).sources[&web].clone();
-    let digest = pulled.repository_digest().unwrap().to_string();
+    let digest = pulled
+        .repository_digest()
+        .expect("repository digest succeeds")
+        .to_string();
 
     in_use
         .ensure(&*harness.docker, [(&web, &pulled)])
         .await
-        .unwrap();
+        .expect("ensure succeeds");
     assert_eq!(harness.docker.registry.lock().await.pulls[&digest], 1);
 
-    let api = ServiceName::parse("api").unwrap();
+    let api = ServiceName::parse("api").expect("the service name parses");
     let built = ResolvedSource::Git {
         requested: piqueld_core::manifest::ValidatedSource::Image {
             image: "unused".into(),
@@ -176,7 +210,7 @@ async fn missing_images_are_pulled_again_by_digest_or_reported_unavailable() {
     let error = in_use
         .ensure(&*harness.docker, [(&web, &pulled), (&api, &built)])
         .await
-        .unwrap_err();
+        .expect_err("ensure is rejected");
     assert_eq!(error.code(), "image_unavailable");
     assert_eq!(
         error.message(),
@@ -209,7 +243,13 @@ async fn cleanup_deletes_unretained_pushed_images_from_a_reachable_registry() {
         ..image('d', &owned)
     });
     docker.registry_unreachable.store(true, Ordering::SeqCst);
-    assert!(harness.controller.clean_images().await.unwrap());
+    assert!(
+        harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
     let all = [
         running.clone(),
         unused.clone(),
@@ -225,7 +265,13 @@ async fn cleanup_deletes_unretained_pushed_images_from_a_reachable_registry() {
     );
 
     docker.registry_unreachable.store(false, Ordering::SeqCst);
-    assert!(harness.controller.clean_images().await.unwrap());
+    assert!(
+        harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
     let kept = [running, on_host, others];
     assert_eq!(harness.registry_images().await, kept.into());
     assert_eq!(
@@ -260,7 +306,13 @@ async fn registry_cleanup_goes_past_one_images_failure_but_stops_at_the_registry
     };
 
     refuse(&c, 500).await;
-    assert!(harness.controller.clean_images().await.unwrap());
+    assert!(
+        harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
     assert_eq!(
         harness.registry_images().await,
         [running.clone(), c.clone()].into()
@@ -270,20 +322,31 @@ async fn registry_cleanup_goes_past_one_images_failure_but_stops_at_the_registry
     assert!(
         status
             .failure
-            .unwrap()
+            .expect("the failure is present")
             .contains("500 Internal Server Error")
     );
 
     harness.push(&[&d]).await;
     refuse(&c, 405).await;
-    assert!(harness.controller.clean_images().await.unwrap());
+    assert!(
+        harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
     assert_eq!(
         harness.registry_images().await,
         [running.clone(), c.clone(), d.clone()].into()
     );
     let status = harness.registry_status();
     assert_eq!((status.images, status.deleted_images), (Some(3), 2));
-    assert!(status.failure.unwrap().contains("405 Method Not Allowed"));
+    assert!(
+        status
+            .failure
+            .expect("the failure is present")
+            .contains("405 Method Not Allowed")
+    );
     let failed = harness
         .actions(piqueld_core::Phase::DeleteRegistryImage, "action_failed")
         .await;
@@ -293,7 +356,13 @@ async fn registry_cleanup_goes_past_one_images_failure_but_stops_at_the_registry
     for image in [&c, &d, &e] {
         refuse(image, 500).await;
     }
-    assert!(harness.controller.clean_images().await.unwrap());
+    assert!(
+        harness
+            .controller
+            .clean_images()
+            .await
+            .expect("clean images succeeds")
+    );
     assert_eq!(
         harness.registry_images().await,
         [running, c, d, e, f].into()
@@ -303,13 +372,16 @@ async fn registry_cleanup_goes_past_one_images_failure_but_stops_at_the_registry
 
 /// The repository the harness's build machine pushes to.
 fn build_repository() -> BuildRepository {
-    BuildRepository::try_from("registry.example.ts.net:5000/piqueld".to_owned()).unwrap()
+    BuildRepository::try_from("registry.example.ts.net:5000/piqueld".to_owned())
+        .expect("the build repository converts")
 }
 
 /// The images `repository` holds under digests of `bytes`.
 fn pushed<const N: usize>(repository: &BuildRepository, bytes: [char; N]) -> [RepositoryDigest; N] {
     bytes.map(|byte| {
-        repository
-            .image(&Sha256Digest::parse(format!("sha256:{}", byte.to_string().repeat(64))).unwrap())
+        repository.image(
+            &Sha256Digest::parse(format!("sha256:{}", byte.to_string().repeat(64)))
+                .expect("the sha256 digest parses"),
+        )
     })
 }

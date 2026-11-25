@@ -30,7 +30,8 @@ impl TestApplications {
         sources: Arc<Sources>,
     ) -> Self {
         Self {
-            service: ApplicationService::new(Arc::clone(&store), runtime, sources).unwrap(),
+            service: ApplicationService::new(Arc::clone(&store), runtime, sources)
+                .expect("the application service builds"),
             store,
         }
     }

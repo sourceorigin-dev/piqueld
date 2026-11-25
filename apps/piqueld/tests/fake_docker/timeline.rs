@@ -19,7 +19,11 @@ async fn deployments_record_their_steps_and_forecast_the_next_one() {
     let harness = ControllerHarness::new().await;
     let first = harness.apply(manifest(), Some(0)).await;
     harness.finish(&first).await;
-    let done = harness.applications().timeline(&first.id).await.unwrap();
+    let done = harness
+        .applications()
+        .timeline(&first.id)
+        .await
+        .expect("timeline succeeds");
     assert_eq!(done.operation.state, OperationState::Succeeded);
     assert!(
         done.steps
@@ -33,7 +37,11 @@ async fn deployments_record_their_steps_and_forecast_the_next_one() {
     }
 
     let second = harness.apply(manifest(), Some(1)).await;
-    let forecast = harness.applications().timeline(&second.id).await.unwrap();
+    let forecast = harness
+        .applications()
+        .timeline(&second.id)
+        .await
+        .expect("timeline succeeds");
     assert_eq!(
         steps(&forecast),
         done.steps
@@ -49,7 +57,11 @@ async fn deployments_record_their_steps_and_forecast_the_next_one() {
     );
 
     harness.finish(&second).await;
-    let deployed = harness.applications().timeline(&second.id).await.unwrap();
+    let deployed = harness
+        .applications()
+        .timeline(&second.id)
+        .await
+        .expect("timeline succeeds");
     assert!(
         deployed
             .steps
@@ -75,7 +87,10 @@ async fn a_timeline_followed_across_a_rerun_shows_what_a_new_read_does() {
     let failed = harness.apply(scaled, None).await;
     assert_eq!(harness.scan_result(&failed).await.0, OperationState::Failed);
     let applications = harness.applications();
-    let mut followed = applications.timeline(&failed.id).await.unwrap();
+    let mut followed = applications
+        .timeline(&failed.id)
+        .await
+        .expect("timeline succeeds");
 
     harness
         .docker
@@ -84,10 +99,18 @@ async fn a_timeline_followed_across_a_rerun_shows_what_a_new_read_does() {
     let rerun = applications
         .reconcile(&failed.environment_id, None)
         .await
-        .unwrap();
+        .expect("reconcile succeeds");
     assert_eq!(rerun.id, failed.id);
-    assert!(applications.advance_timeline(&mut followed).await.unwrap());
-    let read = applications.timeline(&failed.id).await.unwrap();
+    assert!(
+        applications
+            .advance_timeline(&mut followed)
+            .await
+            .expect("advance timeline succeeds")
+    );
+    let read = applications
+        .timeline(&failed.id)
+        .await
+        .expect("timeline succeeds");
     assert_eq!(followed.operation.attempt, read.operation.attempt);
     assert_eq!(steps(&followed), steps(&read));
 }
@@ -108,7 +131,7 @@ async fn waiting_for_a_rollout_records_its_tasks_as_they_start_and_run() {
         .applications()
         .timeline(&operation.id)
         .await
-        .unwrap();
+        .expect("timeline succeeds");
     let wait = timeline
         .steps
         .iter()

@@ -37,7 +37,10 @@ impl Repository {
     /// Writes `manifest` to [`MANIFEST`] and commits everything, returning
     /// the commit.
     fn push(&self, manifest: &ApplicationManifest) -> String {
-        self.commit(&[(MANIFEST, &serde_json::to_vec(manifest).unwrap())])
+        self.commit(&[(
+            MANIFEST,
+            &serde_json::to_vec(manifest).expect("the value serialises"),
+        )])
     }
 
     /// Commits `manifest` and a new `Dockerfile` on `feat/local` of a
@@ -46,7 +49,7 @@ impl Repository {
     fn snapshot(&self, manifest: &ApplicationManifest, base: &str) -> (String, Vec<u8>) {
         let work = self.working_copy();
         work.git(&["switch", "-qc", "feat/local"]);
-        let manifest = serde_json::to_vec(manifest).unwrap();
+        let manifest = serde_json::to_vec(manifest).expect("the value serialises");
         let commit = work.commit(&[(MANIFEST, &manifest), ("Dockerfile", b"FROM alpine:3.21\n")]);
         (commit, work.bundle("feat/local", Some(base)))
     }
@@ -96,7 +99,8 @@ impl ControllerHarness {
     /// `production` environment.
     async fn bootstrap(&self, bootstrap: ApplicationManifest) -> (ApplicationId, EnvironmentId) {
         let saved = self.save(bootstrap, Some(0)).await;
-        let application = ApplicationId::parse(saved.application_id).unwrap();
+        let application =
+            ApplicationId::parse(saved.application_id).expect("the application id parses");
         let environment = self.production_of(&application).await;
         (application, environment)
     }
@@ -107,7 +111,7 @@ impl ControllerHarness {
             .store
             .deployments(&operation.environment_id, None, 3)
             .await
-            .unwrap();
+            .expect("the deployments list");
         deployments
             .items
             .into_iter()
@@ -124,16 +128,16 @@ impl ControllerHarness {
         name: &str,
         branch: &str,
     ) -> EnvironmentId {
-        let application = self.store.get(production).await.unwrap();
+        let application = self.store.get(production).await.expect("the item exists");
         let MutationResponse::Environment(environment) = self
             .applications()
             .accept(
                 Daemon,
                 Mutation::CreateEnvironment {
                     application: application.environment.application_id,
-                    name: EnvironmentName::parse(name).unwrap(),
+                    name: EnvironmentName::parse(name).expect("the environment name parses"),
                     source: Some(piqueld::api::SourceChoice::Branch(
-                        TrackedBranch::new(branch.into(), None).unwrap(),
+                        TrackedBranch::new(branch.into(), None).expect("the tracked branch builds"),
                     )),
                 },
                 None,
@@ -141,7 +145,7 @@ impl ControllerHarness {
                 None,
             )
             .await
-            .unwrap()
+            .expect("the connection is accepted")
         else {
             panic!("environment expected")
         };
@@ -155,7 +159,7 @@ impl ControllerHarness {
             .applications()
             .accept(Daemon, mutation, None, false, None)
             .await
-            .unwrap()
+            .expect("the connection is accepted")
         {
             MutationResponse::Preview(created) => (created.operation, Some(created.preview.id)),
             MutationResponse::Operation(operation) => (operation, None),
@@ -182,27 +186,31 @@ async fn repository_files_are_captured_at_the_fetched_commit() {
         mode: FileMode::default(),
     }];
     let otel = repository.path().join("otel.yaml");
-    std::fs::write(&otel, "home: ${HOME}\n").unwrap();
+    std::fs::write(&otel, "home: ${HOME}\n").expect("write succeeds");
     let environment = harness
         .deploy_pushed(&repository, &main)
         .await
         .environment_id;
     let deployed = async || {
-        let current = harness.store.get(&environment).await.unwrap();
+        let current = harness
+            .store
+            .get(&environment)
+            .await
+            .expect("the item exists");
         assert!(current.application.application.files().is_empty());
-        current.resolved.unwrap().services[0].files[0]
+        current.resolved.expect("the resolved is present").services[0].files[0]
             .content
             .clone()
     };
     assert_eq!(deployed().await, "home: ${HOME}\n");
 
-    std::fs::write(&otel, "home: /root\n").unwrap();
+    std::fs::write(&otel, "home: /root\n").expect("write succeeds");
     repository.commit(&[]);
     let changed = harness.deploy(&environment).await;
     assert_eq!(changed.state, OperationState::Succeeded);
     assert_eq!(deployed().await, "home: /root\n");
 
-    std::fs::remove_file(&otel).unwrap();
+    std::fs::remove_file(&otel).expect("the file is removed");
     repository.commit(&[]);
     let missing = harness.deploy(&environment).await;
     assert_eq!(
@@ -225,7 +233,7 @@ async fn fetched_connections_are_ignored_with_a_warning() {
     let harness = ControllerHarness::new().await;
     let initial = repository.manifest();
     let mut redirected = initial.clone();
-    let declared = redirected.spec.manifest.as_mut().unwrap();
+    let declared = redirected.spec.manifest.as_mut().expect("as mut succeeds");
     declared.path = "next.json".into();
     declared.repository.url = "/elsewhere".into();
     declared.repository.branch = "release".into();
@@ -237,10 +245,17 @@ async fn fetched_connections_are_ignored_with_a_warning() {
         harness.warnings(&first).await,
         ["manifest_connection_ignored"]
     );
-    let current = harness.store.get(&first.environment_id).await.unwrap();
-    assert_eq!(current.resolved.as_ref().unwrap().services[0].replicas, 2);
+    let current = harness
+        .store
+        .get(&first.environment_id)
+        .await
+        .expect("the item exists");
     assert_eq!(
-        current.tracking().unwrap().repository(),
+        current.resolved.as_ref().expect("as ref succeeds").services[0].replicas,
+        2
+    );
+    assert_eq!(
+        current.tracking().expect("tracking succeeds").repository(),
         initial.spec.manifest
     );
     assert_eq!(
@@ -248,7 +263,13 @@ async fn fetched_connections_are_ignored_with_a_warning() {
         initial.spec.manifest
     );
     let mut branched = initial.clone();
-    branched.spec.manifest.as_mut().unwrap().repository.branch = "release".into();
+    branched
+        .spec
+        .manifest
+        .as_mut()
+        .expect("as mut succeeds")
+        .repository
+        .branch = "release".into();
     let mut bare = initial.clone();
     bare.spec.manifest = None;
     bare.spec.services[0]
@@ -259,9 +280,13 @@ async fn fetched_connections_are_ignored_with_a_warning() {
         let deployed = harness.deploy(&first.environment_id).await;
         assert_eq!(deployed.state, OperationState::Succeeded);
         assert_eq!(harness.warnings(&deployed).await, Vec::<String>::new());
-        let current = harness.store.get(&first.environment_id).await.unwrap();
+        let current = harness
+            .store
+            .get(&first.environment_id)
+            .await
+            .expect("the item exists");
         assert_eq!(
-            current.tracking().unwrap().repository(),
+            current.tracking().expect("tracking succeeds").repository(),
             initial.spec.manifest
         );
     }
@@ -282,7 +307,7 @@ async fn deployments_record_the_branch_head_sync_follows_from() {
             .store
             .get(&production)
             .await
-            .unwrap()
+            .expect("the item exists")
             .environment
             .synced
             .and_then(|head| head.commit)
@@ -316,7 +341,11 @@ async fn environments_on_different_branches_deploy_independently() {
         .create_environment(&production, "staging", "release")
         .await;
     let replicas = async |environment: &EnvironmentId| {
-        let current = harness.store.get(environment).await.unwrap();
+        let current = harness
+            .store
+            .get(environment)
+            .await
+            .expect("the item exists");
         (
             current
                 .resolved
@@ -331,7 +360,11 @@ async fn environments_on_different_branches_deploy_independently() {
     let (before, production_manifest) = replicas(&production).await;
     assert_eq!(before, Some(1));
     let saved_replicas = async || {
-        let current = harness.store.get(&production).await.unwrap();
+        let current = harness
+            .store
+            .get(&production)
+            .await
+            .expect("the item exists");
         current.application.application.spec().services[0]
             .replicas
             .clone()
@@ -353,14 +386,14 @@ async fn environments_on_different_branches_deploy_independently() {
             Daemon,
             Mutation::SetBranch {
                 id: staging.clone(),
-                branch: TrackedBranch::new("main".into(), None).unwrap(),
+                branch: TrackedBranch::new("main".into(), None).expect("the tracked branch builds"),
             },
             None,
             true,
             None,
         )
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     assert_eq!(replicas(&staging).await.0, Some(3));
     let deployed = harness.deploy(&staging).await;
     assert_eq!(deployed.state, OperationState::Succeeded);
@@ -370,10 +403,12 @@ async fn environments_on_different_branches_deploy_independently() {
         .await;
     assert_eq!(deployed.state, OperationState::Succeeded);
     assert_eq!(replicas(&staging).await.0, Some(3));
-    let current = harness.store.get(&staging).await.unwrap();
+    let current = harness.store.get(&staging).await.expect("the item exists");
     assert_eq!(
         current.environment.source,
-        piqueld_core::EnvironmentSource::Branch(TrackedBranch::new("main".into(), None).unwrap())
+        piqueld_core::EnvironmentSource::Branch(
+            TrackedBranch::new("main".into(), None).expect("the tracked branch builds")
+        )
     );
 }
 
@@ -388,15 +423,15 @@ async fn deleting_a_preview_removes_every_volume_it_ever_created() {
     let production = harness.deploy_pushed(&repository, &main).await;
     repository.git(&["checkout", "-b", "feat/cache"]);
     let mut cached = main.clone();
-    cached
-        .spec
-        .volumes
-        .push(serde_json::from_value(serde_json::json!({"name": "cache"})).unwrap());
+    cached.spec.volumes.push(
+        serde_json::from_value(serde_json::json!({"name": "cache"}))
+            .expect("the value deserialises"),
+    );
     cached.spec.services[0].mounts.push(
         serde_json::from_value(
             serde_json::json!({"volume": "cache", "target": "/var/cache/notes"}),
         )
-        .unwrap(),
+        .expect("the value deserialises"),
     );
     repository.push(&cached);
     let volumes = async || {
@@ -415,22 +450,32 @@ async fn deleting_a_preview_removes_every_volume_it_ever_created() {
                 .store
                 .get(&production.environment_id)
                 .await
-                .unwrap()
+                .expect("the item exists")
                 .environment
                 .application_id,
-            branch: "feat/cache".parse().unwrap(),
+            branch: "feat/cache".parse().expect("the value parses"),
             slot: None,
         }))
         .await;
-    assert_eq!(created.unwrap().state, OperationState::Succeeded);
-    let preview = preview.unwrap();
-    assert_eq!(harness.store.current_release(&preview).await.unwrap(), None);
+    assert_eq!(
+        created.expect("the created operation is present").state,
+        OperationState::Succeeded
+    );
+    let preview = preview.expect("the preview is present");
+    assert_eq!(
+        harness
+            .store
+            .current_release(&preview)
+            .await
+            .expect("current release succeeds"),
+        None
+    );
     assert!(
         harness
             .store
             .current_release(&production.environment_id)
             .await
-            .unwrap()
+            .expect("current release succeeds")
             .is_some()
     );
     repository.push(&main);
@@ -439,8 +484,15 @@ async fn deleting_a_preview_removes_every_volume_it_ever_created() {
             id: preview.clone(),
         }))
         .await;
-    assert_eq!(deployed.unwrap().state, OperationState::Succeeded);
-    let inventory = harness.store.preview_volumes(&preview).await.unwrap();
+    assert_eq!(
+        deployed.expect("the deployed operation is present").state,
+        OperationState::Succeeded
+    );
+    let inventory = harness
+        .store
+        .preview_volumes(&preview)
+        .await
+        .expect("preview volumes succeeds");
     assert_eq!(inventory.len(), 2);
     assert!(inventory.iter().all(|name| !before.contains(name)));
     let current = volumes().await;
@@ -468,8 +520,12 @@ async fn missing_invalid_and_failed_build_manifests_preserve_accepted_configurat
     let harness = ControllerHarness::new().await;
     let initial = repository.manifest();
     let first = harness.deploy_pushed(&repository, &initial).await;
-    let before = harness.store.get(&first.environment_id).await.unwrap();
-    std::fs::remove_file(repository.path().join(MANIFEST)).unwrap();
+    let before = harness
+        .store
+        .get(&first.environment_id)
+        .await
+        .expect("the item exists");
+    std::fs::remove_file(repository.path().join(MANIFEST)).expect("the file is removed");
     repository.commit(&[]);
     let missing = harness.deploy(&first.environment_id).await;
     assert_eq!(missing.error_code.as_deref(), Some("manifest_not_found"));
@@ -485,11 +541,24 @@ async fn missing_invalid_and_failed_build_manifests_preserve_accepted_configurat
     repository.push(&failing);
     let failed = harness.deploy(&first.environment_id).await;
     assert_eq!(failed.error_code.as_deref(), Some("git_build_failed"));
-    let after = harness.store.get(&first.environment_id).await.unwrap();
+    let after = harness
+        .store
+        .get(&first.environment_id)
+        .await
+        .expect("the item exists");
     assert_eq!(before.application, after.application);
     assert_eq!(before.application.generation, after.application.generation);
     assert_eq!(before.resolved, after.resolved);
-    assert_eq!(harness.store.list(None, 50).await.unwrap().items.len(), 1);
+    assert_eq!(
+        harness
+            .store
+            .list(None, 50)
+            .await
+            .expect("the list loads")
+            .items
+            .len(),
+        1
+    );
 }
 
 /// The connection's branch deploys the saved manifest, edits included,
@@ -501,7 +570,13 @@ async fn edits_deploy_until_a_push_changes_the_manifest() {
     let initial = repository.manifest();
     let first = harness.deploy_pushed(&repository, &initial).await;
     let environment = first.environment_id.clone();
-    let saved = || async { harness.store.get(&environment).await.unwrap() };
+    let saved = || async {
+        harness
+            .store
+            .get(&environment)
+            .await
+            .expect("the item exists")
+    };
     let id = saved().await.application.application.id().clone();
     let generation = saved().await.application.generation;
     let mut edited = initial.clone();
@@ -510,8 +585,20 @@ async fn edits_deploy_until_a_push_changes_the_manifest() {
     repository.commit(&[("README.md", b"notes")]);
     harness.finish(&harness.deploy(&environment).await).await;
     let current = saved().await;
-    assert_eq!(current.own.unwrap().spec().services[0].replicas, 4.into());
-    let view = harness.applications().application(&id).await.unwrap();
+    assert_eq!(
+        current
+            .own
+            .expect("the own manifest is present")
+            .spec()
+            .services[0]
+            .replicas,
+        4.into()
+    );
+    let view = harness
+        .applications()
+        .application(&id)
+        .await
+        .expect("the application loads");
     assert!(view.edited());
     assert_eq!(
         view.edits()
@@ -528,7 +615,7 @@ async fn edits_deploy_until_a_push_changes_the_manifest() {
     harness.finish(&harness.deploy(&environment).await).await;
     let current = saved().await;
     for deployed in [
-        current.own.as_ref().unwrap(),
+        current.own.as_ref().expect("as ref succeeds"),
         &current.application.application,
     ] {
         let web = &deployed.spec().services[0];
@@ -539,7 +626,11 @@ async fn edits_deploy_until_a_push_changes_the_manifest() {
         current.environment.resolved_generation,
         Some(current.application.generation)
     );
-    let view = harness.applications().application(&id).await.unwrap();
+    let view = harness
+        .applications()
+        .application(&id)
+        .await
+        .expect("the application loads");
     assert!(!view.edited());
 }
 
@@ -561,7 +652,7 @@ async fn retry_after_reopening_store_uses_fetched_manifest_and_new_deploy_fetche
         .applications()
         .reconcile(&first.environment_id, None)
         .await
-        .unwrap();
+        .expect("reconcile succeeds");
     assert_eq!(retry.id, failed.id);
     harness.scan().await;
     assert_eq!(
@@ -580,17 +671,19 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
     let harness = ControllerHarness::new().await;
     let mut fetched = repository.manifest();
     fetched.spec.services[0].source = self_source();
-    std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.20\n").unwrap();
+    std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.20\n")
+        .expect("write succeeds");
     let main = repository.push(&fetched);
     repository.git(&["checkout", "-b", "feature"]);
-    std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.21\n").unwrap();
+    std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.21\n")
+        .expect("write succeeds");
     let feature = repository.commit(&[]);
     repository.git(&["checkout", "main"]);
     let (application, environment) = harness.bootstrap(repository.bootstrap()).await;
     let expected_spec = fetched
         .clone()
         .validate()
-        .unwrap()
+        .expect("the value validates")
         .normalize(application)
         .to_manifest()
         .spec;
@@ -606,9 +699,13 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
         let one_off = revision.clone();
         let deployment = harness.deploy_revision(&environment, revision).await;
         assert_eq!(deployment.state, OperationState::Succeeded);
-        let stored = harness.store.get(&environment).await.unwrap();
+        let stored = harness
+            .store
+            .get(&environment)
+            .await
+            .expect("the item exists");
         assert!(
-            matches!(&stored.resolved.as_ref().unwrap().services[0].source, ResolvedSource::Git { commit, .. } if commit == &expected)
+            matches!(&stored.resolved.as_ref().expect("as ref succeeds").services[0].source, ResolvedSource::Git { commit, .. } if commit == &expected)
         );
         saved_main |= one_off.is_none();
         assert_eq!(
@@ -617,13 +714,23 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
         );
     }
     let mut moved = fetched;
-    moved.spec.manifest.as_mut().unwrap().repository.url = "/elsewhere".into();
+    moved
+        .spec
+        .manifest
+        .as_mut()
+        .expect("as mut succeeds")
+        .repository
+        .url = "/elsewhere".into();
     let head = repository.push(&moved);
     let deployment = harness.deploy(&environment).await;
     assert_eq!(deployment.state, OperationState::Succeeded);
-    let stored = harness.store.get(&environment).await.unwrap();
+    let stored = harness
+        .store
+        .get(&environment)
+        .await
+        .expect("the item exists");
     assert!(
-        matches!(&stored.resolved.as_ref().unwrap().services[0].source, ResolvedSource::Git { commit, .. } if commit == &head)
+        matches!(&stored.resolved.as_ref().expect("as ref succeeds").services[0].source, ResolvedSource::Git { commit, .. } if commit == &head)
     );
 }
 
@@ -637,7 +744,8 @@ async fn local_snapshots_deploy_their_manifest_and_build_self_sources_from_the_s
     let harness = ControllerHarness::new().await;
     let mut fetched = repository.manifest();
     fetched.spec.services[0].source = self_source();
-    std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.20\n").unwrap();
+    std::fs::write(repository.path().join("Dockerfile"), "FROM alpine:3.20\n")
+        .expect("write succeeds");
     let base = repository.push(&fetched);
     let (application, _) = harness.bootstrap(repository.bootstrap()).await;
 
@@ -652,7 +760,7 @@ async fn local_snapshots_deploy_their_manifest_and_build_self_sources_from_the_s
             Daemon,
             (
                 application,
-                piqueld_core::GitBranch::parse("feat/local").unwrap(),
+                piqueld_core::GitBranch::parse("feat/local").expect("the git branch parses"),
                 None,
             ),
             (
@@ -664,15 +772,19 @@ async fn local_snapshots_deploy_their_manifest_and_build_self_sources_from_the_s
             None,
         )
         .await
-        .unwrap();
+        .expect("deploy snapshot succeeds");
     let MutationResponse::Preview(created) = created else {
         panic!("preview expected")
     };
     harness.scan().await;
     let operation = harness.operation(&created.operation.operation_id).await;
     assert_eq!(operation.state, OperationState::Succeeded);
-    let stored = harness.store.get(&created.preview.id).await.unwrap();
-    let service = &stored.resolved.as_ref().unwrap().services[0];
+    let stored = harness
+        .store
+        .get(&created.preview.id)
+        .await
+        .expect("the item exists");
+    let service = &stored.resolved.as_ref().expect("as ref succeeds").services[0];
     assert!(matches!(&service.source, ResolvedSource::Git { commit, .. } if commit == &snapshot));
     assert_eq!(
         service.environment.get("SNAPSHOT").map(String::as_str),
@@ -682,7 +794,7 @@ async fn local_snapshots_deploy_their_manifest_and_build_self_sources_from_the_s
         .store
         .deployments(&created.preview.id, None, 3)
         .await
-        .unwrap();
+        .expect("the deployments list");
     assert_eq!(
         history.items[0].origin,
         piqueld_core::api::DeploymentOrigin::Local(piqueld_core::api::LocalSnapshot {
@@ -694,7 +806,10 @@ async fn local_snapshots_deploy_their_manifest_and_build_self_sources_from_the_s
         history.items[0].system_value(piqueld_core::manifest::SystemVariable::GitSha),
         Some(snapshot.as_str())
     );
-    let synced = stored.environment.synced.unwrap();
+    let synced = stored
+        .environment
+        .synced
+        .expect("the synced release is present");
     assert_eq!(synced.commit, None);
 }
 
@@ -710,7 +825,7 @@ async fn retry_after_reopening_store_builds_self_sources_at_the_fetched_commit()
     built.source = self_source();
     fetched.spec.services.push(built);
     let dockerfile = repository.path().join("Dockerfile");
-    std::fs::write(&dockerfile, "FROM alpine:3.20\n").unwrap();
+    std::fs::write(&dockerfile, "FROM alpine:3.20\n").expect("write succeeds");
     let pinned = repository.push(&fetched);
     let (_, environment) = harness.bootstrap(repository.bootstrap()).await;
     harness.docker.arm_tag_flips(100).await;
@@ -724,7 +839,7 @@ async fn retry_after_reopening_store_builds_self_sources_at_the_fetched_commit()
         failed.error_code.as_deref(),
         Some("image_resolution_failed")
     );
-    std::fs::write(&dockerfile, "FROM alpine:3.21\n").unwrap();
+    std::fs::write(&dockerfile, "FROM alpine:3.21\n").expect("write succeeds");
     repository.commit(&[]);
     harness.reopen().await;
     harness.docker.arm_tag_flips(0).await;
@@ -732,7 +847,7 @@ async fn retry_after_reopening_store_builds_self_sources_at_the_fetched_commit()
         .applications()
         .reconcile(&environment, None)
         .await
-        .unwrap();
+        .expect("reconcile succeeds");
     assert_eq!(retry.id, failed.id);
     harness.finish(&retry).await;
     let resolved = harness.target(&environment).await;
@@ -755,7 +870,7 @@ async fn bootstrap_can_pin_manifest_revision_independently_from_git_build_revisi
         build_repository.path().join("Dockerfile"),
         "FROM alpine:3.20\n",
     )
-    .unwrap();
+    .expect("write succeeds");
     let build_commit = build_repository.commit(&[]);
     let mut fetched = repository.manifest();
     fetched.spec.services[0].source = piqueld_core::Source::Git {
@@ -768,7 +883,13 @@ async fn bootstrap_can_pin_manifest_revision_independently_from_git_build_revisi
     };
     let pinned = repository.push(&fetched);
     let mut bootstrap = repository.bootstrap();
-    bootstrap.spec.manifest.as_mut().unwrap().repository.commit = Some(pinned);
+    bootstrap
+        .spec
+        .manifest
+        .as_mut()
+        .expect("as mut succeeds")
+        .repository
+        .commit = Some(pinned);
     fetched.metadata.name = "wrong-later-name".into();
     repository.push(&fetched);
     let (_, environment) = harness.bootstrap(bootstrap).await;
@@ -778,9 +899,9 @@ async fn bootstrap_can_pin_manifest_revision_independently_from_git_build_revisi
         .store
         .get(&environment)
         .await
-        .unwrap()
+        .expect("the item exists")
         .resolved
-        .unwrap();
+        .expect("the resolved is present");
     assert!(
         matches!(&resolved.services[0].source, ResolvedSource::Git { commit, .. } if commit == &build_commit)
     );
