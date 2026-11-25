@@ -2,7 +2,7 @@ import { test as base, expect, type Browser, type CDPSession, type Locator, type
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { resolve, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -380,6 +380,15 @@ export type Options = {
   processEnv: NodeJS.ProcessEnv;
 };
 
+/** The console errors Chromium logs for API responses the dashboard expects; see `browserErrors`. */
+const expectedResourceError =
+  /^Failed to load resource: (the server responded with a status of (4\d\d|503) |net::ERR_(FAILED|CONNECTION_REFUSED)$)/;
+
+/** The error the dashboard's `style-src 'self'` policy logs when Playwright's
+ * `animations: 'disabled'` screenshot option injects its own inline styles;
+ * see `browserErrors`. */
+const screenshotStyleError = /^Applying inline style violates the following Content Security Policy directive 'style-src 'self''/;
+
 export const test = base.extend<Options & { daemon: Daemon; passkeys: Passkeys; account: User; cli: Cli; browserErrors: void }>({
   fakeDocker: [false, { option: true }],
   processEnv: [{}, { option: true }],
@@ -419,11 +428,27 @@ export const test = base.extend<Options & { daemon: Daemon; passkeys: Passkeys; 
     await use(account);
   },
   cli: async ({ daemon, processEnv }, use, testInfo) => { await use(new Cli(daemon, testInfo, processEnv)); },
-  browserErrors: [async ({ page }, use) => {
+  browserErrors: [async ({ page }, use, testInfo) => {
     const errors: string[] = [];
+    // The documentation's screenshots disable animations, which makes
+    // Playwright, not the dashboard, apply inline styles the policy blocks.
+    const screenshots = testInfo.file.split(sep).includes('screenshots');
     page.on('pageerror', error => errors.push(error.message));
+    // Chromium logs each API response with an error status as a console
+    // error, though the dashboard reads them as answers, such as a signed-out
+    // 401 or the readiness 503, and specs provoke others on purpose, some by
+    // aborting requests. Any other console error fails the test: another 5xx,
+    // a missing asset, or an error the dashboard logs.
+    page.on('console', message => {
+      if (message.type() !== 'error') return;
+      const api = new URL(message.location().url, page.url()).pathname.startsWith('/api/');
+      if (screenshots && screenshotStyleError.test(message.text())) return;
+      if (!(api && expectedResourceError.test(message.text()))) {
+        errors.push(`console error: ${message.text()} (${message.location().url})`);
+      }
+    });
     await use();
-    expect(errors, 'Uncaught browser errors').toEqual([]);
+    expect(errors, 'Uncaught errors and console errors in the browser').toEqual([]);
   }, { auto: true }],
 });
 export { expect };

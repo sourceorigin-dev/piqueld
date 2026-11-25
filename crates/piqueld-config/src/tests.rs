@@ -317,6 +317,17 @@ fn dns_providers_accept_credentials_only_from_files() {
     }
 }
 
+/// The example the repository ships, which the daemon suggests with
+/// `--config examples/piqueld.toml`, stays valid.
+#[test]
+fn the_shipped_example_is_valid() {
+    DaemonConfig::check(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/piqueld.toml"
+    ))
+    .unwrap();
+}
+
 #[test]
 fn checks_locate_credential_files_without_reading_them() {
     let directory = tempfile::tempdir().unwrap();

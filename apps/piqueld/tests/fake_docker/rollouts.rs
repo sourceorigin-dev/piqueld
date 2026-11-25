@@ -696,19 +696,27 @@ async fn dependents_roll_out_once_their_dependencies_converge() {
     );
 }
 
+/// Six chained services, each depending on the one before, each converge
+/// after 1.75 s of backed-off polls (250, 500 and 1000 ms). That leaves each
+/// over 6 s of the 8 s timeout on a loaded machine, while the chain's polls
+/// alone take 10.5 s, longer than one timeout. It runs on real time: the
+/// deadline is a timer while the store works on its own thread, which paused
+/// time would skip to.
 #[tokio::test]
 async fn each_dependency_gets_the_full_convergence_timeout() {
-    let rollout = deploy_dependents(
-        &[("db", &[]), ("api", &["db"]), ("web", &["api"])],
-        &[("db", 5), ("api", 5), ("web", 5)],
-        Duration::from_secs(4),
-    )
-    .await;
+    let names = ["a", "b", "c", "d", "e", "f"];
+    let services: Vec<(&str, &[&str])> = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (*name, &names[index.saturating_sub(1)..index]))
+        .collect();
+    let slow: Vec<_> = names.iter().map(|name| (*name, 5)).collect();
+    let rollout = deploy_dependents(&services, &slow, Duration::from_secs(8)).await;
     assert_eq!(
         rollout,
         (
             OperationState::Succeeded,
-            ["db", "api", "web"]
+            names
                 .iter()
                 .flat_map(|name| [format!("ensure {name}"), format!("converged {name}")])
                 .collect()
