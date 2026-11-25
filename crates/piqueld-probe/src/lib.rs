@@ -115,6 +115,10 @@ impl HttpProbe {
     /// Returns an [`ArgumentError`] for a missing subcommand, unknown,
     /// repeated, or missing flags, a zero port or timeout, or a path that does
     /// not start with `/` or contains whitespace or control characters.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the error names the flag and the rejected value, which a parse error cannot improve on"
+    )]
     pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, ArgumentError> {
         let mut arguments = arguments.into_iter();
         if arguments.next().as_deref() != Some("http") {

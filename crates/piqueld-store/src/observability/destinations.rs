@@ -37,6 +37,10 @@ struct WebhookUrl(Zeroizing<String>);
 
 impl WebhookUrl {
     /// Checks `url`, see [`WebhookUrl`].
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the destination URL can carry credentials, so it is reported only as invalid"
+    )]
     fn parse(url: String) -> Result<Self, DestinationError> {
         let url = Zeroizing::new(url);
         let parsed = url::Url::parse(&url).map_err(|_| DestinationError::UrlInvalid)?;

@@ -78,6 +78,10 @@ impl ApplicationService {
     /// # Errors
     /// Returns [`ApplicationError::Busy`] when as many already run as `kind`
     /// allows.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the only failure is no free permit, which `Busy` names"
+    )]
     pub fn admit(&self, kind: Expensive) -> Result<OwnedSemaphorePermit, ApplicationError> {
         Arc::clone(self.admission.of(kind))
             .try_acquire_owned()

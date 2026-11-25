@@ -75,6 +75,10 @@ impl DeclarationDraft {
     /// # Errors
     ///
     /// Returns a message naming the secret when its size does not parse.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     pub fn declaration(self) -> Result<SecretDeclaration, String> {
         let size = self
             .size

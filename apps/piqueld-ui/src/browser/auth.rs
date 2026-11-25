@@ -622,6 +622,10 @@ fn ConfirmPasskey(step_up: StepUp) -> impl IntoView {
 /// in. The host operator, which has no passkey, signs in with a new link in
 /// another tab and then continues here, keeping unsaved edits.
 #[component]
+#[expect(
+    clippy::map_err_ignore,
+    reason = "any failure to read the session means the page is still signed out"
+)]
 fn SessionExpired(state: AuthState) -> impl IntoView {
     let feedback = Feedback::new();
     let operator = state.current.with_untracked(|session| {

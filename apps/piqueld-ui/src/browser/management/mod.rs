@@ -755,6 +755,10 @@ struct Mutation(Client);
 
 impl Mutation {
     /// Draws the request identity.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "a browser failure reaches the page only as this fixed message"
+    )]
     fn new() -> Result<Self, String> {
         // Unlike randomUUID, getRandomValues is available on the supported plain
         // HTTP origins. Keep 128 bits of cryptographic entropy for replay identities.

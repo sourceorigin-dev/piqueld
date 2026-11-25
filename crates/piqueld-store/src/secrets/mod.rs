@@ -155,6 +155,10 @@ impl SecretCipher {
 
     /// Opens an existing key without creating or changing anything, as the
     /// installation check does.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the error is a key-length marker with no detail"
+    )]
     pub(crate) fn open(path: &Path) -> anyhow::Result<Self> {
         use anyhow::{Context, bail};
         let descriptor = rustix::fs::open(
@@ -217,6 +221,10 @@ impl SecretCipher {
         format!("{version}\0{owner}\0{name}\0{generation}").into_bytes()
     }
     /// Encrypts one secret value under a fresh random nonce.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "AEAD errors are opaque by design, so a secret cannot leak through them"
+    )]
     pub(crate) fn encrypt(
         &self,
         owner: SecretOwner<'_>,
@@ -243,6 +251,10 @@ impl SecretCipher {
     }
     /// Decrypts a value, returning [`KeyFailure::AuthenticationFailed`] when the key
     /// or identity does not match. The plaintext is zeroized on drop.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "AEAD errors are opaque by design, so a secret cannot leak through them"
+    )]
     pub(crate) fn decrypt(
         &self,
         owner: SecretOwner<'_>,

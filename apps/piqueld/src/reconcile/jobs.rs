@@ -447,6 +447,10 @@ impl<D: DockerApi> Controller<D> {
     /// for every environment carry on meanwhile. That is safe: a job starts,
     /// and a service is written, only under the lock, after checking that no
     /// run or service still holds a volume it would share.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "`Elapsed` carries nothing the timeout variant does not already say"
+    )]
     async fn wait_unlocked(
         &self,
         released: impl Future<Output = Result<(), piqueld_docker::DockerError>>,

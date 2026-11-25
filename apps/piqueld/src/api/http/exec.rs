@@ -49,7 +49,8 @@ impl<S: Send + Sync> FromRequestParts<S> for ExecUpgrade {
         WebSocketUpgrade::from_request_parts(parts, state)
             .await
             .map(Self)
-            .map_err(|_| {
+            .map_err(|error| {
+                tracing::debug!(%error, "exec request is not a WebSocket upgrade");
                 ApiError::new(
                     StatusCode::UPGRADE_REQUIRED,
                     ApiErrorCode::UpgradeRequired,

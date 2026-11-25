@@ -102,6 +102,10 @@ impl RemoteBuilder {
     /// [`Self::PROBE_TIMEOUT`], and keeps the check as the latest for
     /// [`Self::status`]. It checks only `BuildKit`: the build registry is
     /// reached by the engine, and by image cleanup.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "`Elapsed` carries nothing the timeout variant does not already say"
+    )]
     async fn connect(
         &self,
     ) -> (

@@ -50,6 +50,7 @@ impl Signature {
     }
 
     /// The signature of `body` under `secret`.
+    #[expect(clippy::map_err_ignore, reason = "the error is the digest itself")]
     fn of(secret: &[u8], body: &[u8]) -> Result<Self, openssl::error::ErrorStack> {
         let key = openssl::pkey::PKey::hmac(secret)?;
         let digest = openssl::sign::Signer::new(openssl::hash::MessageDigest::sha256(), &key)?

@@ -185,13 +185,14 @@ impl Record {
     /// Parses a provider's record of type `kind`. Other types are `None`.
     /// TXT content loses its quotes, and CNAME targets their trailing dot.
     fn parse(kind: &str, content: &str, proxied: bool) -> Result<Option<Self>, ApiError> {
-        let invalid = || ApiError::Record(format!("{kind} {content}"));
+        let invalid =
+            |error: &dyn std::fmt::Display| ApiError::Record(format!("{kind} {content}: {error}"));
         Ok(Some(match kind {
-            "A" => Self::A(content.parse().map_err(|_| invalid())?),
-            "AAAA" => Self::Aaaa(content.parse().map_err(|_| invalid())?),
+            "A" => Self::A(content.parse().map_err(|error| invalid(&error))?),
+            "AAAA" => Self::Aaaa(content.parse().map_err(|error| invalid(&error))?),
             "CNAME" => Self::Cname {
                 target: Hostname::parse(content.trim_end_matches('.').to_ascii_lowercase())
-                    .map_err(|_| invalid())?,
+                    .map_err(|error| invalid(&error))?,
                 proxied,
             },
             "TXT" => Self::Txt(

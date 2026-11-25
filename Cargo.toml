@@ -163,6 +163,7 @@ unimplemented = "warn"
 unused_result_ok = "warn"
 unreachable = "warn"
 let_underscore_must_use = "warn"
+map_err_ignore = "warn"
 dbg_macro = "warn"
 # Every exception names its lint with `#[expect]` and says why.
 allow_attributes = "warn"

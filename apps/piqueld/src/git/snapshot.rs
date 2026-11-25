@@ -143,6 +143,10 @@ impl Snapshots {
     /// Returns [`SnapshotError`] for an oversized, malformed, or unverifiable
     /// bundle, an unavailable base, a tree too large to check out, a
     /// timeout, or a storage failure.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "`Elapsed` carries nothing the timeout variant does not already say"
+    )]
     pub(crate) async fn receive<E: std::error::Error + Send + Sync + 'static>(
         &self,
         body: impl Stream<Item = Result<Bytes, E>>,
@@ -208,6 +212,10 @@ impl Snapshots {
     }
 
     /// Streams `body` to `path`, refusing more than `limit` bytes.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "`Elapsed` carries nothing the timeout variant does not already say"
+    )]
     async fn store<E: std::error::Error + Send + Sync + 'static>(
         body: impl Stream<Item = Result<Bytes, E>>,
         path: &Path,

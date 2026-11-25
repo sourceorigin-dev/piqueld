@@ -242,6 +242,10 @@ impl BollardDocker {
 
     /// Converts core resource limits into Docker task limits, leaving
     /// reservations unset. Fails when the memory limit exceeds `i64::MAX`.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the only failure is a limit that overflows, which the message names"
+    )]
     pub(super) fn task_resources(
         resources: Option<&ResourceLimits>,
     ) -> Result<Option<TaskSpecResources>, DockerError> {

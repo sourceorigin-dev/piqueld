@@ -278,8 +278,12 @@ pub(crate) async fn read_text(path: &Path, what: &'static str, limit: u64) -> Re
                 "{what} {shown} exceeds the input limit"
             )));
         }
-        String::from_utf8(bytes)
-            .map_err(|_| invalid(format_args!("{what} {shown} is not valid UTF-8")))
+        String::from_utf8(bytes).map_err(|error| {
+            invalid(format_args!(
+                "{what} {shown} is not valid UTF-8: {}",
+                error.utf8_error()
+            ))
+        })
     })
     .await
     .map_err(|error| {

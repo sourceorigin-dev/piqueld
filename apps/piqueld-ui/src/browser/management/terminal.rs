@@ -150,6 +150,10 @@ struct Form {
 
 impl Form {
     /// The request the form describes, for a terminal of `size`.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the form states what to enter, which a parse error cannot improve on"
+    )]
     fn request(self, size: TerminalSize) -> Result<ExecRequest, String> {
         let service = ServiceName::parse(self.service.get_untracked())
             .map_err(|_| "Choose a service.".to_owned())?;

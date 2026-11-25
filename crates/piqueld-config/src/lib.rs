@@ -319,6 +319,10 @@ impl AuthConfig {
     /// # Errors
     /// Requires HTTPS, except for HTTP development on `localhost` or its
     /// subdomains, which browsers resolve to loopback and treat as secure.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the error is a fixed message that already names the setting"
+    )]
     pub fn validate_origin(value: &str) -> Result<url::Url, InvalidOrigin> {
         let url = url::Url::parse(value).map_err(|_| InvalidOrigin("invalid public_url"))?;
         if url.domain().is_none()

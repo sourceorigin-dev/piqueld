@@ -74,8 +74,9 @@ impl Client {
     /// or [`ClientError::Configuration`] if the HTTP client cannot initialize.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn tcp(base_url: &str) -> Result<Self, ClientError> {
-        let url = url::Url::parse(base_url)
-            .map_err(|_| ClientError::invalid_request("base URL is not a valid URL"))?;
+        let url = url::Url::parse(base_url).map_err(|error| {
+            ClientError::invalid_request(format!("base URL is not a valid URL: {error}"))
+        })?;
         if !matches!(url.scheme(), "http" | "https")
             || url.path() != "/"
             || url.query().is_some()
@@ -158,7 +159,9 @@ impl Client {
     /// Rejects secrets that cannot be represented as an HTTP header.
     pub fn with_bearer(mut self, token: &str) -> Result<Self, ClientError> {
         let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
-            .map_err(|_| ClientError::invalid_request("invalid bearer credential"))?;
+            .map_err(|error| {
+                ClientError::invalid_request(format!("invalid bearer credential: {error}"))
+            })?;
         value.set_sensitive(true);
         self.generated.inner.bearer = Some(value);
         Ok(self)
@@ -240,9 +243,9 @@ impl Client {
         &self,
         builder: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, ClientError> {
-        let mut request = builder
-            .build()
-            .map_err(|_| ClientError::invalid_request("request could not be constructed"))?;
+        let mut request = builder.build().map_err(|error| {
+            ClientError::invalid_request(format!("request could not be constructed: {error}"))
+        })?;
         self.generated
             .inner
             .prepare(&mut request)
@@ -313,8 +316,9 @@ impl ClientState {
         // reqwest passes this duration to the signed 32-bit browser timer.
         #[cfg(target_arch = "wasm32")]
         if let Some(timeout) = self.timeout {
-            i32::try_from(timeout.as_millis())
-                .map_err(|_| "browser request timeout exceeds i32::MAX milliseconds".to_owned())?;
+            i32::try_from(timeout.as_millis()).map_err(|error| {
+                format!("browser request timeout exceeds i32::MAX milliseconds: {error}")
+            })?;
         }
         *request.timeout_mut() = self.timeout;
         if let Some(bearer) = &self.bearer {
@@ -328,7 +332,7 @@ impl ClientState {
             && let Some(request_id) = &self.request_id
         {
             let value = reqwest::header::HeaderValue::from_str(request_id)
-                .map_err(|_| "request header value is invalid".to_owned())?;
+                .map_err(|error| format!("request header value is invalid: {error}"))?;
             request.headers_mut().insert("idempotency-key", value);
         }
         Ok(())

@@ -195,6 +195,10 @@ impl ApplicationSpec {
 
     /// The declaration of environment `name` by `config`, whose block is at
     /// `path`, or the errors at its fields.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the diagnostic names the field and says why it is invalid"
+    )]
     fn declare(
         &self,
         name: EnvironmentName,
