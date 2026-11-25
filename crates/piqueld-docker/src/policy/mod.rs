@@ -8,20 +8,15 @@ use piqueld_core::manifest::{ContainerUser, ServiceSecurity};
 
 /// The runtime policy emitted by the desired-service Docker specification builder.
 ///
-/// This policy verifies exactly the fields piqueld authors — replication,
-/// update settings, the restart condition and delay, mounts (named volumes,
-/// a telemetry receiver's socket directory, whose source and user the
-/// desired service compares, and a read-only root's `/tmp`), environment,
-/// network targets and logical-name aliases, health checks and the probe
-/// config they run, file configs, resource limits, the security settings a
-/// service's `security` expresses, and the placement pin to the local node.
-/// Fields the builder never sets are
-/// accepted only at known Engine defaults, so ordinary engine-defaulted
-/// echo-back does not register as drift while unsupported non-default values
-/// do. Security relevant settings piqueld cannot express (privileged
-/// execution, added or single dropped capabilities, sysctls, named users,
-/// groups, runtimes, log drivers) are
-/// explicitly denied: their presence means out-of-band modification.
+/// Verifies exactly the fields piqueld authors: replication, update settings,
+/// restart condition and delay, mounts, environment, network targets and
+/// aliases, health checks and their probe config, file configs, resource
+/// limits, security settings, and the placement pin to the local node. Other
+/// fields are accepted only at known Engine defaults, so engine-defaulted
+/// echo-back is not drift but unsupported non-default values are. Security
+/// settings piqueld cannot express (privileged execution, added or single
+/// dropped capabilities, sysctls, named users, groups, runtimes, log drivers)
+/// are denied: their presence means out-of-band modification.
 pub(super) struct ServiceRuntimePolicy;
 
 impl ServiceRuntimePolicy {
