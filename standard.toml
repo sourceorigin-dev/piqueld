@@ -14,6 +14,9 @@ cargo-in-ci = [
   "cargo xtask dist",
 ]
 
+# Jobs that watch `ci` from outside, so `ci` mustn't need them.
+ci-watchers = ["fail-fast"]
+
 [deviations]
 
 [deviations.workspace-lints]
@@ -27,10 +30,6 @@ crates = ["piqueld"]
 [deviations.generated-lints]
 reason = "Progenitor writes these attributes into the generated client, so the file keeps them"
 paths = ["crates/piqueld-client/src/generated.rs"]
-
-[deviations.ci-shape]
-reason = "rule challenge: `fail-fast` watches for `ci` to start, so `ci` can't need it"
-paths = [".github/workflows/ci.yml"]
 
 [deviations.cache-saves]
 reason = "rule challenge: pull requests save the small prebuilt dashboard on purpose, so the next one finds it before dashboard-cache.yml runs on main (see ci.yml)"
