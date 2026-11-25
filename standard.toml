@@ -28,12 +28,8 @@ crates = ["piqueld"]
 reason = "Progenitor writes these attributes into the generated client, so the file keeps them"
 paths = ["crates/piqueld-client/src/generated.rs"]
 
-[deviations.recipes]
-reason = "rule challenge: `just validate` checks without modifying files, as AGENTS.md and docs/dev/validation.md say, so it runs `fmt-check` instead of `fmt`"
-paths = ["justfile"]
-
 [deviations.ci-shape]
-reason = "rule challenge: `report` runs after `ci`, on the nightly run's result, and `fail-fast` watches for `ci` to start, so `ci` can't need either"
+reason = "rule challenge: `fail-fast` watches for `ci` to start, so `ci` can't need it"
 paths = [".github/workflows/ci.yml"]
 
 [deviations.cache-saves]
@@ -43,10 +39,6 @@ paths = [".github/actions/dashboard/action.yml"]
 [deviations.nextest-config]
 reason = "rule challenge: `just docker-test` bounds the Docker integration tests' run as a whole, so their override sets no `terminate-after`"
 paths = [".config/nextest.toml"]
-
-[deviations.workspace-dependencies]
-reason = "rule challenge: `piqueld-generated` isn't published, so the crates that use it as a development dependency publish without it; and the daemon's tests depend on its own crate with the `fake-docker` feature"
-paths = ["Cargo.toml", "apps/piqueld/Cargo.toml"]
 
 # The pull request checks' settings, which they read at a pull request's base.
 [pr-checks]
