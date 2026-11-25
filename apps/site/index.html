@@ -16,9 +16,10 @@
 <!-- The page's one typeface sets its character grid, so it loads first. -->
 <link rel="preload" href="fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
 <!-- The page is piqueld's manual page, as a terminal shows it: one typeface
-     on a character grid, bold for commands, underline for links only. It
-     breaks the form twice, for the headline and for one picture of the
-     dashboard. Like man, it reflows to a narrow window. -->
+     on a character grid, bold for commands, underline for links only, and
+     the colours a terminal gives code. It breaks the form twice, for the
+     headline and for one picture of the dashboard. Like man, it reflows to
+     a narrow window. -->
 <style>
 @font-face { font-family: "JetBrains Mono"; src: url("fonts/jetbrains-mono.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
 
@@ -31,6 +32,8 @@
     --line: #24242b;
     --violet: #a78bfa;
     --ok: #7fd1a1;
+    --key: #8ec5f5;
+    --value: #e3c17a;
     --row: 1.65em;    /* one line of the terminal */
     --indent: 7ch;    /* man's indent of a section's text */
     color-scheme: dark;
@@ -80,6 +83,11 @@ h1 + p { margin-top: calc(var(--row) / 2); }
 .copy { padding: 2px 0; margin-block: -2px; color: var(--violet); background: none; border: 0; cursor: pointer; }
 .status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .note, .out, .prompt { color: var(--muted); }
+/* Code is coloured as a terminal colours it: the names of settings, options
+   and fields of output, and the values written for settings. Green is only
+   for what went well, and violet only for links. */
+.key { color: var(--key); }
+.value { color: var(--value); }
 .ok { color: var(--ok); }
 
 /* Long lines wrap, as in a terminal, and a wrapped line hangs under its
@@ -141,7 +149,7 @@ figure img { display: block; width: 100%; height: auto; border: 1px solid var(--
         <h2>SYNOPSIS</h2>
         <div class="body">
             <div class="install">
-                <pre><code id="install"><b>curl</b> -fsSL https://piqueld.dev/install.sh | <b>sh</b></code></pre>
+                <pre><code id="install"><b>curl</b> <span class="key">-fsSL</span> https://piqueld.dev/install.sh | <b>sh</b></code></pre>
                 <button class="copy" type="button" aria-label="Copy the install command" hidden>[copy]</button>
                 <span class="status" role="status"></span>
             </div>
@@ -169,22 +177,22 @@ figure img { display: block; width: 100%; height: auto; border: 1px solid var(--
             <div class="tagged">
             <p>The application’s manifest, in its repository. An excerpt of one that declares staging and production:</p>
 <pre><span class="out"># …</span>
-[metadata]
-name = "blog"
+<b>[metadata]</b>
+<span class="key">name</span> = <span class="value">"blog"</span>
 
-[spec.environments.staging]
-sync = true
-visibility = "private"
+<b>[spec.environments.staging]</b>
+<span class="key">sync</span> = <span class="value">true</span>
+<span class="key">visibility</span> = <span class="value">"private"</span>
 <span class="out"># …</span>
-[spec.environments.production]
-promote_from = "staging"
+<b>[spec.environments.production]</b>
+<span class="key">promote_from</span> = <span class="value">"staging"</span>
 <span class="out"># …</span>
-[[spec.services]]
-name = "web"
+<b>[[spec.services]]</b>
+<span class="key">name</span> = <span class="value">"web"</span>
 <span class="out"># …</span>
-[spec.services.source.build]
-type = "docker"
-dockerfile = "Dockerfile"
+<b>[spec.services.source.build]</b>
+<span class="key">type</span> = <span class="value">"docker"</span>
+<span class="key">dockerfile</span> = <span class="value">"Dockerfile"</span>
 <span class="out"># …</span></pre>
             <p>The <a href="https://docs.piqueld.dev/user/reference/manifest.html">manifest reference</a> describes every setting.</p>
             </div>
@@ -198,28 +206,28 @@ dockerfile = "Dockerfile"
         <div class="body">
             <p>A coding agent deploys its worktree, before it pushes:</p>
             <div class="transcript">
-                <div class="line"><span class="prompt">$</span> <b>piquelctl</b> preview deploy blog --local</div>
+                <div class="line"><span class="prompt">$</span> <b>piquelctl</b> preview deploy blog <span class="key">--local</span></div>
                 <div class="line out">snapshot: succeeded · 535 bytes against 3c1922b70fbd…</div>
                 <div class="line out">Info: sending uncommitted files: draft.html, index.html</div>
                 <div class="line out">…</div>
-                <div class="line">Deploys: local snapshot 88a48a99160c on 3c1922b70fbd</div>
-                <div class="line">Operation: operation-01a16d97ef6f… succeeded</div>
-                <div class="line">URL: https://blog-feat-login-09b526.preview.blog.example.com (web) <span class="ok">ready</span></div>
+                <div class="line"><span class="key">Deploys:</span> local snapshot 88a48a99160c on 3c1922b70fbd</div>
+                <div class="line"><span class="key">Operation:</span> operation-01a16d97ef6f… succeeded</div>
+                <div class="line"><span class="key">URL:</span> https://blog-feat-login-09b526.preview.blog.example.com (web) <span class="ok">ready</span></div>
             </div>
             <p>You push to main, and staging follows:</p>
             <div class="transcript">
                 <div class="line"><span class="prompt">$</span> <b>git</b> push origin main</div>
                 <div class="line"><span class="prompt">$</span> <b>piquelctl</b> env show blog staging</div>
                 <div class="line out">…</div>
-                <div class="line">Sync: <span class="ok">following</span>, last synced 44928efc5d32…</div>
+                <div class="line"><span class="key">Sync:</span> <span class="ok">following</span>, last synced 44928efc5d32…</div>
                 <div class="line out">…</div>
             </div>
             <p>You promote what staging runs:</p>
             <div class="transcript">
                 <div class="line"><span class="prompt">$</span> <b>piquelctl</b> env promote blog production</div>
                 <div class="line out">Promoting release rel-01a16d95e162… into environment production: promoted from staging's deployment operation-01a16d95dac6…, deployment operation-01a16d964c78…</div>
-                <div class="line">Operation: operation-01a16d964c78…</div>
-                <div class="line">  State: <span class="ok">succeeded</span></div>
+                <div class="line"><span class="key">Operation:</span> operation-01a16d964c78…</div>
+                <div class="line">  <span class="key">State:</span> <span class="ok">succeeded</span></div>
                 <div class="line out">  …</div>
             </div>
             <p>The same application, in the dashboard:</p>
