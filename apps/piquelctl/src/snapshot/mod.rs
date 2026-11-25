@@ -4,18 +4,10 @@
 //! top of `HEAD`, uploaded as a Git bundle. Ignored files are left out, or
 //! kept as committed when tracked. It never changes the user's repository:
 //! Git writes the snapshot's index, objects, and ref into a private
-//! temporary directory instead.
-//!
-//! 1. Its files are measured against the daemon's limits before anything
-//!    is written (see [`Worktree::snapshot`]).
-//! 2. `git add -A` stages the worktree into a copy of its index
-//!    (`GIT_INDEX_FILE`), writing new objects into a temporary object
-//!    directory that reads the repository's own as an alternate.
-//! 3. `git write-tree` and `git commit-tree -p HEAD` make the commit.
-//! 4. A temporary bare repository sharing both object directories names it
-//!    with a ref, and bundles it, thin against a base the application's
-//!    repository has, or with the whole history only when asked to (see
-//!    [`History`]).
+//! temporary directory instead. Its files are measured against the daemon's
+//! limits before anything is written (see [`Worktree::snapshot`]); the
+//! bundle is thin against a base the application's repository has, or holds
+//! the whole history only when asked to (see [`History`]).
 use crate::error::{CliError, ErrorKind, Result};
 use piqueld_client::{LocalSnapshot, SnapshotLimits, observability::Bytes, sync::short_commit};
 use std::{

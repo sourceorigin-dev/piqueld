@@ -648,7 +648,7 @@ Commands:
 
 Recover from a lost secret key by discarding every value it encrypted.
 
-Use it only when the daemon's `secrets.key` is lost and you have no backup: the daemon refuses while the key still works. It discards the stored and generated secret values of ALL applications and environments and the repository webhook secrets, and deletes every notification destination, since their URLs are encrypted. Running services keep their Docker secrets. Afterwards, set the stored secrets again and deploy, which also generates new values for generated secrets, give each repository a new webhook secret with `app repository webhook rotate`, and add the notification destinations again with `notification set`. Needs `system:operate`. If you last signed in with your passkey more than 2 minutes ago, it asks you to confirm in a browser first.
+Use it only when the daemon's `secrets.key` is lost and you have no backup. It discards the stored and generated secret values of ALL applications and environments, the repository webhook secrets, and every notification destination. Afterwards, set the secrets and destinations again and deploy. Needs `system:operate`; a passkey sign-in older than 2 minutes asks you to confirm in a browser first.
 
 ```text
 piquelctl secrets recover-key [OPTIONS]
