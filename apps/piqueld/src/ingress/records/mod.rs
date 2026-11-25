@@ -7,37 +7,16 @@
 //! public route, direct    A/AAAA -> [ingress] public_addresses (else manual)
 //! ```
 //!
-//! The webhook hostname, `[ingress] webhook_hostname`, gets a public route's
-//! records, and the dashboard hostname, `[ingress.private]
-//! dashboard_hostname`, a private route's.
+//! **Ordering.** Records follow the routes the gateway has acknowledged: written
+//! once it serves a route, deleted or repointed only after it withdrew it.
 //!
-//! **Ordering.** Records follow the routes the gateway has acknowledged
-//! ([`Store::applied_table`](piqueld_store::Store::applied_table)), so they
-//! are written once the gateway serves a route and deleted or repointed only
-//! after it has withdrawn it. A route waiting for the gateway keeps its
-//! current records, and so does every route until the gateway has converged
-//! with this daemon's configuration, such as a new ingress mode. Each
-//! hostname's plan is checked again just before its records change.
+//! **Ownership.** Only names with a `_piqueld.<hostname>` TXT record holding the
+//! installation ID are changed. A name with A/AAAA/CNAME records or another
+//! installation's ownership record is a `dns_conflict` and never written.
 //!
-//! A wildcard route's records are the wildcard's own (`*.<parent>`).
-//!
-//! **Ownership.** piqueld only changes the records of names it owns: those
-//! with a `_piqueld.<hostname>` TXT record holding the installation ID
-//! (`_piqueld._wildcard.<parent>` for wildcards), and
-//! no other installation's. A name already holding A/AAAA/CNAME records, or
-//! another installation's ownership record, is a `dns_conflict` and never
-//! written. Claimed names are
-//! kept in the store until their records are deleted, so a removed route's
-//! records are found after a restart.
-//!
-//! **Reconciliation.** Every 10 seconds the desired records are recomputed
-//! from the store and the apps node's addresses, without calling providers.
-//! A hostname's records are reconciled when its plan changed and every 5
-//! minutes to repair drift. A hostname that failed is retried on its own, a
-//! minute later, then doubling up to an hour. Changes OVH stages are marked
-//! unpublished in the store until published, so a failed publish is retried.
-//! Changes are daemon-scoped journal actions with `ingress_dns_*` phases; a
-//! pass that changes nothing records nothing.
+//! **Reconciliation.** Every 10 seconds the desired records are recomputed from
+//! the store; a hostname is reconciled when its plan changed and every 5 minutes.
+//! Changes are daemon-scoped journal actions with `ingress_dns_*` phases.
 use super::{
     Ingress,
     backoff::{Backoff, BackoffPolicy},

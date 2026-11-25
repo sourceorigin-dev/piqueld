@@ -1,31 +1,25 @@
 //! The Cloudflare Tunnel: a `cloudflared` container on the gateway's edge
 //! network that carries public routes' traffic in tunnel mode, so the host
 //! publishes no ports. Cloudflare terminates TLS; `cloudflared` connects out
-//! to it and forwards every request to the gateway's tunnel listener.
+//! and forwards every request to the gateway's tunnel listener.
 //!
-//! The tunnel is locally managed: piqueld writes `cloudflared`'s configuration
-//! with one catch-all rule, so adding or removing routes never touches
-//! Cloudflare. Hostnames the gateway does not know receive Caddy's 404.
+//! Its configuration has one catch-all rule, so routes never touch Cloudflare.
 //!
 //! ```text
 //! Cloudflare -> cloudflared -> http://<gateway>:8080 (public routes only)
 //! ```
 //!
-//! `cloudflared` runs as the daemon's user with no capabilities and a
-//! read-only root, and keeps running across daemon restarts. Its files live
-//! under `<data_dir>/ingress/tunnel`, mounted read-only:
+//! It runs as the daemon's user with no capabilities and a read-only root, and
+//! survives daemon restarts. Its files live under `<data_dir>/ingress/tunnel`,
+//! mounted read-only:
 //!
 //! ```text
 //! config.json         configuration, owned by piqueld
 //! credentials.json    the tunnel's credentials (0600)
 //! ```
 //!
-//! Like the gateway's, changes are daemon-scoped journal actions, and a
-//! container whose spec hash differs is replaced. Its connection state comes
-//! from a Docker healthcheck running `cloudflared tunnel ready` inside the
-//! container, which checks its metrics server's `/ready`. The daemon reads the
-//! outcome through the Docker API, so it never needs a route to the container,
-//! and the metrics server listens only on the container's loopback.
+//! Changes are daemon-scoped journal actions; a container whose spec hash
+//! differs is replaced.
 
 use super::{CLOUDFLARED_IMAGE, Ingress};
 use anyhow::{Context, Result};

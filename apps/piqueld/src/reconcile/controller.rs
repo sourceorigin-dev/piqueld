@@ -51,17 +51,14 @@ impl<D: DockerApi> Controller<D> {
 
     /// Moves the operation to `Running`, executes it, and persists the outcome.
     ///
-    /// 1. A `Requested` operation that can no longer start is reported as superseded.
-    /// 2. A `Running` operation with a recorded error (a transient retry) is cycled
-    ///    through `Requested` so it starts a fresh attempt.
-    /// 3. A cancelled local token (shutdown or replacement) persists nothing.
-    ///    Otherwise success completes the operation (or finalizes deletion), a
-    ///    `Cancelled`/`Superseded` error defers to newer durable state, failed
-    ///    deletions keep running with the error recorded for retry, and other
-    ///    failures mark the environment degraded and the operation failed,
-    ///    or roll a failed rollout back (see `rollback`).
-    ///
-    /// Returns a short outcome label for logging.
+    /// A `Requested` operation that can no longer start is reported as
+    /// superseded, and a `Running` one with a recorded transient error is cycled
+    /// through `Requested` for a fresh attempt. A cancelled local token persists
+    /// nothing. Otherwise success completes the operation (or finalizes
+    /// deletion), a `Cancelled`/`Superseded` error defers to newer durable state,
+    /// a failed deletion keeps running with the error recorded, and other
+    /// failures mark the environment degraded and the operation failed, or roll
+    /// a failed rollout back (see `rollback`). Returns a short outcome label.
     async fn run_operation_inner(
         &self,
         operation: &Operation,
@@ -554,19 +551,14 @@ impl<D: DockerApi> Controller<D> {
 
     /// Resolves the operation's deployable target, reusing a previously saved one.
     ///
-    /// Verifies the swarm topology, then returns the saved target, as every
-    /// release, promoted or deployed again, and every restore has from
-    /// acceptance. A build's
-    /// saved target needs the environment still tracking
-    /// (`environment_promoted` once it was made promoted), since a promoted
-    /// environment only runs releases, unless it is already the active
-    /// target: repairing that rolls nothing new in. Otherwise the
-    /// environment must still be tracking: fetches
-    /// the deployment manifest, keeps the application's current name, reuses
-    /// prior image resolutions unless this is a `Refresh`, pins secret
-    /// versions, then resolves images and builds sources. The result is saved
-    /// on the operation only if it is still current and the topology is still
-    /// supported. Image cleanup waits until it is saved.
+    /// Verifies the swarm topology, then returns the saved target if there is
+    /// one, as every release and restore has. A build's saved target needs the
+    /// environment still tracking, unless it is already the active target.
+    /// Otherwise it fetches the deployment manifest, keeps the application's
+    /// current name, reuses prior image resolutions unless this is a `Refresh`,
+    /// pins secret versions, then resolves images and builds sources. The result
+    /// is saved only if the operation is still current and the topology still
+    /// supported; image cleanup waits until then.
     #[tracing::instrument(skip_all, fields(phase = "preparation", timeout_seconds = self.prepare_timeout.as_secs()))]
     async fn prepare_target(
         &self,

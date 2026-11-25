@@ -3,8 +3,7 @@
 //! Caddy writes one JSON access log line per request to [`TRAFFIC_SOCKET`]
 //! in its control mount (see `configuration`). Each route that proxies to a
 //! service tags its requests with `piqueld_environment`, `piqueld_service`
-//! and `piqueld_hostname`; untagged lines, such as the probe endpoint's,
-//! redirects' and the installation's own hostnames', aren't counted.
+//! and `piqueld_hostname`; untagged lines aren't counted.
 //!
 //! ```text
 //! {"ts":1794834486832631131,"request":{"client_ip":"203.0.113.7","method":"GET",
@@ -16,8 +15,7 @@
 //! Lines are added up in memory and flushed to the store every minute, and
 //! on shutdown, as hourly [`TrafficTally`] rows. Nothing about a single
 //! request is kept: visitors are told apart by a hash of their address and
-//! user agent, keyed by a random key replaced every UTC day, which never
-//! leaves memory.
+//! user agent, keyed by a random key replaced every UTC day.
 use piqueld_core::EnvironmentId;
 use piqueld_store::Store;
 use piqueld_store::traffic::{DAY_MS, HOUR_MS, HourCounts, RankKind, TrafficRoute, TrafficTally};

@@ -227,19 +227,13 @@ impl<D: DockerApi> Controller<D> {
         Ok(true)
     }
 
-    /// Deletes from the build registry each image this host's builds pushed
-    /// to `repository`, found by its tag (`pushed`, listed beforehand), that
-    /// no retention root keeps, counting `registry_keep_deployments`
-    /// successful deployments, and that the engine no longer has
-    /// (`on_host`), one by one, by digest. Images are told apart by digest
-    /// alone, so a new name for the same registry in `build.repository`
-    /// keeps the images deployments refer to under the old one. Skips the
-    /// registry, without journaling anything, when it couldn't be listed, and
-    /// stops at the first deletion that fails for a reason of the whole
-    /// registry's, such as deletes being disabled, or at the third in a row
-    /// that fails for one image's: every other deletion would fail too, and
-    /// cleanup holds operations off meanwhile. Fewer failures of one image's
-    /// keep that image and go on.
+    /// Deletes from the build registry, one by digest, each image this host's
+    /// builds pushed to `repository` (`pushed`, listed beforehand) that no
+    /// retention root keeps, counting `registry_keep_deployments` successful
+    /// deployments, and that the engine no longer has (`on_host`). Skips the
+    /// registry when it couldn't be listed, and stops at the first deletion
+    /// that fails for the whole registry's reason, or at the third in a row that
+    /// fails for one image's. Fewer failures keep that image and go on.
     ///
     /// # Errors
     /// Returns storage errors. A failed deletion is journaled and the image

@@ -15,28 +15,16 @@ use piqueld_store::{DeploymentInput, Tracking};
 
 impl<D: DockerApi> Controller<D> {
     /// Resolves the rendered manifest an operation should deploy, with `"self"`
-    /// sources pinned to the commit its manifest was fetched from, and, for a
-    /// local snapshot, the snapshot they are checked out from.
+    /// sources pinned to the commit it was fetched from, and, for a local
+    /// snapshot, the snapshot they are checked out from.
     ///
-    /// Deployments are rendered when captured, or once fetched when
-    /// repository-backed, and retries reuse that rendering, so they never
-    /// re-read variables, a moving branch, or the files services mount.
-    /// Otherwise the repository is cloned and the manifest file (at most
-    /// 2 MiB; `.json` parsed as JSON, anything else as TOML) is validated,
-    /// required to keep the application name, and replaced by the captured
-    /// saved manifest when unchanged (see [`Self::fetched_template`]), then
-    /// captured with the repository files its services mount, rendered for
-    /// `environment` at the fetched commit, bounded by `[previews]` when it
-    /// is a preview, and persisted with it.
-    /// Its own `spec.manifest` must decode but is ignored, even when absent or
-    /// invalid: the repository it was fetched from replaces it before
-    /// validation, with a `manifest_connection_ignored` warning when it names
-    /// another repository URL or manifest path. Each `[previews]` bound is a
-    /// warning too. It records the head of the branch the environment
-    /// tracked (see [`Self::branch_head`]). Inputs without repository backing
-    /// are marked fetched as-is. A local snapshot (`preview deploy --local`)
-    /// is fetched the same way, from its own repository instead of the
-    /// branch, which must still be the application's.
+    /// A captured rendering is reused on retry, so variables, a moving branch
+    /// and mounted files are never re-read. Otherwise the repository is cloned
+    /// and its manifest (at most 2 MiB) validated, kept to the application
+    /// name, rendered for `environment` at the fetched commit, bounded by
+    /// `[previews]` for a preview, and persisted. The manifest's own
+    /// `spec.manifest` is replaced by the repository's, with a
+    /// `manifest_connection_ignored` warning when they differ.
     pub(super) async fn deployment_manifest(
         &self,
         operation: &Operation,

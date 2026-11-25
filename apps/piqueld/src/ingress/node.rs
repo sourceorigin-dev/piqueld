@@ -1,20 +1,16 @@
 //! The apps tailnet node: a Tailscale container on the gateway's edge network
-//! that carries private routes' traffic. It is separate from the daemon's own
-//! node (`crate::tailnet`), which terminates TLS itself and must not depend on
-//! Docker: this one passes raw TLS through to Caddy.
+//! that carries private routes' traffic. Unlike the daemon's own node
+//! (`crate::tailnet`), it passes raw TLS through to Caddy.
 //!
 //! Its serve configuration forwards tailnet TCP 443 and 80 to the gateway's
-//! private listener, prefixed with a PROXY v2 header so Caddy sees each
-//! client's tailnet address. `tailscaled` uses userspace networking, so it
-//! dials the gateway by its container name like any other process.
+//! private listener behind a PROXY v2 header carrying the client's address:
 //!
 //! ```text
 //! tailnet :443 -> <gateway>:8443 (HTTPS)    tailnet :80 -> <gateway>:8081 (HTTP -> HTTPS)
 //! ```
 //!
-//! The node runs as the daemon's user with no capabilities and a read-only
-//! root, and keeps running across daemon restarts. Its files live under
-//! `<data_dir>/ingress/tailscale`:
+//! It runs as the daemon's user with no capabilities and a read-only root, and
+//! survives daemon restarts. Its files live under `<data_dir>/ingress/tailscale`:
 //!
 //! ```text
 //! state/                  node identity and preferences
@@ -23,8 +19,8 @@
 //! config/auth-key         first-login auth key (0600), when configured
 //! ```
 //!
-//! Like the gateway's, changes are daemon-scoped journal actions, and a
-//! container whose spec hash differs is replaced.
+//! Changes are daemon-scoped journal actions; a container whose spec hash differs
+//! is replaced.
 
 use super::{Ingress, TAILSCALE_IMAGE, gateway::TMPFS};
 use crate::tailnet::ProxyListener;

@@ -22,23 +22,18 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 const MAX_TICK: Duration = Duration::from_secs(1);
 
 impl<D: DockerApi> Controller<D> {
-    /// One event loop polls environment futures and discovery concurrently. No
-    /// environment holds the loop while waiting for Docker, `SQLite`, or a timer.
-    /// Failures are recorded inside each future, never in the loop body: a job
-    /// suspended while holding the writer or a failure set must keep being polled.
-    /// Process startup closes abandoned actions before any worker starts; this
-    /// loop runs beside ingress, whose daemon actions it must not interrupt.
+    /// One event loop polls environment futures and discovery concurrently, so
+    /// no environment holds the loop while waiting for Docker, `SQLite`, or a
+    /// timer. Failures are recorded inside each future, never in the loop body.
+    /// Process startup closes abandoned actions before any worker starts.
     ///
     /// # Panics
     /// Panics if the scan interval is zero.
     ///
     /// # Errors
     /// Store failures are logged and retried. Shutdown cancels running
-    /// operations and gives them [`SHUTDOWN_GRACE`] to record their outcome,
-    /// such as a job run's result, instead of dropping them mid-way. Health
-    /// refreshes and discovery hold no job run and are dropped first, so
-    /// neither holds a lock the operations need; startup closes whatever
-    /// any of them left open.
+    /// operations and gives them [`SHUTDOWN_GRACE`] to record their outcome;
+    /// health refreshes and discovery are dropped first.
     pub async fn run(
         &self,
         wake: Arc<Notify>,
@@ -402,11 +397,8 @@ impl<D: DockerApi> Controller<D> {
     }
 
     /// Processes `discovered`, the operation discovery found, never one
-    /// requested since: the coordinator tracks and cancels this scan by its
-    /// ID, and the next pass picks up newer operations. Its state is read
-    /// again first, since an earlier scan may have finished it after
-    /// discovery read it. Every transition rechecks that it is still the
-    /// latest, so a superseded one changes nothing.
+    /// requested since: its state is read again first, and every transition
+    /// rechecks that it is still the latest, so a superseded one changes nothing.
     ///
     /// 1. Repairs drift in the active target while a newer target is unpromoted.
     /// 2. Runs requested, cleanly running, or retry-due operations.
@@ -544,17 +536,12 @@ impl<D: DockerApi> Controller<D> {
 
     /// The prepared target the unpromoted operation may still roll out, if
     /// any, as `observed` shows the runtime. A failed job or a cancellation
-    /// ends the deployment once no job container can still be running, and
-    /// so does a failure whose own plan a conflict blocks: only an operator
-    /// resolves that, and reconsidering the deployment then rolls its
-    /// prerequisites out again. Unless a job of it that stops services
-    /// succeeded: they would run against data in the new format, so they
-    /// stay stopped until the deployment continues. Other failures are
-    /// retried, or reconsidered as soon as their plan is unblocked, so
-    /// restoring the active target meanwhile would only churn their
-    /// prerequisites. Independently, the Docker adapter refuses to start a
-    /// service while a job holds one of its volumes, including runs of
-    /// superseded operations.
+    /// ends the deployment once no job container can still be running, and so
+    /// does a failure whose own plan a conflict blocks, which only an operator
+    /// resolves. A deployment whose job that stops services succeeded stays
+    /// stopped until it continues, as those services would run against data in
+    /// the new format. Other failures are retried, so restoring the active
+    /// target meanwhile would only churn their prerequisites.
     pub(super) async fn rolling_out(
         &self,
         operation: &Operation,
