@@ -23,8 +23,7 @@ pub use mutation::{
     SourceChoice, SyncOutcome,
 };
 mod observability;
-pub(crate) use audit::AuditPrincipal;
-pub use audit::{AuditOrigin, AuditRequest, Author, NewAuditEvent, Recorded};
+pub use audit::{AuditOrigin, AuditPrincipal, AuditRequest, Author, NewAuditEvent, Recorded};
 pub use auth::access::{Actor, Attribution, Caller, EnvironmentOwner, Visibility};
 pub use auth::{
     Cascade, CredentialKind, DirectoryView, Invitation, Lockout, NewCredential, NewInvitation,

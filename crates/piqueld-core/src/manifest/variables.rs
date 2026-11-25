@@ -308,7 +308,7 @@ pub enum TemplateError {
 impl TemplateError {
     /// The stable validation code for this error.
     #[must_use]
-    pub(super) const fn code(&self) -> ApiErrorCode {
+    pub const fn code(&self) -> ApiErrorCode {
         match self {
             Self::Unterminated | Self::Malformed(_) => ApiErrorCode::TemplateInvalid,
             Self::Reserved(_) => ApiErrorCode::VariableReserved,
@@ -462,7 +462,7 @@ pub enum RenderTarget {
 impl RenderTarget {
     /// `env.name` and `env.slug`.
     #[must_use]
-    pub(super) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             Self::Environment(name) => name.as_str(),
             Self::Preview(slug) => slug.as_str(),
@@ -525,7 +525,7 @@ impl RenderContext {
     /// Renders saved configuration outside any deployment, e.g. to reserve
     /// the hostnames an environment will serve.
     #[must_use]
-    pub(super) const fn saved(target: RenderTarget) -> Self {
+    pub const fn saved(target: RenderTarget) -> Self {
         Self {
             target,
             git: None,

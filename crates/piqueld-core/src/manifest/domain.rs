@@ -50,30 +50,30 @@ pub struct ValidatedJob {
     /// Logical job name.
     pub name: JobName,
     /// Service whose prepared container settings the job reuses.
-    pub(crate) service: ServiceName,
+    pub service: ServiceName,
     /// Command replacing the service's command and arguments.
-    pub(crate) command: Vec<String>,
+    pub command: Vec<String>,
     /// Environment variables added to the service's. Omitted when empty so
     /// existing specification hashes stay stable.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) environment: BTreeMap<String, String>,
+    pub environment: BTreeMap<String, String>,
     /// Secrets added to the service's. Omitted when empty so existing
     /// specification hashes stay stable.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) secrets: Vec<ValidatedSecretMount>,
+    pub secrets: Vec<ValidatedSecretMount>,
     /// Deployment point at which the job runs.
-    pub(crate) run: JobRun,
+    pub run: JobRun,
     /// Seconds the job may run before the deployment fails.
     pub timeout_seconds: u32,
     /// How the job may use the service's volumes. The default is omitted, so
     /// spec hashes of applications that never set it stay unchanged.
     #[serde(skip_serializing_if = "JobVolumeAccess::is_default")]
-    pub(crate) volume_access: JobVolumeAccess,
+    pub volume_access: JobVolumeAccess,
     /// Whether the job's service stops before the job runs. Omitted when
     /// unset, so spec hashes of applications that never set it stay
     /// unchanged.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) stop_service: bool,
+    pub stop_service: bool,
 }
 
 /// Validated service source.
@@ -197,7 +197,7 @@ pub struct HealthTiming<T = u32> {
 
 impl<T> HealthTiming<T> {
     /// Each setting with its manifest field name.
-    pub(super) fn fields(self) -> [(&'static str, T); 4] {
+    pub fn fields(self) -> [(&'static str, T); 4] {
         [
             ("interval_seconds", self.interval_seconds),
             ("timeout_seconds", self.timeout_seconds),
@@ -218,11 +218,11 @@ impl HealthExecution {
 
 impl ValidatedHealthCheck {
     /// Probe interval applied when a check declares none.
-    pub(super) const DEFAULT_INTERVAL_SECONDS: u32 = 10;
+    pub const DEFAULT_INTERVAL_SECONDS: u32 = 10;
     /// Probe timeout applied when a check declares none.
-    pub(super) const DEFAULT_TIMEOUT_SECONDS: u32 = 3;
+    pub const DEFAULT_TIMEOUT_SECONDS: u32 = 3;
     /// Startup grace applied when a check declares none.
-    pub(super) const DEFAULT_START_PERIOD_SECONDS: u32 = 0;
+    pub const DEFAULT_START_PERIOD_SECONDS: u32 = 0;
     /// Consecutive failures tolerated when a check declares no retries.
     pub const DEFAULT_RETRIES: u32 = 3;
 
@@ -245,7 +245,7 @@ impl ValidatedHealthCheck {
 
     /// The check's timing, whichever variant declared it.
     #[must_use]
-    const fn timing(&self) -> HealthTiming {
+    pub const fn timing(&self) -> HealthTiming {
         match *self {
             Self::Http {
                 interval_seconds,
@@ -316,21 +316,21 @@ pub struct ValidatedService {
     /// Environment variables keyed by name.
     pub environment: BTreeMap<String, String>,
     /// Container entrypoint command.
-    pub(crate) command: Vec<String>,
+    pub command: Vec<String>,
     /// Arguments passed to the command.
-    pub(crate) arguments: Vec<String>,
+    pub arguments: Vec<String>,
     /// Persistent volume mounts.
-    pub(crate) mounts: Vec<ValidatedMount>,
+    pub mounts: Vec<ValidatedMount>,
     /// Secret file mounts.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) secrets: Vec<ValidatedSecretMount>,
+    pub secrets: Vec<ValidatedSecretMount>,
     /// Read-only files. Omitted when empty so existing specification hashes stay stable.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<super::ServiceFile>,
     /// Optional container health check.
-    pub(crate) healthcheck: Option<ValidatedHealthCheck>,
+    pub healthcheck: Option<ValidatedHealthCheck>,
     /// Optional CPU and memory limits.
-    pub(crate) resources: Option<ValidatedResourceLimits>,
+    pub resources: Option<ValidatedResourceLimits>,
     /// Services in this application that must be healthy before this one rolls out.
     /// Omitted when empty so existing specification hashes stay stable.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -350,11 +350,11 @@ pub struct ValidatedService {
 
 /// A rendered secret file mount.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
-pub(crate) struct ValidatedSecretMount {
+pub struct ValidatedSecretMount {
     /// Logical secret name.
-    pub(crate) name: String,
+    pub name: String,
     /// Absolute normalized destination under /run/secrets.
-    pub(crate) target: String,
+    pub target: String,
 }
 
 impl ValidatedSecretMount {
@@ -416,18 +416,18 @@ impl SecretSource {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
 pub struct ValidatedVolume {
     /// Logical volume name.
-    pub(crate) name: VolumeName,
+    pub name: VolumeName,
 }
 
 /// A persistent volume mount in a service.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
-pub(crate) struct ValidatedMount {
+pub struct ValidatedMount {
     /// Referenced logical volume name.
-    pub(crate) volume: VolumeName,
+    pub volume: VolumeName,
     /// Container target path.
-    pub(crate) target: String,
+    pub target: String,
     /// Whether the mount is read-only.
-    pub(crate) read_only: bool,
+    pub read_only: bool,
 }
 
 impl ValidationErrors {
@@ -615,7 +615,7 @@ impl ValidatedHealthCheck {
 
     /// Converts back to the editable input shape used for export.
     #[must_use]
-    fn to_input(&self) -> input::HealthCheck {
+    pub fn to_input(&self) -> input::HealthCheck {
         let timing = self.timing();
         match self {
             Self::Http { port, path, .. } => input::HealthCheck::Http {
@@ -654,7 +654,7 @@ impl ValidatedResourceLimits {
 
     /// Converts back to the editable input shape used for export.
     #[must_use]
-    fn to_input(&self) -> input::ResourceLimits {
+    pub fn to_input(&self) -> input::ResourceLimits {
         input::ResourceLimits {
             cpu_millis: self.cpu_millis.map(Typed::Literal),
             memory_bytes: self.memory_bytes.map(Typed::Literal),
@@ -765,7 +765,7 @@ impl ValidatedSpec {
 
     /// Where the value of the secret `name` comes from.
     #[must_use]
-    fn secret_source(&self, name: &str) -> SecretSource {
+    pub fn secret_source(&self, name: &str) -> SecretSource {
         SecretSource::of(name, &self.secrets)
     }
 
@@ -914,7 +914,7 @@ impl ValidatedService {
 
     /// Whether an explicit start-first order lets two tasks share a writable volume.
     #[must_use]
-    pub(crate) fn rollout_overlaps_writable_volume(&self) -> bool {
+    pub fn rollout_overlaps_writable_volume(&self) -> bool {
         self.rollout
             .overlaps_writable_volume(self.read_only_mounts())
     }

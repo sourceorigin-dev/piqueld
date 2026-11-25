@@ -61,7 +61,7 @@ pub struct ValidatedExport {
     pub applications: BTreeSet<ApplicationName>,
     /// Whether previews of those applications may import it too.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) previews: bool,
+    pub previews: bool,
 }
 
 /// A validated import.
@@ -69,9 +69,9 @@ pub struct ValidatedExport {
 #[serde(deny_unknown_fields)]
 pub struct ValidatedImport {
     /// Application exporting the service.
-    pub(crate) application: ApplicationName,
+    pub application: ApplicationName,
     /// Exported service of that application.
-    pub(crate) service: ServiceName,
+    pub service: ServiceName,
     /// Environment of that application to reach; unset reaches the one named
     /// like the importing environment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -114,7 +114,7 @@ impl Export {
 impl ValidatedExport {
     /// Converts back to the editable input shape.
     #[must_use]
-    pub(super) fn to_input(&self) -> Export {
+    pub fn to_input(&self) -> Export {
         Export {
             service: self.service.to_string(),
             applications: self.applications.iter().map(ToString::to_string).collect(),
@@ -148,7 +148,7 @@ impl Import {
 impl ValidatedImport {
     /// Converts back to the editable input shape.
     #[must_use]
-    pub(super) fn to_input(&self) -> Import {
+    pub fn to_input(&self) -> Import {
         Import {
             application: self.application.to_string(),
             service: self.service.to_string(),

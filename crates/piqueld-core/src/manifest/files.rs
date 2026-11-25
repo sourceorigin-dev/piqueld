@@ -202,7 +202,7 @@ impl RepositoryFiles {
     }
 
     /// Each captured path and its content, in path order.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
         self.0
             .iter()
             .map(|(path, content)| (path.as_str(), content.as_str()))
@@ -216,7 +216,7 @@ impl RepositoryFiles {
 
     /// Total bytes of every captured file.
     #[must_use]
-    fn bytes(&self) -> usize {
+    pub fn bytes(&self) -> usize {
         self.0.values().map(String::len).sum()
     }
 }

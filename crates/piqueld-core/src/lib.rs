@@ -33,14 +33,20 @@ mod toml_diagnostic;
 mod urls;
 
 pub use api::ApiErrorCode;
-pub use docker_names::{DockerConfigName, DockerNetworkName, DockerServiceName, DockerVolumeName};
+pub use docker_names::{
+    DockerConfigName, DockerConfigNameError, DockerNetworkName, DockerNetworkNameError,
+    DockerServiceName, DockerServiceNameError, DockerVolumeName, DockerVolumeNameError,
+};
 pub use environment::{EnvironmentKind, EnvironmentSource, Preview, PromotedFrom, TrackedBranch};
 pub use event::{Event, EventActor, EventDetail, EventKind};
 pub use identity::{
-    ApplicationId, ApplicationIdError, EnvironmentId, EnvironmentIdError, ReleaseId, ResourceKind,
-    docker_resource_name, docker_resource_readable_prefix,
+    ApplicationId, ApplicationIdError, EnvironmentId, EnvironmentIdError, ReleaseId,
+    ReleaseIdError, ResourceKind, docker_resource_name, docker_resource_readable_prefix,
 };
-pub use images::{BuiltImage, ImageReference, ImmutableImage, RepositoryDigest};
+pub use images::{
+    BuiltImage, ImageReference, ImageReferenceError, ImmutableImage, ImmutableImageError,
+    RepositoryDigest, RepositoryDigestError,
+};
 pub use manifest::{
     NormalizedApplication, Service, Source, ValidatedApplication, ValidationError,
     ValidationErrors, Volume, parse_json, parse_toml,
@@ -59,8 +65,9 @@ pub use resource::{
     CompileError, Convergence, DesiredFile, DesiredJob, DesiredJobRun, DesiredMount,
     DesiredNetwork, DesiredService, DesiredVolume, InstanceId, ObservedApplication,
     ObservedService, Ownership, OwnershipState, ResolutionRequirement, ResolutionSet,
-    ResolvedApplication, ResolvedSource, RuntimeMessage, Sha256Digest, TaskState,
-    compile_application, compile_release, image_repository, preview_resolution, valid_logical_name,
+    ResolvedApplication, ResolvedSource, RuntimeMessage, Sha256Digest, Sha256DigestError,
+    TaskState, compile_application, compile_release, image_repository, preview_resolution,
+    valid_logical_name,
 };
 pub use retention::{
     BuildHistoryConfig, ImagesConfig, LocalImages, ReleaseAvailability, RetentionConfig,

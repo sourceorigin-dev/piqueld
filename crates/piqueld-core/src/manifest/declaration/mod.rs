@@ -52,18 +52,18 @@ impl std::fmt::Display for DeclaredSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Declaration {
     /// The environment's name, the block's key.
-    name: EnvironmentName,
+    pub name: EnvironmentName,
     /// Where it deploys from.
-    source: DeclaredSource,
+    pub source: DeclaredSource,
     /// Whether pushes to its branch deploy it while the repository syncs.
     /// Always false for promoted environments, which never build.
-    sync: bool,
+    pub sync: bool,
     /// Whether converging changes an existing environment's source and sync
     /// to these: its block sets them, or the previous manifest's did, so that
     /// removing them returns it to the default. Otherwise they only create a
     /// missing environment, and an existing one keeps the source it has, such
     /// as one set with `piquelctl env source` before blocks declared sources.
-    manages_source: bool,
+    pub manages_source: bool,
 }
 
 impl Declaration {

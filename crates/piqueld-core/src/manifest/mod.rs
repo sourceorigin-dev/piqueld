@@ -46,9 +46,12 @@ mod variables;
 pub use declaration::{Declaration, DeclaredSource, EnvironmentChange};
 pub use domain::{
     HealthExecution, HealthTiming, SecretSource, ValidatedBuild, ValidatedHealthCheck,
-    ValidatedResourceLimits, ValidatedSource,
+    ValidatedJob, ValidatedMetadata, ValidatedMount, ValidatedResourceLimits, ValidatedSecretMount,
+    ValidatedService, ValidatedSource, ValidatedSpec, ValidatedVolume,
 };
-pub use files::{FileCaptureError, FileMode, FileSource, RepositoryFiles, ServiceFile};
+pub use files::{
+    FileCaptureError, FileMode, FileModeError, FileSource, RepositoryFiles, ServiceFile,
+};
 pub use input::{
     ApplicationManifest, ApplicationSpec, Build, EnvironmentConfig, GitRepository, HealthCheck,
     Job, JobRun, JobVolumeAccess, ManifestRepository, ManifestRevision, Metadata, Mount,
@@ -61,10 +64,10 @@ pub use links::{Export, Import, ValidatedExport, ValidatedImport};
 pub use rollout::{
     Rollback, Rollout, RolloutOrder, RolloutOrderSource, RolloutPolicy, ValidatedRollout,
 };
-pub(crate) use routes::RedirectUrl;
 pub use routes::{
-    Hostname, RedirectStatus, RouteHostname, RouteTarget, ValidatedRedirect, ValidatedRoute,
-    Visibility,
+    Hostname, HostnameError, RedirectStatus, RedirectStatusError, RedirectUrl, RedirectUrlError,
+    RouteHostname, RouteHostnameError, RouteTarget, ValidatedRedirect, ValidatedRoute, Visibility,
+    VisibilityError,
 };
 pub use security::{ContainerUser, ServiceSecurity};
 pub use template::{ApplicationTemplate, Rendering, ValidatedTemplate};
@@ -80,7 +83,6 @@ pub use variables::{
 };
 
 use crate::{ApplicationId, ApplicationName};
-use domain::{ValidatedMetadata, ValidatedSpec};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
