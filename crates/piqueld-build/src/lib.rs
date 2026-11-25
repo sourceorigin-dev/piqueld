@@ -128,6 +128,10 @@ impl NestedCargo {
     /// # Errors
     /// The nested Cargo can't run or fails, such as when the target isn't
     /// installed.
+    #[expect(
+        clippy::print_stdout,
+        reason = "a build script talks to Cargo on stdout"
+    )]
     pub fn build(
         &self,
         dir: &Path,

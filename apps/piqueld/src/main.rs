@@ -112,6 +112,7 @@ impl Args {
 
 /// Runs a one-shot [`Command`], or the daemon until a shutdown signal.
 #[tokio::main]
+#[expect(clippy::print_stdout, reason = "the daemon binary reports on stdout")]
 async fn main() -> Result<()> {
     let args = Args::parse();
     match &args.command {
@@ -391,6 +392,7 @@ fn log_ui_status(ui_assets: &UiAssets) {
 /// Loads configuration from `--config` when given, where any failure is fatal.
 /// Otherwise reads `DEFAULT_CONFIG_PATH`, falling back to validated built-in
 /// defaults only when that file does not exist.
+#[expect(clippy::print_stderr, reason = "the daemon binary reports on stderr")]
 fn load_config(explicit_path: Option<&std::path::Path>) -> Result<DaemonConfig> {
     if let Some(path) = explicit_path {
         return DaemonConfig::load(path).with_context(|| {

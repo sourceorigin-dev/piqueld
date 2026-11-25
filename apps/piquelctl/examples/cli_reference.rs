@@ -3,6 +3,10 @@
 //! with the checked-in page. `just generate` and `just openapi-check` run it
 //! after the daemon's `generate_openapi`, which regenerates the client this
 //! depends on.
+#![expect(
+    clippy::print_stdout,
+    reason = "an example is a command-line program that reports on stdout"
+)]
 
 use clap::{Arg, ArgAction, Command};
 use piqueld_generated::{ArtifactError, Artifacts, Page};
@@ -183,8 +187,10 @@ impl CliReference {
 }
 
 fn main() -> Result<(), ArtifactError> {
-    Artifacts::from_args()?.sync([(
+    let report = Artifacts::from_args()?.sync([(
         CliReference::PATH,
         CliReference::render(piquelctl::command()),
-    )])
+    )])?;
+    println!("{report}");
+    Ok(())
 }

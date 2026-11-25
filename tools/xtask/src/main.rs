@@ -3,6 +3,11 @@
 //! isolated Docker integration tests, the Playwright browser suite, the
 //! crates' dependency boundaries, CI's quick checks for what changed, test
 //! coverage, the release binaries, and releases.
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "xtask is a command-line tool that reports on stdout and stderr"
+)]
 
 mod boundary;
 mod check_changed;

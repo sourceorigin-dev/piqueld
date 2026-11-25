@@ -1,5 +1,7 @@
-# `expect_used`, `panic` and `dbg_macro` hold for production code only; tests
-# may panic on failure and print what they inspect.
+# `expect_used`, `panic`, `dbg_macro`, `print_stdout` and `print_stderr` hold
+# for production code only; tests may panic on failure and print what they
+# inspect.
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-dbg-in-tests = true
+allow-print-in-tests = true
