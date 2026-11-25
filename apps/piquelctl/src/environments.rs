@@ -1158,7 +1158,9 @@ const LOG_STREAM_IDLE: std::time::Duration = std::time::Duration::from_secs(45);
 /// Emits a bounded snapshot of runtime logs, warning when the daemon truncated
 /// it. With `--follow`, then emits each line written after it, one report
 /// each (one JSON object per line with `--json`), until interrupted or the
-/// daemon ends the stream.
+/// daemon ends the stream. Following resumes after the snapshot's newest
+/// line, or the start of its window, so no line written meanwhile is missed,
+/// and `--timeout` doesn't count it.
 pub(crate) async fn logs(
     console: &mut Console,
     client: &Client,
@@ -1181,8 +1183,6 @@ pub(crate) async fn logs(
     if !window.follow {
         return Ok(());
     }
-    // Resumes after the snapshot's newest line, or, without one, at the
-    // start of its window, so no line written meanwhile is missed.
     let after = logs.items.last().map_or_else(
         || {
             let since = std::time::Duration::from_secs(window.since_seconds.into());
@@ -1197,7 +1197,6 @@ pub(crate) async fn logs(
     let stream = client
         .environment_logs_stream(id, service, None, Some(&after))
         .await?;
-    // Following is the operator's time, which `--timeout` doesn't count.
     crate::support::interactive(follow_logs(console, client, id, service, stream, after)).await
 }
 
@@ -1206,7 +1205,8 @@ pub(crate) async fn logs(
 /// reopened after the newest line printed, `after`, pausing longer between
 /// failed attempts, as long as the failure is one trying again may fix
 /// ([`CliError::is_unavailable`]). Any other ends it, such as the caller
-/// losing access or the environment being deleted.
+/// losing access or the environment being deleted. Timestamps share one
+/// fixed-width format, so the newest is found by comparing them as text.
 async fn follow_logs(
     console: &mut Console,
     client: &Client,
@@ -1221,8 +1221,6 @@ async fn follow_logs(
         let error = if let Some(open) = &mut stream {
             match tokio::time::timeout(LOG_STREAM_IDLE, open.next()).await {
                 Ok(Some(Ok(Some(record)))) => {
-                    // Timestamps share one fixed-width format, so they
-                    // compare as text.
                     if record.timestamp > after {
                         after.clone_from(&record.timestamp);
                     }

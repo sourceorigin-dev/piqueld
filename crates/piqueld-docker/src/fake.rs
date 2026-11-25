@@ -28,6 +28,9 @@ use tokio::sync::Mutex;
 /// The message of an update `fail_convergence` pauses.
 pub const FAILED_UPDATE_MESSAGE: &str = "update paused due to failure or early termination of task";
 
+/// How often a followed fake container writes a log line.
+const LOG_INTERVAL: Duration = Duration::from_secs(1);
+
 /// The engine's state, shared by its clones. Each knob is off by default.
 #[derive(Clone, Default)]
 pub struct FakeDocker {
@@ -678,7 +681,7 @@ impl DockerApi for FakeDocker {
         futures_util::stream::unfold(0_u64, move |request| {
             let line = format!("{id} served request {request}");
             async move {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(LOG_INTERVAL).await;
                 let lines = super::LogLines {
                     stream: Some(piqueld_core::api::LogStream::Stdout),
                     lines: vec![(super::now_ns(), line)],

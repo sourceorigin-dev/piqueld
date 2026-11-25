@@ -54,6 +54,9 @@ impl Follow {
 /// service or stream filter, or resuming, reads the latest lines again. The
 /// service selector lists the services of the manifest the shown environment
 /// deploys; `fixed_service` scopes it to one service and hides the selector.
+/// Lines arriving within a [`FLUSH`] are drawn together. A hidden tab holds
+/// one of the daemon's few log streams, so hiding it closes the stream and
+/// showing it reads the latest lines again; a paused stream stays paused.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -> impl IntoView {
@@ -67,14 +70,10 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
     let service = RwSignal::new(fixed_service.unwrap_or_default());
     let stream = RwSignal::new(None::<piqueld_client::LogStream>);
     let live = StoredValue::new_local(None::<EventStream>);
-    // Bumped to read the latest output again; a read for an older one is
-    // discarded.
     let generation = RwSignal::new(0_u64);
     let alive = Alive::new();
     let id = context.environment_id();
-    // Whether hiding the tab closed the stream, which showing it reopens.
     let hidden = StoredValue::new(false);
-    // Lines arriving within a `FLUSH` are drawn together.
     let flush = move || {
         let arrived = pending.try_update_value(std::mem::take).unwrap_or_default();
         records.try_update(|records| {
@@ -147,8 +146,6 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
         });
         live.set_value(opened);
     };
-    // Reads the latest output, then follows what is written after it; in a
-    // hidden tab, waits until it is shown.
     let start = move || {
         if document_hidden() {
             hidden.set_value(true);
@@ -190,9 +187,6 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
         });
     };
     let start = StoredValue::new_local(start);
-    // A hidden tab draws nothing and holds one of the daemon's few log
-    // streams, so hiding it closes the stream and showing it reads the latest
-    // lines again. A stream the operator paused stays paused.
     let visibility = window_event_listener(ev::visibilitychange, move |_| {
         if document_hidden() {
             if matches!(follow.get_untracked(), Follow::Connecting | Follow::Live) {
