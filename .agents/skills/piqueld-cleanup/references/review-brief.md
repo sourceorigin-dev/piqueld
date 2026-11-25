@@ -1,5 +1,8 @@
 # Cleanup pass: reviewer
 
+Report only defects in the change and regressions it causes. Anything else is
+a follow-up.
+
 Review one PR from a piqueld cleanup pass. It claims to be a pure refactor: no
 behavior, output, schema, format or test coverage changes. Bug fixes go in
 their own PRs, so any behavior change here is a finding.
