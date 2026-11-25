@@ -114,7 +114,7 @@ impl Heads {
         .map_err(|error| {
             // Git may echo the URL, credentials included, so details stay in logs.
             tracing::warn!(?error, "git ls-remote failed");
-            match error.downcast_ref::<piqueld_docker::command::CommandFailure>() {
+            match error.failure() {
                 Some(failure) => anyhow::anyhow!("git ls-remote failed ({})", failure.status),
                 None => anyhow::anyhow!("git ls-remote could not run"),
             }
@@ -479,11 +479,9 @@ impl Checkouts {
             Self::FILES * 28,
         )
         .await
-        .map_err(|error| {
-            match error.downcast_ref::<piqueld_docker::command::OutputLimit>() {
-                Some(_) => self.too_large().into(),
-                None => error,
-            }
+        .map_err(|error| match error.limit() {
+            Some(_) => self.too_large().into(),
+            None => anyhow::Error::from(error),
         })?;
         let output = String::from_utf8(output).context("decode Git tree sizes")?;
         let mut bytes = 0_u64;

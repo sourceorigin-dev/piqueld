@@ -11,7 +11,7 @@ async fn command_diagnostics_keep_stage_and_exit_code_without_output() {
     )
     .await
     .unwrap_err();
-    let diagnostic = crate::application::BoundaryError::GitBuild(error).diagnostic();
+    let diagnostic = crate::application::BoundaryError::GitBuild(error.into()).diagnostic();
     assert_eq!(
         diagnostic.causes,
         [

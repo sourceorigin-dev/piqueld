@@ -118,6 +118,17 @@ impl WireError {
     }
 }
 
+/// Why a build has no build machine to run on.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ReachError {
+    /// The build machine is unreachable and the build must not run elsewhere.
+    #[error(transparent)]
+    Unavailable(#[from] super::BuilderUnavailable),
+    /// The build log could not record why the build machine is unreachable.
+    #[error(transparent)]
+    Log(#[from] crate::command::LogError),
+}
+
 impl BollardDocker {
     /// Opens one shared, cheaply cloneable Bollard connection handle. The
     /// socket need not exist yet: the client is created on first use.
@@ -555,7 +566,7 @@ impl BollardDocker {
     pub(super) async fn reachable_builder(
         &self,
         log: Option<&dyn crate::command::OutputLog>,
-    ) -> anyhow::Result<Option<&super::RemoteBuilder>> {
+    ) -> Result<Option<&super::RemoteBuilder>, ReachError> {
         let Some(remote) = self.builder.as_deref() else {
             return Ok(None);
         };

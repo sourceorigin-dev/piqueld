@@ -200,8 +200,14 @@ impl Kept {
 
 #[async_trait::async_trait]
 impl piqueld_docker::command::OutputLog for BuildLog {
-    async fn append(&self, bytes: &[u8], stream: LogStream) -> anyhow::Result<()> {
-        Ok(BuildLog::append(self, bytes, stream).await?)
+    async fn append(
+        &self,
+        bytes: &[u8],
+        stream: LogStream,
+    ) -> Result<(), piqueld_docker::command::LogError> {
+        BuildLog::append(self, bytes, stream)
+            .await
+            .map_err(piqueld_docker::command::LogError::new)
     }
 }
 

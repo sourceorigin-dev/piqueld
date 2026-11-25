@@ -14,6 +14,44 @@ const NETWORK_INSPECT_ATTEMPTS: usize = 10;
 /// Pause between incomplete network inspections.
 const NETWORK_INSPECT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
 
+/// Why an image build failed.
+#[derive(Debug, thiserror::Error)]
+enum BuildError {
+    /// The Dockerfile or build context is not what its path says.
+    #[error("Dockerfile must be a file and build context must be a directory")]
+    Inputs,
+    /// The build's scratch directory could not be created.
+    #[error("create Docker build directory")]
+    Directory(#[source] std::io::Error),
+    /// No build machine to run on.
+    #[error(transparent)]
+    Builder(#[from] super::engine::ReachError),
+    /// The engine's platform is unknown.
+    #[error(transparent)]
+    Platform(#[from] DockerError),
+    /// The build command failed.
+    #[error(transparent)]
+    Command(#[from] crate::command::CommandError),
+    /// The build's metadata file could not be read.
+    #[error("read build metadata")]
+    ReadMetadata(#[source] std::io::Error),
+    /// The build's metadata file is not the expected JSON.
+    #[error("decode build metadata")]
+    DecodeMetadata(#[source] serde_json::Error),
+    /// The built image's digest is invalid.
+    #[error("validate built image digest")]
+    Digest(#[source] piqueld_core::Sha256DigestError),
+    /// The built image could not be tagged.
+    #[error("tag built image")]
+    Tag(#[source] bollard::errors::Error),
+    /// The engine could not pull the image the build machine pushed.
+    #[error("pull the image the build machine pushed")]
+    Pull(#[source] DockerError),
+    /// The build log could not record the pull failure.
+    #[error(transparent)]
+    Log(#[from] crate::command::LogError),
+}
+
 /// An application's observed networks, with what service observation needs.
 struct NetworkSnapshot {
     observed: Vec<ObservedNetwork>,
@@ -580,7 +618,6 @@ impl DockerApi for BollardDocker {
         // image by. A build on the engine's own builder is then tagged (see
         // `ImageBuild::tag`); a build machine's image is pulled by its
         // digest only, and pulled again if it goes missing.
-        use anyhow::Context;
         #[derive(serde::Deserialize)]
         struct Metadata {
             #[serde(rename = "containerimage.digest")]
@@ -588,9 +625,9 @@ impl DockerApi for BollardDocker {
         }
         let result = async {
             if !build.dockerfile.is_file() || !build.context.is_dir() {
-                anyhow::bail!("Dockerfile must be a file and build context must be a directory");
+                return Err(BuildError::Inputs);
             }
-            let directory = tempfile::tempdir().context("create Docker build directory")?;
+            let directory = tempfile::tempdir().map_err(BuildError::Directory)?;
             let metadata = directory.path().join("metadata.json");
             let builder = self.reachable_builder(log).await?;
             let mut command = if let Some(remote) = builder {
@@ -619,11 +656,11 @@ impl DockerApi for BollardDocker {
                 .await?;
             let metadata = tokio::fs::read(metadata)
                 .await
-                .context("read build metadata")?;
+                .map_err(BuildError::ReadMetadata)?;
             let metadata: Metadata =
-                serde_json::from_slice(&metadata).context("decode build metadata")?;
+                serde_json::from_slice(&metadata).map_err(BuildError::DecodeMetadata)?;
             let digest = piqueld_core::resource::Sha256Digest::parse(metadata.digest)
-                .context("validate built image digest")?;
+                .map_err(BuildError::Digest)?;
             let Some(remote) = builder else {
                 let (repo, tag) = build.tag(&digest);
                 self.client()?
@@ -635,7 +672,7 @@ impl DockerApi for BollardDocker {
                         }),
                     )
                     .await
-                    .context("tag built image")?;
+                    .map_err(BuildError::Tag)?;
                 return Ok(digest.into());
             };
             // The build machine pushed it: the engine has to pull it.
@@ -643,13 +680,19 @@ impl DockerApi for BollardDocker {
             let pulled = self
                 .resolve_image(image.as_str())
                 .await
-                .map_err(anyhow::Error::from)
-                .context("pull the image the build machine pushed");
+                .map_err(BuildError::Pull);
             // The push succeeded in the output above, so say why the build
             // still failed.
             if let (Err(error), Some(log)) = (&pulled, log) {
+                let detail =
+                    std::iter::successors(Some(error as &dyn std::error::Error), |error| {
+                        error.source()
+                    })
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(": ");
                 log.append(
-                    format!("ERROR Could not {error:#}\n").as_bytes(),
+                    format!("ERROR Could not {detail}\n").as_bytes(),
                     piqueld_core::api::LogStream::Stderr,
                 )
                 .await?;
@@ -658,14 +701,14 @@ impl DockerApi for BollardDocker {
             Ok(image.into())
         }
         .await;
-        result.map_err(|source: anyhow::Error| {
-            match source.downcast::<super::BuilderUnavailable>() {
-                Ok(unavailable) => unavailable.into(),
-                Err(source) => DockerError::RequestSource {
-                    operation: "build Docker image",
-                    source: source.into(),
-                },
+        result.map_err(|error: BuildError| match error {
+            BuildError::Builder(super::engine::ReachError::Unavailable(unavailable)) => {
+                unavailable.into()
             }
+            source => DockerError::RequestSource {
+                operation: "build Docker image",
+                source: source.into(),
+            },
         })
     }
 
