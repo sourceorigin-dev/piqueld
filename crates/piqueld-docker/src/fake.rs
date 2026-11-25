@@ -895,7 +895,6 @@ impl DockerApi for FakeDocker {
         for network in &mut observed.networks {
             network.in_use = Self::attached(&observed.services, &network.name);
         }
-        // As the adapter observes: see `BollardDocker::relevant`.
         let relevant = |name: &str, labels: &BTreeMap<String, String>| {
             BollardDocker::relevant(name, labels, application)
         };
@@ -985,7 +984,6 @@ impl DockerApi for FakeDocker {
         } else if self.stall_convergence.load(Ordering::SeqCst)
             || self.slow_services.lock().await.get(&logical) > Some(&0)
         {
-            // Its tasks start, and run once it converges.
             service.convergence = Convergence::Updating;
             for task in &mut service.tasks {
                 task.state = TaskState::Starting;

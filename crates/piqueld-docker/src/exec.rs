@@ -147,8 +147,6 @@ impl BollardDocker {
             output: sink,
             stop,
         } = io;
-        // Output is pumped on its own so a command that stops reading its
-        // input never stops its output from draining.
         let forward_output = async {
             while let Some(item) = output.next().await {
                 let frame = match item.or_request("read exec output")? {
@@ -164,8 +162,6 @@ impl BollardDocker {
             }
             Ok::<_, DockerError>(())
         };
-        // Never returns: a blocked stdin write must not hide a stop, so stops
-        // are watched separately.
         let client = self.client()?;
         let forward_input = async {
             let mut input_open = true;
@@ -187,9 +183,6 @@ impl BollardDocker {
                             tracing::debug!(?error, "exec terminal resize failed");
                         }
                     }
-                    // Closing a terminal's input makes Docker close its output
-                    // too, detaching from the command. Only a disconnected
-                    // client does that; a terminal has no end of input.
                     ExecInput::CloseStdin if exec.tty => {}
                     ExecInput::CloseStdin => {
                         input_open = false;
@@ -201,7 +194,6 @@ impl BollardDocker {
             }
             std::future::pending::<Infallible>().await
         };
-        // A stop wins over input still queued, which must not reach the command.
         tokio::select! {
             biased;
             () = stop.cancelled() => return Err(DockerError::Request("exec stopped by its client transport")),

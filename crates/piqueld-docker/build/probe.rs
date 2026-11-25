@@ -31,9 +31,6 @@ pub(crate) fn embed(manifest_dir: &Path) -> Result<(), Box<dyn Error>> {
             Some(&manifest_dir.join("build/probe.toml")),
         )?
         .join("piqueld-probe");
-    // Embed a copy that lives with this script's output. The nested build
-    // writes `built` while this script runs, so tracking it would always look
-    // newer than the last run and rebuild the daemon every time.
     fs::copy(&built, &copy)?;
     Ok(())
 }

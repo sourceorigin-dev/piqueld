@@ -56,8 +56,6 @@ impl ServiceRuntimePolicy {
         container: &TaskSpecContainerSpec,
         node_id: &str,
     ) -> bool {
-        // Docker echoes the default container runtime name back even though
-        // the builder never authors it; only a non-default runtime is drift.
         task.runtime
             .as_deref()
             .is_none_or(|runtime| runtime.is_empty() || runtime == "container")

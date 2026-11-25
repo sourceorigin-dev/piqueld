@@ -167,8 +167,6 @@ impl BollardDocker {
                         }))
                         .collect(),
                 ),
-                // A receiver runs as the daemon, so the daemon may connect to
-                // the socket it creates. Validation lets only others set one.
                 user: desired
                     .telemetry
                     .as_ref()
@@ -232,7 +230,6 @@ impl BollardDocker {
             interval: Some(Self::seconds_to_nanoseconds(timing.interval_seconds)),
             timeout: Some(Self::seconds_to_nanoseconds(timing.timeout_seconds)),
             retries: Some(timing.retries.into()),
-            // Docker omits a zero start period, so none is written either.
             start_period: (timing.start_period_seconds > 0)
                 .then(|| Self::seconds_to_nanoseconds(timing.start_period_seconds)),
             ..Default::default()

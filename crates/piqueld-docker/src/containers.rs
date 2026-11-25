@@ -364,8 +364,6 @@ impl BollardDocker {
 fn unix_nanos(timestamp: &str) -> Option<i64> {
     let (date, time) = timestamp.strip_suffix('Z')?.split_once('T')?;
     let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
-    // Widen parsed i64 fields before calendar arithmetic, so malformed Docker
-    // output cannot overflow before the final nanosecond range check.
     let numbers = |text: &str, separator| -> Option<[i128; 3]> {
         text.split(separator)
             .map(|part| part.parse::<i64>().ok().map(i128::from))
@@ -383,8 +381,6 @@ fn unix_nanos(timestamp: &str) -> Option<i64> {
         return None;
     }
     let nanos: i128 = format!("{fraction:0<9}").parse().ok()?;
-    // Days since 1970-01-01 in the proleptic Gregorian calendar, after
-    // Howard Hinnant's `days_from_civil`.
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
     let year_of_era = year - era * 400;
@@ -412,7 +408,6 @@ mod tests {
         ));
         assert!(starts.next().await.is_none());
 
-        // Nothing was cached: once the socket exists, the client is created.
         let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
         docker.client().expect("`client` should succeed");
     }

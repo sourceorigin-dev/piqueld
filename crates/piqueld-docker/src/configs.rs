@@ -235,15 +235,12 @@ impl BollardDocker {
         labels: &[String],
         keep: impl Fn(&ListedConfig) -> bool,
     ) -> Result<(), DockerError> {
-        // Listed before services, so a config published after this listing
-        // is never removed for lack of a service mounting it yet.
         let filters = serde_json::to_string(&Self::label_filter(labels.to_vec()))
             .map_err(|source| DockerError::request(kind.list(), source))?;
         let path = format!(
             "/configs?filters={}",
             url::form_urlencoded::byte_serialize(filters.as_bytes()).collect::<String>()
         );
-        // Both listings stream, as they carry every payload and spec.
         let mut configs = self
             .engine_list::<ListedConfig>(&path)
             .await
@@ -252,7 +249,6 @@ impl BollardDocker {
         if configs.is_empty() {
             return Ok(());
         }
-        // Bollard's service model omits `PreviousSpec`, so read the raw list.
         let referenced = Self::referenced_configs(
             self.engine_list::<ServiceConfigs>("/services")
                 .await

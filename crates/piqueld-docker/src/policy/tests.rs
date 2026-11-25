@@ -81,7 +81,6 @@ fn authored_rollout_is_observed_back() {
     };
     assert_eq!(observed(&writable), Some(writable.rollout_policy()));
 
-    // Values piqueld never authors are not mistaken for a rollout policy.
     let mut spec = BollardDocker::service_spec(&writable, "local-node").unwrap();
     let update = spec.update_config.as_mut().unwrap();
     update.monitor = Some(1_500_000_000);
@@ -210,7 +209,6 @@ fn template_text_is_authored_literally_and_observed_back() {
     assert_eq!(observed.mounts[0].target, "/data/{{.Task.Slot}}");
     assert!(observed.matches(&desired));
 
-    // Specs written before escaping are drift, so reconciling rewrites them.
     let unescaped = |edit: fn(&mut TaskSpecContainerSpec)| {
         let mut spec = spec.clone();
         edit(
@@ -360,14 +358,11 @@ fn near_http_command_health_checks_round_trip_as_commands() {
 fn policy_verifies_exactly_the_authored_fields() {
     let authored = authored();
     assert!(ServiceRuntimePolicy::matches(&authored, "local-node"));
-    // Services are pinned to the local node.
     assert!(!ServiceRuntimePolicy::matches(&authored, "another-node"));
     let mut unpinned = authored.clone();
     unpinned.task_template.as_mut().unwrap().placement = None;
     assert!(!ServiceRuntimePolicy::matches(&unpinned, "local-node"));
 
-    // Known Engine defaults are accepted, while unsupported non-default
-    // behavior remains visible as drift.
     let mut echoed = authored.clone();
     let task = echoed.task_template.as_mut().expect("task");
     task.resources.as_mut().expect("resources").reservations =
@@ -399,20 +394,16 @@ fn policy_verifies_exactly_the_authored_fields() {
     }
     assert!(!ServiceRuntimePolicy::matches(&echoed, "local-node"));
 
-    // A non-default runtime is out-of-band modification.
     let mut runtime = authored.clone();
     runtime.task_template.as_mut().unwrap().runtime = Some("custom-runtime".into());
     assert!(!ServiceRuntimePolicy::matches(&runtime, "local-node"));
 
-    // Drift in a field piqueld authors is still rejected.
     let mut drifted = authored.clone();
     if let Some(update) = drifted.update_config.as_mut() {
         update.parallelism = Some(4);
     }
     assert!(!ServiceRuntimePolicy::matches(&drifted, "local-node"));
 
-    // Out-of-band security settings are rejected even though piqueld
-    // cannot author them.
     let mut injected_capability = authored.clone();
     if let Some(container) = injected_capability
         .task_template
@@ -426,8 +417,6 @@ fn policy_verifies_exactly_the_authored_fields() {
         "local-node"
     ));
 
-    // A numeric user is the desired service's to compare; a named one
-    // is never authored.
     let mut injected_user = authored;
     if let Some(container) = injected_user
         .task_template

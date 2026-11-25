@@ -90,8 +90,6 @@ impl BollardDocker {
                 }
             }
         }
-        // Unlabelled resources and volumes with truncated logical names cannot
-        // be disambiguated from an application ID alone. Keep them fail-closed.
         name.starts_with(&docker_resource_readable_prefix(app))
     }
 
@@ -105,9 +103,6 @@ impl BollardDocker {
             && network.attachable.unwrap_or(false)
             && !network.enable_ipv6.unwrap_or(false)
             && !network.config_only.unwrap_or(false)
-            // Docker serializes an unused ConfigFrom as either null or an
-            // object whose Network field is empty, depending on Engine/API
-            // version. Both mean that this is not a config-derived network.
             && network
                 .config_from
                 .as_ref()
