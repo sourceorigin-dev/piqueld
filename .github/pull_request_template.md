@@ -9,3 +9,7 @@ Keep the pull request to one change; stack dependent ones. -->
 
 - [ ] The feature reaches each surface in `AGENTS.md` it applies to,
       documentation included, with its reverse states.
+
+## Testing
+
+<!-- How you checked the change: `just check-changed`, and anything you ran by hand. -->

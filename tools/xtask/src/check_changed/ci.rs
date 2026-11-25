@@ -11,6 +11,7 @@ use super::filters::Filter;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Job {
     Checks,
+    Standard,
     RustLint,
     RustTest,
     Msrv,
@@ -23,8 +24,9 @@ pub(super) enum Job {
 
 impl Job {
     /// Every job, in the order ci.yml lists them.
-    pub(super) const ALL: [Self; 9] = [
+    pub(super) const ALL: [Self; 10] = [
         Self::Checks,
+        Self::Standard,
         Self::RustLint,
         Self::RustTest,
         Self::Msrv,
@@ -39,6 +41,7 @@ impl Job {
     pub(super) fn name(self) -> &'static str {
         match self {
             Self::Checks => "checks",
+            Self::Standard => "standard",
             Self::RustLint => "rust (lint)",
             Self::RustTest => "rust (test)",
             Self::Msrv => "msrv",
@@ -59,7 +62,7 @@ impl Job {
             Self::DockerIntegration => &[Filter::Docker],
             Self::BrowserPlaywright => &[Filter::Playwright],
             Self::MacosCli => &[Filter::Cli],
-            Self::Docs => return Trigger::EveryChange,
+            Self::Standard | Self::Docs => return Trigger::EveryChange,
         })
     }
 
@@ -72,6 +75,7 @@ impl Job {
                 Recipe::Audit,
                 Recipe::Unused,
             ],
+            Self::Standard => &[Recipe::Standard],
             Self::RustLint => &[
                 Recipe::Lint,
                 Recipe::Doc,
@@ -126,6 +130,7 @@ pub(super) enum Recipe {
     LintCi,
     Audit,
     Unused,
+    Standard,
     Lint,
     Doc,
     OpenapiCheck,
@@ -151,6 +156,7 @@ impl Recipe {
             Self::LintCi => &["just", "lint-ci"],
             Self::Audit => &["just", "audit"],
             Self::Unused => &["just", "unused"],
+            Self::Standard => &["just", "standard"],
             Self::Lint => &["just", "lint"],
             Self::Doc => &["just", "doc"],
             Self::OpenapiCheck => &["just", "openapi-check"],
@@ -196,6 +202,7 @@ impl Recipe {
             | Self::LintCi
             | Self::Audit
             | Self::Unused
+            | Self::Standard
             | Self::Boundary
             | Self::Msrv
             | Self::UiCheck
@@ -223,6 +230,7 @@ impl Recipe {
             | Self::LintCi
             | Self::Audit
             | Self::Unused
+            | Self::Standard
             | Self::Lint
             | Self::Doc
             | Self::OpenapiCheck

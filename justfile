@@ -3,7 +3,7 @@
 default: check-changed
 
 # Validation checks sources and generated artifacts without modifying them.
-validate: fmt-check lint-ci lint check test doc doc-test audit unused openapi-check boundary check-wasm test-playwright docs
+validate: fmt-check lint-ci standard lint check test doc doc-test audit unused openapi-check boundary check-wasm test-playwright docs
 
 build:
     @cargo build --workspace --locked
@@ -19,11 +19,11 @@ build-cli:
 
 [positional-arguments]
 run *ARGS:
-    @cargo run --package piquelctl -- "$@"
+    @cargo run --locked --package piquelctl -- "$@"
 
 [positional-arguments]
 daemon *ARGS:
-    @cargo run --package piqueld --bin piqueld -- "$@"
+    @cargo run --locked --package piqueld --bin piqueld -- "$@"
 
 fmt:
     @cargo fmt --all
@@ -128,11 +128,15 @@ doc *ARGS='--workspace':
 # Check generated artifacts against freshly generated endpoint, manifest,
 # configuration, and command-line metadata.
 openapi-check:
-    @cargo run --package piqueld --example generate_openapi -- --check
-    @cargo run --package piquelctl --example cli_reference -- --check
+    @cargo run --locked --package piqueld --example generate_openapi -- --check
+    @cargo run --locked --package piquelctl --example cli_reference -- --check
 
 boundary:
     @cargo xtask boundary
+
+# The engineering standard's rules; `cargo xtask standard rules` lists them.
+standard:
+    @cargo xtask standard
 
 # Reads CI's path filters in .github/filters.yml, runs the Rust checks on the
 # changed crates and those depending on them, and names the slow checks it
@@ -179,7 +183,7 @@ build-embedded:
 
 [positional-arguments]
 daemon-embedded *ARGS:
-    @cargo run --package piqueld --bin piqueld --features embedded-ui -- "$@"
+    @cargo run --locked --package piqueld --bin piqueld --features embedded-ui -- "$@"
 
 # Isolated development instance for this worktree (docs/dev/development.md).
 [positional-arguments]
@@ -211,8 +215,8 @@ ctl *ARGS:
 # Schemas, and the configuration reference page together, then the CLI
 # reference page, whose generator builds on the regenerated client.
 generate:
-    @cargo run --package piqueld --example generate_openapi
-    @cargo run --package piquelctl --example cli_reference
+    @cargo run --locked --package piqueld --example generate_openapi
+    @cargo run --locked --package piquelctl --example cli_reference
 
 # Builds the documentation book into target/book, failing on any mdBook
 # warning, then checks every link and heading anchor in it and in the

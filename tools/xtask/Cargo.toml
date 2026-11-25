@@ -18,6 +18,7 @@ piqueld-client.workspace = true
 rustix = { workspace = true, features = ["fs", "process"] }
 serde.workspace = true
 serde_json.workspace = true
+sourceorigin-standard.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 toml.workspace = true
