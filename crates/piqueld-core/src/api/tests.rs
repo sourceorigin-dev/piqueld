@@ -1,6 +1,6 @@
 use super::{
     ApplicationView, BuildLogChunk, DeploymentPage, EnvironmentAccess, EnvironmentView, LogRecord,
-    MountedSecret, SecretAccess, SecretMetadata, StoredSecret,
+    LogTime, MountedSecret, SecretAccess, SecretMetadata, StoredSecret,
 };
 
 use crate::{ApplicationId, EnvironmentId, EnvironmentName, EnvironmentSource};
@@ -143,4 +143,28 @@ fn deployment_pages_are_documented_as_any_of() {
         .expect("schema JSON");
     assert!(schema.get("oneOf").is_none());
     assert_eq!(schema["anyOf"].as_array().map(Vec::len), Some(2));
+}
+
+#[test]
+fn log_times_read_and_write_docker_timestamps() {
+    for (timestamp, nanos) in [
+        ("1970-01-01T00:00:00Z", Some(0)),
+        (
+            "2026-01-01T00:00:00.000000001Z",
+            Some(1_767_225_600_000_000_001),
+        ),
+        ("2024-02-29T23:59:59.5Z", Some(1_709_251_199_500_000_000)),
+        ("2026-01-01T00:00:00+01:00", None),
+        ("2026-13-01T00:00:00Z", None),
+        ("9223372036854775807-01-01T00:00:00Z", None),
+        ("1970-01-01T9223372036854775807:00:00Z", None),
+        ("1970-01-01T00:-9223372036854775808:00Z", None),
+        ("not a timestamp", None),
+    ] {
+        assert_eq!(LogTime::parse(timestamp), nanos.map(LogTime), "{timestamp}");
+    }
+    assert_eq!(
+        LogTime(1_709_251_199_500_000_000).to_string(),
+        "2024-02-29T23:59:59.500000000Z"
+    );
 }

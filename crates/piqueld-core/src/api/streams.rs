@@ -12,11 +12,14 @@ string_enum! {
         /// The whole operation timeline, as JSON, from the timeline stream,
         /// first when it opens and then again on each change.
         Timeline => "timeline",
+        /// One line of a service's output, a `LogRecord` as JSON, from the
+        /// log stream. Its ID is the line's timestamp.
+        Log => "log",
         /// The event stream resumed after events that history no longer
         /// holds; history must be reloaded. The stream ends.
         HistoryExpired => "history_expired",
-        /// The stream could no longer read the store, or serialize what it
-        /// read. The stream ends.
+        /// The stream could no longer read the store or Docker, or serialize
+        /// what it read. The stream ends.
         StreamError => "stream_error",
         /// The caller lost access to what the stream shows; its data is the
         /// `ErrorBody` of the request that would now be refused. The stream

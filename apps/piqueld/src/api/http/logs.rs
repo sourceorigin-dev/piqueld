@@ -1,10 +1,28 @@
-//! Recent container output of an environment's services.
-use super::{ApiError, ApiPath, ApiQuery, ApiState, QueryParams, ok, openapi::ApiErrors};
-use axum::{extract::State, response::IntoResponse};
+//! Container output of an environment's services: recent output read once,
+//! or followed live as server-sent events.
+use super::{
+    ApiError, ApiPath, ApiQuery, ApiState, QueryParams,
+    auth::TailnetSource,
+    lease::Lease,
+    live::{self, Follow},
+    ok,
+    openapi::ApiErrors,
+};
+use crate::{
+    api::{ApplicationError, Expensive, LogFollower},
+    auth::Identity,
+};
+use axum::{
+    Extension,
+    extract::State,
+    http::HeaderMap,
+    response::{IntoResponse, sse::Event as ServerEvent},
+};
 use piqueld_core::ApiErrorCode;
 use piqueld_core::{
     EnvironmentId,
-    api::{ApplicationLogs, Envelope},
+    access::AppPermission,
+    api::{ApplicationLogs, Envelope, LogTime, StreamMessage},
 };
 /// Query parameters for recent container output.
 #[derive(serde::Deserialize, utoipa::IntoParams)]
@@ -53,7 +71,7 @@ pub(super) async fn get(
     ApiQuery(query): ApiQuery<LogQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let id = EnvironmentId::parse(id)?;
-    let _admitted = state.admit(crate::api::Expensive::Logs)?;
+    let _admitted = state.admit(Expensive::Logs)?;
     Ok(ok(state
         .logs(
             &id,
@@ -63,4 +81,138 @@ pub(super) async fn get(
             query.stream,
         )
         .await?))
+}
+
+/// Query parameters for following container output.
+#[derive(Default, serde::Deserialize, utoipa::IntoParams)]
+#[serde(default, deny_unknown_fields)]
+#[into_params(parameter_in=Query)]
+pub(super) struct LogStreamQuery {
+    /// Only include output from this service (1–63 characters); all services when omitted.
+    service: Option<String>,
+    /// Only include this output stream; both when omitted.
+    stream: Option<piqueld_core::api::LogStream>,
+    /// Only include output written after this RFC 3339 UTC timestamp, at most a
+    /// day back; from when the stream opens when omitted. A `Last-Event-ID`
+    /// header takes its place.
+    after: Option<String>,
+}
+
+impl QueryParams for LogStreamQuery {
+    const INVALID_CODE: ApiErrorCode = ApiErrorCode::LogsQueryInvalid;
+    const INVALID_MESSAGE: &'static str = "Invalid log query";
+}
+
+/// Follows container output of an environment's services as server-sent
+/// events: a `log` message per line, its data a `LogRecord` and its ID the
+/// newest timestamp sent, which a reconnecting client resumes after. Lines of
+/// several containers interleave, so a resume can skip lines another
+/// container hadn't delivered yet, but never repeats one. Tasks that start
+/// meanwhile are followed too. Malformed parameters fail with 400
+/// `logs_query_invalid`. The stream ends with `stream_error` once Docker can't
+/// be read, with `access_ended`, an `ErrorBody`, once the caller loses access,
+/// and without a message when the daemon shuts down.
+#[utoipa::path(get,path="/api/v1/environments/{id}/logs/stream",operation_id="streamEnvironmentLogs",params(("id"=String,Path),LogStreamQuery),
+ responses((status=200,description="SSE of `log` messages, each a `LogRecord`; IDs are the newest timestamp sent",body=String,content_type="text/event-stream"),
+ ApiErrors<400, 404, 502, 503>))]
+pub(super) async fn stream(
+    State(state): State<ApiState>,
+    Extension(identity): Extension<Identity>,
+    source: Option<TailnetSource>,
+    headers: HeaderMap,
+    ApiPath(id): ApiPath<String>,
+    ApiQuery(query): ApiQuery<LogStreamQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let id = EnvironmentId::parse(id)?;
+    let after = headers
+        .get("last-event-id")
+        .map(|value| value.to_str().ok().map(str::to_owned))
+        .or(query.after.map(Some))
+        .map(|after| {
+            after
+                .as_deref()
+                .and_then(LogTime::parse)
+                .ok_or(ApplicationError::InvalidLogQuery)
+        })
+        .transpose()?;
+    let admitted = state.admit(Expensive::LogStream)?;
+    let logs = state
+        .follow_logs(
+            &id,
+            query.service.as_deref(),
+            query.stream,
+            after.map(|after| after.0),
+        )
+        .await?;
+    let follow = FollowLogs {
+        _admitted: admitted,
+        lease: Lease::new(state.clone(), identity, source),
+        environment: id,
+        logs,
+        newest: String::new(),
+        done: false,
+    };
+    Ok(follow.serve())
+}
+
+/// A live log stream: its environment's output, and the caller's access.
+struct FollowLogs {
+    /// The stream's share of the log stream budget, while it is open.
+    _admitted: tokio::sync::OwnedSemaphorePermit,
+    lease: Lease,
+    environment: EnvironmentId,
+    logs: LogFollower,
+    /// The newest timestamp sent, each message's ID. Timestamps share one
+    /// fixed-width format, so they compare as text.
+    newest: String,
+    /// Whether a final message was sent.
+    done: bool,
+}
+
+impl Follow for FollowLogs {
+    /// Access is rechecked before every message once due, and while no
+    /// output comes.
+    async fn next(&mut self) -> Option<ServerEvent> {
+        if self.done {
+            return None;
+        }
+        loop {
+            if self.lease.due() {
+                let environment = self.environment.clone();
+                let checked = self
+                    .lease
+                    .recheck(|state: ApiState, identity: Identity| async move {
+                        let grants = state.grants(identity.actor()).await?;
+                        let owner = state.environment_owner(&environment).await?;
+                        Ok(grants.require_change(
+                            &[AppPermission::LogsRead],
+                            piqueld_store::EnvironmentOwner::target(owner.as_ref()),
+                        )?)
+                    })
+                    .await;
+                if let Err(ended) = checked {
+                    self.done = true;
+                    return ended.message();
+                }
+            }
+            tokio::select! {
+                record = self.logs.next() => return Some(match record {
+                    Ok(record) => {
+                        if record.timestamp > self.newest {
+                            self.newest.clone_from(&record.timestamp);
+                        }
+                        let message = ServerEvent::default().id(self.newest.clone());
+                        live::json(message, StreamMessage::Log, record)
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, environment = %self.environment, "live log stream ended");
+                        self.done = true;
+                        live::named(StreamMessage::StreamError)
+                            .data("Docker output could no longer be followed")
+                    }
+                }),
+                () = self.lease.wait(std::future::pending::<()>()) => {}
+            }
+        }
+    }
 }

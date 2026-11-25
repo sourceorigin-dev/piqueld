@@ -1,4 +1,5 @@
-//! Read owned container output on demand. No daemon log persistence or followers.
+//! Read owned container output on demand, without persisting it. The
+//! daemon follows live output through `DockerApi::container_logs` instead.
 use super::{BollardDocker, BollardResult, DockerError};
 use bollard::{
     container::LogOutput,

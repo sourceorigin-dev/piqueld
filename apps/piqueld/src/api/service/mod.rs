@@ -4,6 +4,7 @@ mod admission;
 mod checks;
 mod exec;
 mod history;
+mod live_logs;
 mod notification_message;
 mod notification_worker;
 mod observability;
@@ -22,6 +23,7 @@ use crate::application::{BoundaryError, RuntimeBoundary};
 pub use admission::Expensive;
 pub use exec::ExecSession;
 pub use history::ManifestExport;
+pub use live_logs::LogFollower;
 use piqueld_core::Phase;
 use piqueld_core::{
     ApplicationId, EnvironmentId,

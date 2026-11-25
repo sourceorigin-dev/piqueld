@@ -9,8 +9,10 @@ pub use piqueld_core::api::{
 pub use piqueld_core::{EnvironmentName, EnvironmentSource, PromotedFrom, TrackedBranch};
 
 use crate::{
-    AcceptedOperation, ApplicationLogs, Client, ClientError, DeploymentView, Event, LogStream,
-    ManifestRevision, Operation, Page, PlanView, client::EnvelopedCall, observability::EventFilter,
+    AcceptedOperation, ApplicationLogs, Client, ClientError, DeploymentView, Event, LiveStream,
+    LogRecord, LogStream, ManifestRevision, Operation, Page, PlanView, StreamMessage,
+    client::{EnvelopedCall, GeneratedCall},
+    observability::EventFilter,
 };
 
 impl Client {
@@ -425,4 +427,33 @@ impl Client {
             .data()
             .await
     }
+
+    /// Follows an environment's container output as Docker writes it,
+    /// narrowed to one service and one stream when given: the lines written
+    /// after `after`, an RFC 3339 timestamp at most a day back, or from now.
+    /// Tasks that start meanwhile, such as a rollout's, are followed too. The
+    /// stream has no request deadline; it carries keep-alives every 15
+    /// seconds, so the caller can bound how long it waits for one.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when the stream cannot be opened, including a
+    /// 503 when the daemon has too many log streams open.
+    pub async fn environment_logs_stream(
+        &self,
+        id: &str,
+        service: Option<&str>,
+        stream: Option<LogStream>,
+        after: Option<&str>,
+    ) -> Result<LogRecordStream, ClientError> {
+        let body = self
+            .streaming()
+            .generated
+            .stream_environment_logs(id, after, service, stream.as_ref())
+            .payload()
+            .await?;
+        Ok(LiveStream::new(body, StreamMessage::Log))
+    }
 }
+
+/// An environment's container output as the daemon streams it, line by line.
+pub type LogRecordStream = LiveStream<LogRecord>;

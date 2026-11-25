@@ -1097,6 +1097,15 @@ pub fn stop_environment(id: &str) -> String {
     format!("/api/v1/environments/{id}/stop", id = encode_path(id))
 }
 
+/// `GET /api/v1/environments/{id}/logs/stream`
+#[must_use]
+pub fn stream_environment_logs(id: &str) -> String {
+    format!(
+        "/api/v1/environments/{id}/logs/stream",
+        id = encode_path(id)
+    )
+}
+
 /// `GET /api/v1/events/stream`
 #[must_use]
 pub fn stream_events() -> String {

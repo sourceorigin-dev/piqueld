@@ -1,8 +1,64 @@
 //! Server-sent events read from a streamed response body.
 
-use crate::{ClientError, client::MAX_RESPONSE_BODY_BYTES};
+use crate::{ClientError, StreamMessage, client::MAX_RESPONSE_BODY_BYTES};
 use futures_util::StreamExt;
 use progenitor_client::ByteStream;
+use serde::de::DeserializeOwned;
+use std::marker::PhantomData;
+
+/// One of the daemon's live streams: its `name` messages, each decoded as a
+/// `T`, such as an operation's timeline or a line of output.
+pub struct LiveStream<T> {
+    messages: Messages,
+    name: StreamMessage,
+    decoded: PhantomData<fn() -> T>,
+}
+
+impl<T: DeserializeOwned> LiveStream<T> {
+    /// Reads the `name` messages of a streamed response `body`.
+    pub(crate) fn new(body: ByteStream, name: StreamMessage) -> Self {
+        Self {
+            messages: Messages::new(body),
+            name,
+            decoded: PhantomData,
+        }
+    }
+
+    /// The next message; `Ok(None)` for a keep-alive, which the daemon sends
+    /// every 15 seconds, so a caller can tell a quiet stream from a dropped
+    /// one; or `None` once the stream ended, as it does when the daemon
+    /// shuts down. Messages it doesn't know are skipped. Cancel-safe.
+    ///
+    /// # Errors
+    /// Returns a transport error when the connection fails, an exchange
+    /// error when the daemon can no longer read what it streams
+    /// (`stream_error`), and a 403 API error with the daemon's reason once
+    /// the caller lost access (`access_ended`). The stream ends after any of
+    /// them.
+    pub async fn next(&mut self) -> Option<Result<Option<T>, ClientError>> {
+        loop {
+            let message = match self.messages.next().await? {
+                Ok(Received::Message(message)) => message,
+                Ok(Received::Comment) => return Some(Ok(None)),
+                Err(error) => return Some(Err(error)),
+            };
+            return Some(match StreamMessage::parse(&message.event) {
+                Some(name) if name == self.name => serde_json::from_str(&message.data)
+                    .map(Some)
+                    .map_err(|source| ClientError::Decode { source }),
+                Some(StreamMessage::StreamError) => Err(ClientError::exchange(format!(
+                    "the {} stream failed: {}",
+                    self.name, message.data
+                ))),
+                Some(StreamMessage::AccessEnded) => Err(ClientError::api(
+                    http::StatusCode::FORBIDDEN,
+                    message.data.as_bytes(),
+                )),
+                _ => continue,
+            });
+        }
+    }
+}
 
 /// One server-sent event.
 pub(crate) struct Message {

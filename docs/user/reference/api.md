@@ -39,9 +39,9 @@ Request bodies are limited to 2 MiB, and to 64 KiB on the public sign-in
 endpoints (16 KiB for device starts); larger ones fail with `413
 request_body_too_large`. A body that sends nothing for a minute fails with
 `408 request_body_timeout`. Deployment analytics, logs, commands, event
-streams and installation checks each run a bounded number at once across all
-listeners (4 analytics reads, 8 log reads, 32 commands, 128 event streams, 2
-installation check runs); more fail at once with
+streams, log streams and installation checks each run a bounded number at once
+across all listeners (4 analytics reads, 8 log reads, 32 commands, 128 event
+streams, 16 log streams, 2 installation check runs); more fail at once with
 `503 server_busy`, which records no diagnostic. Retry them shortly.
 
 An application owns the saved manifest and its configuration revision
@@ -704,6 +704,22 @@ Snapshots read the 256 newest tasks, running ones first, and keep each task's
 newest output within an equal share of 1 MiB of collected text (at least
 64 KiB), with `truncated` indicating a partial result. Docker retains the source logs; removed containers
 have no available history. No output is stored by piqueld.
+
+`GET /api/v1/environments/{id}/logs/stream` follows the same output live
+through server-sent events, with the same `service` and `stream` filters. Each
+line is a `log` message whose data is a log record and whose ID is the newest
+timestamp sent so far. It starts with output written after `after`, an RFC 3339
+timestamp at most a day back, or from when it opens; a `Last-Event-ID` header
+takes the place of `after`, so a reconnecting client resumes after the newest
+line it received. Each container's lines arrive in order, but lines of several
+containers interleave as they arrive. A resume never repeats a line, but skips
+those another container wrote before the newest one received and hadn't
+delivered yet: usually a moment's worth, more if the stream dropped while first
+replaying output. Tasks that start while the stream is open, such as a
+rollout's, are followed too. A malformed `after`
+fails with `400 logs_query_invalid`. The stream ends with `stream_error` once
+Docker can no longer be read, and otherwise like the
+[event stream](#event-history). It needs `logs:read`, like the snapshot.
 
 `GET /api/v1/environments/{id}/exec` opens a WebSocket that runs a one-off
 command in a running task of a service (preferring healthy tasks over those

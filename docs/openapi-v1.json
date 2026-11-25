@@ -30410,6 +30410,112 @@
         "x-piqueld-access": "logs:read"
       }
     },
+    "/api/v1/environments/{id}/logs/stream": {
+      "get": {
+        "operationId": "streamEnvironmentLogs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only include output from this service (1–63 characters); all services when omitted.",
+            "in": "query",
+            "name": "service",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only include this output stream; both when omitted.",
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/LogStream"
+            }
+          },
+          {
+            "description": "Only include output written after this RFC 3339 UTC timestamp, at most a\nday back; from when the stream opens when omitted. A `Last-Event-ID`\nheader takes its place.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "SSE of `log` messages, each a `LogRecord`; IDs are the newest timestamp sent"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Follows container output of an environment's services as server-sent\nevents: a `log` message per line, its data a `LogRecord` and its ID the\nnewest timestamp sent, which a reconnecting client resumes after. Lines of\nseveral containers interleave, so a resume can skip lines another\ncontainer hadn't delivered yet, but never repeats one. Tasks that start\nmeanwhile are followed too. Malformed parameters fail with 400\n`logs_query_invalid`. The stream ends with `stream_error` once Docker can't\nbe read, with `access_ended`, an `ErrorBody`, once the caller loses access,\nand without a message when the daemon shuts down.",
+        "x-piqueld-access": "logs:read"
+      }
+    },
     "/api/v1/environments/{id}/promote": {
       "post": {
         "description": "Deploys the release of the source environment's current deployment (which\nmust be `deployment` when given), or an earlier `release`, without building\nor fetching. The release's manifest is rendered with this environment's\n`[spec.environments.<name>]` block and variables, and its images deployed as\nrecorded. Refused with `promotion_source_not_ready`, `promotion_source_changed`,\n`release_incompatible`, `image_unavailable` or `secrets_unavailable` when the\nsource, build inputs, images or mounted secrets do not allow it. The inspected\napplication `expected_generation` goes in the JSON body.",

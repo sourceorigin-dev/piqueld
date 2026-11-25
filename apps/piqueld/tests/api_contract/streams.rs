@@ -594,3 +594,69 @@ async fn event_streams_end_once_access_is_lost_or_the_daemon_stops() {
         .expect("the stream ends on shutdown");
     assert!(!text.contains("access_ended"), "{text}");
 }
+
+/// A log stream resumes after its `Last-Event-ID`, sending the output its
+/// environment's tasks wrote since, on the chosen stream, then that of a task
+/// started while it is open, and ends with `access_ended` once its reader
+/// loses `logs:read`. The ID falls between the fake's `old` and `hello`
+/// lines, so a stream ignoring it would start now and send neither.
+#[tokio::test]
+async fn log_streams_follow_new_tasks_until_access_is_lost() {
+    let f = GrantFixture::new().await;
+    let grant = [("logs:read", Some(f.blog.as_str()))];
+    let reader = seed_account(&database(&f.temp), "reader", &grant).await;
+    let stream = format!("/api/v1/environments/{}/logs/stream", f.blog_production);
+    assert_eq!(
+        f.router
+            .status(&reader, "GET", &format!("{stream}?after=yesterday"))
+            .await,
+        400
+    );
+    f.runtime.start_container("one", &f.blog_production, "web");
+    f.runtime
+        .start_container("other", &f.shop_production, "web");
+    let resume = piqueld_core::api::LogTime(piqueld_docker::now_ns() - 5_400_000_000_000);
+    let request = Request::builder()
+        .uri(format!("{stream}?stream=stdout"))
+        .header("authorization", format!("Bearer {reader}"))
+        .header("last-event-id", resume.to_string())
+        .body(Body::empty())
+        .unwrap();
+    let response = f.router.open(request).await;
+    assert_eq!(response.status(), 200);
+    let mut body = response.into_body();
+    let first = tokio::time::timeout(
+        Duration::from_secs(2),
+        read_stream(&mut body, Some("hello one")),
+    )
+    .await
+    .unwrap();
+    assert!(
+        first.contains("id: 20") && first.contains("event: log\n"),
+        "{first}"
+    );
+    assert!(first.contains(r#""task_id":"task-one""#), "{first}");
+    assert!(!first.contains("old one"), "{first}");
+
+    f.runtime.start_container("two", &f.blog_production, "web");
+    let next = tokio::time::timeout(
+        Duration::from_secs(2),
+        read_stream(&mut body, Some("hello two")),
+    )
+    .await
+    .unwrap();
+    for skipped in ["debug", "other"] {
+        assert!(!format!("{first}{next}").contains(skipped), "{first}{next}");
+    }
+
+    let revoke = serde_json::json!({"action": "revoke_credential", "id": "reader"});
+    let manage = "/api/v1/auth/manage";
+    assert_eq!(f.router.call(&reader, "POST", manage, revoke).await.0, 200);
+    let text = tokio::time::timeout(Duration::from_secs(5), read_stream(&mut body, None))
+        .await
+        .expect("the stream ends promptly");
+    assert!(
+        text.trim_start().starts_with("event: access_ended"),
+        "{text}"
+    );
+}

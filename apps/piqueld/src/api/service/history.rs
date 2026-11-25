@@ -257,6 +257,15 @@ impl ApplicationService {
         Ok(report)
     }
 
+    /// Refuses a log query's `service` filter unless it is a possible
+    /// service name: 1 to 63 characters, the DNS label limit.
+    pub(super) fn check_log_service(service: Option<&str>) -> Result<(), ApplicationError> {
+        if service.is_some_and(|name| name.is_empty() || name.len() > 63) {
+            return Err(ApplicationError::InvalidLogQuery);
+        }
+        Ok(())
+    }
+
     /// Reads bounded runtime logs for an existing environment.
     /// # Errors
     /// Returns invalid query, absence, storage, or runtime errors.
@@ -268,12 +277,10 @@ impl ApplicationService {
         since_seconds: u32,
         stream: Option<LogStream>,
     ) -> Result<ApplicationLogs, ApplicationError> {
-        if !(1..=1000).contains(&tail)
-            || !(1..=86400).contains(&since_seconds)
-            || service.is_some_and(|name| name.is_empty() || name.len() > 63)
-        {
+        if !(1..=1000).contains(&tail) || !(1..=86400).contains(&since_seconds) {
             return Err(ApplicationError::InvalidLogQuery);
         }
+        Self::check_log_service(service)?;
         self.store.get(id).await?;
         Ok(self
             .runtime
