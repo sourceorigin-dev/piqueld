@@ -61,7 +61,6 @@ pub(super) async fn open(
     url: String,
     request: String,
 ) -> Result<(Reader, Writer), ClientError> {
-    // The browser client's base URL is the page's HTTP(S) origin.
     let url = url
         .strip_prefix("http")
         .map(|rest| format!("ws{rest}"))
@@ -82,7 +81,6 @@ pub(super) async fn open(
     });
     let message = Closure::<dyn FnMut(MessageEvent)>::new({
         let sender = sender.clone();
-        // Text messages are not part of the daemon's side of the protocol.
         move |event: MessageEvent| {
             if let Ok(data) = event.data().dyn_into::<js_sys::ArrayBuffer>() {
                 let data = js_sys::Uint8Array::new(&data).to_vec();
@@ -145,8 +143,6 @@ impl Reader {
                 Some(SocketEvent::Message(data)) => return Ok(Some(data)),
                 Some(SocketEvent::Open) => {}
                 Some(SocketEvent::Closed(event)) => {
-                    // The handlers, and so the senders, live as long as this
-                    // reader: closing the channel ends later reads.
                     self.events.close();
                     if !event.was_clean() {
                         return Err(exchange(&format!(
@@ -165,7 +161,6 @@ impl Reader {
 impl Writer {
     /// Ready at once: the browser buffers outgoing messages itself.
     pub(super) fn send(&mut self, data: &[u8]) -> Ready<Result<(), ClientError>> {
-        // Browsers silently discard messages sent on a closing socket.
         ready(if self.0.socket.ready_state() == WebSocket::OPEN {
             self.0
                 .socket
