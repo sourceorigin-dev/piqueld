@@ -79,8 +79,8 @@ pub enum BuildError {
     },
 }
 
-// A build script's `main` prints the error it returns with `Debug`, so this
-// shows the message and its causes, rather than escaped fields.
+/// Shows the message and its causes, rather than escaped fields, as a build
+/// script's `main` prints the error it returns with `Debug`.
 impl fmt::Debug for BuildError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{self}")?;
