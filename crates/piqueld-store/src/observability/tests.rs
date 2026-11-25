@@ -1663,7 +1663,7 @@ async fn daemon_stats_report_write_waits_and_queue_ages() {
     let writer = store.hold_writer().await;
     let release = async {
         store.writer_waiting().await;
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
         drop(writer);
     };
     // Deploying queues its operation, once the held turn is released.

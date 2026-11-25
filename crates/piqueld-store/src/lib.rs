@@ -973,10 +973,8 @@ impl Writers {
         let started = std::time::Instant::now();
         let turn = self.queue.lock().await;
         let waited = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        self.waits
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.waited_ns
-            .fetch_add(waited, std::sync::atomic::Ordering::Relaxed);
+        self.waits.fetch_add(1, Ordering::Relaxed);
+        self.waited_ns.fetch_add(waited, Ordering::Relaxed);
         Writer {
             _turn: turn,
             written,
@@ -986,9 +984,7 @@ impl Writers {
     /// Writers waiting now, writers that waited since the store opened, and
     /// how long they waited in all, in milliseconds.
     fn stats(&self) -> (u64, u64, u64) {
-        let load = |counter: &std::sync::atomic::AtomicU64| {
-            counter.load(std::sync::atomic::Ordering::Relaxed)
-        };
+        let load = |counter: &std::sync::atomic::AtomicU64| counter.load(Ordering::Relaxed);
         (
             u64::try_from(*self.waiting.borrow()).unwrap_or(u64::MAX),
             load(&self.waits),
