@@ -10,7 +10,7 @@ struct Recorded {
 struct Capture(Arc<Mutex<Recorded>>);
 impl Capture {
     fn text(&self) -> String {
-        String::from_utf8(self.0.lock().bytes.clone()).unwrap()
+        String::from_utf8(self.0.lock().bytes.clone()).expect("the bytes are utf-8")
     }
     fn flushes(&self) -> usize {
         self.0.lock().flushes
@@ -64,7 +64,7 @@ fn roles_route_and_flush_before_returning_in_every_mode() {
             let stderr = Capture::default();
             let mut console =
                 Console::with_writers(json, quiet, false, stdout.writer(), stderr.writer());
-            console.emit(&Sample).unwrap();
+            console.emit(&Sample).expect("the output is written");
             assert_eq!(
                 stdout.text(),
                 if json {
@@ -76,18 +76,22 @@ fn roles_route_and_flush_before_returning_in_every_mode() {
                 }
             );
             assert_eq!(stdout.flushes(), usize::from(json || !quiet));
-            console.info("routine").unwrap();
+            console.info("routine").expect("the output is written");
             assert_eq!(stderr.text().contains("routine"), !quiet);
-            console.warning("incomplete").unwrap();
+            console
+                .warning("incomplete")
+                .expect("the output is written");
             assert!(stderr.text().contains(if json {
                 "{\"warning\":{\"message\":\"incomplete\"}}\n"
             } else {
                 "Warning: incomplete\n"
             }));
             let before = stderr.flushes();
-            console.warning_report(&Sample).unwrap();
+            console
+                .warning_report(&Sample)
+                .expect("the output is written");
             assert_eq!(stderr.flushes(), before + 1, "context is one flushed event");
-            console.prompt("Continue? ").unwrap();
+            console.prompt("Continue? ").expect("the output is written");
             assert!(stderr.text().ends_with(if json {
                 "{\"prompt\":{\"message\":\"Continue?\"}}\n"
             } else {
@@ -108,7 +112,7 @@ fn roles_route_and_flush_before_returning_in_every_mode() {
             assert!(!stdout.text().contains("task"));
             if json {
                 for line in stderr.text().lines() {
-                    serde_json::from_str::<serde_json::Value>(line).unwrap();
+                    serde_json::from_str::<serde_json::Value>(line).expect("the line is json");
                 }
             }
         }
@@ -120,9 +124,15 @@ fn dynamic_controls_are_escaped_and_log_whitespace_is_preserved() {
     let output = Capture::default();
     let mut writer = output.writer();
     let mut human = HumanWriter::new(writer.as_mut());
-    human.label("Value", "café\n\t\r\x1b[31m\u{85}").unwrap();
-    human.change('+', "name\x1b[2J", "value\nnext").unwrap();
-    human.log_text("one\n\ttwo\r\x1b[2J").unwrap();
+    human
+        .label("Value", "café\n\t\r\x1b[31m\u{85}")
+        .expect("the output is written");
+    human
+        .change('+', "name\x1b[2J", "value\nnext")
+        .expect("the output is written");
+    human
+        .log_text("one\n\ttwo\r\x1b[2J")
+        .expect("the output is written");
     assert_eq!(
         output.text(),
         "Value: café\\n\\t\\r\\u{1b}[31m\\u{85}\n  + name\\u{1b}[2J   value\\nnext\none\n\ttwo\\r\\u{1b}[2J"
@@ -142,10 +152,10 @@ fn invisible_format_characters_are_escaped() {
             "Name",
             "evil\u{202e}gnp.exe\u{2066}\u{200b}\u{200f}\u{61c}\u{2028}\u{200d}",
         )
-        .unwrap();
+        .expect("the output is written");
     human
         .log_text("log\u{202d}\u{feff}\u{2029} 👩\u{200d}💻\n")
-        .unwrap();
+        .expect("the output is written");
     assert_eq!(
         output.text(),
         "Name: evil\\u{202e}gnp.exe\\u{2066}\\u{200b}\\u{200f}\\u{61c}\\u{2028}\\u{200d}\n\
@@ -167,12 +177,12 @@ fn tables_align_columns_by_escaped_display_width() {
         .table(&rows, "No rows.", ["NAME", "VALUE", "LAST"], |row| {
             row.map(str::to_owned)
         })
-        .unwrap();
+        .expect("the output is written");
     human
         .table(&[] as &[[&str; 1]], "No rows.", ["NAME"], |row| {
             row.map(str::to_owned)
         })
-        .unwrap();
+        .expect("the output is written");
     assert_eq!(
         output.text(),
         "NAME     VALUE  LAST\n\
@@ -199,10 +209,10 @@ fn json_keeps_original_log_values_without_human_escaping() {
         truncated: true,
         expired: false,
     };
-    console.emit(&page).unwrap();
+    console.emit(&page).expect("the output is written");
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&stdout.text()).unwrap(),
-        serde_json::to_value(&page).unwrap()
+        serde_json::from_str::<serde_json::Value>(&stdout.text()).expect("the output is json"),
+        serde_json::to_value(&page).expect("the page serializes")
     );
     assert_eq!(stdout.flushes(), 1);
 }
@@ -220,12 +230,14 @@ fn task_clones_share_completion_and_plain_updates_are_deduplicated() {
         child.update("first");
     })
     .join()
-    .unwrap();
+    .expect("the task finishes");
     assert!(
         stderr.text().contains("first"),
         "updates are visible before completion"
     );
-    console.warning("between tasks").unwrap();
+    console
+        .warning("between tasks")
+        .expect("the output is written");
     b.finish(TaskOutcome::Skipped, "already done");
     a.finish(TaskOutcome::Succeeded, "done");
     a.finish(TaskOutcome::Failed, "must not appear");
@@ -283,7 +295,7 @@ fn writes_and_flushes_fail_without_panicking_and_hidden_results_do_not_render() 
             assert!(
                 console
                     .emit(&Sample)
-                    .unwrap_err()
+                    .expect_err("the output fails")
                     .to_string()
                     .contains("could not write output")
             );
@@ -298,8 +310,8 @@ fn writes_and_flushes_fail_without_panicking_and_hidden_results_do_not_render() 
         }
     }
     let mut quiet = Console::with_writers(false, true, false, Box::new(Broken), Box::new(Broken));
-    quiet.emit(&MustNotRender).unwrap();
-    quiet.info("hidden").unwrap();
+    quiet.emit(&MustNotRender).expect("the output is written");
+    quiet.info("hidden").expect("the output is written");
 }
 
 /// A secret the daemon shows once, such as a new token.
@@ -319,8 +331,8 @@ impl Report for OneTime {
 fn quiet_still_shows_one_time_secrets() {
     let stdout = Capture::default();
     let mut quiet = Console::with_writers(false, true, false, stdout.writer(), Box::new(Broken));
-    quiet.emit(&MustNotRender).unwrap();
-    quiet.emit(&OneTime).unwrap();
+    quiet.emit(&MustNotRender).expect("the output is written");
+    quiet.emit(&OneTime).expect("the output is written");
     assert_eq!(stdout.text(), "pqd_secret\n");
 }
 
@@ -331,7 +343,7 @@ fn manifests_print_as_toml_with_their_newlines() {
     stdout
         .human_console()
         .emit(&reports::ManifestReport(manifest.into()))
-        .unwrap();
+        .expect("the output is written");
     assert_eq!(stdout.text(), "[metadata]\nname = \"notes\"\n\n[spec]\n");
 }
 
@@ -415,15 +427,17 @@ fn terminal_progress_is_suspended_for_every_role_and_cleared_on_final_drop() {
     second.stop_ticking();
     first.update("working");
     second.update("waiting");
-    console.emit(&Sample).unwrap();
+    console.emit(&Sample).expect("the output is written");
     assert!(
         terminal.0.load(Ordering::SeqCst),
         "active progress is redrawn after a result"
     );
-    console.info("information").unwrap();
-    console.warning("warning").unwrap();
-    console.warning_report(&Sample).unwrap();
-    console.prompt("Continue? ").unwrap();
+    console.info("information").expect("the output is written");
+    console.warning("warning").expect("the output is written");
+    console
+        .warning_report(&Sample)
+        .expect("the output is written");
+    console.prompt("Continue? ").expect("the output is written");
     console.error(&Sample);
     first.finish(TaskOutcome::Succeeded, "done");
     drop(first);
@@ -435,7 +449,9 @@ fn terminal_progress_is_suspended_for_every_role_and_cleared_on_final_drop() {
         !terminal.0.load(Ordering::SeqCst),
         "final drop clears the abandoned row"
     );
-    console.warning("after tasks").unwrap();
+    console
+        .warning("after tasks")
+        .expect("the output is written");
     assert_eq!(capture.text().matches("first: succeeded").count(), 1);
     assert!(
         !capture.text().contains("second:"),
@@ -476,7 +492,8 @@ fn status_and_dns_refresh_list_images_dns_providers_certificate_failures_and_pre
             },
             total: 3,
             applications: vec![ApplicationPreviews {
-                id: piqueld_client::ApplicationId::parse("app-notes").unwrap(),
+                id: piqueld_client::ApplicationId::parse("app-notes")
+                    .expect("the application id parses"),
                 name: "notes".into(),
                 previews: 3,
             }],
@@ -519,8 +536,8 @@ fn status_and_dns_refresh_list_images_dns_providers_certificate_failures_and_pre
             transport: "unix",
             ingress: Some(&ingress),
         })
-        .unwrap();
-    console.emit(&status.dns).unwrap();
+        .expect("the output is written");
+    console.emit(&status.dns).expect("the output is written");
     let text = stdout.text();
     assert_eq!(
         text.matches("ovh (healthy, manages route records): piquel.fr")
@@ -565,10 +582,15 @@ fn telemetry_status_lists_destinations() {
                 endpoint: "unix:///var/lib/piqueld/telemetry/app-otel/collector/otlp.sock".into(),
                 headers: None,
                 receiver: Some(piqueld_client::TelemetryReceiver {
-                    environment_id: piqueld_client::EnvironmentId::parse("app-otel").unwrap(),
-                    application: Some(piqueld_client::ApplicationName::parse("otel").unwrap()),
+                    environment_id: piqueld_client::EnvironmentId::parse("app-otel")
+                        .expect("the environment id parses"),
+                    application: Some(
+                        piqueld_client::ApplicationName::parse("otel")
+                            .expect("the application name parses"),
+                    ),
                     environment: Some(
-                        piqueld_client::EnvironmentName::parse("production").unwrap(),
+                        piqueld_client::EnvironmentName::parse("production")
+                            .expect("the environment name parses"),
                     ),
                 }),
                 last_success_ms: Some(10),
@@ -581,7 +603,7 @@ fn telemetry_status_lists_destinations() {
     };
     let stdout = Capture::default();
     let mut console = stdout.human_console();
-    console.emit(&status).unwrap();
+    console.emit(&status).expect("the output is written");
     assert_eq!(
         stdout.text(),
         "Telemetry: unix:///run/otel/otlp.sock (failing, last export at 1970-01-01 00:00:00Z, 3 records dropped, headers from /run/credentials/piqueld.service/otlp-headers)\nTelemetry: otel production at unix:///var/lib/piqueld/telemetry/app-otel/collector/otlp.sock (connected, last export at 1970-01-01 00:00:00Z, 0 records dropped)\nTelemetry exports: daemon traces, metrics and logs; container logs and resource usage\n"
@@ -607,7 +629,7 @@ fn route_list_shows_visibility_dns_records_and_unready_causes() {
             target: serde_json::from_value::<RouteTarget>(
                 serde_json::json!({"service":"web","port":3000}),
             )
-            .unwrap(),
+            .expect("the json decodes"),
             state: state.into(),
             message: "Waiting for the gateway configuration to be applied".into(),
         },
@@ -641,10 +663,11 @@ fn route_list_shows_visibility_dns_records_and_unready_causes() {
             "ready",
         ),
     ];
-    rows[1].route.name = Some(piqueld_client::RouteName::parse("web").unwrap());
+    rows[1].route.name =
+        Some(piqueld_client::RouteName::parse("web").expect("the route name parses"));
     let stdout = Capture::default();
     let mut console = stdout.human_console();
-    console.emit(&rows).unwrap();
+    console.emit(&rows).expect("the output is written");
     let text = stdout.text();
     for expected in [
         "admin.example.com  -     staging      private     pending  web:3000     managed       A/AAAA -> 100.64.0.1, fd7a:115c:a1e0::1\n\
@@ -668,10 +691,10 @@ fn urls_print_one_line_each_with_name_state_and_what_they_wait_for() {
             {"condition": "service", "service": "web"}
         ]}
     ]))
-    .unwrap();
+    .expect("the json decodes");
     let stdout = Capture::default();
     let mut console = stdout.human_console();
-    console.emit(&urls).unwrap();
+    console.emit(&urls).expect("the output is written");
     assert_eq!(
         stdout.text(),
         "URL: https://notes.example.com (web) ready\n\
@@ -700,7 +723,7 @@ fn status_shows_what_registry_cleanup_deleted_and_what_it_couldnt() {
         ),
     ] {
         let stdout = Capture::default();
-        stdout.human_console().emit(&registry).unwrap();
+        stdout.human_console().emit(&registry).expect("the output is written");
         let text = stdout.text();
         assert!(text.contains(&expected), "{text}");
     }
@@ -727,7 +750,10 @@ fn status_shows_the_build_machine_and_its_latest_check() {
         ),
     ] {
         let stdout = Capture::default();
-        stdout.human_console().emit(&builder).unwrap();
+        stdout
+            .human_console()
+            .emit(&builder)
+            .expect("the output is written");
         let text = stdout.text();
         assert!(
             text.contains(&format!(

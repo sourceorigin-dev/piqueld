@@ -13,7 +13,7 @@ struct ProfilesFixture {
 }
 impl ProfilesFixture {
     fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         std::fs::write(
             directory.path().join("profiles.toml"),
             r#"
@@ -22,7 +22,7 @@ socket = "/tmp/profile-missing.sock"
 timeout = "2s"
 "#,
         )
-        .unwrap();
+        .expect("the file is written");
         Self { directory }
     }
     fn command(&self) -> Command {
@@ -39,7 +39,7 @@ timeout = "2s"
             .args(args)
             .envs(env.iter().copied())
             .output()
-            .unwrap()
+            .expect("the command runs")
     }
 }
 #[test]
@@ -119,7 +119,7 @@ url = "http://127.0.0.1:7845"
 socket = "/tmp/dev.sock"
 "#,
     )
-    .unwrap();
+    .expect("the file is written");
     let env = [
         ("PIQUELD_PROFILE", "missing"),
         ("PIQUELD_SOCKET", "/tmp/unused.sock"),
@@ -136,13 +136,13 @@ socket = "/tmp/dev.sock"
         String::from_utf8_lossy(&result.stderr)
     );
     assert_eq!(
-        String::from_utf8(result.stdout).unwrap(),
+        String::from_utf8(result.stdout).expect("the bytes are utf-8"),
         "NAME  ENDPOINT\ndev   /tmp/dev.sock\nprod  http://127.0.0.1:7845\n"
     );
     let result = fixture.run(&["profiles", "--json", "--quiet"], &env);
     assert!(result.status.success());
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap(),
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).expect("the json decodes"),
         serde_json::json!({
             "profiles": [
                 {"name": "dev", "endpoint": "/tmp/dev.sock", "default": false},
@@ -170,10 +170,10 @@ socket = "/tmp/default-missing.sock"
 socket = "/tmp/dev-missing.sock"
 "#,
     )
-    .unwrap();
+    .expect("the file is written");
     let result = fixture.run(&["profiles"], &[]);
     assert_eq!(
-        String::from_utf8(result.stdout).unwrap(),
+        String::from_utf8(result.stdout).expect("the bytes are utf-8"),
         "NAME     ENDPOINT\ndefault  /tmp/default-missing.sock\n\
          dev      /tmp/dev-missing.sock\nprod     /tmp/prod-missing.sock  (default)\n"
     );
@@ -201,20 +201,26 @@ socket = "/tmp/dev-missing.sock"
 fn explicit_file_flag_replaces_environment_file_and_automatic_discovery() {
     let fixture = ProfilesFixture::new();
     let file = fixture.directory.path().join("explicit.toml");
-    std::fs::write(&file, "[profiles.explicit]\nurl = 'http://localhost:7845'").unwrap();
+    std::fs::write(&file, "[profiles.explicit]\nurl = 'http://localhost:7845'")
+        .expect("the file is written");
     let user_directory = fixture.directory.path().join("piqueld");
-    std::fs::create_dir(&user_directory).unwrap();
-    std::fs::write(user_directory.join("profiles.toml"), "invalid TOML").unwrap();
+    std::fs::create_dir(&user_directory).expect("the user directory is created");
+    std::fs::write(user_directory.join("profiles.toml"), "invalid TOML")
+        .expect("the file is written");
     let env = [(
         "XDG_CONFIG_HOME",
-        fixture.directory.path().to_str().unwrap(),
+        fixture
+            .directory
+            .path()
+            .to_str()
+            .expect("the path is utf-8"),
     )];
     let result = fixture.run(
         &[
             "profiles",
             "--json",
             "--profiles-file",
-            file.to_str().unwrap(),
+            file.to_str().expect("the path is utf-8"),
         ],
         &env,
     );
@@ -224,7 +230,7 @@ fn explicit_file_flag_replaces_environment_file_and_automatic_discovery() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap(),
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).expect("the json decodes"),
         serde_json::json!({
             "profiles": [
                 {"name": "explicit", "endpoint": "http://localhost:7845", "default": false}
@@ -234,7 +240,8 @@ fn explicit_file_flag_replaces_environment_file_and_automatic_discovery() {
     let result = fixture.run(&["profiles", "--json"], &env);
     assert!(result.status.success());
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap()["profiles"][0]["name"],
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).expect("the json decodes")["profiles"]
+            [0]["name"],
         "testing"
     );
 }
@@ -243,20 +250,22 @@ fn explicit_file_flag_replaces_environment_file_and_automatic_discovery() {
 fn empty_profiles_succeed_and_missing_explicit_files_fail() {
     let fixture = ProfilesFixture::new();
     let path = fixture.directory.path().join("profiles.toml");
-    std::fs::write(&path, "").unwrap();
+    std::fs::write(&path, "").expect("the file is written");
     let result = fixture.run(&["profiles", "--json"], &[]);
     assert!(result.status.success());
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap(),
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).expect("the json decodes"),
         serde_json::json!({"profiles": []})
     );
     let result = fixture.run(&["profiles"], &[]);
     assert!(result.status.success());
     assert_eq!(result.stdout, b"No profiles configured.\n");
-    std::fs::remove_file(&path).unwrap();
+    std::fs::remove_file(&path).expect("the file is removed");
     let result = fixture.run(&["profiles"], &[]);
     assert_eq!(result.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&result.stderr).contains(path.to_str().unwrap()));
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains(path.to_str().expect("the path is utf-8"))
+    );
 }
 
 #[test]
@@ -267,11 +276,11 @@ fn listing_rejects_invalid_profiles_even_when_not_selected() {
         &path,
         "[profiles.broken]\nsocket = '/tmp/dev.sock'\nurl = 'http://localhost'",
     )
-    .unwrap();
+    .expect("the file is written");
     let result = fixture.run(&["profiles"], &[]);
     assert_eq!(result.status.code(), Some(2));
     let error = String::from_utf8_lossy(&result.stderr);
-    assert!(error.contains("broken") && error.contains(path.to_str().unwrap()));
+    assert!(error.contains("broken") && error.contains(path.to_str().expect("the path is utf-8")));
 }
 
 #[test]
@@ -282,12 +291,12 @@ fn automatic_discovery_uses_xdg_then_falls_back_to_home() {
         (root.join("piqueld"), "/tmp/xdg.sock"),
         (root.join(".config/piqueld"), "/tmp/home.sock"),
     ] {
-        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::create_dir_all(&directory).expect("the directory is created");
         std::fs::write(
             directory.join("profiles.toml"),
             format!("[profiles.discovery_test]\nsocket = '{endpoint}'"),
         )
-        .unwrap();
+        .expect("the file is written");
     }
     for xdg in [Some(root.as_os_str()), Some(std::ffi::OsStr::new("")), None] {
         let mut command = fixture.command();
@@ -298,19 +307,23 @@ fn automatic_discovery_uses_xdg_then_falls_back_to_home() {
         if let Some(xdg) = xdg {
             command.env("XDG_CONFIG_HOME", xdg);
         }
-        let result = command.args(["profiles", "--json"]).output().unwrap();
+        let result = command
+            .args(["profiles", "--json"])
+            .output()
+            .expect("the command runs");
         assert!(
             result.status.success(),
             "{}",
             String::from_utf8_lossy(&result.stderr)
         );
-        let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        let output: serde_json::Value =
+            serde_json::from_slice(&result.stdout).expect("the json decodes");
         let profile = output["profiles"]
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
             .find(|profile| profile["name"] == "discovery_test")
-            .unwrap();
+            .expect("the profile is listed");
         assert_eq!(
             profile["endpoint"],
             if xdg.is_some_and(|value| !value.is_empty()) {
@@ -386,15 +399,15 @@ fn timeout_provenance_is_independent_of_endpoint_provenance() {
     use std::os::unix::net::UnixListener;
     let fixture = ProfilesFixture::new();
     let socket = fixture.directory.path().join("pending.sock");
-    let _listener = UnixListener::bind(&socket).unwrap();
+    let _listener = UnixListener::bind(&socket).expect("the listener binds");
     std::fs::write(
         fixture.directory.path().join("profiles.toml"),
         format!(
             "[profiles.testing]\nsocket = {:?}\ntimeout = \"20ms\"\n",
-            socket.to_str().unwrap()
+            socket.to_str().expect("the path is utf-8")
         ),
     )
-    .unwrap();
+    .expect("the file is written");
     for (extra, env, source) in [
         (vec![], vec![], "profile \"testing\" in"),
         (
@@ -412,7 +425,7 @@ fn timeout_provenance_is_independent_of_endpoint_provenance() {
             "--profile",
             "testing",
             "--socket",
-            socket.to_str().unwrap(),
+            socket.to_str().expect("the path is utf-8"),
             "status",
         ];
         args.extend(extra);
@@ -450,7 +463,8 @@ fn invalid_configuration_reports_its_source_without_exposing_values() {
         "[profiles.testing]\nurl = \"http://user:private-token@localhost/\" broken",
         "profiles = \"private-token\"",
     ] {
-        std::fs::write(fixture.directory.path().join("profiles.toml"), malformed).unwrap();
+        std::fs::write(fixture.directory.path().join("profiles.toml"), malformed)
+            .expect("the file is written");
         let output = fixture.run(&["--socket", "/tmp/override.sock", "status"], &[]);
         assert_eq!(output.status.code(), Some(2));
         let error = String::from_utf8_lossy(&output.stderr);
@@ -471,14 +485,17 @@ fn invalid_configuration_reports_its_source_without_exposing_values() {
 fn refused_connections_identify_the_listening_endpoint_check() {
     let fixture = ProfilesFixture::new();
     let socket = fixture.directory.path().join("stopped.sock");
-    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
+    drop(std::os::unix::net::UnixListener::bind(&socket).expect("the listener binds"));
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("the listener binds");
+    let port = listener
+        .local_addr()
+        .expect("the listener has an address")
+        .port();
     drop(listener);
     let url = format!("http://127.0.0.1:{port}");
     let dns_url = format!("http://localhost.:{port}");
     for (flag, endpoint) in [
-        ("--socket", socket.to_str().unwrap()),
+        ("--socket", socket.to_str().expect("the path is utf-8")),
         ("--url", url.as_str()),
         ("--url", dns_url.as_str()),
     ] {

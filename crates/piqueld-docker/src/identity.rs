@@ -263,9 +263,13 @@ mod tests {
             "Driver":"overlay","Internal":false,"Attachable":true,"ConfigFrom":{"Network":""},
             "Options":{"com.docker.network.driver.overlay.vxlanid_list":"4100"}
         }))
-        .unwrap();
+        .expect("the json decodes");
         assert!(BollardDocker::network_configuration_matches(&network));
-        network.config_from.as_mut().unwrap().network = Some("external-template".into());
+        network
+            .config_from
+            .as_mut()
+            .expect("the field is set")
+            .network = Some("external-template".into());
         assert!(!BollardDocker::network_configuration_matches(&network));
         network.config_from = None;
         assert!(BollardDocker::network_configuration_matches(&network));
@@ -274,8 +278,9 @@ mod tests {
     #[test]
     fn shared_prefix_does_not_include_foreign_canonical_resources() {
         let prefix = "a".repeat(42);
-        let app = EnvironmentId::parse(format!("{prefix}-one")).unwrap();
-        let foreign = EnvironmentId::parse(format!("{prefix}-two")).unwrap();
+        let app = EnvironmentId::parse(format!("{prefix}-one")).expect("the environment id parses");
+        let foreign =
+            EnvironmentId::parse(format!("{prefix}-two")).expect("the environment id parses");
         assert_eq!(
             docker_resource_readable_prefix(&app),
             docker_resource_readable_prefix(&foreign)

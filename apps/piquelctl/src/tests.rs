@@ -154,11 +154,26 @@ fn subcommand_arguments_never_reuse_global_ids() {
 
 #[test]
 fn timeout_parser_accepts_bounded_units() {
-    assert_eq!(parse_duration("500ms").unwrap(), Duration::from_millis(500));
-    assert_eq!(parse_duration("30s").unwrap(), Duration::from_secs(30));
-    assert_eq!(parse_duration("2m").unwrap(), Duration::from_mins(2));
-    assert_eq!(parse_duration("1").unwrap(), Duration::from_secs(1));
-    assert_eq!(parse_duration("7d").unwrap(), Duration::from_hours(7 * 24));
+    assert_eq!(
+        parse_duration("500ms").expect("the duration parses"),
+        Duration::from_millis(500)
+    );
+    assert_eq!(
+        parse_duration("30s").expect("the duration parses"),
+        Duration::from_secs(30)
+    );
+    assert_eq!(
+        parse_duration("2m").expect("the duration parses"),
+        Duration::from_mins(2)
+    );
+    assert_eq!(
+        parse_duration("1").expect("the duration parses"),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        parse_duration("7d").expect("the duration parses"),
+        Duration::from_hours(7 * 24)
+    );
 }
 
 #[test]

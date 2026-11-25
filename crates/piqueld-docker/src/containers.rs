@@ -365,9 +365,9 @@ mod tests {
 
     #[tokio::test]
     async fn streams_fail_until_docker_creates_its_socket_then_connect() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let socket = directory.path().join("docker.sock");
-        let docker = BollardDocker::connect(&socket).unwrap();
+        let docker = BollardDocker::connect(&socket).expect("the docker client connects");
 
         let mut starts = docker.watch_container_starts(0);
         assert!(matches!(
@@ -376,7 +376,7 @@ mod tests {
         ));
         assert!(starts.next().await.is_none());
 
-        let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let _listener = tokio::net::UnixListener::bind(&socket).expect("the listener binds");
         docker.client().expect("`client` should succeed");
     }
 
@@ -384,7 +384,7 @@ mod tests {
     /// containers and unlabelled ones are not managed.
     #[test]
     fn managed_containers_are_classified_by_their_labels() {
-        let instance = InstanceId::parse("instance-1").unwrap();
+        let instance = InstanceId::parse("instance-1").expect("the instance id parses");
         let labels = |pairs: &[(&str, &str)]| -> HashMap<String, String> {
             pairs
                 .iter()
@@ -423,7 +423,8 @@ mod tests {
             )),
             Some((
                 Workload::Service {
-                    environment: EnvironmentId::parse("env-web-0001").unwrap(),
+                    environment: EnvironmentId::parse("env-web-0001")
+                        .expect("the environment id parses"),
                     name: "web".into(),
                 },
                 Some("task-1".into()),

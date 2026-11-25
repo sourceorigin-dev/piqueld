@@ -194,17 +194,19 @@ fn account_changes_resolve_usernames_to_typed_requests() {
     let credentials = directory.path().join("credentials.json");
     let login = json!({"username": "bob", "token": "pqd_bob"});
     let saved = json!({"endpoints": {&url: {"selected": "bob-id", "accounts": {"bob-id": login}}}});
-    fs::write(&credentials, saved.to_string()).unwrap();
-    fs::set_permissions(&credentials, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(&credentials, saved.to_string()).expect("the file is written");
+    fs::set_permissions(&credentials, fs::Permissions::from_mode(0o600))
+        .expect("the permissions are set");
     let mut update = server.command();
     update.env("PIQUELD_CREDENTIALS_FILE", &credentials);
     let output = update
         .args(["--json", "--account", "bob", "account", "update", "bob"])
         .args(["--username", "robert"])
         .output()
-        .unwrap();
+        .expect("the command runs");
     assert_json_success(&output);
-    let saved: Value = serde_json::from_slice(&fs::read(&credentials).unwrap()).unwrap();
+    let saved: Value = serde_json::from_slice(&fs::read(&credentials).expect("the file is read"))
+        .expect("the json decodes");
     assert_eq!(
         saved["endpoints"][&url]["accounts"]["bob-id"],
         json!({"username": "robert", "token": "pqd_bob"})
@@ -236,7 +238,7 @@ fn account_changes_resolve_usernames_to_typed_requests() {
         .finish()
         .into_iter()
         .filter(|request| request.path == "/api/v1/auth/manage")
-        .map(|request| serde_json::from_slice(&request.body).unwrap())
+        .map(|request| serde_json::from_slice(&request.body).expect("the json decodes"))
         .collect();
     assert_eq!(
         sent,

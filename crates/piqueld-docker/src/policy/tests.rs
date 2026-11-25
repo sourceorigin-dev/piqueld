@@ -15,18 +15,22 @@ fn authored() -> ServiceSpec {
 /// Desired service attached to its private network and mounting `mounts`.
 fn desired(mounts: Vec<DesiredMount>) -> DesiredService {
     let image = format!("ghcr.io/example/notes@sha256:{}", "a".repeat(64));
-    let application = piqueld_core::EnvironmentId::parse("app-policy").unwrap();
+    let application =
+        piqueld_core::EnvironmentId::parse("app-policy").expect("the environment id parses");
     DesiredService {
         link_aliases: BTreeMap::new(),
         secrets: Vec::new(),
         files: Vec::new(),
-        logical_name: piqueld_core::ServiceName::parse("web").unwrap(),
-        name: piqueld_core::DockerServiceName::parse("app-policy-web").unwrap(),
+        logical_name: piqueld_core::ServiceName::parse("web").expect("the service name parses"),
+        name: piqueld_core::DockerServiceName::parse("app-policy-web")
+            .expect("the docker service name parses"),
         source: ResolvedSource::Image {
-            requested: piqueld_core::ImageReference::parse("ghcr.io/example/notes:1.4.0").unwrap(),
-            digest_reference: piqueld_core::RepositoryDigest::parse(image.clone()).unwrap(),
+            requested: piqueld_core::ImageReference::parse("ghcr.io/example/notes:1.4.0")
+                .expect("the image reference parses"),
+            digest_reference: piqueld_core::RepositoryDigest::parse(image.clone())
+                .expect("the repository digest parses"),
         },
-        image: piqueld_core::ImmutableImage::parse(image).unwrap(),
+        image: piqueld_core::ImmutableImage::parse(image).expect("the image parses"),
         replicas: 2,
         environment: BTreeMap::from([("NOTES_PORT".into(), "8080".into())]),
         command: vec!["/bin/notes".into()],
@@ -41,9 +45,12 @@ fn desired(mounts: Vec<DesiredMount>) -> DesiredService {
             &application,
         )],
         labels: piqueld_core::Ownership {
-            instance_id: piqueld_core::InstanceId::parse("instance").unwrap(),
+            instance_id: piqueld_core::InstanceId::parse("instance")
+                .expect("the instance id parses"),
             environment_id: application,
-            service: Some(piqueld_core::ServiceName::parse("web").unwrap()),
+            service: Some(
+                piqueld_core::ServiceName::parse("web").expect("the service name parses"),
+            ),
             spec_hash: format!("sha256:{}", "b".repeat(64)),
         }
         .labels(),
@@ -58,12 +65,14 @@ fn desired(mounts: Vec<DesiredMount>) -> DesiredService {
 #[test]
 fn authored_rollout_is_observed_back() {
     let mount = |read_only| DesiredMount {
-        volume_name: piqueld_core::DockerVolumeName::parse("app-policy-data").unwrap(),
+        volume_name: piqueld_core::DockerVolumeName::parse("app-policy-data")
+            .expect("the docker volume name parses"),
         target: "/data".into(),
         read_only,
     };
     let observed = |desired: &DesiredService| {
-        let spec = BollardDocker::service_spec(desired, "local-node").unwrap();
+        let spec =
+            BollardDocker::service_spec(desired, "local-node").expect("the service spec builds");
         assert!(ServiceRuntimePolicy::matches(&spec, "local-node"));
         BollardDocker::observed_rollout(&spec)
     };
@@ -81,11 +90,12 @@ fn authored_rollout_is_observed_back() {
     };
     assert_eq!(observed(&writable), Some(writable.rollout_policy()));
 
-    let mut spec = BollardDocker::service_spec(&writable, "local-node").unwrap();
-    let update = spec.update_config.as_mut().unwrap();
+    let mut spec =
+        BollardDocker::service_spec(&writable, "local-node").expect("the service spec builds");
+    let update = spec.update_config.as_mut().expect("the field is set");
     update.monitor = Some(1_500_000_000);
     assert_eq!(BollardDocker::observed_rollout(&spec), None);
-    let update = spec.update_config.as_mut().unwrap();
+    let update = spec.update_config.as_mut().expect("the field is set");
     update.monitor = Some(5_000_000_000);
     update.order = Some(ServiceSpecUpdateConfigOrderEnum::EMPTY);
     assert_eq!(BollardDocker::observed_rollout(&spec), None);
@@ -97,18 +107,19 @@ fn authored_rollout_is_observed_back() {
 fn authored_security_is_observed_back() {
     let mut hardened = desired(Vec::new());
     hardened.security = ServiceSecurity {
-        user: Some("1000:1000".parse().unwrap()),
+        user: Some("1000:1000".parse().expect("the user parses")),
         read_only_root: true,
         drop_capabilities: true,
         no_new_privileges: true,
     };
-    let mut spec = BollardDocker::service_spec(&hardened, "local-node").unwrap();
+    let mut spec =
+        BollardDocker::service_spec(&hardened, "local-node").expect("the service spec builds");
     assert!(ServiceRuntimePolicy::matches(&spec, "local-node"));
     let container = spec
         .task_template
         .as_mut()
         .and_then(|task| task.container_spec.as_mut())
-        .unwrap();
+        .expect("the container spec is set");
     assert_eq!(
         BollardDocker::observed_security(container),
         hardened.security
@@ -116,12 +127,12 @@ fn authored_security_is_observed_back() {
     assert_eq!(
         BollardDocker::observed_security(
             BollardDocker::service_spec(&desired(Vec::new()), "local-node")
-                .unwrap()
+                .expect("the service spec builds")
                 .task_template
-                .unwrap()
+                .expect("the service has a task template")
                 .container_spec
                 .as_ref()
-                .unwrap()
+                .expect("the field is set")
         ),
         ServiceSecurity::default()
     );
@@ -131,7 +142,7 @@ fn authored_security_is_observed_back() {
             spec.task_template
                 .as_mut()
                 .and_then(|task| task.container_spec.as_mut())
-                .unwrap(),
+                .expect("the container spec is set"),
         );
         !ServiceRuntimePolicy::matches(&spec, "local-node")
     };
@@ -141,8 +152,11 @@ fn authored_security_is_observed_back() {
         container.capability_drop = Some(vec!["NET_RAW".into()]);
     }));
     assert!(drifted(|container| {
-        container.privileges.as_mut().unwrap().app_armor =
-            Some(bollard::models::TaskSpecContainerSpecPrivilegesAppArmor::default());
+        container
+            .privileges
+            .as_mut()
+            .expect("the field is set")
+            .app_armor = Some(bollard::models::TaskSpecContainerSpecPrivilegesAppArmor::default());
     }));
 }
 
@@ -152,12 +166,13 @@ fn authored_security_is_observed_back() {
 #[test]
 fn a_telemetry_mount_without_a_receiver_is_observed_as_telemetry() {
     let plain = desired(Vec::new());
-    let mut spec = BollardDocker::service_spec(&plain, "local-node").unwrap();
+    let mut spec =
+        BollardDocker::service_spec(&plain, "local-node").expect("the service spec builds");
     let container = spec
         .task_template
         .as_mut()
         .and_then(|task| task.container_spec.as_mut())
-        .unwrap();
+        .expect("the container spec is set");
     container
         .mounts
         .get_or_insert_default()
@@ -190,15 +205,22 @@ fn a_telemetry_mount_without_a_receiver_is_observed_as_telemetry() {
 fn template_text_is_authored_literally_and_observed_back() {
     let text = r#"${{ vars.x }} {{.Service.Name}} {{{ {{"{{"}}"#;
     let mut desired = desired(vec![DesiredMount {
-        volume_name: piqueld_core::DockerVolumeName::parse("app-policy-data").unwrap(),
+        volume_name: piqueld_core::DockerVolumeName::parse("app-policy-data")
+            .expect("the docker volume name parses"),
         target: "/data/{{.Task.Slot}}".into(),
         read_only: false,
     }]);
     desired.environment.insert("TEXT".into(), text.into());
-    let spec = BollardDocker::service_spec(&desired, "local-node").unwrap();
-    let container = spec.task_template.as_ref().unwrap().container_spec.as_ref();
+    let spec =
+        BollardDocker::service_spec(&desired, "local-node").expect("the service spec builds");
+    let container = spec
+        .task_template
+        .as_ref()
+        .expect("the field is set")
+        .container_spec
+        .as_ref();
     assert!(
-        container.unwrap().env.as_ref().unwrap().contains(
+        container.expect("the service has a container").env.as_ref().expect("the container has an environment").contains(
             &r#"TEXT=${{"{{"}} vars.x }} {{"{{"}}.Service.Name}} {{"{{"}}{ {{"{{"}}"{{"{{"}}"}}"#
                 .into()
         )
@@ -214,10 +236,10 @@ fn template_text_is_authored_literally_and_observed_back() {
         edit(
             spec.task_template
                 .as_mut()
-                .unwrap()
+                .expect("the field is set")
                 .container_spec
                 .as_mut()
-                .unwrap(),
+                .expect("the field is set"),
         );
         BollardDocker::observe_service(&spec, "local-node", Vec::new(), None)
             .expect("observed service")
@@ -229,7 +251,8 @@ fn template_text_is_authored_literally_and_observed_back() {
     );
     assert_eq!(
         unescaped(|container| {
-            container.mounts.as_mut().unwrap()[0].target = Some("/data/{{.Task.Slot}}".into());
+            container.mounts.as_mut().expect("the field is set")[0].target =
+                Some("/data/{{.Task.Slot}}".into());
         }),
         ["runtime_policy"]
     );
@@ -242,12 +265,16 @@ fn logical_name_is_the_only_accepted_alias() {
     let network = &mut spec
         .task_template
         .as_mut()
-        .unwrap()
+        .expect("the field is set")
         .networks
         .as_mut()
-        .unwrap()[0];
+        .expect("the field is set")[0];
     assert_eq!(network.aliases, Some(vec!["web".into()]));
-    network.aliases.as_mut().unwrap().push("other".into());
+    network
+        .aliases
+        .as_mut()
+        .expect("the field is set")
+        .push("other".into());
     assert!(!ServiceRuntimePolicy::matches(&spec, "local-node"));
 }
 
@@ -295,7 +322,7 @@ fn command_health_check_accepts_equivalent_http_vector() {
     };
 
     let config = BollardDocker::health_config(&health_check);
-    let observed = BollardDocker::observed_health(&config).unwrap();
+    let observed = BollardDocker::observed_health(&config).expect("the health is observed");
     assert!(matches!(observed, HealthCheck::Http { port: 8080, .. }));
     assert_eq!(observed.execution(), health_check.execution());
     assert!(ServiceRuntimePolicy::supported_health_config(&config));
@@ -360,7 +387,11 @@ fn policy_verifies_exactly_the_authored_fields() {
     assert!(ServiceRuntimePolicy::matches(&authored, "local-node"));
     assert!(!ServiceRuntimePolicy::matches(&authored, "another-node"));
     let mut unpinned = authored.clone();
-    unpinned.task_template.as_mut().unwrap().placement = None;
+    unpinned
+        .task_template
+        .as_mut()
+        .expect("the field is set")
+        .placement = None;
     assert!(!ServiceRuntimePolicy::matches(&unpinned, "local-node"));
 
     let mut echoed = authored.clone();
@@ -395,7 +426,11 @@ fn policy_verifies_exactly_the_authored_fields() {
     assert!(!ServiceRuntimePolicy::matches(&echoed, "local-node"));
 
     let mut runtime = authored.clone();
-    runtime.task_template.as_mut().unwrap().runtime = Some("custom-runtime".into());
+    runtime
+        .task_template
+        .as_mut()
+        .expect("the field is set")
+        .runtime = Some("custom-runtime".into());
     assert!(!ServiceRuntimePolicy::matches(&runtime, "local-node"));
 
     let mut drifted = authored.clone();

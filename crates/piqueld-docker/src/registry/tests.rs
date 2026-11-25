@@ -3,20 +3,26 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// A registry on `port` holding `repository`.
 fn registry(port: u16, path: &str) -> BuildRegistry {
-    BuildRegistry::new(BuildRepository::try_from(format!("localhost:{port}/{path}")).unwrap())
-        .unwrap()
+    BuildRegistry::new(
+        BuildRepository::try_from(format!("localhost:{port}/{path}"))
+            .expect("the repository parses"),
+    )
+    .expect("the registry builds")
 }
 
 /// Answers one request with `response`, returning the request line.
 async fn answer(listener: &tokio::net::TcpListener, response: String) -> String {
-    let (mut stream, _) = listener.accept().await.unwrap();
+    let (mut stream, _) = listener.accept().await.expect("the connection is accepted");
     let mut request = vec![0; 4096];
-    let read = stream.read(&mut request).await.unwrap();
-    stream.write_all(response.as_bytes()).await.unwrap();
+    let read = stream.read(&mut request).await.expect("the file is read");
+    stream
+        .write_all(response.as_bytes())
+        .await
+        .expect("the response is written");
     String::from_utf8_lossy(&request[..read])
         .lines()
         .next()
-        .unwrap()
+        .expect("the iterator yields an item")
         .to_owned()
 }
 
@@ -49,10 +55,16 @@ async fn answer_all(listener: &tokio::net::TcpListener, responses: Vec<String>) 
 
 #[tokio::test]
 async fn deletes_by_digest_and_reports_why_the_registry_kept_an_image() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener binds");
+    let port = listener
+        .local_addr()
+        .expect("the listener has an address")
+        .port();
     let piqueld = registry(port, "piqueld");
-    let digest = Sha256Digest::parse(format!("sha256:{}", "a".repeat(64))).unwrap();
+    let digest =
+        Sha256Digest::parse(format!("sha256:{}", "a".repeat(64))).expect("the digest parses");
     let image = piqueld.repository.image(&digest);
     let unknown = Some(("MANIFEST_UNKNOWN", "manifest unknown"));
     let disabled = Some(("UNSUPPORTED", "The operation is unsupported."));
@@ -85,7 +97,7 @@ async fn deletes_by_digest_and_reports_why_the_registry_kept_an_image() {
     ));
 
     drop(listener);
-    let owner = InstanceId::parse("instance-1").unwrap();
+    let owner = InstanceId::parse("instance-1").expect("the instance id parses");
     assert!(matches!(
         piqueld.pushed_images(&owner).await,
         Err(RegistryError::Unreachable { .. })
@@ -107,18 +119,22 @@ fn only_a_registry_on_this_hosts_loopback_is_reached_over_http() {
         ),
         ("registry.example/team/piqueld", "https://registry.example"),
     ] {
-        let registry =
-            BuildRegistry::new(BuildRepository::try_from(repository.to_owned()).unwrap()).unwrap();
+        let registry = BuildRegistry::new(
+            BuildRepository::try_from(repository.to_owned()).expect("the repository parses"),
+        )
+        .expect("the registry builds");
         assert_eq!(registry.base(), base);
     }
 }
 
 #[tokio::test]
 async fn lists_only_this_installations_tagged_images_page_by_page() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener binds");
+    let port = listener.local_addr().expect("the listener is bound").port();
     let piqueld = registry(port, "piqueld");
-    let owner = InstanceId::parse("instance-1").unwrap();
+    let owner = InstanceId::parse("instance-1").expect("the instance id parses");
     let digest = |byte: char| format!("sha256:{}", byte.to_string().repeat(64));
     let found = |byte: char| {
         with_body(
@@ -163,9 +179,9 @@ async fn lists_only_this_installations_tagged_images_page_by_page() {
     let expected = ['a', 'b'].map(|byte| {
         piqueld
             .repository
-            .image(&Sha256Digest::parse(digest(byte)).unwrap())
+            .image(&Sha256Digest::parse(digest(byte)).expect("the digest parses"))
     });
-    assert_eq!(images.unwrap(), expected.clone().into());
+    assert_eq!(images.expect("pages list"), expected.clone().into());
 
     let all = with_body(
         "200 OK",
@@ -184,25 +200,25 @@ async fn lists_only_this_installations_tagged_images_page_by_page() {
             "HEAD /v2/piqueld/manifests/instance-1.gone HTTP/1.1",
         ]
     );
-    assert_eq!(images.unwrap(), expected.clone().into());
+    assert_eq!(images.expect("pages list"), expected.clone().into());
     let (_, deleted) = tokio::join!(
         answer(&listener, response("202 Accepted", None)),
         piqueld.delete(&expected[0])
     );
-    deleted.unwrap();
+    deleted.expect("the images are deleted");
     let (requests, images) = tokio::join!(
         answer_all(&listener, vec![all, missing]),
         piqueld.pushed_images(&owner)
     );
     assert_eq!(requests.len(), 2, "{requests:?}");
-    assert_eq!(images.unwrap(), [expected[1].clone()].into());
+    assert_eq!(images.expect("pages list"), [expected[1].clone()].into());
 
     let unknown = response(
         "404 Not Found",
         Some(("NAME_UNKNOWN", "repository name not known")),
     );
     let (_, images) = tokio::join!(answer(&listener, unknown), piqueld.pushed_images(&owner));
-    assert!(images.unwrap().is_empty());
+    assert!(images.expect("pages list").is_empty());
     let (_, images) = tokio::join!(
         answer(&listener, response("404 Not Found", None)),
         piqueld.pushed_images(&owner)
@@ -217,7 +233,7 @@ async fn lists_only_this_installations_tagged_images_page_by_page() {
 
 #[test]
 fn each_push_gets_a_new_tag_naming_the_installation() {
-    let owner = InstanceId::parse("instance-1").unwrap();
+    let owner = InstanceId::parse("instance-1").expect("the instance id parses");
     let (first, second) = (
         BuildRegistry::new_tag(&owner),
         BuildRegistry::new_tag(&owner),

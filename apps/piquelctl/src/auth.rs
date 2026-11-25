@@ -640,11 +640,12 @@ mod tests {
 
     #[test]
     fn credential_io_errors_name_the_credentials_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("the temp dir is created");
         let blocker = dir.path().join("not-a-directory");
-        std::fs::write(&blocker, "").unwrap();
+        std::fs::write(&blocker, "").expect("the file is written");
         let path = blocker.join("credentials.json");
-        let error = Credentials::update_at(&path, |_| Ok(())).unwrap_err();
+        let error =
+            Credentials::update_at(&path, |_| Ok(())).expect_err("the blocked update fails");
         assert!(
             error
                 .to_string()
@@ -656,17 +657,18 @@ mod tests {
     #[test]
     fn credentials_must_be_a_regular_file_not_a_link() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("the temp dir is created");
         let real = dir.path().join("real.json");
-        std::fs::write(&real, "{\"endpoints\":{}}").unwrap();
-        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::write(&real, "{\"endpoints\":{}}").expect("the file is written");
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o600))
+            .expect("the permissions are set");
         let link = dir.path().join("credentials.json");
-        std::os::unix::fs::symlink(&real, &link).unwrap();
+        std::os::unix::fs::symlink(&real, &link).expect("the symlink is created");
         let fifo = dir.path().join("fifo.json");
         let made = std::process::Command::new("mkfifo")
             .arg(&fifo)
             .status()
-            .unwrap();
+            .expect("mkfifo runs");
         assert!(made.success());
         for (path, problem) in [
             (link, "must not be a symbolic link"),
@@ -700,15 +702,19 @@ mod tests {
             ("BOB", "bob-id"),
             ("BOB-ID", "alice-id"),
         ] {
-            let cli = Cli::try_parse_from(["piquelctl", "--account", account, "whoami"]).unwrap();
-            let selected = credentials.selected(&cli).unwrap().map(|(id, _)| id);
+            let cli = Cli::try_parse_from(["piquelctl", "--account", account, "whoami"])
+                .expect("the arguments parse");
+            let selected = credentials
+                .selected(&cli)
+                .expect("an account is selected")
+                .map(|(id, _)| id);
             assert_eq!(selected, Some(id), "{account}");
         }
     }
 
     #[test]
     fn concurrent_credential_updates_preserve_every_login() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("the temp dir is created");
         let path = dir.path().join("credentials.json");
         let barrier = std::sync::Barrier::new(16);
         std::thread::scope(|scope| {
@@ -729,12 +735,14 @@ mod tests {
                         );
                         Ok(())
                     })
-                    .unwrap();
+                    .expect("the credentials update");
                 });
             }
         });
         assert_eq!(
-            Credentials::read_at(&path).unwrap().endpoints["daemon"]
+            Credentials::read_at(&path)
+                .expect("the credentials are read")
+                .endpoints["daemon"]
                 .accounts
                 .len(),
             16

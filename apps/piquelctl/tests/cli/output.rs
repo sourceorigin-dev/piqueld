@@ -48,8 +48,11 @@ fn partial_list_failures_preserve_results_and_context_in_all_modes() {
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
             if json {
-                let warning: Value = serde_json::from_str(stderr.trim()).unwrap();
-                let message = warning["warning"]["message"].as_str().unwrap();
+                let warning: Value =
+                    serde_json::from_str(stderr.trim()).expect("the warning is json");
+                let message = warning["warning"]["message"]
+                    .as_str()
+                    .expect("the value is a string");
                 assert!(message.starts_with("notes/staging: status unavailable"));
             } else {
                 assert!(stderr.contains("Warning: notes/staging: status unavailable"));
@@ -132,7 +135,7 @@ fn runtime_commands_retry_transport() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let result: Value = serde_json::from_slice(&output.stdout).expect("the json decodes");
         assert_eq!(result["generation"], 1);
         assert_eq!(server.finish().len(), 3);
     }
@@ -174,7 +177,7 @@ fn quiet_preserves_json_and_errors_but_suppresses_human_success() {
     let output = run_human(&server, &["--quiet", "builds", "logs", "1"]);
     assert!(output.status.success());
     assert_eq!(output.stdout, b"");
-    let stderr = String::from_utf8(output.stderr).unwrap();
+    let stderr = String::from_utf8(output.stderr).expect("the bytes are utf-8");
     assert!(stderr.contains("expired"));
     assert!(stderr.contains("truncated"));
     assert!(!stderr.contains("--before"));
@@ -228,7 +231,12 @@ fn json_errors_are_one_envelope_on_stderr() {
         "details": details, "request_id": "request-01"
     });
     let server = start_server(false, 2, move |request| {
-        match request.path.split('?').next().unwrap() {
+        match request
+            .path
+            .split('?')
+            .next()
+            .expect("the iterator yields an item")
+        {
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
             "/api/v1/applications/app-notes-01/previews" => Reply::status("409 Conflict", &body),
             path => panic!("unexpected path {path}"),
@@ -251,9 +259,14 @@ fn json_errors_are_one_envelope_on_stderr() {
     let output = support::command()
         .args(["--json", "env", "wait"])
         .output()
-        .unwrap();
+        .expect("the command runs");
     assert_eq!(output.status.code(), Some(2));
     let error = support::json_error(&output);
     assert_eq!(error["code"], "usage");
-    assert!(error["message"].as_str().unwrap().contains("required"));
+    assert!(
+        error["message"]
+            .as_str()
+            .expect("the value is a string")
+            .contains("required")
+    );
 }

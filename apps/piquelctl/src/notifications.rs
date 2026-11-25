@@ -436,7 +436,7 @@ mod tests {
                 "--categories",
                 value,
             ];
-            let cli = crate::cli::Cli::try_parse_from(arguments).unwrap();
+            let cli = crate::cli::Cli::try_parse_from(arguments).expect("the arguments parse");
             let crate::cli::Command::Notification {
                 command: NotificationCommand::Set(set),
             } = cli.command

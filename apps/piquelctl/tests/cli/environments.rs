@@ -106,11 +106,17 @@ fn assert_usage_error(arguments: &[&str], flag: &str) {
         .arg("--json")
         .args(arguments)
         .output()
-        .unwrap();
+        .expect("the command runs");
     assert_eq!(output.status.code(), Some(2), "{arguments:?}");
     let error = support::json_error(&output);
     assert_eq!(error["code"], "usage", "{arguments:?}");
-    assert!(error["message"].as_str().unwrap().contains(flag), "{error}");
+    assert!(
+        error["message"]
+            .as_str()
+            .expect("the value is a string")
+            .contains(flag),
+        "{error}"
+    );
 }
 
 #[test]
@@ -581,9 +587,14 @@ fn attempts_list_a_deployments_tries_and_page() {
     let listed = |page: &Value| {
         page["items"]
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
-            .map(|item| (item["attempt"].as_u64().unwrap(), item["state"].clone()))
+            .map(|item| {
+                (
+                    item["attempt"].as_u64().expect("the as u64 call succeeds"),
+                    item["state"].clone(),
+                )
+            })
             .collect::<Vec<_>>()
     };
     for named in [&[][..], &["--deployment", "operation-01"]] {
@@ -666,7 +677,7 @@ fn listed_first() -> Value {
 /// `states` in turn, and its detail then as each of `details` in turn (the
 /// last one repeats).
 fn wait_server(states: Vec<&'static str>, details: Vec<Value>) -> TestServer {
-    let state = *states.last().unwrap();
+    let state = *states.last().expect("the list has a last item");
     let timelines: Vec<_> = states
         .into_iter()
         .map(|state| timeline(&operation(state), &json!([])))
@@ -674,7 +685,12 @@ fn wait_server(states: Vec<&'static str>, details: Vec<Value>) -> TestServer {
     let mut details = std::iter::once(detail("operation-01", false, "pending")).chain(details);
     let mut current = None;
     start_server(false, usize::MAX, move |request| {
-        match request.path.split('?').next().unwrap() {
+        match request
+            .path
+            .split('?')
+            .next()
+            .expect("the iterator yields an item")
+        {
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
             "/api/v1/environments/app-notes-01/deployments" => {
                 Reply::json(page(vec![listed_first()], Some("next")))
@@ -683,7 +699,7 @@ fn wait_server(states: Vec<&'static str>, details: Vec<Value>) -> TestServer {
             TIMELINE_STREAM => Reply::timelines(&timelines),
             "/api/v1/environments/app-notes-01/detail" => {
                 current = details.next().or(current.take());
-                Reply::json(current.clone().unwrap())
+                Reply::json(current.clone().expect("the environment is set"))
             }
             path => panic!("unexpected path {path}"),
         }
@@ -711,7 +727,10 @@ fn wait_follows_one_deployment_until_it_is_ready() {
         assert_eq!(result["outcome"], "succeeded");
         assert_eq!(result["urls"][0]["state"], url_state, "{ready:?}");
         for line in String::from_utf8_lossy(&output.stderr).lines() {
-            assert!(serde_json::from_str::<Value>(line).unwrap()["progress"].is_object());
+            assert!(
+                serde_json::from_str::<Value>(line).expect("the line is json")["progress"]
+                    .is_object()
+            );
         }
     }
 }
@@ -726,7 +745,12 @@ fn wait_reports_the_local_snapshot_a_restore_runs() {
     snapshot["current_target"] = json!(false);
     snapshot["origin"] = json!({"type": "local", "commit": "c".repeat(40), "base": "b".repeat(40)});
     let server = start_server(false, usize::MAX, move |request| {
-        match request.path.split('?').next().unwrap() {
+        match request
+            .path
+            .split('?')
+            .next()
+            .expect("the iterator yields an item")
+        {
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
             "/api/v1/environments/app-notes-01/deployments" => {
                 Reply::json(page(vec![restored.clone(), snapshot.clone()], None))
@@ -756,7 +780,10 @@ fn wait_never_follows_a_newer_deployment_and_fails_or_times_out_with_its_code() 
     let mut retried = detail("operation-01", true, "ready");
     retried["latest_operation"]["state"] = json!("failed");
     let mut no_urls = detail("operation-01", true, "ready");
-    no_urls.as_object_mut().unwrap().remove("urls");
+    no_urls
+        .as_object_mut()
+        .expect("the value is an object")
+        .remove("urls");
     let cases = [
         (
             vec!["superseded"],
@@ -830,7 +857,12 @@ fn wait_needs_the_runtime_observed() {
 fn deploy_output_carries_the_deployment_fields_agents_need() {
     for no_wait in [true, false] {
         let server = start_server(false, usize::MAX, move |request| {
-            match request.path.split('?').next().unwrap() {
+            match request
+                .path
+                .split('?')
+                .next()
+                .expect("the iterator yields an item")
+            {
                 "/api/v1/applications/app-notes-01" => {
                     Reply::json(app_view("app-notes-01", "notes"))
                 }
@@ -905,7 +937,12 @@ fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
     ] {
         let mut reads = healths.iter();
         let server = start_server(false, usize::MAX, move |request| {
-            match request.path.split('?').next().unwrap() {
+            match request
+                .path
+                .split('?')
+                .next()
+                .expect("the iterator yields an item")
+            {
                 "/api/v1/applications/app-notes-01" => {
                     Reply::json(app_view("app-notes-01", "notes"))
                 }
@@ -1003,9 +1040,9 @@ fn followed_logs_resume_after_the_newest_line_until_refused() {
     );
     assert_eq!(output.status.code(), Some(7), "{output:?}");
     let lines = std::str::from_utf8(&output.stdout)
-        .unwrap()
+        .expect("the output is UTF-8")
         .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .map(|line| serde_json::from_str::<Value>(line).expect("each line is a JSON log entry"))
         .collect::<Vec<_>>();
     assert_eq!(lines, [snapshot, streamed]);
     let stderr = String::from_utf8_lossy(&output.stderr);

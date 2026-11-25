@@ -8,13 +8,13 @@ struct Files {
 impl Files {
     fn new() -> Self {
         Self {
-            directory: tempfile::tempdir().unwrap(),
+            directory: tempfile::tempdir().expect("the temp dir is created"),
         }
     }
 
     fn write(&self, name: &str, text: &str) -> PathBuf {
         let path = self.directory.path().join(name);
-        std::fs::write(&path, text).unwrap();
+        std::fs::write(&path, text).expect("the file is written");
         path
     }
 }
@@ -47,7 +47,8 @@ url = "http://localhost:7846"
 socket = "/tmp/user-only.sock"
 "#,
     );
-    let profiles = Profiles::load_files([(system.clone(), false), (user.clone(), false)]).unwrap();
+    let profiles = Profiles::load_files([(system.clone(), false), (user.clone(), false)])
+        .expect("the profiles load");
     assert_eq!(
         profiles
             .profiles
@@ -72,15 +73,16 @@ fn later_files_replace_the_default_which_must_name_a_merged_profile() {
         "default = 'dev'\n[profiles.prod]\nurl = 'http://127.0.0.1:7845'",
     );
     let user = files.write("user.toml", "[profiles.dev]\nsocket = '/tmp/dev.sock'");
-    let profiles = Profiles::load_files([(system.clone(), false), (user.clone(), false)]).unwrap();
+    let profiles = Profiles::load_files([(system.clone(), false), (user.clone(), false)])
+        .expect("the profiles load");
     assert_eq!(profiles.default_name(), "dev");
     let later = files.write("later.toml", "default = 'prod'");
-    let profiles =
-        Profiles::load_files([(system.clone(), false), (user, false), (later, false)]).unwrap();
+    let profiles = Profiles::load_files([(system.clone(), false), (user, false), (later, false)])
+        .expect("the profiles load");
     assert_eq!(profiles.default_name(), "prod");
     let error = Profiles::load_files([(system.clone(), false)])
         .err()
-        .unwrap()
+        .expect("the profiles fail to load")
         .to_string();
     assert!(
         error.contains(&format!(
@@ -96,19 +98,20 @@ fn missing_optional_files_are_ignored_but_required_files_fail_with_path() {
     let files = Files::new();
     let missing = files.directory.path().join("missing.toml");
     let valid = files.write("valid.toml", "[profiles.dev]\nsocket = '/tmp/dev.sock'");
-    let profiles = Profiles::load_files([(missing.clone(), false), (valid, false)]).unwrap();
+    let profiles = Profiles::load_files([(missing.clone(), false), (valid, false)])
+        .expect("the profiles load");
     assert!(profiles.profiles.contains_key("dev"));
     assert!(
         Profiles::load_files([(missing.clone(), false)])
-            .unwrap()
+            .expect("the profiles load")
             .profiles
             .is_empty()
     );
     let error = Profiles::load_files([(missing.clone(), true)])
         .err()
-        .unwrap()
+        .expect("the profiles fail to load")
         .to_string();
-    assert!(error.contains(missing.to_str().unwrap()));
+    assert!(error.contains(missing.to_str().expect("the path is utf-8")));
 }
 
 #[test]
@@ -118,9 +121,12 @@ fn malformed_and_unreadable_optional_files_fail_with_path() {
     for path in [malformed, files.directory.path().to_owned()] {
         let error = Profiles::load_files([(path.clone(), false)])
             .err()
-            .unwrap()
+            .expect("the profiles fail to load")
             .to_string();
-        assert!(error.contains(path.to_str().unwrap()), "{error}");
+        assert!(
+            error.contains(path.to_str().expect("the path is utf-8")),
+            "{error}"
+        );
     }
 }
 
@@ -142,11 +148,11 @@ fn invalid_effective_profiles_report_name_and_source() {
         let path = files.write("invalid.toml", &format!("[profiles.broken]\n{settings}"));
         let error = Profiles::load_files([(path.clone(), false)])
             .err()
-            .unwrap()
+            .expect("the profiles fail to load")
             .to_string();
         assert!(
             error.contains("broken")
-                && error.contains(path.to_str().unwrap())
+                && error.contains(path.to_str().expect("the path is utf-8"))
                 && error.contains(expected),
             "{error}"
         );

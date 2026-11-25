@@ -9,10 +9,10 @@ struct EngineStub {
 /// A client of the engine socket in a new directory, and the listener
 /// behind it.
 fn listen() -> (tempfile::TempDir, tokio::net::UnixListener, BollardDocker) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     let socket = directory.path().join("docker.sock");
-    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-    let docker = BollardDocker::connect(&socket).unwrap();
+    let listener = tokio::net::UnixListener::bind(&socket).expect("the listener binds");
+    let docker = BollardDocker::connect(&socket).expect("the docker client connects");
     (directory, listener, docker)
 }
 
@@ -53,15 +53,15 @@ impl EngineStub {
         let (directory, listener, docker) = listen();
         let task = tokio::spawn(async move {
             for (expected, response) in exchanges {
-                let (mut stream, _) = listener.accept().await.unwrap();
+                let (mut stream, _) = listener.accept().await.expect("the connection is accepted");
                 let mut headers = Vec::new();
                 while !headers.ends_with(b"\r\n\r\n") {
-                    headers.push(stream.read_u8().await.unwrap());
+                    headers.push(stream.read_u8().await.expect("the request is read"));
                 }
-                let headers = String::from_utf8(headers).unwrap();
+                let headers = String::from_utf8(headers).expect("the bytes are utf-8");
                 if let Some(expected) = expected {
                     assert_eq!(
-                        headers.lines().next().unwrap(),
+                        headers.lines().next().expect("the iterator yields an item"),
                         format!("{expected} HTTP/1.1")
                     );
                 }
@@ -70,12 +70,18 @@ impl EngineStub {
                     .find_map(|line| {
                         let (key, value) = line.split_once(':')?;
                         key.eq_ignore_ascii_case("content-length")
-                            .then(|| value.trim().parse().unwrap())
+                            .then(|| value.trim().parse().expect("the content length parses"))
                     })
                     .unwrap_or_default();
-                stream.read_exact(&mut vec![0; length]).await.unwrap();
-                stream.write_all(response.as_bytes()).await.unwrap();
-                stream.shutdown().await.unwrap();
+                stream
+                    .read_exact(&mut vec![0; length])
+                    .await
+                    .expect("the request body is read");
+                stream
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("the response is written");
+                stream.shutdown().await.expect("the stream shuts down");
             }
         });
         Self {
@@ -91,7 +97,8 @@ async fn service_update_retry_uses_id_and_rechecks_ownership() {
     use piqueld_core::resource::{
         APPLICATION_LABEL, INSTANCE_LABEL, MANAGED_LABEL, SERVICE_LABEL, SPEC_HASH_LABEL,
     };
-    let app = piqueld_core::EnvironmentId::parse("app-update-race").unwrap();
+    let app =
+        piqueld_core::EnvironmentId::parse("app-update-race").expect("the environment id parses");
     let name =
         piqueld_core::docker_resource_name(&app, piqueld_core::ResourceKind::Service, Some("web"));
     let spec = bollard::models::ServiceSpec {
@@ -139,14 +146,14 @@ async fn service_update_retry_uses_id_and_rechecks_ownership() {
             .update_service_wire("immutable-id", 1, &spec)
             .await;
         if changed == "none" {
-            result.unwrap();
+            result.expect("the request task finishes");
         } else {
             assert!(
                 matches!(result, Err(super::DockerError::OwnershipConflict)),
                 "{changed}: {result:?}"
             );
         }
-        stub.task.await.unwrap();
+        stub.task.await.expect("the stub task finishes");
     }
 }
 
@@ -155,22 +162,31 @@ async fn cancelling_service_request_closes_connection_driver() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let (_directory, listener, docker) = listen();
     let request = tokio::spawn(async move { docker.inspect_service_wire("test").await });
-    let (mut stream, _) = listener.accept().await.unwrap();
+    let (mut stream, _) = listener.accept().await.expect("the connection is accepted");
     let mut headers = Vec::new();
     while !headers.ends_with(b"\r\n\r\n") {
-        headers.push(stream.read_u8().await.unwrap());
+        headers.push(stream.read_u8().await.expect("the request is read"));
     }
     stream
         .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n{")
         .await
-        .unwrap();
+        .expect("the response is written");
     tokio::task::yield_now().await;
     request.abort();
-    assert!(request.await.unwrap_err().is_cancelled());
+    assert!(
+        request
+            .await
+            .expect_err("the cancelled request fails")
+            .is_cancelled()
+    );
     let mut byte = [0];
     let read =
         tokio::time::timeout(std::time::Duration::from_secs(1), stream.read(&mut byte)).await;
-    assert_eq!(read.expect("cancelled connection must close").unwrap(), 0);
+    assert_eq!(
+        read.expect("cancelled connection must close")
+            .expect("the read ends cleanly"),
+        0
+    );
 }
 
 #[tokio::test]
@@ -178,13 +194,16 @@ async fn missing_engine_retains_io_cause_and_public_classification() {
     use std::error::Error;
     let (directory, listener, docker) = listen();
     drop(listener);
-    std::fs::remove_file(directory.path().join("docker.sock")).unwrap();
-    let error = docker.inspect_service_wire("test").await.unwrap_err();
+    std::fs::remove_file(directory.path().join("docker.sock")).expect("the file is removed");
+    let error = docker
+        .inspect_service_wire("test")
+        .await
+        .expect_err("the inspection fails");
     let source = error
         .source()
-        .unwrap()
+        .expect("the error has a source")
         .downcast_ref::<std::io::Error>()
-        .unwrap();
+        .expect("the source is a bollard error");
     assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
     assert!(
         matches!(error, super::DockerError::UnavailableSource { .. }),
@@ -203,9 +222,9 @@ async fn bad_service_responses_retain_their_cause() {
             .docker
             .inspect_service_wire("test")
             .await
-            .unwrap_err();
-        engine.task.await.unwrap();
-        let source = error.source().unwrap();
+            .expect_err("the inspection fails");
+        engine.task.await.expect("the engine task finishes");
+        let source = error.source().expect("the error has a source");
         if decoding {
             assert!(source.is::<serde_json::Error>(), "{error:?}");
             assert_eq!(
@@ -241,8 +260,8 @@ async fn a_secret_removed_during_creation_is_a_request_failure() {
         .docker
         .provision_secret("secret", b"value", &std::collections::BTreeMap::new())
         .await
-        .unwrap_err();
-    stub.task.await.unwrap();
+        .expect_err("the secret provisioning fails");
+    stub.task.await.expect("the stub task finishes");
     assert!(
         matches!(
             error,

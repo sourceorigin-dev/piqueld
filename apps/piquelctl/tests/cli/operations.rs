@@ -27,21 +27,24 @@ fn progress_is_visible_before_the_server_completes_the_command() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .unwrap();
-    let stderr = child.stderr.take().unwrap();
+        .expect("the process starts");
+    let stderr = child.stderr.take().expect("the child has a stderr pipe");
     let (visible, observed) = mpsc::channel();
     let reader = thread::spawn(move || {
         for line in BufReader::new(stderr).lines() {
-            if line.unwrap().contains("resolving_image") {
-                visible.send(()).unwrap();
+            if line.expect("the line is read").contains("resolving_image") {
+                visible.send(()).expect("the message is sent");
             }
         }
     });
     let streamed = observed.recv_timeout(Duration::from_secs(3));
-    let still_running = child.try_wait().unwrap().is_none();
-    release.send(()).unwrap();
-    let output = child.wait_with_output().unwrap();
-    reader.join().unwrap();
+    let still_running = child
+        .try_wait()
+        .expect("the child status is read")
+        .is_none();
+    release.send(()).expect("the message is sent");
+    let output = child.wait_with_output().expect("the child exits");
+    reader.join().expect("the task finishes");
     server.finish();
     streamed.expect("progress must be flushed before releasing the final response");
     assert!(still_running);
@@ -74,7 +77,10 @@ fn stepped_timelines() -> Vec<Value> {
     updated["state"] = json!("succeeded");
     updated["retries"] = json!(1);
     updated["finished_at_ms"] = json!(41_200);
-    updated.as_object_mut().unwrap().remove("diagnostic");
+    updated
+        .as_object_mut()
+        .expect("the value is an object")
+        .remove("diagnostic");
     let mut succeeded = operation("succeeded");
     succeeded["started_at_ms"] = json!(1_000);
     succeeded["finished_at_ms"] = json!(42_000);
@@ -117,7 +123,7 @@ fn non_terminal_progress_prints_a_rollouts_new_tasks_and_downtime() {
             .iter()
             .map(|(state, from)| json!({"state": state, "from_ms": from}))
             .collect();
-        let state = spans.last().unwrap()["state"].clone();
+        let state = spans.last().expect("the list has a last item")["state"].clone();
         json!({"id": id, "slot": 1, "current": current, "state": state, "spans": spans})
     };
     let wait = |state: &str, tasks: Value| {
@@ -173,7 +179,7 @@ fn json_progress_emits_a_step_event_per_step_change() {
     assert_eq!(assert_json_success(&output)["state"], "succeeded");
     let events: Vec<Value> = String::from_utf8_lossy(&output.stderr)
         .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
+        .map(|line| serde_json::from_str(line).expect("the line is json"))
         .collect();
     let steps: Vec<_> = events
         .iter()
@@ -181,8 +187,8 @@ fn json_progress_emits_a_step_event_per_step_change() {
         .map(|step| {
             assert_eq!(step["task"], "operation-01");
             (
-                step["phase"].as_str().unwrap(),
-                step["state"].as_str().unwrap(),
+                step["phase"].as_str().expect("the value is a string"),
+                step["state"].as_str().expect("the value is a string"),
             )
         })
         .collect();
@@ -196,7 +202,7 @@ fn json_progress_emits_a_step_event_per_step_change() {
         ]
     );
     assert_eq!(
-        events.last().unwrap()["progress"],
+        events.last().expect("the list has a last item")["progress"],
         json!({"task": "operation-01", "message": "41.0 s (usual 27.0 s)", "outcome": "succeeded"})
     );
 }

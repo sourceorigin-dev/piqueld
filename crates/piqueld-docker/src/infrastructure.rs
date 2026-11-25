@@ -428,34 +428,48 @@ mod tests {
     #[tokio::test]
     async fn requests_pin_the_api_version_except_version() {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let socket = directory.path().join("docker.sock");
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let listener = tokio::net::UnixListener::bind(&socket).expect("the listener binds");
         let server = tokio::spawn(async move {
             let mut lines = Vec::new();
             for _ in 0..4 {
-                let (mut stream, _) = listener.accept().await.unwrap();
+                let (mut stream, _) = listener.accept().await.expect("the connection is accepted");
                 let mut head = Vec::new();
                 while !head.ends_with(b"\r\n\r\n") {
-                    head.push(stream.read_u8().await.unwrap());
+                    head.push(stream.read_u8().await.expect("the request is read"));
                 }
-                let head = String::from_utf8(head).unwrap();
-                lines.push(head.lines().next().unwrap().to_owned());
+                let head = String::from_utf8(head).expect("the bytes are utf-8");
+                lines.push(
+                    head.lines()
+                        .next()
+                        .expect("the iterator yields an item")
+                        .to_owned(),
+                );
                 stream
                     .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
                     .await
-                    .unwrap();
+                    .expect("the response is written");
             }
             lines
         });
-        let docker = Infrastructure::connect(&socket).unwrap();
-        docker.version().await.unwrap();
-        docker.inspect_container("gateway").await.unwrap();
-        docker.log_lines("gateway", 20, Some((1, 2))).await.unwrap();
-        let changes = InfrastructureChanges::connect(&socket).unwrap();
-        changes.remove_network("edge").await.unwrap();
+        let docker = Infrastructure::connect(&socket).expect("the docker client connects");
+        docker.version().await.expect("the version is read");
+        docker
+            .inspect_container("gateway")
+            .await
+            .expect("the container is inspected");
+        docker
+            .log_lines("gateway", 20, Some((1, 2)))
+            .await
+            .expect("the log lines are read");
+        let changes = InfrastructureChanges::connect(&socket).expect("the docker client connects");
+        changes
+            .remove_network("edge")
+            .await
+            .expect("the network is removed");
         assert_eq!(
-            server.await.unwrap(),
+            server.await.expect("the server task finishes"),
             [
                 "GET /version HTTP/1.1",
                 "GET /v1.48/containers/gateway/json HTTP/1.1",

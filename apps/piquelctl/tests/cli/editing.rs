@@ -237,7 +237,9 @@ fn secret_mount_commands_edit_the_loaded_mounts_and_save_the_whole_list() {
             mount("database", "/run/secrets/db"),
             mount("session", "/run/secrets/session")
         ]);
-        let (action, values) = arguments.split_first().unwrap();
+        let (action, values) = arguments
+            .split_first()
+            .expect("the arguments are not empty");
         let mut arguments = vec!["app", "service", "secret", action, "app-notes-01", "web"];
         arguments.extend(values);
         arguments.push("--yes");
@@ -477,7 +479,7 @@ fn git_service_creation_does_not_require_a_placeholder_image() {
             request.path,
             "/api/v1/applications/app-notes-01/services?deploy=false&expected_generation=1"
         );
-        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        let body: Value = serde_json::from_slice(&request.body).expect("the json decodes");
         assert_eq!(body["name"], "worker");
         assert_eq!(
             body["source"],
@@ -529,12 +531,15 @@ fn git_build_flags_are_refused_on_an_image_service() {
             .arg("nginx:stable")
             .args(flag)
             .output()
-            .unwrap();
+            .expect("the command runs");
         assert_eq!(output.status.code(), Some(2), "{flag:?}");
         let error = support::json_error(&output);
         assert_eq!(error["code"], "usage", "{flag:?}");
         assert!(
-            error["message"].as_str().unwrap().contains(flag[0]),
+            error["message"]
+                .as_str()
+                .expect("the value is a string")
+                .contains(flag[0]),
             "{error}"
         );
     }

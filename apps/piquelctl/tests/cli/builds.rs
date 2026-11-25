@@ -106,10 +106,13 @@ fn build_logs_render_structured_output_and_page_backwards() {
         }
         let output = run_human(&server, &args);
         assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), "ERROR failed\n");
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("the bytes are utf-8"),
+            "ERROR failed\n"
+        );
         assert!(
             String::from_utf8(output.stderr)
-                .unwrap()
+                .expect("the bytes are utf-8")
                 .contains("--before 64")
         );
         server.finish();

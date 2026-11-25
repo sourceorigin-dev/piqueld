@@ -160,7 +160,7 @@ fn events_cli_reads_a_filtered_page_newest_first() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let result: Value = serde_json::from_slice(&output.stdout).expect("the json decodes");
     assert_eq!(result["items"][0]["attempt"], 2);
     assert_eq!(server.finish().len(), 1);
 }
@@ -190,7 +190,11 @@ fn analytics_reads_one_environment_over_a_relative_window() {
             .filter_map(|parameter| parameter.split_once('='))
             .collect();
         assert_eq!(parameters["environment_id"], "env-staging-01");
-        let bound = |name: &str| parameters[name].parse::<i64>().unwrap();
+        let bound = |name: &str| {
+            parameters[name]
+                .parse::<i64>()
+                .expect("the parameter is a number")
+        };
         assert_eq!(bound("until_ms") - bound("since_ms"), 6 * 86_400_000);
         Reply::json(json!({
             "since_ms": 1, "until_ms": 2, "history_started_at_ms": 5, "pruned_through_ms": null,

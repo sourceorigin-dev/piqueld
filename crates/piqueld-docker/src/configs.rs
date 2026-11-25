@@ -293,7 +293,7 @@ mod tests {
             {"Spec": spec("current"), "PreviousSpec": spec("previous")},
             {"Spec": {"TaskTemplate": {"ContainerSpec": {"Env": ["LARGE=…"], "Configs": null}}}},
         ]))
-        .unwrap();
+        .expect("the json decodes");
         assert_eq!(
             BollardDocker::referenced_configs(services),
             BTreeSet::from(["current".into(), "previous".into()])
