@@ -21,6 +21,9 @@ pub(crate) struct Job {
     group: Pid,
 }
 
+/// How long a job that timed out or was interrupted may take to stop before it is killed.
+const STOP_GRACE: Duration = Duration::from_secs(30);
+
 impl Job {
     pub(crate) fn spawn(command: &mut Command) -> Result<Self> {
         let name = command
@@ -63,7 +66,7 @@ impl Job {
             () = shutdown.requested() => "was interrupted",
         };
         let name = self.name.clone();
-        self.stop(Duration::from_secs(30)).await?;
+        self.stop(STOP_GRACE).await?;
         bail!("{name} {reason}")
     }
 

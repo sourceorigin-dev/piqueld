@@ -211,8 +211,11 @@ async fn test(
 /// How long each test run may take: `PIQUELD_DOCKER_TEST_TIMEOUT`, such as
 /// `90s`, `30m`, or `1h`, 15 minutes by default.
 fn limit() -> Result<Duration> {
+    /// The default for `PIQUELD_DOCKER_TEST_TIMEOUT`.
+    const DEFAULT: Duration = Duration::from_mins(15);
+
     let Ok(value) = std::env::var("PIQUELD_DOCKER_TEST_TIMEOUT") else {
-        return Ok(Duration::from_mins(15));
+        return Ok(DEFAULT);
     };
     let (number, unit) = value
         .split_at_checked(value.len().saturating_sub(1))
