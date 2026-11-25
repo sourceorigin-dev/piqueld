@@ -85,6 +85,41 @@ new variant fails to compile until every consumer handles it. Behaviour
 belongs on the type that owns it, as a method; free functions are for small
 helpers with no owner.
 
+## Dependency pins
+
+The workspace's `Cargo.toml` pins these for reasons it cannot enforce:
+
+- Published crates carry the version they are published with.
+  `piqueld-generated` isn't published, so the crates that use it as a
+  development dependency publish without it.
+- `rust-version` is the oldest Rust the crates build with, which the `msrv` CI
+  job checks. Raise it when code needs a newer Rust; Cargo then prefers
+  dependency versions that support it when updating the lockfile.
+- `documentation` is set for the daemon and CLI, which link the book; the
+  library crates leave it unset, so crates.io links their documentation on
+  docs.rs.
+- `opentelemetry-proto`'s generated clients export telemetry over OTLP/gRPC,
+  rather than `opentelemetry-otlp`'s exporters, because the daemon queues
+  records per destination itself. Tonic channels serve TCP, TLS (rustls on
+  ring, like reqwest) and Unix sockets alike.
+- `webauthn-rs-core` is exact, so a change to how passkeys are verified only
+  arrives through a deliberate, reviewed bump: piqueld uses this low-level
+  crate directly, without the checks `webauthn-rs` adds on top.
+- `js-sys`, `wasm-bindgen`, `web-sys` and their companions are exact pins:
+  `web-sys` patch releases regenerate bindings procedurally and move in
+  lockstep with `js-sys` and `wasm-bindgen`, so one tested combination stays
+  frozen until bumped deliberately. `wasm-bindgen-cli-support`, which the
+  daemon build script binds the dashboard with, must match the `wasm-bindgen`
+  crate exactly.
+- `[profile.dev]` keeps line tables, which preserve file and line numbers in
+  backtraces but drop the variable and type information that makes up most of
+  a debug build's output; tests inherit it.
+- `[profile.dashboard]` builds the embedded dashboard for wasm32 from the
+  daemon build script, which strips host `CARGO_PROFILE_*` overrides so these
+  settings alone apply. Size beats speed: it halves the gzipped module compared
+  with release settings plus `wasm-opt -Oz`, so no separate wasm optimizer is
+  needed.
+
 ## Tests and docs
 
 Tests prove one behaviour each, named for it, and assert the outcome;

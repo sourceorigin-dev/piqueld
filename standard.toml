@@ -29,12 +29,6 @@ crates = ["piqueld", "piqueld-config", "piqueld-docker"]
 reason = "160 findings: progenitor writes the `allow`s into the generated client; fixed in a follow-up"
 paths = ["crates/piqueld-client/src/generated.rs"]
 
-[deviations.config-comments]
-reason = "8 findings in 5 files, fixed in a follow-up"
-paths = [
-  "Cargo.toml",
-]
-
 [deviations.doc-length]
 reason = "74 findings in 60 files, fixed in a follow-up"
 paths = [
