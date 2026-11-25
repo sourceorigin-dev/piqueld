@@ -10,7 +10,7 @@
 //!     --output=type=image,name=registry.example.ts.net:5000/piqueld:<instance ID>.<UUIDv7>,push=true …
 //! registry.example.ts.net:5000/piqueld@sha256:<64 hex>
 //! ```
-use anyhow::Context;
+use crate::command::CommandError;
 use piqueld_core::build_machine::{BuilderEndpoint, RemoteBuild, WhenUnavailable};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -26,6 +26,20 @@ pub struct BuilderUnavailable {
     /// Why connecting failed.
     #[source]
     pub(crate) source: std::io::Error,
+}
+
+/// Why a build machine could not be registered with Buildx.
+#[derive(Debug, thiserror::Error)]
+pub enum RegisterError {
+    /// The build registry's HTTP client could not be created.
+    #[error("create the build registry's HTTP client")]
+    Registry(#[source] reqwest::Error),
+    /// The earlier Buildx configuration could not be removed.
+    #[error("remove the earlier Buildx configuration")]
+    Remove(#[source] std::io::Error),
+    /// Buildx refused the registration.
+    #[error(transparent)]
+    Buildx(#[from] CommandError),
 }
 
 /// A build machine registered with Buildx, in a configuration directory of
@@ -59,18 +73,18 @@ impl RemoteBuilder {
     ///
     /// # Errors
     /// Returns why the directory could not be replaced or Buildx refused.
-    pub async fn register(remote: &RemoteBuild, data_dir: &Path) -> anyhow::Result<Self> {
+    pub async fn register(remote: &RemoteBuild, data_dir: &Path) -> Result<Self, RegisterError> {
         let builder = Self {
             config: data_dir.join("buildx"),
             endpoint: remote.builder.clone(),
             registry: crate::BuildRegistry::new(remote.repository.clone())
-                .context("create the build registry's HTTP client")?,
+                .map_err(RegisterError::Registry)?,
             unavailable: remote.unavailable,
             last_check: parking_lot::Mutex::default(),
         };
         match tokio::fs::remove_dir_all(&builder.config).await {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                return Err(error).context("remove the earlier Buildx configuration");
+                return Err(RegisterError::Remove(error));
             }
             _ => {}
         }

@@ -339,7 +339,7 @@ impl Staged {
     async fn git(&self, operation: &'static str, arguments: &[&str]) -> anyhow::Result<Vec<u8>> {
         let mut command = Checkout::command_in(&self.0);
         command.args(arguments);
-        LoggedCommand::output(&mut command, operation, Self::OUTPUT_LIMIT).await
+        Ok(LoggedCommand::output(&mut command, operation, Self::OUTPUT_LIMIT).await?)
     }
 
     /// Creates the bare repository.
@@ -357,7 +357,7 @@ impl Staged {
         LoggedCommand::output(&mut init, "create snapshot repository", Self::OUTPUT_LIMIT)
             .await
             .map(drop)
-            .map_err(SnapshotError::Internal)
+            .map_err(|error| SnapshotError::Internal(error.into()))
     }
 
     /// Fetches `prerequisites` and their history from `url`, under refs so

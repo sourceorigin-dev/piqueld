@@ -2,6 +2,7 @@
 //! diagnostics recorded for them.
 use piqueld_config::unix_http::UnixHttpError;
 use piqueld_core::observability::DiagnosticCode;
+use piqueld_docker::command::CommandError;
 
 /// A fresh, time-ordered ID for a recorded diagnostic, e.g.
 /// `diagnostic-0190c4f6a3e27b8a9d1e4f6a3e27b8a9`.
@@ -398,7 +399,7 @@ impl OperationError {
                     .causes
                     .push(format!("Docker returned HTTP status {status_code}"));
             }
-            if let Some(error) = error.downcast_ref::<piqueld_docker::command::CommandFailure>() {
+            if let Some(error) = error.downcast_ref().and_then(CommandError::failure) {
                 diagnostic
                     .causes
                     .push(format!("Command stage: {}", error.operation));

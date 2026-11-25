@@ -89,7 +89,7 @@ pub use timeout::DockerTimeout;
 mod build_queue;
 pub use build_queue::BuildPriority;
 mod builder;
-pub use builder::{BuilderUnavailable, RemoteBuilder};
+pub use builder::{BuilderUnavailable, RegisterError, RemoteBuilder};
 mod registry;
 pub use registry::{BuildRegistry, RegistryError};
 mod configs;

@@ -79,7 +79,7 @@ impl OutputLog for Appends {
         &self,
         bytes: &[u8],
         _stream: piqueld_core::api::LogStream,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), LogError> {
         self.0.lock().push(bytes.to_vec());
         Ok(())
     }

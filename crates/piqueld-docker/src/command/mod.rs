@@ -1,6 +1,5 @@
 //! Shared process execution for Git and Docker, retaining only diagnostic tails.
-use anyhow::Context;
-use std::{collections::VecDeque, process::Stdio};
+use std::{collections::VecDeque, io, process::Stdio};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
@@ -38,7 +37,94 @@ pub trait OutputLog: Send + Sync {
         &self,
         bytes: &[u8],
         stream: piqueld_core::api::LogStream,
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), LogError>;
+}
+
+/// An [`OutputLog`] that could not record output.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct LogError(Box<dyn std::error::Error + Send + Sync>);
+
+impl LogError {
+    /// Wraps the failure `source` of a log's storage.
+    pub fn new(source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        Self(Box::new(source))
+    }
+}
+
+/// Why a command's output could not be read or recorded.
+#[derive(Debug, thiserror::Error)]
+pub enum OutputError {
+    /// Reading the output failed.
+    #[error(transparent)]
+    Read(#[from] io::Error),
+    /// The output exceeded its limit.
+    #[error(transparent)]
+    Limit(#[from] OutputLimit),
+    /// The log could not record the output.
+    #[error(transparent)]
+    Log(#[from] LogError),
+}
+
+/// Why a command did not complete.
+#[derive(Debug, thiserror::Error)]
+pub enum CommandError {
+    /// The command could not start.
+    #[error("{operation}")]
+    Spawn {
+        /// What the command was for.
+        operation: &'static str,
+        /// The failure to start.
+        #[source]
+        source: io::Error,
+    },
+    /// The started command's process group or output pipe was unavailable.
+    #[error("capture command {0}")]
+    Capture(&'static str),
+    /// The command's output could not be read or recorded.
+    #[error("{operation}")]
+    Output {
+        /// What the command was for.
+        operation: &'static str,
+        /// The failure.
+        #[source]
+        source: OutputError,
+    },
+    /// The command's exit could not be awaited.
+    #[error("{operation}")]
+    Wait {
+        /// What the command was for.
+        operation: &'static str,
+        /// The failure.
+        #[source]
+        source: io::Error,
+    },
+    /// The command exited unsuccessfully.
+    #[error(transparent)]
+    Failed(#[from] CommandFailure),
+}
+
+impl CommandError {
+    /// How the command failed, if it ran and exited unsuccessfully.
+    #[must_use]
+    pub fn failure(&self) -> Option<&CommandFailure> {
+        match self {
+            Self::Failed(failure) => Some(failure),
+            _ => None,
+        }
+    }
+
+    /// The limit [`LoggedCommand::output`] enforced, if the output exceeded it.
+    #[must_use]
+    pub fn limit(&self) -> Option<&OutputLimit> {
+        match self {
+            Self::Output {
+                source: OutputError::Limit(limit),
+                ..
+            } => Some(limit),
+            _ => None,
+        }
+    }
 }
 
 /// Namespace for running external commands with bounded output capture.
@@ -78,7 +164,7 @@ impl LoggedCommand {
         command: &mut Command,
         operation: &'static str,
         log: Option<&dyn OutputLog>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), CommandError> {
         let stdout =
             |stdout| Self::tail_recorded(stdout, log, piqueld_core::api::LogStream::Stdout);
         Self::run_in_group(command, operation, stdout, log)
@@ -96,11 +182,11 @@ impl LoggedCommand {
         command: &mut Command,
         operation: &'static str,
         limit: usize,
-    ) -> anyhow::Result<Vec<u8>> {
-        let stdout = async |stdout: tokio::process::ChildStdout| {
+    ) -> Result<Vec<u8>, CommandError> {
+        let stdout = async |stdout: tokio::process::ChildStdout| -> Result<Vec<u8>, OutputError> {
             let mut output = Vec::new();
             stdout
-                .take(u64::try_from(limit)?.saturating_add(1))
+                .take(u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1))
                 .read_to_end(&mut output)
                 .await?;
             if output.len() > limit {
@@ -114,12 +200,12 @@ impl LoggedCommand {
     /// Runs a command in its own process group, reading its standard output
     /// with `read_stdout` and the last `TAIL_BYTES` of its standard error,
     /// streamed into `log` when supplied. Returns what `read_stdout` read.
-    async fn run_in_group<F: Future<Output = anyhow::Result<Vec<u8>>>>(
+    async fn run_in_group<F: Future<Output = Result<Vec<u8>, OutputError>>>(
         command: &mut Command,
         operation: &'static str,
         read_stdout: impl FnOnce(tokio::process::ChildStdout) -> F,
         log: Option<&dyn OutputLog>,
-    ) -> anyhow::Result<Vec<u8>> {
+    ) -> Result<Vec<u8>, CommandError> {
         let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -127,24 +213,27 @@ impl LoggedCommand {
             .kill_on_drop(true)
             .process_group(0)
             .spawn()
-            .with_context(|| operation)?;
+            .map_err(|source| CommandError::Spawn { operation, source })?;
         let mut group = ProcessGroup(Some(
             child
                 .id()
                 .and_then(|id| i32::try_from(id).ok())
                 .and_then(rustix::process::Pid::from_raw)
-                .context("capture command process group")?,
+                .ok_or(CommandError::Capture("process group"))?,
         ));
-        let stdout = child.stdout.take().context("capture command stdout")?;
-        let stderr = child.stderr.take().context("capture command stderr")?;
+        let stdout = child.stdout.take().ok_or(CommandError::Capture("stdout"))?;
+        let stderr = child.stderr.take().ok_or(CommandError::Capture("stderr"))?;
         // Keep the leader unreaped while draining pipes. Its reserved PID prevents
         // the process-group ID from being reused while cancellation can signal it.
         let (stdout, stderr) = tokio::try_join!(
             read_stdout(stdout),
             Self::tail_recorded(stderr, log, piqueld_core::api::LogStream::Stderr),
         )
-        .with_context(|| operation)?;
-        let status = child.wait().await.with_context(|| operation)?;
+        .map_err(|source| CommandError::Output { operation, source })?;
+        let status = child
+            .wait()
+            .await
+            .map_err(|source| CommandError::Wait { operation, source })?;
         // No await may intervene between reaping the leader and disarming.
         group.0 = None;
         if !status.success() {
@@ -168,7 +257,7 @@ impl LoggedCommand {
         mut stream: impl AsyncRead + Unpin,
         log: Option<&dyn OutputLog>,
         source: piqueld_core::api::LogStream,
-    ) -> anyhow::Result<Vec<u8>> {
+    ) -> Result<Vec<u8>, OutputError> {
         let mut tail = VecDeque::with_capacity(Self::TAIL_BYTES);
         let mut buffer = [0; 4096];
         let mut batch = log.map(|log| Batch::new(log, source));
@@ -231,7 +320,7 @@ impl<'a> Batch<'a> {
 
     /// Adds output read from the stream, appending the batch once it holds
     /// [`Self::BYTES`].
-    async fn add(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
+    async fn add(&mut self, bytes: &[u8]) -> Result<(), LogError> {
         self.pending.extend_from_slice(bytes);
         if self.pending.len() >= Self::BYTES {
             return self.append(false).await;
@@ -243,7 +332,7 @@ impl<'a> Batch<'a> {
 
     /// Appends the pending output. Unless the stream `ended`, an incomplete
     /// trailing character waits for the rest of its bytes.
-    async fn append(&mut self, ended: bool) -> anyhow::Result<()> {
+    async fn append(&mut self, ended: bool) -> Result<(), LogError> {
         self.due = None;
         let end = if ended {
             self.pending.len()
