@@ -1,16 +1,14 @@
 //! The settings reference pages, `docs/user/reference/manifest-settings.md`
 //! and `docs/user/reference/configuration-settings.md`, rendered from the
-//! application manifest's and the daemon configuration's JSON Schemas: a
-//! section per TOML table, with an entry per setting giving its full path,
-//! type, whether it is required or its default, and its description.
+//! manifest's and the daemon configuration's JSON Schemas: a section per TOML
+//! table, with an entry per setting giving its path, type, whether it is
+//! required or its default, and its description.
 //!
-//! Settings take their description from their doc comment and tables from
-//! their type's, so every setting and table must have one. The description of
-//! a table keyed by name, such as `environments`, names its key first, as in
-//! ``Declares the environment `<environment>` ``. Tagged enums, such as
-//! health checks, render as one table whose settings say which `type` they
-//! apply to. Plain values with a type of their own, such as templates, link to
-//! their description at the end of the page.
+//! Settings and tables take their description from their doc comment. A table
+//! keyed by name, such as `environments`, names its key first, as in
+//! ``Declares the environment `<environment>` ``. Tagged enums render as one
+//! table whose settings say which `type` they apply to; plain values with a
+//! type of their own link to their description at the page's end.
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use piqueld_generated::Page;
