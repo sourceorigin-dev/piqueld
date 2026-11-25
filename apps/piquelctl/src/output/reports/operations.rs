@@ -53,7 +53,7 @@ report!(BuildLogPage, self, out, {
         .iter()
         .map(|chunk| chunk.text.as_str())
         .collect::<String>();
-    out.log_text(&piqueld_client::LogRecord::clean_message(&text))
+    out.log_text(&LogRecord::clean_message(&text))
 });
 
 report!(Page<BuildRecord>, self, out, {
