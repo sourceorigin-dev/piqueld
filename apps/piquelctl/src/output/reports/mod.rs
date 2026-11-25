@@ -12,15 +12,15 @@ use piqueld_client::{
 use std::{collections::BTreeMap, io};
 use unicode_width::UnicodeWidthStr;
 
-// Implements `Report` with the block as `render_human`. The JSON is the value
-// itself, what it dereferences to, or one of its fields:
-//
-// report!(Type, self, out, { ... })                    // Json = Type
-// report!(Vec<Row> as [Row], self, out, { ... })       // Json = [Row]
-// report!(Wrapper as Inner = field, self, out, { ... }) // Json = Inner, from `self.field`
-// report!(once Type, self, out, { ... })               // a one-time secret `--quiet` shows
-//
-// rustfmt skips the `as` forms, so their bodies are formatted by hand.
+/// Implements `Report` with the block as `render_human`. The JSON is the value
+/// itself, what it dereferences to, or one of its fields:
+///
+/// ```text
+/// report!(Type, self, out, { ... })                     // Json = Type
+/// report!(Vec<Row> as [Row], self, out, { ... })        // Json = [Row]
+/// report!(Wrapper as Inner = field, self, out, { ... }) // Json = Inner, from `self.field`
+/// report!(once Type, self, out, { ... })                // a one-time secret `--quiet` shows
+/// ```
 macro_rules! report {
     (@impl $ty:ty, $json:ty, |$this:ident| $value:expr, $out:ident, $body:block $(, $once:literal)?) => {
         impl $crate::output::Report for $ty {
@@ -328,7 +328,7 @@ impl<'a, T> Named<'a, T> {
     }
 }
 
-// Implements `Report` for `Named<T>`, rendering with `names` in scope.
+/// Implements `Report` for `Named<T>`, rendering with `names` in scope.
 macro_rules! named {
     ($ty:ty, $value:ident, $names:ident, $out:ident, $body:block) => {
         impl $crate::output::Report for $crate::output::reports::Named<'_, $ty> {

@@ -22,11 +22,6 @@ const GLOBAL: &str = "Global options";
 /// ```text
 /// one_of!(Preset::ALL, Preset::parse)  →  `--preset <PRESET>  [possible values: read-only, …]`
 /// ```
-//
-// Clap's `ValueEnum` would do this, but the orphan rule forbids implementing
-// it here for `piqueld-core` types. Values go through their string form
-// instead: clap only accepts the listed strings, each the `as_str` of a
-// value, so `$parse` cannot fail on them.
 macro_rules! one_of {
     ($values:expr, $parse:path $(, $help:expr)?) => {
         clap::builder::TypedValueParser::map(
@@ -60,7 +55,6 @@ macro_rules! parsed_args {
                 ($parse)(flags)
             }
 
-            // Replaces the whole value; nothing in piquelctl calls `update_from`.
             fn update_from_arg_matches(
                 &mut self,
                 matches: &clap::ArgMatches,
@@ -95,10 +89,6 @@ pub(crate) use parsed_args;
 /// ```text
 /// choice_args!(NewSource, NewSourceFlags, NewSourceFlags::choice)
 /// ```
-//
-// Clap derives `Args` only for structs, which hold each choice as an
-// `Option`. `$choose` returns `None` only when no choice was given, which
-// clap already rejects while parsing.
 macro_rules! choice_args {
     ($choice:ty, $flags:ty, $choose:path) => {
         crate::cli::parsed_args!($choice, $flags, |flags: $flags| {
@@ -119,8 +109,8 @@ pub(crate) use choice_args;
 #[derive(Debug, Parser)]
 #[command(name = "piquelctl", version)]
 pub(crate) struct Cli {
-    // Where the effective endpoint and timeout came from, filled in by
-    // `Profiles::resolve` and shown in connection diagnostics.
+    /// Where the effective endpoint and timeout came from, filled in by
+    /// `Profiles::resolve` and shown in connection diagnostics.
     #[arg(skip)]
     pub(crate) connection_sources: crate::profiles::ConnectionSources,
 
@@ -261,7 +251,6 @@ impl Cli {
     }
 }
 
-// Account selection and authentication transport options.
 #[derive(Debug, Args)]
 pub(crate) struct AuthArgs {
     /// Act as this saved login, by account ID, or by username ignoring case.
@@ -280,8 +269,6 @@ pub(crate) struct AuthArgs {
     pub(crate) allow_insecure_http: bool,
 }
 
-// Top-level commands. `Profiles` and `Login` are dispatched by `main` before the
-// timeout-bounded `commands::run`; everything else goes through it.
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
     /// Sign in with a passkey through your browser, and save the login.
@@ -714,7 +701,6 @@ pub(crate) struct ApplyArgs {
     pub(crate) force: bool,
 }
 
-// Shared `--deploy` / `--no-wait` flags for commands that save configuration.
 #[derive(Debug, Args)]
 pub(crate) struct DeploymentArgs {
     /// Also deploy the saved configuration to each declared environment that
@@ -740,7 +726,6 @@ pub(crate) struct DeleteArgs {
     pub(crate) deletion: DeletionFlags,
 }
 
-// Precondition, confirmation, and waiting flags shared by deletions.
 #[derive(Debug, Args)]
 pub(crate) struct DeletionFlags {
     /// Fail unless the application is at this generation.
@@ -794,7 +779,6 @@ pub(crate) fn parse_request_id(value: &str) -> Result<String, String> {
 pub(crate) fn parse_duration(value: &str) -> Result<Duration, String> {
     /// Converts a number of the unit, `None` when it overflows.
     type Unit = fn(u64) -> Option<Duration>;
-    // `ms` comes first because it ends with `s`.
     let units: [(&str, Unit); 5] = [
         ("ms", |number| Some(Duration::from_millis(number))),
         ("s", |number| Some(Duration::from_secs(number))),
@@ -848,8 +832,6 @@ pub(crate) struct DeployArgs {
     pub(crate) overrides: DeployOverrides,
 }
 
-// What one deployment does differently, without saving anything: the
-// revision its manifest is fetched from, and whether it builds again.
 #[derive(Debug, Args)]
 pub(crate) struct DeployOverrides {
     /// Fetch the repository manifest from this branch, for this deployment only.
@@ -884,8 +866,6 @@ impl DeployOverrides {
     }
 }
 
-// Application selection, confirmation, and waiting shared by `app reconcile`,
-// `app stop`, `app start` and `app deploy`.
 #[derive(Debug, Args)]
 pub(crate) struct TargetArgs {
     /// Application name or stable ID.
@@ -894,8 +874,6 @@ pub(crate) struct TargetArgs {
     pub(crate) flags: OperationFlags,
 }
 
-// Precondition, confirmation, and waiting flags shared by deploy, reconcile,
-// stop and start.
 #[derive(Debug, Args)]
 pub(crate) struct OperationFlags {
     /// Fail unless the application is at this generation.
@@ -912,7 +890,6 @@ pub(crate) struct OperationFlags {
     pub(crate) no_wait: bool,
 }
 
-// Log window shared by `app logs` and `env logs`.
 #[derive(Debug, Args)]
 pub(crate) struct LogArgs {
     /// Only show this service's output.

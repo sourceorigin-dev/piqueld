@@ -52,7 +52,6 @@ fn logout_without_a_credential_sends_nothing() {
 fn limited_credentials_are_never_requested_from_older_daemons() {
     let server = start_server(false, 3, |request| {
         match (request.method.as_str(), request.path.as_str()) {
-            // An older session has no `scoped` field.
             ("GET", "/api/v1/auth/me") => {
                 let user = json!({"id": "alice", "username": "alice", "display_name": ""});
                 Reply::bare(&json!({"user": user, "grants": [{"permission": "admin"}]}))
@@ -61,7 +60,6 @@ fn limited_credentials_are_never_requested_from_older_daemons() {
                 "initialized": true,
                 "public_url": "http://localhost:7845"
             })),
-            // An older daemon ignores the body and echoes no grants.
             ("POST", "/api/v1/auth/device/start") => Reply::bare(&json!({
                 "device_code": "device",
                 "user_code": "ABCD-EFGH",
@@ -191,7 +189,6 @@ fn account_changes_resolve_usernames_to_typed_requests() {
     let Endpoint::Tcp(address) = &server.endpoint else {
         panic!("TCP server");
     };
-    // Saved logins are keyed by the endpoint without its trailing slash.
     let url = format!("http://{address}");
     let directory = tempdir().expect("credentials directory");
     let credentials = directory.path().join("credentials.json");

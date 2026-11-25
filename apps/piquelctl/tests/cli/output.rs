@@ -248,7 +248,6 @@ fn json_errors_are_one_envelope_on_stderr() {
         })
     );
 
-    // Usage errors take the same shape.
     let output = support::command()
         .args(["--json", "env", "wait"])
         .output()

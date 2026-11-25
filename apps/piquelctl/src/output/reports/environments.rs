@@ -86,7 +86,6 @@ fn runtime_health(status: &EnvironmentStatusView) -> String {
     let Some(observed) = status.health_observed_at_ms else {
         return health.into();
     };
-    // A daemon clock ahead of this one still observed it just now.
     let now = crate::support::now_ms().max(observed);
     let when = Age::at(observed, now)
         .label()
@@ -139,7 +138,6 @@ fn branch_state(state: &BranchState) -> String {
     }
 }
 
-// `preview list` result.
 report!(Vec<PreviewView> as [PreviewView], self, out, {
     out.table(
         self,
@@ -262,8 +260,6 @@ report!(CreatedPreviewReport<'_>, self, out, {
     out.urls(self.deployed.urls.iter().flatten())
 });
 
-// `preview prune` result: the previews whose deletion was accepted, with
-// their operations, since `--no-wait` reports before they finish.
 report!(Vec<DeletedPreview> as [DeletedPreview], self, out, {
     if self.is_empty() {
         return out.line("No preview deleted.");
@@ -401,7 +397,6 @@ named!(EnvironmentView, environment, names, out, {
     ))
 });
 
-// Each release with where its manifest came from and each service's image.
 named!(Page<ReleaseView>, page, names, out, {
     if page.items.is_empty() {
         out.line("No releases.")?;
@@ -412,7 +407,6 @@ named!(Page<ReleaseView>, page, names, out, {
     out.next_cursor(page.next_cursor.as_deref())
 });
 
-// Each deployment, newest first, with its outcome, origin and release.
 named!(Page<DeploymentView>, page, names, out, {
     if page.items.is_empty() {
         out.line("No deployments.")?;

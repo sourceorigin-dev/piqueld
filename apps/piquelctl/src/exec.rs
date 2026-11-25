@@ -27,7 +27,6 @@ use tokio::{
     sync::mpsc,
 };
 
-// `exec` arguments shared by `app exec` and `preview exec`.
 #[derive(Debug, Args)]
 pub(crate) struct ExecArgs<T: Args> {
     #[command(flatten)]
@@ -49,7 +48,6 @@ pub(crate) struct ExecArgs<T: Args> {
     command: Vec<String>,
 }
 
-// `app exec`'s target: an application and, when it has several, one of its environments.
 #[derive(Debug, Args)]
 pub(crate) struct ApplicationTarget {
     /// Application name or stable ID.
@@ -86,16 +84,12 @@ impl<T: Args + Target> ExecArgs<T> {
             tty: self.tty.then(RawTerminal::size).transpose()?,
         };
         let (output, input) = client.exec(environment.id.as_str(), &request).await?;
-        // Restored on drop, before main reports any error.
         let _terminal = self.tty.then(RawTerminal::enable).transpose()?;
         let resizes = self
             .tty
             .then(|| signal(SignalKind::window_change()))
             .transpose()
             .map_err(|error| local_error("watch terminal size", &error))?;
-        // A local input failure aborts the session rather than ending the
-        // command's input early, which would look like success. The session
-        // is operator time, which `--timeout` doesn't bound.
         let code = support::interactive(async {
             tokio::select! {
                 code = receive(output) => code,
@@ -154,8 +148,6 @@ async fn forward(
     mut resizes: Option<Signal>,
 ) -> Result<()> {
     loop {
-        // Disabled branches still evaluate their expressions, so each source
-        // is only touched inside a lazy `async` block that is never polled.
         let frame = tokio::select! {
             chunk = async { stdin.as_mut().expect("select polls this branch only when stdin is Some").recv().await }, if stdin.is_some() => {
                 match chunk {

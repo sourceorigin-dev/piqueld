@@ -17,7 +17,6 @@ use piqueld_client::{
 };
 use std::path::PathBuf;
 
-// `app secret` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum SecretAction {
     /// List the application's stored secrets and who may mount them.
@@ -75,7 +74,6 @@ pub(crate) enum SecretAction {
     Delete(SecretChange),
 }
 
-// A secret to delete or regenerate, guarded by its generation.
 #[derive(Debug, Args)]
 pub(crate) struct SecretChange {
     /// Secret name.
@@ -100,8 +98,6 @@ impl SecretChange {
     }
 }
 
-// Access list changes. Unset flags keep the current setting, or the default
-// of every environment and no previews for a new secret.
 #[derive(Debug, Args)]
 pub(crate) struct AccessFlags {
     /// Let only these environments mount the secret: comma-separated names or
@@ -228,8 +224,6 @@ impl SecretAction {
                         format!("secret must contain 1–{MAX_SECRET_VALUE_BYTES} bytes"),
                     ));
                 }
-                // Replacing the access, guard it like `access` does, so a
-                // concurrent change isn't overwritten.
                 let expected = access.as_ref().and(existing.map(|s| &s.access));
                 let secret = client
                     .put_stored_secret(id, name, generation, value, access.as_ref(), expected)
@@ -277,7 +271,6 @@ impl SecretAction {
     }
 }
 
-// `env secret` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum GeneratedSecretAction {
     /// List the environment's generated secrets.
@@ -298,7 +291,6 @@ pub(crate) enum GeneratedSecretAction {
     Delete(GeneratedSecretChange),
 }
 
-// A generated secret of one named environment to delete or regenerate.
 #[derive(Debug, Args)]
 pub(crate) struct GeneratedSecretChange {
     #[command(flatten)]
@@ -346,7 +338,6 @@ impl GeneratedSecretAction {
     }
 }
 
-// Daemon-wide operations, distinct from environment-scoped secret values.
 #[derive(Debug, Subcommand)]
 pub(crate) enum KeyAction {
     /// Recover from a lost secret key by discarding every value it encrypted.
@@ -369,7 +360,6 @@ impl KeyAction {
     pub(crate) async fn run(&self, client: &Client, console: &mut Console) -> Result<()> {
         let Self::RecoverKey { yes } = self;
         let message = "Discard stored and generated secret values for ALL applications and environments, and repository webhook secrets, and delete every notification destination? Running services keep their Docker secrets. Afterwards, set the secrets again and deploy, rotate repository webhook secrets with `app repository webhook rotate`, and add destinations again with `notification set`.";
-        // Print scope even with --yes; the confirmation skips its prompt then.
         console.warning(message)?;
         console.confirm(*yes, message).await?;
         let action = SensitiveAction::RecoverSecretKey;

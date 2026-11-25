@@ -22,7 +22,6 @@ use piqueld_client::{
 };
 use std::{collections::BTreeMap, path::PathBuf};
 
-// `notification` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum NotificationCommand {
     /// List notification destinations and what each receives.
@@ -72,7 +71,6 @@ pub(crate) enum NotificationCommand {
     },
 }
 
-// Destination changes; `///` on fields is user-facing help.
 #[derive(Debug, Args)]
 pub(crate) struct SetArgs {
     /// Destination name.
@@ -238,9 +236,6 @@ impl SetArgs {
             return Ok(None);
         }
         let mut url = read_hidden(console, "destination URL", self.url_file.clone(), 8192).await?;
-        // A file's trailing newline doesn't count; `read_hidden` already
-        // dropped stdin's. Check before trimming, so input `read_hidden` cut
-        // short at its cap is refused, not shortened.
         if self.url_file.is_some() && url.pop_if(|byte| *byte == b'\n').is_some() {
             url.pop_if(|byte| *byte == b'\r');
         }
@@ -392,8 +387,6 @@ report!(TestReport<'_> as DestinationTest = test, self, out, {
     out.line(format_args!("{} acknowledged the test notification.", self.name))
 });
 
-// One delivery per line: what it is about, where it went, its state and when
-// it changed (or, while pending, is next attempted), and its last error.
 report!(Page<NotificationDelivery>, self, out, {
     if self.items.is_empty() {
         out.line("No notification deliveries.")?;

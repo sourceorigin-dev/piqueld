@@ -123,9 +123,6 @@ impl<T> Declarations<T> for Vec<T> {
     }
 }
 
-// Flags shared by every edit: deployment, generation precondition, and confirmation.
-// Flattened `Args` structs use `//`: their doc comments would override the `about`
-// text of commands that flatten them. Field `///` comments are user-facing help.
 #[derive(Debug, Args)]
 pub(crate) struct EditFlags {
     #[command(flatten)]
@@ -143,10 +140,10 @@ pub(crate) struct EditFlags {
     #[arg(long, short)]
     yes: bool,
 }
-// Declares edit argument structs: a flattened target followed by one `value`,
-// whose doc comment and `#[arg]` attributes each struct gives, so every
-// command documents its own value. Values that accept `${{ }}` references
-// take `Template` or `Typed` types.
+/// Declares edit argument structs: a flattened target followed by one `value`,
+/// whose doc comment and `#[arg]` attributes each struct gives, so every
+/// command documents its own value. Values that accept `${{ }}` references
+/// take `Template` or `Typed` types.
 macro_rules! value_args {
     ($($name:ident($target:ty) { $(#[$attr:meta])* value: $ty:ty $(,)? })*) => {$(
         #[derive(Debug, Args)]
@@ -274,8 +271,8 @@ value_args! {
         value: String,
     }
 }
-// Declares service-edit argument structs whose value is either given or
-// removed with `--clear`; each struct documents both.
+/// Declares service-edit argument structs whose value is either given or
+/// removed with `--clear`; each struct documents both.
 macro_rules! optional_args {
     ($($name:ident {
         $(#[$value_attr:meta])* value: $ty:ty,

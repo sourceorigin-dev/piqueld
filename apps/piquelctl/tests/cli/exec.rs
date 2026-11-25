@@ -40,7 +40,6 @@ fn exec_ends_through_the_supervisor_on_sigterm() {
         "/api/v1/environments/app-notes-01/exec" => Reply::upgrade_signalling(started.clone()),
         path => panic!("unexpected path {path}"),
     });
-    // Standard input stays open, so the session never ends on its own.
     let mut child = server
         .command()
         .args(["app", "exec", "app-notes-01", "web", "-i", "--", "cat", "-"])
@@ -50,8 +49,6 @@ fn exec_ends_through_the_supervisor_on_sigterm() {
         .spawn()
         .expect("piquelctl process");
     let stdin = child.stdin.take().expect("child stdin");
-    // The supervisor's handlers are installed before any request is sent, and
-    // the exec request was read, so SIGTERM arrives during the session.
     session_started
         .recv_timeout(Duration::from_secs(10))
         .expect("exec requested");
@@ -88,7 +85,6 @@ fn exec_forwards_stdin_streams_output_and_exits_with_the_command_code() {
 
 #[test]
 fn exec_fails_instead_of_closing_stdin_when_it_cannot_be_read() {
-    // Reading a directory fails with EISDIR.
     let directory = fs::File::open(env!("CARGO_MANIFEST_DIR")).expect("directory");
     let target = ["app", "exec", "app-notes-01"];
     let (server, output) = exec_cat(&target, "app-notes-01", directory.into(), b"");

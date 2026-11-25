@@ -255,7 +255,6 @@ pub(crate) fn build_client(cli: &Cli) -> Result<Client> {
 /// Reports daemon status together with the transport that was used.
 async fn status(cli: &Cli, client: &Client, console: &mut Console) -> Result<()> {
     let status = client.system_status().await?;
-    // Listener health is best effort: status must work while readiness fails.
     let readiness = client.system_readiness().await.ok();
     console.emit(&StatusReport {
         status: &status,
@@ -274,7 +273,6 @@ pub(crate) async fn doctor(cli: &Cli, client: &Client, console: &mut Console) ->
         endpoint_source: cli.connection_sources.endpoint.to_string(),
         credential: crate::auth::Credentials::token(cli)?.1.to_string(),
     };
-    // Outside the command supervisor, so Ctrl-C is handled here, like login.
     let checks = tokio::select! {
         checks = client.system_checks() => checks.map_err(CliError::from),
         error = CliError::on_interrupt("doctor interrupted") => Err(error),
@@ -405,7 +403,6 @@ impl ApplyArgs {
     async fn run(&self, client: &Client, console: &mut Console) -> Result<()> {
         let manifest = read_manifest(&self.file).await?;
         let name = manifest_name(&manifest, &self.file)?;
-        // Configuration inspection does not depend on Docker availability.
         let current = find_by_name(client, &name).await?;
         let generation = current.as_ref().map_or(0, |app| app.generation);
         let id = current.as_ref().map(|app| app.id.as_str());
@@ -649,8 +646,6 @@ pub(crate) async fn resolve_application(
     if looks_like_application_id(name_or_id) {
         match client.application(name_or_id).await {
             Ok(application) => return Ok(application),
-            // The value may still be an application name, so fall through to
-            // the name lookup.
             Err(error) if error.is_not_found() => {}
             Err(error) => return Err(error.into()),
         }
@@ -762,7 +757,6 @@ impl<P: Progress> Wait<P> {
             Err(error) if error.is_not_found() => return Ok(false),
             detail => detail,
         };
-        // An unavailable daemon can't have replaced the operation yet.
         let Some(detail) = self.read(detail)? else {
             return Ok(true);
         };
@@ -824,9 +818,6 @@ pub(crate) async fn wait_for_operation_until<T>(
             continue;
         }
         if wait.retried(client, &timeline.operation).await? {
-            // Checked again each `SETTLE_INTERVAL`: a deployment accepted
-            // before the retry replaces the failed operation without an
-            // event on its timeline.
             if let Ok(next) = time::timeout(SETTLE_INTERVAL, timelines.next(&mut wait)).await {
                 timeline = next?;
             }
@@ -903,8 +894,6 @@ impl<'a> TimelineFollower<'a> {
             let next = match &mut self.source {
                 TimelineSource::Closed => {
                     wait.resume().await;
-                    // A daemon that takes the connection but never answers
-                    // counts as unavailable.
                     let Ok(opened) = time::timeout(
                         Self::IDLE,
                         self.client.operation_timeline_stream(self.operation_id),
@@ -932,14 +921,12 @@ impl<'a> TimelineFollower<'a> {
                     }
                     continue;
                 }
-                // Silence past the keep-alives counts as the stream ending.
                 TimelineSource::Streaming(stream, idle) => {
                     let received = time::timeout_at(*idle, stream.next()).await.ok().flatten();
                     if matches!(received, Some(Ok(_))) {
                         *idle = time::Instant::now() + Self::IDLE;
                     }
                     match received {
-                        // A keep-alive.
                         Some(Ok(None)) => continue,
                         Some(Ok(Some(timeline))) => Ok(timeline),
                         Some(Err(error)) => Err(error),
@@ -959,7 +946,6 @@ impl<'a> TimelineFollower<'a> {
             if let Some(timeline) = wait.read(next)? {
                 return Ok(timeline);
             }
-            // The stream ends after a failure.
             if matches!(self.source, TimelineSource::Streaming(..)) {
                 self.source = TimelineSource::Closed;
             }
@@ -1079,7 +1065,6 @@ mod tests {
     async fn a_pause_cut_short_ends_when_it_would_have() {
         let mut wait = Wait::new(Quiet);
         let started = time::Instant::now();
-        // Cut short, as a wait that checks every second cuts a longer pause.
         time::timeout(POLL_INTERVAL / 2, wait.pause())
             .await
             .expect_err("the pause outlasts the timeout");

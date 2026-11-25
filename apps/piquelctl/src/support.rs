@@ -58,8 +58,6 @@ static INTERACTION_CHANGED: Notify = Notify::const_new();
 /// Updates the interaction flag and wakes the supervisor.
 fn set_interaction(active: bool) {
     INTERACTION_ACTIVE.store(active, Ordering::SeqCst);
-    // `notify_one` stores a permit when no waiter is registered yet, so a
-    // transition can never be lost by the timeout supervisor.
     INTERACTION_CHANGED.notify_one();
 }
 
@@ -157,8 +155,6 @@ pub(crate) async fn read_hidden(
 ) -> Result<Vec<u8>> {
     let stdin = file.is_none();
     let terminal = stdin && io::stdin().is_terminal();
-    // Dropped with this future, so echo also returns when Ctrl-C
-    // interrupts the read.
     let _hidden = if terminal {
         let mut prompt = what.to_owned();
         if let Some(first) = prompt.get_mut(..1) {
@@ -267,8 +263,6 @@ pub(crate) async fn read_text(path: &Path, what: &'static str, limit: u64) -> Re
                 "{what} {shown} exceeds the {limit}-byte input limit"
             )));
         }
-        // Cap the read itself so a concurrently growing file cannot force an
-        // unbounded allocation after the metadata check.
         let mut bytes = Vec::new();
         file.take(limit + 1)
             .read_to_end(&mut bytes)

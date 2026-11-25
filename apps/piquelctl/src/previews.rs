@@ -24,7 +24,6 @@ use piqueld_client::{
     CreatedPreview, EnvironmentView, PrunePreviewsRequest,
 };
 
-// `preview` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum PreviewCommand {
     /// Create a preview of a branch and deploy it.
@@ -125,15 +124,11 @@ pub(crate) enum PreviewCommand {
     },
 }
 
-// What `preview deploy` deploys, and where.
 #[derive(Debug, Args)]
 pub(crate) struct DeployArgs {
     /// Application name or stable ID.
     application: String,
     /// Preview ID, slug, or branch. Omit it with `--local`.
-    // The preview also conflicts with the `--local` options, the
-    // `SnapshotArgs` group: clap skips their `requires = "local"` once an
-    // argument conflicting with `--local` is present.
     #[arg(required_unless_present = "local", conflicts_with_all = ["local", "SnapshotArgs"])]
     preview: Option<String>,
     /// The preview's slot. Give it to address a preview with a slot by its
@@ -162,7 +157,6 @@ pub(crate) struct DeployArgs {
 /// How many files `preview deploy --local` names in a message.
 const LISTED: usize = 20;
 
-// `preview deploy --local` options; `///` on fields is user-facing help.
 #[derive(Debug, Args)]
 pub(crate) struct SnapshotArgs {
     /// Upload every commit of `HEAD` with the snapshot.
@@ -189,7 +183,6 @@ pub(crate) struct SnapshotArgs {
     allow_secret_files: bool,
 }
 
-// An application and one of its previews.
 #[derive(Debug, Args)]
 pub(crate) struct PreviewArgs {
     /// Application name or stable ID.
@@ -202,7 +195,6 @@ pub(crate) struct PreviewArgs {
     slot: Option<String>,
 }
 
-// Confirmation and waiting flags for preview deletions.
 #[derive(Debug, Args)]
 pub(crate) struct PreviewDeletionFlags {
     /// Skip the confirmation prompt. You need it when not on a terminal.
@@ -333,7 +325,6 @@ impl DeployArgs {
         }
         let application = resolve_application(client, &self.application).await?;
         let id = application.application.id().as_str();
-        // Older daemons report no limits; they still refuse what exceeds them.
         let limits = retry_transport(|| client.system_status()).await?.snapshots;
         let history = if self.snapshot.full_history {
             History::Full
@@ -381,7 +372,6 @@ impl DeployArgs {
         .await;
         let created = progress.settle(uploaded, |_| "uploaded".to_owned())?;
         let mut deployed = deployed(console, client, &created, self.no_wait).await?;
-        // A deployment read back once it ended names its snapshot itself.
         if self.no_wait {
             deployed = deployed.snapshot(&branch, &bundle.snapshot);
         }

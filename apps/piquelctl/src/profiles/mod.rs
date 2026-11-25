@@ -139,7 +139,6 @@ impl Profiles {
                 result.default = Some(default);
             }
         }
-        // The default may name a profile from another file, so check it after merging.
         if let Some(default) = &result.default
             && !result.profiles.contains_key(&default.name)
         {
@@ -214,7 +213,6 @@ impl Profiles {
             name,
             path: profile.source.clone(),
         });
-        // Resolve a transport as a pair: a higher-priority URL replaces a lower socket.
         if cli.socket.is_some() {
             cli.connection_sources.endpoint = Source::Flag("socket");
         } else if cli.url.is_some() {
@@ -276,7 +274,6 @@ impl Profiles {
     fn parse_file(text: &str, path: &std::path::Path) -> Result<Self> {
         toml::from_str(text).map_err(|error: toml::de::Error| {
             let mut diagnostic = piqueld_client::TomlDiagnostic::new(text, &error);
-            // Schema messages can quote values, which are not safe to print.
             diagnostic.message = if diagnostic.message.starts_with("unknown field") {
                 "unknown field (expected default, or profiles containing socket, url, or timeout)"
             } else if diagnostic.message.starts_with("invalid type") {

@@ -67,7 +67,6 @@ socket = "/tmp/user-only.sock"
 #[test]
 fn later_files_replace_the_default_which_must_name_a_merged_profile() {
     let files = Files::new();
-    // The system default names a profile defined only in the user file.
     let system = files.write(
         "system.toml",
         "default = 'dev'\n[profiles.prod]\nurl = 'http://127.0.0.1:7845'",
@@ -116,7 +115,6 @@ fn missing_optional_files_are_ignored_but_required_files_fail_with_path() {
 fn malformed_and_unreadable_optional_files_fail_with_path() {
     let files = Files::new();
     let malformed = files.write("malformed.toml", "[profiles.");
-    // Reading a directory fails even when tests run as root.
     for path in [malformed, files.directory.path().to_owned()] {
         let error = Profiles::load_files([(path.clone(), false)])
             .err()

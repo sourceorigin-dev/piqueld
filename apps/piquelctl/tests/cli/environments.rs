@@ -230,7 +230,6 @@ fn stable_ids_select_environments_before_names_that_look_like_them() {
     let server = start_server(false, 2, move |request| match request.path.as_str() {
         "/api/v1/applications/app-notes-01" => {
             let mut view = app_view("app-notes-01", "notes");
-            // Name order lists the impostor named like production's ID first.
             view["environments"]
                 .as_array_mut()
                 .expect("environments")
@@ -547,7 +546,6 @@ fn attempts_list_a_deployments_tries_and_page() {
     let server = start_server(false, usize::MAX, move |request| {
         match request.path.as_str() {
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
-            // Any page of the list leads with an older deployment.
             path if path.starts_with("/api/v1/environments/app-notes-01/deployments?") => {
                 Reply::json(page(vec![listed_first()], Some("next")))
             }
@@ -598,7 +596,6 @@ fn attempts_list_a_deployments_tries_and_page() {
         assert_eq!(first["next_cursor"], "older");
     }
 
-    // A later page lists retained outcomes alone.
     let older = assert_json_success(&run(
         &server,
         &[
@@ -713,7 +710,6 @@ fn wait_follows_one_deployment_until_it_is_ready() {
         assert_eq!(result["deployment_id"], "operation-01");
         assert_eq!(result["outcome"], "succeeded");
         assert_eq!(result["urls"][0]["state"], url_state, "{ready:?}");
-        // Every stderr line is a progress event while waiting.
         for line in String::from_utf8_lossy(&output.stderr).lines() {
             assert!(serde_json::from_str::<Value>(line).unwrap()["progress"].is_object());
         }
@@ -757,14 +753,11 @@ fn wait_reports_the_local_snapshot_a_restore_runs() {
 #[test]
 fn wait_never_follows_a_newer_deployment_and_fails_or_times_out_with_its_code() {
     let pending = || detail("operation-01", true, "pending");
-    // A retry of the deployment that failed after it first succeeded.
     let mut retried = detail("operation-01", true, "ready");
     retried["latest_operation"]["state"] = json!("failed");
-    // A daemon that does not report URL readiness never reads as ready.
     let mut no_urls = detail("operation-01", true, "ready");
     no_urls.as_object_mut().unwrap().remove("urls");
     let cases = [
-        // Superseded while pending, or after succeeding by a newer one.
         (
             vec!["superseded"],
             pending(),
@@ -782,7 +775,6 @@ fn wait_never_follows_a_newer_deployment_and_fails_or_times_out_with_its_code() 
         (vec!["failed"], pending(), "10s", 5, "operation_failed"),
         (vec!["succeeded"], retried, "10s", 5, "operation_failed"),
         (vec!["succeeded"], no_urls, "10s", 1, "failed"),
-        // Ready only once routes are: `--wait-timeout` ends the local wait.
         (vec!["running"], pending(), "500ms", 4, "timeout"),
     ];
     for (states, detail, timeout, code, error_code) in cases {
@@ -869,11 +861,9 @@ fn deploy_output_carries_the_deployment_fields_agents_need() {
             assert_eq!(result[field], value, "{field}");
         }
         if no_wait {
-            // The accepted operation's fields are kept.
             assert_eq!(result["generation"], 1);
             assert!(result.get("outcome").is_none() && result.get("urls").is_none());
         } else {
-            // So are the waited result's.
             assert_eq!(result["accepted"]["operation_id"], "operation-01");
             assert_eq!(result["operation"]["state"], "succeeded");
             assert_eq!(result["outcome"], "succeeded");
@@ -893,8 +883,6 @@ fn deploy_output_carries_the_deployment_fields_agents_need() {
 /// doesn't fail the wait.
 #[test]
 fn env_stop_waits_until_stopped_unless_the_stop_fails_or_is_undone() {
-    // (state before the stop, attempt and state after, run state, runtime
-    // health at each status read, exit code)
     for (before, attempt, after, run_state, healths, code) in [
         (
             "succeeded",

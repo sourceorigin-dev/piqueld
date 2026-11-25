@@ -33,7 +33,6 @@ impl CliReference {
 
     /// Renders the page from the complete command tree, `piquelctl::command()`.
     fn render(mut command: Command) -> String {
-        // Building fills in each subcommand's full name and its usage.
         command.build();
         let mut reference = Self {
             page: Page::new(

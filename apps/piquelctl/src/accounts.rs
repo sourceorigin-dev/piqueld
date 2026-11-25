@@ -27,7 +27,6 @@ use piqueld_client::{
 use serde::Serialize;
 use std::{collections::BTreeMap, io};
 
-// `account` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum AccountCommand {
     /// List the accounts you can see, with their grants.
@@ -129,7 +128,6 @@ pub(crate) enum AccountCommand {
     },
 }
 
-// `account passkey` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum PasskeyCommand {
     /// List the passkeys of the accounts you can see, with their owners.
@@ -148,7 +146,6 @@ pub(crate) enum PasskeyCommand {
     /// own account's.
     Rename {
         /// Passkey ID, from `account passkey list`.
-        // Base64url credential IDs may start with `-`.
         #[arg(allow_hyphen_values = true)]
         id: String,
         /// New name.
@@ -167,7 +164,6 @@ pub(crate) enum PasskeyCommand {
     /// passkey would remain.
     Remove {
         /// Passkey ID, from `account passkey list`.
-        // Base64url credential IDs may start with `-`.
         #[arg(allow_hyphen_values = true)]
         id: String,
         #[command(flatten)]
@@ -178,7 +174,6 @@ pub(crate) enum PasskeyCommand {
     },
 }
 
-// `account invitation` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum InvitationCommand {
     /// List pending invitation and enrollment links, with the grants they
@@ -198,7 +193,6 @@ pub(crate) enum InvitationCommand {
     },
 }
 
-// Grants selected on the command line: a preset, permissions, or both.
 #[derive(Debug, Args)]
 pub(crate) struct GrantArgs {
     /// Grant the permissions of this preset.
@@ -293,7 +287,6 @@ impl GrantArgs {
     }
 }
 
-// `token` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum TokenCommand {
     /// Create an API token for your account, and print it.
@@ -386,9 +379,6 @@ impl TokenCommand {
                 no_expiry,
                 tailnet,
             } => {
-                // Daemons older than scoped tokens would ignore `grants` and
-                // issue full access. Their sessions lack `scoped`, so this
-                // fails to decode before anything is created.
                 match client.auth_me().await {
                     Ok(_) => {}
                     Err(piqueld_client::ClientError::Decode { .. }) => {
@@ -676,8 +666,6 @@ async fn owner(client: &Client, directory: &Directory, user: Option<&str>) -> Re
         })
 }
 
-// `--no-cascade`, shared by the commands that also revoke what was issued
-// through what they name; `///` on the field is user-facing help.
 #[derive(Clone, Copy, Debug, Args)]
 pub(crate) struct CascadeArg {
     /// Revoke only what you name, leaving valid the credentials, links and
@@ -837,7 +825,6 @@ impl AccountsReport<'_> {
         })
     }
 }
-// Its JSON borrows, which `report!` cannot name.
 impl<'a> Report for AccountsReport<'a> {
     type Json = AccountList<'a>;
     fn json(&self) -> &AccountList<'a> {
@@ -863,7 +850,6 @@ impl<'a> Report for AccountsReport<'a> {
     }
 }
 
-// `audit` options: whose requests to show, newest first, or `audit verify`.
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
 pub(crate) struct AuditArgs {
@@ -890,7 +876,6 @@ fn parse_tailnet(value: &str) -> std::result::Result<TailnetBinding, String> {
     TailnetBinding::parse(value).map_err(str::to_owned)
 }
 
-// `audit` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum AuditCommand {
     /// Check that no one altered the audit trail.
@@ -927,10 +912,6 @@ impl AuditArgs {
                 None => Ok(()),
             };
         }
-        // Deleted accounts keep their trail but leave the directory, and
-        // auditors without accounts:manage only see themselves there, so an
-        // account it lacks is matched by ID when the value is one (IDs are
-        // UUIDs), and otherwise by the username its requests recorded.
         let (user_id, username) = match &self.user {
             Some(account) => match find(&client.auth_directory().await?, account) {
                 Ok(found) => (Some(found.user.id), None),
@@ -952,7 +933,6 @@ impl AuditArgs {
     }
 }
 
-// Result of `audit verify`.
 report!(AuditVerification, self, out, {
     let state = if self.broken_at.is_some() {
         "broken"
@@ -964,7 +944,6 @@ report!(AuditVerification, self, out, {
     if let Some(id) = self.broken_at {
         out.label("First mismatch", id)?;
     }
-    // Operators keep both elsewhere to detect a rewritten or moved chain.
     let link = |link: &Option<AuditLink>| {
         link.as_ref().map_or_else(
             || "none".to_owned(),
@@ -980,7 +959,6 @@ report!(AuditVerification, self, out, {
     out.label(head, link(&self.head))
 });
 
-// A page of audited requests, one line each.
 report!(Page<AuditEvent>, self, out, {
     for event in &self.items {
         let who = event.who();

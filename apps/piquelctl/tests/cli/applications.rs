@@ -21,7 +21,6 @@ fn listed(id: &str, name: &str, state: &str) -> Value {
 /// `app list` reads every page, and each environment's status from it.
 #[test]
 fn list_paginates_and_includes_reconciliation_status() {
-    // Each page answers only its own cursor.
     let server = start_server(true, 2, move |request| match request.path.as_str() {
         "/api/v1/applications?limit=100" => Reply::json(page(
             vec![listed("app-first-01", "first", "ready")],
@@ -49,8 +48,6 @@ fn repeated_pagination_cursor_is_rejected() {
     let mut page_number = 0;
     let server = start_server(false, 2, move |request| {
         page_number += 1;
-        // The second page is requested with the first page's cursor, which
-        // it returns again.
         let (path, items) = if page_number == 1 {
             (
                 "/api/v1/applications?limit=100",
@@ -107,7 +104,6 @@ fn apply_deploy_retries_a_dropped_request_with_the_same_identity() {
     let directory = tempdir().expect("manifest directory");
     let manifest = write_manifest(&directory);
     let mut attempts = 0;
-    // Over the Unix socket, the default transport; other retries run over TCP.
     let server = start_server(true, 3, move |request| match request.path.as_str() {
         "/api/v1/applications?name=notes" => Reply::json(page(Vec::new(), None)),
         "/api/v1/applications/apply?deploy=true" => {
@@ -150,7 +146,6 @@ fn apply_deploy_retries_a_dropped_request_with_the_same_identity() {
         .headers
         .get("idempotency-key")
         .expect("command has a replay identity");
-    // Sent as is, so rerunning the command replays it.
     assert_eq!(key, "agent-run-7");
     assert_eq!(Some(key), second.headers.get("idempotency-key"));
 }
@@ -413,7 +408,6 @@ fn validate_checks_manifests_without_a_daemon_or_profiles() {
     .expect("invalid manifest");
     let validate = |path: &PathBuf| {
         support::command()
-            // Neither the daemon nor the profiles file is consulted.
             .env(
                 "PIQUELD_PROFILES_FILE",
                 directory.path().join("absent.toml"),
@@ -507,7 +501,6 @@ fn delete_stops_on_failed_or_cancelled_operation() {
 /// application, is an input error.
 #[test]
 fn names_are_looked_up_by_the_daemon_and_checked() {
-    // A daemon that predates the name filter answers with other applications.
     for (applications, code, expected) in [
         (Vec::new(), 2, "was not found"),
         (vec![app_summary("app-blog-01", "blog")], 2, "was not found"),

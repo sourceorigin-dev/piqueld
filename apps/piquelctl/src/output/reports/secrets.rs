@@ -2,7 +2,6 @@
 
 use piqueld_client::{EnvironmentView, SecretMetadata, StoredSecret};
 
-// Secret metadata list, flagging unreadable values and pending deletions.
 report!(Vec<SecretMetadata> as [SecretMetadata], self, out, {
     for secret in self {
         out.line(format_args!(

@@ -39,7 +39,6 @@ pub(crate) struct GitSourceArgs {
     /// own repository, at the commit the manifest was read from.
     #[arg(id = "git", value_name = "URL|self")]
     repository: BuildRepository,
-    // Boxed to keep the CLI command enum small.
     #[command(flatten)]
     build: Box<GitBuildArgs>,
 }
@@ -60,8 +59,6 @@ impl From<String> for BuildRepository {
         }
     }
 }
-// Git build settings; each flag requires the `git` argument (`--git` or the
-// positional repository of `source git`).
 #[derive(Debug, Args)]
 pub(crate) struct GitBuildArgs {
     /// Branch to build when no commit is pinned. Default: `main`. `self`

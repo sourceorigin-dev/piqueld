@@ -46,7 +46,6 @@ fn resources_and_settings_show_the_daemon_measurements_and_host_settings() {
     for line in [
         "Uptime: 3 d 4 h",
         "Memory: 48.0 MiB resident",
-        // The daemon's first measurement has no CPU usage yet.
         "CPU: not measured yet; ask again in 5 seconds",
         "Database: 12.0 MiB (WAL 4.0 MiB)",
         "Available disk: unavailable on this host",
@@ -93,8 +92,6 @@ fn doctor_reports_the_connection_and_exits_6_on_a_failed_check() {
 
 #[test]
 fn doctor_reports_the_connection_when_the_daemon_times_out() {
-    // The checks stay pending until the CLI has given up on them and the
-    // test drops `release`, or for `READ_TIMEOUT` if the CLI never does.
     let (release, pending) = mpsc::channel::<()>();
     let server = start_server(true, 1, move |_| {
         #[expect(
@@ -135,7 +132,6 @@ fn recover_admin_sends_no_credential() {
 fn events_cli_reads_a_filtered_page_newest_first() {
     let server = start_server(false, 1, |request| {
         assert_eq!(request.method, "GET");
-        // An environment ID alone is sent as is, so deleted ones still match.
         assert_eq!(
             request.path,
             "/api/v1/events?cursor=v1%3A7&descending=true&environment_id=app-notes-01&limit=2"

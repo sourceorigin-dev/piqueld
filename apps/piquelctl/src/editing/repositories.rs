@@ -28,7 +28,6 @@ pub(crate) enum RepositoryCommand {
         #[command(flatten)]
         target: RepositoryTarget,
         /// Git clone URL, or a path on the daemon's host.
-        // A distinct id keeps clap from storing this in the global `--url` endpoint.
         #[arg(id = "repository_url", value_name = "URL")]
         url: String,
         /// Path of the manifest file, relative to the repository root.
@@ -78,7 +77,6 @@ pub(crate) enum RepositoryCommand {
     },
 }
 
-// `--sync` and the `--interval` only `poll` takes, for `connect`.
 #[derive(Debug, Args)]
 struct ConnectSyncFlags {
     /// Whether to deploy pushes, as `app repository sync` sets it.
@@ -100,7 +98,6 @@ pub(crate) struct ConnectSync(RepositorySync);
 crate::cli::parsed_args!(ConnectSync, ConnectSyncFlags, |flags: ConnectSyncFlags| {
     flags.mode.with_interval(flags.interval).map(ConnectSync)
 });
-// The mode and the `--interval` only `poll` takes, for `sync`.
 #[derive(Debug, Args)]
 struct SyncFlags {
     /// How to detect pushes.

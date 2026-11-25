@@ -107,7 +107,6 @@ fn roles_route_and_flush_before_returning_in_every_mode() {
             );
             assert!(!stdout.text().contains("task"));
             if json {
-                // Every stderr event is a JSON line.
                 for line in stderr.text().lines() {
                     serde_json::from_str::<serde_json::Value>(line).unwrap();
                 }
@@ -174,8 +173,6 @@ fn tables_align_columns_by_escaped_display_width() {
             row.map(str::to_owned)
         })
         .unwrap();
-    // `日本` is four columns wide, and the escaped `\u{1b}` widens `a`
-    // to seven; a row ending in an empty cell has no trailing spaces.
     assert_eq!(
         output.text(),
         "NAME     VALUE  LAST\n\
@@ -414,8 +411,6 @@ fn terminal_progress_is_suspended_for_every_role_and_cleared_on_final_drop() {
         )));
     let first = console.start_task("first");
     let second = console.start_task("second");
-    // A tick clears the row and then rewrites it from another thread, so the
-    // checks below could otherwise land in between on a slow runner.
     first.stop_ticking();
     second.stop_ticking();
     first.update("working");
@@ -474,7 +469,6 @@ fn status_and_dns_refresh_list_images_dns_providers_certificate_failures_and_pre
                 error: Some("ovh create TXT record in zone piquel.fr: HTTP 403".into()),
             }],
         },
-        // `max_total` was lowered below the existing previews.
         previews: Some(PreviewUsage {
             limits: PreviewLimits {
                 max_total: 2,
@@ -526,7 +520,6 @@ fn status_and_dns_refresh_list_images_dns_providers_certificate_failures_and_pre
             ingress: Some(&ingress),
         })
         .unwrap();
-    // `dns refresh` prints the same lines without the daemon header.
     console.emit(&status.dns).unwrap();
     let text = stdout.text();
     assert_eq!(
@@ -701,7 +694,6 @@ fn status_shows_what_registry_cleanup_deleted_and_what_it_couldnt() {
             status(Some(12), Some("connection refused")),
             format!("{deleted}; the last cleanup couldn't delete them all: connection refused"),
         ),
-        // Before any cleanup listed the registry, there is no count.
         (
             status(None, Some("connection refused")),
             "Registry images: registry.example.ts.net:5000/piqueld not listed yet; cleanup deleted 3".to_owned(),
