@@ -466,7 +466,7 @@ mod tests {
             .normalize(captured.id().clone());
         store
             .accept(
-                crate::Actor::Daemon,
+                Daemon,
                 Mutation::Save {
                     application: Box::new(edited.clone()),
                     expected_application_id: Some(captured.id().to_string()),
@@ -534,7 +534,7 @@ mod tests {
     ) -> (Operation, piqueld_core::ResolvedApplication) {
         let (MutationResponse::Operation(accepted), _) = store
             .accept(
-                crate::Actor::Daemon,
+                Daemon,
                 Mutation::deploy(environment.clone()),
                 None,
                 true,
@@ -875,7 +875,7 @@ mod tests {
         let production = store.production(&application).await;
         let (MutationResponse::Environment(staging), _) = store
             .accept(
-                crate::Actor::Daemon,
+                Daemon,
                 Mutation::CreateEnvironment {
                     application,
                     name: piqueld_core::EnvironmentName::parse("staging").unwrap(),

@@ -78,7 +78,7 @@ fn plan_shows_effective_rollouts_and_warns_about_overlapping_writers() {
             "web"
         )
     );
-    assert_eq!(warning.severity, piqueld_core::DiagnosticSeverity::Warning);
+    assert_eq!(warning.severity, DiagnosticSeverity::Warning);
     assert!(!plan.is_blocked());
 }
 

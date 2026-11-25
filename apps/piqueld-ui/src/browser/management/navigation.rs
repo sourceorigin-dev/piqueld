@@ -3,8 +3,8 @@ use super::super::confirm;
 use crate::application::slug;
 use leptos::ev;
 use leptos::prelude::*;
-use leptos::wasm_bindgen::JsCast;
 use leptos::wasm_bindgen::closure::Closure;
+use leptos::wasm_bindgen::{JsCast, JsValue};
 use leptos_router::NavigateOptions;
 use leptos_router::hooks::{use_location, use_navigate};
 use std::collections::BTreeSet;
@@ -15,7 +15,7 @@ struct GuardedLocation {
     /// The editor's dirty form groups; navigation is only guarded while non-empty.
     dirty: RwSignal<BTreeSet<String>>,
     url: String,
-    state: leptos::wasm_bindgen::JsValue,
+    state: JsValue,
 }
 
 /// App-wide `popstate` guard; holds the active editor's location while one is mounted.

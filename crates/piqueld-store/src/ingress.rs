@@ -1228,7 +1228,7 @@ mod tests {
         store.stage_routes(&id, &[], false, None).await.unwrap();
         assert_eq!(
             store.routing_table().await.unwrap()[&id],
-            [] as [piqueld_core::manifest::ValidatedRoute; 0]
+            [] as [ValidatedRoute; 0]
         );
     }
 
@@ -1250,7 +1250,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             store.routing_table().await.unwrap()[&id],
-            [] as [piqueld_core::manifest::ValidatedRoute; 0]
+            [] as [ValidatedRoute; 0]
         );
         store.stage_routes(&id, &private, true, None).await.unwrap();
         assert_eq!(store.routing_table().await.unwrap()[&id], private);

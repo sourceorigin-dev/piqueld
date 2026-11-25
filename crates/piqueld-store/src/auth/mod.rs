@@ -435,7 +435,7 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        let issued = super::SecurityEvent::RecoveryIssued;
+        let issued = SecurityEvent::RecoveryIssued;
         Self::operator_link_event_on(&mut tx, issued, "An admin recovery link", operator).await?;
         let change = format!(
             "admin recovery link issued, expires {}",
@@ -461,7 +461,7 @@ impl Store {
     /// link`, as a security event attributed to it.
     async fn operator_link_event_on(
         db: &mut SqliteConnection,
-        event: super::SecurityEvent,
+        event: SecurityEvent,
         link: &str,
         operator: HostOperator,
     ) -> Result<(), StoreError> {
@@ -501,7 +501,7 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::constraint)?;
-        let issued = super::SecurityEvent::OperatorSignInIssued;
+        let issued = SecurityEvent::OperatorSignInIssued;
         Self::operator_link_event_on(&mut tx, issued, "A host operator sign-in link", operator)
             .await?;
         let expires = Expiry(Some(expires_at));

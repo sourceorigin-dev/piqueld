@@ -1997,7 +1997,7 @@ fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
             cascade,
         });
     });
-    let rename = move |event: leptos::ev::SubmitEvent| {
+    let rename = move |event: ev::SubmitEvent| {
         event.prevent_default();
         editing.set(false);
         feedback.manage(Manage::RenamePasskey {

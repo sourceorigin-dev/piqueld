@@ -97,7 +97,7 @@ fn assert_edit_refused(arguments: &[&str]) {
 fn file_add_inlines_local_files_and_names_repository_files() {
     let directory = tempdir().expect("file directory");
     let local = directory.path().join("prometheus.yml");
-    std::fs::write(&local, "scrape: ${HOME} {{ .x }}\n").expect("local file");
+    fs::write(&local, "scrape: ${HOME} {{ .x }}\n").expect("local file");
     let local = local.to_str().expect("UTF-8 path");
     // Local files are inlined verbatim, never rendered.
     assert_saves_field(

@@ -81,7 +81,7 @@ fn read_request_uses_the_full_command_timeout() {
 #[test]
 fn human_output_reports_a_closed_pipe_without_panicking() {
     let server = start_server(false, 1, |_| Reply::json(operation("requested")));
-    let (reader, writer) = std::os::unix::net::UnixStream::pair().expect("output pipe");
+    let (reader, writer) = UnixStream::pair().expect("output pipe");
     drop(reader);
     let output = server
         .command()

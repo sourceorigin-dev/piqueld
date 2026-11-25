@@ -142,12 +142,7 @@ impl ApplicationService {
     /// already used elsewhere appears on a new network. IPv6 addresses count
     /// by /64, the smallest prefix normally assigned to one client. Written in
     /// the background like audit records, once per pair per run.
-    pub(crate) fn observe_address(
-        &self,
-        credential_id: &str,
-        user_id: &str,
-        address: std::net::IpAddr,
-    ) {
+    pub(crate) fn observe_address(&self, credential_id: &str, user_id: &str, address: IpAddr) {
         let pair = (credential_id.to_owned(), crate::auth::network(address));
         if !self.known_addresses.insert(&pair) {
             return;

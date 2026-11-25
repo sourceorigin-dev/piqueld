@@ -644,7 +644,7 @@ pub struct DnsConfig {
     // `Serialize`, which utoipa needs to document a container default.
     #[serde(default)]
     #[schema(default = json!([]))]
-    pub providers: Vec<crate::dns::provider::DnsProviderConfig>,
+    pub providers: Vec<dns::provider::DnsProviderConfig>,
 }
 
 /// Uploads of local worktrees by `piquelctl preview deploy --local`.
@@ -782,7 +782,7 @@ impl ServerConfig {
     /// Unix API socket path inside the runtime directory.
     #[must_use]
     pub fn socket_path(&self) -> PathBuf {
-        self.runtime_dir.join(crate::runtime_dir::SOCKET_NAME)
+        self.runtime_dir.join(runtime_dir::SOCKET_NAME)
     }
 
     /// Embedded database path inside the data directory.

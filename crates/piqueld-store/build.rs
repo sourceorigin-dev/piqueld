@@ -48,7 +48,7 @@ fn embed_migrations(manifest_dir: &Path) -> Result<(), Box<dyn Error>> {
             let sql = fs::read_to_string(&path)?;
             Ok((utf8(&path)?.to_owned(), sql))
         })
-        .collect::<Result<Vec<_>, std::io::Error>>()?;
+        .collect::<Result<Vec<_>, io::Error>>()?;
 
     let mut expected_version = 0_u64;
     for (path, _) in &migrations {
@@ -84,7 +84,7 @@ fn embed_migrations(manifest_dir: &Path) -> Result<(), Box<dyn Error>> {
     let database_path = out_dir.join("sqlx-build.db");
     match fs::remove_file(&database_path) {
         Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
 

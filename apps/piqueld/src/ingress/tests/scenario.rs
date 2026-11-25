@@ -21,7 +21,7 @@ pub(super) struct Scenario {
     /// Stops counting the gateway's traffic, then flushes the counts.
     pub(super) counting: CancellationToken,
     /// The traffic counter, until a step stops it.
-    pub(super) counter: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    pub(super) counter: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Scenario {
@@ -101,7 +101,7 @@ impl Scenario {
             tls_port: port("PIQUELD_INGRESS_HTTPS_PORT"),
             plain_port: port("PIQUELD_INGRESS_HTTP_PORT"),
             counting,
-            counter: tokio::sync::Mutex::new(Some(counter)),
+            counter: Mutex::new(Some(counter)),
         };
         scenario.await_certificate("one.example.test").await;
         scenario

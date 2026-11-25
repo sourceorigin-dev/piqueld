@@ -244,7 +244,7 @@ async fn build_pages_filter_before_applying_the_limit() {
     let other = manifest
         .validate()
         .unwrap()
-        .normalize(piqueld_core::ApplicationId::parse("app-other").unwrap());
+        .normalize(ApplicationId::parse("app-other").unwrap());
     let other_operation = store
         .save_application(&ApplicationTemplate::from(&other), None, Some(0))
         .await

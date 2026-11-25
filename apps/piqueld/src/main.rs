@@ -436,7 +436,7 @@ where
     info!(address = ?listener.local_addr(), "HTTP API listening");
     tokio::spawn(async move {
         let shutdown = cancellation.clone();
-        let serve = std::future::IntoFuture::into_future(
+        let serve = IntoFuture::into_future(
             axum::serve(listener, router.into_make_service_with_connect_info::<C>())
                 .with_graceful_shutdown(async move { shutdown.cancelled().await }),
         );

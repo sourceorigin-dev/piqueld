@@ -124,7 +124,7 @@ impl<D> ApplicationRuntime<D> {
 impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
     async fn logs(
         &self,
-        id: &piqueld_core::EnvironmentId,
+        id: &EnvironmentId,
         service: Option<&str>,
         tail: u16,
         since: u32,
@@ -161,7 +161,7 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
     /// ownership labels, so foreign Docker secrets are never deleted.
     async fn remove_secrets(
         &self,
-        application: &piqueld_core::EnvironmentId,
+        application: &EnvironmentId,
         names: &[String],
     ) -> Result<(), BoundaryError> {
         let ownership = piqueld_core::resource::Ownership::scope(&self.instance_id, application);
@@ -175,7 +175,7 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
     }
     async fn create_exec(
         &self,
-        environment: &piqueld_core::EnvironmentId,
+        environment: &EnvironmentId,
         request: &piqueld_core::exec::ExecRequest,
     ) -> Result<Option<piqueld_docker::Exec>, BoundaryError> {
         Ok(self

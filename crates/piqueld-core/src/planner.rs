@@ -119,7 +119,7 @@ pub enum ActionKind {
         /// Docker name of the service whose convergence is awaited.
         service: String,
         /// Its name in the manifest, which names the step in history.
-        logical_name: crate::ServiceName,
+        logical_name: ServiceName,
     },
     /// Wait for a service to be removed.
     WaitForServiceRemoval {
@@ -312,7 +312,7 @@ impl PlanAction {
 
     /// Creates a non-mutating convergence wait for `service`.
     #[must_use]
-    pub fn wait_for_service(service: &crate::DesiredService) -> Self {
+    pub fn wait_for_service(service: &DesiredService) -> Self {
         Self::new(
             ActionKind::WaitForService {
                 service: service.name.to_string(),

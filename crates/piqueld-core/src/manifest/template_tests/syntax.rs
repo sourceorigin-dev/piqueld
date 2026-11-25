@@ -284,7 +284,7 @@ fn typed_template_schema_describes_reference_text() {
     assert!(schema.to_string().contains("TypedTemplate"));
     // OpenAPI follows the private schema-only type through its registered schema.
     let mut schemas = Vec::new();
-    <Typed<u16> as utoipa::ToSchema>::schemas(&mut schemas);
+    <Typed<u16> as ToSchema>::schemas(&mut schemas);
     let schema = schemas
         .into_iter()
         .find(|(name, _)| name == "TypedTemplate")

@@ -1042,7 +1042,7 @@ async fn an_unreachable_build_machine_fails_the_deployment_as_builder_unavailabl
     harness
         .docker
         .builder_unavailable
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+        .store(true, Ordering::SeqCst);
     let fixture = git_fixture::GitBuildFixture::new();
     let deployment = harness.deploy_git_build(&fixture).await;
     harness.scan().await;

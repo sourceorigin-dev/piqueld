@@ -993,7 +993,7 @@ pub(crate) async fn wait_for_deletion<T, F>(
     operation_ids: &[String],
 ) -> Result<()>
 where
-    F: std::future::Future<Output = std::result::Result<T, ClientError>>,
+    F: Future<Output = std::result::Result<T, ClientError>>,
 {
     let mut wait = Wait::start(
         console,

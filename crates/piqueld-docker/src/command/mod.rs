@@ -77,7 +77,7 @@ impl LoggedCommand {
     pub async fn run_recorded(
         command: &mut Command,
         operation: &'static str,
-        log: Option<&dyn crate::command::OutputLog>,
+        log: Option<&dyn OutputLog>,
     ) -> anyhow::Result<()> {
         let stdout =
             |stdout| Self::tail_recorded(stdout, log, piqueld_core::api::LogStream::Stdout);
@@ -118,7 +118,7 @@ impl LoggedCommand {
         command: &mut Command,
         operation: &'static str,
         read_stdout: impl FnOnce(tokio::process::ChildStdout) -> F,
-        log: Option<&dyn crate::command::OutputLog>,
+        log: Option<&dyn OutputLog>,
     ) -> anyhow::Result<Vec<u8>> {
         let mut child = command
             .stdin(Stdio::null())
@@ -166,7 +166,7 @@ impl LoggedCommand {
     /// next read or end of stream.
     async fn tail_recorded(
         mut stream: impl AsyncRead + Unpin,
-        log: Option<&dyn crate::command::OutputLog>,
+        log: Option<&dyn OutputLog>,
         source: piqueld_core::api::LogStream,
     ) -> anyhow::Result<Vec<u8>> {
         let mut tail = VecDeque::with_capacity(Self::TAIL_BYTES);

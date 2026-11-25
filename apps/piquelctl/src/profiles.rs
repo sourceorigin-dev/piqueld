@@ -312,7 +312,7 @@ impl Profile {
     }
 
     /// Socket path or URL, whichever is configured.
-    fn endpoint(&self) -> std::borrow::Cow<'_, str> {
+    fn endpoint(&self) -> Cow<'_, str> {
         if let Some(socket) = &self.socket {
             socket.to_string_lossy()
         } else {

@@ -3,9 +3,11 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use utoipa::openapi::schema::{AnyOfBuilder, Schema};
-use utoipa::openapi::{RefOr, schema::RefBuilder};
-use utoipa::{PartialSchema, ToSchema};
+use utoipa::openapi::schema::AnyOfBuilder;
+// What the `ToSchema` derive writes in full (`utoipa::ToSchema`, `RefBuilder`,
+// `RefOr`, `Schema`, ...) is not imported here: next to a named import its
+// paths count as unnecessary qualifications. The traits come in unnamed.
+use utoipa::ToSchema as _;
 
 use super::{AcceptedOperation, DiagnosticView, Page};
 use crate::manifest::{ApplicationTemplate, SystemVariable, VariableValue};
@@ -16,7 +18,7 @@ use crate::{
 };
 
 /// Durable deployment snapshot and execution summary.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct DeploymentView {
     /// Execution ID also identifies this deployment.
     pub operation: Operation,
@@ -50,7 +52,7 @@ impl DeploymentView {
     /// A system variable's rendered value, e.g. `git.sha`: absent before a
     /// repository-backed manifest is fetched, and for saved manifests.
     #[must_use]
-    pub fn system_value(&self, variable: crate::manifest::SystemVariable) -> Option<&str> {
+    pub fn system_value(&self, variable: SystemVariable) -> Option<&str> {
         match self.variables.get(variable.as_str())? {
             VariableValue::String(value) => Some(value),
             VariableValue::Boolean(_) | VariableValue::Integer(_) => None,
@@ -71,7 +73,7 @@ string_enum! {
 }
 
 /// A deployment without its manifests, as a history row shows it.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct DeploymentSummary {
     /// Execution ID also identifies this deployment.
     pub operation: Operation,
@@ -126,14 +128,16 @@ pub enum DeploymentPage {
 
 impl DeploymentPage {
     /// The component name of a page of `T`s, as utoipa names generic schemas.
-    fn page_name<T: ToSchema>() -> String {
+    fn page_name<T: utoipa::ToSchema>() -> String {
         format!("{}_{}", Page::<T>::name(), T::name())
     }
 
     /// A reference to the page of `T`s, described as `description`.
-    fn page_ref<T: ToSchema>(description: &str) -> RefOr<Schema> {
-        RefOr::Ref(
-            RefBuilder::new()
+    fn page_ref<T: utoipa::ToSchema>(
+        description: &str,
+    ) -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::RefOr::Ref(
+            utoipa::openapi::schema::RefBuilder::new()
                 .ref_location_from_schema_name(Self::page_name::<T>())
                 .description(Some(description))
                 .build(),
@@ -141,10 +145,18 @@ impl DeploymentPage {
     }
 
     /// Registers the page of `T`s, `T` and the schemas they use.
-    fn page_schemas<T: ToSchema>(schemas: &mut Vec<(String, RefOr<Schema>)>) {
-        schemas.push((Self::page_name::<T>(), <Page<T> as PartialSchema>::schema()));
+    fn page_schemas<T: utoipa::ToSchema>(
+        schemas: &mut Vec<(
+            String,
+            utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+        )>,
+    ) {
+        schemas.push((
+            Self::page_name::<T>(),
+            <Page<T> as utoipa::PartialSchema>::schema(),
+        ));
         schemas.push((T::name().into_owned(), T::schema()));
-        <Page<T> as ToSchema>::schemas(schemas);
+        <Page<T> as utoipa::ToSchema>::schemas(schemas);
         T::schemas(schemas);
     }
 }
@@ -152,8 +164,8 @@ impl DeploymentPage {
 // Written out because the derive documents an untagged enum as `oneOf`, which
 // a whole page fails: it also matches the summary schema, which allows more
 // properties, and an empty page matches both. `anyOf` accepts either.
-impl PartialSchema for DeploymentPage {
-    fn schema() -> RefOr<Schema> {
+impl utoipa::PartialSchema for DeploymentPage {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
         AnyOfBuilder::new()
             .description(Some(
                 "A page of an environment's deployments, newest first, in the\n\
@@ -167,8 +179,13 @@ impl PartialSchema for DeploymentPage {
     }
 }
 
-impl ToSchema for DeploymentPage {
-    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+impl utoipa::ToSchema for DeploymentPage {
+    fn schemas(
+        schemas: &mut Vec<(
+            String,
+            utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+        )>,
+    ) {
         Self::page_schemas::<DeploymentView>(schemas);
         Self::page_schemas::<DeploymentSummary>(schemas);
     }
@@ -177,7 +194,7 @@ impl ToSchema for DeploymentPage {
 /// An immutable release of an application, recorded by a successful
 /// preparation in one of its tracking environments. Environments whose
 /// deployments prepared the same content share it.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct ReleaseView {
     /// Stable release identifier.
     pub id: ReleaseId,
@@ -203,7 +220,7 @@ pub struct ReleaseView {
 
 /// A deployment that received a release: promoted, deployed again by ID, or
 /// restored.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub struct ReleasePromotion {
     /// The environment it was deployed to.
     pub environment_id: EnvironmentId,
@@ -216,7 +233,7 @@ pub struct ReleasePromotion {
 }
 
 /// Where a deployment came from.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DeploymentOrigin {
     /// Built from its environment's source: the saved manifest or its branch.
@@ -251,7 +268,7 @@ pub enum DeploymentOrigin {
 
 /// A snapshot of a local worktree: a commit of its committed, uncommitted,
 /// and untracked files, except ignored ones, on top of its `HEAD`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub struct LocalSnapshot {
     /// The snapshot commit, whose parent is the worktree's `HEAD`.
     pub commit: String,
@@ -264,7 +281,7 @@ pub struct LocalSnapshot {
 
 /// What `env promote` deploys into a promoted environment. Either way the
 /// release is pinned when the promotion is accepted.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(tag = "from", rename_all = "snake_case")]
 pub enum PromotionSelection {
     /// The release of the source environment's current deployment, which
@@ -285,7 +302,7 @@ pub enum PromotionSelection {
 /// Promotes a release into a promoted environment, conditioned on the
 /// inspected application revision. By default the source environment's
 /// current deployment; `deployment` and `release` are mutually exclusive.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PromoteRequest {
     /// The source deployment to promote; it must still be the source's current one.
@@ -301,7 +318,7 @@ pub struct PromoteRequest {
 
 /// Restores an earlier deployment of an environment or preview exactly. No
 /// application revision is needed: the deployment pins everything deployed.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RestoreRequest {
     /// The deployment to restore; it must have succeeded.
@@ -309,7 +326,7 @@ pub struct RestoreRequest {
 }
 
 /// An accepted promotion and the release it pinned.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct AcceptedPromotion {
     /// The deployment operation; its ID is also the deployment's.
     #[serde(flatten)]
@@ -323,7 +340,9 @@ pub struct AcceptedPromotion {
 /// A secret a rendered deployment mounts but cannot use. Promotions are
 /// refused while any is left. Generated secrets are generated when missing,
 /// so only a pending deletion makes one unusable.
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
+#[derive(
+    Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, utoipa::ToSchema,
+)]
 #[serde(tag = "problem", rename_all = "snake_case")]
 pub enum SecretProblem {
     /// Mounted from the application's store, which has no such secret.
@@ -350,7 +369,7 @@ pub enum SecretProblem {
 
 /// What a plan of a release adds: the release and where it comes from, and
 /// what the environment still lacks.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct ReleasePlan {
     /// The release, with its provenance and image availability.
     pub release: ReleaseView,

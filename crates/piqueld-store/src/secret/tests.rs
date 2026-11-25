@@ -21,16 +21,13 @@ fn with_secret(app: &NormalizedApplication) -> NormalizedApplication {
 /// `with_secret`, with `token` declared as a generated secret.
 fn with_generated_secret(app: &NormalizedApplication) -> NormalizedApplication {
     let mut manifest = with_secret(app).to_manifest();
-    manifest
-        .spec
-        .secrets
-        .push(piqueld_core::manifest::SecretDeclaration {
-            name: "token".into(),
-            generate: piqueld_core::manifest::SecretGenerator::Random {
-                bytes: 16,
-                encoding: piqueld_core::manifest::SecretEncoding::Hex,
-            },
-        });
+    manifest.spec.secrets.push(SecretDeclaration {
+        name: "token".into(),
+        generate: piqueld_core::manifest::SecretGenerator::Random {
+            bytes: 16,
+            encoding: piqueld_core::manifest::SecretEncoding::Hex,
+        },
+    });
     manifest.validate().unwrap().normalize(app.id().clone())
 }
 

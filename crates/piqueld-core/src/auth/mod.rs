@@ -73,9 +73,9 @@ pub struct HostOperator {
     pub uid: u32,
 }
 
-impl std::fmt::Display for HostOperator {
+impl fmt::Display for HostOperator {
     /// `host operator (uid 1000)`
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "host operator (uid {})", self.uid)
     }
 }

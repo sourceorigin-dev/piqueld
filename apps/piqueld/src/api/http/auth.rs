@@ -329,7 +329,7 @@ pub(super) struct TailnetSource {
 }
 
 impl TailnetSource {
-    fn of(extensions: &axum::http::Extensions) -> Option<Self> {
+    fn of(extensions: &http::Extensions) -> Option<Self> {
         let lookup = extensions.get::<Arc<dyn TailnetLookup>>().cloned()?;
         let ConnectInfo(peer) = *extensions.get::<ConnectInfo<SocketAddr>>()?;
         Some(Self { lookup, peer })
@@ -345,7 +345,7 @@ impl<S: Send + Sync> axum::extract::OptionalFromRequestParts<S> for TailnetSourc
     type Rejection = std::convert::Infallible;
 
     fn from_request_parts(
-        parts: &mut axum::http::request::Parts,
+        parts: &mut http::request::Parts,
         _: &S,
     ) -> impl Future<Output = Result<Option<Self>, Self::Rejection>> + Send {
         std::future::ready(Ok(Self::of(&parts.extensions)))
@@ -421,7 +421,7 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for OperatorPeer {
     type Rejection = ApiError;
 
     fn from_request_parts(
-        parts: &mut axum::http::request::Parts,
+        parts: &mut http::request::Parts,
         _: &S,
     ) -> impl Future<Output = Result<Self, ApiError>> + Send {
         std::future::ready(

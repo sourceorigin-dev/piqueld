@@ -292,8 +292,7 @@ mod tests {
         let receiver = axum::Router::new().route(
             "/secret",
             axum::routing::post(
-                move |headers: axum::http::HeaderMap,
-                      axum::Json(body): axum::Json<serde_json::Value>| {
+                move |headers: http::HeaderMap, axum::Json(body): axum::Json<serde_json::Value>| {
                     let requests = seen.clone();
                     let count = count.clone();
                     async move {
@@ -302,9 +301,9 @@ mod tests {
                             body,
                         ));
                         let status = if count.fetch_add(1, Ordering::SeqCst) == 0 {
-                            axum::http::StatusCode::SERVICE_UNAVAILABLE
+                            http::StatusCode::SERVICE_UNAVAILABLE
                         } else {
-                            axum::http::StatusCode::OK
+                            http::StatusCode::OK
                         };
                         (status, [("retry-after", "1")], "private-receiver-detail")
                     }

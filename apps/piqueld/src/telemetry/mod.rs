@@ -259,7 +259,7 @@ impl Telemetry {
             .with(log_file.map(|file| {
                 tracing_subscriber::fmt::layer()
                     .json()
-                    .with_writer(std::sync::Arc::new(file))
+                    .with_writer(Arc::new(file))
             }))
             .with(self.layer())
             .try_init()

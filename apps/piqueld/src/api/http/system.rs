@@ -124,7 +124,7 @@ pub(super) async fn health() -> impl IntoResponse {
     ApiErrors<503>))]
 pub(super) async fn configuration(
     State(state): State<ApiState>,
-) -> Result<impl IntoResponse, super::ApiError> {
+) -> Result<impl IntoResponse, ApiError> {
     Ok(ok(state.host_configuration()?.clone()))
 }
 
@@ -165,9 +165,7 @@ pub(super) async fn readiness(
 #[utoipa::path(get,path="/api/v1/system/checks",operation_id="systemChecks",
     responses((status=200,description="Installation checks",body=Envelope<piqueld_core::api::SystemChecks>),
     ApiErrors<503>))]
-pub(super) async fn checks(
-    State(state): State<ApiState>,
-) -> Result<impl IntoResponse, super::ApiError> {
+pub(super) async fn checks(State(state): State<ApiState>) -> Result<impl IntoResponse, ApiError> {
     let _admitted = state.admit(crate::api::Expensive::Checks)?;
     Ok(ok(state.system_checks().await?))
 }

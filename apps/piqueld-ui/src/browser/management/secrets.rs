@@ -115,10 +115,7 @@ impl Feedback {
 }
 
 /// Loads `load` into `items` once now and on each `reload`, marking `ready`.
-fn loader<
-    T: Send + Sync + 'static,
-    F: std::future::Future<Output = Result<Vec<T>, ClientError>>,
->(
+fn loader<T: Send + Sync + 'static, F: Future<Output = Result<Vec<T>, ClientError>>>(
     items: RwSignal<Vec<T>>,
     ready: RwSignal<bool>,
     feedback: Feedback,

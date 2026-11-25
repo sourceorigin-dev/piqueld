@@ -190,7 +190,7 @@ async fn refusals<T>(
 /// status, the JSON response body, and any `Set-Cookie` value.
 async fn as_peer(
     router: &axum::Router,
-    request: axum::http::request::Builder,
+    request: http::request::Builder,
     uid: Option<u32>,
     body: Option<serde_json::Value>,
 ) -> (u16, serde_json::Value, Option<String>) {
@@ -251,7 +251,7 @@ async fn admin_recovery_requires_the_host_operator_over_the_unix_socket() {
     }
     // A credential keeps its meaning, even an unusable one.
     let request = Request::post("/api/v1/auth/recovery")
-        .header(axum::http::header::AUTHORIZATION, "Bearer pqd_unknown");
+        .header(http::header::AUTHORIZATION, "Bearer pqd_unknown");
     assert_eq!(as_peer(&unix, request, Some(operator), None).await.0, 404);
     let (status, body) = recover(&unix, Some(operator)).await;
     assert_eq!(status, 200, "{body}");
@@ -387,7 +387,7 @@ async fn credentials_presented_by_the_host_operator_keep_their_meaning() {
         assert_eq!(status, 401, "{unusable}");
     }
     // So does a session cookie, even in a later `Cookie` header.
-    let cookies = |request: axum::http::request::Builder| {
+    let cookies = |request: http::request::Builder| {
         request
             .header(header::COOKIE, "other=one")
             .header(header::COOKIE, "__Host-piqueld_session=pqd_unknown")

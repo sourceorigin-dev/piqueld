@@ -430,8 +430,8 @@ impl std::error::Error for CliError {}
 
 /// I/O errors surface from output writes, so they are phrased as such. Input
 /// and credential-file I/O map their own errors.
-impl From<std::io::Error> for CliError {
-    fn from(error: std::io::Error) -> Self {
+impl From<io::Error> for CliError {
+    fn from(error: io::Error) -> Self {
         Self::new(
             ErrorKind::General,
             format!("could not write output: {error}"),

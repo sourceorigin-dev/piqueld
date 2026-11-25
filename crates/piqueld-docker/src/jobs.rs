@@ -630,7 +630,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let deadline = Some(std::time::UNIX_EPOCH);
+        let deadline = Some(UNIX_EPOCH);
         assert_eq!(
             BollardDocker::job_task_status(status(TaskState::RUNNING, None, None), deadline),
             JobStatus::Running { deadline }

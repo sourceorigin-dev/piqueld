@@ -567,7 +567,7 @@ impl Store {
                 commit: Some(commit.into()),
             };
             let (_writer, mut tx) = self.begin_immediate().await.unwrap();
-            Self::record_branch_head_on(&mut tx, id, &head, super::now_ms())
+            Self::record_branch_head_on(&mut tx, id, &head, now_ms())
                 .await
                 .unwrap();
             tx.commit().await.unwrap();

@@ -389,7 +389,7 @@ struct RegistryAnswer {
 
 impl RegistryAnswer {
     /// Reads `response`'s first error; an empty one if it has none.
-    async fn read(response: reqwest::Response) -> Self {
+    async fn read(response: Response) -> Self {
         /// The response's body: its errors.
         #[derive(serde::Deserialize)]
         struct Body {

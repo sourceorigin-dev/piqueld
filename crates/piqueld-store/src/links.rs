@@ -96,7 +96,7 @@ impl Store {
     pub(super) async fn bind_links_from_on(
         connection: &mut SqliteConnection,
         target: &mut ResolvedApplication,
-        previous: &piqueld_core::links::Bindings,
+        previous: &Bindings,
     ) -> Result<(), StoreError> {
         target.bindings = piqueld_core::links::bind(
             &target.exports,

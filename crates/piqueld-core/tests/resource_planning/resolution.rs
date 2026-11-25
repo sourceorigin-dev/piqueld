@@ -23,7 +23,7 @@ fn image_resolution_is_the_only_pending_compilation_input() {
     );
     assert_eq!(
         preview_resolution(&app, &resolutions()),
-        [] as [piqueld_core::ResolutionRequirement; 0]
+        [] as [ResolutionRequirement; 0]
     );
 }
 

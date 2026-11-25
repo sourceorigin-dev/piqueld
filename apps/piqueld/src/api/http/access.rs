@@ -288,7 +288,7 @@ async fn refusal(
 /// their outcome (see [`Audit`]); the caller's identity comes back on the
 /// response from authentication.
 pub(super) async fn audit(
-    State((routes, state)): State<(Arc<RouteAccess>, super::ApiState)>,
+    State((routes, state)): State<(Arc<RouteAccess>, ApiState)>,
     matched: Option<MatchedPath>,
     params: Result<RawPathParams, RawPathParamsRejection>,
     mut request: Request,
@@ -495,7 +495,7 @@ impl Audit {
     /// command refused after its WebSocket upgrade was allowed.
     pub(super) fn refused_later(
         self,
-        state: &super::ApiState,
+        state: &ApiState,
         identity: Identity,
         tailnet: Option<&TailnetPeer>,
         error: &ApiError,
@@ -517,7 +517,7 @@ impl Audit {
     /// refusals. Recording happens in the background (see
     /// `ApplicationService::record_audit`); the response never waits. A
     /// success whose changes recorded themselves is not recorded again.
-    fn record(self, state: &super::ApiState, answer: Answer) {
+    fn record(self, state: &ApiState, answer: Answer) {
         let Answer {
             tailnet,
             status,

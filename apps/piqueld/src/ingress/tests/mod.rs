@@ -116,8 +116,8 @@ impl Drop for Engine {
 }
 
 /// `[ingress.private]`, enabled.
-pub(super) fn private_config() -> piqueld_config::PrivateIngressConfig {
-    piqueld_config::PrivateIngressConfig {
+pub(super) fn private_config() -> PrivateIngressConfig {
+    PrivateIngressConfig {
         enabled: true,
         ..Default::default()
     }

@@ -97,7 +97,7 @@ async fn interrupted_actions_and_diagnostics_survive_restart_and_scope_controls_
     // Application history, including its environments', goes with the application.
     let (MutationResponse::Deleted(deleted), _) = store
         .accept(
-            crate::Actor::Daemon,
+            Actor::Daemon,
             Mutation::DeleteApplication {
                 id: application_of(&store, &op).await,
                 environments: Vec::new(),
@@ -196,7 +196,7 @@ async fn closed_incidents_cannot_be_retried_after_failed_delivery() {
         if failed_before_close {
             // The same failure remains retryable while its condition is open.
             store
-                .retry_delivery(crate::Actor::Daemon, &failure.id)
+                .retry_delivery(Actor::Daemon, &failure.id)
                 .await
                 .unwrap();
             store
@@ -214,9 +214,7 @@ async fn closed_incidents_cannot_be_retried_after_failed_delivery() {
             assert!(store.claim_delivery().await.unwrap().is_none());
         }
         assert!(matches!(
-            store
-                .retry_delivery(crate::Actor::Daemon, &failure.id)
-                .await,
+            store.retry_delivery(Actor::Daemon, &failure.id).await,
             Err(StoreError::Retry(RetryError::Closed))
         ));
     }
@@ -252,7 +250,7 @@ async fn failed_recovery_cannot_be_retried_after_its_incident_reopens() {
         .unwrap();
     // Before the incident reopens, the recovery is still accurate and retryable.
     store
-        .retry_delivery(crate::Actor::Daemon, &recovery.id)
+        .retry_delivery(Actor::Daemon, &recovery.id)
         .await
         .unwrap();
     store
@@ -261,9 +259,7 @@ async fn failed_recovery_cannot_be_retried_after_its_incident_reopens() {
         .unwrap();
     finish(false).await;
     assert!(matches!(
-        store
-            .retry_delivery(crate::Actor::Daemon, &recovery.id)
-            .await,
+        store.retry_delivery(Actor::Daemon, &recovery.id).await,
         Err(StoreError::Retry(RetryError::Reopened))
     ));
 }
@@ -296,9 +292,9 @@ async fn failed_daemon_delivery(store: &Store) -> String {
 async fn retry_refusals_name_their_reason() {
     let (_temp, store) = Store::temporary().await;
     let delivery = failed_daemon_delivery(&store).await;
-    let retry = || store.retry_delivery(crate::Actor::Daemon, &delivery);
+    let retry = || store.retry_delivery(Actor::Daemon, &delivery);
     assert!(matches!(
-        store.retry_delivery(crate::Actor::Daemon, "missing").await,
+        store.retry_delivery(Actor::Daemon, "missing").await,
         Err(StoreError::NotFound)
     ));
     retry().await.unwrap();
@@ -374,7 +370,7 @@ async fn an_undeliverable_delivery_does_not_block_the_next() {
         [claimed.id.as_str()]
     );
     assert!(matches!(
-        store.retry_delivery(crate::Actor::Daemon, &poisoned).await,
+        store.retry_delivery(Actor::Daemon, &poisoned).await,
         Err(StoreError::Retry(RetryError::UnknownCategory))
     ));
 }
@@ -592,7 +588,7 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
             .with_observability(
                 &retention,
                 &piqueld_core::ImagesConfig::default(),
-                std::time::Duration::from_secs(60),
+                Duration::from_secs(60),
             );
         notify(&store).await;
         let op = application(&store).await;
@@ -629,7 +625,7 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
             .with_observability(
                 &retention,
                 &piqueld_core::ImagesConfig::default(),
-                std::time::Duration::from_secs(60),
+                Duration::from_secs(60),
             );
         store.restart_failure_windows().await.unwrap();
         store
@@ -869,7 +865,7 @@ async fn recovery_waits_for_all_pending_failure_categories_at_the_same_destinati
         .await
         .unwrap();
     assert!(matches!(
-        store.retry_delivery(crate::Actor::Daemon, &second.id).await,
+        store.retry_delivery(Actor::Daemon, &second.id).await,
         Err(StoreError::Retry(RetryError::Recovered))
     ));
     assert!(store.claim_delivery().await.unwrap().is_none());
@@ -1024,10 +1020,7 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
         .execute(&store.pool)
         .await
         .unwrap();
-    store
-        .retry_delivery(crate::Actor::Daemon, failed)
-        .await
-        .unwrap();
+    store.retry_delivery(Actor::Daemon, failed).await.unwrap();
     let mut notified = Vec::new();
     for delivery in deliveries {
         assert_eq!(delivery.category, NotificationCategory::Security);
@@ -1053,7 +1046,7 @@ async fn security_events_record_their_system_actor() {
     let (_temp, store) = Store::temporary().await;
     let system = piqueld_core::sync::SystemActor::SyncPoll;
     let mut db = store.pool.acquire().await.unwrap();
-    let by = crate::Actor::System(system).attribution();
+    let by = Actor::System(system).attribution();
     Store::security_event_on(&mut db, SecurityEvent::AdminGranted, "granted", by)
         .await
         .unwrap();
@@ -1360,7 +1353,7 @@ async fn deployments_follow_cancelled_recoveries_and_stay_retryable() {
         .await
         .unwrap();
     store
-        .retry_delivery(crate::Actor::Daemon, &deployed.id)
+        .retry_delivery(Actor::Daemon, &deployed.id)
         .await
         .unwrap();
 }
@@ -1506,7 +1499,7 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
         "Docker is unavailable".into(),
     );
     store
-        .action_retry(&action, 1, std::time::Duration::from_secs(1), &busy)
+        .action_retry(&action, 1, Duration::from_secs(1), &busy)
         .await
         .unwrap();
     store.finish_action(&action, None).await.unwrap();
@@ -1566,7 +1559,7 @@ async fn requested_notification_changes_commit_with_their_audit_record() {
         .complete_delivery(&failure.id, DeliveryState::Failed, failed, 3600)
         .await
         .expect("the delivery fails");
-    let request = crate::testing::audit_request("POST /api/v1/notifications");
+    let request = testing::audit_request("POST /api/v1/notifications");
     let author = Author {
         actor: Actor::Daemon,
         request: Some(&request),
@@ -1655,7 +1648,7 @@ async fn requested_webhook_secret_rotations_commit_with_their_audit_record() {
     let op = application(&store).await;
     let application = application_of(&store, &op).await;
     let route = "POST /api/v1/applications/{id}/webhook/secret";
-    let request = crate::testing::audit_request(route);
+    let request = testing::audit_request(route);
     let author = Author {
         actor: Actor::Daemon,
         request: Some(&request),

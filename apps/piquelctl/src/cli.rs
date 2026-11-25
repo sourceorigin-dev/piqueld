@@ -776,7 +776,7 @@ pub(crate) struct OperationArgs {
 
 /// Accepts a request ID the daemon accepts: 1 to 128 ASCII letters, digits,
 /// `-`, `_`, `.` or `:`.
-pub(crate) fn parse_request_id(value: &str) -> std::result::Result<String, String> {
+pub(crate) fn parse_request_id(value: &str) -> Result<String, String> {
     if piqueld_client::is_request_id(value) {
         Ok(value.to_owned())
     } else {
@@ -791,7 +791,7 @@ pub(crate) fn parse_request_id(value: &str) -> std::result::Result<String, Strin
 /// ```text
 /// "500ms" → 500ms    "30" → 30s    "2m" → 120s    "7d" → 604800s    "0s" / "1.5s" / "-1" → error
 /// ```
-pub(crate) fn parse_duration(value: &str) -> std::result::Result<Duration, String> {
+pub(crate) fn parse_duration(value: &str) -> Result<Duration, String> {
     /// Converts a number of the unit, `None` when it overflows.
     type Unit = fn(u64) -> Option<Duration>;
     // `ms` comes first because it ends with `s`.

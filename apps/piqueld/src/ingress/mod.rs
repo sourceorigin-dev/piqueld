@@ -573,11 +573,8 @@ impl Ingress {
     /// call. Node failures degrade only the private listener's health, which
     /// public routes do not depend on, but still count towards the
     /// `ingress_unavailable` condition so they notify.
-    async fn synchronize_for(
-        &self,
-        application: Option<&piqueld_core::EnvironmentId>,
-    ) -> Result<()> {
-        let mut failures = std::collections::BTreeMap::new();
+    async fn synchronize_for(&self, application: Option<&EnvironmentId>) -> Result<()> {
+        let mut failures = BTreeMap::new();
         // Health messages name only the failed stage and any unmet requirement
         // of the gateway. Error details, which may include Docker/Caddy
         // response bodies, stay in daemon logs.

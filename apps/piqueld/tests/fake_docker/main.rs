@@ -80,7 +80,7 @@ fn manifest_with_jobs(jobs: &[&str], timeout_seconds: u32) -> ApplicationManifes
             name: (*name).into(),
             service: "web".into(),
             command: vec!["notes".into(), (*name).into()],
-            environment: std::collections::BTreeMap::new(),
+            environment: BTreeMap::new(),
             secrets: Vec::new(),
             run: piqueld_core::manifest::JobRun::BeforeRollout,
             timeout_seconds,
@@ -150,7 +150,7 @@ impl ControllerHarness {
                 .with_observability(
                     &config.retention,
                     &config.images,
-                    std::time::Duration::from_secs(config.reconciliation.scan_interval_seconds),
+                    Duration::from_secs(config.reconciliation.scan_interval_seconds),
                 ),
         );
         self.controller = self.new_controller();

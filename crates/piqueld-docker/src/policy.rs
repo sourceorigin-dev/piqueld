@@ -411,7 +411,7 @@ mod tests {
             .labels(),
             depends_on: Vec::new(),
             rollout: Rollout::default(),
-            security: piqueld_core::manifest::ServiceSecurity::default(),
+            security: ServiceSecurity::default(),
             receives_telemetry: false,
             telemetry: None,
         }
