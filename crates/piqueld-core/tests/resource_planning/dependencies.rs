@@ -18,8 +18,8 @@ fn dependent_application() -> ResolvedApplication {
         service("server", "\"db\""),
         service("web", ""),
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     resolve_all(&app)
 }
 

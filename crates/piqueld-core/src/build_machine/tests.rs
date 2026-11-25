@@ -10,7 +10,8 @@ fn a_builder_is_a_tcp_host_and_port() {
         ("tcp://100.64.0.1:1234/", "100.64.0.1:1234"),
         ("tcp://[fd7a::1]:1234", "[fd7a::1]:1234"),
     ] {
-        let parsed = BuilderEndpoint::try_from(endpoint.to_owned()).unwrap();
+        let parsed =
+            BuilderEndpoint::try_from(endpoint.to_owned()).expect("the builder endpoint is valid");
         assert_eq!(parsed.address(), address);
     }
     for invalid in [
@@ -30,9 +31,10 @@ fn a_builder_is_a_tcp_host_and_port() {
 
 #[test]
 fn a_build_repository_is_on_a_named_registry_without_a_tag() {
-    let repository =
-        BuildRepository::try_from("build.example.ts.net:5000/piqueld".to_owned()).unwrap();
-    let digest = Sha256Digest::parse(format!("sha256:{}", "a".repeat(64))).unwrap();
+    let repository = BuildRepository::try_from("build.example.ts.net:5000/piqueld".to_owned())
+        .expect("the build repository is valid");
+    let digest = Sha256Digest::parse(format!("sha256:{}", "a".repeat(64)))
+        .expect("the sha256 digest is valid");
     assert_eq!(
         repository.image(&digest).as_str(),
         format!("build.example.ts.net:5000/piqueld@{digest}")
@@ -47,7 +49,8 @@ fn a_build_repository_is_on_a_named_registry_without_a_tag() {
         "build.example.ts.net:5000/other",
         "build.example.ts.net:5000/piqueld/sub",
     ] {
-        let other = BuildRepository::try_from(other.to_owned()).unwrap();
+        let other =
+            BuildRepository::try_from(other.to_owned()).expect("the build repository is valid");
         assert_eq!(repository.digest_of(&other.image(&digest)), None);
     }
     for invalid in [

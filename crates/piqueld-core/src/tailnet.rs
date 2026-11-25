@@ -111,8 +111,9 @@ mod tests {
             node: "runner".into(),
             tags: vec!["tag:ci".into(), "tag:prod".into()],
         };
-        let alice = TailnetBinding::parse("alice@example.com").unwrap();
-        let ci = TailnetBinding::parse("tag:ci").unwrap();
+        let alice =
+            TailnetBinding::parse("alice@example.com").expect("the tailnet binding is valid");
+        let ci = TailnetBinding::parse("tag:ci").expect("the tailnet binding is valid");
         assert!(alice.matches(&laptop) && !alice.matches(&runner));
         assert!(ci.matches(&runner) && !ci.matches(&laptop));
         assert_eq!(runner.describe(), "tag:ci,tag:prod on runner");

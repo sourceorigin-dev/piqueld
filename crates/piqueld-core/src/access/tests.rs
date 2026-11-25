@@ -1,7 +1,7 @@
 use super::*;
 
 fn id(value: &str) -> ApplicationId {
-    ApplicationId::parse(value).unwrap()
+    ApplicationId::parse(value).expect("the application id is valid")
 }
 
 fn only(values: &[&str]) -> Scope {
@@ -11,12 +11,12 @@ fn only(values: &[&str]) -> Scope {
 fn grants(list: &[(&str, Option<&[&str]>)]) -> Grants {
     list.iter()
         .map(|(permission, applications)| Grant {
-            permission: permission.parse().unwrap(),
+            permission: permission.parse().expect("the input parses"),
             applications: applications.map(|ids| ids.iter().map(|value| id(value)).collect()),
         })
         .collect::<Vec<_>>()
         .try_into()
-        .unwrap()
+        .expect("the conversion holds")
 }
 
 /// Hidden applications do not leak; visible ones name the missing permission.
@@ -167,7 +167,7 @@ fn wire_list_is_validated_and_canonical() {
         ("apps:read", Some(&["app-shop0000"])),
     ]);
     assert_eq!(
-        serde_json::to_value(&merged).unwrap(),
+        serde_json::to_value(&merged).expect("the value serializes"),
         serde_json::json!([{"permission": "apps:read", "applications": ["app-blog0000", "app-shop0000"]}])
     );
     for invalid in [
@@ -186,7 +186,7 @@ fn wire_list_is_validated_and_canonical() {
 fn selections_scope_only_application_permissions() {
     let blog = only(&["app-blog0000"]);
     let mut selected = Preset::Developer.grants(&blog);
-    selected.grant_within("accounts:manage".parse().unwrap(), &blog);
+    selected.grant_within("accounts:manage".parse().expect("the input parses"), &blog);
     assert!(selected.has_global(GlobalPermission::AccountsManage));
     assert!(!selected.has_global(GlobalPermission::SystemRead));
     assert_eq!(selected.app_scope(AppPermission::Exec), blog);

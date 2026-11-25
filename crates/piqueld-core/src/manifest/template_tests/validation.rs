@@ -7,7 +7,7 @@ fn invalid_references_fail_validation_with_their_field_paths() {
     )
     .replace("${{ env.name }}", "${{ secrets.token }} ${{ git.sha }}")
     .replace("name = \"web\"", "name = \"${{ vars.tag }}\"");
-    let errors = parse_template_toml(&text).unwrap_err();
+    let errors = parse_template_toml(&text).expect_err("the manifest is rejected");
     assert_eq!(
         codes_and_paths(&errors),
         [
@@ -27,7 +27,7 @@ fn invalid_references_fail_validation_with_their_field_paths() {
     let text = manifest("[spec.variables]\nweb_replicas = 1\ntag = \"${{ vars.web_replicas }}\"\n")
         .replace("${{ env.name }}", "${{ git.sha }}");
     assert_eq!(
-        codes_and_paths(&parse_template_toml(&text).unwrap_err()),
+        codes_and_paths(&parse_template_toml(&text).expect_err("the manifest is rejected")),
         [
             (
                 ApiErrorCode::VariableUnavailable,
@@ -36,7 +36,7 @@ fn invalid_references_fail_validation_with_their_field_paths() {
             (ApiErrorCode::VariableNotAllowed, "spec.variables.tag"),
         ]
     );
-    let errors = parse_toml(&manifest(VARIABLES)).unwrap_err();
+    let errors = parse_toml(&manifest(VARIABLES)).expect_err("the manifest is rejected");
     assert!(
         errors
             .0
@@ -55,7 +55,7 @@ fn diagnostics_stay_bounded_for_oversized_names_and_repeated_references() {
         "[spec.variables]\nweb_replicas = 1\ntag = \"stable\"\n{name} = \"{references}\"\n"
     ))
     .replace("hello ${{ env.name }}", &references);
-    let errors = parse_template_toml(&text).unwrap_err();
+    let errors = parse_template_toml(&text).expect_err("the manifest is rejected");
     assert_eq!(errors.0.len(), 3, "{:?}", codes_and_paths(&errors));
     assert!(errors.0.iter().all(|error| error.path.len() < 300));
 }
@@ -234,7 +234,11 @@ fn unicode_diagnostic_keys_truncate_on_byte_boundaries_and_echo_on_characters() 
     }
     let mut errors = Vec::new();
     spec.check_variables(&mut errors);
-    errors.extend(spec.declared_environments().unwrap_err().0);
+    errors.extend(
+        spec.declared_environments()
+            .expect_err("the environments are rejected")
+            .0,
+    );
     let errors = ValidationErrors::sorted(errors);
     let short = "é".repeat(127);
     assert_eq!(
@@ -276,7 +280,9 @@ fn references_check_declarations_and_repository_availability_before_rendering() 
         let mut manifest = base();
         manifest.spec.services[0].command =
             vec![format!("text ${{{{{reference}}}}}${{{{vars.second}}}}").into()];
-        let errors = manifest.validate_template().unwrap_err();
+        let errors = manifest
+            .validate_template()
+            .expect_err("the template is rejected");
         assert_eq!(
             codes_and_paths(&errors),
             [(code, "spec.services[0].command[0]")]
@@ -305,14 +311,14 @@ fn references_check_declarations_and_repository_availability_before_rendering() 
 
 #[test]
 fn plain_names_paths_and_keys_reject_even_escaped_references() {
-    let mut input = serde_json::to_value(complete()).unwrap();
+    let mut input = serde_json::to_value(complete()).expect("the value serializes");
     input["spec"]["volumes"] = json!([{"name":"data"}]);
     input["spec"]["services"][0]["mounts"] = json!([{"volume":"data", "target":"/data"}]);
     input["spec"]["services"][0]["secrets"] = json!([{"name":"key", "target":"/run/secrets/key"}]);
     input["spec"]["secrets"] =
         json!([{"name":"key", "generate":{"type":"random", "bytes":32, "encoding":"hex"}}]);
     input["spec"]["services"][1]["source"]["repository"] =
-        serde_json::to_value(repository().repository).unwrap();
+        serde_json::to_value(repository().repository).expect("the value serializes");
     for &(pointer, path) in &[
         ("/metadata/name", "metadata.name"),
         ("/spec/services/0/name", "spec.services[0].name"),
@@ -353,12 +359,15 @@ fn plain_names_paths_and_keys_reject_even_escaped_references() {
         for text in ["${{env.name}}", "$${{env.name}}"] {
             let mut wire = input.clone();
             if pointer.ends_with("/commit") {
-                let parent = pointer.strip_suffix("/commit").unwrap();
-                wire.pointer_mut(parent).unwrap()["commit"] = json!(text);
+                let parent = pointer
+                    .strip_suffix("/commit")
+                    .expect("the suffix is present");
+                wire.pointer_mut(parent).expect("the pointer exists")["commit"] = json!(text);
             } else {
-                *wire.pointer_mut(pointer).unwrap() = json!(text);
+                *wire.pointer_mut(pointer).expect("the pointer exists") = json!(text);
             }
-            let errors = parse_template_json(&wire.to_string()).unwrap_err();
+            let errors =
+                parse_template_json(&wire.to_string()).expect_err("the manifest is rejected");
             assert!(
                 codes_and_paths(&errors).contains(&(ApiErrorCode::VariableNotAllowed, path)),
                 "{pointer}: {errors}"
@@ -377,8 +386,9 @@ fn plain_names_paths_and_keys_reject_even_escaped_references() {
     ] {
         for text in ["${{env.name}}", "$${{env.name}}"] {
             let mut wire = input.clone();
-            *wire.pointer_mut(pointer).unwrap() = json!({text: "literal"});
-            let errors = parse_template_json(&wire.to_string()).unwrap_err();
+            *wire.pointer_mut(pointer).expect("the pointer exists") = json!({text: "literal"});
+            let errors =
+                parse_template_json(&wire.to_string()).expect_err("the manifest is rejected");
             assert!(
                 codes_and_paths(&errors).contains(&(ApiErrorCode::VariableNotAllowed, path)),
                 "{errors}"
@@ -389,7 +399,7 @@ fn plain_names_paths_and_keys_reject_even_escaped_references() {
 
 #[test]
 fn non_template_wire_types_and_headers_reject_references_during_decode_or_validation() {
-    let mut input = serde_json::to_value(complete()).unwrap();
+    let mut input = serde_json::to_value(complete()).expect("the value serializes");
     input["spec"]["volumes"] = json!([{"name":"data"}]);
     input["spec"]["services"][0]["mounts"] =
         json!([{"volume":"data", "target":"/data", "read_only":true}]);
@@ -445,8 +455,9 @@ fn non_template_wire_types_and_headers_reject_references_during_decode_or_valida
     ] {
         for text in ["${{env.name}}", "$${{env.name}}"] {
             let mut wire = input.clone();
-            *wire.pointer_mut(pointer).unwrap() = json!(text);
-            let errors = parse_template_json(&wire.to_string()).unwrap_err();
+            *wire.pointer_mut(pointer).expect("the pointer exists") = json!(text);
+            let errors =
+                parse_template_json(&wire.to_string()).expect_err("the manifest is rejected");
             assert_eq!(
                 codes_and_paths(&errors),
                 [(ApiErrorCode::ManifestDecodeFailed, path)],
@@ -461,7 +472,9 @@ fn non_template_wire_types_and_headers_reject_references_during_decode_or_valida
         let mut wire = input.clone();
         wire[field] = json!("${{env.name}}");
         assert_eq!(
-            codes_and_paths(&parse_template_json(&wire.to_string()).unwrap_err()),
+            codes_and_paths(
+                &parse_template_json(&wire.to_string()).expect_err("the manifest is rejected")
+            ),
             [(code, field)]
         );
     }
@@ -470,15 +483,18 @@ fn non_template_wire_types_and_headers_reject_references_during_decode_or_valida
 #[test]
 fn template_parsers_agree_and_reject_bad_wire_data_and_trailing_json() {
     let text = manifest(VARIABLES);
-    let input: ApplicationManifest = toml::from_str(&text).unwrap();
-    let json = serde_json::to_string(&input).unwrap();
+    let input: ApplicationManifest = toml::from_str(&text).expect("the text deserializes");
+    let json = serde_json::to_string(&input).expect("the value serializes");
     assert_eq!(
-        parse_template_toml(&text).unwrap(),
-        parse_template_json(&json).unwrap()
+        parse_template_toml(&text).expect("the template toml parses"),
+        parse_template_json(&json).expect("the template json parses")
     );
     for text in ["not TOML", "[spec", "api_version = 2"] {
         assert_eq!(
-            parse_template_toml(text).unwrap_err().0[0].code,
+            parse_template_toml(text)
+                .expect_err("the manifest is rejected")
+                .0[0]
+                .code,
             ApiErrorCode::ManifestDecodeFailed
         );
     }
@@ -491,21 +507,26 @@ fn template_parsers_agree_and_reject_bad_wire_data_and_trailing_json() {
         ),
     ] {
         assert_eq!(
-            parse_template_json(&text).unwrap_err().0[0].code,
+            parse_template_json(&text)
+                .expect_err("the manifest is rejected")
+                .0[0]
+                .code,
             ApiErrorCode::ManifestDecodeFailed
         );
     }
-    let mut wire = serde_json::to_value(input).unwrap();
+    let mut wire = serde_json::to_value(input).expect("the value serializes");
     wire["spec"]["variables"]["tag"] = json!(["not scalar"]);
     assert_eq!(
-        codes_and_paths(&parse_template_json(&wire.to_string()).unwrap_err()),
+        codes_and_paths(
+            &parse_template_json(&wire.to_string()).expect_err("the manifest is rejected")
+        ),
         [(ApiErrorCode::ManifestDecodeFailed, "spec.variables")]
     );
 }
 
 #[test]
 fn foreign_resource_names_and_declaration_keys_reject_references() {
-    let mut input = serde_json::to_value(complete()).unwrap();
+    let mut input = serde_json::to_value(complete()).expect("the value serializes");
     input["spec"]["services"][0]["depends_on"] = json!(["b-build"]);
     input["spec"]["volumes"] = json!([{"name":"data"}]);
     input["spec"]["services"][0]["mounts"] = json!([{"volume":"data", "target":"/data"}]);
@@ -533,9 +554,11 @@ fn foreign_resource_names_and_declaration_keys_reject_references() {
     ] {
         for text in ["${{env.name}}", "$${{env.name}}"] {
             let mut wire = input.clone();
-            *wire.pointer_mut(pointer).unwrap() = json!(text);
+            *wire.pointer_mut(pointer).expect("the pointer exists") = json!(text);
             assert_eq!(
-                codes_and_paths(&parse_template_json(&wire.to_string()).unwrap_err()),
+                codes_and_paths(
+                    &parse_template_json(&wire.to_string()).expect_err("the manifest is rejected")
+                ),
                 [(code, path)]
             );
         }
@@ -543,7 +566,7 @@ fn foreign_resource_names_and_declaration_keys_reject_references() {
     for text in ["${{env.name}}", "$${{env.name}}"] {
         let mut wire = input.clone();
         wire["spec"]["variables"] = json!({text: 1});
-        let errors = parse_template_json(&wire.to_string()).unwrap_err();
+        let errors = parse_template_json(&wire.to_string()).expect_err("the manifest is rejected");
         assert_eq!(
             codes_and_paths(&errors),
             [(
@@ -554,7 +577,9 @@ fn foreign_resource_names_and_declaration_keys_reject_references() {
         wire["spec"]["variables"] = json!({});
         wire["spec"]["environments"] = json!({text: {}});
         assert_eq!(
-            codes_and_paths(&parse_template_json(&wire.to_string()).unwrap_err()),
+            codes_and_paths(
+                &parse_template_json(&wire.to_string()).expect_err("the manifest is rejected")
+            ),
             [(ApiErrorCode::NameInvalid, "spec.environments")]
         );
     }
@@ -569,7 +594,7 @@ fn type_error_diagnostics_bound_large_substituted_values() {
         .variables
         .insert("large".into(), Variable::String("x".repeat(60_000).into()));
     manifest.spec.services[0].replicas = Typed::Template("${{vars.large}}".into());
-    let errors = render(&normalize(manifest), "production").unwrap_err();
+    let errors = render(&normalize(manifest), "production").expect_err("the render is rejected");
     assert_eq!(
         codes_and_paths(&errors),
         [(

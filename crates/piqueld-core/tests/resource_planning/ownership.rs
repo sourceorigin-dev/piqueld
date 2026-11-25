@@ -14,7 +14,7 @@ use super::{application, digest, environment, instance, labels_for, observed, re
 
 #[test]
 fn desired_identity_matrices_reject_non_canonical_resources() {
-    let id = EnvironmentId::parse("app-notes-01").unwrap();
+    let id = EnvironmentId::parse("app-notes-01").expect("the environment id is valid");
     let instance = instance();
     let network = DesiredNetwork {
         name: DockerNetworkName::parse(piqueld_core::docker_resource_name(
@@ -22,7 +22,7 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
             piqueld_core::ResourceKind::Network,
             None,
         ))
-        .unwrap(),
+        .expect("the docker network name is valid"),
         labels: labels_for(&instance, &id),
     };
     assert!(network.has_valid_identity());
@@ -34,36 +34,41 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
     assert!(!mislabeled.has_valid_identity());
 
     let mut renamed = network.clone();
-    renamed.name = DockerNetworkName::parse(format!("{}x", renamed.name)).unwrap();
+    renamed.name = DockerNetworkName::parse(format!("{}x", renamed.name))
+        .expect("the docker network name is valid");
     assert!(!renamed.has_valid_identity());
 
     let volume = DesiredVolume {
-        logical_name: piqueld_core::VolumeName::parse("data").unwrap(),
+        logical_name: piqueld_core::VolumeName::parse("data").expect("the volume name is valid"),
         name: piqueld_core::DockerVolumeName::parse(piqueld_core::docker_resource_name(
             &id,
             piqueld_core::ResourceKind::Volume,
             Some("data"),
         ))
-        .unwrap(),
+        .expect("the docker volume name is valid"),
         labels: labels_for(&instance, &id),
     };
     assert!(volume.has_valid_identity());
 
-    let resolved = resolutions().sources.get("web").unwrap().clone();
+    let resolved = resolutions()
+        .sources
+        .get("web")
+        .expect("the entry exists")
+        .clone();
     let service = DesiredService {
         link_aliases: BTreeMap::new(),
         secrets: Vec::new(),
         files: Vec::new(),
-        logical_name: piqueld_core::ServiceName::parse("web").unwrap(),
+        logical_name: piqueld_core::ServiceName::parse("web").expect("the service name is valid"),
         name: piqueld_core::DockerServiceName::parse(piqueld_core::docker_resource_name(
             &id,
             piqueld_core::ResourceKind::Service,
             Some("web"),
         ))
-        .unwrap(),
+        .expect("the docker service name is valid"),
         source: resolved,
         image: piqueld_core::ImmutableImage::parse(format!("ghcr.io/example/notes@{}", digest()))
-            .unwrap(),
+            .expect("the immutable image is valid"),
         replicas: 1,
         environment: BTreeMap::default(),
         command: Vec::new(),
@@ -82,7 +87,7 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
                 piqueld_core::ResourceKind::Network,
                 None,
             ))
-            .unwrap(),
+            .expect("the docker network name is valid"),
         ],
         labels: {
             let mut labels = labels_for(&instance, &id);
@@ -101,7 +106,7 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
 
 #[test]
 fn ownership_states_classify_labels() {
-    let id = EnvironmentId::parse("app-notes-01").unwrap();
+    let id = EnvironmentId::parse("app-notes-01").expect("the environment id is valid");
     let instance = instance();
 
     assert_eq!(
@@ -110,7 +115,10 @@ fn ownership_states_classify_labels() {
     );
 
     let foreign = OwnershipState::from_labels(
-        &labels_for(&InstanceId::parse("other-instance").unwrap(), &id),
+        &labels_for(
+            &InstanceId::parse("other-instance").expect("the instance id is valid"),
+            &id,
+        ),
         &instance,
         &id,
     );
@@ -142,8 +150,8 @@ fn ownership_states_classify_labels() {
 #[test]
 fn logical_name_is_an_alias_only_on_the_private_network() {
     let app = application();
-    let mut desired =
-        compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let mut desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let ingress = DockerNetworkName::for_ingress(&environment());
     desired.services[0].networks.push(ingress.clone());
     assert_eq!(
@@ -174,8 +182,9 @@ fn logical_name_is_an_alias_only_on_the_private_network() {
 #[test]
 fn compiled_ownership_carries_the_spec_hash_label() {
     let app = application();
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
-    let hash = Sha256Digest::parse(desired.spec_hash.clone()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
+    let hash = Sha256Digest::parse(desired.spec_hash.clone()).expect("the sha256 digest is valid");
     for network in &desired.networks {
         assert_eq!(
             network
@@ -189,19 +198,20 @@ fn compiled_ownership_carries_the_spec_hash_label() {
 
 #[test]
 fn desired_names_are_checked_while_engine_observations_remain_permissive() {
-    let desired =
-        compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
-    let mut wire = serde_json::to_value(&desired).unwrap();
+    let desired = compile_application(&application(), &environment(), instance(), &resolutions())
+        .expect("the application compiles");
+    let mut wire = serde_json::to_value(&desired).expect("the value serializes");
     wire["services"][0]["name"] = "Foreign_Service".into();
     serde_json::from_value::<piqueld_core::ResolvedApplication>(wire)
         .expect_err("`serde_json::from_value` should be rejected");
 
-    let mut snapshot = serde_json::to_value(observed(&desired)).unwrap();
+    let mut snapshot = serde_json::to_value(observed(&desired)).expect("the value serializes");
     snapshot["services"][0]["name"] = "Foreign_Service".into();
     snapshot["services"][0]["mounts"] = serde_json::json!([
         {"volume_name":"Foreign.Volume", "target":"/data", "read_only":false}
     ]);
-    let observation: ObservedApplication = serde_json::from_value(snapshot).unwrap();
+    let observation: ObservedApplication =
+        serde_json::from_value(snapshot).expect("the input deserializes");
     assert_eq!(observation.services[0].name, "Foreign_Service");
     assert_eq!(
         observation.services[0].mounts[0].volume_name,
@@ -214,8 +224,8 @@ fn desired_names_are_checked_while_engine_observations_remain_permissive() {
 fn planner_rejects_wrong_resource_roles_before_use_or_deletion() {
     use piqueld_core::resource::SERVICE_LABEL;
     use piqueld_core::{ResourceKind, docker_resource_name};
-    let desired =
-        compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&application(), &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     for role in [
         ResourceKind::Network,
         ResourceKind::Volume,

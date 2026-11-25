@@ -273,7 +273,8 @@ mod tests {
         serde_json::from_str::<ExecRequest>(r#"{"service":"web","command":[]}"#)
             .expect_err("`serde_json::from_str` should be rejected");
         let request: ExecRequest =
-            serde_json::from_str(r#"{"service":"web","command":["sh","-c",""]}"#).unwrap();
+            serde_json::from_str(r#"{"service":"web","command":["sh","-c",""]}"#)
+                .expect("the text deserializes");
         assert_eq!(request.command.as_slice(), ["sh", "-c", ""]);
         assert!(!request.stdin && request.tty.is_none());
     }

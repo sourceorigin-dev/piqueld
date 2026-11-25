@@ -25,14 +25,14 @@ image = "postgres:17"
 cpu_millis = 2000
 "#,
     )
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap())
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"))
 }
 
 fn preview() -> EnvironmentKind {
     let (name, branch) = (
-        ApplicationName::parse("notes").unwrap(),
-        GitBranch::parse("feat/login").unwrap(),
+        ApplicationName::parse("notes").expect("the application name is valid"),
+        GitBranch::parse("feat/login").expect("the git branch is valid"),
     );
     EnvironmentKind::Preview(Box::new(Preview {
         slug: PreviewSlug::derive(&name, &branch, None),

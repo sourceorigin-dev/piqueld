@@ -15,14 +15,19 @@ image="example:1"
 [spec.services.environment]
 TOKEN="old-secret"
 "#;
-    let id = crate::ApplicationId::parse("app-example-01").unwrap();
-    let original = crate::parse_toml(input).unwrap().normalize(id);
+    let id = crate::ApplicationId::parse("app-example-01").expect("the application id is valid");
+    let original = crate::parse_toml(input)
+        .expect("the toml parses")
+        .normalize(id);
     let mut changed = original.to_manifest();
     changed.spec.services[0].replicas = 3.into();
     changed.spec.services[0]
         .environment
         .insert("TOKEN".into(), "new-secret".into());
-    let changed = changed.validate().unwrap().normalize(original.id().clone());
+    let changed = changed
+        .validate()
+        .expect("the manifest validates")
+        .normalize(original.id().clone());
     let (original, changed) = (original.spec().to_input(), changed.spec().to_input());
     let differences = ManifestChange::between(Some(&original), &changed);
     assert_eq!(differences.len(), 2);
@@ -33,7 +38,7 @@ TOKEN="old-secret"
                 && change.before.as_deref() == Some("1")
                 && change.after.as_deref() == Some("3"))
     );
-    let json = serde_json::to_string(&differences).unwrap();
+    let json = serde_json::to_string(&differences).expect("the value serializes");
     assert!(!json.contains("old-secret"));
     assert!(!json.contains("new-secret"));
     assert!(json.contains("redacted"));
@@ -47,7 +52,7 @@ fn edits_list_secret_declarations_and_environment_sources() {
         crate::manifest::parse_template_toml(&format!(
             "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='example'\n[spec.manifest]\npath='app.toml'\n[spec.manifest.repository]\nurl='https://example.com/app.git'\nbranch='main'\n[[spec.services]]\nname='web'\nsource={{type='image',image='example:1'}}\n{body}"
         ))
-        .unwrap()
+        .expect("the template toml parses")
         .spec()
         .clone()
     };
@@ -94,8 +99,10 @@ name="web"
 type="image"
 image="example:1"
 "#;
-    let id = crate::ApplicationId::parse("app-example-01").unwrap();
-    let original = crate::parse_toml(input).unwrap().normalize(id.clone());
+    let id = crate::ApplicationId::parse("app-example-01").expect("the application id is valid");
+    let original = crate::parse_toml(input)
+        .expect("the toml parses")
+        .normalize(id.clone());
     let with_jobs = |jobs: &[(&str, &str)]| {
         let mut manifest = original.to_manifest();
         manifest.spec.jobs = jobs
@@ -114,7 +121,7 @@ image="example:1"
             .collect();
         manifest
             .validate()
-            .unwrap()
+            .expect("the manifest validates")
             .normalize(id.clone())
             .spec()
             .to_input()

@@ -370,9 +370,10 @@ mod tests {
 
     fn slug(branch: &str, slot: Option<&str>) -> PreviewSlug {
         PreviewSlug::derive(
-            &ApplicationName::parse("notes").unwrap(),
-            &GitBranch::parse(branch).unwrap(),
-            slot.map(|slot| PreviewSlot::parse(slot).unwrap()).as_ref(),
+            &ApplicationName::parse("notes").expect("the application name is valid"),
+            &GitBranch::parse(branch).expect("the git branch is valid"),
+            slot.map(|slot| PreviewSlot::parse(slot).expect("the preview slot is valid"))
+                .as_ref(),
         )
     }
 
@@ -417,15 +418,16 @@ mod tests {
     #[test]
     fn a_one_time_revision_replaces_the_branch_or_pins_a_commit() {
         let commit = "0123456789abcdef0123456789abcdef01234567";
-        let pinned = TrackedBranch::new("main".into(), Some(commit.into())).unwrap();
+        let pinned = TrackedBranch::new("main".into(), Some(commit.into()))
+            .expect("the tracked branch is valid");
         let other = pinned
             .at(&ManifestRevision::Branch("feat/login".into()))
-            .unwrap();
+            .expect("the entry exists");
         assert_eq!((other.branch(), other.commit()), ("feat/login", None));
         let at = TrackedBranch::new("main".into(), None)
-            .unwrap()
+            .expect("the tracked branch is valid")
             .at(&ManifestRevision::Commit(commit.into()))
-            .unwrap();
+            .expect("the entry exists");
         assert_eq!(at, pinned);
         for invalid in [
             ManifestRevision::Branch("-x".into()),

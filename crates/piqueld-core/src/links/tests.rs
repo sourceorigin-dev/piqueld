@@ -3,9 +3,11 @@ use crate::EnvironmentName;
 
 fn party(id: &str, application: &str, name: &str) -> LinkParty {
     LinkParty {
-        environment: EnvironmentId::parse(format!("{id}-0000000")).unwrap(),
-        application_id: ApplicationId::parse(format!("app-{application}")).unwrap(),
-        application: ApplicationName::parse(application).unwrap(),
+        environment: EnvironmentId::parse(format!("{id}-0000000"))
+            .expect("the environment id is valid"),
+        application_id: ApplicationId::parse(format!("app-{application}"))
+            .expect("the application id is valid"),
+        application: ApplicationName::parse(application).expect("the application name is valid"),
         name: name.into(),
         preview: false,
         exports: Vec::new(),
@@ -33,10 +35,12 @@ fn deployed(mut parties: Vec<LinkParty>) -> Vec<LinkParty> {
 
 fn export(service: &str, applications: &[&str], previews: bool) -> ValidatedExport {
     ValidatedExport {
-        service: ServiceName::parse(service).unwrap(),
+        service: ServiceName::parse(service).expect("the service name is valid"),
         applications: applications
             .iter()
-            .map(|application| ApplicationName::parse(*application).unwrap())
+            .map(|application| {
+                ApplicationName::parse(*application).expect("the application name is valid")
+            })
             .collect(),
         previews,
     }
@@ -44,9 +48,10 @@ fn export(service: &str, applications: &[&str], previews: bool) -> ValidatedExpo
 
 fn import(application: &str, service: &str, environment: Option<&str>) -> ValidatedImport {
     ValidatedImport {
-        application: ApplicationName::parse(application).unwrap(),
-        service: ServiceName::parse(service).unwrap(),
-        environment: environment.map(|name| EnvironmentName::parse(name).unwrap()),
+        application: ApplicationName::parse(application).expect("the application name is valid"),
+        service: ServiceName::parse(service).expect("the service name is valid"),
+        environment: environment
+            .map(|name| EnvironmentName::parse(name).expect("the environment name is valid")),
     }
 }
 
@@ -139,9 +144,11 @@ fn grants_follow_the_application_bound_when_deployed_not_its_name() {
     let mut parties = deployed(vec![auth, notes]);
     assert_eq!(links(&parties).len(), 1);
 
-    parties[1].application = ApplicationName::parse("journal").unwrap();
+    parties[1].application =
+        ApplicationName::parse("journal").expect("the application name is valid");
     let mut impostor = party("c", "notes", "staging");
-    impostor.application_id = ApplicationId::parse("app-impostor").unwrap();
+    impostor.application_id =
+        ApplicationId::parse("app-impostor").expect("the application id is valid");
     impostor.imports = vec![import("auth", "api", None)];
     parties.push(impostor);
     let parties = deployed(parties);
@@ -154,7 +161,8 @@ fn grants_follow_the_application_bound_when_deployed_not_its_name() {
     );
 
     let mut parties = parties;
-    parties[0].application = ApplicationName::parse("identity").unwrap();
+    parties[0].application =
+        ApplicationName::parse("identity").expect("the application name is valid");
     let report = report(&parties[1].environment, &parties, &Scope::All);
     assert_eq!(report.imports[0].state, ImportState::Connected);
     assert_eq!(report.imports[0].alias, "api.identity");

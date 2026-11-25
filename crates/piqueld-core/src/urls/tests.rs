@@ -8,12 +8,13 @@ use crate::{Convergence, RouteName, ServiceName};
 
 fn route() -> ValidatedRoute {
     ValidatedRoute {
-        hostname: crate::manifest::RouteHostname::parse("notes.example.com").unwrap(),
-        name: Some(RouteName::parse("web").unwrap()),
+        hostname: crate::manifest::RouteHostname::parse("notes.example.com")
+            .expect("the route hostname is valid"),
+        name: Some(RouteName::parse("web").expect("the route name is valid")),
         visibility: Visibility::Public,
         target: RouteTarget::Service {
-            service: ServiceName::parse("web").unwrap(),
-            port: 3000.try_into().unwrap(),
+            service: ServiceName::parse("web").expect("the service name is valid"),
+            port: 3000.try_into().expect("the conversion holds"),
         },
     }
 }
@@ -78,7 +79,7 @@ fn a_url_is_ready_only_when_every_condition_holds() {
     let ready = derive(|_, _, _| {});
     assert_eq!(ready.state, UrlState::Ready);
     assert_eq!(ready.url, "https://notes.example.com");
-    assert_eq!(ready.name.unwrap().as_str(), "web");
+    assert_eq!(ready.name.expect("the name is valid").as_str(), "web");
     assert_eq!(ready.pending, []);
 }
 
@@ -144,7 +145,7 @@ fn each_condition_keeps_a_url_pending() {
     let unchecked =
         https("Not checked yet: the daemon verifies HTTPS once the gateway serves the route");
     let web = UrlCondition::Service {
-        service: ServiceName::parse("web").unwrap(),
+        service: ServiceName::parse("web").expect("the service name is valid"),
     };
     let cases: [(&str, RouteUrl, Vec<UrlCondition>); 9] = [
         (
@@ -174,8 +175,8 @@ fn each_condition_keeps_a_url_pending() {
             "checked before its target changed",
             derive(|_, ingress, _| {
                 ingress.routes[0].target = RouteTarget::Service {
-                    service: ServiceName::parse("api").unwrap(),
-                    port: 80.try_into().unwrap(),
+                    service: ServiceName::parse("api").expect("the service name is valid"),
+                    port: 80.try_into().expect("the conversion holds"),
                 };
             }),
             vec![unchecked],
@@ -215,7 +216,7 @@ fn redirects_need_no_service_and_manual_dns_is_not_pending() {
         redirect: serde_json::from_value(
             serde_json::json!({"to": "https://example.com", "status": 308, "preserve_path": true}),
         )
-        .unwrap(),
+        .expect("the input deserializes"),
     };
     let mut status = status(&redirect);
     status.dns_state = DnsRecordState::Manual;

@@ -43,16 +43,16 @@ VITE_ORIGIN = "{arg}"
 REVISION = "${{{{ git.sha }}}}"
 "#
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-shop-0001").unwrap())
+    .expect("the template toml parses")
+    .normalize(ApplicationId::parse("app-shop-0001").expect("the application id is valid"))
 }
 
 fn environment(name: &str) -> EnvironmentId {
-    EnvironmentId::parse(format!("env-{name}-0001")).unwrap()
+    EnvironmentId::parse(format!("env-{name}-0001")).expect("the environment id is valid")
 }
 
 fn instance() -> InstanceId {
-    InstanceId::parse("instance").unwrap()
+    InstanceId::parse("instance").expect("the instance id is valid")
 }
 
 /// The release staging records after building `web` from `template`.
@@ -63,8 +63,11 @@ fn staging_release(template: ApplicationTemplate) -> Release {
         sources: BTreeMap::new(),
     };
     let rendering = unprepared
-        .render(EnvironmentName::parse("staging").unwrap(), None)
-        .unwrap();
+        .render(
+            EnvironmentName::parse("staging").expect("the environment name is valid"),
+            None,
+        )
+        .expect("the template renders");
     let web = &rendering.application.spec().services[0];
     let resolutions = ResolutionSet {
         sources: BTreeMap::from([(
@@ -73,7 +76,7 @@ fn staging_release(template: ApplicationTemplate) -> Release {
                 requested: web.source.clone(),
                 commit: COMMIT.into(),
                 image_id: Sha256Digest::parse(format!("sha256:{}", "a".repeat(64)))
-                    .unwrap()
+                    .expect("the sha256 digest is valid")
                     .into(),
             },
         )]),
@@ -85,14 +88,14 @@ fn staging_release(template: ApplicationTemplate) -> Release {
         instance(),
         &resolutions,
     )
-    .unwrap();
+    .expect("the application compiles");
     Release::new(unprepared.template, unprepared.commit, &target)
 }
 
 #[test]
 fn records_provenance_images_and_fingerprint_and_hashes_content() {
     let release = staging_release(template("https://example.com"));
-    let web = ServiceName::parse("web").unwrap();
+    let web = ServiceName::parse("web").expect("the service name is valid");
     let ResolvedSource::Git {
         commit, image_id, ..
     } = &release.sources()[&web]
@@ -118,14 +121,18 @@ fn records_provenance_images_and_fingerprint_and_hashes_content() {
         )
     );
     let renamed = Release {
-        template: release
-            .template
-            .clone()
-            .with_name(crate::ApplicationName::parse("store").unwrap()),
+        template: release.template.clone().with_name(
+            crate::ApplicationName::parse("store").expect("the application name is valid"),
+        ),
         ..release.clone()
     };
     assert_ne!(renamed.content_hash(), release.content_hash());
-    let mut manifest = release.template.spec().manifest.clone().unwrap();
+    let mut manifest = release
+        .template
+        .spec()
+        .manifest
+        .clone()
+        .expect("the value is present");
     manifest.repository.branch = "release".into();
     let branched = Release {
         template: release.template.clone().with_manifest(Some(manifest)),
@@ -143,10 +150,10 @@ fn instantiates_for_an_environment_whose_variables_change_only_runtime_fields() 
     let release = staging_release(template("https://example.com"));
     let rendering = release
         .render(
-            EnvironmentName::parse("production").unwrap(),
+            EnvironmentName::parse("production").expect("the environment name is valid"),
             Some("deployment".into()),
         )
-        .unwrap();
+        .expect("the template renders");
     let target = compile_release(
         &rendering.application,
         &environment("production"),
@@ -154,13 +161,18 @@ fn instantiates_for_an_environment_whose_variables_change_only_runtime_fields() 
         &release,
         BTreeMap::new(),
     )
-    .unwrap();
+    .expect("the release compiles");
     let web = &target.services[0];
     assert_eq!(web.replicas, 3);
     assert_eq!(web.environment["ORIGIN"], "https://example.com");
     assert_eq!(
         web.source,
-        release.sources().values().next().unwrap().clone()
+        release
+            .sources()
+            .values()
+            .next()
+            .expect("the next item exists")
+            .clone()
     );
 }
 
@@ -168,8 +180,11 @@ fn instantiates_for_an_environment_whose_variables_change_only_runtime_fields() 
 fn refuses_an_environment_that_renders_a_build_argument_differently() {
     let release = staging_release(template("https://${{ vars.domain }}"));
     let rendering = release
-        .render(EnvironmentName::parse("production").unwrap(), None)
-        .unwrap();
+        .render(
+            EnvironmentName::parse("production").expect("the environment name is valid"),
+            None,
+        )
+        .expect("the template renders");
     let errors = compile_release(
         &rendering.application,
         &environment("production"),
@@ -177,7 +192,7 @@ fn refuses_an_environment_that_renders_a_build_argument_differently() {
         &release,
         BTreeMap::new(),
     )
-    .unwrap_err();
+    .expect_err("the release is rejected");
     assert_eq!(
         errors
             .iter()

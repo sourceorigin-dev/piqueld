@@ -1,4 +1,8 @@
 //! Manifest parsing, validation budgets, canonicalization, and hashing.
+#![expect(
+    clippy::expect_used,
+    reason = "Test helpers expect on fixtures that are valid by construction."
+)]
 
 use piqueld_core::ApiErrorCode;
 use piqueld_core::{
@@ -15,20 +19,20 @@ const GOLDEN_SPEC_HASH: &str =
 
 fn normalized() -> NormalizedApplication {
     parse_toml(TOML)
-        .unwrap()
-        .normalize(ApplicationId::parse("app-notes-01").unwrap())
+        .expect("the toml parses")
+        .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"))
 }
 
 /// Asserts that validating `manifest` reports exactly `expected` codes and
 /// paths, in order.
 fn assert_errors(manifest: &str, expected: &[(ApiErrorCode, &str)]) {
-    let errors = parse_toml(manifest).unwrap_err();
+    let errors = parse_toml(manifest).expect_err("the manifest is rejected");
     let found = errors
         .0
         .iter()
         .map(|error| {
             (
-                ApiErrorCode::parse(&error.code).unwrap(),
+                ApiErrorCode::parse(&error.code).expect("the api error code is valid"),
                 error.path.as_str(),
             )
         })
@@ -63,7 +67,7 @@ fn image_manifest_parses_from_both_supported_formats() {
     let json = parse_json(JSON).expect("valid JSON manifest");
     assert_eq!(toml.name().as_str(), "notes");
     assert_eq!(toml.spec(), json.spec());
-    let id = ApplicationId::parse("app-notes-01").unwrap();
+    let id = ApplicationId::parse("app-notes-01").expect("the application id is valid");
     assert_eq!(
         toml.normalize(id.clone()).spec_hash(),
         json.normalize(id).spec_hash()
@@ -75,21 +79,22 @@ fn image_manifest_parses_from_both_supported_formats() {
 #[test]
 fn the_basic_website_example_is_valid() {
     let example = parse_toml(include_str!("../../../examples/basic-website.toml"))
-        .unwrap()
-        .normalize(ApplicationId::parse("app-basic-website").unwrap());
-    let reparsed = parse_toml(&example.export_toml().unwrap())
-        .unwrap()
+        .expect("the basic website example parses")
+        .normalize(ApplicationId::parse("app-basic-website").expect("the application ID is valid"));
+    let reparsed = parse_toml(&example.export_toml().expect("the example exports"))
+        .expect("the exported example parses")
         .normalize(example.id().clone());
     assert_eq!(example, reparsed);
 }
 
 #[test]
 fn normalization_is_canonical_and_round_trips() {
-    let validated = parse_toml(TOML).unwrap();
-    let normalized = validated.normalize(ApplicationId::parse("app-notes-01").unwrap());
-    let exported = normalized.export_toml().unwrap();
+    let validated = parse_toml(TOML).expect("the toml parses");
+    let normalized = validated
+        .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
+    let exported = normalized.export_toml().expect("the manifest exports");
     let reparsed = parse_toml(&exported)
-        .unwrap()
+        .expect("the toml parses")
         .normalize(normalized.id().clone());
     assert_eq!(normalized, reparsed);
     let renormalized = reparsed.clone().normalize();
@@ -100,9 +105,9 @@ fn normalization_is_canonical_and_round_trips() {
 fn spec_hash_is_pinned_and_ignores_metadata() {
     let app = normalized();
     assert_eq!(app.spec_hash(), GOLDEN_SPEC_HASH);
-    let exported = app.export_toml().unwrap();
+    let exported = app.export_toml().expect("the manifest exports");
     let renamed = parse_toml(&exported.replace("name = \"notes\"", "name = \"renamed\""))
-        .unwrap()
+        .expect("the toml parses")
         .normalize(app.id().clone());
     assert_eq!(renamed.metadata().name.as_str(), "renamed");
     assert_eq!(renamed.spec_hash(), app.spec_hash());
@@ -124,9 +129,11 @@ type = "image"
 image = "nginx:1"
 "#;
     let swapped = base.replace("\"sh\", \"-c\"", "\"-c\", \"sh\"");
-    let id = ApplicationId::parse("app-notes-01").unwrap();
-    let left = parse_toml(base).unwrap().normalize(id.clone());
-    let right = parse_toml(&swapped).unwrap().normalize(id);
+    let id = ApplicationId::parse("app-notes-01").expect("the application id is valid");
+    let left = parse_toml(base)
+        .expect("the toml parses")
+        .normalize(id.clone());
+    let right = parse_toml(&swapped).expect("the toml parses").normalize(id);
     assert_ne!(left.spec_hash(), right.spec_hash());
 }
 
@@ -141,14 +148,14 @@ fn dependency_manifest(services: &[(&str, &[&str])]) -> String {
             manifest,
             "[[spec.services]]\nname = \"{name}\"\ndepends_on = {depends_on:?}\n[spec.services.source]\ntype = \"image\"\nimage = \"nginx:1.27\"\n"
         )
-        .unwrap();
+        .expect("the value deserializes");
     }
     manifest
 }
 
 fn dependency_errors(services: &[(&str, &[&str])]) -> Vec<(String, String)> {
     parse_toml(&dependency_manifest(services))
-        .unwrap_err()
+        .expect_err("the manifest is rejected")
         .0
         .into_iter()
         .map(|error| (error.code, error.path))
@@ -162,8 +169,8 @@ fn service_dependencies_are_canonical_and_hashed() {
         ("db", &[]),
         ("cache", &[]),
     ]))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     let web = &app.spec().services[2];
     assert_eq!(
         web.depends_on
@@ -172,8 +179,8 @@ fn service_dependencies_are_canonical_and_hashed() {
             .collect::<Vec<_>>(),
         ["cache", "db"]
     );
-    let reparsed = parse_toml(&app.export_toml().unwrap())
-        .unwrap()
+    let reparsed = parse_toml(&app.export_toml().expect("the manifest exports"))
+        .expect("the toml parses")
         .normalize(app.id().clone());
     assert_eq!(app, reparsed);
     let independent = parse_toml(&dependency_manifest(&[
@@ -181,7 +188,7 @@ fn service_dependencies_are_canonical_and_hashed() {
         ("db", &[]),
         ("cache", &[]),
     ]))
-    .unwrap()
+    .expect("the toml parses")
     .normalize(app.id().clone());
     assert_ne!(app.spec_hash(), independent.spec_hash());
 }
@@ -249,7 +256,7 @@ type = "image"
 image = "nginx:1.27"
 "#,
     )
-    .unwrap_err();
+    .expect_err("the manifest is rejected");
     let [error] = error.0.as_slice() else {
         panic!("expected one decode error: {error}");
     };
@@ -363,7 +370,7 @@ stop_service = "yes"
 "#,
         valid_manifest("notes")
     );
-    let error = parse_toml(&manifest).unwrap_err();
+    let error = parse_toml(&manifest).expect_err("the manifest is rejected");
     let [error] = error.0.as_slice() else {
         panic!("expected one decode error: {error}");
     };
@@ -381,7 +388,7 @@ image = ["notes"]
 "#,
         valid_manifest("notes")
     );
-    let error = parse_toml(&manifest).unwrap_err();
+    let error = parse_toml(&manifest).expect_err("the manifest is rejected");
     let [error] = error.0.as_slice() else {
         panic!("expected one decode error: {error}");
     };
@@ -391,7 +398,8 @@ image = ["notes"]
 
 #[test]
 fn malformed_and_invalid_manifests_return_safe_validation_errors() {
-    let error = parse_toml(include_str!("fixtures/manifests/invalid.toml")).unwrap_err();
+    let error = parse_toml(include_str!("fixtures/manifests/invalid.toml"))
+        .expect_err("the manifest is rejected");
     assert!(has_code(&error, ApiErrorCode::ApiVersionUnsupported));
     assert!(has_code(&error, ApiErrorCode::ImageInvalid));
     let display = error.to_string();
@@ -399,7 +407,7 @@ fn malformed_and_invalid_manifests_return_safe_validation_errors() {
         assert!(display.contains(&item.code), "{display}");
         assert!(display.contains(&item.path), "{display}");
     }
-    let error = parse_json("{\"api_version\":").unwrap_err();
+    let error = parse_json("{\"api_version\":").expect_err("the json is rejected");
     assert!(
         error
             .0
@@ -420,7 +428,7 @@ fn registry_host_case_is_canonicalized_and_ipv6_is_rejected() {
         );
         let app = parse_toml(&uppercased)
             .expect("uppercase registry hosts are accepted")
-            .normalize(ApplicationId::parse("app-notes-01").unwrap());
+            .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
         match &app.spec().services[0].source {
             piqueld_core::manifest::ValidatedSource::Image { image } => {
                 assert_eq!(image, canonical);
@@ -430,7 +438,7 @@ fn registry_host_case_is_canonicalized_and_ipv6_is_rejected() {
     }
 
     let ipv6 = valid_manifest("notes").replace("ghcr.io/example", "[::1]:5000/example");
-    let error = parse_toml(&ipv6).unwrap_err();
+    let error = parse_toml(&ipv6).expect_err("the manifest is rejected");
     assert!(has_code(&error, ApiErrorCode::ImageInvalid));
 }
 
@@ -482,7 +490,7 @@ fn environment_entries_are_checked_and_errors_quote_the_key() {
             "{}[spec.services.environment]\n\"{key}\" = \"{value}\"\n",
             valid_manifest("notes")
         );
-        let errors = parse_toml(&manifest).unwrap_err();
+        let errors = parse_toml(&manifest).expect_err("the manifest is rejected");
         let error = errors
             .0
             .iter()
@@ -561,7 +569,7 @@ fn collection_and_argument_budgets_are_enforced() {
             ApiErrorCode::VolumeCountExcessive,
         ),
     ] {
-        let errors = parse_toml(&manifest).unwrap_err();
+        let errors = parse_toml(&manifest).expect_err("the manifest is rejected");
         assert!(has_code(&errors, code), "{code}: {errors:?}");
     }
 }
@@ -592,7 +600,7 @@ volume = "data"
 target = "{target}"
 "#
         );
-        let errors = parse_toml(&manifest).unwrap_err();
+        let errors = parse_toml(&manifest).expect_err("the manifest is rejected");
         assert!(
             has_code(&errors, ApiErrorCode::MountTargetUnsafe),
             "{target}"
@@ -617,15 +625,15 @@ fn at_most_one_service_receives_telemetry() {
             "spec.services[1].receives_telemetry",
         )],
     );
-    let id = ApplicationId::parse("app-notes-01").unwrap();
+    let id = ApplicationId::parse("app-notes-01").expect("the application id is valid");
     let receiving = parse_toml(&format!("{header}{}", service("a")))
-        .unwrap()
+        .expect("the toml parses")
         .normalize(id.clone());
     let plain = parse_toml(&format!(
         "{header}{}",
         service("a").replace("receives_telemetry = true\n", "")
     ))
-    .unwrap()
+    .expect("the toml parses")
     .normalize(id);
     assert!(receiving.spec().services[0].receives_telemetry);
     assert_errors(
@@ -652,9 +660,13 @@ fn at_most_one_service_receives_telemetry() {
 fn security_settings_are_hashed_and_validated() {
     let security = "\n[spec.services.security]\nuser = \"1000:1000\"\nread_only_root = true\ndrop_capabilities = true\nno_new_privileges = true\n";
     let manifest = |extra: &str| format!("{}{security}{extra}", valid_manifest("notes"));
-    let id = ApplicationId::parse("app-notes-01").unwrap();
-    let hardened = parse_toml(&manifest("")).unwrap().normalize(id.clone());
-    let plain = parse_toml(&valid_manifest("notes")).unwrap().normalize(id);
+    let id = ApplicationId::parse("app-notes-01").expect("the application id is valid");
+    let hardened = parse_toml(&manifest(""))
+        .expect("the toml parses")
+        .normalize(id.clone());
+    let plain = parse_toml(&valid_manifest("notes"))
+        .expect("the toml parses")
+        .normalize(id);
     let settings = hardened.spec().services[0].security;
     assert_eq!(
         settings.user.map(|user| user.to_string()).as_deref(),
@@ -692,7 +704,7 @@ fn healthcheck_rules_include_the_interval_cap_and_single_zero_error() {
         "image = \"ghcr.io/example/notes:1\"",
         "image = \"ghcr.io/example/notes:1\"\n\n[spec.services.healthcheck]\ntype = \"http\"\nport = 8080\ninterval_seconds = 0\ntimeout_seconds = 5",
     );
-    let errors = parse_toml(&zero_interval).unwrap_err();
+    let errors = parse_toml(&zero_interval).expect_err("the manifest is rejected");
     let interval_errors = errors
         .0
         .iter()
@@ -710,7 +722,7 @@ fn healthcheck_rules_include_the_interval_cap_and_single_zero_error() {
         "image = \"ghcr.io/example/notes:1\"",
         "image = \"ghcr.io/example/notes:1\"\n\n[spec.services.healthcheck]\ntype = \"http\"\nport = 8080\ninterval_seconds = 3601\ntimeout_seconds = 10",
     );
-    let errors = parse_toml(&huge_interval).unwrap_err();
+    let errors = parse_toml(&huge_interval).expect_err("the manifest is rejected");
     assert!(has_code(
         &errors,
         ApiErrorCode::HealthcheckIntervalExcessive
@@ -720,7 +732,7 @@ fn healthcheck_rules_include_the_interval_cap_and_single_zero_error() {
         "image = \"ghcr.io/example/notes:1\"",
         "image = \"ghcr.io/example/notes:1\"\n\n[spec.services.healthcheck]\ntype = \"http\"\nport = 8080\ninterval_seconds = 10\ntimeout_seconds = 11",
     );
-    let errors = parse_toml(&timeout_above_interval).unwrap_err();
+    let errors = parse_toml(&timeout_above_interval).expect_err("the manifest is rejected");
     assert!(has_code(&errors, ApiErrorCode::HealthcheckTimeoutInvalid));
 
     let healthcheck = |settings: &str| {
@@ -731,19 +743,22 @@ fn healthcheck_rules_include_the_interval_cap_and_single_zero_error() {
             ),
         )
     };
-    let errors = parse_toml(&healthcheck("start_period_seconds = 3601")).unwrap_err();
+    let errors = parse_toml(&healthcheck("start_period_seconds = 3601"))
+        .expect_err("the manifest is rejected");
     assert!(has_code(
         &errors,
         ApiErrorCode::HealthcheckStartPeriodExcessive
     ));
     for retries in [0, 101] {
-        let errors = parse_toml(&healthcheck(&format!("retries = {retries}"))).unwrap_err();
+        let errors = parse_toml(&healthcheck(&format!("retries = {retries}")))
+            .expect_err("the manifest is rejected");
         assert!(
             has_code(&errors, ApiErrorCode::HealthcheckRetriesInvalid),
             "{retries}"
         );
     }
-    parse_toml(&healthcheck("start_period_seconds = 3600\nretries = 100")).unwrap();
+    parse_toml(&healthcheck("start_period_seconds = 3600\nretries = 100"))
+        .expect("the toml parses");
 }
 
 #[test]
@@ -905,18 +920,23 @@ fn rollout_manifest(settings: &str) -> String {
 #[test]
 fn rollout_settings_are_typed_bounded_and_backwards_compatible() {
     use piqueld_core::manifest::{RolloutOrder, ValidatedRollout as Rollout};
-    let id = ApplicationId::parse("app-notes-01").unwrap();
+    let id = ApplicationId::parse("app-notes-01").expect("the application id is valid");
 
     let empty = parse_toml(&rollout_manifest(""))
-        .unwrap()
+        .expect("the toml parses")
         .normalize(id.clone());
     assert_eq!(empty.spec_hash(), GOLDEN_SPEC_HASH);
-    assert!(!empty.export_toml().unwrap().contains("rollout"));
+    assert!(
+        !empty
+            .export_toml()
+            .expect("the manifest exports")
+            .contains("rollout")
+    );
 
     let explicit = parse_toml(&rollout_manifest(
         "order = \"start-first\"\nmonitor_seconds = 3600",
     ))
-    .unwrap()
+    .expect("the toml parses")
     .normalize(id.clone());
     assert_eq!(
         explicit.spec().services[0].rollout,
@@ -926,20 +946,20 @@ fn rollout_settings_are_typed_bounded_and_backwards_compatible() {
         }
     );
     assert_ne!(explicit.spec_hash(), GOLDEN_SPEC_HASH);
-    let reparsed = parse_toml(&explicit.export_toml().unwrap())
-        .unwrap()
+    let reparsed = parse_toml(&explicit.export_toml().expect("the manifest exports"))
+        .expect("the toml parses")
         .normalize(id);
     assert_eq!(explicit, reparsed);
 
     for monitor in [0, Rollout::MAX_MONITOR_SECONDS + 1] {
         let errors = parse_toml(&rollout_manifest(&format!("monitor_seconds = {monitor}")))
-            .unwrap_err()
+            .expect_err("the manifest is rejected")
             .0;
         assert_eq!(
             errors
                 .iter()
                 .map(|error| (
-                    ApiErrorCode::parse(&error.code).unwrap(),
+                    ApiErrorCode::parse(&error.code).expect("the api error code is valid"),
                     error.path.as_str()
                 ))
                 .collect::<Vec<_>>(),
@@ -949,7 +969,8 @@ fn rollout_settings_are_typed_bounded_and_backwards_compatible() {
             )]
         );
     }
-    let unknown = parse_toml(&rollout_manifest("order = \"rolling\"")).unwrap_err();
+    let unknown =
+        parse_toml(&rollout_manifest("order = \"rolling\"")).expect_err("the manifest is rejected");
     assert_eq!(unknown.0[0].code, ApiErrorCode::ManifestDecodeFailed);
 }
 
@@ -966,35 +987,37 @@ proptest! {
 #[test]
 fn normalized_deserialization_revalidates_and_canonicalizes_configuration() {
     let original = parse_toml(&valid_manifest("notes"))
-        .unwrap()
-        .normalize(ApplicationId::parse("app-domain-01").unwrap());
-    let mut wire = serde_json::to_value(&original).unwrap();
+        .expect("the toml parses")
+        .normalize(ApplicationId::parse("app-domain-01").expect("the application id is valid"));
+    let mut wire = serde_json::to_value(&original).expect("the value serializes");
     let mut later = wire["spec"]["services"][0].clone();
     later["name"] = "z-last".into();
     let mut earlier = later.clone();
     earlier["name"] = "a-first".into();
     wire["spec"]["services"] = serde_json::json!([later, earlier]);
-    let decoded: NormalizedApplication = serde_json::from_value(wire.clone()).unwrap();
+    let decoded: NormalizedApplication =
+        serde_json::from_value(wire.clone()).expect("the input deserializes");
     assert_eq!(decoded.spec().services[0].name.as_str(), "a-first");
     assert_eq!(decoded.spec().services[1].name.as_str(), "z-last");
     assert_eq!(decoded.id(), original.id());
     let expected = decoded
         .to_manifest()
         .validate()
-        .unwrap()
+        .expect("the manifest validates")
         .normalize(original.id().clone());
     assert_eq!(decoded.spec_hash(), expected.spec_hash());
 
     for pointer in ["/metadata/name", "/spec/services/0/name"] {
         let mut malformed = wire.clone();
-        *malformed.pointer_mut(pointer).unwrap() = "INVALID".into();
+        *malformed.pointer_mut(pointer).expect("the pointer exists") = "INVALID".into();
         serde_json::from_value::<NormalizedApplication>(malformed)
             .expect_err("`serde_json::from_value` should be rejected");
     }
     wire["spec"]["services"][0]["mounts"] = serde_json::json!([
         {"volume": "undeclared", "target": "/data", "read_only": false}
     ]);
-    let error = serde_json::from_value::<NormalizedApplication>(wire).unwrap_err();
+    let error = serde_json::from_value::<NormalizedApplication>(wire)
+        .expect_err("the normalized application is rejected");
     assert!(error.to_string().contains("mount"), "{error}");
 }
 
@@ -1085,10 +1108,10 @@ fn manifest_json_schema_matches_serde_strictness() {
     for (name, tag, value, decodes) in cases {
         let variant = definitions[name]["oneOf"]
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
             .find(|variant| variant["properties"][tag]["enum"][0] == value[tag])
-            .unwrap();
+            .expect("the item is found");
         let admitted = variant["additionalProperties"] != false;
         assert_eq!(admitted, decodes(&value), "{value}");
     }
@@ -1155,8 +1178,8 @@ name = "database-password"
 generate = { type = "random", bytes = 32 }
 "#,
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     let secrets = &app.spec().secrets;
     assert_eq!(secrets[0].name, "database-password");
     assert_eq!(
@@ -1166,8 +1189,8 @@ generate = { type = "random", bytes = 32 }
             encoding: SecretEncoding::Hex
         }
     );
-    let reparsed = parse_toml(&app.export_toml().unwrap())
-        .unwrap()
+    let reparsed = parse_toml(&app.export_toml().expect("the manifest exports"))
+        .expect("the toml parses")
         .normalize(app.id().clone());
     assert_eq!(app, reparsed);
 
@@ -1181,7 +1204,7 @@ name = "key"
 generate = { type = "random", bytes = 8, encoding = "base64url" }
 "#,
     ))
-    .unwrap_err();
+    .expect_err("the manifest is rejected");
     let found = error
         .0
         .iter()
@@ -1213,8 +1236,8 @@ run = "before-rollout"
 timeout_seconds = 60
 "#;
     let app = parse_toml(&(valid_manifest("notes") + jobs))
-        .unwrap()
-        .normalize(ApplicationId::parse("app-notes-01").unwrap());
+        .expect("the toml parses")
+        .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     let names = app
         .spec()
         .jobs
@@ -1222,12 +1245,12 @@ timeout_seconds = 60
         .map(|job| (job.name.as_str(), job.timeout_seconds))
         .collect::<Vec<_>>();
     assert_eq!(names, [("migrate", 300), ("seed", 60)]);
-    let reparsed = parse_toml(&app.export_toml().unwrap())
-        .unwrap()
+    let reparsed = parse_toml(&app.export_toml().expect("the manifest exports"))
+        .expect("the toml parses")
         .normalize(app.id().clone());
     assert_eq!(reparsed, app);
     let without_jobs = parse_toml(&valid_manifest("notes"))
-        .unwrap()
+        .expect("the toml parses")
         .normalize(app.id().clone());
     assert_ne!(app.spec_hash(), without_jobs.spec_hash());
 
@@ -1244,13 +1267,14 @@ service = "web"
 command = ["notes"]
 run = "before-rollout"
 "#;
-    let error = parse_toml(&(valid_manifest("notes") + invalid)).unwrap_err();
+    let error =
+        parse_toml(&(valid_manifest("notes") + invalid)).expect_err("the manifest is rejected");
     let found = error
         .0
         .iter()
         .map(|error| {
             (
-                ApiErrorCode::parse(&error.code).unwrap(),
+                ApiErrorCode::parse(&error.code).expect("the api error code is valid"),
                 error.path.as_str(),
             )
         })
@@ -1289,14 +1313,14 @@ name = "owner-password"
 target = "/run/secrets/owner"
 "#;
     let app = parse_toml(&(valid_manifest("notes") + job))
-        .unwrap()
-        .normalize(ApplicationId::parse("app-notes-01").unwrap());
+        .expect("the toml parses")
+        .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     assert_eq!(
         app.spec().mounted_secret_names(),
         ["app-key", "owner-password"].into()
     );
-    let reparsed = parse_toml(&app.export_toml().unwrap())
-        .unwrap()
+    let reparsed = parse_toml(&app.export_toml().expect("the manifest exports"))
+        .expect("the toml parses")
         .normalize(app.id().clone());
     assert_eq!(reparsed, app);
 
@@ -1309,7 +1333,7 @@ target = "/run/secrets/owner"
     });
     let found = conflicting
         .validate()
-        .unwrap_err()
+        .expect_err("the manifest is rejected")
         .0
         .into_iter()
         .map(|error| (error.code, error.path))
@@ -1338,15 +1362,15 @@ fn dependency_jobs_must_precede_jobs_that_start_their_services() {
          type = \"image\"\nimage = \"storage:1\"\n",
         valid_manifest("notes")
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap())
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"))
     .to_manifest();
     manifest
         .spec
         .services
         .iter_mut()
         .find(|service| service.name == "web")
-        .unwrap()
+        .expect("the item is found")
         .depends_on = vec!["db".into()];
     manifest.spec.jobs = ["storage", "db", "web"]
         .into_iter()
@@ -1362,11 +1386,11 @@ fn dependency_jobs_must_precede_jobs_that_start_their_services() {
             stop_service: false,
         })
         .collect();
-    manifest.clone().validate().unwrap();
+    manifest.clone().validate().expect("the manifest validates");
     for dependency in [0, 1] {
         let mut invalid = manifest.clone();
         invalid.spec.jobs.swap(dependency, 2);
-        let errors = invalid.validate().unwrap_err();
+        let errors = invalid.validate().expect_err("the manifest is rejected");
         assert!(errors.0.iter().any(
             |error| error.code == ApiErrorCode::JobDependencyOrderInvalid
                 && error.path == format!("spec.jobs[{dependency}].service")
@@ -1384,8 +1408,8 @@ fn exclusive_jobs_need_a_writable_volume_their_dependencies_do_not_mount() {
          command = [\"notes\", \"migrate\"]\nrun = \"before-rollout\"\n",
         valid_manifest("notes")
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap())
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"))
     .to_manifest();
     let mount = |read_only| piqueld_core::manifest::Mount {
         volume: "data".into(),
@@ -1445,8 +1469,8 @@ application = "auth"
 service = "events"
 "#;
     let app = parse_toml(&format!("{}{links}", valid_manifest("notes")))
-        .unwrap()
-        .normalize(ApplicationId::parse("app-notes-01").unwrap());
+        .expect("the toml parses")
+        .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     assert_eq!(app.spec().exports[0].service.as_str(), "web");
     assert_eq!(app.spec().exports[0].applications.len(), 2);
     assert_eq!(app.spec().imports[0].alias(), "api.auth");
@@ -1457,8 +1481,8 @@ service = "events"
             .map(piqueld_core::EnvironmentName::as_str),
         Some("staging")
     );
-    let reparsed = parse_toml(&app.export_toml().unwrap())
-        .unwrap()
+    let reparsed = parse_toml(&app.export_toml().expect("the manifest exports"))
+        .expect("the toml parses")
         .normalize(app.id().clone());
     assert_eq!(reparsed, app);
 
@@ -1481,7 +1505,7 @@ application = "auth"
 service = "api"
 "#;
     let errors = parse_toml(&format!("{}{invalid}", valid_manifest("notes")))
-        .unwrap_err()
+        .expect_err("the manifest is rejected")
         .0
         .into_iter()
         .map(|error| (error.code, error.path))

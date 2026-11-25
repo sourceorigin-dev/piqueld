@@ -174,15 +174,23 @@ mod tests {
 
     #[test]
     fn identity_types_validate_at_boundaries() {
-        assert_eq!(InstanceId::parse("UPPERCASE").unwrap_err(), InstanceIdError);
+        assert_eq!(
+            InstanceId::parse("UPPERCASE").expect_err("the instance id is rejected"),
+            InstanceIdError
+        );
         serde_json::from_str::<InstanceId>(r#""instance-1""#)
             .expect("`serde_json::from_str` should succeed");
         serde_json::from_str::<InstanceId>(r#""-invalid""#)
             .expect_err("`serde_json::from_str` should be rejected");
         let digest = format!("sha256:{}", "a".repeat(64));
-        assert_eq!(Sha256Digest::parse(&digest).unwrap().as_str(), digest);
         assert_eq!(
-            Sha256Digest::parse("sha256:bad").unwrap_err(),
+            Sha256Digest::parse(&digest)
+                .expect("the sha256 digest is valid")
+                .as_str(),
+            digest
+        );
+        assert_eq!(
+            Sha256Digest::parse("sha256:bad").expect_err("the sha256 digest is rejected"),
             Sha256DigestError
         );
     }

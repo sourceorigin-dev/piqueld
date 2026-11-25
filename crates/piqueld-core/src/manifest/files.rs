@@ -317,20 +317,22 @@ mod tests {
     fn a_file_has_exactly_one_source_and_an_octal_mode() {
         let parse = |toml: &str| toml::from_str::<ServiceFile>(toml);
         assert_eq!(
-            parse("target = \"/etc/motd\"\ncontent = \"${HOME} {{ x }}\"").unwrap(),
+            parse("target = \"/etc/motd\"\ncontent = \"${HOME} {{ x }}\"")
+                .expect("the input parses"),
             ServiceFile {
                 target: "/etc/motd".into(),
                 source: FileSource::Content("${HOME} {{ x }}".into()),
                 mode: FileMode::READ_ONLY,
             }
         );
-        let file = parse("target = \"/etc/a\"\npath = \"a.yaml\"\nmode = \"0640\"").unwrap();
+        let file = parse("target = \"/etc/a\"\npath = \"a.yaml\"\nmode = \"0640\"")
+            .expect("the input parses");
         assert_eq!(
             (file.source.clone(), file.mode.bits()),
             (FileSource::Path("a.yaml".into()), 0o640)
         );
         assert_eq!(
-            toml::to_string(&file).unwrap(),
+            toml::to_string(&file).expect("the value serializes"),
             "target = \"/etc/a\"\npath = \"a.yaml\"\nmode = \"0640\"\n"
         );
         for invalid in [
@@ -343,7 +345,13 @@ mod tests {
         ] {
             assert!(parse(invalid).is_err(), "{invalid}");
         }
-        assert_eq!("644".parse::<FileMode>().unwrap().to_string(), "0644");
+        assert_eq!(
+            "644"
+                .parse::<FileMode>()
+                .expect("the file mode parses")
+                .to_string(),
+            "0644"
+        );
     }
 
     /// piqueld.dev's manifests validate, and a deployment can capture every
@@ -355,7 +363,8 @@ mod tests {
             include_str!("../../../../deploy/piqueld-dev.toml"),
             include_str!("../../../../deploy/piqueld-observability.toml"),
         ] {
-            let application = crate::manifest::parse_template_toml(manifest).unwrap();
+            let application =
+                crate::manifest::parse_template_toml(manifest).expect("the template toml parses");
             let files = RepositoryFiles(
                 application
                     .spec()
@@ -368,7 +377,10 @@ mod tests {
                     })
                     .collect(),
             );
-            application.spec().check_captured(&files).unwrap();
+            application
+                .spec()
+                .check_captured(&files)
+                .expect("the check captures");
         }
     }
 
@@ -378,7 +390,7 @@ mod tests {
         let example = crate::manifest::parse_template_toml(include_str!(
             "../../../../examples/observability/application.toml"
         ))
-        .unwrap();
+        .expect("the template toml parses");
         assert!(example.spec().repository_file_paths().is_empty());
     }
 }

@@ -19,9 +19,10 @@ fn jobs_reuse_their_service_container_under_a_distinct_identity() {
          command = [\"notes\", \"migrate\"]\nrun = \"before-rollout\"\n",
         include_str!("../fixtures/manifests/prebuilt.toml")
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let (service, job) = (&desired.services[0], &desired.jobs[0]);
     assert!(job.has_valid_identity());
     assert_ne!(job.container.name, service.name);
@@ -31,9 +32,13 @@ fn jobs_reuse_their_service_container_under_a_distinct_identity() {
     assert!(!service.mounts[0].read_only);
     assert_eq!(job.exclusive_volumes().count(), 0);
     assert!(job.for_operation("operation-1").container.mounts[0].read_only);
-    let mut legacy = serde_json::to_value(job).unwrap();
-    legacy.as_object_mut().unwrap().remove("volume_access");
-    let legacy: piqueld_core::DesiredJob = serde_json::from_value(legacy).unwrap();
+    let mut legacy = serde_json::to_value(job).expect("the value serializes");
+    legacy
+        .as_object_mut()
+        .expect("the value is an object")
+        .remove("volume_access");
+    let legacy: piqueld_core::DesiredJob =
+        serde_json::from_value(legacy).expect("the input deserializes");
     assert!(legacy.for_operation("operation-1").container.mounts[0].read_only);
     assert_eq!(job.container.networks, service.networks);
     assert_eq!(job.container.command, ["notes", "migrate"]);
@@ -80,9 +85,10 @@ fn jobs_add_their_environment_and_secrets_to_their_container_only() {
          [[spec.jobs.secrets]]\nname = \"owner-password\"\ntarget = \"/run/secrets/owner\"\n",
         include_str!("../fixtures/manifests/prebuilt.toml")
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
-    let errors = compile_application(&app, &environment(), instance(), &resolutions()).unwrap_err();
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
+    let errors = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect_err("the application is rejected");
     assert_eq!(
         errors
             .iter()
@@ -95,7 +101,8 @@ fn jobs_add_their_environment_and_secrets_to_their_container_only() {
     pinned
         .secret_names
         .insert("owner-password".into(), "owner-password-v1".into());
-    let desired = compile_application(&app, &environment(), instance(), &pinned).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &pinned)
+        .expect("the application compiles");
     let (service, job) = (&desired.services[0], &desired.jobs[0]);
     assert_eq!(
         service.environment,
@@ -123,7 +130,7 @@ fn jobs_add_their_environment_and_secrets_to_their_container_only() {
 fn migration(
     configure: impl FnOnce(&mut piqueld_core::manifest::Job),
 ) -> piqueld_core::NormalizedApplication {
-    let id = ApplicationId::parse("app-notes-01").unwrap();
+    let id = ApplicationId::parse("app-notes-01").expect("the application id is valid");
     let mut manifest = parse_toml(&format!(
         "{}[[spec.services]]\nname = \"db\"\n[spec.services.source]\n\
          type = \"image\"\nimage = \"ghcr.io/example/notes:1.4.0\"\n\
@@ -131,7 +138,7 @@ fn migration(
          command = [\"notes\", \"migrate\"]\nrun = \"before-rollout\"\n",
         include_str!("../fixtures/manifests/prebuilt.toml")
     ))
-    .unwrap()
+    .expect("the toml parses")
     .normalize(id.clone())
     .to_manifest();
     configure(&mut manifest.spec.jobs[0]);
@@ -140,7 +147,10 @@ fn migration(
             service.depends_on = vec!["db".into()];
         }
     }
-    manifest.validate().unwrap().normalize(id)
+    manifest
+        .validate()
+        .expect("the manifest validates")
+        .normalize(id)
 }
 
 /// The fixture's exclusive migration of `web`.
@@ -154,7 +164,7 @@ fn web(desired: &ResolvedApplication) -> &piqueld_core::DesiredService {
         .services
         .iter()
         .find(|service| service.logical_name.as_str() == "web")
-        .unwrap()
+        .expect("the item is found")
 }
 
 #[test]
@@ -211,7 +221,11 @@ fn assert_job_stops_web(desired: &ResolvedApplication) {
 
     let mut repair = plan_for(&ready);
     assert_eq!(
-        repair.next_repair().unwrap().kind.to_string(),
+        repair
+            .next_repair()
+            .expect("the repair exists")
+            .kind
+            .to_string(),
         "ENSURE SERVICE web"
     );
     repair.preserve_job_prerequisites(desired, &ready);
@@ -246,7 +260,7 @@ fn previews_list_jobs_after_their_dependencies_and_warn_about_stopped_services()
         names
             .iter()
             .position(|name| name.starts_with(prefix))
-            .unwrap()
+            .expect("the item is present")
     };
     assert!(position("ENSURE SERVICE db") < position("RUN JOB migrate"));
     assert!(position("WAIT SERVICE") < position("RUN JOB migrate"));

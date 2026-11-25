@@ -239,11 +239,13 @@ mod tests {
 
     fn view(commit: Option<&str>, sync: bool, synced: bool) -> EnvironmentView {
         EnvironmentView {
-            id: EnvironmentId::parse("env-0000000001").unwrap(),
-            application_id: ApplicationId::parse("app-0000000001").unwrap(),
+            id: EnvironmentId::parse("env-0000000001").expect("the environment id is valid"),
+            application_id: ApplicationId::parse("app-0000000001")
+                .expect("the application id is valid"),
             name: EnvironmentName::default_name(),
             source: EnvironmentSource::Branch(
-                TrackedBranch::new("main".into(), commit.map(Into::into)).unwrap(),
+                TrackedBranch::new("main".into(), commit.map(Into::into))
+                    .expect("the tracked branch is valid"),
             ),
             kind: EnvironmentKind::Environment,
             sync,
@@ -294,7 +296,9 @@ mod tests {
 
     #[test]
     fn sync_settings_decode_with_a_default_interval_and_validate_its_range() {
-        let decode = |toml: &str| toml::from_str::<RepositorySync>(toml).unwrap();
+        let decode = |toml: &str| {
+            toml::from_str::<RepositorySync>(toml).expect("the repository sync deserializes")
+        };
         assert_eq!(
             decode("mode = 'poll'"),
             RepositorySync::Poll {

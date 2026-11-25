@@ -12,7 +12,8 @@ use super::{application, environment, instance, observed, resolutions};
 #[test]
 fn planner_creates_only_supported_runtime_actions() {
     let app = application();
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let plan = Plan::from_request(
         &PlanRequest::Reconcile {
             desired: desired.clone(),
@@ -43,7 +44,9 @@ fn plan_shows_effective_rollouts_and_warns_about_overlapping_writers() {
     let rollout = |app: &piqueld_core::NormalizedApplication| {
         let mut plan = Plan::default();
         plan.warn_rollouts(app, piqueld_core::manifest::Rollback::Manual);
-        let [view] = ServiceRolloutView::for_application(app).try_into().unwrap();
+        let [view] = ServiceRolloutView::for_application(app)
+            .try_into()
+            .expect("the conversion holds");
         (view, plan)
     };
 
@@ -62,8 +65,8 @@ fn plan_shows_effective_rollouts_and_warns_about_overlapping_writers() {
         "{}\n[spec.services.rollout]\norder = \"start-first\"\n",
         include_str!("../fixtures/manifests/prebuilt.toml")
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     let (explicit, plan) = rollout(&overlapping);
     assert_eq!(
         (explicit.order, explicit.order_source),
@@ -91,8 +94,8 @@ fn automatic_rollback_warns_about_routed_services_without_health_checks() {
     let fixture = include_str!("../fixtures/manifests/prebuilt.toml");
     let app = |extra: &str| {
         parse_toml(&format!("{fixture}{extra}"))
-            .unwrap()
-            .normalize(ApplicationId::parse("app-notes-01").unwrap())
+            .expect("the toml parses")
+            .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"))
     };
     let warnings = |app: &piqueld_core::NormalizedApplication, rollback| {
         let mut plan = Plan::default();
@@ -125,7 +128,8 @@ fn automatic_rollback_warns_about_routed_services_without_health_checks() {
 #[test]
 fn converged_services_need_no_work_and_delete_retains_volumes() {
     let app = application();
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let observed = observed(&desired);
     let plan = Plan::from_request(
         &PlanRequest::Reconcile {
@@ -194,7 +198,8 @@ fn converged_services_need_no_work_and_delete_retains_volumes() {
 #[test]
 fn obsolete_cleanup_is_gated_and_reports_deferred_diagnostics() {
     let app = application();
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let base = observed(&desired);
     let mut gated = base.clone();
     gated.services[0].convergence = Convergence::Updating;
@@ -260,7 +265,8 @@ fn obsolete_cleanup_is_gated_and_reports_deferred_diagnostics() {
 #[test]
 fn failed_convergence_blocks_with_a_service_update_diagnostic() {
     let app = application();
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let mut failed = observed(&desired);
     let service = &mut failed.services[0];
     service.convergence = Convergence::Failed;
@@ -310,8 +316,8 @@ fn runtime_messages_are_cleaned_and_capped() {
 
 #[test]
 fn cleanup_plans_are_stable_across_engine_listing_order() {
-    let desired =
-        compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&application(), &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let mut snapshot = observed(&desired);
     let mut obsolete_names = Vec::new();
     for logical in ["old-z", "old-a"] {
