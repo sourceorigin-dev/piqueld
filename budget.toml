@@ -1,5 +1,6 @@
-# Each crate's number of `#[expect]` lints; every new one raises it, which
-# the owner reviews. `just standard` fails until a count equals its budget.
+# Each crate's number of `#[expect]` lints and of `// wall-clock:` lines;
+# every new one raises it, which the owner reviews. `just standard` fails
+# until a count equals its budget.
 [expect]
 piquelctl = 24
 piqueld = 65
@@ -12,3 +13,9 @@ piqueld-probe = 2
 piqueld-store = 11
 piqueld-ui = 60
 xtask = 4
+
+[wall-clock]
+piquelctl = 2
+piqueld = 22
+piqueld-client = 1
+piqueld-store = 1
