@@ -33,7 +33,6 @@ paths = ["crates/piqueld-client/src/generated.rs"]
 reason = "8 findings in 5 files, fixed in a follow-up"
 paths = [
   "Cargo.toml",
-  "justfile",
 ]
 
 [deviations.doc-length]

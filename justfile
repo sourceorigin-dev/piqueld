@@ -1,14 +1,13 @@
-# CI's quick checks for only what changed, which is what matters most while
-# working; `validate` runs everything.
+# CI's quick checks for only what changed; `validate` runs everything.
 default: check-changed
 
-# Validation checks sources and generated artifacts without modifying them.
+# Every local check CI runs, without modifying files.
 validate: fmt-check lint-ci standard lint check test doc doc-test audit unused openapi-check boundary check-wasm test-playwright docs
 
 build:
     @cargo build --workspace --locked
 
-# Native CLI validation on Linux and macOS, including its shared contracts.
+# Native CLI validation on Linux and macOS.
 validate-cli:
     @cargo clippy --locked --package piquelctl --package piqueld-client --package piqueld-core --all-targets --all-features -- -D warnings
     @cargo nextest run --locked --package piquelctl --package piqueld-client --package piqueld-core
@@ -32,21 +31,12 @@ fmt:
 fmt-check:
     @cargo fmt --all -- --check
 
-# Lints the GitHub workflows, running shellcheck over their `run` steps, and
-# the shell scripts.
+# Lints the GitHub workflows and the shell scripts.
 lint-ci:
     @actionlint
     @shellcheck scripts/*.sh apps/site/install.sh
 
-# The native build compiles the browser code out, so the dashboard and client
-# are linted as wasm32 too. Without --no-deps this also lints their workspace
-# dependencies (piqueld-core) as wasm32. The workspace pass unifies features
-# across crates, so a crate can compile there only because another crate
-# enables a feature it needs: linting each crate alone catches that.
-# Clippy with warnings denied: the workspace, wasm32, and each crate alone.
-# `--package <crate>` arguments (or `-p <crate>`) narrow it to those crates:
-# the workspace pass lints them together, each is linted alone, and the
-# wasm32 pass runs only if they include the dashboard or the client.
+# Clippy, warnings denied: workspace, wasm32 and each crate alone.
 lint *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -87,15 +77,12 @@ check-wasm:
     @rustup target add wasm32-unknown-unknown
     @cargo check --locked --package piqueld-client --all-targets --target wasm32-unknown-unknown
 
-# Runs focused transport tests in a headless browser. The development shell
-# must provide wasm-bindgen-test-runner and a supported WebDriver.
+# Runs the transport tests in a headless browser (needs a WebDriver).
 test-wasm:
     @rustup target add wasm32-unknown-unknown
     @WASM_BINDGEN_TEST_ONLY_WEB=1 CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --locked --package piqueld-client --lib --target wasm32-unknown-unknown
 
-# All features, like lint: the daemon tests run against the real embedded
-# bundle, and lint, test, and doc-test share one build. ARGS go on to nextest,
-# such as `--package piquelctl`, in place of `--workspace`.
+# Runs nextest; ARGS, such as `--package piquelctl`, replace `--workspace`.
 test *ARGS='--workspace':
     @cargo nextest run --locked --all-features {{ARGS}}
 
@@ -103,14 +90,12 @@ test *ARGS='--workspace':
 doc-test *ARGS='--workspace':
     @cargo test --locked --doc --all-features {{ARGS}}
 
-# Runs `test` under coverage instrumentation, writes an HTML report to
-# target/llvm-cov/html, and prints each crate's totals. ARGS go on to nextest.
-# Not part of `validate`; see docs/dev/validation.md for what it leaves out.
+# Runs `test` under coverage, reporting to target/llvm-cov/html.
 [positional-arguments]
 coverage *ARGS:
     @cargo xtask coverage "$@"
 
-# Advisories, licenses, bans and sources, as deny.toml configures them.
+# Advisories, licenses, bans and sources (deny.toml).
 audit:
     @cargo deny check
 
@@ -118,15 +103,11 @@ audit:
 unused:
     @cargo machete
 
-# Private items are documented, since most of the code is internal and its docs
-# link to it.
-# Rustdoc warnings, such as broken intra-doc links, fail the build. ARGS, such
-# as `--package piqueld-core`, replace `--workspace`.
+# Rustdoc, private items included; ARGS replace `--workspace`.
 doc *ARGS='--workspace':
     @RUSTDOCFLAGS='-D warnings -A rustdoc::private_intra_doc_links' cargo doc --locked --no-deps --all-features --document-private-items {{ARGS}}
 
-# Check generated artifacts against freshly generated endpoint, manifest,
-# configuration, and command-line metadata.
+# Checks the generated artifacts against freshly generated ones.
 openapi-check:
     @cargo run --locked --package piqueld --example generate_openapi -- --check
     @cargo run --locked --package piquelctl --example cli_reference -- --check
@@ -138,11 +119,8 @@ boundary:
 standard:
     @cargo xtask standard
 
-# Reads CI's path filters in .github/filters.yml, runs the Rust checks on the
-# changed crates and those depending on them, and names the slow checks it
-# leaves to CI; see docs/dev/validation.md.
 # CI's quick checks for what changed since the merge base with origin/main, or
-# the branch given, counting uncommitted and untracked files.
+# the branch given.
 [positional-arguments]
 check-changed *ARGS:
     @cargo xtask check-changed "$@"
@@ -167,17 +145,11 @@ dist:
 release *ARGS:
     @cargo xtask release "$@"
 
-# UI checks and embedded builds need only the wasm32 target from
-# rust-toolchain.toml: the daemon build script compiles and binds the dashboard
-# itself. Default all-feature Clippy builds the embedded dashboard, and
-# Playwright validation builds it through its Rust fixture too.
+# Type-checks the dashboard and client for wasm32.
 ui-check:
     @cargo check --locked --target wasm32-unknown-unknown --package piqueld-client --package piqueld-ui
 
-# Release daemon and CLI; the daemon build script compiles the dashboard.
-# Build the shipped binaries together so Cargo can share dependencies and schedule both.
-# The features are the daemon's: `piqueld/embedded-ui` would name the feature of
-# the daemon's dev-dependency on itself, which this build leaves out.
+# Release daemon and CLI with the dashboard embedded.
 build-embedded:
     @cargo build --release --package piqueld --package piquelctl --bin piqueld --bin piquelctl --features embedded-ui --locked
 
@@ -190,16 +162,12 @@ daemon-embedded *ARGS:
 dev *ARGS:
     @cargo xtask dev "$@"
 
-# Prepares a new worktree: its development configuration and a workspace build.
-# T3 Code runs it when it creates a worktree (t3.json).
+# Prepares a new worktree; T3 Code runs it (t3.json).
 setup-worktree:
     #!/usr/bin/env bash
     set -euo pipefail
-    # T3 Code often creates several worktrees at once: build at low priority on
-    # half the CPUs this process may use (`nproc`, else the online ones, as on
-    # macOS), unless Cargo's `build.jobs` (or CARGO_BUILD_JOBS) says otherwise.
-    # `cargo config get` is unstable, hence RUSTC_BOOTSTRAP; if it fails, the
-    # default applies.
+    # Worktrees are often created together: build on half the CPUs unless
+    # `build.jobs` is set (`config get` is unstable, hence RUSTC_BOOTSTRAP).
     if ! RUSTC_BOOTSTRAP=1 cargo -Zunstable-options config get build.jobs >/dev/null 2>&1; then
         export CARGO_BUILD_JOBS="$(( ($(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1) + 1) / 2 ))"
     fi
@@ -211,19 +179,12 @@ setup-worktree:
 ctl *ARGS:
     @cargo xtask dev ctl "$@"
 
-# Generate the OpenAPI document and client, the manifest and configuration JSON
-# Schemas, and the configuration reference page together, then the CLI
-# reference page, whose generator builds on the regenerated client.
+# Generates the OpenAPI document, client, schemas and reference pages.
 generate:
     @cargo run --locked --package piqueld --example generate_openapi
     @cargo run --locked --package piquelctl --example cli_reference
 
-# Builds the documentation book into target/book, failing on any mdBook
-# warning, then checks every link and heading anchor in it and in the
-# repository's Markdown files, offline (see lychee.toml). Links to this
-# repository on GitHub are checked against the checkout; the second remap
-# fails those that don't point at main, which would otherwise go unchecked.
-# CI runs this on every pull request; see docs/dev/documentation.md.
+# Builds the documentation book and checks its links offline.
 docs:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -243,34 +204,25 @@ docs:
 docs-serve *ARGS:
     @mdbook serve "$@"
 
-# Runs the Docker integration tests against a throwaway Docker-in-Docker engine.
-# ARGS select a suite, `ingress` or `engine`, a shard of it, such as
-# `engine --partition count:1/2`, and the engine's image store, such as
-# `--store containerd`; see `cargo xtask docker-test --help`.
+# Docker integration tests on a throwaway engine; see `docker-test --help`.
 [positional-arguments]
 docker-test *ARGS:
     @cargo xtask docker-test "$@"
 
-# Explicit development-only setup: pinned JS packages and a containerized browser.
+# Development-only setup: pinned JS packages and a containerized browser.
 setup-playwright:
     @pnpm --dir tests/playwright install --frozen-lockfile --ignore-scripts
     @docker pull "mcr.microsoft.com/playwright:v$(node -p 'require("./tests/playwright/package.json").devDependencies["@playwright/test"]')-noble"
 
-# The Rust fixture serves the embedded UI/API with isolated state and no Docker backend.
 [positional-arguments]
 test-playwright *ARGS: build-playwright
     @cargo xtask playwright "$@"
 
-# Regenerates the dashboard screenshots in docs/images whose page changed,
-# through the browser suite's fixture with deployments to its fake Docker
-# engine. With `--update-snapshots=none`, fails on an outdated one instead:
-# see docs/dev/documentation.md.
+# Regenerates the dashboard screenshots in docs/images.
 [positional-arguments]
 docs-screenshots *ARGS: build-playwright
     @cargo xtask playwright --config screenshots.config.ts "$@"
 
-# Builds what the browser runs need: the CLI and the Rust fixture, and
-# type-checks the Playwright specs.
 [private]
 build-playwright:
     @cargo build --locked --package piquelctl
