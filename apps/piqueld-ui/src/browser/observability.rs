@@ -22,6 +22,9 @@ use piqueld_client::{
 use std::collections::BTreeSet;
 use std::time::Duration;
 
+/// How often [`Refresh::new`] bumps the revision.
+const REFRESH_PERIOD: Duration = Duration::from_secs(5);
+
 /// Revision counter that observability resources track to refetch.
 /// Bumped every 5 seconds while the tab is visible, or on demand.
 #[derive(Clone, Copy)]
@@ -30,7 +33,7 @@ pub(super) struct Refresh(RwSignal<u64>);
 impl Refresh {
     /// Starts the 5-second interval, cleared when the owning view unmounts.
     pub(super) fn new() -> Self {
-        Self::every(Duration::from_secs(5))
+        Self::every(REFRESH_PERIOD)
     }
 
     /// Starts an interval of `period`, cleared when the owning view unmounts.
