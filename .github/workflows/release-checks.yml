@@ -1,20 +1,6 @@
-# Release builds of piqueld, checked after merging instead of before.
-#
-#   nix     -> every Nix package, and the NixOS modules' VM tests
-#   package -> publish --dry-run
-#   install -> dist, then install.sh
-#
-# Each one compiles the workspace with release optimizations, which takes far
-# longer than the few minutes CI aims to take, so they don't gate pull requests
-# or the merge queue. They run on pushes to main that change what they build
-# from, such as a manifest, a build script, a migration, the flake or
-# install.sh, and nightly to catch the rest, along with what breaks without a
-# commit, such as a new stable Rust or runner image. A failure opens an issue,
-# or comments on the open one, and the next passing run closes it
-# (.github/actions/report); see docs/dev/validation.md.
-#
-# Caches are saved from main, as in CI. The release workflow restores the
-# install job's.
+# Release builds of piqueld, checked after merging instead of before: `nix`,
+# `package` (publish --dry-run) and `install` (dist, then install.sh). What
+# they cover, when they run and the cache notes are in docs/dev/validation.md.
 
 name: Release checks
 
@@ -46,8 +32,7 @@ on:
     - cron: "0 4 * * *"
   workflow_dispatch:
 
-# Only a branch's latest commit matters: it contains every earlier one. Runs
-# on other branches, started by hand, leave main's alone.
+# Only a branch's latest commit matters; other branches leave main's alone.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -55,18 +40,16 @@ concurrency:
 permissions:
   contents: read
 
-# As in CI and the release workflow: rust-cache's key hashes the CARGO*, RUST*
-# and CC* variables, so the three restore each other's caches only while they
-# match.
+# As in CI and the release workflow: they share rust-cache keys only while
+# these CARGO*, RUST* and CC* variables match.
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   RUST_BACKTRACE: short
 
 jobs:
-  # Builds every Nix package. Crane's dependency builds are rooted with
-  # out-links so the cache action's garbage collection keeps them; without
-  # roots it deletes them, and every run rebuilds every dependency.
+  # Every Nix package; crane's dependency builds are rooted so the cache's GC
+  # keeps them.
   nix:
     name: nix packages
     runs-on: ubuntu-latest
@@ -80,16 +63,14 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
       - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          # Keys are immutable, so each main build saves a fresh one; the
-          # newest one with the same lockfiles restores first.
+          # Keys are immutable: each main build saves a fresh one.
           primary-key: nix-x86_64-linux-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}-${{ github.sha }}
           restore-prefixes-first-match: |
             nix-x86_64-linux-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}-
             nix-x86_64-linux-
           save: ${{ github.ref == 'refs/heads/main' }}
           gc-max-store-size-linux: 4G
-          # Only caches no run restored for a day: a failed save must not
-          # purge the last usable cache.
+          # Only caches unused for a day: keeps the last usable one.
           purge: ${{ github.ref == 'refs/heads/main' }}
           purge-prefixes: nix-x86_64-linux-
           purge-last-accessed: P1D
@@ -102,9 +83,7 @@ jobs:
       - name: Test the build machine and build registry modules
         run: nix build -L .#checks.x86_64-linux.piqueld-builder
 
-  # Packages every published crate, with the dashboard the daemon ships, and
-  # builds each from its package, as `cargo install` would: everything
-  # `just publish` does except uploading.
+  # Everything `just publish` does except uploading.
   package:
     name: package
     runs-on: ubuntu-latest
@@ -121,12 +100,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask publish --dry-run
 
-  # Builds the release archive as the release workflow does, then installs it
-  # with install.sh on the runner, which has systemd and Docker Engine like a
-  # user's host. The script runs as the runner's user, as users run it, with
-  # sudo for the steps that need root; --yes also adds that user to the
-  # piqueld group. The second run is an update, which must leave the daemon
-  # running too. The cache is shared with the release workflow's build.
+  # Builds the release archive, then installs it with install.sh as a user
+  # would; the second run is an update. Shares the release workflow's cache.
   install:
     name: install
     runs-on: ubuntu-latest
@@ -150,15 +125,13 @@ jobs:
             echo "::endgroup::"
           done
       - run: sudo piquelctl status
-      # A member of the piqueld group reaches the daemon without an account to
-      # print the setup link; sg runs it with the group the script added.
+      # sg runs it with the piqueld group the script added.
       - run: sg piqueld -c 'piquelctl setup-link'
       - name: Show the daemon's logs
         if: failure()
         run: sudo journalctl --unit piqueld --no-pager
 
-  # Keeps an issue open while main fails a release check; manual runs on
-  # another branch leave it alone.
+  # Keeps an issue open while main fails a release check.
   report:
     name: report
     needs: [nix, package, install]
@@ -176,6 +149,5 @@ jobs:
       - uses: ./.github/actions/report
         with:
           title: Release checks fail on main
-          # A job that hits its timeout reports `cancelled`; the run itself
-          # being cancelled skips this job.
+          # A job that hits its timeout reports `cancelled`.
           failed: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
