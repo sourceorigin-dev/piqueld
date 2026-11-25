@@ -910,11 +910,11 @@ mod tests {
     use super::*;
 
     fn host(name: &str) -> Hostname {
-        Hostname::parse(name).unwrap()
+        Hostname::parse(name).expect("the hostname parses")
     }
 
     fn route(name: &str) -> RouteHostname {
-        RouteHostname::parse(name).unwrap()
+        RouteHostname::parse(name).expect("the route hostname parses")
     }
 
     #[test]
@@ -958,9 +958,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_stored_wildcard_keeps_serving_while_no_zone_is_known() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let certificates = Certificates::new(
-            Dns::new(Vec::new()).unwrap(),
+            Dns::new(Vec::new()).expect("the value is valid"),
             AcmeConfig::default(),
             directory.path().into(),
         );
@@ -991,7 +991,7 @@ mod tests {
         let problems: Vec<_> = certificates
             .status()
             .into_iter()
-            .map(|status| (status.name, status.error.unwrap()))
+            .map(|status| (status.name, status.error.expect("the error is set")))
             .collect();
         assert_eq!(
             problems,

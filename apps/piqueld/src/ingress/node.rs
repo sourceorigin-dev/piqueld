@@ -321,7 +321,7 @@ mod tests {
             ("fd00::/8", true),
             ("fd7b::/16", false),
         ] {
-            let parsed = Subnet::parse(subnet).unwrap();
+            let parsed = Subnet::parse(subnet).expect("the subnet parses");
             assert_eq!(parsed.overlaps_tailnet(), overlaps, "{subnet}");
         }
         for invalid in ["10.0.0.0", "10.0.0.0/33", "::/129", "nonsense/8"] {

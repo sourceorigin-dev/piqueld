@@ -25,9 +25,12 @@ async fn disabled_ingress_removes_its_own_edge_network() {
                             axum::response::IntoResponse::into_response(axum::Json(network))
                         }
                         (Method::DELETE, path) => {
-                            deleted
-                                .lock()
-                                .push(path.rsplit('/').next().unwrap().to_owned());
+                            deleted.lock().push(
+                                path.rsplit('/')
+                                    .next()
+                                    .expect("the next item exists")
+                                    .to_owned(),
+                            );
                             axum::response::IntoResponse::into_response(
                                 hyper::StatusCode::NO_CONTENT,
                             )
@@ -40,7 +43,11 @@ async fn disabled_ingress_removes_its_own_edge_network() {
             })
         })
         .await;
-        engine.ingress(false).stop_gateway().await.unwrap();
+        engine
+            .ingress(false)
+            .stop_gateway()
+            .await
+            .expect("stop gateway succeeds");
         let expected: &[&str] = if removed { &["edge-id"] } else { &[] };
         assert_eq!(*deleted.lock(), expected);
     }
@@ -75,13 +82,27 @@ async fn prepare_on_subnet(
     }
     let app = application("public", "www.example.com", "body");
     let (id, _) = request_deployment(&engine.store, Actor::Daemon, app).await;
-    environment.set(id.to_string()).unwrap();
+    environment
+        .set(id.to_string())
+        .expect("the variable is set");
     let store = &engine.store;
     let route = routes(Visibility::Public, "www.example.com");
-    store.stage_routes(&id, &route, true, None).await.unwrap();
-    let table = store.routing_table().await.unwrap();
-    store.acknowledge_routes(&table).await.unwrap();
-    let (prepared, _, mut failures) = ingress.prepare_routes(&table).await.unwrap();
+    store
+        .stage_routes(&id, &route, true, None)
+        .await
+        .expect("stage routes succeeds");
+    let table = store
+        .routing_table()
+        .await
+        .expect("the routing table loads");
+    store
+        .acknowledge_routes(&table)
+        .await
+        .expect("acknowledge routes succeeds");
+    let (prepared, _, mut failures) = ingress
+        .prepare_routes(&table)
+        .await
+        .expect("prepare routes succeeds");
     (prepared[&id].clone(), failures.remove(&id))
 }
 
@@ -115,7 +136,7 @@ async fn ingress_networks_overlapping_the_tailnet_lose_their_routes_with_a_priva
 /// stale networks only after.
 #[tokio::test]
 async fn networks_exposing_the_private_listener_are_detached_before_caddy_reloads() {
-    let id = EnvironmentId::parse("env-retained").unwrap();
+    let id = EnvironmentId::parse("env-retained").expect("the environment id parses");
     let overlap = piqueld_core::DockerNetworkName::for_ingress(&id).to_string();
     let requests = Arc::new(parking_lot::Mutex::new(Vec::<String>::new()));
     let (docker, exposed) = (Arc::clone(&requests), overlap.clone());
@@ -143,8 +164,9 @@ async fn networks_exposing_the_private_listener_are_detached_before_caddy_reload
     })
     .await;
     let control = engine.directory.path().join("ingress/control");
-    std::fs::create_dir_all(&control).unwrap();
-    let admin = tokio::net::UnixListener::bind(control.join("admin.sock")).unwrap();
+    std::fs::create_dir_all(&control).expect("the directory is created");
+    let admin =
+        tokio::net::UnixListener::bind(control.join("admin.sock")).expect("the listener binds");
     let caddy = Arc::clone(&requests);
     let admin_api = axum::Router::new().fallback(move |request: axum::extract::Request| {
         caddy.lock().push(format!(
@@ -161,7 +183,7 @@ async fn networks_exposing_the_private_listener_are_detached_before_caddy_reload
     ingress
         .configure_gateway(&table, &BTreeSet::new())
         .await
-        .unwrap();
+        .expect("configure gateway succeeds");
     server.abort();
     let log = requests.lock().clone();
     let position = |entry: &str| {

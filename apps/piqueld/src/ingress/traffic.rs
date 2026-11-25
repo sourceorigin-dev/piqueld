@@ -360,7 +360,7 @@ mod tests {
             "resp_headers":{{"Content-Type":["{response_type}"]}},
             "piqueld_environment":"env-sc2dle","piqueld_service":"web","piqueld_hostname":"app.example.com"}}"#
         ))
-        .unwrap()
+        .expect("the value deserializes")
     }
 
     const BROWSER: &str =
@@ -412,10 +412,19 @@ mod tests {
         let ranks = &counter.tally.ranks;
         assert_eq!(ranks.len(), MAX_RANKS);
         assert!(ranks.keys().all(|key| key.3 != "/new"));
-        let first = ranks.iter().find(|(key, _)| key.3 == "/0").unwrap();
+        let first = ranks
+            .iter()
+            .find(|(key, _)| key.3 == "/0")
+            .expect("the match exists");
         assert_eq!(*first.1, 2);
         assert_eq!(
-            counter.tally.hours.values().next().unwrap().page_views,
+            counter
+                .tally
+                .hours
+                .values()
+                .next()
+                .expect("the next item exists")
+                .page_views,
             1_002
         );
     }

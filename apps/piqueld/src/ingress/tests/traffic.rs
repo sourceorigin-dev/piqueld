@@ -13,18 +13,18 @@ impl Scenario {
             .directory
             .path()
             .join("ingress/control/test-backend.sock");
-        let listener = tokio::net::UnixListener::bind(socket).unwrap();
+        let listener = tokio::net::UnixListener::bind(socket).expect("the listener binds");
         let mut servers = tokio::task::JoinSet::new();
         servers.spawn(async move {
             let mut connections = tokio::task::JoinSet::new();
             loop {
-                let (stream, _) = listener.accept().await.unwrap();
+                let (stream, _) = listener.accept().await.expect("the connection is accepted");
                 connections.spawn(async move {
                     hyper::server::conn::http1::Builder::new()
                         .serve_connection(TokioIo::new(stream), hyper::service::service_fn(backend))
                         .with_upgrades()
                         .await
-                        .unwrap();
+                        .expect("the connection serves to its end");
                 });
             }
         });
@@ -33,11 +33,16 @@ impl Scenario {
 
     pub(super) async fn persistent_traffic_survives_reload(&self) {
         let _servers = self.traffic_backend();
-        let original = self.gateway.caddy.get("/config/").await.unwrap();
+        let original = self
+            .gateway
+            .caddy
+            .get("/config/")
+            .await
+            .expect("the entry exists");
         let mut configuration = original.clone();
         let handlers = configuration["apps"]["http"]["servers"]["public"]["routes"]
             .as_array_mut()
-            .unwrap()
+            .expect("the value is an array")
             .iter_mut()
             .filter_map(|route| route["handle"].as_array_mut())
             .flatten();
@@ -48,17 +53,24 @@ impl Scenario {
             .caddy
             .external(Method::POST, "/load", Some(&configuration))
             .await
-            .unwrap();
+            .expect("the Caddy admin call succeeds");
         let builder = || {
             Scenario::trusting(&self.root, &["one.example.test"]).timeout(Duration::from_secs(15))
         };
-        let http1 = builder().http1_only().build().unwrap();
-        let http2 = builder().http2_prior_knowledge().build().unwrap();
+        let http1 = builder().http1_only().build().expect("the client builds");
+        let http2 = builder()
+            .http2_prior_knowledge()
+            .build()
+            .expect("the client builds");
         let url = self.url("one.example.test");
-        let mut events = http2.get(format!("{url}events")).send().await.unwrap();
+        let mut events = http2
+            .get(format!("{url}events"))
+            .send()
+            .await
+            .expect("the request is sent");
         assert_eq!(events.version(), reqwest::Version::HTTP_2);
         assert_eq!(events.headers()["content-type"], "text/event-stream");
-        assert!(events.chunk().await.unwrap().is_some());
+        assert!(events.chunk().await.expect("the stream reads").is_some());
         let response = http1
             .get(format!("{url}websocket"))
             .header("Connection", "Upgrade")
@@ -67,21 +79,24 @@ impl Scenario {
             .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
             .send()
             .await
-            .unwrap();
+            .expect("the request is sent");
         assert_eq!(response.status(), 101);
         assert_eq!(
             response.headers()["sec-websocket-accept"],
             "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
         );
-        let mut websocket = response.upgrade().await.unwrap();
+        let mut websocket = response.upgrade().await.expect("the connection upgrades");
         for revision in 0..3 {
             for (client, version) in [
                 (&http1, reqwest::Version::HTTP_11),
                 (&http2, reqwest::Version::HTTP_2),
             ] {
-                let response = client.get(&url).send().await.unwrap();
+                let response = client.get(&url).send().await.expect("the request is sent");
                 assert_eq!(response.version(), version);
-                assert_eq!(response.text().await.unwrap(), "persistent backend");
+                assert_eq!(
+                    response.text().await.expect("the body reads"),
+                    "persistent backend"
+                );
             }
             configuration["apps"]["http"]["servers"]["public_http"]["routes"][0]["handle"][0]["headers"]
                 ["X-Reload"] = serde_json::json!([revision.to_string()]);
@@ -89,25 +104,28 @@ impl Scenario {
                 .caddy
                 .external(Method::POST, "/load", Some(&configuration))
                 .await
-                .unwrap();
+                .expect("the Caddy admin call succeeds");
             tokio::time::timeout(Duration::from_secs(3), async {
                 websocket
                     .write_all(&[0x81, 0x81, 0, 0, 0, 0, b'x'])
                     .await
-                    .unwrap();
+                    .expect("the bytes are written");
                 let mut echo = [0; 3];
-                websocket.read_exact(&mut echo).await.unwrap();
+                websocket
+                    .read_exact(&mut echo)
+                    .await
+                    .expect("the bytes are read");
                 assert_eq!(echo, [0x81, 1, b'x']);
-                assert!(events.chunk().await.unwrap().is_some());
+                assert!(events.chunk().await.expect("the stream reads").is_some());
             })
             .await
-            .unwrap();
+            .expect("the step finishes in time");
         }
         self.gateway
             .caddy
             .external(Method::POST, "/load", Some(&original))
             .await
-            .unwrap();
+            .expect("the Caddy admin call succeeds");
     }
 }
 
@@ -127,15 +145,18 @@ async fn backend(mut request: Request<hyper::body::Incoming>) -> Result<Response
                     ))
                 },
             )))
-            .unwrap(),
+            .expect("the request builds"),
         "/websocket" => {
             let upgrade = hyper::upgrade::on(&mut request);
             tokio::spawn(async move {
-                let mut stream = TokioIo::new(upgrade.await.unwrap());
+                let mut stream = TokioIo::new(upgrade.await.expect("the connection upgrades"));
                 let mut frame = [0; 7];
                 while stream.read_exact(&mut frame).await.is_ok() {
                     assert_eq!(&frame[..6], &[0x81, 0x81, 0, 0, 0, 0]);
-                    stream.write_all(&[0x81, 1, frame[6]]).await.unwrap();
+                    stream
+                        .write_all(&[0x81, 1, frame[6]])
+                        .await
+                        .expect("the bytes are written");
                 }
             });
             Response::builder()
@@ -144,7 +165,7 @@ async fn backend(mut request: Request<hyper::body::Incoming>) -> Result<Response
                 .header("Upgrade", "websocket")
                 .header("Sec-WebSocket-Accept", "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
                 .body(Body::empty())
-                .unwrap()
+                .expect("the request builds")
         }
         _ => Response::new(Body::from("persistent backend")),
     };

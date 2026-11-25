@@ -41,7 +41,7 @@ const CHALLTESTSRV_IMAGE: &str = "ghcr.io/letsencrypt/pebble-challtestsrv:2.10.1
 fn hosts(names: &[&str]) -> BTreeSet<Hostname> {
     names
         .iter()
-        .map(|name| Hostname::parse(*name).unwrap())
+        .map(|name| Hostname::parse(*name).expect("the hostname parses"))
         .collect()
 }
 
@@ -61,14 +61,18 @@ fn challtestsrv_dns() -> SocketAddr {
 fn routes(names: &[&str]) -> BTreeSet<RouteHostname> {
     names
         .iter()
-        .map(|name| RouteHostname::parse(*name).unwrap())
+        .map(|name| RouteHostname::parse(*name).expect("the route hostname parses"))
         .collect()
 }
 
 impl Scenario {
     /// Pulls an image into the isolated daemon.
     pub(super) async fn pull(&self, image: &str) {
-        self.gateway.external().pull_image(image).await.unwrap();
+        self.gateway
+            .external()
+            .pull_image(image)
+            .await
+            .expect("pull image succeeds");
     }
 
     /// Starts `challtestsrv` and Pebble on a shared bridge network and returns
@@ -78,7 +82,7 @@ impl Scenario {
         docker
             .create_bridge_network("pebble", &json!({}))
             .await
-            .unwrap();
+            .expect("create bridge network succeeds");
         for (name, image, command, ports, env) in [
             (
                 "challtestsrv",
@@ -118,8 +122,14 @@ impl Scenario {
                 "Image":image,"Cmd":command,"Env":env,
                 "HostConfig":{"NetworkMode":"pebble","PortBindings":ports}
             });
-            docker.create_container(name, &spec).await.unwrap();
-            docker.start_container(name).await.unwrap();
+            docker
+                .create_container(name, &spec)
+                .await
+                .expect("the container is created");
+            docker
+                .start_container(name)
+                .await
+                .expect("the container starts");
         }
         let path = bollard::query_parameters::DownloadFromContainerOptionsBuilder::default()
             .path("/test/certs/pebble.minica.pem")
@@ -127,19 +137,19 @@ impl Scenario {
         let archive = self
             .docker
             .client()
-            .unwrap()
+            .expect("the docker client is available")
             .download_from_container("pebble", Some(path))
             .map_ok(Vec::from)
             .try_concat()
             .await
-            .unwrap();
+            .expect("try concat succeeds");
         let size = usize::from_str_radix(
             std::str::from_utf8(&archive[124..136])
-                .unwrap()
+                .expect("from utf8 succeeds")
                 .trim_matches(['\0', ' ']),
             8,
         )
-        .unwrap();
+        .expect("from str radix succeeds");
         archive[512..512 + size].to_vec()
     }
 
@@ -165,7 +175,8 @@ impl Scenario {
 
     /// A second manager of this scenario's gateway, issuing from Pebble.
     fn pebble_ingress(&self, root: &std::path::Path) -> Ingress {
-        let mut dns = Dns::new(vec![DnsProvider::Challtestsrv(challtestsrv()).into()]).unwrap();
+        let mut dns = Dns::new(vec![DnsProvider::Challtestsrv(challtestsrv()).into()])
+            .expect("the value is valid");
         dns.nameservers = Some(vec![vec![
             SocketAddr::from(([127, 0, 0, 1], 1)),
             challtestsrv_dns(),
@@ -201,7 +212,7 @@ impl Scenario {
             TokioRuntimeProvider::default(),
         )
         .build()
-        .unwrap();
+        .expect("the client builds");
         match resolver.txt_lookup(format!("{name}.")).await {
             Ok(lookup) => lookup
                 .answers()
@@ -222,7 +233,7 @@ impl Scenario {
             .tls_info(true)
             .resolve(hostname, SocketAddr::from(([127, 0, 0, 1], port)))
             .build()
-            .unwrap()
+            .expect("the client builds")
             .get(format!("https://{hostname}:{port}/"))
             .send()
             .await
@@ -231,18 +242,27 @@ impl Scenario {
     /// A loopback port relaying to the private listener with a PROXY header
     /// naming a tailnet client, like the apps node.
     async fn relay(&self) -> (u16, tokio::task::JoinSet<()>) {
-        let private = SocketAddr::from(([127, 0, 0, 1], self.gateway.private_port.unwrap()));
-        let (relay, task) = proxy_relay(private, "100.64.0.9:41000".parse().unwrap())
-            .await
-            .unwrap();
+        let private = SocketAddr::from((
+            [127, 0, 0, 1],
+            self.gateway.private_port.expect("the private port is set"),
+        ));
+        let (relay, task) = proxy_relay(
+            private,
+            "100.64.0.9:41000".parse().expect("the value parses"),
+        )
+        .await
+        .expect("proxy relay succeeds");
         (relay.port(), task)
     }
 
     /// The certificate the private listener presents for `hostname`.
     async fn served_certificate(&self, hostname: &str) -> Vec<u8> {
         let (relay, _relay) = self.relay().await;
-        let response = self.untrusted(hostname, relay).await.unwrap();
-        peer_certificate(&response).unwrap()
+        let response = self
+            .untrusted(hostname, relay)
+            .await
+            .expect("the untrusted request completes");
+        peer_certificate(&response).expect("the response has a peer certificate")
     }
 
     /// Runs `curl` on `network` and returns its exit code and output.
@@ -250,18 +270,30 @@ impl Scenario {
         let docker = self.gateway.external();
         let name = "piqueld-test-curl";
         let spec = json!({"Image":CURL_IMAGE,"Cmd":arguments,"HostConfig":{"NetworkMode":network}});
-        docker.create_container(name, &spec).await.unwrap();
-        docker.start_container(name).await.unwrap();
-        let exited = docker.wait_container(name).await.unwrap();
+        docker
+            .create_container(name, &spec)
+            .await
+            .expect("the container is created");
+        docker
+            .start_container(name)
+            .await
+            .expect("the container starts");
+        let exited = docker
+            .wait_container(name)
+            .await
+            .expect("the container exits");
         let output = self
             .gateway
             .docker
             .log_lines(name, 100, None)
             .await
-            .unwrap()
+            .expect("the log lines load")
             .join("\n");
-        docker.remove_container(name).await.unwrap();
-        (exited.unwrap(), output)
+        docker
+            .remove_container(name)
+            .await
+            .expect("remove container succeeds");
+        (exited.expect("the container exits"), output)
     }
 
     /// Applications reach the gateway's private listener over their ingress
@@ -269,10 +301,15 @@ impl Scenario {
     /// with a forged PROXY header. Public routes stay reachable as a control.
     async fn applications_cannot_reach_private_routes(&self, admin: &piqueld_core::EnvironmentId) {
         let network = piqueld_core::DockerNetworkName::for_ingress(admin).to_string();
-        let gateway = self.gateway.container().await.unwrap().unwrap();
+        let gateway = self
+            .gateway
+            .container()
+            .await
+            .expect("the container lookup succeeds")
+            .expect("the container exists");
         let address = gateway["NetworkSettings"]["Networks"][&network]["IPAddress"]
             .as_str()
-            .unwrap()
+            .expect("the value is a string")
             .to_owned();
         self.pull(CURL_IMAGE).await;
         let request = |host: &str, port: u16| {
@@ -312,16 +349,20 @@ impl Scenario {
                 "{http.request.header.X-Forwarded-For}",
             )
             .to_manifest();
-            manifest.spec.routes[0].visibility = visibility.parse().unwrap();
+            manifest.spec.routes[0].visibility = visibility.parse().expect("the value parses");
             manifest
                 .validate()
-                .unwrap()
-                .normalize(piqueld_core::ApplicationId::parse("admin-input").unwrap())
+                .expect("the manifest validates")
+                .normalize(
+                    piqueld_core::ApplicationId::parse("admin-input")
+                        .expect("the application id parses"),
+                )
         };
         let id = self.deploy(admin("public")).await;
         assert_eq!(self.plain("admin.example.test", "").await.status(), 308);
-        let deployed =
-            admin("private").with_id(piqueld_core::ApplicationId::parse(id.as_str()).unwrap());
+        let deployed = admin("private").with_id(
+            piqueld_core::ApplicationId::parse(id.as_str()).expect("the application id parses"),
+        );
         self.deploy(deployed).await;
         assert_eq!(self.plain("admin.example.test", "").await.status(), 404);
         self.untrusted("admin.example.test", self.tls_port)
@@ -333,7 +374,7 @@ impl Scenario {
     /// The private listener serves only private routes, with their DNS-01
     /// certificate, and backends see the PROXY header's client address.
     async fn private_listener_serves_private_routes(&self, ingress: &Ingress) {
-        let private = self.gateway.private_port.unwrap();
+        let private = self.gateway.private_port.expect("the private port is set");
         assert!(
             self.untrusted("one.example.test", private).await.is_err(),
             "a public route completed TLS on the private listener"
@@ -342,20 +383,23 @@ impl Scenario {
         let body = self
             .untrusted("admin.example.test", relay)
             .await
-            .unwrap()
+            .expect("the untrusted request completes")
             .text()
             .await
-            .unwrap();
+            .expect("the body reads");
         assert_eq!(body, "100.64.0.9");
         let node = ingress
             .named_container(&ingress.node_name())
             .await
-            .unwrap()
+            .expect("the named container lookup succeeds")
             .expect("the apps node runs");
         assert_eq!(node["HostConfig"]["ReadonlyRootfs"], true);
         tokio::time::timeout(Duration::from_mins(1), async {
             loop {
-                ingress.synchronize().await.unwrap();
+                ingress
+                    .synchronize()
+                    .await
+                    .expect("the ingress synchronizes");
                 if !ingress.status().await.private.state.is_empty() {
                     break;
                 }
@@ -379,7 +423,7 @@ impl Scenario {
             .store
             .filtered_events(&filter, &piqueld_store::Visibility::ALL, None, 100)
             .await
-            .unwrap()
+            .expect("the filtered events load")
             .items;
         events.retain(|e| e.phase.map(piqueld_core::Phase::as_str) == Some(phase));
         events
@@ -394,10 +438,12 @@ impl Scenario {
                 .join(name),
         )
         .await
-        .unwrap();
-        let chain = &bundle[bundle.find("-----BEGIN CERTIFICATE-----").unwrap()..];
+        .expect("read to string succeeds");
+        let chain = &bundle[bundle
+            .find("-----BEGIN CERTIFICATE-----")
+            .expect("the match exists")..];
         x509_parser::pem::parse_x509_pem(chain.as_bytes())
-            .unwrap()
+            .expect("parse x509 pem succeeds")
             .1
             .contents
     }
@@ -405,7 +451,9 @@ impl Scenario {
     async fn dns01_certificates(&self) {
         let root = self.start_pebble().await;
         let root_path = self.directory.path().join("pebble.minica.pem");
-        tokio::fs::write(&root_path, &root).await.unwrap();
+        tokio::fs::write(&root_path, &root)
+            .await
+            .expect("the file is written");
         let ingress = self.pebble_ingress(&root_path);
         Self::route_checks_resolve_authoritatively(&ingress).await;
         let admin = self.deploy_private_route().await;
@@ -420,7 +468,10 @@ impl Scenario {
         self.dns01_leftover(&ingress, now).await;
         self.dns01_retire(&ingress, now, expires).await;
         self.wildcard_routes(&ingress, now).await;
-        ingress.synchronize().await.unwrap();
+        ingress
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
     }
 
     /// A public wildcard route is served with its own DNS-01 certificate.
@@ -437,12 +488,19 @@ impl Scenario {
         self.deploy(exact).await;
         self.deploy(tenants).await;
         let desired = routes(&["*.tenants.example.test"]);
-        let table = self.store.routing_table().await.unwrap();
+        let table = self
+            .store
+            .routing_table()
+            .await
+            .expect("the routing table loads");
         assert!(ingress.dns01_hostnames(&table).is_superset(&desired));
         ingress
             .maintain_certificates(&desired, now, &CancellationToken::new())
             .await;
-        ingress.synchronize().await.unwrap();
+        ingress
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
 
         let answer = |host: &'static str| async move {
             let response = self.untrusted(host, self.tls_port).await.ok()?;
@@ -519,12 +577,19 @@ impl Scenario {
                 .join("ingress/certificates")
                 .join(file);
             assert_eq!(
-                std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                std::fs::metadata(path)
+                    .expect("the file has metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
                 0o600
             );
         }
 
-        ingress.synchronize().await.unwrap();
+        ingress
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
         assert_eq!(
             self.served_certificate("admin.example.test").await,
             self.stored_leaf("_wildcard.example.test.pem").await
@@ -532,9 +597,9 @@ impl Scenario {
         status
             .certificates
             .iter()
-            .map(|c| c.expires_at_ms.unwrap())
+            .map(|c| c.expires_at_ms.expect("the certificate has an expiry"))
             .max()
-            .unwrap()
+            .expect("the maximum exists")
     }
 
     /// With a third of the lifetime left both are renewed, and nothing else.
@@ -580,9 +645,13 @@ impl Scenario {
             .certificates
             .iter()
             .find(|c| c.name == "*.fail.example.test")
-            .unwrap();
+            .expect("the match exists");
         assert!(
-            failed.error.as_deref().unwrap().contains("was not visible"),
+            failed
+                .error
+                .as_deref()
+                .expect("the error is set")
+                .contains("was not visible"),
             "{failed:?}"
         );
         assert_eq!(
@@ -640,12 +709,12 @@ impl Scenario {
             .certificates
             .iter()
             .find(|c| c.name == "*.cancel.example.test")
-            .unwrap();
+            .expect("the match exists");
         assert!(
             interrupted
                 .error
                 .as_deref()
-                .unwrap()
+                .expect("the error is set")
                 .contains("cancelled by daemon shutdown"),
             "{interrupted:?}"
         );
@@ -663,8 +732,8 @@ impl Scenario {
     /// record too.
     async fn dns01_leftover(&self, ingress: &Ingress, now: i64) {
         let dns = &ingress.certificates.dns;
-        let hostname = Hostname::parse("x.leftover.example.test").unwrap();
-        let (provider, zone) = dns.zone_for(&hostname).await.unwrap();
+        let hostname = Hostname::parse("x.leftover.example.test").expect("the hostname parses");
+        let (provider, zone) = dns.zone_for(&hostname).await.expect("the zone resolves");
         let id = dns
             .provider(provider)
             .upsert(
@@ -675,14 +744,18 @@ impl Scenario {
                 &Record::Txt("stale".into()),
             )
             .await
-            .unwrap();
+            .expect("the record upserts");
         let leftover = AcmeChallenge {
             name: "_acme-challenge.leftover.example.test".into(),
             zone: zone.name,
             value: "stale".into(),
             record_id: Some(id.0),
         };
-        ingress.store.save_acme_challenge(&leftover).await.unwrap();
+        ingress
+            .store
+            .save_acme_challenge(&leftover)
+            .await
+            .expect("save acme challenge succeeds");
         ingress
             .maintain_certificates(&[hostname.into()].into(), now, &CancellationToken::new())
             .await;
@@ -691,7 +764,7 @@ impl Scenario {
             .certificates
             .iter()
             .find(|c| c.name == "*.leftover.example.test")
-            .unwrap();
+            .expect("the match exists");
         assert!(
             issued.error.is_none() && issued.expires_at_ms.is_some(),
             "{issued:?}"
@@ -700,7 +773,14 @@ impl Scenario {
             self.txt("_acme-challenge.leftover.example.test").await,
             [] as [String; 0]
         );
-        assert_eq!(ingress.store.acme_challenges().await.unwrap(), []);
+        assert_eq!(
+            ingress
+                .store
+                .acme_challenges()
+                .await
+                .expect("acme challenges succeeds"),
+            []
+        );
     }
 
     /// A route check resolves a hostname whose records piqueld manages on its
@@ -710,12 +790,15 @@ impl Scenario {
     async fn route_checks_resolve_authoritatively(ingress: &Ingress) {
         let dns = &ingress.certificates.dns;
         dns.discover().await;
-        let addresses: [IpAddr; 2] = ["192.0.2.7".parse().unwrap(), "2001:db8::7".parse().unwrap()];
+        let addresses: [IpAddr; 2] = [
+            "192.0.2.7".parse().expect("the value parses"),
+            "2001:db8::7".parse().expect("the value parses"),
+        ];
         challtestsrv()
             .answer(dns.http(), "fresh.example.test", &addresses)
             .await;
-        let route = RouteHostname::parse("fresh.example.test").unwrap();
-        let hostname = Hostname::parse("fresh.example.test").unwrap();
+        let route = RouteHostname::parse("fresh.example.test").expect("the route hostname parses");
+        let hostname = Hostname::parse("fresh.example.test").expect("the hostname parses");
         assert!(
             ingress.resolve(&route, &hostname).await.is_err(),
             "the host's resolver must have no answer"
@@ -728,7 +811,10 @@ impl Scenario {
             },
         );
         assert_eq!(
-            ingress.resolve(&route, &hostname).await.unwrap(),
+            ingress
+                .resolve(&route, &hostname)
+                .await
+                .expect("resolve succeeds"),
             BTreeSet::from(addresses)
         );
     }

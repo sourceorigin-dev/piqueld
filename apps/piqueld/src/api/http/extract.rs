@@ -498,7 +498,8 @@ mod tests {
             Body::from_stream(stalled),
         );
         let request = Request::new(Body::new(body));
-        let error = request_body(Bytes::from_request(request, &()).await).unwrap_err();
+        let error = request_body(Bytes::from_request(request, &()).await)
+            .expect_err("the body is rejected");
         assert_eq!(error.status, StatusCode::REQUEST_TIMEOUT);
         assert_eq!(error.body().code, ApiErrorCode::RequestBodyTimeout);
     }

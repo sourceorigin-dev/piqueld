@@ -14,7 +14,7 @@ impl Scenario {
         let error = invalid
             .replace_gateway(table, networks, &invalid.container_spec())
             .await
-            .unwrap_err();
+            .expect_err("replace gateway fails");
         assert!(
             format!("{error:#}").contains("configuration validation failed"),
             "{error:#}"
@@ -25,19 +25,31 @@ impl Scenario {
 
     pub(super) async fn replacement_preserves_unverified_attachment(&self) {
         let original = self.gateway.container_id().await;
-        let table = self.store.routing_table().await.unwrap();
+        let table = self
+            .store
+            .routing_table()
+            .await
+            .expect("the routing table loads");
         self.gateway
             .replace_gateway(&table, &BTreeSet::new(), &self.gateway.container_spec())
             .await
-            .unwrap();
+            .expect("replace gateway succeeds");
         assert_eq!(self.gateway.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
     }
 
     pub(super) async fn replacement_failure_and_recovery(&self) {
         let original = self.gateway.container_id().await;
-        let table = self.store.routing_table().await.unwrap();
-        let (_, networks, _) = self.gateway.prepare_routes(&table).await.unwrap();
+        let table = self
+            .store
+            .routing_table()
+            .await
+            .expect("the routing table loads");
+        let (_, networks, _) = self
+            .gateway
+            .prepare_routes(&table)
+            .await
+            .expect("prepare routes succeeds");
         let mut spec = self.gateway.container_spec();
         spec["Image"] = "piqueld-missing-test-image:never-pull".into();
         assert!(
@@ -58,7 +70,7 @@ impl Scenario {
             .gateway
             .replace_gateway(&table, &networks, &spec)
             .await
-            .unwrap_err();
+            .expect_err("replace gateway fails");
         assert!(
             format!("{error:#}").contains("previous gateway restored"),
             "{error:#}"
@@ -66,30 +78,41 @@ impl Scenario {
         assert_eq!(self.gateway.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
 
-        let configuration = self.gateway.caddy.get("/config/").await.unwrap();
+        let configuration = self
+            .gateway
+            .caddy
+            .get("/config/")
+            .await
+            .expect("the entry exists");
         tokio::fs::write(
             self.directory
                 .path()
                 .join("ingress/config/caddy/rollback.json"),
-            serde_json::to_vec(&configuration).unwrap(),
+            serde_json::to_vec(&configuration).expect("the value serializes"),
         )
         .await
-        .unwrap();
+        .expect("the file is written");
         let previous = format!("{}-previous", self.gateway.name);
         let docker = self.gateway.external();
-        docker.stop_container(&self.gateway.name, 1).await.unwrap();
+        docker
+            .stop_container(&self.gateway.name, 1)
+            .await
+            .expect("stop container succeeds");
         docker
             .rename_container(&self.gateway.name, &previous)
             .await
-            .unwrap();
-        self.gateway.recover_gateway().await.unwrap();
+            .expect("rename container succeeds");
+        self.gateway
+            .recover_gateway()
+            .await
+            .expect("recover gateway succeeds");
         assert_eq!(self.gateway.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
 
         self.gateway
             .replace_gateway(&table, &networks, &self.gateway.container_spec())
             .await
-            .unwrap();
+            .expect("replace gateway succeeds");
         assert_ne!(self.gateway.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
         assert!(
@@ -97,7 +120,7 @@ impl Scenario {
                 .docker
                 .inspect_container(&previous)
                 .await
-                .unwrap()
+                .expect("inspect container succeeds")
                 .is_none()
         );
     }
@@ -110,15 +133,18 @@ impl Scenario {
             .external()
             .create_container(&previous, &self.gateway.container_spec())
             .await
-            .unwrap();
-        self.gateway.recover_gateway().await.unwrap();
+            .expect("the container is created");
+        self.gateway
+            .recover_gateway()
+            .await
+            .expect("recover gateway succeeds");
         assert_eq!(self.gateway.container_id().await, replaced);
         assert!(
             self.gateway
                 .docker
                 .inspect_container(&previous)
                 .await
-                .unwrap()
+                .expect("inspect container succeeds")
                 .is_none()
         );
         assert_eq!(self.body("one.example.test").await, "first backend");
@@ -130,31 +156,48 @@ impl Scenario {
         (unavailable, app)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "One scenario walks the whole withdrawal sequence; rustfmt puts each `expect` on its own line."
+    )]
     pub(super) async fn unavailable_network_does_not_block_withdrawals(&self) {
         let (unavailable, app) = self.unavailable_application().await;
         self.store
             .stage_routes(&unavailable, &app.spec().routes, true, None)
             .await
-            .unwrap();
+            .expect("stage routes succeeds");
         self.store
-            .acknowledge_routes(&self.store.routing_table().await.unwrap())
+            .acknowledge_routes(
+                &self
+                    .store
+                    .routing_table()
+                    .await
+                    .expect("the routing table loads"),
+            )
             .await
-            .unwrap();
+            .expect("acknowledge routes succeeds");
         let mut pending = app.spec().routes.clone();
-        pending[0].target = serde_json::from_value(json!({"service":"web","port":8081})).unwrap();
+        pending[0].target = serde_json::from_value(json!({"service":"web","port":8081}))
+            .expect("the value deserializes");
         self.store
             .stage_routes(&unavailable, &pending, true, None)
             .await
-            .unwrap();
+            .expect("stage routes succeeds");
         let original = self.gateway.container_id().await;
         let mut upgraded = self.replica();
         upgraded
             .extra_hosts
             .push("upgrade.example.test:127.0.0.1".into());
-        upgraded.synchronize_for(Some(&self.first)).await.unwrap();
+        upgraded
+            .synchronize_for(Some(&self.first))
+            .await
+            .expect("the ingress synchronizes");
         assert!(!upgraded.status().await.healthy);
         assert_eq!(
-            self.store.applied_routes(&unavailable).await.unwrap(),
+            self.store
+                .applied_routes(&unavailable)
+                .await
+                .expect("the applied routes load"),
             app.spec().routes
         );
         assert_eq!(self.body("one.example.test").await, "first backend");
@@ -164,37 +207,60 @@ impl Scenario {
             .external()
             .create_bridge_network(&network, &json!({}))
             .await
-            .unwrap();
-        upgraded.synchronize_for(Some(&self.first)).await.unwrap();
+            .expect("create bridge network succeeds");
+        upgraded
+            .synchronize_for(Some(&self.first))
+            .await
+            .expect("the ingress synchronizes");
         assert!(
-            self.gateway.container().await.unwrap().unwrap()["NetworkSettings"]["Networks"]
+            self.gateway
+                .container()
+                .await
+                .expect("the container lookup succeeds")
+                .expect("the container exists")["NetworkSettings"]["Networks"]
                 .get(&network)
                 .is_none(),
             "a conflicting network must never be attached"
         );
-        let routes = self.store.applied_routes(&self.first).await.unwrap();
+        let routes = self
+            .store
+            .applied_routes(&self.first)
+            .await
+            .expect("the applied routes load");
         self.store
             .stage_routes(&self.first, &[], true, None)
             .await
-            .unwrap();
-        upgraded.synchronize_for(Some(&self.first)).await.unwrap();
+            .expect("stage routes succeeds");
+        upgraded
+            .synchronize_for(Some(&self.first))
+            .await
+            .expect("the ingress synchronizes");
         assert_eq!(
-            self.store.applied_routes(&self.first).await.unwrap(),
+            self.store
+                .applied_routes(&self.first)
+                .await
+                .expect("the applied routes load"),
             [] as [ValidatedRoute; 0]
         );
         assert_eq!(self.plain("one.example.test", "").await.status(), 404);
         self.store
             .stage_routes(&self.first, &routes, true, None)
             .await
-            .unwrap();
-        upgraded.synchronize_for(Some(&self.first)).await.unwrap();
+            .expect("stage routes succeeds");
+        upgraded
+            .synchronize_for(Some(&self.first))
+            .await
+            .expect("the ingress synchronizes");
         assert_eq!(self.body("one.example.test").await, "first backend");
         assert_eq!(upgraded.container_id().await, original);
         self.store
             .stage_routes(&unavailable, &[], true, None)
             .await
-            .unwrap();
-        upgraded.synchronize().await.unwrap();
+            .expect("stage routes succeeds");
+        upgraded
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
         assert!(upgraded.status().await.healthy);
         assert_ne!(upgraded.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
@@ -202,8 +268,11 @@ impl Scenario {
             .external()
             .remove_network(&network)
             .await
-            .unwrap();
-        self.gateway.synchronize().await.unwrap();
+            .expect("remove network succeeds");
+        self.gateway
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
     }
 }
 

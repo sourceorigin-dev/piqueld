@@ -299,7 +299,10 @@ mod tests {
                     let count = count.clone();
                     async move {
                         requests.lock().await.push((
-                            headers["idempotency-key"].to_str().unwrap().to_owned(),
+                            headers["idempotency-key"]
+                                .to_str()
+                                .expect("the header is text")
+                                .to_owned(),
                             body,
                         ));
                         let status = if count.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -312,11 +315,17 @@ mod tests {
                 },
             ),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the listener binds");
+        let address = listener.local_addr().expect("the listener has an address");
         let server = tokio::spawn(axum::serve(listener, receiver).into_future());
-        let temp = tempfile::tempdir().unwrap();
-        let store = Arc::new(Store::open_unsynced(temp.path().join("db")).await.unwrap());
+        let temp = tempfile::tempdir().expect("the temp dir is created");
+        let store = Arc::new(
+            Store::open_unsynced(temp.path().join("db"))
+                .await
+                .expect("the store opens"),
+        );
         let url = format!("http://{address}/secret");
         store
             .add_destination(
@@ -337,7 +346,7 @@ mod tests {
                 piqueld_store::Attribution::default(),
             )
             .await
-            .unwrap();
+            .expect("record diagnostic succeeds");
         let service = ApplicationService::unconnected(store.clone(), temp.path()).await;
         let cancel = CancellationToken::new();
         let worker_cancel = cancel.clone();
@@ -345,7 +354,10 @@ mod tests {
             service.deliver_notifications(worker_cancel).await;
         });
         let delivered = store.wait_until(async || {
-            let deliveries = store.deliveries(None, 100).await.unwrap();
+            let deliveries = store
+                .deliveries(None, 100)
+                .await
+                .expect("the deliveries load");
             deliveries
                 .items
                 .first()
@@ -355,14 +367,19 @@ mod tests {
             .await
             .expect("the retry delivers the notification");
         cancel.cancel();
-        worker.await.unwrap();
+        worker.await.expect("the worker task joins");
         server.abort();
         let requests = requests.lock().await;
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0], requests[1]);
         assert_eq!(requests[0].1["version"], 2);
         assert_eq!(requests[0].1["delivery_id"], requests[0].0);
-        let delivery = store.deliveries(None, 100).await.unwrap().items.remove(0);
+        let delivery = store
+            .deliveries(None, 100)
+            .await
+            .expect("the deliveries load")
+            .items
+            .remove(0);
         assert_eq!(delivery.attempts, 2);
         assert!(delivery.last_error.is_none());
         assert!(!format!("{delivery:?}").contains("private-receiver-detail"));

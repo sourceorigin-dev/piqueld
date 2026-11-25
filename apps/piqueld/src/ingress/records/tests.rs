@@ -69,12 +69,12 @@ impl Harness {
                 },
                 &piqueld_config::AcmeConfig::default(),
             )
-            .unwrap()
+            .expect("the ingress builds with DNS")
             .with_private(&private_config())
             .with_tunnel(&piqueld_config::TunnelConfig {
                 credentials: tunnel,
             })
-            .with_public_addresses(&[PUBLIC.parse().unwrap()])
+            .with_public_addresses(&[PUBLIC.parse().expect("the value parses")])
     }
 
     /// Another manager of this store and zone, as after a restart, before its
@@ -92,12 +92,21 @@ impl Harness {
     /// Saves an application, returning its environment and the route to
     /// `host` with `visibility`.
     async fn route(&self, host: &str, visibility: &str) -> (EnvironmentId, ValidatedRoute) {
-        let name = host.trim_start_matches("*.").split('.').next().unwrap();
+        let name = host
+            .trim_start_matches("*.")
+            .split('.')
+            .next()
+            .expect("the next item exists");
         let app = application(name, host, "body");
         let (id, _) = request_deployment(&self.store, crate::api::Actor::Daemon, app.clone()).await;
         let mut manifest = app.to_manifest();
-        manifest.spec.routes[0].visibility = visibility.parse().unwrap();
-        let route = manifest.validate().unwrap().spec().routes[0].clone();
+        manifest.spec.routes[0].visibility = visibility.parse().expect("the value parses");
+        let route = manifest
+            .validate()
+            .expect("the manifest validates")
+            .spec()
+            .routes[0]
+            .clone();
         (id, route)
     }
 
@@ -106,7 +115,7 @@ impl Harness {
         self.store
             .stage_routes(id, routes, ready, None)
             .await
-            .unwrap();
+            .expect("stage routes succeeds");
     }
 
     /// Saves an application routing `host` publicly, and stages and applies
@@ -120,19 +129,26 @@ impl Harness {
 
     /// Acknowledges the desired table, as the gateway does once applied.
     async fn apply(&self) {
-        let table = self.store.routing_table().await.unwrap();
-        self.store.acknowledge_routes(&table).await.unwrap();
+        let table = self
+            .store
+            .routing_table()
+            .await
+            .expect("the routing table loads");
+        self.store
+            .acknowledge_routes(&table)
+            .await
+            .expect("acknowledge routes succeeds");
     }
 
     /// One reconciliation pass of `ingress` over every hostname, returning
     /// whether each succeeded.
     async fn pass_of(ingress: &Ingress) -> bool {
-        let plan = ingress.plan_records().await.unwrap();
+        let plan = ingress.plan_records().await.expect("plan records succeeds");
         let every = plan.keys().cloned().collect();
         ingress
             .reconcile_records(&plan, &every, &CancellationToken::new())
             .await
-            .unwrap()
+            .expect("reconcile records succeeds")
             .is_empty()
     }
 
@@ -141,12 +157,18 @@ impl Harness {
     }
 
     fn state(&self, host: &str) -> RouteDns {
-        self.ingress.route_dns(&RouteHostname::parse(host).unwrap())
+        self.ingress
+            .route_dns(&RouteHostname::parse(host).expect("the route hostname parses"))
     }
 
     /// Phases of the journal actions that started since the last call.
     async fn journaled(&self, since: &mut i64) -> Vec<String> {
-        let mut events = self.store.events(None, None, 100).await.unwrap().items;
+        let mut events = self
+            .store
+            .events(None, None, 100)
+            .await
+            .expect("the events load")
+            .items;
         events.retain(|event| event.id > *since);
         *since = events.iter().map(|event| event.id).max().unwrap_or(*since);
         events.sort_by_key(|event| event.id);
@@ -173,14 +195,14 @@ impl Harness {
 
     /// Changes the address of `host` by hand, as drift piqueld must notice.
     fn drift(&self, host: &str) {
-        let drifted = self.provider.found(host).unwrap();
+        let drifted = self.provider.found(host).expect("the provider has records");
         self.provider
             .set(
                 host,
                 Some(&drifted[0].id),
-                &Record::A("198.51.100.7".parse().unwrap()),
+                &Record::A("198.51.100.7".parse().expect("the value parses")),
             )
-            .unwrap();
+            .expect("the variable is set");
         self.forget_changes();
     }
 
@@ -195,11 +217,14 @@ impl Harness {
     ) -> AcmeChallenge {
         let challenge = AcmeChallenge {
             name: name.into(),
-            zone: Hostname::parse(zone).unwrap(),
+            zone: Hostname::parse(zone).expect("the hostname parses"),
             value: value.into(),
             record_id,
         };
-        self.store.save_acme_challenge(&challenge).await.unwrap();
+        self.store
+            .save_acme_challenge(&challenge)
+            .await
+            .expect("save acme challenge succeeds");
         challenge
     }
 
@@ -207,7 +232,9 @@ impl Harness {
     /// by ID as a challenge record an earlier attempt left.
     async fn leftover(&self, name: &str, value: &str) {
         self.provider.insert(name, Record::Txt(value.into()));
-        let id = self.provider.found(name).unwrap()[0].id.clone();
+        let id = self.provider.found(name).expect("the provider has records")[0]
+            .id
+            .clone();
         self.save_challenge(name, "example.com", value, Some(id.0))
             .await;
     }
@@ -224,7 +251,7 @@ impl Harness {
 /// The credentials of the tunnel `TUNNEL`.
 fn tunnel() -> TunnelCredentials {
     TunnelCredentials {
-        id: TUNNEL.parse().unwrap(),
+        id: TUNNEL.parse().expect("the value parses"),
         file: "{}".into(),
     }
 }
@@ -246,7 +273,7 @@ fn changes_update_in_place_and_delete_before_creating() {
     };
     let a = |last: u8| Record::A(std::net::Ipv4Addr::new(192, 0, 2, last));
     let cname = Record::Cname {
-        target: Hostname::parse("x.cfargotunnel.com").unwrap(),
+        target: Hostname::parse("x.cfargotunnel.com").expect("the hostname parses"),
         proxied: true,
     };
     let current = [found("1", a(1)), found("2", a(2)), found("3", a(2))];
@@ -285,7 +312,7 @@ fn changes_update_in_place_and_delete_before_creating() {
 /// the next repair.
 #[test]
 fn failed_hostnames_back_off_while_others_wait_for_a_repair() {
-    let hostname = |name: &str| RouteHostname::parse(name).unwrap();
+    let hostname = |name: &str| RouteHostname::parse(name).expect("the route hostname parses");
     let (failing, working) = (hostname("a.example.com"), hostname("b.example.com"));
     let mut plan = BTreeMap::from([
         (failing.clone(), Plan::Manual),
@@ -293,7 +320,7 @@ fn failed_hostnames_back_off_while_others_wait_for_a_repair() {
     ]);
     let mut schedule = Schedule::default();
     let start = Instant::now();
-    let ms = |seconds: u64| i64::try_from(seconds * 1000).unwrap();
+    let ms = |seconds: u64| i64::try_from(seconds * 1000).expect("the seconds fit");
     let mut pass =
         |plan: &BTreeMap<RouteHostname, Plan>, seconds, took, failed: &[&RouteHostname]| {
             let started = start + Duration::from_secs(seconds);
@@ -365,7 +392,7 @@ async fn records_are_written_once_applied_and_never_on_foreign_names() {
     let (other, taken) = harness.route("taken.example.com", "public").await;
     harness.provider.insert(
         "taken.example.com",
-        Record::A("198.51.100.1".parse().unwrap()),
+        Record::A("198.51.100.1".parse().expect("the value parses")),
     );
     harness.stage(&other, &[taken], true).await;
     harness.apply().await;
@@ -374,7 +401,10 @@ async fn records_are_written_once_applied_and_never_on_foreign_names() {
     let conflict = harness.state("taken.example.com");
     assert_eq!(conflict.state, DnsRecordState::DnsConflict);
     assert!(
-        conflict.message.unwrap().contains("A 198.51.100.1"),
+        conflict
+            .message
+            .expect("the message is set")
+            .contains("A 198.51.100.1"),
         "conflict names the record"
     );
 }
@@ -399,11 +429,16 @@ async fn a_name_claimed_at_the_same_time_is_left_to_the_other_installation() {
     assert!(
         conflict
             .message
-            .unwrap()
+            .expect("the message is set")
             .starts_with("Another installation claimed"),
         "conflict says why"
     );
-    let events = harness.store.events(None, None, 100).await.unwrap().items;
+    let events = harness
+        .store
+        .events(None, None, 100)
+        .await
+        .expect("the events load")
+        .items;
     assert!(events.iter().all(|event| event.kind != "action_failed"));
 }
 
@@ -492,7 +527,14 @@ async fn saved_challenge_records_are_deleted_after_a_restart() {
         harness.provider.dump(),
         [format!("{unanswered} {}", txt("someone else's"))]
     );
-    assert_eq!(harness.store.acme_challenges().await.unwrap(), [elsewhere]);
+    assert_eq!(
+        harness
+            .store
+            .acme_challenges()
+            .await
+            .expect("acme challenges succeeds"),
+        [elsewhere]
+    );
     let mut since = 0;
     let journaled = harness.journaled(&mut since).await;
     assert_eq!(journaled, ["ingress_certificate_challenge_delete"; 2]);
@@ -523,7 +565,14 @@ async fn failing_challenge_deletions_back_off() {
     pass(3 * minute).await;
     assert_eq!(harness.journaled(&mut since).await.len(), 1);
     assert_eq!(harness.provider.dump(), Vec::<String>::new());
-    assert_eq!(harness.store.acme_challenges().await.unwrap(), []);
+    assert_eq!(
+        harness
+            .store
+            .acme_challenges()
+            .await
+            .expect("acme challenges succeeds"),
+        []
+    );
 }
 
 #[tokio::test]
@@ -615,7 +664,14 @@ async fn visibility_changes_withdraw_before_repointing() {
     restarted.converged();
     assert!(Harness::pass_of(&restarted).await);
     assert_eq!(harness.provider.dump(), Vec::<String>::new());
-    assert!(harness.store.dns_records().await.unwrap().is_empty());
+    assert!(
+        harness
+            .store
+            .dns_records()
+            .await
+            .expect("the dns records load")
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -646,7 +702,12 @@ async fn failures_keep_records_and_unmanaged_zones_stay_manual() {
     assert!(!harness.pass().await, "a failed pass is retried sooner");
     let failed = harness.state("www.example.com");
     assert_eq!(failed.state, DnsRecordState::Pending);
-    assert!(failed.message.unwrap().contains("retries"));
+    assert!(
+        failed
+            .message
+            .expect("the message is set")
+            .contains("retries")
+    );
     harness.provider.fail(None);
     assert!(harness.pass().await);
     assert_eq!(
@@ -725,7 +786,14 @@ async fn staged_changes_are_published_after_a_failed_publish() {
     harness.provider.fail(None);
     assert!(harness.pass().await);
     assert_eq!(harness.provider.changes(), ["publish"]);
-    assert!(harness.store.dns_records().await.unwrap().is_empty());
+    assert!(
+        harness
+            .store
+            .dns_records()
+            .await
+            .expect("the dns records load")
+            .is_empty()
+    );
     assert!(harness.pass().await);
     harness.unchanged();
 }
@@ -734,7 +802,11 @@ async fn staged_changes_are_published_after_a_failed_publish() {
 async fn a_route_changed_during_a_pass_waits_for_the_next_one() {
     let harness = Harness::new(true).await;
     let id = harness.applied("www.example.com").await;
-    let plan = harness.ingress.plan_records().await.unwrap();
+    let plan = harness
+        .ingress
+        .plan_records()
+        .await
+        .expect("plan records succeeds");
     let every = plan.keys().cloned().collect();
     harness.stage(&id, &[], true).await;
     harness.apply().await;
@@ -758,15 +830,21 @@ async fn tunnel_routes_wait_in_zones_that_cannot_proxy() {
     tunnel.converged();
     assert!(Harness::pass_of(&tunnel).await);
     harness.unchanged();
-    let state = tunnel.route_dns(&RouteHostname::parse("www.example.com").unwrap());
+    let state = tunnel
+        .route_dns(&RouteHostname::parse("www.example.com").expect("the route hostname parses"));
     assert_eq!(state.state, DnsRecordState::Pending);
-    assert!(state.message.unwrap().contains("Cloudflare"));
+    assert!(
+        state
+            .message
+            .expect("the message is set")
+            .contains("Cloudflare")
+    );
 }
 
 #[tokio::test]
 async fn the_webhook_hostname_gets_a_public_routes_records() {
     let harness = Harness::new(true).await;
-    let hooks = Hostname::parse("hooks.example.com").unwrap();
+    let hooks = Hostname::parse("hooks.example.com").expect("the hostname parses");
     let direct = harness
         .restart(None)
         .await

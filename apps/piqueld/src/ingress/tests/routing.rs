@@ -5,21 +5,34 @@ use super::*;
 
 impl Scenario {
     async fn assert_public_routing(&self) {
-        let history = self.store.events(None, None, 100).await.unwrap().items;
+        let history = self
+            .store
+            .events(None, None, 100)
+            .await
+            .expect("the events load")
+            .items;
         assert!(history.iter().any(|event| event.kind == "action_succeeded"
             && event.phase.map(piqueld_core::Phase::as_str) == Some("ingress_start_gateway")));
         let retained = history.len();
-        self.gateway.synchronize().await.unwrap();
+        self.gateway
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
         assert_eq!(
             self.store
                 .events(None, None, 100)
                 .await
-                .unwrap()
+                .expect("the events load")
                 .items
                 .len(),
             retained
         );
-        let container = self.gateway.container().await.unwrap().unwrap();
+        let container = self
+            .gateway
+            .container()
+            .await
+            .expect("the container lookup succeeds")
+            .expect("the container exists");
         assert_eq!(
             container["HostConfig"]["PortBindings"]["443/tcp"][0]["HostPort"],
             "443"
@@ -41,7 +54,7 @@ impl Scenario {
     /// A service-less application's redirect is answered by Caddy itself, so
     /// the application has no ingress network.
     async fn redirect_without_backend(&self) {
-        let app = piqueld_core::parse_toml("api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='www'\n[[spec.routes]]\nhostname='www.example.test'\nvisibility='public'\nredirect={to='https://one.example.test/base/'}").unwrap().normalize(piqueld_core::ApplicationId::parse("input-app").unwrap());
+        let app = piqueld_core::parse_toml("api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='www'\n[[spec.routes]]\nhostname='www.example.test'\nvisibility='public'\nredirect={to='https://one.example.test/base/'}").expect("parse toml succeeds").normalize(piqueld_core::ApplicationId::parse("input-app").expect("the application id parses"));
         let id = self.deploy(app).await;
         self.await_certificate("www.example.test").await;
         let response = self
@@ -49,13 +62,20 @@ impl Scenario {
             .get(format!("{}path?q=1", self.url("www.example.test")))
             .send()
             .await
-            .unwrap();
+            .expect("the request is sent");
         assert_eq!(response.status(), 308);
         assert_eq!(
             response.headers()["location"],
             "https://one.example.test/base/path?q=1"
         );
-        assert_eq!(self.docker.observe(&id).await.unwrap().networks, []);
+        assert_eq!(
+            self.docker
+                .observe(&id)
+                .await
+                .expect("observe succeeds")
+                .networks,
+            []
+        );
     }
 
     async fn add_application_without_interrupting_traffic(&self) {
@@ -92,8 +112,16 @@ impl Scenario {
         );
         self.await_certificate("two.example.test").await;
         assert_eq!(self.body("two.example.test").await, "second backend");
-        let one = self.docker.observe(&self.first).await.unwrap();
-        let two = self.docker.observe(&second).await.unwrap();
+        let one = self
+            .docker
+            .observe(&self.first)
+            .await
+            .expect("observe succeeds");
+        let two = self
+            .docker
+            .observe(&second)
+            .await
+            .expect("observe succeeds");
         assert!(
             one.services[0]
                 .networks
@@ -124,7 +152,7 @@ impl Scenario {
                         cancellation.clone(),
                     )
                     .await
-                    .unwrap();
+                    .expect("run succeeds");
             },
             async {
                 tokio::time::timeout(Duration::from_mins(1), async {
@@ -133,7 +161,7 @@ impl Scenario {
                             self.store
                                 .operation(&routed)
                                 .await
-                                .unwrap()
+                                .expect("the operation loads")
                                 .phase
                                 .map(piqueld_core::Phase::as_str)
                                 == Some("routing")
@@ -146,14 +174,22 @@ impl Scenario {
                     let (_, operation) = request_deployment(
                         &self.store,
                         Actor::Daemon,
-                        private.validate().unwrap().normalize(
-                            piqueld_core::ApplicationId::parse("private-input").unwrap(),
-                        ),
+                        private
+                            .validate()
+                            .expect("the manifest validates")
+                            .normalize(
+                                piqueld_core::ApplicationId::parse("private-input")
+                                    .expect("the application id parses"),
+                            ),
                     )
                     .await;
                     self.succeeded(&operation).await;
                     assert_eq!(
-                        self.store.operation(&routed).await.unwrap().state,
+                        self.store
+                            .operation(&routed)
+                            .await
+                            .expect("the operation loads")
+                            .state,
                         OperationState::Running
                     );
                 })
@@ -162,7 +198,7 @@ impl Scenario {
                 drop(guard);
                 tokio::time::timeout(Duration::from_mins(1), self.succeeded(&routed))
                     .await
-                    .unwrap();
+                    .expect("the step finishes in time");
                 cancellation.cancel();
             }
         );
@@ -183,24 +219,24 @@ impl Scenario {
             }
         })
         .await
-        .unwrap();
+        .expect("the step finishes in time");
         assert_eq!(self.body("one.example.test").await, "first backend");
     }
 
     async fn release_unhealthy_backend(&self) {
         let next_name = piqueld_core::DockerServiceName::for_service(
             &self.first,
-            &piqueld_core::ServiceName::parse("next").unwrap(),
+            &piqueld_core::ServiceName::parse("next").expect("the service name parses"),
         );
         let container = tokio::time::timeout(Duration::from_mins(1), async {
             loop {
                 let containers = self
                     .docker
                     .client()
-                    .unwrap()
+                    .expect("the docker client is available")
                     .list_containers(None::<bollard::query_parameters::ListContainersOptions>)
                     .await
-                    .unwrap();
+                    .expect("list containers succeeds");
                 if let Some(id) = containers.into_iter().find_map(|container| {
                     let labels = container.labels?;
                     let service = labels.get("com.docker.swarm.service.name")?;
@@ -218,17 +254,20 @@ impl Scenario {
             }
         })
         .await
-        .unwrap();
+        .expect("the step finishes in time");
         for _ in 0..5 {
             assert_eq!(
                 self.body_across_reload("one.example.test").await,
                 "first backend"
             );
             assert_eq!(
-                self.store.applied_routes(&self.first).await.unwrap()[0]
+                self.store
+                    .applied_routes(&self.first)
+                    .await
+                    .expect("the applied routes load")[0]
                     .target
                     .service()
-                    .unwrap()
+                    .expect("the target is a service")
                     .as_str(),
                 "web"
             );
@@ -241,28 +280,37 @@ impl Scenario {
             .docker
             .inspect_container(&container)
             .await
-            .unwrap()
-            .unwrap();
+            .expect("inspect container succeeds")
+            .expect("the container exists");
         assert_eq!(health["State"]["Running"], true);
         assert!(
             health["State"]["Health"]["Log"]
                 .as_array()
-                .unwrap()
+                .expect("the value is an array")
                 .iter()
                 .any(|probe| probe["ExitCode"] == 1),
             "cutover must remain blocked after a real failed health probe"
         );
-        let client = self.docker.client().unwrap();
+        let client = self
+            .docker
+            .client()
+            .expect("the docker client is available");
         let exec = bollard::models::ExecConfig {
             cmd: Some(vec!["touch".into(), "/tmp/ready".into()]),
             ..Default::default()
         };
-        let exec = client.create_exec(&container, exec).await.unwrap();
+        let exec = client
+            .create_exec(&container, exec)
+            .await
+            .expect("create exec succeeds");
         let start = bollard::exec::StartExecOptions {
             detach: true,
             ..Default::default()
         };
-        client.start_exec(&exec.id, Some(start)).await.unwrap();
+        client
+            .start_exec(&exec.id, Some(start))
+            .await
+            .expect("start exec succeeds");
     }
 
     async fn repoint_after_backend_convergence(&self) {
@@ -308,27 +356,34 @@ impl Scenario {
                 }
             }
         );
-        let observed = self.docker.observe(&self.first).await.unwrap();
+        let observed = self
+            .docker
+            .observe(&self.first)
+            .await
+            .expect("observe succeeds");
         let web = piqueld_core::DockerServiceName::for_service(
             &self.first,
-            &piqueld_core::ServiceName::parse("web").unwrap(),
+            &piqueld_core::ServiceName::parse("web").expect("the service name parses"),
         );
         assert_eq!(
             observed
                 .services
                 .iter()
                 .find(|service| service.name == web.as_str())
-                .unwrap()
+                .expect("the match exists")
                 .networks
                 .len(),
             1,
             "previous backend loses its ingress attachment only after cutover"
         );
         assert_eq!(
-            self.store.applied_routes(&self.first).await.unwrap()[0]
+            self.store
+                .applied_routes(&self.first)
+                .await
+                .expect("the applied routes load")[0]
                 .target
                 .service()
-                .unwrap()
+                .expect("the target is a service")
                 .as_str(),
             "next"
         );
@@ -352,27 +407,31 @@ impl Scenario {
             .header("X-Forwarded-For", "203.0.113.9")
             .send()
             .await
-            .unwrap()
+            .expect("the request is sent")
             .text()
             .await
-            .unwrap();
+            .expect("the body reads");
         let [peer, forwarded, proxies] = body.split(' ').collect::<Vec<_>>()[..] else {
             panic!("unexpected backend response: {body}");
         };
-        let peer: std::net::Ipv4Addr = peer.parse().unwrap();
-        forwarded.parse::<IpAddr>().unwrap();
+        let peer: std::net::Ipv4Addr = peer.parse().expect("the value parses");
+        forwarded.parse::<IpAddr>().expect("the ip addr parses");
         assert_ne!(
             forwarded, "203.0.113.9",
             "client-supplied header reached the backend"
         );
-        let (network, prefix) = proxies.split_once('/').unwrap();
-        let mask = u32::MAX << (32 - prefix.parse::<u32>().unwrap());
+        let (network, prefix) = proxies.split_once('/').expect("the text splits");
+        let mask = u32::MAX << (32 - prefix.parse::<u32>().expect("the u32 parses"));
         assert_eq!(
             u32::from(peer) & mask,
-            u32::from(network.parse::<std::net::Ipv4Addr>().unwrap()),
+            u32::from(
+                network
+                    .parse::<std::net::Ipv4Addr>()
+                    .expect("the ipv4 addr parses")
+            ),
             "{peer} is outside {proxies}"
         );
-        let observed = self.docker.observe(&id).await.unwrap();
+        let observed = self.docker.observe(&id).await.expect("observe succeeds");
         assert!(observed.services[0].runtime_configuration_matches);
         assert!(
             !observed.services[0]
@@ -403,22 +462,37 @@ impl Scenario {
                 .header("Referer", "https://news.example.org/item?id=1")
                 .send()
                 .await
-                .unwrap();
+                .expect("the request is sent");
             assert!(response.status().is_success());
         }
         let bot = self.client.get(&url).header("User-Agent", "Googlebot/2.1");
-        assert!(bot.send().await.unwrap().status().is_success());
+        assert!(
+            bot.send()
+                .await
+                .expect("the request is sent")
+                .status()
+                .is_success()
+        );
         let probe = format!(
             "{}.well-known/piqueld-ingress",
             self.url("four.example.test")
         );
-        self.client.get(probe).send().await.unwrap();
+        self.client
+            .get(probe)
+            .send()
+            .await
+            .expect("the request is sent");
         // wall-clock: Caddy writes access log lines on its own schedule and
         // signals nothing; give it time before the counter stops.
         tokio::time::sleep(Duration::from_secs(1)).await;
         self.counting.cancel();
-        let counter = self.counter.lock().await.take().unwrap();
-        counter.await.unwrap();
+        let counter = self
+            .counter
+            .lock()
+            .await
+            .take()
+            .expect("the counter is present");
+        counter.await.expect("the task joins");
         let now = now_ms();
         let report = self
             .store
@@ -432,7 +506,7 @@ impl Scenario {
                 },
             )
             .await
-            .unwrap();
+            .expect("the traffic request completes");
         let totals = &report.totals;
         assert_eq!((totals.page_views, totals.visitors), (3, 1), "{report:?}");
         assert!(totals.requests >= 4, "{report:?}");
@@ -451,8 +525,17 @@ impl Scenario {
 
     async fn disable_and_restore_deployed_routes(&self) {
         let disabled = Arc::new(self.ingress(false));
-        disabled.synchronize().await.unwrap();
-        assert!(disabled.container().await.unwrap().is_none());
+        disabled
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
+        assert!(
+            disabled
+                .container()
+                .await
+                .expect("the container lookup succeeds")
+                .is_none()
+        );
         self.client
             .get(self.url("one.example.test"))
             .send()
@@ -464,7 +547,11 @@ impl Scenario {
                 .join(scenario::ROOT_CERTIFICATE)
                 .exists()
         );
-        let sources = Arc::new(Sources::open(self.directory.path()).await.unwrap());
+        let sources = Arc::new(
+            Sources::open(self.directory.path())
+                .await
+                .expect("the store opens"),
+        );
         let controller =
             Controller::new(Arc::clone(&self.docker), Arc::clone(&self.store), sources)
                 .with_ingress(Arc::clone(&disabled));
@@ -473,11 +560,18 @@ impl Scenario {
         changed.spec.routes.clear();
         deploy(&self.store, &controller, self.first_as(changed)).await;
         assert_eq!(
-            self.store.routing_table().await.unwrap()[&self.first],
+            self.store
+                .routing_table()
+                .await
+                .expect("the routing table loads")[&self.first],
             [] as [ValidatedRoute; 0]
         );
         assert_eq!(
-            self.docker.observe(&self.first).await.unwrap().services[0]
+            self.docker
+                .observe(&self.first)
+                .await
+                .expect("observe succeeds")
+                .services[0]
                 .networks
                 .len(),
             1
@@ -487,7 +581,7 @@ impl Scenario {
                 self.controller
                     .scan(&CancellationToken::new())
                     .await
-                    .unwrap();
+                    .expect("scan succeeds");
                 if self.gateway.synchronize().await.is_ok()
                     && let Ok(response) = self.client.get(self.url("two.example.test")).send().await
                     && response.status().is_success()
@@ -504,10 +598,13 @@ impl Scenario {
             }
         })
         .await
-        .unwrap();
+        .expect("the step finishes in time");
         assert_eq!(self.plain("one.example.test", "").await.status(), 404);
         assert_eq!(self.body("two.example.test").await, "second backend");
-        disabled.synchronize().await.unwrap();
+        disabled
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
     }
 }
 
@@ -518,7 +615,7 @@ async fn ingress_caddy_routes_tls_network_changes_and_disable() {
         .with_test_writer()
         .with_max_level(tracing::Level::INFO)
         .try_init()
-        .unwrap();
+        .expect("try init succeeds");
     let scenario = Box::pin(Scenario::new()).await;
     scenario.assert_public_routing().await;
     scenario.redirect_without_backend().await;
