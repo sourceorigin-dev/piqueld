@@ -29,25 +29,6 @@ crates = ["piqueld"]
 reason = "160 findings: progenitor writes the `allow`s into the generated client; fixed in a follow-up"
 paths = ["crates/piqueld-client/src/generated.rs"]
 
-[deviations.doc-length]
-reason = "74 findings in 60 files, fixed in a follow-up"
-paths = [
-  "apps/piqueld/src/ingress/certificates.rs",
-  "apps/piqueld/src/ingress/configuration.rs",
-  "apps/piqueld/src/ingress/gateway.rs",
-  "apps/piqueld/src/ingress/mod.rs",
-  "apps/piqueld/src/ingress/node.rs",
-  "apps/piqueld/src/ingress/records/mod.rs",
-  "apps/piqueld/src/ingress/traffic.rs",
-  "apps/piqueld/src/ingress/tunnel.rs",
-  "apps/piqueld/src/reconcile/controller.rs",
-  "apps/piqueld/src/reconcile/coordinator.rs",
-  "apps/piqueld/src/reconcile/deployment.rs",
-  "apps/piqueld/src/reconcile/images.rs",
-  "apps/piqueld/src/tailnet/node.rs",
-  "apps/piqueld/src/telemetry/mod.rs",
-]
-
 [deviations.recipes]
 reason = "rule challenge: `just validate` checks without modifying files, as AGENTS.md and docs/dev/validation.md say, so it runs `fmt-check` instead of `fmt`"
 paths = ["justfile"]

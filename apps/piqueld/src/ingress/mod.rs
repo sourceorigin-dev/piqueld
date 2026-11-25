@@ -576,14 +576,11 @@ impl Ingress {
     ///
     /// When enabled: verifies ingress networks, ensures the gateway container,
     /// applies routes and attachments, acknowledges the applied table, then
-    /// ensures `cloudflared` and the apps node. When disabled: stops the
-    /// gateway, `cloudflared` and the node and acknowledges the withdrawal.
-    /// Callers must hold the writer lock. Network failures degrade health;
-    /// they fail the call only for `application` (or for any application when
-    /// `None`). A disconnected tunnel degrades health without failing the
-    /// call. Node failures degrade only the private listener's health, which
-    /// public routes do not depend on, but still count towards the
-    /// `ingress_unavailable` condition so they notify.
+    /// ensures `cloudflared` and the apps node. When disabled: stops them and
+    /// acknowledges the withdrawal. Callers must hold the writer lock. Network
+    /// failures degrade health and fail the call only for `application` (or for
+    /// any application when `None`). Tunnel and node failures degrade health
+    /// without failing the call.
     async fn synchronize_for(&self, application: Option<&EnvironmentId>) -> Result<()> {
         let mut failures = BTreeMap::new();
         // Health messages name only the failed stage and any unmet requirement

@@ -69,9 +69,8 @@ impl Node {
     ///
     /// # Errors
     /// Returns state directory, tailscaled, login, certificate, or forwarding
-    /// errors. HTTPS certificates must be enabled for the tailnet. A shared
-    /// node fails when the port is already served, unless it forwards to an
-    /// address that refuses connections, as a crashed daemon leaves it.
+    /// errors. A shared node fails when the port is already served, unless it
+    /// forwards to an address that refuses connections.
     pub async fn join(config: &mut DaemonConfig) -> Result<Option<Self>> {
         if !config.tailscale.enabled {
             return Ok(None);

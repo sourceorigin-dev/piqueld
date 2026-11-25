@@ -1,53 +1,20 @@
 //! Builds Caddy's runtime JSON from the deployed routing table. The daemon loads
-//! it through Caddy's private Unix admin socket and persists it as the gateway's
-//! autosave configuration for independent container restarts.
+//! it through Caddy's private admin socket and persists it as the gateway's
+//! autosave configuration. Each visibility has its own listener and routes:
 //!
-//! Each visibility has its own listener, with its own route list:
-//!
-//! | Server | Listens on | Serves |
-//! | --- | --- | --- |
-//! | `public`, `public_http` | `:443`, `:80` (published) | public routes |
-//! | `tunnel`, instead of `public` | `:8080` HTTP (not published) | public routes, from `cloudflared` |
-//! | `private`, `private_http` | `:8443`, `:8081` (not published) | private routes |
-//!
-//! With `ingress.webhook_hostname`, the public listener also forwards that
-//! hostname's webhook path, and nothing else, to the daemon's webhook socket.
-//! With `ingress.private.dashboard_hostname`, the private listener forwards
-//! that hostname to the daemon's dashboard socket, which serves the website.
+//! ```text
+//! public, public_http    :443, :80 (published)         public routes
+//! tunnel, not public     :8080 HTTP (not published)    public routes, from cloudflared
+//! private, private_http  :8443, :8081 (not published)  private routes
+//! ```
 //!
 //! A hostname appears only on its own listener, and each HTTPS server's TLS
-//! policy accepts only its own hostnames, so a forged Host or SNI for a
-//! private route on the public listener gets no certificate and a 404. The
-//! private servers exist only while private ingress is enabled, and never fall
-//! back to the public listener. Applications can connect to them too, since
-//! their networks are attached to the gateway, so the private servers serve
-//! only tailnet client addresses. Only edge network peers, the apps node among
-//! them, may set the client address with a PROXY header; anyone else's header
-//! is ignored and their own address is used.
-//!
-//! In tunnel mode, Cloudflare terminates TLS and `cloudflared` forwards public
-//! routes to the `tunnel` server, which therefore has no certificates and no
-//! redirects. It refuses every peer outside the edge network, whose only
-//! other member, the apps node, forwards only to the private listener, and
-//! takes the client address from the `Cf-Connecting-IP` header `cloudflared`
-//! sets.
-//!
-//! Known hosts redirect HTTP to HTTPS, then either proxy to their Swarm service's
-//! internal HTTP port or answer with their configured redirect. Caddy
-//! obtains/renews certificates for exact public hosts automatically. Private
-//! hosts and public wildcards use the DNS-01 certificates piqueld loads as
-//! PEM, so automatic HTTPS is off on the private servers and skips public
-//! wildcards. Explicit redirects keep unknown HTTP hosts on the final 404
-//! handler.
-//!
-//! A wildcard host matches every name one label below its parent, except
-//! the exact hostnames of any listener: exact routes, and the webhook and
-//! dashboard hostnames, always win, so a wildcard never captures them.
-//!
-//! While the daemon [counts traffic](Ingress::counts_traffic), the HTTPS and
-//! tunnel servers log each request to its traffic socket, and each route
-//! proxying to a service tags its requests with the environment, service
-//! and route hostname the daemon counts them under (see `traffic`).
+//! policy accepts only its own hostnames, so a forged Host or SNI gets a 404.
+//! Private servers serve only tailnet client addresses, and only edge network
+//! peers may set the client address with a PROXY header. In tunnel mode,
+//! `cloudflared` forwards public routes to the `tunnel` server, which has no
+//! certificates or redirects. Known hosts redirect HTTP to HTTPS, then proxy to
+//! their service or answer with their redirect.
 
 use super::{
     DASHBOARD_SOCKET, Ingress, WEBHOOK_SOCKET,

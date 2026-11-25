@@ -294,15 +294,12 @@ impl Ingress {
     ///
     /// Returns the table to apply, the verified ingress networks to attach, and
     /// per-application network failures. Applications without proxied routes
-    /// (withdrawn or redirect-only) need no network and are passed through.
-    /// Keep unavailable apps on their accepted destinations, but always honor
-    /// withdrawals. Never attach an unverified network or acknowledge a new route
-    /// for an app whose network failed validation. An app whose network
-    /// overlaps the tailnet loses all its routes instead, so that network is
-    /// detached rather than retained. So does every app with a failed network
-    /// while the gateway switches between direct and tunnel mode: the new
-    /// gateway could not attach its network, and the switch goes ahead for
-    /// the other apps.
+    /// need no network and are passed through. Unavailable apps keep their
+    /// accepted destinations, but withdrawals are always honored, and no new
+    /// route is acknowledged for an app whose network failed validation. An
+    /// app whose network overlaps the tailnet loses all its routes, as does
+    /// every app with a failed network while the gateway switches between
+    /// direct and tunnel mode.
     pub(super) async fn prepare_routes(
         &self,
         desired: &RoutingTable,

@@ -5,7 +5,6 @@
 //!
 //! Each certificate covers one name: the wildcard of a hostname's parent when
 //! that parent lies inside the provider's zone, otherwise the exact hostname.
-//! Wildcard routes use their own wildcard.
 //!
 //! ```text
 //! admin.piquel.fr, staging.piquel.fr         -> *.piquel.fr
@@ -21,8 +20,7 @@
 //! certificates/<name>.pem                   private key, then chain (0600)
 //! ```
 //!
-//! where `<name>` is the hostname, or `_wildcard.<parent>` for wildcards. One
-//! file holds both, so a renewal replaces the pair atomically.
+//! where `<name>` is the hostname, or `_wildcard.<parent>` for wildcards.
 
 use super::{
     Ingress,

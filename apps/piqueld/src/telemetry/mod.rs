@@ -1,27 +1,15 @@
 //! Export of the daemon's own traces, metrics and logs over OTLP/gRPC.
 //!
-//! piqueld pushes telemetry to every destination: the `[telemetry]`
-//! endpoint, if set, and the receiving service of each environment granted
-//! telemetry, over its socket (see [`Sockets`]). Every record carries the
-//! resource attributes `service.name = piqueld`, `service.version` and
-//! `service.instance.id`, the installation's ID.
+//! piqueld pushes telemetry to every destination: the `[telemetry]` endpoint, if
+//! set, and the receiving service of each environment granted telemetry, over its
+//! socket (see [`Sockets`]). Traces cover each journaled operation, see
+//! [`journal`], and API requests; metrics cover deployments, builds, API latency
+//! and gauges of the daemon and its services; logs are `tracing` and journal
+//! events. With `[telemetry] containers`, container output and resource usage
+//! is exported too, see [`containers`].
 //!
-//! - Traces: each journaled operation, see [`journal`], and API requests,
-//!   through a `tracing-opentelemetry` layer on their `tracing` spans.
-//! - Metrics: deployments, builds, API latency, access denials, and gauges
-//!   of the daemon process, its queues and every deployed service.
-//! - Logs: the daemon's own `tracing` events and every journal event.
-//!
-//! With `[telemetry] containers`, the output and resource usage of every
-//! container piqueld runs are exported too, see [`containers`], each under
-//! its own resource naming the manifest service.
-//!
-//! Records flow through the OpenTelemetry SDK into [`Fanout`], which copies
-//! them onto each destination's bounded queues. Nothing waits on a collector:
-//! a full queue or a failed export drops records and counts them, and one
-//! that keeps failing raises a single `telemetry_export_failed` diagnostic,
-//! attributed to the receiving environment for a receiver. Revoking a
-//! receiver's grant drops its destination at once, with what it had queued.
+//! Records flow through the OpenTelemetry SDK into [`Fanout`], which copies them
+//! onto each destination's bounded queues, dropping and counting on overflow.
 
 mod containers;
 mod destination;
@@ -220,21 +208,16 @@ impl Telemetry {
         }))))
     }
 
-    /// Installs tracing filtered by `RUST_LOG` when present.
-    ///
-    /// With telemetry enabled, API request spans and log events are also
+    /// Installs tracing filtered by `RUST_LOG` when present, falling back to
+    /// `info`. With telemetry enabled, API request spans and log events are also
     /// exported over OTLP.
     ///
-    /// Interactive terminals and the systemd journal receive plain text. The
-    /// journal gets it without colors or timestamps, which it records itself.
-    /// Other pipes (containers, log collectors) receive structured JSON. A
-    /// `log_file` additionally receives JSON, so tools can query the logs while a
-    /// person watches the terminal.
+    /// Interactive terminals and the systemd journal receive plain text, the
+    /// journal without colors or timestamps. Other pipes receive structured
+    /// JSON, and a `log_file` additionally receives JSON.
     ///
     /// # Errors
-    ///
-    /// Invalid or absent `RUST_LOG` values fall back to the `info` filter. The
-    /// returned error is only from subscriber initialization, such as when another
+    /// Returns an error from subscriber initialization, such as when another
     /// global subscriber is already installed.
     pub fn init_tracing(
         &self,
