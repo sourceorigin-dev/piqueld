@@ -10,6 +10,16 @@ use std::{
     process::{Command, ExitStatus},
 };
 
+/// `path` as UTF-8, as the generated `include_*!` calls that name it need.
+///
+/// # Errors
+///
+/// Returns an error if `path` is not valid UTF-8.
+pub fn utf8(path: &Path) -> io::Result<&str> {
+    path.to_str()
+        .ok_or_else(|| io::Error::other(format!("path is not valid UTF-8: {}", path.display())))
+}
+
 /// Why a nested build could not run or failed, with the paths, package and
 /// target a person needs to fix it.
 #[derive(thiserror::Error)]

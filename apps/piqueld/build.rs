@@ -1,12 +1,7 @@
 //! Embeds the dashboard bundle into the daemon binary: built under
 //! `--features embedded-ui`, or the prebuilt one a published crate ships.
 
-use std::{
-    env,
-    error::Error,
-    io,
-    path::{Path, PathBuf},
-};
+use std::{env, error::Error, path::PathBuf};
 
 #[path = "build/dashboard.rs"]
 mod dashboard;
@@ -25,10 +20,4 @@ fn out_dir() -> Result<PathBuf, Box<dyn Error>> {
     Ok(PathBuf::from(env::var_os("OUT_DIR").ok_or(
         "Cargo did not provide OUT_DIR to the piqueld build script",
     )?))
-}
-
-/// `path` as UTF-8, as the generated `include_*!` calls that name it need.
-fn utf8(path: &Path) -> io::Result<&str> {
-    path.to_str()
-        .ok_or_else(|| io::Error::other(format!("path is not valid UTF-8: {}", path.display())))
 }
