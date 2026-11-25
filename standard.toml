@@ -65,9 +65,6 @@ paths = [
   "apps/piqueld/src/tailnet/node.rs",
   "apps/piqueld/src/telemetry/mod.rs",
   "crates/piqueld-build/src/lib.rs",
-  "crates/piqueld-docker/src/logs/mod.rs",
-  "crates/piqueld-docker/src/policy/mod.rs",
-  "crates/piqueld-docker/src/spec.rs",
 ]
 
 [deviations.recipes]

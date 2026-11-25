@@ -18,18 +18,17 @@ const SWARM_OPEN: &str = "{{";
 const SWARM_ESCAPED_OPEN: &str = r#"{{"{{"}}"#;
 
 impl BollardDocker {
-    /// Builds the service specification pinned to `node_id`, then resolves
-    /// the inputs Docker assigns: each pinned secret becomes its immutable
-    /// Docker secret ID reference, each file and, for services whose health
-    /// check runs `piqueld-probe`, the probe mount their Swarm configs,
-    /// published on first use, and
-    /// services attached to the application's ingress network get
-    /// `INGRESS_PROXIES_ENV` set to that network's subnets.
+    /// Builds the service specification pinned to `node_id`, resolving the
+    /// inputs Docker assigns: each pinned secret becomes its immutable Docker
+    /// secret ID reference, each file (and the health probe, for services
+    /// whose health check runs `piqueld-probe`) a Swarm config published on
+    /// first use, and services on the application's ingress network get
+    /// `INGRESS_PROXIES_ENV` set to its subnets.
     ///
-    /// Fails when a secret version is missing, when a file or the health probe
-    /// cannot be published, or when the ingress network is missing or still has no
-    /// subnet after bounded inspection retries, since Swarm assigns subnets
-    /// after creating the network.
+    /// Fails when a secret version is missing, a file or the probe cannot be
+    /// published, or the ingress network is missing or still has no subnet
+    /// after bounded inspection retries, since Swarm assigns subnets after
+    /// creating it.
     #[expect(
         clippy::expect_used,
         reason = "`service_spec` always builds a task template."

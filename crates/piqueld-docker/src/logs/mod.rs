@@ -75,18 +75,13 @@ impl TaskLog {
 impl BollardDocker {
     /// Reads a bounded, merged log window for one application's services.
     ///
-    /// 1. Resolve the managed services (optionally a single logical service).
-    /// 2. List their tasks, running ones first, then the most recently
-    ///    updated, and keep the first [`MAX_LOG_TASKS`].
-    /// 3. Read their containers' timestamped output, [`LOG_READS`] at a time:
-    ///    at most `tail + 1` lines per container since `since` seconds ago,
-    ///    each task keeping its newest output within an equal share of
-    ///    [`LOG_BYTES`], at least [`TASK_LOG_BYTES`].
-    /// 4. Sort by timestamp then task ID and keep the newest `tail` records.
-    ///
-    /// Tasks that never got a container are skipped: they have no output.
-    /// `truncated` is set whenever records were skipped: tasks without an ID
-    /// or known service, vanished containers, or any limit hit.
+    /// Lists the services' tasks, running ones first, then the most recently
+    /// updated, and keeps the first [`MAX_LOG_TASKS`]. Reads their containers'
+    /// timestamped output [`LOG_READS`] at a time: at most `tail + 1` lines
+    /// since `since` seconds ago, each task keeping its newest output within
+    /// an equal share of [`LOG_BYTES`], at least [`TASK_LOG_BYTES`]. Returns
+    /// the newest `tail` records by timestamp then task ID. `truncated` is set
+    /// whenever tasks or records were skipped, or a limit was hit.
     pub(super) async fn read_logs(
         &self,
         instance: &InstanceId,
