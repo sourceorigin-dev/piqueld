@@ -11,7 +11,12 @@ use super::{Backups, Manifest, Moved, PreMigration, Refusal, entries, move_entri
 use anyhow::{Context, Result, bail};
 use piqueld_core::InstanceId;
 use piqueld_store::SCHEMA_VERSION;
-use std::{ffi::OsStr, fs, os::unix::fs::DirBuilderExt, path::PathBuf};
+use std::{
+    ffi::OsStr,
+    fs,
+    os::unix::fs::DirBuilderExt,
+    path::{Path, PathBuf},
+};
 
 /// A directory a roll-back moved the state it replaced into,
 /// `rolled-back-<ms>`, which nothing deletes.
@@ -104,7 +109,10 @@ impl Backups {
             .mode(0o700)
             .create(&aside)
             .with_context(|| format!("create {}", aside.display()))?;
-        let staging = self.mark(staged)?;
+        let staging = match self.mark(staged) {
+            Ok(staging) => staging,
+            Err(error) => return Err(Self::without_aside(error, &aside)),
+        };
         let state = entries(data_dir, |name| {
             Some(name) != staging.file_name() && !Self::kept(name)
         })?;
@@ -119,28 +127,34 @@ impl Backups {
                 },
             })
         });
-        let (removed, context) = if published
+        let undone = published
             .as_ref()
-            .is_err_and(|failed| failed.undo.is_none())
-        {
-            let removed =
-                fs::remove_dir(&aside).with_context(|| format!("remove {}", aside.display()));
-            (removed, format!("roll back to {}", backup.display()))
-        } else {
-            let context = format!(
-                "roll back to {}, with the state it replaced in {}",
-                backup.display(),
-                aside.display()
-            );
-            (Ok(()), context)
-        };
-        self.finish(&staging, published)
-            .and(removed)
-            .context(context)?;
+            .is_err_and(|failed| failed.undo.is_none());
+        if let Err(error) = self.finish(&staging, published) {
+            return Err(if undone {
+                Self::without_aside(error, &aside)
+                    .context(format!("roll back to {}", backup.display()))
+            } else {
+                error.context(format!(
+                    "roll back to {}, with the state it replaced in {}",
+                    backup.display(),
+                    aside.display()
+                ))
+            });
+        }
         Ok(RollBack::Restored {
             backup,
             manifest,
             aside,
         })
+    }
+
+    /// `error`, once the empty `aside` a failed roll-back left is removed, or
+    /// with why it couldn't be.
+    fn without_aside(error: anyhow::Error, aside: &Path) -> anyhow::Error {
+        match fs::remove_dir(aside) {
+            Ok(()) => error,
+            Err(removal) => error.context(format!("remove {}: {removal}", aside.display())),
+        }
     }
 }

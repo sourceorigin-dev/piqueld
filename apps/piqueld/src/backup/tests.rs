@@ -626,3 +626,35 @@ async fn a_copy_left_while_verifying_is_removed() {
         .expect("the backup restores");
     assert!(!data_dir.join(".staged-1").exists());
 }
+
+/// A roll-back whose backup fails to publish once the state moved aside,
+/// here because its copy holds an entry the data directory keeps, moves the
+/// state back and leaves no marker or rolled-back directory.
+#[tokio::test]
+async fn a_roll_back_that_cannot_publish_moves_the_state_back() {
+    let (data_dir, _, _) = migrated_by_a_newer_daemon().await;
+    let data_dir = data_dir.path();
+    fs::create_dir_all(data_dir.join("telemetry/env")).expect("a receiver's directory is created");
+    fs::write(data_dir.join("telemetry/env/otlp.sock"), b"").expect("its socket is created");
+    let entries_now = || {
+        let mut names = names(data_dir);
+        names.retain(|name| !name.ends_with("-wal") && !name.ends_with("-shm"));
+        names
+    };
+    let (before, entries_before) = (state(data_dir), entries_now());
+
+    let error = Backups::new(data_dir)
+        .roll_back(async |_| {
+            for name in entries(data_dir, |name| {
+                name.as_encoded_bytes().starts_with(b".staged-")
+            })? {
+                fs::create_dir(data_dir.join(name).join("telemetry"))?;
+            }
+            Ok(())
+        })
+        .await
+        .expect_err("the roll-back fails");
+    assert!(error.downcast_ref::<Refusal>().is_none(), "{error:#}");
+    assert_eq!(state(data_dir), before);
+    assert_eq!(entries_now(), entries_before);
+}

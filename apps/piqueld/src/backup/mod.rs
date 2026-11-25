@@ -55,7 +55,7 @@ const BACKUPS: &str = "backups";
 /// The data directory's entries that restores and roll-backs leave in place:
 /// the backups, and the telemetry receivers' sockets, which their collectors
 /// keep listening on.
-const KEPT: [&str; 2] = [BACKUPS, "telemetry"];
+const KEPT: [&str; 2] = [BACKUPS, crate::telemetry::Sockets::DIRECTORY];
 /// How many pre-migration backups the daemon keeps.
 const PRE_MIGRATION_KEEP: usize = 3;
 

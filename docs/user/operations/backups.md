@@ -165,11 +165,10 @@ updated the database.
    sudo -u piqueld piqueld --config /etc/piqueld/config.toml roll-back
    ```
 
-   On NixOS, skip this step and set
-   [`rollBack`](#roll-back-on-every-start) instead: the daemon does it as it
-   starts. The command reads the configuration's credential files, which on
-   NixOS only the unit receives. Without `rollBack`,
-   [roll back by hand](#roll-back-by-hand).
+   On NixOS, skip this step if the generation you went back to sets
+   [`rollBack`](#roll-back-on-every-start): the daemon does it as it starts.
+   Otherwise, [roll back by hand](#roll-back-by-hand): the command reads the
+   configuration's credential files, which on NixOS only the unit receives.
 
    It prints where the state it replaced went:
 
@@ -209,9 +208,6 @@ it moves back what it moved, and they stay stopped until the daemon starts.
 It never deletes the state it replaced: the database, with every change since
 the backup, and everything else stay in `rolled-back-<time>`. Delete that
 directory once you no longer need it.
-
-piqueld then compares what Docker runs with the deployments in the restored
-database, and repairs the difference, as it repairs any drift.
 
 ### Roll back on every start
 
@@ -318,6 +314,10 @@ backup you [took yourself](#back-up), restore it by hand:
    It may fail to start a few times, until piqueld removes the stale socket
    the backup holds.
 
+However you roll back, piqueld then compares what Docker runs with the
+deployments in the restored database, and repairs the difference, as it
+repairs any drift.
+
 ## Troubleshooting
 
 - **The integrity check doesn't print `ok`.** The copy is damaged: take the
@@ -336,13 +336,28 @@ backup you [took yourself](#back-up), restore it by hand:
 - **The daemon refuses to start because of an unfinished restore.** A
   `piqueld restore` or `piqueld roll-back` was interrupted, or failed and
   couldn't undo what it had done. The `.restore-<time>` directory the error
-  names only holds a copy of the backup, so nothing is lost by removing it:
+  names only holds a copy of the backup, so nothing is lost by removing it.
+  A roll-back already moved most of the state it replaced into the newest
+  `rolled-back-<time>` directory.
 
-  1. Remove the `.restore-<time>` directory.
+  1. Stop the daemon, so it doesn't start on what's left:
+
+     ```console
+     sudo systemctl stop piqueld
+     ```
+
   2. Move the data directory's other contents, but for `backups`,
-     `telemetry` and `rolled-back-<time>` directories, into a new directory,
-     without deleting them. A roll-back already moved most of the state it
-     replaced into the newest `rolled-back-<time>`.
-  3. [Restore the backup again](#roll-back-by-hand), with `piqueld restore`.
+     `telemetry` and `rolled-back-<time>` directories, into a new directory
+     named `rolled-back-<anything>` inside it, such as
+     `/var/lib/piqueld/rolled-back-recovered`. `piqueld restore` leaves those
+     in place.
+  3. Remove the `.restore-<time>` directory.
+  4. Restore the backup again, as the daemon's user:
+
+     ```console
+     sudo -u piqueld piqueld restore --data-dir /var/lib/piqueld /var/lib/piqueld/backups/pre-<schema>-<time>
+     ```
+
+  5. Start the daemon.
 - **The daemon can't write to a restored database.** Its files must belong to
   the daemon's user: run `sudo chown -R piqueld:piqueld /var/lib/piqueld`.

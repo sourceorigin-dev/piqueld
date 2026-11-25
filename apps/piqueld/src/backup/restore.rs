@@ -66,7 +66,7 @@ pub enum Refusal {
     OtherInstance(String),
     /// A restore was interrupted, or failed and couldn't be undone.
     #[error(
-        "{} holds an unfinished restore, {}, which only holds a copy of the backup: remove it, move the data directory's other entries but backups, telemetry and rolled-back-* aside, without deleting them, and run piqueld restore again",
+        "{} holds an unfinished restore, {}, which only holds a copy of the backup: with the daemon stopped, move the data directory's other entries but backups, telemetry and rolled-back-* into a new rolled-back-<name> directory there, then remove it and run piqueld restore again",
         .0.display(), .1.display()
     )]
     Unfinished(PathBuf, PathBuf),
@@ -162,8 +162,15 @@ impl Backups {
         fs::rename(staged.path(), &staging)
             .with_context(|| format!("move the verified backup to {}", staging.display()))?;
         drop(staged.keep());
-        sync(data_dir)?;
-        Ok(staging)
+        let Err(error) = sync(data_dir) else {
+            return Ok(staging);
+        };
+        Err(match fs::remove_dir_all(&staging) {
+            Ok(()) => error,
+            Err(removal) => error
+                .context(format!("remove {}: {removal}", staging.display()))
+                .context(Refusal::Unfinished(data_dir.clone(), staging)),
+        })
     }
 
     /// Refuses to go on while the data directory holds an unfinished
