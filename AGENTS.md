@@ -61,10 +61,11 @@ recognise a case the list doesn't name.
 
 ## Conventions
 
-Follow `docs/dev/rust-conventions.md`, which applies the shared
-[engineering standard](https://gist.github.com/PiquelChips/04330e52c03efbe9ce4c889c88673a27)
-to piqueld. `just lint` enforces its lints, and `just boundary` the crate
-boundaries.
+Follow the shared engineering standard,
+[sourceorigin-standard](https://crates.io/crates/sourceorigin-standard), and
+`docs/dev/rust-conventions.md`, which applies it to piqueld. `just standard`
+checks its rules (the `standard` skill says what to do when one fails),
+`just lint` its lints, and `just boundary` the crate boundaries.
 
 Read a dependency's real source in `~/.cargo/registry/src`, at the version in
 `Cargo.lock`, rather than trusting memory of a fast-moving crate's API, such as
@@ -85,6 +86,10 @@ local check CI runs, which `docs/dev/validation.md` lists, on the whole
 workspace without modifying files (`just fmt` formats the code): run it when
 a change is workspace-wide or when asked. CI owns the full suite. If a step cannot run, report the exact command and
 why.
+
+`just coverage` measures the native tests' coverage. Under load, the
+`fake_docker` timing tests and Playwright's `branches.spec.ts` flake: rerun
+one once before calling it a failure.
 
 T3 Code prepares a new worktree with `just setup-worktree`; run it yourself if
 the worktree has no `piqueld.local.toml` or build yet.
@@ -150,10 +155,14 @@ A way in needs a way out and a way to see it: create needs delete, enable
 needs disable, pause needs resume, and each state shows in `piquelctl` and the
 dashboard.
 
+A refactor changes none of the surfaces: the OpenAPI document, the manifest,
+the CLI's help and output, the NixOS module's options and output, and the
+names and labels of what piqueld creates in Docker stay as they were.
+
 ## Documentation
 
 The documentation in `docs/` is an mdBook with a user guide (`docs/user`) and a
 developer guide (`docs/dev`). Update it in the same pull request as the change
 it describes, following `docs/dev/documentation.md`, and run `just docs` to
-build it and check its links. The `piqueld-docs` skill in `.agents/skills`
-points agents to that guide.
+build it and check its links. The `docs` skill in `.agents/skills` says how
+to write it.

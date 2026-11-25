@@ -1,8 +1,10 @@
 # Rust conventions
 
-piqueld follows the shared
-[engineering standard](https://gist.github.com/PiquelChips/04330e52c03efbe9ce4c889c88673a27),
-also used by SourceOrigin and DirkEngine. This page applies it to piqueld.
+piqueld follows the shared engineering standard,
+[sourceorigin-standard](https://crates.io/crates/sourceorigin-standard), also
+used by SourceOrigin and DirkEngine. `just standard` checks its rules, and
+`standard.toml` lists where piqueld departs from one, with its reason. This
+page holds what piqueld adds that no rule checks.
 Keep implementations simple, follow neighbouring modules, and share repeated
 logic instead of copying it.
 
@@ -78,15 +80,12 @@ Validate input once, where it becomes a value: `ApplicationId::parse`,
 validated type never checks it again. Match domain enums exhaustively, so a
 new variant fails to compile until every consumer handles it. Behaviour
 belongs on the type that owns it, as a method; free functions are for small
-helpers with no owner. Limits and timeouts are named constants.
+helpers with no owner.
 
-## Modules, tests and docs
+## Tests and docs
 
-A module with children is `foo/mod.rs` (`self_named_module_files`). Unit tests
-live in `#[cfg(test)] mod tests;` with a sibling `tests.rs` once the block is
-more than 30% of its file; a smaller one may stay inline. Tests prove one behaviour each, named for it, and
-assert the outcome; [automated validation](validation.md) lists the suites
-and what each covers.
+Tests prove one behaviour each, named for it, and assert the outcome;
+[automated validation](validation.md) lists the suites and what each covers.
 
 Every item has a doc comment. Public items' `///` comments on the manifest,
 configuration and CLI types are also the generated references, so keep them
@@ -96,11 +95,6 @@ the docs, private items included, with warnings denied.
 
 ## Deviations
 
-- No `CLAUDE.md` beside `AGENTS.md`: Claude Code reads `AGENTS.md` itself, so
-  the file would add nothing.
-- `unwrap_used` is off: the tests still call `unwrap` about 4,400 times. They
-  move to `expect("what should have held")` crate by crate (PQD-124); new
-  tests use `expect`.
 - `just doc` allows links from public items to private ones
   (`rustdoc::private_intra_doc_links`), since most of the code is internal and
   documented for its developers.

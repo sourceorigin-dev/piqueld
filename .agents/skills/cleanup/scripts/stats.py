@@ -1,14 +1,21 @@
-"""Line statistics for a piqueld checkout, for the audit step of a cleanup pass.
+"""Line statistics for a repository's checkout, for the audit step of a cleanup pass.
 
 Usage: python3 -I stats.py [REPO] [--json OUT]
 
 Prints a summary and, with --json, writes every per-file record and the
-history to OUT for charts. Generated files and lockfiles are the ones
-.gitattributes marks linguist-generated. Rust lines are classified by a small
-lexer: a line is code, a doc comment (/// or //!), a plain comment or blank,
-and a line with code and a trailing comment counts as code. Test code is whole
-files under tests/, tests.rs files, modules declared behind #[cfg(test)], and
-inline #[cfg(test)] items. Other languages are counted by cloc.
+history to OUT for charts. Generated files are the ones .gitattributes marks
+linguist-generated, and lockfiles are Cargo.lock, flake.lock and pnpm-lock.yaml. Rust lines
+are classified by a small lexer: a line is code, a doc comment (/// or //!), a
+plain comment or blank, and a line with code and a trailing comment counts as
+code. Rust test code is whole files under tests/, tests.rs files, and modules
+and inline items behind a test-only cfg: #[cfg(test)], #[cfg(all(test, ...))]
+or #[cfg(any(test, feature = "test-util"))]. The counts of unwrap, expect and
+the like read only production code lines, so doc examples are left out;
+TODO, FIXME and XXX are counted in comments too. TypeScript and JavaScript
+test code is files under a test/ or tests/ directory and *.spec.ts or
+*.test.ts files. Areas are a workspace member (apps/x, crates/x, packages/x,
+tools/x, tests/x) or another top-level directory. Other languages are counted
+by cloc.
 """
 import bisect, csv, io, json, os, re, subprocess, sys
 from collections import defaultdict
@@ -32,19 +39,37 @@ files = git("ls-files", "-z").split("\0")[:-1]
 attrs = git("check-attr", "-z", "linguist-generated", "--", *files).split("\0")
 marked = {attrs[i] for i in range(0, len(attrs) - 2, 3) if attrs[i + 2] in ("set", "true")}
 LOCKFILE = re.compile(r"(^|/)(Cargo\.lock|flake\.lock|pnpm-lock\.yaml)$")
-LOCKFILES = {p for p in marked if LOCKFILE.search(p)}
+LOCKFILES = {p for p in files if LOCKFILE.search(p)}
 GENERATED = marked - LOCKFILES
+ROOT = "root & CI"
+# An attribute compiling its item only for tests, or for other crates' tests
+# through the `test-util` feature.
+TEST_CFG = r'#\[cfg\(\s*(?:test|all\(\s*test\b[^\]]*|any\(\s*test\s*,\s*feature\s*=\s*"test-util"\s*\))\s*\)\]'
 
 
 def area(p):
     parts = p.split("/")
-    if parts[0] in ("apps", "crates", "tools") and len(parts) > 1:
+    if parts[0] in ("apps", "crates", "packages", "tools", "tests") and len(parts) > 2:
         return f"{parts[0]}/{parts[1]}"
-    if p.startswith("tests/playwright/"):
-        return "tests/playwright"
-    if parts[0] in ("docs", "deploy", "nix", "examples", "scripts"):
+    if len(parts) > 1 and not parts[0].startswith("."):
         return parts[0]
-    return "root & CI"
+    return ROOT
+
+
+def ts_test(p):
+    """Whether p is TypeScript or JavaScript test code."""
+    return p.endswith((".ts", ".js")) and (
+        re.search(r"(^|/)tests?/", p) is not None or p.endswith((".spec.ts", ".test.ts")))
+
+
+def module(p):
+    """The top-level module or directory of an area holding p: apps/x/src/oidc, apps/x/tests."""
+    a = area(p)
+    if a == ROOT:
+        return a
+    parts = p[len(a) + 1:].split("/")
+    head = parts[:2] if parts[0] == "src" and len(parts) > 2 else parts[:1]
+    return a + "/" + "/".join(head)
 
 
 RAW = re.compile(r'b?r(#*)"')
@@ -108,12 +133,19 @@ def lex_rust(src):
 
 
 def inline_test_lines(src, braces):
-    """Line numbers of #[cfg(test)] items inside a file that isn't all test code."""
+    """Line numbers of test-only items inside a file that isn't all test code."""
     test, offsets = set(), [b[0] for b in braces]
-    for m in re.finditer(r"#\[cfg\(test\)\]", src):
+    for m in re.finditer(TEST_CFG, src):
         semi = src.find(";", m.end())
         k = bisect.bisect_left(offsets, m.end())
-        if k >= len(braces) or (semi >= 0 and semi < braces[k][0]):
+        brace = braces[k][0] if k < len(braces) else len(src)
+        if k < len(braces) and braces[k][1] == "}":
+            # A field, enum variant or match arm: it ends at its `,`, a last
+            # statement at its `;`, and a last one without either just before
+            # the `}` closing its parent.
+            ends = [e for e in (src.find(",", m.end(), brace), src.find(";", m.end(), brace)) if e >= 0]
+            end = min(ends, default=len(src[:brace].rstrip()) - 1)
+        elif 0 <= semi < brace:
             end = semi
         else:
             depth, end = 0, len(src)
@@ -129,7 +161,7 @@ def test_files(rs, sources):
     """Rust files that are test code as a whole."""
     tf = {p for p in rs if "/tests/" in "/" + p or p.endswith("/tests.rs")}
     for p in rs:
-        for m in re.finditer(r"#\[cfg\(test\)\]\s*(?:pub(?:\([a-z]+\))?\s+)?mod\s+(\w+)\s*;", sources[p]):
+        for m in re.finditer(TEST_CFG + r"\s*(?:pub(?:\([a-z]+\))?\s+)?mod\s+(\w+)\s*;", sources[p]):
             d, base = os.path.split(p)
             stem = base[:-3]
             root = os.path.join(d if stem in ("mod", "lib", "main") else os.path.join(d, stem), m.group(1))
@@ -155,6 +187,7 @@ FACTS = {
 }
 facts = defaultdict(int)
 tests = defaultdict(int)
+ignored = defaultdict(int)  # Rust tests that run only when asked, by reason
 records = []
 for p in files:
     kind = "generated" if p in GENERATED else "lockfile" if p in LOCKFILES else "handwritten"
@@ -177,18 +210,22 @@ for p in files:
                 rec["blank"] += 1
         rec["lang"] = "Rust"
         if kind == "handwritten":
-            prod = "\n".join(l for i, l in enumerate(lines) if i not in tl)
+            prod = [i for i in range(len(lines)) if i not in tl]
+            prod_code = "\n".join(lines[i] for i in prod if code[i])
+            prod_all = "\n".join(lines[i] for i in prod)
             for k, rx in FACTS.items():
-                facts[k] += len(re.findall(rx, prod, re.M))
+                facts[k] += len(re.findall(rx, prod_all if k == "TODO/FIXME" else prod_code, re.M))
             n = len(re.findall(r"#\[(tokio::|wasm_bindgen_)?test\b", src))
             tests["rust integration" if "/tests/" in "/" + p and "/src/" not in p else "rust unit"] += n
+            for reason in re.findall(r'#\[ignore(?: = "([^"]*)")?\]', src):
+                ignored[reason or "no reason"] += 1
     elif p in cloc:
         lang, b, c, k = cloc[p]
         rec.update(lang=lang, blank=b, comment=c, code=k)
-        if p.startswith("tests/playwright/") and p.endswith(".ts"):
+        if ts_test(p):
             rec["test_code"], rec["code"], rec["test_comment"], rec["comment"] = k, 0, c, 0
-            if p.endswith(".spec.ts"):
-                tests["playwright"] += len(re.findall(r"^\s*test(\.\w+)?\(", open(p).read(), re.M))
+            if p.endswith((".spec.ts", ".test.ts")) and "/screenshots/" not in p:
+                tests["typescript"] += len(re.findall(r"^\s*test(\.only)?\(", open(p).read(), re.M))
     elif os.path.isfile(p):
         try:
             text = open(p, encoding="utf-8").read()
@@ -213,7 +250,7 @@ def hist_cat(p):
     if p in LOCKFILES: return "lockfile"
     if p.endswith(".md"): return "docs"
     if (p.endswith(".rs") and ("/tests/" in "/" + p or p.endswith("tests.rs"))) or \
-            (p.startswith("tests/playwright/") and p.endswith(".ts")):
+            ts_test(p):
         return "test"
     if p.endswith((".png", ".jpg", ".ico", ".woff2")): return "binary"
     return "source"
@@ -265,18 +302,30 @@ for r in hand:
 for a, (s, t) in sorted(areas.items(), key=lambda kv: -sum(kv[1])):
     print(f"  {a:<24} {s:>8,} {t:>8,}  {t / (s + t) if s + t else 0:5.0%}")
 
+modules = defaultdict(lambda: [0, 0])
+for r in hand:
+    if r["lang"] not in ("Markdown", "Other", "TOML") and sum(areas[r["area"]]) > 30000:
+        modules[module(r["path"])][0] += r["code"]; modules[module(r["path"])][1] += r["test_code"]
+if modules:
+    print("\nModules of areas over 30,000 lines (source / test):")
+    for m, (s, t) in sorted(modules.items(), key=lambda kv: -sum(kv[1])):
+        print(f"  {m:<40} {s:>8,} {t:>8,}")
+
 print("\nHand-written files over 1,500 lines:")
 for r in sorted((r for r in hand if r["lang"] not in ("Markdown", "Other") and total(r) > 1500),
                 key=total, reverse=True):
     print(f"  {total(r):>6,}  {r['path']}")
 
 print("\nTests:", ", ".join(f"{v} {k}" for k, v in tests.items()))
+if ignored:
+    print("Ignored unless asked:", ", ".join(f"{v} ({k})" for k, v in sorted(ignored.items(), key=lambda kv: -kv[1])))
 print("Outside tests:", ", ".join(f"{v} {k}" for k, v in facts.items()))
 print("(regex counts: close, not exact)")
 
 # `foo.rs` next to `foo/` is caught by clippy::self_named_module_files. The
-# other half of the layout rule is that a `mod.rs` needs children.
-lonely = [p for p in rs if p.endswith("/mod.rs") and not p.endswith("tests/support/mod.rs")
+# other half of the layout rule is that a `mod.rs` needs children, a tests.rs
+# at least. An integration test's shared `tests/<name>/mod.rs` is exempt.
+lonely = [p for p in rs if p.endswith("/mod.rs") and not re.search(r"(^|/)tests/[^/]+/mod\.rs$", p)
           and not any(q != p and q.startswith(os.path.dirname(p) + "/") for q in rs)]
 if lonely:
     print("\nmod.rs files with no child modules (should be a plain foo.rs):")
@@ -285,6 +334,6 @@ if lonely:
 
 if out:
     with open(out, "w") as f:
-        json.dump({"files": records, "facts": facts, "tests": tests, "history": history,
+        json.dump({"files": records, "facts": facts, "tests": tests, "ignored": ignored, "history": history,
                    "generated": sorted(GENERATED), "lockfiles": sorted(LOCKFILES)}, f, indent=1)
     print(f"\nWrote {out}")
