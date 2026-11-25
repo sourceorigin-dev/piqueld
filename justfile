@@ -192,8 +192,13 @@ setup-worktree:
     #!/usr/bin/env bash
     set -euo pipefail
     # T3 Code often creates several worktrees at once: build at low priority on
-    # half the cores, unless CARGO_BUILD_JOBS says otherwise.
-    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(( ($(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1) + 1) / 2 ))}"
+    # half the CPUs this process may use (`nproc`, else the online ones, as on
+    # macOS), unless Cargo's `build.jobs` (or CARGO_BUILD_JOBS) says otherwise.
+    # `cargo config get` is unstable, hence RUSTC_BOOTSTRAP; if it fails, the
+    # default applies.
+    if ! RUSTC_BOOTSTRAP=1 cargo -Zunstable-options config get build.jobs >/dev/null 2>&1; then
+        export CARGO_BUILD_JOBS="$(( ($(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1) + 1) / 2 ))"
+    fi
     just dev config
     nice -n 10 just build
 
