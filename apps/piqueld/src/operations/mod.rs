@@ -1,7 +1,7 @@
 //! Errors encountered while reconciling application operations, and the
 //! diagnostics recorded for them.
 use piqueld_config::unix_http::UnixHttpError;
-use piqueld_core::observability::DiagnosticCode;
+use piqueld_core::observability::{DeploymentFailure, DiagnosticCode};
 use piqueld_docker::command::CommandError;
 
 /// A fresh, time-ordered ID for a recorded diagnostic, e.g.
@@ -139,9 +139,15 @@ pub enum OperationError {
     /// The runtime plan is blocked by a diagnostic without a specific mapping.
     #[error("runtime plan is blocked by {0}")]
     PlanBlocked(&'static str),
-    /// A service did not converge before its deadline.
+    /// A service, or the work around it, did not converge before its
+    /// deadline.
     #[error("service did not converge before the deadline")]
     ConvergenceTimeout,
+    /// A service the rollout waited for did not converge before its
+    /// deadline, such as when its tasks stay pending. Its rollout failed, as
+    /// with `ServiceUpdateFailed`.
+    #[error("service did not converge before the deadline")]
+    ServiceTimeout,
     /// Image resolution or the source build did not finish before its deadline.
     #[error("application preparation did not finish before the deadline")]
     PreparationTimeout,
@@ -196,8 +202,19 @@ impl OperationError {
             Self::JobFailed { .. } => DiagnosticCode::JobFailed,
             Self::JobTimeout(_) => DiagnosticCode::JobTimeout,
             Self::PlanBlocked(_) => DiagnosticCode::PlanBlocked,
-            Self::ConvergenceTimeout => DiagnosticCode::ConvergenceTimeout,
+            Self::ConvergenceTimeout | Self::ServiceTimeout => DiagnosticCode::ConvergenceTimeout,
             Self::PreparationTimeout => DiagnosticCode::PreparationTimeout,
+        }
+    }
+
+    /// What a deployment that failed with this error failed at (see
+    /// [`DiagnosticCode::deployment_failure`]): a service that never
+    /// converged during the rollout fails it like one Docker paused.
+    #[must_use]
+    pub fn deployment_failure(&self) -> Option<DeploymentFailure> {
+        match self {
+            Self::ServiceTimeout => Some(DeploymentFailure::Rollout),
+            _ => self.diagnostic_code().deployment_failure(),
         }
     }
 

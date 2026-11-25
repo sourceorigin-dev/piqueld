@@ -3,7 +3,7 @@
 use super::*;
 
 /// A migration whose database depends on storage, plus an unrelated service.
-fn manifest_with_job_dependencies() -> ApplicationManifest {
+pub(super) fn manifest_with_job_dependencies() -> ApplicationManifest {
     let mut input = migration();
     input.spec.services[0].depends_on = vec!["db".into()];
     for (name, dependencies) in [

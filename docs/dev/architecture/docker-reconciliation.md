@@ -250,17 +250,21 @@ request aborts its connection driver, and timeout errors retain their cause.
 
 `DiagnosticCode::deployment_failure` classifies what a failed deployment
 failed at: a job (`job_failed`, `job_timeout`), which ends the deployment
-before rollout as described above, or its rollout (`service_update_failed`: Docker paused an update
-because a task failed within its monitor window). When an operation fails with
-a rollout failure, the controller's `fail` checks the environment's effective
-`rollback` (`StoredEnvironment::rollback`, read from the manifest the
-environment deploys; previews are always manual). If it is automatic, and the
-operation is no automatic rollback itself and never succeeded before (a retry
-or repair of what already ran is no new rollout), the controller picks the
-environment's newest other deployment that succeeded, makes sure its images
-are present within the preparation timeout, with cleanup held off, and then,
-in one transaction,
-fails the operation and accepts restoring that deployment with origin
+before rollout as described above, or its rollout (`service_update_failed`:
+Docker paused an update because a task failed within its monitor window).
+`OperationError::deployment_failure` adds `ServiceTimeout`, a service the
+rollout waited for that didn't converge before its deadline. It records
+`convergence_timeout`, which other timeouts share, so only the error tells it
+apart. It includes the wait for a service a before-rollout job depends on:
+that service already runs the new spec, and no job has run yet. When an
+operation fails with a rollout failure, the controller's `fail` checks the
+environment's effective `rollback` (`StoredEnvironment::rollback`, read from
+the manifest the environment deploys; previews are always manual). If it is
+automatic, and the operation is no automatic rollback itself and never
+succeeded before (a retry or repair of what already ran is no new rollout),
+the controller picks the environment's newest other deployment that
+succeeded, makes sure its images are present within the preparation timeout,
+with cleanup held off, and then, in one transaction, fails the operation and accepts restoring that deployment with origin
 `{"type": "restore", "deployment": …, "rolled_back": <failed>}`. Swarm's own
 service rollback is never used, since it would disagree with the maintained
 target. The restore supersedes the failed deployment as the latest operation,

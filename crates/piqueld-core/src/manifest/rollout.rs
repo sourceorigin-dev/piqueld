@@ -142,7 +142,8 @@ string_enum! {
     #[serde]
     /// What happens when an environment's rollout fails: a service update
     /// that Docker pauses because a new task failed within its monitor
-    /// window.
+    /// window, or a service that doesn't become ready within the convergence
+    /// timeout.
     pub enum Rollback {
         /// Restore the environment's last successful deployment at once.
         Automatic => "automatic",

@@ -178,7 +178,7 @@ impl DiagnosticCode {
             Self::ConvergenceTimeout => (
                 Application,
                 true,
-                "Inspect service health and resource capacity. Reconciliation will retry.",
+                "Inspect service health and resource capacity. Reconciliation retries unless automatic rollback restored the last successful deployment.",
             ),
             Self::PreparationTimeout => (
                 Application,
@@ -252,8 +252,10 @@ pub enum DeploymentFailure {
     /// prerequisites it started or updated to the active target.
     Job,
     /// A service update failed: Docker paused it because a new task failed
-    /// within its monitor window. With automatic rollback, the environment's
-    /// last successful deployment is restored.
+    /// within its monitor window, or a service never converged before the
+    /// deadline. That timeout shares `convergence_timeout` with others, so
+    /// only the daemon's own error tells it apart. With automatic rollback,
+    /// the environment's last successful deployment is restored.
     Rollout,
 }
 
