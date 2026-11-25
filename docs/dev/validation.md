@@ -41,7 +41,7 @@ by version.
 | Real browser transport tests | `test-wasm` | `wasm-ui` |
 | Isolated Engine integration tests | `docker-test` | `docker-integration` |
 | Browser end-to-end tests | `test-playwright` | `browser-playwright` |
-| Documentation screenshots match the dashboard | `docs-screenshots --update-snapshots=none` | `browser-playwright` |
+| Documentation and piqueld.dev screenshots match the dashboard | `docs-screenshots --update-snapshots=none` | `browser-playwright` |
 | CLI on macOS | `validate-cli` | `cli (macOS)` |
 | Documentation book build and link check | `docs` | `docs` |
 
@@ -136,7 +136,7 @@ measures the tests without checking a minimum; see
   the development shell provides.
 - `test-playwright` serves the embedded dashboard and API from a Rust fixture
   with isolated state and no Docker backend. `docs-screenshots` regenerates the
-  screenshots in `docs/images` whose page changed, through the same fixture
+  screenshots in `docs/images` and `apps/site` whose page changed, through the same fixture
   with deployments to its fake Docker engine; with
   `--update-snapshots=none` it fails on an outdated one instead. See
   [documentation](documentation.md).

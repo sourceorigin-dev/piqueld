@@ -25,9 +25,10 @@ struct Release<'a> {
 }
 
 impl Release<'_> {
-    /// Checks that `HEAD` is the latest `origin/main` and that the version
-    /// isn't tagged on `origin` yet. Then publishes the crates, tags `HEAD`
-    /// `v<version>`, and pushes the tag, on which the release workflow
+    /// Checks that piqueld.dev's footer names the version, that `HEAD` is the
+    /// latest `origin/main`, and that the version isn't tagged on `origin`
+    /// yet. Then publishes the crates, tags `HEAD` `v<version>`, and pushes
+    /// the tag, on which the release workflow
     /// (`.github/workflows/release.yml`) builds the release binaries and
     /// creates the GitHub release. Last, closes its minor version's GitHub
     /// milestone, such as `v0.2`.
@@ -78,10 +79,18 @@ impl Release<'_> {
         Ok(format!("v{major}.{minor}"))
     }
 
-    /// Fails unless `HEAD` is the latest `origin/main`, and the version isn't
-    /// tagged on `origin` yet.
+    /// Fails unless piqueld.dev's footer names the version, `HEAD` is the
+    /// latest `origin/main`, and the version isn't tagged on `origin` yet.
     fn check(&self) -> Result<()> {
         let root = self.workspace.root();
+        let site = root.join("apps/site/index.html");
+        let page =
+            fs::read_to_string(&site).with_context(|| format!("reading {}", site.display()))?;
+        ensure!(
+            page.contains(&format!("<span>piqueld {}</span>", self.version)),
+            "the footer of apps/site/index.html doesn't name {}: set its version and month first",
+            self.version
+        );
         Workspace::git(root, &["fetch", "origin", "main"])?;
         ensure!(
             Workspace::git(root, &["rev-parse", "HEAD"])?

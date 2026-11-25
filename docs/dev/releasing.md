@@ -121,7 +121,10 @@ and the [GitHub CLI](https://cli.github.com) signed in to the repository.
    `version` under `[workspace.package]`, and the `version` of each internal
    dependency under `[workspace.dependencies]`. Then run
    `cargo update --workspace` to update `Cargo.lock`. The Nix packages read the
-   version from `Cargo.toml`.
+   version from `Cargo.toml`. Set the same version, and the month you
+   release it in, in the footer of
+   [`apps/site/index.html`](https://github.com/sourceorigin-dev/piqueld/blob/main/apps/site/index.html),
+   which <https://piqueld.dev> shows.
 2. Merge it, and check out the merge commit:
 
    ```console
@@ -154,8 +157,9 @@ and the [GitHub CLI](https://cli.github.com) signed in to the repository.
    just release
    ```
 
-   It checks that you are on the latest `main` with a clean working tree, and
-   that the version isn't released yet. It then publishes the crates in
+   It checks that piqueld.dev's footer names the version, that you are on the
+   latest `main` with a clean working tree, and that the version isn't
+   released yet. It then publishes the crates in
    dependency order, which takes several minutes, tags the commit
    `v<version>`, and pushes the tag. Last, it closes the GitHub milestone of
    the minor version, such as `v0.2` for 0.2.0. A patch release finds it

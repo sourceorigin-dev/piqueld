@@ -1,5 +1,6 @@
 // Helpers for the documentation screenshots: each one brings the dashboard to
-// a page, or state, a guide shows; `shoot` then saves it into docs/images.
+// a page, or state, a guide shows; `shoot` then saves it into docs/images,
+// and `shootForSite` a part of it into apps/site.
 import type { Locator, Page, Route } from '@playwright/test';
 import { test as base, expect, accountRows, adminToken, confirmPasskey, fillRegistration, applicationTab, card, rewrite, title, chooseGrants, done, Process, type Cli } from '../fixtures.js';
 import { createHash } from 'node:crypto';
@@ -8,7 +9,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { crc32 } from 'node:zlib';
 
-const docs = new URL('../../../docs/', import.meta.url);
+const repository = new URL('../../../', import.meta.url);
+const docs = new URL('docs/', repository);
 
 /** Git repositories on this machine that the daemon and `piquelctl` reach
  * at the URLs the guides use, such as https://github.com/example/blog.git.
@@ -148,6 +150,40 @@ export const test = base.extend<{ gitHost: GitHost }>({
  * `--update-snapshots=none`, as in CI, a page that no longer matches fails
  * instead. */
 export async function shoot(page: Page, name: string, through?: Locator, from?: Locator) {
+  await save(page, `docs/images/${name}.png`, 1280, () => screenshot(page), through, from);
+}
+
+/** Saves `only`, a part of the page, for piqueld.dev, with 12 pixels around
+ * it, twice: as apps/site/dashboard.png, in a window 912 pixels wide, and as
+ * apps/site/dashboard-narrow.png, in one 340 wide, as on a phone. The page's
+ * main region is then 680 and 340 pixels wide, about what the site draws
+ * each image at: the narrow one at its real size, the other a little larger.
+ * Both are saved the way `shoot` saves a page, but at three device pixels per
+ * CSS pixel, so they stay sharp. */
+export async function shootForSite(page: Page, only: Locator) {
+  const size = page.viewportSize();
+  if (!size) throw new Error('the page has no fixed window size to restore');
+  for (const [name, width] of [['dashboard', 912], ['dashboard-narrow', 340]] as const) {
+    // `save` measures `only` in the window it is given, so narrow it first.
+    await page.setViewportSize({ ...size, width });
+    await save(page, `apps/site/${name}.png`, width, async () => {
+      const box = await only.boundingBox();
+      if (!box) throw new Error('the part of the page to save for the site is hidden');
+      const clip = { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24, scale: 3 };
+      const session = await page.context().newCDPSession(page);
+      try {
+        return Buffer.from((await session.send('Page.captureScreenshot', { format: 'png', clip })).data, 'base64');
+      } finally {
+        await session.detach();
+      }
+    }, only);
+  }
+  await page.setViewportSize(size);
+}
+
+/** Saves what `take` draws of the page, in a window `width` pixels wide, as
+ * `path`, a file of the repository, the way `shoot` describes. */
+async function save(page: Page, path: string, width: number, take: () => Promise<Buffer>, through?: Locator, from?: Locator) {
   // Stop the dashboard's timers, without running any, so no refresh starts
   // while the page is measured and frozen. Fixing the time first makes
   // pausing at it skip nothing, however long the calls take.
@@ -162,19 +198,19 @@ export async function shoot(page: Page, name: string, through?: Locator, from?: 
     { message: 'the page is still loading' }).toBe(true);
   const top = await from?.evaluate(element => element.getBoundingClientRect().top + scrollY - 12) ?? 0;
   const bottom = await through?.evaluate(element => element.getBoundingClientRect().bottom + scrollY + 12);
-  await page.setViewportSize({ width: 1280, height: bottom ? Math.ceil(bottom - top) : 800 });
+  await page.setViewportSize({ width, height: bottom ? Math.ceil(bottom - top) : 800 });
   await page.evaluate(top => scrollTo(0, top), top);
   const frozen = await freeze(page);
-  const file = new URL(`images/${name}.png`, docs);
+  const file = new URL(path, repository);
   const drawn = await fingerprint(page);
   const current = createHash('sha256').update(drawn).digest('hex');
   if (await readFile(file).then(Png.fingerprint, () => undefined) !== current) {
     if (test.info().config.updateSnapshots === 'none') {
       // What the page drew, to compare with a run that regenerates the image.
-      await test.info().attach(`${name} fingerprint`, { body: drawn, contentType: 'text/plain' });
-      throw new Error(`docs/images/${name}.png shows an older version of its page: run just docs-screenshots`);
+      await test.info().attach(`${path} fingerprint`, { body: drawn, contentType: 'text/plain' });
+      throw new Error(`${path} shows an older version of its page: run just docs-screenshots`);
     }
-    await writeFile(file, Png.withFingerprint(await screenshot(page), current));
+    await writeFile(file, Png.withFingerprint(await take(), current));
   }
   // A live stream's message, which no clock delays, redraws it anyway.
   expect(frozen, 'a refresh redrew the page while it was saved').toEqual(expect.arrayContaining(await varying(page)));

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, applicationTab, card, deploymentRows, environmentTab, openDeployment, rewrite, submitRegistration, title } from '../fixtures.js';
-import { test, accountForm, application, createApplication, environment, manifest, saveChanges, service, shoot, steadyDeployment, Piquelctl } from './docs.js';
+import { test, accountForm, application, createApplication, environment, manifest, saveChanges, service, shoot, shootForSite, steadyDeployment, Piquelctl } from './docs.js';
 
 const guides = 'user/applications';
 
@@ -88,7 +88,9 @@ test('shipping applications', async ({ page, daemon, cli, passkeys, gitHost }) =
   await environment(page, 'blog', 'production');
   await shoot(page, 'applications/environment-source', card(page, 'Source'));
   await application(page, 'blog', 'Environments');
-  await shoot(page, 'applications/environments', page.getByRole('list', { name: 'Environments' }));
+  const environments = page.getByRole('list', { name: 'Environments' });
+  await shoot(page, 'applications/environments', environments);
+  await shootForSite(page, environments);
 
   // Previews: two of feat/login, the first created in the dashboard and
   // deploying local changes, and one of feat/search, merged and deleted since.
