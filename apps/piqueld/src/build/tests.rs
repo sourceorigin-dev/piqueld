@@ -73,7 +73,7 @@ fn a_small_cap_keeps_what_fits_and_a_tail_without_the_note() {
 async fn attempt(directory: &std::path::Path, cap: u32) -> BuildAttempt {
     let store = Store::open_unsynced(directory.join("db"))
         .await
-        .unwrap()
+        .expect("the store opens")
         .with_build_history(piqueld_config::BuildHistoryConfig {
             log_max_bytes: cap,
             log_retention_days: 1,
@@ -82,9 +82,12 @@ async fn attempt(directory: &std::path::Path, cap: u32) -> BuildAttempt {
         "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='notes'\n\
          [[spec.services]]\nname='web'\n[spec.services.source]\ntype='image'\nimage='nginx'",
     )
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
-    let operation = store.save_application(&app, None, None).await.unwrap();
+    .expect("parse template toml succeeds")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id parses"));
+    let operation = store
+        .save_application(&app, None, None)
+        .await
+        .expect("save application succeeds");
     let source = Source::Image {
         image: "nginx".into(),
     };
@@ -97,7 +100,7 @@ async fn attempt(directory: &std::path::Path, cap: u32) -> BuildAttempt {
         None,
     )
     .await
-    .unwrap()
+    .expect("start succeeds")
 }
 
 /// The text of a build's whole stored log, and whether it is truncated.
@@ -105,7 +108,11 @@ async fn stored(log: &BuildLog) -> (String, bool) {
     let mut text = String::new();
     let mut before = None;
     loop {
-        let page: BuildLogPage = log.store.build_logs(log.id, before, None).await.unwrap();
+        let page: BuildLogPage = log
+            .store
+            .build_logs(log.id, before, None)
+            .await
+            .expect("build logs succeeds");
         let chunks = page.items.iter().map(|chunk| chunk.text.as_str());
         text.insert_str(0, &chunks.collect::<String>());
         before = page.previous_offset;
@@ -119,7 +126,7 @@ async fn stored(log: &BuildLog) -> (String, bool) {
 /// turn between the head filling and the build finishing.
 #[tokio::test]
 async fn long_output_keeps_its_start_and_end() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     let attempt = attempt(directory.path(), 70_000).await;
     let log = attempt.log.clone();
     let text = lines();
@@ -129,17 +136,20 @@ async fn long_output_keeps_its_start_and_end() {
     written.borrow_and_update();
     append(&log, rest).await;
     assert!(
-        !written.has_changed().unwrap(),
+        !written.has_changed().expect("the watch is open"),
         "the full head took a writer turn"
     );
-    attempt.finish(BuildState::Failed, None).await.unwrap();
+    attempt
+        .finish(BuildState::Failed, None)
+        .await
+        .expect("finish succeeds");
     assert_eq!(stored(&log).await, (kept(&text), true));
 }
 
 /// 220,000 bytes of numbered lines, past the tests' 70,000-byte cap.
 fn lines() -> String {
     (0..20_000).fold(String::new(), |mut text, line| {
-        writeln!(text, "line {line:05}").unwrap();
+        writeln!(text, "line {line:05}").expect("the line is written");
         text
     })
 }
@@ -147,7 +157,9 @@ fn lines() -> String {
 /// Appends `bytes` to `log` in 4 KiB pieces, as a command's reads arrive.
 async fn append(log: &BuildLog, bytes: &[u8]) {
     for piece in bytes.chunks(4096) {
-        log.append(piece, LogStream::Stdout).await.unwrap();
+        log.append(piece, LogStream::Stdout)
+            .await
+            .expect("append succeeds");
     }
 }
 
@@ -164,18 +176,23 @@ fn kept(text: &str) -> String {
 async fn database(directory: &std::path::Path) -> sqlx::SqliteConnection {
     use sqlx::Connection as _;
     let url = format!("sqlite:{}", directory.join("db").display());
-    sqlx::SqliteConnection::connect(&url).await.unwrap()
+    sqlx::SqliteConnection::connect(&url)
+        .await
+        .expect("the connection opens")
 }
 
 /// Output just under the cap is stored whole, and not marked truncated.
 #[tokio::test]
 async fn output_under_the_cap_is_kept_whole() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     let attempt = attempt(directory.path(), 70_000).await;
     let log = attempt.log.clone();
     let text = &lines()[..69_999];
     append(&log, text.as_bytes()).await;
-    attempt.finish(BuildState::Succeeded, None).await.unwrap();
+    attempt
+        .finish(BuildState::Succeeded, None)
+        .await
+        .expect("finish succeeds");
     assert_eq!(stored(&log).await, (text.to_owned(), false));
 }
 
@@ -183,7 +200,7 @@ async fn output_under_the_cap_is_kept_whole() {
 /// retrying it stores the whole ending with the outcome.
 #[tokio::test]
 async fn a_failed_finish_keeps_the_ending_for_its_retry() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     let attempt = attempt(directory.path(), 70_000).await;
     let log = attempt.log.clone();
     let text = lines();
@@ -195,20 +212,20 @@ async fn a_failed_finish_keeps_the_ending_for_its_retry() {
     sqlx::query(&rename("build_log_chunks", "hidden"))
         .execute(&mut database)
         .await
-        .unwrap();
-    log.finish(&failed).await.unwrap_err();
+        .expect("execute succeeds");
+    log.finish(&failed).await.expect_err("finish fails");
     sqlx::query(&rename("hidden", "build_log_chunks"))
         .execute(&mut database)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     assert_eq!(stored(&log).await, (expected[..35_000].to_owned(), false));
-    log.finish(&failed).await.unwrap();
+    log.finish(&failed).await.expect("finish succeeds");
     assert_eq!(stored(&log).await, (expected, true));
     let builds = log
         .store
         .builds(None, None, &piqueld_core::access::Scope::All, None, 1)
         .await
-        .unwrap();
+        .expect("builds succeeds");
     assert_eq!(builds.items[0].state, BuildState::Failed);
 }
 
@@ -216,7 +233,7 @@ async fn a_failed_finish_keeps_the_ending_for_its_retry() {
 /// `Drop`, with the whole ending.
 #[tokio::test]
 async fn a_cancelled_finish_is_completed_with_its_ending() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     let attempt = attempt(directory.path(), 70_000).await;
     let log = attempt.log.clone();
     let text = lines();
@@ -226,20 +243,20 @@ async fn a_cancelled_finish_is_completed_with_its_ending() {
     sqlx::query("BEGIN IMMEDIATE")
         .execute(&mut database)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     let finish = attempt.finish(BuildState::Failed, None);
     tokio::time::timeout(std::time::Duration::from_millis(200), finish)
         .await
-        .unwrap_err();
+        .expect_err("the finish stalls");
     sqlx::query("ROLLBACK")
         .execute(&mut database)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     let state = async || {
         log.store
             .builds(None, None, &piqueld_core::access::Scope::All, None, 1)
             .await
-            .unwrap()
+            .expect("builds succeeds")
             .items[0]
             .state
     };

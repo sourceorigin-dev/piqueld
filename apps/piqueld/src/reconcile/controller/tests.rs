@@ -14,15 +14,19 @@ struct Harness {
 
 impl Harness {
     async fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let store = Arc::new(
             Store::open_unsynced(directory.path().join("db"))
                 .await
-                .unwrap(),
+                .expect("the store opens"),
         );
-        let sources = Arc::new(crate::git::Sources::open(directory.path()).await.unwrap());
+        let sources = Arc::new(
+            crate::git::Sources::open(directory.path())
+                .await
+                .expect("the store opens"),
+        );
         let socket = directory.path().join("unused.sock");
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let listener = tokio::net::UnixListener::bind(&socket).expect("the listener binds");
         Self {
             directory,
             store,
@@ -35,7 +39,7 @@ impl Harness {
     /// A controller of this store whose Docker Engine never answers.
     fn controller(&self) -> Controller<BollardDocker> {
         Controller::new(
-            Arc::new(BollardDocker::connect(&self.socket).unwrap()),
+            Arc::new(BollardDocker::connect(&self.socket).expect("the connection opens")),
             Arc::clone(&self.store),
             Arc::clone(&self.sources),
         )
@@ -48,7 +52,7 @@ async fn deploy(store: &Store, name: &str, spec: &str) -> Operation {
     let manifest = piqueld_core::manifest::parse_template_toml(&format!(
         "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='{name}'\n{spec}"
     ))
-    .unwrap();
+    .expect("parse template toml succeeds");
     let (MutationResponse::Saved(saved), _) = store
         .accept(
             crate::api::Actor::Daemon,
@@ -58,11 +62,14 @@ async fn deploy(store: &Store, name: &str, spec: &str) -> Operation {
             None,
         )
         .await
-        .unwrap()
+        .expect("the connection is accepted")
     else {
         panic!("saved deployment")
     };
-    store.operation(&saved.operation_id.unwrap()).await.unwrap()
+    store
+        .operation(&saved.operation_id.expect("operation id succeeds"))
+        .await
+        .expect("operation succeeds")
 }
 
 /// Accepts a routed environment and starts executing its operation.
@@ -81,8 +88,11 @@ async fn running_operation(store: &Store) -> Operation {
             None,
         )
         .await
-        .unwrap();
-    store.operation(&operation.id).await.unwrap()
+        .expect("transition operation succeeds");
+    store
+        .operation(&operation.id)
+        .await
+        .expect("operation succeeds")
 }
 
 #[tokio::test]
@@ -93,9 +103,9 @@ async fn routing_superseded_while_waiting_for_the_gateway_is_superseded() {
     let routes = store
         .deployment_snapshot(&operation.id)
         .await
-        .unwrap()
+        .expect("deployment snapshot succeeds")
         .rendering
-        .unwrap()
+        .expect("rendering succeeds")
         .application
         .spec()
         .routes
@@ -107,7 +117,7 @@ async fn routing_superseded_while_waiting_for_the_gateway_is_superseded() {
             harness.directory.path(),
             Arc::clone(store),
         )
-        .unwrap(),
+        .expect("the value is valid"),
     );
     let controller = Arc::new(harness.controller().with_ingress(Arc::clone(&ingress)));
 
@@ -118,7 +128,12 @@ async fn routing_superseded_while_waiting_for_the_gateway_is_superseded() {
     });
     store
         .wait_until(async || {
-            store.operation(&operation.id).await.unwrap().phase == Some(Phase::Routing)
+            store
+                .operation(&operation.id)
+                .await
+                .expect("operation succeeds")
+                .phase
+                == Some(Phase::Routing)
         })
         .await;
     store
@@ -130,10 +145,10 @@ async fn routing_superseded_while_waiting_for_the_gateway_is_superseded() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     drop(gateway);
     assert!(matches!(
-        staging.await.unwrap(),
+        staging.await.expect("staging succeeds"),
         Err(OperationError::Superseded)
     ));
 }
@@ -151,12 +166,12 @@ async fn reconciliation_leaves_concurrent_daemon_actions_open() {
             None,
         )
         .await
-        .unwrap();
+        .expect("transition operation succeeds");
     let controller = harness.controller();
     let action = store
         .begin_action(None, Phase::IngressStartGateway, None)
         .await
-        .unwrap();
+        .expect("begin action succeeds");
     let cancellation = CancellationToken::new();
     let run = controller.run(
         Arc::new(tokio::sync::Notify::new()),
@@ -168,7 +183,12 @@ async fn reconciliation_leaves_concurrent_daemon_actions_open() {
     let finished = async {
         store
             .wait_until(async || {
-                store.operation(&operation.id).await.unwrap().state != OperationState::Requested
+                store
+                    .operation(&operation.id)
+                    .await
+                    .expect("operation succeeds")
+                    .state
+                    != OperationState::Requested
             })
             .await;
         let finished = store.finish_action(&action, None).await;
@@ -179,9 +199,9 @@ async fn reconciliation_leaves_concurrent_daemon_actions_open() {
         tokio::join!(run, finished)
     })
     .await
-    .unwrap();
-    result.unwrap();
-    finished.unwrap();
+    .expect("the step finishes in time");
+    result.expect("the reconcile succeeds");
+    finished.expect("the task finishes");
 }
 
 /// Deleting a secret waits for Docker mutations in progress before it
@@ -196,15 +216,15 @@ async fn secret_deletion_waits_for_docker_mutations() {
     store
         .put_secret(daemon, environment, "token", 0, b"value".to_vec())
         .await
-        .unwrap();
+        .expect("put secret succeeds");
     let controller = harness.controller();
     let service = crate::api::ApplicationService::new(
         Arc::clone(store),
         controller.runtime(Arc::default()),
         Arc::clone(&harness.sources),
     )
-    .unwrap();
-    let deleting = async || store.secrets(environment).await.unwrap()[0].deleting;
+    .expect("the value is valid");
+    let deleting = async || store.secrets(environment).await.expect("secrets succeeds")[0].deleting;
     let guard = controller.mutations.lock().await;
     let deletion = service.delete_secret(daemon, environment, "token", 1);
     tokio::pin!(deletion);
@@ -233,7 +253,7 @@ async fn execution_cleanup_waits_for_live_repair_to_commit() {
             None,
         )
         .await
-        .unwrap();
+        .expect("transition operation succeeds");
     store
         .transition_operation(
             &operation.id,
@@ -242,34 +262,40 @@ async fn execution_cleanup_waits_for_live_repair_to_commit() {
             None,
         )
         .await
-        .unwrap();
+        .expect("transition operation succeeds");
     let controller = harness.controller();
     let abandoned = store
         .begin_action(Some(&operation.id), Phase::ResolveImage, Some("web"))
         .await
-        .unwrap();
+        .expect("begin action succeeds");
     let guard = controller.mutations.lock().await;
     let repair = store
         .begin_action(Some(&operation.id), Phase::EnsureService, Some("web"))
         .await
-        .unwrap();
-    store.action_request(&repair, 1).await.unwrap();
+        .expect("begin action succeeds");
+    store
+        .action_request(&repair, 1)
+        .await
+        .expect("action request succeeds");
     let cancellation = CancellationToken::new();
     let cleanup = controller.run_operation(&operation, &cancellation);
     tokio::pin!(cleanup);
     tokio::time::timeout(std::time::Duration::from_millis(100), &mut cleanup)
         .await
         .expect_err("`tokio::time::timeout` should be rejected");
-    store.finish_action(&repair, None).await.unwrap();
+    store
+        .finish_action(&repair, None)
+        .await
+        .expect("finish action succeeds");
     drop(guard);
     tokio::time::timeout(std::time::Duration::from_secs(1), cleanup)
         .await
-        .unwrap()
-        .unwrap();
+        .expect("the step finishes in time")
+        .expect("the value is present");
     let events = store
         .events(Some(&operation.environment_id), None, 100)
         .await
-        .unwrap()
+        .expect("the events load")
         .items;
     assert!(
         events

@@ -583,15 +583,20 @@ mod tests {
     /// costs only the records it was sent, all counted.
     #[tokio::test]
     async fn unreachable_collectors_drop_and_count_records() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let endpoint = OtlpEndpoint::Unix(directory.path().join("absent.sock"));
-        let destination = Arc::new(Destination::new(&endpoint, None, None).unwrap());
+        let destination =
+            Arc::new(Destination::new(&endpoint, None, None).expect("the value is valid"));
         for _ in 0..17 {
             destination.push_metrics(ExportMetricsServiceRequest::default());
         }
         assert_eq!(destination.status().dropped, 1);
         destination.spawn(&Resource::builder_empty().build());
-        destination.close().unwrap().await.unwrap();
+        destination
+            .close()
+            .expect("close succeeds")
+            .await
+            .expect("the value is present");
         let status = destination.status();
         assert_eq!((status.dropped, status.last_success_ms), (17, None));
     }
@@ -600,9 +605,10 @@ mod tests {
     /// keep the worker sending.
     #[tokio::test(flavor = "multi_thread")]
     async fn closing_sends_only_what_is_queued() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let endpoint = OtlpEndpoint::Unix(directory.path().join("absent.sock"));
-        let destination = Arc::new(Destination::new(&endpoint, None, None).unwrap());
+        let destination =
+            Arc::new(Destination::new(&endpoint, None, None).expect("the value is valid"));
         destination.spawn(&Resource::builder_empty().build());
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let pushing = std::thread::spawn({
@@ -613,31 +619,35 @@ mod tests {
                 }
             }
         });
-        let worker = destination.close().unwrap();
+        let worker = destination.close().expect("close succeeds");
         let stopped = tokio::time::timeout(Duration::from_secs(5), worker).await;
         stop.store(true, Ordering::Relaxed);
-        pushing.join().unwrap();
-        stopped.expect("the worker stops").unwrap();
+        pushing.join().expect("the thread joins");
+        stopped
+            .expect("the worker stops")
+            .expect("the worker joins");
     }
 
     /// A socket whose path exceeds `sun_path`, as deep data directories
     /// make receivers', is still reached.
     #[tokio::test]
     async fn sockets_with_paths_too_long_for_an_address_connect() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().expect("the temp dir is created");
         let directory = root.path().join("d".repeat(120));
-        std::fs::create_dir(&directory).unwrap();
+        std::fs::create_dir(&directory).expect("create dir succeeds");
         let socket = directory.join("otlp.sock");
         tokio::net::UnixStream::connect(&socket)
             .await
             .expect_err("`tokio::net::UnixStream::connect` should be rejected");
-        let held = std::fs::File::open(&directory).unwrap();
+        let held = std::fs::File::open(&directory).expect("the store opens");
         let short = format!(
             "/proc/self/fd/{}/otlp.sock",
             std::os::fd::AsRawFd::as_raw_fd(&held)
         );
-        let _listener = std::os::unix::net::UnixListener::bind(short).unwrap();
-        connect_unix(&socket, None).await.unwrap();
+        let _listener = std::os::unix::net::UnixListener::bind(short).expect("the listener binds");
+        connect_unix(&socket, None)
+            .await
+            .expect("connect unix succeeds");
     }
 
     /// A receiver's socket that keeps refusing connections is removed, so
@@ -645,9 +655,9 @@ mod tests {
     /// a collector starts, and another endpoint's socket are left alone.
     #[tokio::test]
     async fn stale_receiver_sockets_are_removed() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let socket = directory.path().join("otlp.sock");
-        drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+        drop(std::os::unix::net::UnixListener::bind(&socket).expect("the listener binds"));
         connect_unix(&socket, None)
             .await
             .expect_err("`connect_unix` should be rejected");
@@ -657,7 +667,9 @@ mod tests {
             .expect_err("`connect_unix` should be rejected");
         assert!(socket.exists(), "a single refusal keeps it");
         if let Some((_, since)) = stale.0.lock().as_mut() {
-            *since = since.checked_sub(StaleSocket::AFTER).unwrap();
+            *since = since
+                .checked_sub(StaleSocket::AFTER)
+                .expect("checked sub succeeds");
         }
         connect_unix(&socket, Some(&stale))
             .await

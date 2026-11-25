@@ -174,7 +174,7 @@ mod tests {
         let found = tokio::time::timeout(Duration::from_millis(100), whois.whois(peer, false))
             .await
             .expect("the cached identity waited for the running lookup");
-        assert_eq!(found.unwrap(), Some(cached));
+        assert_eq!(found.expect("the provider has records"), Some(cached));
     }
 
     /// A known peer is identified and an unknown one isn't, through the
@@ -194,19 +194,19 @@ mod tests {
                 "no match for IP:port\n",
             ),
         ])
-        .unwrap();
+        .expect("serve succeeds");
         let whois = Whois::at(fake.socket().to_owned());
         let known = whois
             .whois(SocketAddr::from(([100, 64, 0, 1], 40_000)), true)
             .await
-            .unwrap()
-            .unwrap();
+            .expect("whois succeeds")
+            .expect("the value is present");
         assert_eq!(known.login.as_deref(), Some("alice@example.com"));
         assert_eq!(known.node, "laptop");
         let unknown = whois
             .whois(SocketAddr::from(([100, 64, 0, 9], 40_000)), true)
             .await
-            .unwrap();
+            .expect("whois succeeds");
         assert_eq!(unknown, None);
     }
 }

@@ -11,9 +11,12 @@ fn sh(directory: &Path, script: &str) -> String {
         .env("GIT_COMMITTER_NAME", "Test")
         .env("GIT_COMMITTER_EMAIL", "test@example.com")
         .output()
-        .unwrap();
+        .expect("output succeeds");
     assert!(output.status.success(), "{output:?}");
-    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    String::from_utf8(output.stdout)
+        .expect("from utf8 succeeds")
+        .trim()
+        .to_owned()
 }
 
 /// A repository `remote` with two commits, and a clone whose snapshot
@@ -40,7 +43,7 @@ fn bundle(root: &Path, arguments: &str) -> Vec<u8> {
         &root.join("work"),
         &format!("git bundle create -q ../x.bundle refs/heads/snapshot {arguments}"),
     );
-    std::fs::read(root.join("x.bundle")).unwrap()
+    std::fs::read(root.join("x.bundle")).expect("read succeeds")
 }
 
 fn body(bytes: &[u8]) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
@@ -56,13 +59,15 @@ fn body(bytes: &[u8]) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
 fn checkouts(max_bytes: u64) -> Checkouts {
     Checkouts::new(
         PathBuf::from("unused"),
-        std::num::NonZeroU64::new(max_bytes).unwrap(),
+        std::num::NonZeroU64::new(max_bytes).expect("the value is valid"),
     )
 }
 
 /// Snapshots kept in `root/snapshots`.
 async fn snapshots(root: &Path) -> Snapshots {
-    Snapshots::open(root.join("snapshots")).await.unwrap()
+    Snapshots::open(root.join("snapshots"))
+        .await
+        .expect("the store opens")
 }
 
 async fn receive<'a>(
@@ -83,7 +88,7 @@ async fn receive<'a>(
 /// uploads waiting to be accepted never pile up on disk.
 #[tokio::test]
 async fn receives_thin_and_complete_bundles() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let (base, commit) = fixture(root.path());
     let remote = root.path().join("remote");
     let snapshots = snapshots(root.path()).await;
@@ -91,7 +96,9 @@ async fn receives_thin_and_complete_bundles() {
     let complete = bundle(root.path(), "");
     assert!(thin.len() < complete.len());
     for (bytes, expected) in [(thin, Some(base)), (complete, None)] {
-        let received = receive(&snapshots, bytes, 1 << 20, &remote).await.unwrap();
+        let received = receive(&snapshots, bytes, 1 << 20, &remote)
+            .await
+            .expect("receive succeeds");
         assert_eq!((&received.commit, &received.base), (&commit, &expected));
         let permits = || snapshots.receiving.available_permits();
         assert_eq!(permits(), Snapshots::RECEIVING - 1);
@@ -106,13 +113,16 @@ async fn receives_thin_and_complete_bundles() {
     let source = snapshots.source(&remote.display().to_string(), &commit);
     let checkouts = Checkouts::open(root.path().join("checkouts"))
         .await
-        .unwrap();
-    let checkout = checkouts.checkout(&source.repository, None).await.unwrap();
+        .expect("the store opens");
+    let checkout = checkouts
+        .checkout(&source.repository, None)
+        .await
+        .expect("checkout succeeds");
     assert_eq!(checkout.commit, commit);
     assert_eq!(
-        tokio::fs::read_to_string(checkout.path("local.txt").await.unwrap())
+        tokio::fs::read_to_string(checkout.path("local.txt").await.expect("path succeeds"))
             .await
-            .unwrap(),
+            .expect("read to string succeeds"),
         "local\n"
     );
     let pinned = GitRepository {
@@ -129,7 +139,8 @@ async fn receives_thin_and_complete_bundles() {
         &source.repository
     );
     assert_eq!(SnapshotSource::checkout(Some(&source), &other), &other);
-    let staged = std::fs::read_dir(root.path().join("snapshots/staging")).unwrap();
+    let staged =
+        std::fs::read_dir(root.path().join("snapshots/staging")).expect("read dir succeeds");
     assert_eq!(staged.count(), 0);
 }
 
@@ -138,7 +149,7 @@ async fn receives_thin_and_complete_bundles() {
 /// deployment is refused is not kept.
 #[tokio::test]
 async fn refuses_oversized_invalid_and_unfetchable_bundles() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let (base, _) = fixture(root.path());
     let remote = root.path().join("remote");
     let snapshots = snapshots(root.path()).await;
@@ -169,7 +180,7 @@ async fn refuses_oversized_invalid_and_unfetchable_bundles() {
 
     let received = receive(&snapshots, thin.clone(), 1 << 20, &remote)
         .await
-        .unwrap();
+        .expect("receive succeeds");
     let commit = received.commit.clone();
     let refused = snapshots
         .keep(received, async {
@@ -200,7 +211,7 @@ async fn refuses_oversized_invalid_and_unfetchable_bundles() {
 /// they share. Prerequisites that are not one history are refused.
 #[tokio::test]
 async fn thin_bundles_of_merges_need_their_base_and_its_ancestors() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let base = sh(
         root.path(),
         "git init -q -b main remote && cd remote
@@ -216,7 +227,9 @@ async fn thin_bundles_of_merges_need_their_base_and_its_ancestors() {
     let remote = root.path().join("remote");
     let snapshots = snapshots(root.path()).await;
     let merged = bundle(root.path(), &format!("^{base}"));
-    let received = receive(&snapshots, merged, 1 << 20, &remote).await.unwrap();
+    let received = receive(&snapshots, merged, 1 << 20, &remote)
+        .await
+        .expect("receive succeeds");
     assert_eq!((received.commit, received.base), (commit, Some(base)));
     let unrelated = bundle(root.path(), "^HEAD^1 ^HEAD^2");
     let refused = receive(&snapshots, unrelated, 1 << 20, &remote).await;
@@ -226,7 +239,7 @@ async fn thin_bundles_of_merges_need_their_base_and_its_ancestors() {
 /// A body that stops sending gives up its permit.
 #[tokio::test(start_paused = true)]
 async fn stalled_uploads_time_out() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let snapshots = snapshots(root.path()).await;
     let stalled = futures_util::stream::pending::<Result<Bytes, std::io::Error>>();
     let received = snapshots
@@ -303,14 +316,17 @@ fn headers_name_one_snapshot_and_its_prerequisites() {
 /// Pruning keeps exactly the snapshots still needed.
 #[tokio::test]
 async fn prune_keeps_only_needed_snapshots() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let snapshots = snapshots(root.path()).await;
     let (kept, removed) = ("a".repeat(40), "b".repeat(40));
     for commit in [&kept, &removed] {
-        std::fs::create_dir(snapshots.path(commit)).unwrap();
+        std::fs::create_dir(snapshots.path(commit)).expect("create dir succeeds");
     }
     let needed = vec![kept.clone()];
-    snapshots.prune(async { Ok(needed) }).await.unwrap();
+    snapshots
+        .prune(async { Ok(needed) })
+        .await
+        .expect("prune succeeds");
     assert!(snapshots.path(&kept).exists());
     assert!(!snapshots.path(&removed).exists());
     assert!(root.path().join("snapshots/staging").exists());

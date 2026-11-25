@@ -527,7 +527,8 @@ mod tests {
     fn operation(kind: OperationKind, state: OperationState) -> Operation {
         Operation {
             id: "op".into(),
-            environment_id: piqueld_core::EnvironmentId::parse("app-notes").unwrap(),
+            environment_id: piqueld_core::EnvironmentId::parse("app-notes")
+                .expect("the environment id parses"),
             kind,
             generation: 1,
             attempt: 2,

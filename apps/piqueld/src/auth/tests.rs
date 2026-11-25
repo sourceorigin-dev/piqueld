@@ -29,12 +29,12 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("the temp dir is created");
         let store = piqueld_store::Store::open_unsynced(dir.path().join("state.db"))
             .await
-            .unwrap();
+            .expect("the store opens");
         Self {
-            auth: Auth::new(&store, ORIGIN).unwrap(),
+            auth: Auth::new(&store, ORIGIN).expect("the value is valid"),
             dir,
         }
     }
@@ -61,7 +61,7 @@ impl Fixture {
             .store
             .insert_credential(&user.id, &credential)
             .await
-            .unwrap();
+            .expect("insert credential succeeds");
         (user.id, token)
     }
 
@@ -84,16 +84,28 @@ impl Fixture {
         grants: &Grants,
     ) -> (String, Identity) {
         let (_, token) = self.account(name, kind, expires, grants).await;
-        let identity = self.auth.authenticate(&token).await.unwrap();
+        let identity = self
+            .auth
+            .authenticate(&token)
+            .await
+            .expect("authenticate succeeds");
         (token, identity)
     }
 
     /// Has `owner` create a token with `create`, returning its secret and
     /// its identity.
     async fn token(&self, owner: &Identity, create: Manage) -> (String, Identity) {
-        let managed = self.auth.manage(owner, None, create).await.unwrap();
-        let secret = managed.token.unwrap();
-        let identity = self.auth.authenticate(&secret).await.unwrap();
+        let managed = self
+            .auth
+            .manage(owner, None, create)
+            .await
+            .expect("manage succeeds");
+        let secret = managed.token.expect("token succeeds");
+        let identity = self
+            .auth
+            .authenticate(&secret)
+            .await
+            .expect("authenticate succeeds");
         (secret, identity)
     }
 
@@ -105,15 +117,28 @@ impl Fixture {
             Manage::CreateEnrollment { .. } => "#enroll=",
             _ => panic!("not a link: {create:?}"),
         };
-        let managed = self.auth.manage(by, None, create).await.unwrap();
-        let url = managed.invitation_url.unwrap();
-        url.split_once(fragment).unwrap().1.to_owned()
+        let managed = self
+            .auth
+            .manage(by, None, create)
+            .await
+            .expect("manage succeeds");
+        let url = managed.invitation_url.expect("invitation url succeeds");
+        url.split_once(fragment)
+            .expect("the text splits")
+            .1
+            .to_owned()
     }
 
     /// Lets the CLI login started with `device_code` poll again at once.
     fn allow_poll(&self, device_code: &str) {
         let key = Auth::hash(device_code);
-        self.auth.0.devices.lock().get_mut(&key).unwrap().next_poll = 0;
+        self.auth
+            .0
+            .devices
+            .lock()
+            .get_mut(&key)
+            .expect("the entry exists")
+            .next_poll = 0;
     }
 
     /// Opens a browser session for `identity`'s account that no passkey
@@ -186,11 +211,11 @@ impl Fixture {
         self.auth
             .directory(identity)
             .await
-            .unwrap()
+            .expect("directory succeeds")
             .users
             .into_iter()
             .find(|account| account.user.id == identity.account().id)
-            .unwrap()
+            .expect("the match exists")
     }
 
     /// Management tests only need a stored key; no WebAuthn ceremony reads it.
@@ -206,11 +231,14 @@ impl Fixture {
             store
                 .add_passkey(
                     None,
-                    PasskeyOwner::Existing(owner.caller().unwrap(), &owner.account().id),
+                    PasskeyOwner::Existing(
+                        owner.caller().expect("caller succeeds"),
+                        &owner.account().id
+                    ),
                     passkey,
                 )
                 .await
-                .unwrap()
+                .expect("add passkey succeeds")
         );
         id
     }
@@ -218,7 +246,7 @@ impl Fixture {
     /// Redeems the invitation or enrollment link `secret` for `user` in a
     /// new browser session, returning whether it added a passkey.
     async fn redeem(&self, user: &User, secret: &str) -> bool {
-        let (_, session) = Auth::browser_session(None).unwrap();
+        let (_, session) = Auth::browser_session(None).expect("browser session succeeds");
         let owner = PasskeyOwner::Redeem {
             user,
             invitation_hash: &Auth::hash(secret),
@@ -234,7 +262,7 @@ impl Fixture {
             .store
             .add_passkey(None, owner, passkey)
             .await
-            .unwrap()
+            .expect("add passkey succeeds")
     }
 }
 
@@ -278,7 +306,7 @@ fn team_lead() -> Grants {
             Permission::Global(GlobalPermission::AccountsManage),
             &Scope::All,
         )
-        .unwrap();
+        .expect("grant succeeds");
     grants
 }
 
@@ -305,7 +333,11 @@ async fn sessions_expire_revoke_and_survive_restart_without_storing_secrets() {
             &Grants::admin(),
         )
         .await;
-    let identity = f.auth.authenticate(&token).await.unwrap();
+    let identity = f
+        .auth
+        .authenticate(&token)
+        .await
+        .expect("authenticate succeeds");
     assert_eq!(identity.account().id, id);
     assert_eq!(identity.grants, Grants::admin());
     assert!(
@@ -314,14 +346,17 @@ async fn sessions_expire_revoke_and_survive_restart_without_storing_secrets() {
             .store
             .credential_owner(&token)
             .await
-            .unwrap()
+            .expect("credential owner succeeds")
             .is_none()
     );
     let store = piqueld_store::Store::open_unsynced(f.dir.path().join("state.db"))
         .await
-        .unwrap();
-    let restarted = Auth::new(&store, ORIGIN).unwrap();
-    restarted.authenticate(&token).await.unwrap();
+        .expect("the store opens");
+    let restarted = Auth::new(&store, ORIGIN).expect("the value is valid");
+    restarted
+        .authenticate(&token)
+        .await
+        .expect("authenticate succeeds");
     f.auth.0.store.age_auth_credentials(DAY).await;
     assert!(matches!(
         f.auth.authenticate(&token).await,
@@ -353,7 +388,7 @@ async fn sessions_expire_revoke_and_survive_restart_without_storing_secrets() {
             },
         )
         .await
-        .unwrap();
+        .expect("manage succeeds");
     assert!(matches!(
         f.auth.authenticate(&api).await,
         Err(AuthError::Unauthorized)
@@ -376,7 +411,7 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
             },
         )
         .await
-        .unwrap();
+        .expect("manage succeeds");
     assert_eq!(f.reload(&bob).await.user.username, "robert");
     let input = |user_id: &str| RegistrationStart {
         invitation: None,
@@ -418,8 +453,16 @@ async fn accounts_manage_themselves_and_last_admin_deletion_is_atomic() {
         )
     );
     assert_ne!(first.is_ok(), second.is_ok());
-    assert_eq!(f.auth.directory(&alice).await.unwrap().users.len(), 1);
-    assert!(f.auth.status().await.unwrap().initialized);
+    assert_eq!(
+        f.auth
+            .directory(&alice)
+            .await
+            .expect("directory succeeds")
+            .users
+            .len(),
+        1
+    );
+    assert!(f.auth.status().await.expect("status succeeds").initialized);
 }
 
 /// Changing another account needs `accounts:manage` and every grant it holds,
@@ -447,18 +490,21 @@ async fn managers_change_only_accounts_and_grants_they_cover() {
         denied(f.auth.manage(&lead, None, rename(&admin)).await),
         Denied::Exceeds
     );
-    f.auth.manage(&lead, None, rename(&viewer)).await.unwrap();
+    f.auth
+        .manage(&lead, None, rename(&viewer))
+        .await
+        .expect("manage succeeds");
     f.auth
         .manage(&lead, None, set_grants(&viewer, developer()))
         .await
-        .unwrap();
+        .expect("manage succeeds");
     for grants in [Grants::admin(), team_lead()] {
         let mut more = grants;
         more.grant(
             Permission::Global(GlobalPermission::SystemOperate),
             &Scope::All,
         )
-        .unwrap();
+        .expect("grant succeeds");
         assert_eq!(
             denied(
                 f.auth
@@ -476,10 +522,18 @@ async fn managers_change_only_accounts_and_grants_they_cover() {
             Denied::Exceeds
         );
     }
-    let directory = f.auth.directory(&dev).await.unwrap();
+    let directory = f.auth.directory(&dev).await.expect("directory succeeds");
     assert_eq!(directory.users.len(), 1);
     assert_eq!(directory.users[0].user.id, dev.account().id);
-    assert_eq!(f.auth.directory(&lead).await.unwrap().users.len(), 4);
+    assert_eq!(
+        f.auth
+            .directory(&lead)
+            .await
+            .expect("directory succeeds")
+            .users
+            .len(),
+        4
+    );
 }
 
 #[tokio::test]
@@ -493,18 +547,18 @@ async fn invitations_carry_grants_and_enrollment_targets_an_account() {
     let secret = f.link(&admin, invite).await;
     let carol = carol();
     assert!(f.redeem(&carol, &secret).await);
-    let directory = f.auth.directory(&admin).await.unwrap();
+    let directory = f.auth.directory(&admin).await.expect("directory succeeds");
     let account = directory
         .users
         .iter()
         .find(|account| account.user.id == carol.id)
-        .unwrap();
+        .expect("the match exists");
     assert_eq!(account.grants, developer());
 
     let enroll = Manage::CreateEnrollment { user_id: bob.id() };
     let secret = f.link(&admin, enroll).await;
     assert!(matches!(
-        f.auth.invitation(&secret).await.unwrap(),
+        f.auth.invitation(&secret).await.expect("invitation succeeds"),
         Some(Invitation::Enrollment(user)) if user.id == bob.account().id
     ));
     assert!(!f.redeem(&carol, &secret).await);
@@ -535,7 +589,7 @@ async fn changes_use_the_callers_current_grants() {
     f.auth
         .manage(&root, None, set_grants(&alice, developer()))
         .await
-        .unwrap();
+        .expect("manage succeeds");
     assert_eq!(
         denied(
             f.auth
@@ -568,7 +622,7 @@ async fn changes_use_the_callers_current_grants() {
             },
         )
         .await
-        .unwrap();
+        .expect("manage succeeds");
     assert!(matches!(
         f.auth
             .manage(
@@ -588,7 +642,10 @@ async fn changes_use_the_callers_current_grants() {
         name: "Key",
         credential: "{}",
     };
-    let owner = PasskeyOwner::Existing(alice.caller().unwrap(), &alice.account().id);
+    let owner = PasskeyOwner::Existing(
+        alice.caller().expect("caller succeeds"),
+        &alice.account().id,
+    );
     assert!(matches!(
         f.auth.0.store.add_passkey(None, owner, passkey).await,
         Err(StoreError::CredentialRevoked)
@@ -635,13 +692,13 @@ async fn links_are_revalidated_when_redeemed_and_revoked() {
             },
         )
         .await
-        .unwrap();
-    let directory = f.auth.directory(&admin).await.unwrap();
+        .expect("manage succeeds");
+    let directory = f.auth.directory(&admin).await.expect("directory succeeds");
     let admin_link = directory
         .invitations
         .iter()
         .find(|link| link.user_id.as_deref() == Some(admin.account().id.as_str()))
-        .unwrap()
+        .expect("the match exists")
         .id
         .clone();
     assert_eq!(
@@ -655,11 +712,11 @@ async fn links_are_revalidated_when_redeemed_and_revoked() {
     f.auth
         .manage(&admin, None, set_grants(&dev, Grants::admin()))
         .await
-        .unwrap();
+        .expect("manage succeeds");
     f.auth
         .manage(&admin, None, set_grants(&lead, developer()))
         .await
-        .unwrap();
+        .expect("manage succeeds");
     let carol = carol();
     for (user, secret) in [(dev.account(), &enroll), (&carol, &invite)] {
         assert!(!f.redeem(user, secret).await);
@@ -689,9 +746,13 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
     f.auth
         .manage(&root, None, set_grants(&alice, read_only.clone()))
         .await
-        .unwrap();
+        .expect("manage succeeds");
     assert_eq!(
-        f.auth.authenticate(&secret).await.unwrap().grants,
+        f.auth
+            .authenticate(&secret)
+            .await
+            .expect("authenticate succeeds")
+            .grants,
         read_only.intersection(&deploy)
     );
     for command in [
@@ -713,12 +774,15 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
         name: "Key",
         credential: "{}",
     };
-    let owner = PasskeyOwner::Existing(ci.caller().unwrap(), &alice.account().id);
+    let owner = PasskeyOwner::Existing(ci.caller().expect("caller succeeds"), &alice.account().id);
     assert!(matches!(
         f.auth.0.store.add_passkey(None, owner, passkey).await,
         Err(StoreError::Denied(Denied::Scoped))
     ));
-    let start = f.auth.device_start(None, None).unwrap();
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("device start succeeds");
     assert!(matches!(
         f.auth.device_approve(&start.user_code, &ci),
         Err(AuthError::Denied(Denied::Scoped))
@@ -748,7 +812,7 @@ async fn tokens_act_within_their_grants_and_cannot_create_credentials() {
             Denied::Scoped
         );
     }
-    f.auth.logout(&ci, None).await.unwrap();
+    f.auth.logout(&ci, None).await.expect("logout succeeds");
     assert!(f.auth.authenticate(&secret).await.is_err());
 }
 
@@ -765,13 +829,16 @@ async fn tokens_see_only_themselves_in_the_directory() {
         .token(&alice, create_token(deploy.clone(), "ci", Some(30)))
         .await;
 
-    let seen = f.auth.directory(&ci).await.unwrap();
+    let seen = f.auth.directory(&ci).await.expect("directory succeeds");
     assert_eq!(seen.users.len(), 1);
     assert_eq!(seen.users[0].grants, deploy);
     assert_eq!(seen.passkeys, []);
     let credentials: Vec<_> = seen.credentials.iter().map(|c| c.id.as_str()).collect();
-    assert_eq!(credentials, [ci.credential_id().unwrap()]);
-    let own = f.auth.directory(&alice).await.unwrap();
+    assert_eq!(
+        credentials,
+        [ci.credential_id().expect("credential id succeeds")]
+    );
+    let own = f.auth.directory(&alice).await.expect("directory succeeds");
     assert_eq!(own.users[0].grants, developer());
     assert_eq!((own.passkeys.len(), own.credentials.len()), (1, 2));
 }
@@ -792,7 +859,7 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
     f.auth
         .manage(&root, None, set_grants(&alice, developer()))
         .await
-        .unwrap();
+        .expect("manage succeeds");
     assert_eq!(
         denied(
             f.auth
@@ -811,14 +878,19 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
     let read_only = Preset::ReadOnly.grants(&Scope::All);
     let admin = Grants::admin();
     let (secret, credential) =
-        Auth::new_credential(CredentialKind::Cli, "limited", None, Some(&admin)).unwrap();
+        Auth::new_credential(CredentialKind::Cli, "limited", None, Some(&admin))
+            .expect("new credential succeeds");
     f.auth
         .0
         .store
         .insert_credential(&root.account().id, &credential)
         .await
-        .unwrap();
-    let limited = f.auth.authenticate(&secret).await.unwrap();
+        .expect("insert credential succeeds");
+    let limited = f
+        .auth
+        .authenticate(&secret)
+        .await
+        .expect("authenticate succeeds");
     let grant = set_grants(&bob, read_only);
     assert_eq!(
         denied(f.auth.manage(&limited, None, grant).await),
@@ -826,14 +898,19 @@ async fn scoped_credentials_follow_their_owner_and_never_widen() {
     );
     let empty = Grants::default();
     let (secret, credential) =
-        Auth::new_credential(CredentialKind::Token, "empty", None, Some(&empty)).unwrap();
+        Auth::new_credential(CredentialKind::Token, "empty", None, Some(&empty))
+            .expect("new credential succeeds");
     f.auth
         .0
         .store
         .insert_credential(&alice.account().id, &credential)
         .await
-        .unwrap();
-    let nothing = f.auth.authenticate(&secret).await.unwrap();
+        .expect("insert credential succeeds");
+    let nothing = f
+        .auth
+        .authenticate(&secret)
+        .await
+        .expect("authenticate succeeds");
     assert!(nothing.scoped);
     assert!(nothing.grants.is_empty());
 }
@@ -862,7 +939,9 @@ async fn identities_refuse_sensitive_actions_without_a_recent_passkey() {
         ));
     }
     let operator = HostOperator { uid: 0 };
-    Identity::operator(operator, None).require_fresh().unwrap();
+    Identity::operator(operator, None)
+        .require_fresh()
+        .expect("require fresh succeeds");
 }
 
 /// Adding a passkey to one's own account needs a recent passkey sign-in,
@@ -1315,7 +1394,7 @@ async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
         max_days: Some(30),
         tailnet: false,
     };
-    let auth = Auth::configured(&f.auth.0.store, ORIGIN, tokens).unwrap();
+    let auth = Auth::configured(&f.auth.0.store, ORIGIN, tokens).expect("the auth is configured");
     let token = |days| create_token(developer(), "ci", days);
     for days in [None, Some(31)] {
         assert!(matches!(
@@ -1323,7 +1402,9 @@ async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
             Err(AuthError::Invalid(_))
         ));
     }
-    auth.manage(&alice, None, token(Some(30))).await.unwrap();
+    auth.manage(&alice, None, token(Some(30)))
+        .await
+        .expect("manage succeeds");
     for legacy in ["l".repeat(43), format!("pqd_{}", "A".repeat(39))] {
         let credential = NewCredential {
             id: Auth::id(),
@@ -1339,9 +1420,13 @@ async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
             .store
             .insert_credential(&alice.account().id, &credential)
             .await
-            .unwrap();
+            .expect("insert credential succeeds");
         assert_eq!(
-            f.auth.authenticate(&legacy).await.unwrap().grants,
+            f.auth
+                .authenticate(&legacy)
+                .await
+                .expect("authenticate succeeds")
+                .grants,
             Grants::admin()
         );
     }
@@ -1353,31 +1438,48 @@ async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
 async fn device_logins_can_request_limited_sessions() {
     let f = Fixture::new().await;
     let alice = f.identity("alice", &developer()).await;
-    let start = f.auth.device_start(None, Some(Grants::admin())).unwrap();
+    let start = f
+        .auth
+        .device_start(None, Some(Grants::admin()))
+        .expect("device start succeeds");
     assert!(matches!(
         f.auth.device_approve(&start.user_code, &alice),
         Err(AuthError::Denied(Denied::Exceeds))
     ));
     let read_only = Preset::ReadOnly.grants(&Scope::All);
-    let start = f.auth.device_start(None, Some(read_only.clone())).unwrap();
+    let start = f
+        .auth
+        .device_start(None, Some(read_only.clone()))
+        .expect("device start succeeds");
     let request = f
         .auth
         .device_inspect(&start.user_code, &alice)
         .expect("the request is shown to its own account");
     assert_eq!(request.grants.as_ref(), Some(&read_only));
-    f.auth.device_approve(&start.user_code, &alice).unwrap();
-    let result = f.auth.device_poll(&start.device_code, None).await.unwrap();
+    f.auth
+        .device_approve(&start.user_code, &alice)
+        .expect("device approve succeeds");
+    let result = f
+        .auth
+        .device_poll(&start.device_code, None)
+        .await
+        .expect("device poll succeeds");
     let session = f
         .auth
-        .authenticate(result.token.as_ref().unwrap())
+        .authenticate(result.token.as_ref().expect("the value is present"))
         .await
-        .unwrap();
+        .expect("authenticate succeeds");
     assert!(session.scoped);
     assert_eq!(session.grants, read_only);
     let root = f.identity("root", &Grants::admin()).await;
     f.passkey(&root).await;
-    let start = f.auth.device_start(None, Some(read_only.clone())).unwrap();
-    f.auth.device_approve(&start.user_code, &alice).unwrap();
+    let start = f
+        .auth
+        .device_start(None, Some(read_only.clone()))
+        .expect("device start succeeds");
+    f.auth
+        .device_approve(&start.user_code, &alice)
+        .expect("device approve succeeds");
     f.auth
         .manage(
             &root,
@@ -1385,7 +1487,7 @@ async fn device_logins_can_request_limited_sessions() {
             set_grants(&alice, Preset::Deploy.grants(&Scope::All)),
         )
         .await
-        .unwrap();
+        .expect("manage succeeds");
     assert!(matches!(
         f.auth.device_poll(&start.device_code, None).await,
         Err(AuthError::Store(StoreError::Denied(Denied::Exceeds)))
@@ -1404,7 +1506,13 @@ async fn deleting_an_issuer_invalidates_its_invitations_and_credentials() {
         grants: developer(),
     };
     let secret = f.link(&alice, invite).await;
-    assert!(f.auth.invitation(&secret).await.unwrap().is_some());
+    assert!(
+        f.auth
+            .invitation(&secret)
+            .await
+            .expect("invitation succeeds")
+            .is_some()
+    );
     f.auth
         .manage(
             &bob,
@@ -1415,8 +1523,14 @@ async fn deleting_an_issuer_invalidates_its_invitations_and_credentials() {
             },
         )
         .await
-        .unwrap();
-    assert!(f.auth.invitation(&secret).await.unwrap().is_none());
+        .expect("manage succeeds");
+    assert!(
+        f.auth
+            .invitation(&secret)
+            .await
+            .expect("invitation succeeds")
+            .is_none()
+    );
     assert!(f.auth.authenticate(&token).await.is_err());
 }
 
@@ -1441,7 +1555,7 @@ async fn changes_keep_an_admin_with_a_passkey() {
             f.auth.manage(&bob, None, command).await,
             Err(AuthError::Store(StoreError::Lockout(Lockout::LastAdmin)))
         ));
-        let directory = f.auth.directory(&alice).await.unwrap();
+        let directory = f.auth.directory(&alice).await.expect("directory succeeds");
         assert_eq!(directory.users.len(), 2);
         assert_eq!(directory.passkeys.len(), 1);
         assert_eq!(directory.passkeys[0].id, key);
@@ -1457,8 +1571,16 @@ async fn changes_keep_an_admin_with_a_passkey() {
             },
         )
         .await
-        .unwrap();
-    assert_eq!(f.auth.directory(&alice).await.unwrap().users.len(), 1);
+        .expect("manage succeeds");
+    assert_eq!(
+        f.auth
+            .directory(&alice)
+            .await
+            .expect("directory succeeds")
+            .users
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -1499,7 +1621,15 @@ async fn concurrent_passkey_and_account_deletions_keep_one_admin() {
             error,
             AuthError::Store(StoreError::Lockout(Lockout::LastAdmin))
         ));
-        assert_eq!(f.auth.directory(&alice).await.unwrap().passkeys.len(), 1);
+        assert_eq!(
+            f.auth
+                .directory(&alice)
+                .await
+                .expect("directory succeeds")
+                .passkeys
+                .len(),
+            1
+        );
     }
 }
 
@@ -1581,8 +1711,13 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
         f: &Fixture,
         alice: &Identity,
     ) -> (String, NewCredential<'static>, String) {
-        let start = f.auth.device_start(None, None).unwrap();
-        f.auth.device_approve(&start.user_code, alice).unwrap();
+        let start = f
+            .auth
+            .device_start(None, None)
+            .expect("device start succeeds");
+        f.auth
+            .device_approve(&start.user_code, alice)
+            .expect("device approve succeeds");
         let key = Auth::hash(&start.device_code);
         let writer = f.auth.0.store.hold_writer().await;
         let cancelled = tokio::spawn({
@@ -1591,12 +1726,23 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
             async move { auth.device_poll(&code, None).await }
         });
         f.auth.0.store.writer_waiting().await;
-        f.auth.device_start(None, None).unwrap();
+        f.auth
+            .device_start(None, None)
+            .expect("device start succeeds");
         f.allow_poll(&start.device_code);
-        let concurrent = f.auth.device_poll(&start.device_code, None).await.unwrap();
+        let concurrent = f
+            .auth
+            .device_poll(&start.device_code, None)
+            .await
+            .expect("device poll succeeds");
         assert_eq!(concurrent.status, "authorization_pending");
         cancelled.abort();
-        assert!(cancelled.await.unwrap_err().is_cancelled());
+        assert!(
+            cancelled
+                .await
+                .expect_err("the task was cancelled")
+                .is_cancelled()
+        );
         drop(writer);
         let (prepared, approval) = {
             let device = &f.auth.0.devices.lock()[&key];
@@ -1605,21 +1751,37 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
         let prepared = prepared.expect("the first poll prepared the session");
         let credential = prepared.credential(None, &approval.expect("the request was approved"));
         let store = &f.auth.0.store;
-        let stored = store.issue_for_credential_owner(alice.caller().unwrap(), &credential);
-        assert!(stored.await.unwrap().is_some());
+        let stored =
+            store.issue_for_credential_owner(alice.caller().expect("caller succeeds"), &credential);
+        assert!(stored.await.expect("the token issues").is_some());
         f.allow_poll(&start.device_code);
         (start.device_code, credential, prepared.token)
     }
 
     let f = Fixture::new().await;
     let alice = f.identity("alice", &Grants::admin()).await;
-    let cli_logins = async || f.auth.directory(&alice).await.unwrap().credentials.len() - 1;
+    let cli_logins = async || {
+        f.auth
+            .directory(&alice)
+            .await
+            .expect("directory succeeds")
+            .credentials
+            .len()
+            - 1
+    };
 
     let (code, _, token) = committed_then_cancelled(&f, &alice).await;
-    let issued = f.auth.device_poll(&code, None).await.unwrap();
+    let issued = f
+        .auth
+        .device_poll(&code, None)
+        .await
+        .expect("device poll succeeds");
     assert_eq!(issued.status, "complete");
     assert_eq!(issued.token.as_ref(), Some(&token));
-    f.auth.authenticate(&token).await.unwrap();
+    f.auth
+        .authenticate(&token)
+        .await
+        .expect("authenticate succeeds");
     assert!(matches!(
         f.auth.device_poll(&code, None).await,
         Err(AuthError::Unauthorized)
@@ -1631,7 +1793,10 @@ async fn device_polls_issue_once_without_blocking_other_logins() {
         id: credential.id,
         cascade: true,
     };
-    f.auth.manage(&alice, None, revoke).await.unwrap();
+    f.auth
+        .manage(&alice, None, revoke)
+        .await
+        .expect("manage succeeds");
     assert!(matches!(
         f.auth.device_poll(&code, None).await,
         Err(AuthError::Unauthorized)
@@ -1651,12 +1816,15 @@ async fn device_approval_is_explicit_single_use_and_bound_to_a_live_session() {
             &Grants::admin(),
         )
         .await;
-    let start = f.auth.device_start(None, None).unwrap();
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("device start succeeds");
     assert_eq!(
         f.auth
             .device_poll(&start.device_code, None)
             .await
-            .unwrap()
+            .expect("device poll succeeds")
             .status,
         "authorization_pending"
     );
@@ -1664,25 +1832,39 @@ async fn device_approval_is_explicit_single_use_and_bound_to_a_live_session() {
         f.auth
             .device_poll(&start.device_code, None)
             .await
-            .unwrap()
+            .expect("device poll succeeds")
             .status,
         "slow_down"
     );
-    f.auth.device_approve(&start.user_code, &identity).unwrap();
+    f.auth
+        .device_approve(&start.user_code, &identity)
+        .expect("device approve succeeds");
     assert!(f.auth.device_approve(&start.user_code, &identity).is_err());
     f.allow_poll(&start.device_code);
-    let result = f.auth.device_poll(&start.device_code, None).await.unwrap();
-    f.auth
-        .authenticate(result.token.as_ref().unwrap())
+    let result = f
+        .auth
+        .device_poll(&start.device_code, None)
         .await
-        .unwrap();
+        .expect("device poll succeeds");
+    f.auth
+        .authenticate(result.token.as_ref().expect("the value is present"))
+        .await
+        .expect("authenticate succeeds");
     f.auth
         .device_poll(&start.device_code, None)
         .await
         .expect_err("`device_poll` should be rejected");
-    let start = f.auth.device_start(None, None).unwrap();
-    f.auth.device_approve(&start.user_code, &identity).unwrap();
-    f.auth.logout(&identity, None).await.unwrap();
+    let start = f
+        .auth
+        .device_start(None, None)
+        .expect("device start succeeds");
+    f.auth
+        .device_approve(&start.user_code, &identity)
+        .expect("device approve succeeds");
+    f.auth
+        .logout(&identity, None)
+        .await
+        .expect("logout succeeds");
     f.auth
         .device_poll(&start.device_code, None)
         .await
@@ -1694,33 +1876,61 @@ async fn setup_link_is_private_stable_and_never_reopens() {
     use std::os::unix::fs::PermissionsExt;
     let f = Fixture::new().await;
     let path = f.dir.path().join("setup-link");
-    f.auth.prepare_setup(&path).await.unwrap();
-    let link = std::fs::read_to_string(&path).unwrap();
+    f.auth
+        .prepare_setup(&path)
+        .await
+        .expect("prepare setup succeeds");
+    let link = std::fs::read_to_string(&path).expect("read to string succeeds");
     assert_eq!(
-        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        std::fs::metadata(&path)
+            .expect("the file has metadata")
+            .permissions()
+            .mode()
+            & 0o777,
         0o600
     );
-    f.auth.prepare_setup(&path).await.unwrap();
-    assert_eq!(link, std::fs::read_to_string(&path).unwrap());
-    assert_eq!(f.auth.setup_link().await.unwrap().url, link.trim());
-    let (_, secret) = link.split_once("#invite=").unwrap();
+    f.auth
+        .prepare_setup(&path)
+        .await
+        .expect("prepare setup succeeds");
+    assert_eq!(
+        link,
+        std::fs::read_to_string(&path).expect("read to string succeeds")
+    );
+    assert_eq!(
+        f.auth.setup_link().await.expect("setup link succeeds").url,
+        link.trim()
+    );
+    let (_, secret) = link.split_once("#invite=").expect("the text splits");
     std::fs::write(
         &path,
         format!("https://old.example/dashboard/auth#invite={secret}"),
     )
-    .unwrap();
-    f.auth.prepare_setup(&path).await.unwrap();
-    assert_eq!(link, std::fs::read_to_string(&path).unwrap());
+    .expect("the file is written");
+    f.auth
+        .prepare_setup(&path)
+        .await
+        .expect("prepare setup succeeds");
+    assert_eq!(
+        link,
+        std::fs::read_to_string(&path).expect("read to string succeeds")
+    );
     f.account("alice", CredentialKind::Token, None, &Grants::admin())
         .await;
     assert!(matches!(
         f.auth.setup_link().await,
         Err(AuthError::SetupCompleted)
     ));
-    f.auth.prepare_setup(&path).await.unwrap();
+    f.auth
+        .prepare_setup(&path)
+        .await
+        .expect("prepare setup succeeds");
     assert!(!path.exists());
     f.auth.0.store.clear_auth_users().await;
-    f.auth.prepare_setup(&path).await.unwrap();
+    f.auth
+        .prepare_setup(&path)
+        .await
+        .expect("prepare setup succeeds");
     assert!(!path.exists());
 }
 
@@ -1762,7 +1972,11 @@ async fn registration_refuses_scoped_callers_and_taken_usernames_at_start() {
 #[tokio::test]
 async fn challenges_require_the_original_browser_and_expire() {
     let f = Fixture::new().await;
-    let ceremony = f.auth.login_start("browser-one").await.unwrap();
+    let ceremony = f
+        .auth
+        .login_start("browser-one")
+        .await
+        .expect("login start succeeds");
     let input = piqueld_core::auth::CeremonyFinish {
         id: ceremony.id.clone(),
         credential: serde_json::json!({}),
@@ -1783,14 +1997,18 @@ async fn challenges_require_the_original_browser_and_expire() {
         f.auth.login_finish(input, "browser-one", None).await,
         Err(AuthError::Invalid(_))
     ));
-    let ceremony = f.auth.login_start("browser").await.unwrap();
+    let ceremony = f
+        .auth
+        .login_start("browser")
+        .await
+        .expect("login start succeeds");
     f.auth
         .0
         .ceremonies
         .lock()
         .await
         .get_mut(&ceremony.id)
-        .unwrap()
+        .expect("the entry exists")
         .expires = 0;
     assert!(matches!(
         f.auth
@@ -1879,9 +2097,9 @@ async fn middleware_authenticates_api_and_enforces_cookie_csrf() {
         }
         let response = router
             .clone()
-            .oneshot(request.body(Body::empty()).unwrap())
+            .oneshot(request.body(Body::empty()).expect("the request builds"))
             .await
-            .unwrap();
+            .expect("the request is served");
         assert_eq!(response.status(), expected, "{method} {path}");
     }
     for (origin, expected) in [
@@ -1893,8 +2111,12 @@ async fn middleware_authenticates_api_and_enforces_cookie_csrf() {
             .header("origin", origin)
             .header("upgrade", "websocket")
             .body(Body::empty())
-            .unwrap();
-        let response = router.clone().oneshot(request).await.unwrap();
+            .expect("the request builds");
+        let response = router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("the request is served");
         assert_eq!(response.status(), expected, "{origin}");
     }
 }
@@ -1939,11 +2161,17 @@ async fn login_start_limits_share_listeners_ignore_forwarded_ips_and_leave_sessi
             .header("origin", f.auth.origin())
             .header("x-forwarded-for", format!("192.0.2.{attempt}"))
             .extension(ConnectInfo(
-                "192.0.2.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                "192.0.2.1:1234"
+                    .parse::<std::net::SocketAddr>()
+                    .expect("the socket addr parses"),
             ))
             .body(Body::empty())
-            .unwrap();
-        let response = router.clone().oneshot(request).await.unwrap();
+            .expect("the request builds");
+        let response = router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("the request is served");
         assert_eq!(
             response.status(),
             if attempt == 30 {
@@ -1963,21 +2191,31 @@ async fn login_start_limits_share_listeners_ignore_forwarded_ips_and_leave_sessi
         .method("POST")
         .uri("/api/v1/auth/device/start")
         .extension(ConnectInfo(
-            "192.0.2.1:5678".parse::<std::net::SocketAddr>().unwrap(),
+            "192.0.2.1:5678"
+                .parse::<std::net::SocketAddr>()
+                .expect("the socket addr parses"),
         ))
         .body(Body::empty())
-        .unwrap();
+        .expect("the request builds");
     assert_eq!(
-        other.oneshot(request).await.unwrap().status(),
+        other
+            .oneshot(request)
+            .await
+            .expect("the request is served")
+            .status(),
         StatusCode::TOO_MANY_REQUESTS
     );
     let request = Request::builder()
         .uri("/api/v1/private")
         .header("authorization", format!("Bearer {token}"))
         .body(Body::empty())
-        .unwrap();
+        .expect("the request builds");
     assert_eq!(
-        router.oneshot(request).await.unwrap().status(),
+        router
+            .oneshot(request)
+            .await
+            .expect("the request is served")
+            .status(),
         StatusCode::OK
     );
 }
@@ -2007,9 +2245,12 @@ async fn concurrent_requests_refresh_a_credential_once() {
     tokio::time::timeout(Duration::from_secs(1), f.auth.authenticate(&token))
         .await
         .expect("the second request does not wait for the writer")
-        .unwrap();
+        .expect("the authentication succeeds");
     drop(writer);
-    first.await.unwrap().unwrap();
+    first
+        .await
+        .expect("the first item exists")
+        .expect("the value is present");
 }
 
 /// Cross-site starts are refused before the throttle counts them, so they
@@ -2037,12 +2278,20 @@ async fn cross_site_starts_spend_no_sign_in_allowance() {
         let request = Request::post("/api/v1/auth/login/start")
             .header(header.0, header.1)
             .extension(ConnectInfo(
-                "192.0.2.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                "192.0.2.1:1234"
+                    .parse::<std::net::SocketAddr>()
+                    .expect("the socket addr parses"),
             ))
             .body(Body::empty())
-            .unwrap();
+            .expect("the request builds");
         let router = router.clone();
-        async move { router.oneshot(request).await.unwrap().status() }
+        async move {
+            router
+                .oneshot(request)
+                .await
+                .expect("the request is served")
+                .status()
+        }
     };
     for _ in 0..31 {
         let foreign = ("origin", "https://attacker.example".to_owned());
@@ -2074,7 +2323,7 @@ async fn https_cookies_use_host_prefix_and_ignore_unprefixed_names() {
             &Grants::admin(),
         )
         .await;
-    let auth = Auth::new(&f.auth.0.store, "https://piqueld.example").unwrap();
+    let auth = Auth::new(&f.auth.0.store, "https://piqueld.example").expect("the value is valid");
     assert_eq!(
         auth.cookie(AuthCookie::Session, "secret", 60),
         "__Host-piqueld_session=secret; Path=/; HttpOnly; SameSite=Strict; Max-Age=60; Secure"
@@ -2085,7 +2334,7 @@ async fn https_cookies_use_host_prefix_and_ignore_unprefixed_names() {
     );
     assert_eq!(
         Auth::new(&f.auth.0.store, "https://piqueld.example:8443")
-            .unwrap()
+            .expect("the value is valid")
             .cookie_name(AuthCookie::Session),
         "__Host-piqueld_session_8443"
     );
@@ -2098,9 +2347,14 @@ async fn https_cookies_use_host_prefix_and_ignore_unprefixed_names() {
             .uri("/api/v1/private")
             .header("cookie", cookie)
             .body(Body::empty())
-            .unwrap();
+            .expect("the request builds");
         assert_eq!(
-            router.clone().oneshot(request).await.unwrap().status(),
+            router
+                .clone()
+                .oneshot(request)
+                .await
+                .expect("the request is served")
+                .status(),
             expected
         );
     }
@@ -2117,13 +2371,16 @@ async fn device_inspection_reports_the_requester_until_approval() {
             &Grants::admin(),
         )
         .await;
-    let peer = "192.0.2.7".parse().unwrap();
-    let start = f.auth.device_start(Some(peer), None).unwrap();
+    let peer = "192.0.2.7".parse().expect("the value parses");
+    let start = f
+        .auth
+        .device_start(Some(peer), None)
+        .expect("device start succeeds");
     assert_eq!(start.requester.as_deref(), Some("192.0.2.7"));
     let request = f
         .auth
         .device_inspect(&format!(" {} ", start.user_code.to_lowercase()), &identity)
-        .unwrap();
+        .expect("device inspect succeeds");
     assert_eq!(request.user_code, start.user_code);
     assert_eq!(request.requester.as_deref(), Some("192.0.2.7"));
     assert!(request.age <= 1 && (599..=600).contains(&request.expires_in));
@@ -2131,23 +2388,28 @@ async fn device_inspection_reports_the_requester_until_approval() {
         f.auth
             .device_poll(&start.device_code, None)
             .await
-            .unwrap()
+            .expect("device poll succeeds")
             .status,
         "authorization_pending"
     );
     f.auth
         .device_inspect("AAAA-AAAA", &identity)
         .expect_err("`device_inspect` should be rejected");
-    f.auth.device_approve(&start.user_code, &identity).unwrap();
+    f.auth
+        .device_approve(&start.user_code, &identity)
+        .expect("device approve succeeds");
     f.auth
         .device_inspect(&start.user_code, &identity)
         .expect_err("`device_inspect` should be rejected");
-    let local = f.auth.device_start(None, None).unwrap();
+    let local = f
+        .auth
+        .device_start(None, None)
+        .expect("device start succeeds");
     assert!(local.requester.is_none());
     assert!(
         f.auth
             .device_inspect(&local.user_code, &identity)
-            .unwrap()
+            .expect("device inspect succeeds")
             .requester
             .is_none()
     );
@@ -2163,7 +2425,7 @@ async fn security_events(auth: &Auth) -> Vec<(String, String)> {
     let events = auth.0.store.filtered_events(&filter, &visible, None, 100);
     events
         .await
-        .unwrap()
+        .expect("the events load")
         .items
         .into_iter()
         .filter(|event| piqueld_store::SecurityEvent::parse(&event.kind).is_some())
@@ -2182,21 +2444,49 @@ async fn recovery_links_create_one_administrator_and_raise_security_events() {
         Err(AuthError::SetupPending)
     ));
     let admin = f.identity("admin", &Grants::admin()).await;
-    let secret = |link: &OperatorLink| link.url.split_once("#invite=").unwrap().1.to_owned();
-    let replaced = secret(&f.auth.recover_admin(root, None).await.unwrap());
-    let current = secret(&f.auth.recover_admin(root, None).await.unwrap());
-    assert!(f.auth.invitation(&replaced).await.unwrap().is_none());
+    let secret = |link: &OperatorLink| {
+        link.url
+            .split_once("#invite=")
+            .expect("the text splits")
+            .1
+            .to_owned()
+    };
+    let replaced = secret(
+        &f.auth
+            .recover_admin(root, None)
+            .await
+            .expect("recover admin succeeds"),
+    );
+    let current = secret(
+        &f.auth
+            .recover_admin(root, None)
+            .await
+            .expect("recover admin succeeds"),
+    );
+    assert!(
+        f.auth
+            .invitation(&replaced)
+            .await
+            .expect("invitation succeeds")
+            .is_none()
+    );
     assert!(matches!(
-        f.auth.invitation(&current).await.unwrap(),
+        f.auth
+            .invitation(&current)
+            .await
+            .expect("invitation succeeds"),
         Some(Invitation::Account)
     ));
     let carol = carol();
     for redeemed in [true, false] {
         assert_eq!(f.redeem(&carol, &current).await, redeemed);
     }
-    let directory = f.auth.directory(&admin).await.unwrap();
+    let directory = f.auth.directory(&admin).await.expect("directory succeeds");
     let recovered = directory.users.iter().find(|a| a.user.id == carol.id);
-    assert_eq!(recovered.unwrap().grants, Grants::admin());
+    assert_eq!(
+        recovered.expect("recovered succeeds").grants,
+        Grants::admin()
+    );
     let issued = "An admin recovery link was issued over the Unix socket to uid 0";
     assert_eq!(
         security_events(&f.auth).await,
@@ -2219,13 +2509,33 @@ async fn recovery_links_create_one_administrator_and_raise_security_events() {
 async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     let f = Fixture::new().await;
     let operator = HostOperator { uid: 1000 };
-    let secret = |link: &OperatorLink| link.url.split_once("#operator=").unwrap().1.to_owned();
-    let expired = secret(&f.auth.sign_in_link(operator, None).await.unwrap());
+    let secret = |link: &OperatorLink| {
+        link.url
+            .split_once("#operator=")
+            .expect("the text splits")
+            .1
+            .to_owned()
+    };
+    let expired = secret(
+        &f.auth
+            .sign_in_link(operator, None)
+            .await
+            .expect("sign in link succeeds"),
+    );
     f.auth.0.store.expire_operator_sessions().await;
     let unusable = f.auth.operator_sign_in(&expired, None).await;
     assert!(matches!(unusable, Err(AuthError::Unauthorized)));
-    let link = secret(&f.auth.sign_in_link(operator, None).await.unwrap());
-    let (signed_in, token) = f.auth.operator_sign_in(&link, None).await.unwrap();
+    let link = secret(
+        &f.auth
+            .sign_in_link(operator, None)
+            .await
+            .expect("sign in link succeeds"),
+    );
+    let (signed_in, token) = f
+        .auth
+        .operator_sign_in(&link, None)
+        .await
+        .expect("operator sign in succeeds");
     assert_eq!(signed_in, operator);
     let again = f.auth.operator_sign_in(&link, None).await;
     assert!(matches!(again, Err(AuthError::Unauthorized)));
@@ -2234,7 +2544,11 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     let guess = tokio::time::timeout(Duration::from_secs(1), guess).await;
     assert!(matches!(guess, Ok(Err(AuthError::Unauthorized))));
     drop(writer);
-    let identity = f.auth.authenticate(&token).await.unwrap();
+    let identity = f
+        .auth
+        .authenticate(&token)
+        .await
+        .expect("authenticate succeeds");
     assert!(identity.user().is_none());
     assert_eq!(identity.grants, Grants::admin());
 
@@ -2242,7 +2556,10 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     f.passkey(&admin).await;
     let bob = f.identity("bob", &developer()).await;
     let demote = set_grants(&bob, Grants::default());
-    f.auth.manage(&identity, None, demote).await.unwrap();
+    f.auth
+        .manage(&identity, None, demote)
+        .await
+        .expect("manage succeeds");
     assert!(f.reload(&bob).await.grants.is_empty());
     let invite = Manage::CreateInvitation {
         grants: Grants::default(),
@@ -2253,12 +2570,15 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
         f.auth
             .directory(&identity)
             .await
-            .unwrap()
+            .expect("directory succeeds")
             .operator_sessions
             .len(),
         1
     );
-    f.auth.logout(&identity, None).await.unwrap();
+    f.auth
+        .logout(&identity, None)
+        .await
+        .expect("logout succeeds");
     assert!(f.auth.authenticate(&token).await.is_err());
 
     let filter = piqueld_core::observability::EventFilter::default();
@@ -2266,11 +2586,11 @@ async fn operator_sign_in_links_work_once_and_act_as_the_operator() {
     let events = f.auth.0.store.filtered_events(&filter, &visible, None, 100);
     let issued = events
         .await
-        .unwrap()
+        .expect("the events load")
         .items
         .into_iter()
         .filter(|event| event.kind == "operator_sign_in_issued")
-        .map(|event| (event.message.unwrap(), event.actor))
+        .map(|event| (event.message.expect("the message is set"), event.actor))
         .collect::<Vec<_>>();
     let message = "A host operator sign-in link was issued over the Unix socket to uid 1000";
     let actor = piqueld_core::EventActor::Operator {
@@ -2290,11 +2610,17 @@ async fn privileged_grants_and_tokens_raise_security_events() {
     let bob = f.identity("bob", &developer()).await;
     for grants in [developer(), Grants::admin()] {
         let change = set_grants(&bob, grants);
-        f.auth.manage(&admin, None, change).await.unwrap();
+        f.auth
+            .manage(&admin, None, change)
+            .await
+            .expect("manage succeeds");
     }
     for (name, days) in [("ci", Some(30)), ("forever", None)] {
         let token = create_token(developer(), name, days);
-        f.auth.manage(&admin, None, token).await.unwrap();
+        f.auth
+            .manage(&admin, None, token)
+            .await
+            .expect("manage succeeds");
     }
     assert_eq!(
         security_events(&f.auth).await,
@@ -2321,7 +2647,7 @@ async fn tailnet_bindings_need_the_tailnet_node_or_dashboard_hostname() {
         "[ingress]\nenabled = true\n\
          [ingress.private]\nenabled = true\ndashboard_hostname = 'dashboard.example.com'",
     )
-    .unwrap();
+    .expect("from toml succeeds");
     assert!(TokenPolicy::new(&dashboard).tailnet);
     let f = Fixture::new().await;
     let admin = f.identity("admin", &Grants::admin()).await;
@@ -2329,7 +2655,10 @@ async fn tailnet_bindings_need_the_tailnet_node_or_dashboard_hostname() {
         grants: developer(),
         name: "ci".into(),
         days: Some(1),
-        tailnet: Some(piqueld_core::tailnet::TailnetBinding::parse("tag:ci").unwrap()),
+        tailnet: Some(
+            piqueld_core::tailnet::TailnetBinding::parse("tag:ci")
+                .expect("the tailnet binding parses"),
+        ),
     };
     assert!(matches!(
         f.auth.manage(&admin, None, token).await,
@@ -2344,18 +2673,32 @@ async fn unreadable_setup_link_is_an_error_and_left_alone() {
     use std::os::unix::fs::PermissionsExt;
     let f = Fixture::new().await;
     let path = f.dir.path().join("setup-link");
-    f.auth.prepare_setup(&path).await.unwrap();
-    let link = std::fs::read_to_string(&path).unwrap();
-    let (_, secret) = link.trim().split_once("#invite=").unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    f.auth
+        .prepare_setup(&path)
+        .await
+        .expect("prepare setup succeeds");
+    let link = std::fs::read_to_string(&path).expect("read to string succeeds");
+    let (_, secret) = link.trim().split_once("#invite=").expect("the text splits");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000))
+        .expect("set permissions succeeds");
     let result = f.auth.prepare_setup(&path).await;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .expect("set permissions succeeds");
     assert!(result.is_err());
-    assert_eq!(link, std::fs::read_to_string(&path).unwrap());
-    std::fs::remove_file(&path).unwrap();
-    std::fs::create_dir(&path).unwrap();
+    assert_eq!(
+        link,
+        std::fs::read_to_string(&path).expect("read to string succeeds")
+    );
+    std::fs::remove_file(&path).expect("remove file succeeds");
+    std::fs::create_dir(&path).expect("create dir succeeds");
     assert!(f.auth.prepare_setup(&path).await.is_err());
-    assert!(f.auth.invitation(secret).await.unwrap().is_some());
+    assert!(
+        f.auth
+            .invitation(secret)
+            .await
+            .expect("invitation succeeds")
+            .is_some()
+    );
 }
 
 /// A setup link that can't be written, here a stale one in a read-only
@@ -2365,15 +2708,26 @@ async fn unwritable_setup_link_keeps_the_stored_secret() {
     use std::os::unix::fs::PermissionsExt;
     let f = Fixture::new().await;
     let directory = f.dir.path().join("setup");
-    std::fs::create_dir(&directory).unwrap();
+    std::fs::create_dir(&directory).expect("create dir succeeds");
     let path = directory.join("setup-link");
-    f.auth.prepare_setup(&path).await.unwrap();
-    let link = std::fs::read_to_string(&path).unwrap();
-    let (_, secret) = link.trim().split_once("#invite=").unwrap();
-    std::fs::write(&path, "stale").unwrap();
-    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o500)).unwrap();
+    f.auth
+        .prepare_setup(&path)
+        .await
+        .expect("prepare setup succeeds");
+    let link = std::fs::read_to_string(&path).expect("read to string succeeds");
+    let (_, secret) = link.trim().split_once("#invite=").expect("the text splits");
+    std::fs::write(&path, "stale").expect("the file is written");
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o500))
+        .expect("set permissions succeeds");
     let result = f.auth.prepare_setup(&path).await;
-    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
+        .expect("set permissions succeeds");
     assert!(result.is_err());
-    assert!(f.auth.invitation(secret).await.unwrap().is_some());
+    assert!(
+        f.auth
+            .invitation(secret)
+            .await
+            .expect("invitation succeeds")
+            .is_some()
+    );
 }

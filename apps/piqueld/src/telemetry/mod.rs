@@ -530,17 +530,20 @@ mod tests {
     /// worker stopped.
     #[tokio::test]
     async fn receivers_follow_the_grants_and_revoked_ones_stop_at_once() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let sockets = Sockets::new(directory.path());
-        let telemetry = Telemetry::new(&TelemetryConfig::default(), sockets.clone()).unwrap();
-        telemetry.start(&piqueld_core::InstanceId::parse("instance-test").unwrap());
+        let telemetry = Telemetry::new(&TelemetryConfig::default(), sockets.clone())
+            .expect("the value is valid");
+        telemetry.start(
+            &piqueld_core::InstanceId::parse("instance-test").expect("the instance id parses"),
+        );
         let (kept, revoked) = (
-            EnvironmentId::parse("app-kept").unwrap(),
-            EnvironmentId::parse("app-revoked").unwrap(),
+            EnvironmentId::parse("app-kept").expect("the environment id parses"),
+            EnvironmentId::parse("app-revoked").expect("the environment id parses"),
         );
         let (collector, renamed) = (
-            ServiceName::parse("collector").unwrap(),
-            ServiceName::parse("otel").unwrap(),
+            ServiceName::parse("collector").expect("the service name parses"),
+            ServiceName::parse("otel").expect("the service name parses"),
         );
         let listed = |receivers: &[(&EnvironmentId, &ServiceName)]| {
             let receivers = receivers
@@ -552,22 +555,25 @@ mod tests {
         telemetry
             .receive(listed(&[(&kept, &collector), (&revoked, &collector)]))
             .await
-            .unwrap();
-        let hub = telemetry.0.as_ref().unwrap();
+            .expect("receive succeeds");
+        let hub = telemetry.0.as_ref().expect("the value is present");
         let (dropped, old) = (
-            hub.destination(&revoked).unwrap(),
-            hub.destination(&kept).unwrap(),
+            hub.destination(&revoked).expect("destination succeeds"),
+            hub.destination(&kept).expect("destination succeeds"),
         );
         assert!(dropped.running(), "receivers start exporting");
         assert_eq!(
-            telemetry.receiver(&kept).unwrap().endpoint,
+            telemetry
+                .receiver(&kept)
+                .expect("receiver succeeds")
+                .endpoint,
             format!("unix://{}", sockets.socket(&kept, &collector).display())
         );
 
         telemetry
             .receive(listed(&[(&kept, &renamed)]))
             .await
-            .unwrap();
+            .expect("receive succeeds");
         let receivers = telemetry
             .status()
             .destinations
