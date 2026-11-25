@@ -155,12 +155,9 @@ impl DaemonConfig {
     /// Checks a configuration file as [`Self::load`] would, without reading
     /// credential files or touching anything else on the host. This is
     /// `piqueld check-config`, which can run where the credentials are absent,
-    /// such as a Nix build.
-    ///
-    /// Credential files are only located: relative paths are accepted without
-    /// `$CREDENTIALS_DIRECTORY`, and checks of their contents (readable,
-    /// non-empty, a tunnel credentials file, a valid webhook URL) wait for
-    /// startup.
+    /// such as a Nix build. Credential files are only located: their contents
+    /// (readable, non-empty, a tunnel credentials file, a valid webhook URL)
+    /// are checked at startup.
     ///
     /// # Errors
     ///
