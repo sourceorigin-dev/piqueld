@@ -1,7 +1,15 @@
 //! Files `just generate` writes from code, and `just openapi-check` compares
 //! against the checked-in copies. The daemon's `generate_openapi` example and
 //! `piquelctl`'s `cli_reference` example both write through [`Artifacts`],
-//! and render the documentation's reference pages with [`Page`].
+//! and render the documentation's reference pages with [`Page`]. Each also
+//! reads its program's clap commands as a [`CommandHelp`] and renders its
+//! manual page with [`ManPage`].
+
+mod help;
+mod man;
+
+pub use help::{ArgumentHelp, CommandHelp, ValueHelp};
+pub use man::{ManPage, Section};
 
 use std::{
     fs, io,
@@ -209,16 +217,50 @@ impl Page {
         self.text
     }
 
-    /// Turns doc-comment or help text into Markdown: lines of a paragraph
-    /// are joined, except list items, and a `<` outside code spans is
-    /// escaped so it doesn't open an HTML tag. Fenced code blocks stay as
-    /// they are.
+    /// Turns doc-comment or help text into Markdown: its [`Block`]s, with a
+    /// `<` outside code spans escaped so it doesn't open an HTML tag. Fenced
+    /// code blocks stay as they are.
     ///
     /// ```text
     /// "Becomes `<host>.ts.net`, see\n<host>." -> "Becomes `<host>.ts.net`, see \<host>."
     /// ```
     #[must_use]
     pub fn prose(text: &str) -> String {
+        Block::parse(text)
+            .into_iter()
+            .map(|block| match block {
+                Block::Text(text) => text
+                    .split('`')
+                    .enumerate()
+                    .map(|(index, part)| {
+                        if index % 2 == 0 {
+                            part.replace('<', "\\<")
+                        } else {
+                            part.to_owned()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("`"),
+                Block::Code(code) => code,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+}
+
+/// A block of doc-comment or help text, which [`Page`] renders as Markdown
+/// and [`ManPage`] as roff.
+pub(crate) enum Block {
+    /// Paragraphs, a blank line apart. A paragraph's lines are joined, except
+    /// list items, which start with `- ` and keep a line each.
+    Text(String),
+    /// A fenced code block, with its fences.
+    Code(String),
+}
+
+impl Block {
+    /// The blocks of `text`, without the empty ones.
+    pub(crate) fn parse(text: &str) -> Vec<Self> {
         let mut blocks = Vec::new();
         let mut prose = Vec::new();
         let mut lines = text.trim().lines();
@@ -227,7 +269,7 @@ impl Page {
                 prose.push(line);
                 continue;
             };
-            blocks.push(Self::paragraph(&prose));
+            blocks.push(Self::Text(Self::join(&prose)));
             prose.clear();
             let mut code = vec![line];
             for line in lines.by_ref() {
@@ -236,15 +278,16 @@ impl Page {
                     break;
                 }
             }
-            blocks.push(code.join("\n"));
+            blocks.push(Self::Code(code.join("\n")));
         }
-        blocks.push(Self::paragraph(&prose));
-        blocks.retain(|block| !block.is_empty());
-        blocks.join("\n\n")
+        blocks.push(Self::Text(Self::join(&prose)));
+        blocks.retain(|block| !matches!(block, Self::Text(text) if text.is_empty()));
+        blocks
     }
 
-    /// [`Self::prose`] for `lines` without code blocks.
-    fn paragraph(lines: &[&str]) -> String {
+    /// The text of `lines`, which hold no code block, as [`Self::Text`]
+    /// holds it.
+    fn join(lines: &[&str]) -> String {
         let mut joined = String::new();
         for line in lines.iter().map(|line| line.trim()) {
             if !joined.is_empty() && !joined.ends_with('\n') {
@@ -259,26 +302,14 @@ impl Page {
             }
             joined.push_str(line);
         }
-        joined
-            .trim()
-            .split('`')
-            .enumerate()
-            .map(|(index, part)| {
-                if index % 2 == 0 {
-                    part.replace('<', "\\<")
-                } else {
-                    part.to_owned()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("`")
+        joined.trim().to_owned()
     }
 }
 
-/// The marker of a fenced code block in [`Page::prose`]: three or more
+/// The marker of a fenced code block in [`Block::parse`]: three or more
 /// backticks or tildes.
 #[derive(Clone, Copy)]
-struct Fence {
+pub(crate) struct Fence {
     /// The marker's character, `` ` `` or `~`.
     marker: char,
     /// How many times the opening line repeats it.
@@ -287,7 +318,7 @@ struct Fence {
 
 impl Fence {
     /// The fence `line` opens, if it is an opening fence.
-    fn open(line: &str) -> Option<Self> {
+    pub(crate) fn open(line: &str) -> Option<Self> {
         let line = line.trim_start();
         let marker = line.chars().next().filter(|c| matches!(c, '`' | '~'))?;
         let len = line.chars().take_while(|&c| c == marker).count();
@@ -296,7 +327,7 @@ impl Fence {
 
     /// Whether `line` closes the fence: only its marker, at least as many
     /// times as the opening line.
-    fn closes(self, line: &str) -> bool {
+    pub(crate) fn closes(self, line: &str) -> bool {
         let line = line.trim();
         let len = line.chars().take_while(|&c| c == self.marker).count();
         len >= self.len && len == line.chars().count()

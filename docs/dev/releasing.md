@@ -78,7 +78,9 @@ just publish --dry-run --allow-dirty
 Each GitHub release has the archive the install script,
 [`apps/site/install.sh`](https://github.com/sourceorigin-dev/piqueld/blob/main/apps/site/install.sh),
 downloads, `piqueld-<version>-x86_64-linux.tar.gz`, and its `SHA256SUMS`. The
-archive holds the daemon, with its dashboard, `piquelctl`, the systemd unit
+archive holds the daemon, with its dashboard, `piquelctl`, their manual pages
+from [`man`](https://github.com/sourceorigin-dev/piqueld/tree/main/man), the
+systemd unit
 [`apps/piqueld/piqueld.service`](https://github.com/sourceorigin-dev/piqueld/blob/main/apps/piqueld/piqueld.service),
 and the license. The binaries link musl and OpenSSL statically, so they run on
 any x86_64 Linux: the daemon builds OpenSSL from source for musl targets.
@@ -120,8 +122,9 @@ and the [GitHub CLI](https://cli.github.com) signed in to the repository.
 1. Open a pull request that sets the new version in the root `Cargo.toml`:
    `version` under `[workspace.package]`, and the `version` of each internal
    dependency under `[workspace.dependencies]`. Then run
-   `cargo update --workspace` to update `Cargo.lock`. The Nix packages read the
-   version from `Cargo.toml`.
+   `cargo update --workspace` to update `Cargo.lock`, and `just generate` to
+   update the manual pages, whose footer names the version. The Nix packages
+   read the version from `Cargo.toml`.
 2. Merge it, and check out the merge commit:
 
    ```console
@@ -198,7 +201,10 @@ and restarts the daemon, so keep your changes to the unit in a drop-in:
 ```console
 curl -fsSL https://piqueld.dev/install.sh | sh
 piquelctl --version
+man piqueld
 ```
+
+The manual page's footer names the new version.
 
 ## Troubleshooting
 

@@ -22,8 +22,8 @@ tests, dependency licenses, dependency boundaries, browser compilation, the
 Playwright browser tests (run `just setup-playwright` first), the
 [documentation](documentation.md#building-and-checking), and the freshness
 of the checked-in generated files: the OpenAPI specification, its client, the
-manifest and configuration JSON Schemas, and the command and settings
-references. It does not modify generated files. Regenerate them all in
+manifest and configuration JSON Schemas, the command and settings
+references, and the manual pages. It does not modify generated files. Regenerate them all in
 dependency order with:
 
 ```console

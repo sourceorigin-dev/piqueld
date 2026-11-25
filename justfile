@@ -125,8 +125,9 @@ unused:
 doc *ARGS='--workspace':
     @RUSTDOCFLAGS='-D warnings -A rustdoc::private_intra_doc_links' cargo doc --locked --no-deps --all-features --document-private-items {{ARGS}}
 
-# Check generated artifacts against freshly generated endpoint, manifest,
-# configuration, and command-line metadata.
+# Check generated artifacts, the manual pages in man/ among them, against
+# freshly generated endpoint, manifest, configuration, and command-line
+# metadata.
 openapi-check:
     @cargo run --locked --package piqueld --example generate_openapi -- --check
     @cargo run --locked --package piquelctl --example cli_reference -- --check
@@ -212,8 +213,9 @@ ctl *ARGS:
     @cargo xtask dev ctl "$@"
 
 # Generate the OpenAPI document and client, the manifest and configuration JSON
-# Schemas, and the configuration reference page together, then the CLI
-# reference page, whose generator builds on the regenerated client.
+# Schemas, the configuration reference page and the daemon's manual page
+# together, then the CLI reference page and piquelctl's manual page, whose
+# generator builds on the regenerated client.
 generate:
     @cargo run --locked --package piqueld --example generate_openapi
     @cargo run --locked --package piquelctl --example cli_reference

@@ -7,18 +7,17 @@ use piqueld::api::ApplicationService;
 use piqueld::api::http::{self, ApiState, UiAssets, UnixPeer};
 use piqueld::auth::Auth;
 use piqueld::backup::Backups;
+use piqueld::cli::{Args, Command, DEFAULT_CONFIG_PATH};
 use piqueld::ingress::{DashboardSocket, Ingress};
 use piqueld::tailnet::Node;
 use piqueld::tailnet::TailnetLookup;
 use piqueld::telemetry::{Sockets, Telemetry};
 use piqueld_config::{ConfigError, DaemonConfig};
-use std::{net::SocketAddr, os::unix::fs::OpenOptionsExt, path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::net::{TcpListener, UnixListener};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-/// Configuration read when `--config` is not supplied.
-const DEFAULT_CONFIG_PATH: &str = "/etc/piqueld/config.toml";
 /// A served listener, which ends after shutdown or on failure.
 type ApiTask = tokio::task::JoinHandle<Result<(), std::io::Error>>;
 /// Time open connections get to finish after shutdown is requested.
@@ -28,87 +27,6 @@ const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 const SHUTDOWN_DEADLINE: std::time::Duration = std::time::Duration::from_mins(1);
 /// Time queued telemetry gets to reach its collectors on exit.
 const TELEMETRY_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
-
-// Command-line arguments. Doc comments on fields become CLI help text.
-#[derive(Debug, Parser)]
-#[command(
-    name = "piqueld",
-    version,
-    about = "Run the piqueld single-node Docker control plane"
-)]
-struct Args {
-    /// Runs the daemon when omitted.
-    #[command(subcommand)]
-    command: Option<Command>,
-
-    /// Read daemon configuration from this TOML file.
-    ///
-    /// Without this flag, `/etc/piqueld/config.toml` is read if it exists;
-    /// otherwise built-in defaults are used.
-    #[arg(long, value_name = "PATH")]
-    config: Option<PathBuf>,
-
-    /// Also append JSON logs to this file, created with mode `0600`.
-    ///
-    /// Standard output keeps its usual format, so tools can query the logs
-    /// while a person watches the terminal.
-    #[arg(long, value_name = "PATH")]
-    log_file: Option<PathBuf>,
-}
-
-/// One-shot commands that exit instead of running the daemon.
-#[derive(Debug, clap::Subcommand)]
-enum Command {
-    /// Check a configuration file's syntax, types, ranges, and combinations,
-    /// then exit.
-    ///
-    /// Nothing on the host is touched: no state, sockets, Docker, or network.
-    /// Credential files are only located, not read, so the check also runs
-    /// where they are absent, such as a Nix build.
-    CheckConfig {
-        /// The TOML file to check.
-        #[arg(long, value_name = "PATH")]
-        config: PathBuf,
-    },
-    /// Restore a backup of the data directory into an empty data directory,
-    /// then exit.
-    ///
-    /// Run it as the daemon's user while the daemon is stopped. It first
-    /// checks the backup: the database's integrity, that the database is the
-    /// one the backup describes, and that `secrets.key` decrypts its secrets.
-    /// It restores nothing if a check fails. The daemon updates the restored
-    /// database when it next starts.
-    Restore {
-        /// The backup, such as `/var/lib/piqueld/backups/pre-<schema>-<time>`.
-        #[arg(value_name = "BACKUP")]
-        backup: PathBuf,
-        /// Restore into this data directory instead of the configuration's
-        /// `server.data_dir`. The configuration isn't read then.
-        #[arg(long, value_name = "PATH")]
-        data_dir: Option<PathBuf>,
-        /// Only check the backup, in a temporary directory, and restore
-        /// nothing.
-        #[arg(long)]
-        check: bool,
-    },
-}
-
-impl Args {
-    /// Opens `--log-file` for appending, creating it private when missing.
-    fn open_log_file(&self) -> Result<Option<std::fs::File>> {
-        self.log_file
-            .as_ref()
-            .map(|path| {
-                std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .mode(0o600)
-                    .open(path)
-                    .with_context(|| format!("failed to open log file {}", path.display()))
-            })
-            .transpose()
-    }
-}
 
 /// Runs a one-shot [`Command`], or the daemon until a shutdown signal.
 #[tokio::main]

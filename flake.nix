@@ -181,6 +181,11 @@
               '';
             }
           );
+          # Each binary's manual page, which `just generate` writes.
+          manPages = {
+            piqueld = ./man/piqueld.8;
+            piquelctl = ./man/piquelctl.1;
+          };
           mkPackage =
             {
               name,
@@ -209,8 +214,8 @@
                 cargoBuildExtraArgs = lib.concatMapStringsSep " " (binary: "--bin ${binary}") binaries;
                 nativeBuildInputs =
                   commonArgs.nativeBuildInputs
-                  ++ lib.optional (builtins.elem "piqueld" binaries) pkgs.makeWrapper
-                  ++ lib.optional (builtins.elem "piquelctl" binaries) pkgs.installShellFiles;
+                  ++ [ pkgs.installShellFiles ]
+                  ++ lib.optional (builtins.elem "piqueld" binaries) pkgs.makeWrapper;
                 installPhaseCommand = ''
                   ${lib.concatMapStringsSep "\n" (
                     binary:
@@ -222,7 +227,8 @@
                   ''}
                 '';
                 postInstall =
-                  lib.optionalString (builtins.elem "piqueld" binaries) ''
+                  lib.concatMapStrings (binary: "installManPage ${manPages.${binary}}\n") binaries
+                  + lib.optionalString (builtins.elem "piqueld" binaries) ''
                     wrapProgram "$out/bin/piqueld" --prefix PATH : ${
                       lib.makeBinPath [
                         pkgs.git

@@ -43,6 +43,8 @@ starts it:
   `ssh`.
 - It downloads the release's binaries, checks them against the release's
   checksums, and installs `piqueld` and `piquelctl` to `/usr/local/bin`.
+- It installs their manual pages to `/usr/local/share/man`, where `man`
+  finds them.
 - It creates a `piqueld` system user in the `docker` group.
 - It writes the daemon's configuration to `/etc/piqueld/config.toml`, unless
   that file exists. The configuration serves the dashboard on the host's
@@ -112,8 +114,8 @@ configuration: read its release notes before you update.
    ```
 
    The module enables Docker, creates a `piqueld` system user, runs the daemon
-   as the `piqueld` systemd service, and installs `piquelctl`. It doesn't open
-   any firewall port.
+   as the `piqueld` systemd service, and installs `piquelctl` and both manual
+   pages. It doesn't open any firewall port.
 
 3. [Choose how to reach the dashboard](#choose-how-to-reach-the-dashboard), and
    add the matching settings.
@@ -247,7 +249,8 @@ To install piqueld without the script, do what it does yourself, on the host:
 
 1. Download a release's archive and its checksums from
    [GitHub](https://github.com/sourceorigin-dev/piqueld/releases), check
-   them, and install the binaries to `/usr/local/bin`:
+   them, and install the binaries to `/usr/local/bin` and their manual pages
+   to `/usr/local/share/man`:
 
    ```console
    version=0.1.0
@@ -257,9 +260,12 @@ To install piqueld without the script, do what it does yourself, on the host:
    tar -xzf "piqueld-$version-x86_64-linux.tar.gz"
    cd "piqueld-$version-x86_64-linux"
    sudo install piqueld piquelctl /usr/local/bin/
+   sudo install -D -m 644 piqueld.8 /usr/local/share/man/man8/piqueld.8
+   sudo install -D -m 644 piquelctl.1 /usr/local/share/man/man1/piquelctl.1
    ```
 
-   To build them from source instead, see
+   The archive of 0.1.0 has no manual pages: leave out the last two commands
+   for it. To build the binaries from source instead, see
    [building from source](#build-from-source).
 
 2. Create a `piqueld` system user and group, and add the user to the `docker`
@@ -307,8 +313,8 @@ To install piqueld without the script, do what it does yourself, on the host:
 6. Add the users who should run `piquelctl` on the host to the `piqueld`
    group.
 
-To update piqueld, install the new release's binaries and unit the same way,
-then restart it with `sudo systemctl restart piqueld`.
+To update piqueld, install the new release's binaries, manual pages and unit
+the same way, then restart it with `sudo systemctl restart piqueld`.
 
 ### Build from source
 
@@ -345,6 +351,11 @@ several minutes.
 Then follow the steps above from step 2. Save the unit from
 [`apps/piqueld/piqueld.service`](https://github.com/sourceorigin-dev/piqueld/blob/main/apps/piqueld/piqueld.service),
 which step 4 shows.
+
+Cargo installs no manual pages. Save them from
+[`man`](https://github.com/sourceorigin-dev/piqueld/tree/main/man) in the
+repository: `piqueld.8` as `/usr/local/share/man/man8/piqueld.8`, and
+`piquelctl.1` as `/usr/local/share/man/man1/piquelctl.1`.
 
 ## Pass files to the daemon
 
@@ -407,6 +418,14 @@ public URL and its secret key, and gives a next step for each check that needs
 action. Once you've signed in, **System status** on the dashboard's
 **Overview** also shows whether Docker and its Swarm are ready, and the
 **Daemon status** page runs the same checks.
+
+The daemon and `piquelctl` each have a manual page, which describes their
+options, files and exit statuses:
+
+```console
+man piqueld
+man piquelctl
+```
 
 Next, [create your account](first-account.md).
 

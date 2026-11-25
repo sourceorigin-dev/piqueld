@@ -33,6 +33,29 @@ piquelctl completions bash > ~/.local/share/bash-completion/completions/piquelct
 
 It also prints `elvish` and `powershell` scripts.
 
+### Manual page
+
+`man piquelctl` describes every command with its arguments and options, as
+[piquelctl commands](cli-commands.md) does, then the exit statuses, environment
+variables and files:
+
+```console
+man piquelctl
+```
+
+The install script and the Nix package install the page. Cargo doesn't, so
+after `cargo install`, save the page of your version from the repository:
+
+```console
+version=$(piquelctl --version | cut -d ' ' -f 2)
+curl -fsSL --create-dirs -o ~/.cargo/share/man/man1/piquelctl.1 \
+  "https://raw.githubusercontent.com/sourceorigin-dev/piqueld/v$version/man/piquelctl.1"
+```
+
+`man` looks for pages in `share/man` beside each directory of your `PATH`,
+such as `~/.cargo/bin`. Version 0.1.0 has no manual page, so the download
+fails for it.
+
 ## macOS support
 
 On Apple Silicon, Nix users can run `nix build .#cli` or
