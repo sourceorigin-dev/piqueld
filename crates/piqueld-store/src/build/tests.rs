@@ -23,10 +23,10 @@ impl Fixture {
     /// Saves the prebuilt application and starts a build of its `web`
     /// service, keeping 70,000 bytes of output for a day.
     async fn new() -> Self {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("tempdir succeeds");
         let store = Store::open_unsynced(temp.path().join("state.db"))
             .await
-            .unwrap()
+            .expect("open unsynced succeeds")
             .with_build_history(piqueld_core::BuildHistoryConfig {
                 log_max_bytes: 70_000,
                 log_retention_days: 1,
@@ -35,7 +35,7 @@ impl Fixture {
         let operation = store
             .save_application(&ApplicationTemplate::from(&app), None, None)
             .await
-            .unwrap();
+            .expect("save application succeeds");
         let environment = store.production(app.id()).await;
         let mut fixture = Self {
             _temp: temp,
@@ -60,7 +60,7 @@ impl Fixture {
                 None,
             )
             .await
-            .unwrap()
+            .expect("start build succeeds")
     }
 }
 
@@ -101,12 +101,15 @@ async fn record(
     let id = store
         .start_build(environment, &fixture.operation, "web", source, None)
         .await
-        .unwrap();
-    store.build_commit(id, &hex(commit, 40)).await.unwrap();
+        .expect("start build succeeds");
+    store
+        .build_commit(id, &hex(commit, 40))
+        .await
+        .expect("build commit succeeds");
     store
         .finish_build(id, &outcome, &LogEnding::default())
         .await
-        .unwrap();
+        .expect("finish build succeeds");
     id
 }
 
@@ -135,11 +138,11 @@ async fn only_the_applications_builds_of_the_same_commit_and_settings_are_reusab
         store
             .reusable_builds(ours, source, &hex('c', 40))
             .await
-            .unwrap()
+            .expect("reusable builds succeeds")
     };
     let original = ReusableBuild {
         id: built,
-        image: BuiltImage::parse(image('a')).unwrap(),
+        image: BuiltImage::parse(image('a')).expect("the built image parses"),
     };
     assert_eq!(reusable(&preview).await, std::slice::from_ref(&original));
 
@@ -169,7 +172,10 @@ async fn build_metadata_obeys_the_writer_gate() {
     assert!(finish.is_err(), "completion bypassed the writer gate");
     assert!(recover.is_err(), "recovery bypassed the writer gate");
     drop(writer);
-    store.build_commit(id, "commit").await.unwrap();
+    store
+        .build_commit(id, "commit")
+        .await
+        .expect("build commit succeeds");
     store
         .finish_build(
             id,
@@ -177,8 +183,11 @@ async fn build_metadata_obeys_the_writer_gate() {
             &LogEnding::default(),
         )
         .await
-        .unwrap();
-    store.recover_builds().await.unwrap();
+        .expect("finish build succeeds");
+    store
+        .recover_builds()
+        .await
+        .expect("recover builds succeeds");
 }
 
 #[tokio::test]
@@ -208,17 +217,23 @@ async fn output_survives_concurrent_metadata_writes_for_another_build() {
             .finish_build(other, &succeeded("sha256:fixture"), &LogEnding::default())
             .await
     };
-    tokio::try_join!(output, metadata).unwrap();
-    let logs = store.build_logs(id, None, None).await.unwrap();
+    tokio::try_join!(output, metadata).expect("the tasks succeed");
+    let logs = store
+        .build_logs(id, None, None)
+        .await
+        .expect("build logs succeeds");
     assert_eq!(logs.items.len(), 8);
     for (index, chunk) in logs.items.iter().enumerate() {
-        assert_eq!(chunk.offset, i64::try_from(index * 4096).unwrap());
+        assert_eq!(
+            chunk.offset,
+            i64::try_from(index * 4096).expect("the value fits")
+        );
         assert_eq!(chunk.text, "a".repeat(4096));
     }
     let records = store
         .builds(None, Some(environment), &Scope::All, None, 50)
         .await
-        .unwrap();
+        .expect("builds succeeds");
     assert_eq!(records.items[0].state, BuildState::Succeeded);
     assert_eq!(records.items[0].commit.as_deref(), Some("commit"));
     assert_eq!(records.items[1].log_bytes, 32768);
@@ -238,12 +253,12 @@ async fn build_pages_filter_before_applying_the_limit() {
     manifest.metadata.name = "other".into();
     let other = manifest
         .validate()
-        .unwrap()
-        .normalize(ApplicationId::parse("app-other").unwrap());
+        .expect("validate succeeds")
+        .normalize(ApplicationId::parse("app-other").expect("the application id parses"));
     let other_operation = store
         .save_application(&ApplicationTemplate::from(&other), None, Some(0))
         .await
-        .unwrap();
+        .expect("save application succeeds");
     let latest = fixture.start().await;
     for _ in 0..3 {
         store
@@ -255,24 +270,24 @@ async fn build_pages_filter_before_applying_the_limit() {
                 None,
             )
             .await
-            .unwrap();
+            .expect("start build succeeds");
     }
     let first = store
         .builds(None, Some(environment), &Scope::All, None, 1)
         .await
-        .unwrap();
+        .expect("builds succeeds");
     assert_eq!(first.items[0].id, latest);
     let cursor = first.next_cursor.as_deref();
     let second = store
         .builds(None, Some(environment), &Scope::All, cursor, 1)
         .await
-        .unwrap();
+        .expect("builds succeeds");
     assert_eq!(second.items[0].id, *id);
     assert!(second.next_cursor.is_none());
     let global = store
         .builds(None, None, &Scope::All, None, 1)
         .await
-        .unwrap();
+        .expect("builds succeeds");
     assert_eq!(
         global.items[0].environment_id,
         other_operation.environment_id.as_str()
@@ -280,14 +295,14 @@ async fn build_pages_filter_before_applying_the_limit() {
     let application = store
         .builds(Some(app.id()), None, &Scope::All, None, 1)
         .await
-        .unwrap();
+        .expect("builds succeeds");
     assert_eq!(application.items[0].id, latest);
-    let absent = EnvironmentId::parse("env-absent").unwrap();
+    let absent = EnvironmentId::parse("env-absent").expect("the environment id parses");
     assert!(
         store
             .builds(None, Some(&absent), &Scope::All, None, 1)
             .await
-            .unwrap()
+            .expect("builds succeeds")
             .items
             .is_empty()
     );
@@ -307,10 +322,13 @@ async fn output_is_bounded_paged_and_expired_without_losing_metadata() {
         store
             .append_build_log(id, &vec![b'a'; 80_000], LogStream::Stdout)
             .await
-            .unwrap(),
+            .expect("append build log succeeds"),
         LogAppend::Closed
     );
-    let first = store.build_logs(id, None, None).await.unwrap();
+    let first = store
+        .build_logs(id, None, None)
+        .await
+        .expect("build logs succeeds");
     assert_eq!(
         first
             .items
@@ -323,7 +341,7 @@ async fn output_is_bounded_paged_and_expired_without_losing_metadata() {
     let second = store
         .build_logs(id, first.previous_offset, None)
         .await
-        .unwrap();
+        .expect("build logs succeeds");
     assert_eq!(
         second
             .items
@@ -336,19 +354,19 @@ async fn output_is_bounded_paged_and_expired_without_losing_metadata() {
     store
         .finish_build(id, &succeeded("sha256:fixture"), &LogEnding::default())
         .await
-        .unwrap();
+        .expect("finish build succeeds");
     assert_eq!(
         store
             .append_build_log(id, b"late", LogStream::Stdout)
             .await
-            .unwrap(),
+            .expect("append build log succeeds"),
         LogAppend::Closed
     );
     assert_eq!(
         store
             .builds(None, Some(environment), &Scope::All, None, 50)
             .await
-            .unwrap()
+            .expect("builds succeeds")
             .items[0]
             .log_bytes,
         70_000
@@ -356,28 +374,34 @@ async fn output_is_bounded_paged_and_expired_without_losing_metadata() {
     sqlx::query!("UPDATE builds SET finished_at_ms=0 WHERE id=?1", id)
         .execute(&store.pool)
         .await
-        .unwrap();
-    store.prune_build_logs().await.unwrap();
-    assert!(store.build_logs(id, None, None).await.unwrap().expired);
+        .expect("execute succeeds");
+    store.prune_build_logs().await.expect("pruning works");
+    assert!(
+        store
+            .build_logs(id, None, None)
+            .await
+            .expect("build logs succeeds")
+            .expired
+    );
     let records = store
         .builds(None, None, &Scope::All, None, 50)
         .await
-        .unwrap();
+        .expect("builds succeeds");
     assert_eq!(records.items.len(), 1);
     assert_eq!(records.items[0].state, BuildState::Succeeded);
     let interrupted = fixture.start().await;
-    store.recover_builds().await.unwrap();
+    store.recover_builds().await.expect("recovery works");
     let page = store
         .builds(None, None, &Scope::All, None, 1)
         .await
-        .unwrap();
+        .expect("builds succeeds");
     assert_eq!(page.items[0].id, interrupted);
     assert_eq!(page.items[0].state, BuildState::Interrupted);
     assert_eq!(
         store
             .builds(None, None, &Scope::All, page.next_cursor.as_deref(), 1)
             .await
-            .unwrap()
+            .expect("builds succeeds")
             .items[0]
             .id,
         id
@@ -390,11 +414,11 @@ async fn output_filters_before_paging_backwards() {
     store
         .append_build_log(id, &vec![b'a'; 80_000], LogStream::Stdout)
         .await
-        .unwrap();
+        .expect("append build log succeeds");
     let newest = store
         .build_logs(id, None, Some(LogStream::Stdout))
         .await
-        .unwrap();
+        .expect("build logs succeeds");
     assert_eq!(newest.items.len(), 16);
     assert!(
         newest
@@ -405,7 +429,7 @@ async fn output_filters_before_paging_backwards() {
     let older = store
         .build_logs(id, newest.previous_offset, Some(LogStream::Stdout))
         .await
-        .unwrap();
+        .expect("build logs succeeds");
     assert_eq!(
         older
             .items
@@ -416,12 +440,12 @@ async fn output_filters_before_paging_backwards() {
         70_000
     );
     assert!(older.previous_offset.is_none());
-    assert!(older.items.last().unwrap().offset < newest.items[0].offset);
+    assert!(older.items.last().expect("last finds a value").offset < newest.items[0].offset);
     assert!(
         store
             .build_logs(id, None, Some(LogStream::Stderr))
             .await
-            .unwrap()
+            .expect("build logs succeeds")
             .items
             .is_empty()
     );
@@ -430,15 +454,15 @@ async fn output_filters_before_paging_backwards() {
     store
         .append_build_log(id, b"error output", LogStream::Stderr)
         .await
-        .unwrap();
+        .expect("append build log succeeds");
     store
         .append_build_log(id, &vec![b'x'; 68_000], LogStream::Stdout)
         .await
-        .unwrap();
+        .expect("append build log succeeds");
     let errors = store
         .build_logs(id, None, Some(LogStream::Stderr))
         .await
-        .unwrap();
+        .expect("build logs succeeds");
     assert_eq!(errors.items[0].text, "error output");
     assert!(errors.previous_offset.is_none());
 }
@@ -452,17 +476,20 @@ async fn structured_chunks_preserve_multibyte_output() {
         store
             .append_build_log(id, text.as_bytes(), LogStream::Stdout)
             .await
-            .unwrap();
+            .expect("append build log succeeds");
         if truncated {
             store
                 .append_build_log(id, b"x", LogStream::Stdout)
                 .await
-                .unwrap();
+                .expect("append build log succeeds");
         }
         let mut output = String::new();
         let mut before = None;
         loop {
-            let page = store.build_logs(id, before, None).await.unwrap();
+            let page = store
+                .build_logs(id, before, None)
+                .await
+                .expect("build logs succeeds");
             assert_eq!(page.truncated, truncated);
             let text = page
                 .items

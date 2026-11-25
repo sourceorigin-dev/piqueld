@@ -19,7 +19,7 @@ async fn ancestry(store: &Store, node: Issued<'_>) -> Vec<String> {
     )
     .fetch_all(&store.pool)
     .await
-    .unwrap()
+    .expect("fetch all succeeds")
 }
 
 /// Invites `user` through `issuer`'s credential and redeems it, giving
@@ -83,7 +83,7 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
     store
         .create_invitation(alice, &invitation, &Grants::default())
         .await
-        .unwrap();
+        .expect("create invitation succeeds");
     let bob = user("bob");
     let passkey = |id| NewPasskey {
         id,
@@ -99,15 +99,15 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         store
             .add_passkey(None, redeem, passkey("bob-key"))
             .await
-            .unwrap()
+            .expect("add passkey succeeds")
     );
     let signed_in = proved(credential("signed-in", CredentialKind::Browser));
     let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
     store
         .sign_in_with_passkey(None, "bob-key", "bob", stored, &signed_in)
         .await
-        .unwrap()
-        .unwrap();
+        .expect("sign in with passkey returns a value")
+        .expect("the value is present");
     let bob_caller = |credential_id| Caller {
         credential_id,
         user_id: "bob",
@@ -117,7 +117,7 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         store
             .add_passkey(None, own, passkey("second-key"))
             .await
-            .unwrap()
+            .expect("add passkey succeeds")
     );
     let mut token = credential("token", CredentialKind::Token);
     let none = Grants::default();
@@ -125,25 +125,25 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
     store
         .create_token(bob_caller("signed-in"), &token, None)
         .await
-        .unwrap();
+        .expect("create token succeeds");
     let cli = proved(credential("cli", CredentialKind::Cli));
     store
         .issue_for_credential_owner(bob_caller("redeemed"), &cli)
         .await
-        .unwrap()
-        .unwrap();
+        .expect("issue for credential owner returns a value")
+        .expect("the value is present");
     let leaf = proved(credential("leaf", CredentialKind::Token));
     store
         .issue_for_credential_owner(alice, &leaf)
         .await
-        .unwrap()
-        .unwrap();
+        .expect("issue for credential owner returns a value")
+        .expect("the value is present");
 
     for id in ["redeemed", "signed-in", "leaf"] {
         let logout = store.revoke_credential(Actor::Daemon, id, Cascade::No);
-        logout.await.unwrap();
+        logout.await.expect("logout is present");
     }
-    store.prune_auth().await.unwrap();
+    store.prune_auth().await.expect("prune auth succeeds");
 
     let chain = ["signed-in", "bob-key", "invitation", "alice"];
     assert_eq!(ancestry(&store, Issued::Credential("token")).await, chain);
@@ -153,7 +153,7 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
     let nodes = sqlx::query_scalar!(r#"SELECT id AS "id!" FROM auth_lineage ORDER BY id"#)
         .fetch_all(&store.pool)
         .await
-        .unwrap();
+        .expect("fetch all succeeds");
     let kept = [
         "alice",
         "bob-key",

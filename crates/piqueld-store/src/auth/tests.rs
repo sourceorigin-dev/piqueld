@@ -13,7 +13,10 @@ async fn browser_session() -> (tempfile::TempDir, Store) {
         expires_at: Some(now_secs() + SESSION_IDLE_SECS),
         ..credential("credential", CredentialKind::Browser)
     };
-    store.insert_credential("alice", &credential).await.unwrap();
+    store
+        .insert_credential("alice", &credential)
+        .await
+        .expect("insert credential succeeds");
     (dir, store)
 }
 
@@ -24,35 +27,44 @@ async fn browser_session() -> (tempfile::TempDir, Store) {
 async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation() {
     let (_dir, store) = browser_session().await;
 
-    let (writer, tx) = store.begin_immediate().await.unwrap();
+    let (writer, tx) = store
+        .begin_immediate()
+        .await
+        .expect("begin immediate succeeds");
     tokio::time::timeout(Duration::from_secs(1), store.credential_owner("hash"))
         .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
+        .expect("the call finishes in time")
+        .expect("the value is present")
+        .expect("the value is present");
     let refresh = store.touch_credential("credential");
     tokio::pin!(refresh);
     tokio::time::timeout(Duration::from_millis(100), &mut refresh)
         .await
         .expect_err("`tokio::time::timeout` should be rejected");
-    tx.rollback().await.unwrap();
+    tx.rollback().await.expect("rollback succeeds");
     let mut connections = Vec::new();
     for _ in 0..8 {
         connections.push(
             tokio::time::timeout(Duration::from_secs(1), store.pool.acquire())
                 .await
-                .unwrap()
-                .unwrap(),
+                .expect("the call finishes in time")
+                .expect("the value is present"),
         );
     }
     sqlx::query!("DELETE FROM auth_credentials")
         .execute(&mut *connections[0])
         .await
-        .unwrap();
+        .expect("execute succeeds");
     drop(connections);
     drop(writer);
-    assert!(!refresh.await.unwrap());
-    assert!(store.credential_owner("hash").await.unwrap().is_none());
+    assert!(!refresh.await.expect("the refresh task completes"));
+    assert!(
+        store
+            .credential_owner("hash")
+            .await
+            .expect("credential owner succeeds")
+            .is_none()
+    );
 }
 
 /// A refresh judges idle expiry when it gets the writer lock, so a session
@@ -61,7 +73,10 @@ async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation
 async fn refreshes_waiting_for_writers_respect_idle_expiry() {
     let (_dir, store) = browser_session().await;
     store.age_auth_credentials(SESSION_IDLE_SECS - 1).await;
-    let (writer, tx) = store.begin_immediate().await.unwrap();
+    let (writer, tx) = store
+        .begin_immediate()
+        .await
+        .expect("begin immediate succeeds");
     let refresh = tokio::spawn({
         let store = store.clone();
         async move { store.touch_credential("credential").await }
@@ -69,9 +84,14 @@ async fn refreshes_waiting_for_writers_respect_idle_expiry() {
     store.writer_waiting().await;
     // wall-clock: refreshes judge expiry by the system clock, which paused
     tokio::time::sleep(Duration::from_secs(1)).await;
-    tx.rollback().await.unwrap();
+    tx.rollback().await.expect("rollback succeeds");
     drop(writer);
-    assert!(!refresh.await.unwrap().unwrap());
+    assert!(
+        !refresh
+            .await
+            .expect("the refresh task completes")
+            .expect("the value is present")
+    );
 }
 
 /// A credential is fresh for two minutes after a passkey proved its
@@ -122,13 +142,29 @@ async fn writes_check_the_stored_proof_and_exempt_the_host_operator() {
             authenticated_at,
             ..credential(id, kind)
         };
-        store.insert_credential("alice", &credential).await.unwrap();
+        store
+            .insert_credential("alice", &credential)
+            .await
+            .expect("insert credential succeeds");
     }
-    let owner = store.credential_owner("fresh").await.unwrap().unwrap();
+    let owner = store
+        .credential_owner("fresh")
+        .await
+        .expect("credential owner returns a value")
+        .expect("the value is present");
     assert_eq!(owner.proof.authenticated_at, Some(proved));
     store.age_auth_credentials(3600).await;
-    assert!(store.touch_credential("fresh").await.unwrap());
-    let owner = store.credential_owner("fresh").await.unwrap().unwrap();
+    assert!(
+        store
+            .touch_credential("fresh")
+            .await
+            .expect("touch credential succeeds")
+    );
+    let owner = store
+        .credential_owner("fresh")
+        .await
+        .expect("credential owner returns a value")
+        .expect("the value is present");
     assert_eq!(owner.proof.authenticated_at, Some(proved));
 
     let account = |credential_id| {
@@ -137,8 +173,11 @@ async fn writes_check_the_stored_proof_and_exempt_the_host_operator() {
             user_id: "alice",
         })
     };
-    let mut db = store.connection().await.unwrap();
-    account("fresh").require_fresh(&mut db).await.unwrap();
+    let mut db = store.connection().await.expect("connection succeeds");
+    account("fresh")
+        .require_fresh(&mut db)
+        .await
+        .expect("require fresh succeeds");
     for (id, reason) in [
         ("credential", Reauthenticate::Stale),
         ("token", Reauthenticate::Token),
@@ -153,24 +192,30 @@ async fn writes_check_the_stored_proof_and_exempt_the_host_operator() {
         operator,
         session: None,
     };
-    socket.require_fresh(&mut db).await.unwrap();
+    socket
+        .require_fresh(&mut db)
+        .await
+        .expect("require fresh succeeds");
     drop(db);
     let expires_at = now_secs() + 3600;
     store
         .create_operator_link(None, "operator", "link", expires_at, operator)
         .await
-        .unwrap();
+        .expect("create operator link succeeds");
     let (session, _) = store
         .redeem_operator_link(None, "link", "session", expires_at)
         .await
-        .unwrap()
-        .unwrap();
+        .expect("redeem operator link returns a value")
+        .expect("the value is present");
     let browser = Actor::Operator {
         operator,
         session: Some(&session),
     };
-    let mut db = store.connection().await.unwrap();
-    browser.require_fresh(&mut db).await.unwrap();
+    let mut db = store.connection().await.expect("connection succeeds");
+    browser
+        .require_fresh(&mut db)
+        .await
+        .expect("require fresh succeeds");
 }
 
 /// Pruning deletes expired credentials, idle browser sessions, and
@@ -189,7 +234,10 @@ async fn pruning_deletes_unusable_auth_state() {
             expires_at,
             ..credential(id, kind)
         };
-        store.insert_credential("alice", &credential).await.unwrap();
+        store
+            .insert_credential("alice", &credential)
+            .await
+            .expect("insert credential succeeds");
     }
     store.age_auth_credentials(SESSION_IDLE_SECS).await;
     for (id, expires_at) in [("old", now), ("open", now + 3600)] {
@@ -200,19 +248,19 @@ async fn pruning_deletes_unusable_auth_state() {
         )
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     }
 
-    store.prune_auth().await.unwrap();
+    store.prune_auth().await.expect("prune auth succeeds");
     let credentials = sqlx::query_scalar!(r#"SELECT id AS "id!" FROM auth_credentials"#)
         .fetch_all(&store.pool)
         .await
-        .unwrap();
+        .expect("fetch all succeeds");
     assert_eq!(credentials, ["live"]);
     let invitations = sqlx::query_scalar!(r#"SELECT id AS "id!" FROM auth_invitations"#)
         .fetch_all(&store.pool)
         .await
-        .unwrap();
+        .expect("fetch all succeeds");
     assert_eq!(invitations, ["open"]);
 }
 

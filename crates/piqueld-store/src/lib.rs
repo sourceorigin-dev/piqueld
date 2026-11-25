@@ -1345,19 +1345,19 @@ impl StoredEnvironmentRow {
 
 /// Fixtures shared with the daemon's tests.
 #[cfg(any(test, feature = "testing"))]
+#[expect(
+    clippy::expect_used,
+    reason = "A test fixture fails the test by panicking."
+)]
 impl Store {
     /// The ID of `application`'s `production` environment.
     ///
     /// # Panics
     /// If the application has none, or it can't be read.
-    #[expect(
-        clippy::expect_used,
-        reason = "A test fixture fails the test by panicking."
-    )]
     pub async fn production(&self, application: &ApplicationId) -> EnvironmentId {
         self.environments(application)
             .await
-            .unwrap()
+            .expect("environments succeeds")
             .into_iter()
             .find(|environment| environment.name == EnvironmentName::default_name())
             .expect("a production environment")
@@ -1368,10 +1368,6 @@ impl Store {
     ///
     /// # Panics
     /// Never: the store outlives its write notifications.
-    #[expect(
-        clippy::expect_used,
-        reason = "The store owns the sender, so it outlives the receiver."
-    )]
     pub async fn wait_until(&self, mut ready: impl AsyncFnMut() -> bool) {
         let mut written = self.written();
         while !ready().await {
@@ -1395,11 +1391,11 @@ impl Store {
         };
         self.put_notification_destination(
             Actor::Daemon,
-            &DestinationName::parse(name).unwrap(),
+            &DestinationName::parse(name).expect("the destination name parses"),
             request,
         )
         .await
-        .unwrap();
+        .expect("put notification destination succeeds");
     }
 }
 
@@ -1415,33 +1411,41 @@ mod tests {
     /// write lock instead of failing every later writer as busy.
     #[tokio::test]
     async fn released_connections_never_keep_a_transaction_open() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("tempdir succeeds");
         let store = Store::open_unsynced(directory.path().join("db"))
             .await
-            .unwrap();
-        let mut connection = store.pool.acquire().await.unwrap();
-        std::mem::forget(connection.begin_with("BEGIN IMMEDIATE").await.unwrap());
+            .expect("open unsynced succeeds");
+        let mut connection = store.pool.acquire().await.expect("acquire succeeds");
+        std::mem::forget(
+            connection
+                .begin_with("BEGIN IMMEDIATE")
+                .await
+                .expect("begin with succeeds"),
+        );
         drop(connection);
-        let (_writer, tx) = store.begin_immediate().await.unwrap();
-        tx.commit().await.unwrap();
+        let (_writer, tx) = store
+            .begin_immediate()
+            .await
+            .expect("begin immediate succeeds");
+        tx.commit().await.expect("commit succeeds");
     }
 
     #[tokio::test]
     async fn every_committed_migration_reopens_after_a_later_migration_fails() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("tempdir succeeds");
         let base = Store::migrated(&directory.path().join("base.db"), 0).await;
         for committed in 0..=MIGRATIONS.len() {
             if let Some(migration) = committed.checked_sub(1).map(|index| MIGRATIONS[index]) {
                 Store::apply_migration(&base, committed, migration)
                     .await
-                    .unwrap();
+                    .expect("apply migration succeeds");
             }
             let path = directory.path().join(format!("migration-{committed}.db"));
             sqlx::query("VACUUM INTO ?1")
-                .bind(path.to_str().unwrap())
+                .bind(path.to_str().expect("to str finds a value"))
                 .execute(&base)
                 .await
-                .unwrap();
+                .expect("execute succeeds");
             let pool = Store::migrated(&path, 0).await;
             assert!(
                 Store::apply_migration(
@@ -1455,14 +1459,14 @@ mod tests {
             let version: i64 = sqlx::query_scalar("PRAGMA user_version")
                 .fetch_one(&pool)
                 .await
-                .unwrap();
-            assert_eq!(usize::try_from(version).unwrap(), committed);
+                .expect("fetch one succeeds");
+            assert_eq!(usize::try_from(version).expect("the value fits"), committed);
             let incomplete: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM sqlite_master WHERE name='incomplete_migration'",
             )
             .fetch_one(&pool)
             .await
-            .unwrap();
+            .expect("fetch one succeeds");
             assert_eq!(incomplete, 0);
             let identity = if committed == 0 {
                 None
@@ -1472,13 +1476,15 @@ mod tests {
                 )
                 .fetch_one(&pool)
                 .await
-                .unwrap();
+                .expect("fetch one succeeds");
                 assert_eq!(row.schema_version, version);
                 Some(row.instance_id)
             };
             pool.close().await;
 
-            let reopened = Store::open_unsynced(&path).await.unwrap();
+            let reopened = Store::open_unsynced(&path)
+                .await
+                .expect("open unsynced succeeds");
             if let Some(identity) = identity {
                 assert_eq!(reopened.instance_id().as_str(), identity);
             }
