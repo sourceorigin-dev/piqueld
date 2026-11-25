@@ -310,7 +310,10 @@ pub(crate) fn manifest_name(manifest: &str, path: &Path) -> Result<String> {
     })
 }
 
-/// Runs `request`, retrying once after 25ms if it failed at the transport level
+/// How long `retry_transport` waits before its one retry.
+const TRANSPORT_RETRY_DELAY: Duration = Duration::from_millis(25);
+
+/// Runs `request`, retrying once after `TRANSPORT_RETRY_DELAY` if it failed at the transport level
 /// (e.g. a dropped connection). API errors and successes are returned as is.
 pub(crate) async fn retry_transport<T, F, Fut>(
     mut request: F,
@@ -321,7 +324,7 @@ where
 {
     let result = request().await;
     if matches!(&result, Err(ClientError::Transport { .. })) {
-        time::sleep(Duration::from_millis(25)).await;
+        time::sleep(TRANSPORT_RETRY_DELAY).await;
         request().await
     } else {
         result

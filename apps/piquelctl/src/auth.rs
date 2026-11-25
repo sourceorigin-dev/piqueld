@@ -20,6 +20,8 @@ use std::{
 
 /// Upper bound for one device login, regardless of the daemon's `expires_in`.
 const MAX_DEVICE_LOGIN_SECS: u64 = 15 * 60;
+/// How long the credentials lock waits between attempts to take it.
+const LOCK_POLL: Duration = Duration::from_millis(50);
 /// How long an update waits for another `piquelctl` to release the
 /// credentials lock. Tests wait up to an hour, because on a heavily loaded
 /// machine their concurrent updates can take minutes to get through it.
@@ -166,7 +168,7 @@ impl Credentials {
             match lock.try_lock() {
                 Ok(()) => return Ok(lock),
                 Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(50));
+                    std::thread::sleep(LOCK_POLL);
                 }
                 Err(std::fs::TryLockError::WouldBlock) => {
                     return Err(CliError::new(
