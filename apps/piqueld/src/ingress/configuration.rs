@@ -55,9 +55,6 @@ impl Ingress {
         };
         let tunnel = self.tunnel.as_ref().and(edge.clone());
         let proxies = self.node.as_ref().and(edge);
-        // Tests outside the engine reach the published private listener from
-        // the host's Docker bridge, outside the edge network. Application
-        // networks, from Swarm's 10.0.0.0/8 pool, stay untrusted.
         #[cfg(test)]
         let proxies = proxies.map(|mut proxies| {
             if self.private_port.is_some() {
@@ -132,15 +129,11 @@ impl Ingress {
                 let mut handle = self.traffic_tags(id, route);
                 handle.push(Self::handler(id, route, tunnel.is_some()));
                 listener.serve(&route.hostname, &host, [
-                    // A bounded, side-effect-free endpoint lets the daemon distinguish
-                    // this gateway from a different server behind an incorrect DNS record.
                     json!({"match":[probe],"handle":[{"handler":"static_response","body":self.instance_id}],"terminal":true}),
                     json!({"match":[host],"handle":handle,"terminal":true}),
                 ]);
             }
         }
-        // Only the webhook path reaches the daemon, through its own socket,
-        // which serves nothing else. Its other paths fall through to the 404.
         if let Some(host) = self.webhook_hostname() {
             let host = RouteHostname::from(host.clone());
             public.serve(&host, &matcher(&host), [json!({
@@ -152,9 +145,6 @@ impl Ingress {
                 "terminal":true
             })]);
         }
-        // The whole website reaches the daemon, which takes each request's
-        // tailnet client from `X-Forwarded-For`: one upstream connection
-        // carries many clients' requests.
         if let Some(host) = self.dashboard_hostname().filter(|_| proxies.is_some()) {
             let host = RouteHostname::from(host.clone());
             private.serve(&host, &matcher(&host), [json!({
@@ -168,8 +158,6 @@ impl Ingress {
                 "terminal":true
             })]);
         }
-        // The Unix admin endpoint is private to the daemon. Strict SNI matching
-        // prevents a TLS connection for one hostname from selecting another host.
         let mut servers = match tunnel {
             None => json!({
                 "public":public.https_server(&[":443".into()]),
@@ -178,9 +166,6 @@ impl Ingress {
             Some(edge) => json!({"tunnel":public.tunnel_server(edge)}),
         };
         if let Some(proxies) = proxies {
-            // Caddy's policies cannot refuse connections without a header, so
-            // headers from other peers are ignored, and only tailnet client
-            // addresses complete TLS or receive redirects.
             let wrapper =
                 json!({"wrapper":"proxy_protocol","allow":proxies,"fallback_policy":"ignore"});
             let tailnet = json!({"ranges":TAILNET_RANGES});
@@ -269,10 +254,6 @@ impl Ingress {
                     "transport":{"protocol":"http","versions":["1.1"]},
                     "stream_close_delay":300_000_000_000_u64
                 });
-                // Cloudflare terminated TLS, and the client address
-                // comes from `Cf-Connecting-IP`, not the peer. Caddy keeps
-                // a trusted peer's `X-Forwarded-Host`, which `cloudflared`
-                // passes through from the client, so it is set here too.
                 if tunnel && route.visibility == Visibility::Public {
                     proxy["headers"] = json!({"request":{"set":{
                         "X-Forwarded-For":["{http.vars.client_ip}"],

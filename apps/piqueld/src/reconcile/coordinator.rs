@@ -72,7 +72,6 @@ impl<D: DockerApi> Controller<D> {
             };
             tokio::select! {
                 () = cancellation.cancelled() => {
-                    // Unpolled, they could hold the mutation lock or store writer.
                     drop((health_jobs, discovery));
                     Self::finish_on_shutdown(jobs).await;
                     return Ok(());
@@ -90,8 +89,6 @@ impl<D: DockerApi> Controller<D> {
                         let failures = ScanFailures::default();
                         for (application, operation) in applications {
                             let id = application.id().clone();
-                            // Full scans refresh health and enforce links, with at most one
-                            // job per application.
                             if full && health_active.insert(id.clone()) {
                                 let span = tracing::debug_span!(
                                     "application_health",
@@ -107,8 +104,6 @@ impl<D: DockerApi> Controller<D> {
                                 );
                                 health_jobs.push(health.instrument(span));
                             }
-                            // A running job is cancelled if a newer operation replaced its own;
-                            // its completion requests another pass that picks up the new one.
                             if let Some((current, token)) = active.get(&id) {
                                 let token: &CancellationToken = token;
                                 if current != &operation.id {
@@ -118,8 +113,6 @@ impl<D: DockerApi> Controller<D> {
                             }
                             let token = cancellation.child_token();
                             active.insert(id, (operation.id.clone(), token.clone()));
-                            // A deletion unlinks the environment as soon as it is requested;
-                            // only its first run asks the other side to replan, not retries.
                             if operation.kind == OperationKind::Delete
                                 && operation.state == OperationState::Requested
                                 && application
@@ -415,7 +408,6 @@ impl<D: DockerApi> Controller<D> {
         failures: &ScanFailures,
     ) -> Result<(), StoreError> {
         let latest = &match self.store.operation(&discovered.id).await {
-            // Deleted with its environment since.
             Err(StoreError::NotFound) => return Ok(()),
             operation => operation?,
         };
@@ -428,7 +420,6 @@ impl<D: DockerApi> Controller<D> {
             return Box::pin(self.run_operation(latest, cancellation)).await;
         }
         if Self::retry_due(latest) {
-            // Reopens it only while it is still the latest and terminal.
             if let Some(operation) = self
                 .store
                 .request_reconcile(application.id(), &latest.id)
@@ -451,8 +442,6 @@ impl<D: DockerApi> Controller<D> {
                 return Ok(());
             }
         };
-        // An older resolved target is useful for reporting health, but cannot
-        // authorize corrective work once newer intent has been accepted.
         let prepared = self.store.prepared_target(&latest.id).await?;
         let target = prepared.as_ref().or(application.resolved.as_ref());
         let request = if application.delete_intent() {
@@ -487,8 +476,6 @@ impl<D: DockerApi> Controller<D> {
                 .set_status_for_operation(&latest.id, ApplicationState::Ready, None)
                 .await?;
         }
-        // Permanent failures are reconsidered only when fresh planning shows
-        // their blocker has disappeared. Transient failures respect backoff.
         let was_blocked = matches!(
             Self::failure(latest),
             Some(
@@ -641,7 +628,6 @@ impl<D: DockerApi> Controller<D> {
         let Some(target) = app.resolved else {
             return Ok(());
         };
-        // Each repair changes one resource, so the target bounds them.
         let bound = target.services.len() + target.networks.len() + 1;
         for _ in 0..bound {
             if !self.repair_once(id, operation_id, &target).await?
@@ -688,13 +674,10 @@ impl<D: DockerApi> Controller<D> {
         {
             return Ok(false);
         }
-        // Reread under the lock: a retry may have reopened a failed operation.
         if let Some(prepared) = self
             .rolling_out(&self.store.operation(operation_id).await?, &observed)
             .await?
         {
-            // As its job prerequisites were planned, so the link networks of
-            // imports it adds are kept too.
             let prepared = self
                 .runtime_target(&prepared, &accepted_routes, &observed, false)
                 .await?;

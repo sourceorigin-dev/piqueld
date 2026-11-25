@@ -91,9 +91,6 @@ async fn ingress_networks_overlapping_the_tailnet_lose_their_routes_with_a_priva
         let (routes, failure) = Box::pin(prepare_on_subnet(private, Some(subnet))).await;
         assert_eq!((routes.len(), failure), (1, None), "{subnet}");
     }
-    // A network without a subnet can't be checked, so it fails closed: its
-    // accepted route is retained like any unverified network's, and the
-    // gateway detaches the network (see the ordering test below).
     let (routes, failure) = Box::pin(prepare_on_subnet(true, None)).await;
     assert_eq!(routes.len(), 1);
     assert!(
@@ -102,8 +99,6 @@ async fn ingress_networks_overlapping_the_tailnet_lose_their_routes_with_a_priva
             .is_some_and(|failure| failure.contains("no subnet")),
         "{failure:?}"
     );
-    // Its containers could pass for tailnet clients on the private listener,
-    // so even its acknowledged route is withdrawn and the network detached.
     let (routes, failure) = Box::pin(prepare_on_subnet(true, Some("100.64.5.0/24"))).await;
     assert_eq!(routes, []);
     assert!(
@@ -162,7 +157,6 @@ async fn networks_exposing_the_private_listener_are_detached_before_caddy_reload
     let server = tokio::spawn(async move { axum::serve(admin, admin_api).await });
     let ingress = engine.ingress(true).with_private(&private_config());
 
-    // Retained routes, as for a network failing its check for another reason.
     let table = [(id, routes(Visibility::Public, "www.example.com"))].into();
     ingress
         .configure_gateway(&table, &BTreeSet::new())

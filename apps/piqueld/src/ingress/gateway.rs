@@ -199,8 +199,6 @@ impl Ingress {
     /// Force-removes a container by name if it exists.
     pub(super) async fn remove_container(&self, journal: &Journaled<'_>, name: &str) -> Result<()> {
         if let Some(container) = self.named_container(name).await? {
-            // Removing the container also removes its restart policy. Persistent
-            // data and config are host directories retained across disablement.
             let id = container["Id"].as_str().context("container ID missing")?;
             journal.change(|docker| docker.remove_container(id)).await?;
             tracing::info!(container=%name,"removed managed ingress container");
@@ -311,7 +309,6 @@ impl Ingress {
         let mut table = desired.clone();
         let mut networks = BTreeSet::new();
         let mut failures = BTreeMap::new();
-        // Read on the first failure that needs it.
         let mut switching = None;
         for (id, routes) in &mut table {
             if !Self::proxies(routes) {
@@ -325,9 +322,6 @@ impl Ingress {
                 Err(error) => {
                     let overlap = error.is::<TailnetOverlap>();
                     if !overlap && switching.is_none() {
-                        // An unreadable gateway keeps the routes: `ensure_gateway`
-                        // reads it next, fails and reports why, and never
-                        // switches modes over a retained route.
                         switching = Some(self.switches_mode().await.unwrap_or(false));
                     }
                     if overlap || switching == Some(true) {
@@ -458,7 +452,6 @@ impl Ingress {
         if !self.extra_hosts.is_empty() {
             spec["HostConfig"]["ExtraHosts"] = json!(self.extra_hosts);
         }
-        // Tests outside the engine reach the private listener on a published port.
         #[cfg(test)]
         if self.private_port.is_some() {
             spec["ExposedPorts"]["8443/tcp"] = json!({});
@@ -533,8 +526,6 @@ impl Ingress {
         let result = async {
             match &current {
                 None => self.create_container(&journal, &self.name, &spec).await?,
-                // A stopped gateway keeps its attachments, so one exposing
-                // the private listener goes before it starts.
                 Some(container) => {
                     for network in self.exposing_networks(container, networks).await? {
                         self.detach(&journal, &network).await?;
@@ -571,7 +562,6 @@ impl Ingress {
         let journal = self.journal(phase, name).await?;
         let result = async {
             if !matches {
-                // State lives in host directories, so a replacement keeps it.
                 self.remove_container(&journal, name).await?;
                 self.create_container(&journal, name, spec).await?;
             }
@@ -650,10 +640,6 @@ impl Ingress {
                     "cannot replace gateway: retained routes for application {id} lack a verified network and the old gateway is not running"
                 );
             };
-            // The old container cannot serve the other mode's listeners: it
-            // would keep ports 80/443 open in tunnel mode, or lack them in
-            // direct mode. `prepare_routes` withdraws such routes before a
-            // switch, so this only guards against a caller that did not.
             ensure!(
                 Self::publishes_ports(&container) == self.tunnel.is_none(),
                 "cannot switch between direct and tunnel ingress: retained routes for application {id} lack a verified network; repair it or withdraw its routes"
@@ -703,12 +689,10 @@ impl Ingress {
         };
         self.write_configuration("rollback.json", &configuration)
             .await?;
-        // All preparation above leaves the current listener untouched.
         let result = async {
             journal
                 .change(|docker| docker.stop_container(&self.name, 10))
                 .await?;
-            // Docker cannot reliably rename a running overlay endpoint.
             self.rename_container(journal, &self.name, &previous)
                 .await?;
             self.rename_container(journal, &next, &self.name).await?;
@@ -812,7 +796,6 @@ impl Ingress {
         if self.named_container(&previous).await?.is_some()
             && !tokio::fs::try_exists(self.rollback_path()).await?
         {
-            // The replacement committed; only its cleanup was interrupted.
             return self.remove_stale_container(&previous).await;
         }
         if self.named_container(&previous).await?.is_none()
@@ -840,12 +823,9 @@ impl Ingress {
             self.remove_container(journal, &next).await?;
             tracing::warn!(gateway=%self.name, "restored gateway after interrupted replacement");
         } else if self.named_container(&next).await?.is_some() {
-            // Cancellation may land between stopping the old container and
-            // renaming it. Keep the candidate until the old listener is restored.
             if let Some(container) = self.container().await?
                 && !Self::running(&container)
             {
-                // Before the first rename the old autosave is still untouched.
                 self.start_container(journal).await?;
             }
             self.remove_container(journal, &next).await?;
@@ -877,8 +857,6 @@ impl Ingress {
 
     /// Writes the configuration for `table` as the autosave and starts the gateway.
     async fn start_gateway(&self, journal: &Journaled<'_>, table: &RoutingTable) -> Result<()> {
-        // A restarted gateway must never briefly resume routes that were removed
-        // by deployments while ingress was disabled.
         self.write_configuration("autosave.json", &self.configuration(table).await?)
             .await?;
         self.start_container(journal).await
@@ -944,7 +922,6 @@ impl Ingress {
             "Tmpfs",
             "NetworkMode",
         ] {
-            // Docker fills MaximumRetryCount in a restart policy.
             if field == "RestartPolicy" {
                 ensure!(
                     current["HostConfig"][field]["Name"] == "unless-stopped",
@@ -1080,8 +1057,6 @@ impl Ingress {
         let desired = self.configuration(table).await?;
         let reload = self.caddy.get("/config/").await? != desired;
         let exposing = self.exposing_networks(&container, networks).await?;
-        // Keep existing attachments for unavailable apps whose routes were
-        // retained, unless they expose the private listener.
         let retained: BTreeSet<_> = table
             .iter()
             .filter(|(_, routes)| Self::proxies(routes))
@@ -1168,8 +1143,6 @@ impl Ingress {
                 tracing::warn!(container=%name, "more than {LOG_LINES} log lines in one pass; only the latest are relayed");
             }
             for line in lines {
-                // Access log lines reach the output only while the daemon's
-                // traffic socket is down; they aren't diagnostics.
                 if line.contains(super::traffic::ACCESS_LOGGER) {
                     continue;
                 }

@@ -88,7 +88,6 @@ impl Health {
                 self.drop_records(records);
                 let now = now_ms();
                 let previous = self.failed_ms[T::INDEX].swap(now, Ordering::Relaxed);
-                // A failure after a quiet minute starts a new failing window.
                 if now.saturating_sub(previous) >= FAILING_AFTER_MS {
                     failing_since.store(0, Ordering::Relaxed);
                 }
@@ -161,7 +160,6 @@ impl Destination {
         use anyhow::Context as _;
         let uri = match endpoint {
             OtlpEndpoint::Tcp(url) => url.to_string(),
-            // The connector below reaches the socket; the URI only names it.
             OtlpEndpoint::Unix(_) => "http://localhost".to_owned(),
         };
         let mut builder = tonic::transport::Endpoint::from_shared(uri)
@@ -371,7 +369,6 @@ impl Destination {
             }
             let records = batch.len() as u64;
             let export = T::export(self, std::mem::take(&mut batch), resource);
-            // The channel's own timeout ends once response headers arrive.
             let result = match tokio::time::timeout(EXPORT_TIMEOUT, export)
                 .await
                 .unwrap_or_else(|_| Err(tonic::Status::deadline_exceeded("export timed out")))
@@ -411,7 +408,6 @@ async fn connect_unix(
         OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
         Mode::empty(),
     )?;
-    // `directory` stays open while its socket is used.
     let short = std::path::Path::new("/proc/self/fd")
         .join(std::os::fd::AsRawFd::as_raw_fd(&directory).to_string())
         .join(socket);
@@ -539,8 +535,6 @@ impl Signal for LogItem {
         let response = LogsServiceClient::new(destination.channel.clone())
             .export(destination.request(request))
             .await;
-        // Container cursors pass these lines only now that they are sent, or
-        // dropped by a failed export.
         drop(handled);
         let response = response?;
         Ok(response
@@ -571,8 +565,6 @@ impl Signal for ExportMetricsServiceRequest {
         let response = MetricsServiceClient::new(destination.channel.clone())
             .export(destination.request(request))
             .await?;
-        // Rejections count data points, but drops count collections: the
-        // batch, usually one collection, is lost if any point was rejected.
         Ok(response.into_inner().partial_success.map_or(0, |partial| {
             if partial.rejected_data_points > 0 {
                 collections
@@ -664,7 +656,6 @@ mod tests {
             .await
             .expect_err("`connect_unix` should be rejected");
         assert!(socket.exists(), "a single refusal keeps it");
-        // As if the first refusal were `AFTER` ago.
         if let Some((_, since)) = stale.0.lock().as_mut() {
             *since = since.checked_sub(StaleSocket::AFTER).unwrap();
         }

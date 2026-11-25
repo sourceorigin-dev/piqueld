@@ -176,10 +176,6 @@ impl<D: DockerApi> Controller<D> {
     /// probe configs. A failed removal is journaled and the image kept.
     pub async fn clean_images(&self) -> Result<bool, OperationError> {
         let instance = self.store.instance_id();
-        // Listing the build registry takes a request per page and per new
-        // tag, so it happens before cleanup holds operations off. An image
-        // pushed meanwhile isn't listed, and one listed whose deployment
-        // finished meanwhile is kept by the retention roots read below.
         let pushed = match self.docker.build_repository() {
             Some(_) => Some(self.docker.pushed_images(instance).await),
             None => None,
@@ -192,8 +188,6 @@ impl<D: DockerApi> Controller<D> {
             .retained_images(self.images.keep_deployments)
             .await?;
         let (mut kept, mut reclaimed) = (0_u32, 0_u64);
-        // The registry digests of the images the engine still has, which
-        // build reuse may deploy again.
         let mut on_host = BTreeSet::new();
         for image in self.docker.images().await? {
             if !image.built_by(instance) {
@@ -209,7 +203,6 @@ impl<D: DockerApi> Controller<D> {
                 reclaimed += image.size;
             }
         }
-        // Old probe configs are about as long-lived as old images.
         self.docker.prune_health_probes(instance).await?;
         let registry = match (self.docker.build_repository(), pushed) {
             (Some(repository), Some(pushed)) => {
@@ -244,9 +237,6 @@ impl<D: DockerApi> Controller<D> {
         pushed: Result<BTreeSet<RepositoryDigest>, DockerError>,
         on_host: &BTreeSet<RepositoryDigest>,
     ) -> Result<RegistryPass, OperationError> {
-        // Failures of one image's own in a row; this many count as the
-        // registry's, such as its storage failing, which answers each image's
-        // deletion with a 500.
         const IMAGE_FAILURES: u32 = 3;
         let mut pass = RegistryPass {
             repository: repository.clone(),
@@ -257,8 +247,6 @@ impl<D: DockerApi> Controller<D> {
         let pushed = match pushed {
             Ok(pushed) => pushed,
             Err(error) => {
-                // The chain says why: a refused connection, a name that
-                // doesn't resolve or a bad certificate.
                 let reason = format!("{:#}", anyhow::Error::new(error));
                 tracing::info!(error = %reason, "skipping registry cleanup while the registry is unavailable");
                 pass.failure = Some(reason);
@@ -369,9 +357,6 @@ impl<D: DockerApi> Controller<D> {
             .begin_daemon_action(None, phase, Some(resource))
             .await?;
         let removed = self.request_once(&journal, request).await;
-        // Unlike `close_action`, only failing to open or close the journal
-        // action fails cleanup; a removal that fails, or whose intent can't
-        // be recorded, keeps the image.
         self.record_outcome(&journal, &removed).await?;
         Ok(removed)
     }

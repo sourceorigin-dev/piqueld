@@ -59,8 +59,6 @@ impl<D: DockerApi> Controller<D> {
             .await?;
         let started = std::time::Instant::now();
         tracing::debug!("action started");
-        // Actions enforce the deadline themselves so a timeout closes the action as
-        // a failure instead of leaving it for interrupted-action recovery.
         let result = match &action.kind {
             kind if kind.mutates_runtime() => {
                 async {
@@ -198,15 +196,12 @@ impl<D: DockerApi> Controller<D> {
         ownership: &std::collections::BTreeMap<String, String>,
         secrets: &SecretValues,
     ) -> Result<(), DockerError> {
-        // Creating or updating resources requires the supported topology so local
-        // images and volumes cannot move. Removals stay safe on any topology.
         if !kind.destructive() {
             self.docker.ensure_swarm(false).await?;
         }
         match kind {
             ActionKind::EnsureNetwork { network } => {
                 self.docker.ensure_network(network).await?;
-                // The exporter attaches to a link network only once it exists.
                 if network
                     .labels
                     .contains_key(piqueld_core::resource::LINK_LABEL)
@@ -220,7 +215,6 @@ impl<D: DockerApi> Controller<D> {
                 for (name, value) in secrets {
                     self.docker.ensure_secret(name, value, ownership).await?;
                 }
-                // Under the mutation lock, as is telemetry cleanup.
                 if let (Some(sockets), Some(mount)) = (&self.sockets, &service.telemetry) {
                     sockets.prepare(mount);
                 }

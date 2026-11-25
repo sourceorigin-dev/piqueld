@@ -113,8 +113,6 @@ impl Traffic {
                 }
             }
         };
-        // Only the wait is cancelled: a flush already running took the tally,
-        // so dropping it would lose its counts.
         let flush = async {
             let mut interval = tokio::time::interval(FLUSH_INTERVAL);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -143,9 +141,7 @@ impl Traffic {
             match read {
                 Ok(0) => return,
                 Ok(_) if line.last() == Some(&b'\n') => {}
-                // The connection closed mid-line.
                 Ok(_) if (line.len() as u64) < MAX_LINE => return,
-                // Cut off before its end: skip the rest of the line.
                 Ok(_) => {
                     tracing::debug!("skipped an access log line longer than 1 MiB");
                     let mut rest = Vec::new();
@@ -340,7 +336,6 @@ impl AccessLine {
     fn referrer(&self) -> Option<String> {
         let referrer = url::Url::parse(self.request.headers.get("Referer")?).ok()?;
         let host = referrer.host_str()?.to_ascii_lowercase();
-        // Route hostnames are DNS names, so a colon only starts the port.
         let own = self.request.host.split(':').next().unwrap_or_default();
         (!host.eq_ignore_ascii_case(own)).then_some(host)
     }
@@ -371,16 +366,13 @@ mod tests {
     fn page_views_need_a_browser_loading_a_document_successfully() {
         assert!(line("/", 200, BROWSER, "text/html").page_view());
         assert!(line("/", 304, BROWSER, "").page_view());
-        // An API call from the page, a failure, and a bot aren't page views.
         let fetch = r#""User-Agent":["Mozilla/5.0"],"Sec-Fetch-Dest":["empty"]"#;
         assert!(!line("/api/guess", 200, fetch, "text/html").page_view());
         assert!(!line("/missing", 404, BROWSER, "text/html").page_view());
         let bot = r#""User-Agent":["Googlebot/2.1"],"Sec-Fetch-Dest":["document"]"#;
         assert!(!line("/", 200, bot, "text/html").page_view());
-        // Prefetches may never be seen.
         let prefetch = format!(r#"{BROWSER},"Sec-Purpose":["prefetch"]"#);
         assert!(!line("/", 200, &prefetch, "text/html").page_view());
-        // Without `Sec-Fetch-Dest`, an HTML answer is a page.
         let old = r#""User-Agent":["Mozilla/5.0"]"#;
         assert!(line("/", 200, old, "text/html; charset=utf-8").page_view());
         assert!(!line("/app.js", 200, old, "text/javascript").page_view());
@@ -416,7 +408,6 @@ mod tests {
         assert!(ranks.keys().all(|key| key.3 != "/new"));
         let first = ranks.iter().find(|(key, _)| key.3 == "/0").unwrap();
         assert_eq!(*first.1, 2);
-        // Totals still count every page view.
         assert_eq!(
             counter.tally.hours.values().next().unwrap().page_views,
             1_002
@@ -430,7 +421,6 @@ mod tests {
         counter.count(&page);
         counter.count(&page);
         counter.count(&line("/api", 500, "", "application/json"));
-        // Untagged lines, such as the probe endpoint's, aren't counted.
         let mut probe = line("/.well-known/piqueld-ingress", 200, "", "text/plain");
         probe.piqueld_environment = None;
         counter.count(&probe);

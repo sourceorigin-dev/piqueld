@@ -72,9 +72,6 @@ impl<D: DockerApi> Controller<D> {
             )
             .await?;
         let ownership = self.ownership_labels(&operation.environment_id);
-        // A run left by an earlier operation must not overlap this deployment,
-        // even one without jobs. This operation's own runs are kept only while
-        // a job is pending, because one of them may be resumed.
         let stale = if jobs.is_empty() {
             JobRuns::All
         } else {
@@ -86,8 +83,6 @@ impl<D: DockerApi> Controller<D> {
             return Ok(());
         }
         for job in &jobs {
-            // A completed run must stop before another job of this operation
-            // starts: cleanup selects runs by operation ID.
             self.retry_job_cleanup(&operation.environment_id).await?;
             let job = self
                 .prepare_job_dependencies(operation, target, job, &ownership, cancellation)
@@ -118,9 +113,6 @@ impl<D: DockerApi> Controller<D> {
                 .observe_with_retry(operation, cancellation, deadline)
                 .await?;
             let accepted_routes = self.store.applied_routes(&operation.environment_id).await?;
-            // A job runs against its dependencies even after a stop, which
-            // the rollout that follows then scales down. Its waits still end
-            // when the environment is stopped or started.
             let stopped = self.store.is_stopped(&operation.environment_id).await?;
             let desired = self
                 .runtime_target(target, &accepted_routes, &observed, false)
@@ -184,8 +176,6 @@ impl<D: DockerApi> Controller<D> {
                 &attempt.log,
             )
             .await;
-        // Failed means the job itself failed; any other error ended the
-        // attempt before its outcome was known.
         let state = match &result {
             Ok(()) => BuildState::Succeeded,
             Err(OperationError::JobFailed { .. } | OperationError::JobTimeout(_)) => {
@@ -196,8 +186,6 @@ impl<D: DockerApi> Controller<D> {
         let finished = attempt
             .finish(state, Some(job.container.image.as_str()))
             .await;
-        // Keep an unrecorded success available for resumption. A timeout or
-        // cancellation must still stop even if bookkeeping failed.
         let stop =
             !self.resumable(operation, &result).await && (finished.is_ok() || result.is_err());
         let queued = if stop {
@@ -207,8 +195,6 @@ impl<D: DockerApi> Controller<D> {
         };
         let journaled = self.record_outcome(&journal, &result).await;
         if stop {
-            // Removing the service also stops a run that timed out or was
-            // superseded or cancelled.
             self.remove_job_run(operation, ownership).await;
         }
         for recorded in [finished, queued, journaled] {
@@ -217,8 +203,6 @@ impl<D: DockerApi> Controller<D> {
                 if result.is_ok() {
                     return Err(error);
                 }
-                // Retain the terminal job error so retrying bookkeeping never
-                // reruns a timed-out or failed migration.
                 self.store
                     .report_diagnostic(&error.diagnostic(), Some(&operation.environment_id))
                     .await;
@@ -260,9 +244,6 @@ impl<D: DockerApi> Controller<D> {
         let secrets = self
             .service_secrets(&job.container.secrets, ownership)
             .await?;
-        // A run that stops services starts once their tasks and containers
-        // have stopped; a newer deployment stops the wait. A run to resume
-        // already waited.
         if job.stops_services() {
             let resumable = AtomicBool::new(false);
             self.retry(operation, journal, cancellation, || async {
@@ -280,8 +261,6 @@ impl<D: DockerApi> Controller<D> {
                 }
             }
         }
-        // A run Docker accepted before a lost response or a restart is resumed.
-        // A failed run left by an earlier attempt is replaced: retrying reruns it.
         self.retry(operation, journal, cancellation, || async {
             if self.docker.job_status(job).await?.resumable() {
                 return Ok(());
@@ -309,10 +288,6 @@ impl<D: DockerApi> Controller<D> {
             }),
             JobStatus::Running { .. } => Err(OperationError::JobTimeout(name)),
         };
-        // Persisted, with its cleanup intent, before anything slower: reading
-        // output may outlast a shutdown's grace, and an operation left
-        // running would be retried and run the job again. The operation's
-        // own failure path retries a failed write.
         if let Err(error) = &result
             && let Err(failure) = self.fail_operation(operation, error).await
         {
@@ -337,7 +312,6 @@ impl<D: DockerApi> Controller<D> {
         if let Some(explanation) = explanation {
             Self::note(log, &explanation).await?;
         }
-        // Marked last: a truncated log accepts no further notes.
         if truncated {
             log.truncated().await;
         }

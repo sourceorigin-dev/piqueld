@@ -119,10 +119,7 @@ impl Ingress {
             format!("TS_HOSTNAME={}", node.hostname),
             "TS_SERVE_CONFIG=/config/serve.json".to_owned(),
             "TS_ACCEPT_DNS=false".to_owned(),
-            // Later starts reuse the node state instead of the key.
             "TS_AUTH_ONCE=true".to_owned(),
-            // An interactive login otherwise times out after a minute, and
-            // every restart brings a new login URL.
             "TS_BOOT_TIMEOUT=24h".to_owned(),
         ];
         let mut labels = self.labels();
@@ -234,7 +231,6 @@ pub(super) async fn proxy_relay(
     let header = ProxyListener::header(client, SocketAddrV4::new(destination, target.port()));
     let mut relay = JoinSet::new();
     relay.spawn(async move {
-        // Dropped with the relay, which aborts open connections.
         let mut connections = JoinSet::new();
         while let Ok((mut inbound, _)) = listener.accept().await {
             while connections.try_join_next().is_some() {}

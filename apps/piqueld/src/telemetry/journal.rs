@@ -174,7 +174,6 @@ impl Journal {
             trace,
             Key::Action(action).span(),
             parent,
-            // Names stay few; the resource, often a Docker name, is an attribute.
             phase.to_owned(),
             (end - duration.unwrap_or_default(), end),
             attributes,
@@ -193,8 +192,6 @@ impl Journal {
         let Some(id) = &event.operation_id else {
             return Vec::new();
         };
-        // An operation goes with its environment, as a finished deletion's
-        // does: its success still ends it, though its kind is unknown.
         let (kind, created_at_ms, attempts) = match context.operation {
             Some(operation) => (
                 Some(operation.kind),
@@ -207,8 +204,6 @@ impl Journal {
             None => return Vec::new(),
         };
         let attempt = event.attempt.unwrap_or(attempts);
-        // Deletions never fail: they record each error and keep their attempt
-        // running until it is retried.
         if event.kind == EventKind::OperationFailed && kind == Some(OperationKind::Delete) {
             return Vec::new();
         }
@@ -264,7 +259,6 @@ impl Journal {
                 || "operation".to_owned(),
                 |kind| format!("operation {kind}"),
             ),
-            // A removed operation's creation is unknown; its last attempt began it.
             (
                 time(created_at_ms.or(started).unwrap_or(event.created_at_ms)),
                 end,
@@ -644,7 +638,6 @@ mod tests {
             (time(3_500), time(5_000))
         );
         assert_eq!((root.start_time, root.end_time), (time(500), time(6_000)));
-        // Repeating the end sends the root again, but no second attempt.
         let repeated = journal.spans(&event("operation_succeeded", 2, 7_000), context);
         assert_eq!(repeated.len(), 1);
         assert_eq!(

@@ -249,7 +249,6 @@ fn changes_update_in_place_and_delete_before_creating() {
         target: Hostname::parse("x.cfargotunnel.com").unwrap(),
         proxied: true,
     };
-    // One address changes and a duplicate goes: one update, one deletion.
     let current = [found("1", a(1)), found("2", a(2)), found("3", a(2))];
     assert_eq!(
         Changes::between(&current, &BTreeSet::from([a(2), a(3)])),
@@ -259,7 +258,6 @@ fn changes_update_in_place_and_delete_before_creating() {
             create: Vec::new(),
         }
     );
-    // A CNAME replaces addresses: they are deleted, then it is created.
     assert_eq!(
         Changes::between(&current[..1], &BTreeSet::from([cname.clone()])),
         Changes {
@@ -269,7 +267,6 @@ fn changes_update_in_place_and_delete_before_creating() {
         }
     );
     assert!(Changes::between(&current[..2], &BTreeSet::from([a(1), a(2)])).is_empty());
-    // An address proxied by hand is rewritten unproxied.
     let proxied = Found {
         proxied: true,
         ..found("4", a(1))
@@ -297,8 +294,6 @@ fn failed_hostnames_back_off_while_others_wait_for_a_repair() {
     let mut schedule = Schedule::default();
     let start = Instant::now();
     let ms = |seconds: u64| i64::try_from(seconds * 1000).unwrap();
-    // A pass starting at `seconds` that takes `took` seconds, in which
-    // `failed` fail; returns the hostnames it reconciled.
     let mut pass =
         |plan: &BTreeMap<RouteHostname, Plan>, seconds, took, failed: &[&RouteHostname]| {
             let started = start + Duration::from_secs(seconds);
@@ -307,7 +302,6 @@ fn failed_hostnames_back_off_while_others_wait_for_a_repair() {
             schedule.record(plan.clone(), &due, failed, started, ms(seconds + took));
             due.into_iter().collect::<Vec<_>>()
         };
-    // The first pass takes 90 seconds, so its failure is retried at 150.
     assert_eq!(
         pass(&plan, 0, 90, &[&failing]),
         [failing.clone(), working.clone()]
@@ -317,14 +311,11 @@ fn failed_hostnames_back_off_while_others_wait_for_a_repair() {
         pass(&plan, 150, 0, &[&failing]),
         std::slice::from_ref(&failing)
     );
-    // The second failure doubles the wait, to two minutes.
     assert_eq!(pass(&plan, 200, 0, &[]), []);
-    // A changed plan is due at once.
     let added = hostname("c.example.com");
     plan.insert(added.clone(), Plan::Manual);
     assert_eq!(pass(&plan, 210, 0, &[]), [added]);
     assert_eq!(pass(&plan, 270, 0, &[]), std::slice::from_ref(&failing));
-    // Five minutes after the first pass, every hostname is repaired.
     assert_eq!(pass(&plan, 300, 0, &[]).len(), 3);
 }
 
@@ -333,7 +324,6 @@ async fn records_are_written_once_applied_and_never_on_foreign_names() {
     let harness = Harness::new(true).await;
     let (id, public) = harness.route("www.example.com", "public").await;
 
-    // Staged but not applied: nothing is written yet.
     harness
         .stage(&id, std::slice::from_ref(&public), true)
         .await;
@@ -344,7 +334,6 @@ async fn records_are_written_once_applied_and_never_on_foreign_names() {
     );
     harness.unchanged();
 
-    // Applied: the ownership record, then the A record, in one action.
     harness.apply().await;
     assert!(harness.pass().await);
     assert_eq!(
@@ -360,13 +349,11 @@ async fn records_are_written_once_applied_and_never_on_foreign_names() {
     );
     let mut since = 0;
     assert_eq!(harness.journaled(&mut since).await, ["ingress_dns_create"]);
-    // An unchanged pass changes nothing and records no history.
     harness.forget_changes();
     assert!(harness.pass().await);
     harness.unchanged();
     assert_eq!(harness.journaled(&mut since).await, Vec::<String>::new());
 
-    // Drift is repaired: an address piqueld owns is changed by hand.
     harness.drift("www.example.com");
     assert!(harness.pass().await);
     assert_eq!(
@@ -375,7 +362,6 @@ async fn records_are_written_once_applied_and_never_on_foreign_names() {
     );
     assert_eq!(harness.journaled(&mut since).await, ["ingress_dns_update"]);
 
-    // A name holding a record piqueld does not own is never written.
     let (other, taken) = harness.route("taken.example.com", "public").await;
     harness.provider.insert(
         "taken.example.com",
@@ -417,7 +403,6 @@ async fn a_name_claimed_at_the_same_time_is_left_to_the_other_installation() {
             .starts_with("Another installation claimed"),
         "conflict says why"
     );
-    // Withdrawing is not a failure of the action.
     let events = harness.store.events(None, None, 100).await.unwrap().items;
     assert!(events.iter().all(|event| event.kind != "action_failed"));
 }
@@ -443,7 +428,6 @@ async fn a_claim_whose_withdrawal_failed_is_withdrawn_by_the_next_pass() {
     assert_eq!(harness.provider.dump(), [format!("{owner} {rival}")]);
     let conflict = harness.state("www.example.com");
     assert_eq!(conflict.state, DnsRecordState::DnsConflict);
-    // Withdrawn for good: the next pass only reports the other's claim.
     assert!(harness.pass().await);
     assert!(harness.ingress.withdrawing.lock().is_empty());
 }
@@ -471,7 +455,6 @@ async fn a_staged_withdrawal_is_published_by_the_next_pass() {
         DnsRecordState::DnsConflict
     );
     assert!(harness.ingress.withdrawing.lock().is_empty());
-    // Published for good: the next pass only reports the other's claim.
     assert!(harness.pass().await);
     assert_eq!(harness.provider.changes(), Vec::<String>::new());
 }
@@ -500,7 +483,6 @@ async fn saved_challenge_records_are_deleted_after_a_restart() {
         )
         .await;
 
-    // Right after a restart, before any zone is discovered.
     let restarted = Harness::undiscovered(&harness.engine, &harness.provider, true, None);
     let token = CancellationToken::new();
     restarted
@@ -510,7 +492,6 @@ async fn saved_challenge_records_are_deleted_after_a_restart() {
         harness.provider.dump(),
         [format!("{unanswered} {}", txt("someone else's"))]
     );
-    // A record in a zone no provider owns now is kept, and nothing journaled.
     assert_eq!(harness.store.acme_challenges().await.unwrap(), [elsewhere]);
     let mut since = 0;
     let journaled = harness.journaled(&mut since).await;
@@ -534,7 +515,6 @@ async fn failing_challenge_deletions_back_off() {
             .maintain_certificates(&unneeded, now, &token)
     };
     let (minute, mut since) = (60_000, 0);
-    // Failures at 0 and 1 minute delay the next attempts by 1 and 2 minutes.
     for (now, attempts) in [(0, 1), (minute / 2, 0), (minute, 1), (2 * minute, 0)] {
         pass(now).await;
         assert_eq!(harness.journaled(&mut since).await.len(), attempts, "{now}");
@@ -551,7 +531,6 @@ async fn wildcards_get_records_with_ownership_beside_their_parent() {
     let harness = Harness::new(true).await;
     harness.applied("*.tenants.example.com").await;
     assert!(harness.pass().await);
-    // Providers accept `*` only as a name's first label.
     assert_eq!(
         harness.provider.dump(),
         [
@@ -576,8 +555,6 @@ async fn visibility_changes_withdraw_before_repointing() {
     assert!(harness.pass().await);
     harness.forget_changes();
 
-    // Public -> private: the deployment withdraws the route first. Until the
-    // gateway acknowledges that, the records stay.
     let mut private = public.clone();
     private.visibility = Visibility::Private;
     harness
@@ -588,7 +565,6 @@ async fn visibility_changes_withdraw_before_repointing() {
         .await;
     assert!(harness.pass().await);
     harness.unchanged();
-    // Withdrawn: the records, then the ownership record, are deleted.
     harness.apply().await;
     assert!(harness.pass().await);
     assert_eq!(
@@ -603,7 +579,6 @@ async fn visibility_changes_withdraw_before_repointing() {
         harness.journaled(&mut since).await,
         ["ingress_dns_create", "ingress_dns_delete"]
     );
-    // Served privately: only the apps node's tailnet addresses.
     harness
         .stage(&id, std::slice::from_ref(&private), true)
         .await;
@@ -617,7 +592,6 @@ async fn visibility_changes_withdraw_before_repointing() {
             "www.example.com AAAA fd7a:115c:a1e0::5".into(),
         ]
     );
-    // The node's address changes: the record is updated in place.
     harness
         .node_addresses(&["100.64.0.9", "fd7a:115c:a1e0::5"])
         .await;
@@ -627,7 +601,6 @@ async fn visibility_changes_withdraw_before_repointing() {
         harness.provider.changes(),
         ["write www.example.com A 100.64.0.9"]
     );
-    // A node without addresses keeps the records.
     harness.node_addresses(&[]).await;
     assert!(harness.pass().await);
     harness.unchanged();
@@ -636,7 +609,6 @@ async fn visibility_changes_withdraw_before_repointing() {
         DnsRecordState::Pending
     );
 
-    // A removed route's records are deleted, even by a restarted daemon.
     harness.stage(&id, &[], true).await;
     harness.apply().await;
     let restarted = harness.restart(None).await;
@@ -652,7 +624,6 @@ async fn tunnel_mode_replaces_addresses_with_a_proxied_cname() {
     harness.applied("www.example.com").await;
     assert!(harness.pass().await);
     let tunnel = harness.restart(Some(tunnel())).await;
-    // Until the gateway runs in tunnel mode, the records stay.
     harness.forget_changes();
     assert!(Harness::pass_of(&tunnel).await);
     harness.unchanged();
@@ -683,7 +654,6 @@ async fn failures_keep_records_and_unmanaged_zones_stay_manual() {
         DnsRecordState::Managed
     );
 
-    // Without `manage_records`, the provider is never called.
     let manual = Harness::new(false).await;
     manual.applied("www.example.com").await;
     assert!(manual.pass().await);
@@ -702,7 +672,6 @@ async fn disabled_ingress_deletes_records_once_the_gateway_stopped() {
     harness.forget_changes();
     let mut disabled = harness.restart(None).await;
     disabled.enabled = false;
-    // The gateway's stop is not confirmed yet: its records stay.
     assert!(Harness::pass_of(&disabled).await);
     harness.unchanged();
     disabled.converged();
@@ -715,7 +684,6 @@ async fn names_another_installation_claims_are_never_changed() {
     let harness = Harness::new(true).await;
     let id = harness.applied("www.example.com").await;
     assert!(harness.pass().await);
-    // Another installation also claims the name, and its address drifts.
     harness
         .provider
         .insert("_piqueld.www.example.com", Record::Txt("other".into()));
@@ -726,7 +694,6 @@ async fn names_another_installation_claims_are_never_changed() {
         harness.state("www.example.com").state,
         DnsRecordState::DnsConflict
     );
-    // Removing the route deletes only this installation's ownership record.
     harness.stage(&id, &[], true).await;
     harness.apply().await;
     assert!(harness.pass().await);
@@ -750,13 +717,11 @@ async fn staged_changes_are_published_after_a_failed_publish() {
     let id = harness.applied("www.example.com").await;
     assert!(harness.pass().await);
     harness.forget_changes();
-    // The route is removed, but publishing its deletion fails.
     harness.stage(&id, &[], true).await;
     harness.apply().await;
     harness.provider.fail(Some(Outage::Publish));
     assert!(!harness.pass().await);
     harness.forget_changes();
-    // Nothing is left to delete; the deletion is still published, once.
     harness.provider.fail(None);
     assert!(harness.pass().await);
     assert_eq!(harness.provider.changes(), ["publish"]);
@@ -769,8 +734,6 @@ async fn staged_changes_are_published_after_a_failed_publish() {
 async fn a_route_changed_during_a_pass_waits_for_the_next_one() {
     let harness = Harness::new(true).await;
     let id = harness.applied("www.example.com").await;
-    // The pass was planned while the route was applied, then the gateway
-    // withdrew it: the stale plan writes nothing.
     let plan = harness.ingress.plan_records().await.unwrap();
     let every = plan.keys().cloned().collect();
     harness.stage(&id, &[], true).await;
@@ -793,7 +756,6 @@ async fn tunnel_routes_wait_in_zones_that_cannot_proxy() {
     harness.applied("www.example.com").await;
     let tunnel = harness.restart(Some(tunnel())).await;
     tunnel.converged();
-    // Nothing is claimed or written, and the pass does not fail.
     assert!(Harness::pass_of(&tunnel).await);
     harness.unchanged();
     let state = tunnel.route_dns(&RouteHostname::parse("www.example.com").unwrap());
@@ -818,7 +780,6 @@ async fn the_webhook_hostname_gets_a_public_routes_records() {
             format!("hooks.example.com A {PUBLIC}")
         ]
     );
-    // In tunnel mode, the proxied CNAME to the tunnel replaces it.
     let tunneled = harness
         .restart(Some(tunnel()))
         .await

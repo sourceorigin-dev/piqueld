@@ -35,7 +35,6 @@ impl Scenario {
         let _servers = self.traffic_backend();
         let original = self.gateway.caddy.get("/config/").await.unwrap();
         let mut configuration = original.clone();
-        // Counted routes tag their requests before proxying them.
         let handlers = configuration["apps"]["http"]["servers"]["public"]["routes"]
             .as_array_mut()
             .unwrap()
@@ -76,8 +75,6 @@ impl Scenario {
         );
         let mut websocket = response.upgrade().await.unwrap();
         for revision in 0..3 {
-            // Pooling stays enabled: these clients exercise idle HTTP/1 and HTTP/2
-            // reuse, alongside an active HTTP/2 SSE stream and WebSocket.
             for (client, version) in [
                 (&http1, reqwest::Version::HTTP_11),
                 (&http2, reqwest::Version::HTTP_2),
@@ -94,8 +91,6 @@ impl Scenario {
                 .await
                 .unwrap();
             tokio::time::timeout(Duration::from_secs(3), async {
-                // One masked, single-byte text frame is sufficient to prove the
-                // same upgraded stream still carries traffic after each reload.
                 websocket
                     .write_all(&[0x81, 0x81, 0, 0, 0, 0, b'x'])
                     .await

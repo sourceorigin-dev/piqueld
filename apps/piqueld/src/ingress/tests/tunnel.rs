@@ -56,7 +56,6 @@ async fn cloudflared_forwards_everything_to_the_tunnel_listener_without_privileg
         json!({
             "tunnel":ID,
             "credentials-file":"/etc/cloudflared/credentials.json",
-            // Only the healthcheck, inside the container, reads it.
             "metrics":"127.0.0.1:2000",
             "ingress":[{"service":format!("http://{gateway}:8080")}]
         })
@@ -92,7 +91,6 @@ async fn cloudflared_forwards_everything_to_the_tunnel_listener_without_privileg
             engine.directory.path().join("ingress/tunnel").display()
         )])
     );
-    // New credentials replace the container, which reads them again.
     let hash = |secret: &str| {
         let config = tunnel(secret);
         ingress.tunnel_spec(config.credentials.as_ref().unwrap())["Labels"]
@@ -104,7 +102,6 @@ async fn cloudflared_forwards_everything_to_the_tunnel_listener_without_privileg
         spec["Labels"]["io.piqueld.ingress-configuration"]
     );
     assert_ne!(hash("c2VjcmV0"), hash("bmV3"));
-    // The gateway publishes no port at all in tunnel mode.
     let gateway = ingress.container_spec();
     assert!(gateway.get("ExposedPorts").is_none());
     assert!(gateway["HostConfig"].get("PortBindings").is_none());
@@ -123,28 +120,23 @@ async fn the_tunnel_listener_serves_only_public_routes_to_edge_peers() {
         Some(&edge),
     );
     let servers = &configuration["apps"]["http"]["servers"];
-    // Ports 80 and 443 have no server; private routes keep their own.
     assert_eq!(
         servers.as_object().unwrap().keys().collect::<Vec<_>>(),
         ["private", "private_http", "tunnel"]
     );
     let tunnel = &servers["tunnel"];
     assert_eq!(tunnel["listen"], json!([":8080"]));
-    // Cloudflare terminates TLS, so Caddy never manages a certificate here.
     assert_eq!(tunnel["automatic_https"], json!({"disable":true}));
     let routes = tunnel["routes"].as_array().unwrap();
-    // Applications on networks attached to the gateway are refused first.
     assert_eq!(
         routes[0],
         json!({"match":[{"not":[{"remote_ip":{"ranges":edge}}]}],"handle":[{"handler":"static_response","abort":true}],"terminal":true})
     );
-    // The probe endpoint and the route itself, for the public host only.
     let hosts: Vec<&Value> = routes
         .iter()
         .filter_map(|route| route["match"][0].get("host"))
         .collect();
     assert_eq!(hosts, [&json!(["www.example.com"]); 2]);
-    // Only edge peers set the client address, and backends see it.
     assert_eq!(
         tunnel["trusted_proxies"],
         json!({"source":"static","ranges":edge})
@@ -166,7 +158,6 @@ async fn the_tunnel_listener_serves_only_public_routes_to_edge_peers() {
             "X-Forwarded-Host":["{http.request.hostport}"]
         })
     );
-    // Private routes' backends keep the PROXY header's client address.
     let private = servers["private"]["routes"]
         .as_array()
         .unwrap()
@@ -200,7 +191,6 @@ async fn the_tunnel_is_connected_only_while_its_healthcheck_passes() {
     for state in [
         running("starting"),
         running("unhealthy"),
-        // A stopped container keeps its last health status.
         json!({"Running":false,"Health":{"Status":"healthy"}}),
     ] {
         assert!(!connected(tunnel_status(state.clone()).await), "{state}");
@@ -242,7 +232,6 @@ async fn defers_replacing_a_direct_gateway(tunnel: Option<&TunnelConfig>) -> any
 #[tokio::test]
 async fn a_deferred_replacement_never_switches_modes() {
     defers_replacing_a_direct_gateway(None).await.unwrap();
-    // The old gateway would keep ports 80/443 open in tunnel mode.
     let error = defers_replacing_a_direct_gateway(Some(&tunnel("c2VjcmV0")))
         .await
         .unwrap_err();
@@ -334,7 +323,6 @@ async fn disabled_ingress_stops_containers_even_if_the_credentials_remain() {
         })
     })
     .await;
-    // A directory where the credentials file belongs cannot be removed.
     std::fs::create_dir_all(
         engine
             .directory
@@ -381,7 +369,6 @@ impl Scenario {
         self.only_cloudflared_reaches_the_tunnel_listener(&ingress, &echo)
             .await;
 
-        // Back to direct mode: cloudflared and its credentials are removed.
         self.gateway.synchronize().await.unwrap();
         assert!(
             self.gateway
@@ -422,7 +409,6 @@ impl Scenario {
             .send()
             .await
             .expect_err("`` should be rejected");
-        // Without a real tunnel, cloudflared never connects.
         assert!(!ingress.status().await.healthy);
     }
 
@@ -464,7 +450,6 @@ impl Scenario {
             (code, output.as_str()),
             (0, "203.0.113.7 https echo.example.test 200")
         );
-        // The private route is deployed, but never served here.
         let (code, output) = self
             .curl(&ingress.name, &request(&ingress.name, "admin.example.test"))
             .await;

@@ -99,7 +99,6 @@ impl Ingress {
     pub(super) async fn ensure_tunnel(&self) -> Result<()> {
         let name = self.tunnel_name();
         let Some(credentials) = &self.tunnel else {
-            // Each is attempted even if the other fails.
             let removed = self.remove_stale_container(&name).await;
             return removed.and(self.remove_tunnel_credentials().await);
         };

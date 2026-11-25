@@ -87,7 +87,6 @@ async fn failed_gateway_sync_reports_health_without_response_details() {
     let ingress = engine.ingress(true);
     ingress.synchronize().await.unwrap_err();
 
-    // The failure happened while reading Docker, so no action was journaled.
     let events = engine.history().await;
     let [health] = events.as_slice() else {
         panic!("expected one health transition: {events:#?}")
@@ -176,7 +175,6 @@ async fn a_failure_notifies_while_the_next_pass_is_slow() {
     ingress
         .observe_availability(true, &PrivateIngressStatus::default())
         .await;
-    // The next pass takes over two minutes; only the repeats observe.
     for period in 1..=9 {
         ingress
             .repeat_availability(failed_at + period * 15_000)
