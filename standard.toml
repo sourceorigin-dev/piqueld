@@ -25,10 +25,6 @@ paths = ["Cargo.toml"]
 reason = "3 findings: these libraries return anyhow errors; typed errors in a follow-up"
 crates = ["piqueld", "piqueld-config", "piqueld-docker"]
 
-[deviations.agents-md]
-reason = "8 findings: AGENTS.md has no map of the crates and holds 168 lines; fixed in a follow-up"
-paths = ["AGENTS.md"]
-
 [deviations.generated-lints]
 reason = "160 findings: progenitor writes the `allow`s into the generated client; fixed in a follow-up"
 paths = ["crates/piqueld-client/src/generated.rs"]

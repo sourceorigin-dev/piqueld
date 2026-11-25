@@ -63,6 +63,7 @@
 - [Automated validation](dev/validation.md)
 - [Rust conventions](dev/rust-conventions.md)
 - [Contract coverage](dev/contract-coverage.md)
+- [Surfaces](dev/surfaces.md)
 - [Changing the documentation](dev/documentation.md)
 - [Releasing piqueld](dev/releasing.md)
 - [Publishing piqueld.dev](dev/publishing.md)
