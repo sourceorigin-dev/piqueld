@@ -180,8 +180,6 @@ impl Ingress {
             Sha256::digest(store.instance_id().as_str().as_bytes())
         );
         let directory = data_dir.join("ingress");
-        // Caddy control requests share the daemon's Docker request budget.
-        // Deployment convergence still imposes its configured outer deadline.
         let request_timeout = piqueld_docker::DockerTimeout::Request.duration();
         let certificates = Certificates::new(
             Dns::new(Vec::new())?,
@@ -439,8 +437,6 @@ impl Ingress {
         self.store
             .stage_routes(id, routes, ready, Some(&operation.id))
             .await?;
-        // Provisioning must proceed before newly enabled ingress networks exist.
-        // Only actual withdrawals require gateway I/O before backend readiness.
         if !ready
             && previous
                 .iter()
@@ -516,8 +512,6 @@ impl Ingress {
             } else {
                 BTreeSet::new()
             };
-            // Not dropped on shutdown: an order in progress deletes its TXT
-            // record and finishes its journal action first.
             self.maintain_certificates(&desired, now_ms(), cancellation)
                 .await;
         }
@@ -550,7 +544,6 @@ impl Ingress {
     async fn run_probes(&self, cancellation: &CancellationToken) {
         let mut ticks = Ticker::new(PROBE_PERIOD);
         while ticks.tick(cancellation).await {
-            // Slow public DNS/TLS must never delay gateway drift repair or disablement.
             let probes = cancellation.run_until_cancelled(self.probe_routes());
             if probes.await.is_none() {
                 return;
@@ -583,12 +576,7 @@ impl Ingress {
     /// without failing the call.
     async fn synchronize_for(&self, application: Option<&EnvironmentId>) -> Result<()> {
         let mut failures = BTreeMap::new();
-        // Health messages name only the failed stage and any unmet requirement
-        // of the gateway. Error details, which may include Docker/Caddy
-        // response bodies, stay in daemon logs.
         let mut stage = "read deployed routing configuration";
-        // Whether the gateway converged (or stopped), even if cloudflared did
-        // not: the private listener depends only on the gateway.
         let mut gateway = false;
         let result: Result<()> = async {
             let table = self.store.served_table().await?;
@@ -609,7 +597,6 @@ impl Ingress {
                 self.ensure_tunnel().await?;
             } else {
                 stage = "stop the disabled Caddy gateway";
-                // Each is attempted even if the other fails.
                 let stopped = self.stop_gateway().await;
                 let removed = self.remove_tunnel_credentials().await;
                 stopped?;
@@ -627,7 +614,6 @@ impl Ingress {
         .context(stage);
         let private = self.private_status(gateway).await;
         let public = self.public_status().await;
-        // In tunnel mode, public routes are unreachable while it is down.
         let disconnected = self.enabled
             && matches!(
                 public,
@@ -710,7 +696,6 @@ impl Ingress {
             message: message.into(),
             ..PrivateIngressStatus::default()
         };
-        // Disabled ingress stops the node with the gateway.
         if !self.enabled {
             return if gateway {
                 status(
@@ -790,7 +775,6 @@ impl Ingress {
                     .route_state(&id, &route, exact, applied, healthy, private)
                     .await;
                 let dns = self.route_dns(&route.hostname);
-                // Until the route is ready, a DNS conflict or failure explains it.
                 if let Some(problem) = dns.message.filter(|_| state != "ready") {
                     message = format!("DNS records ({}): {problem}", dns.state);
                 }
@@ -858,12 +842,9 @@ impl Ingress {
                 ("failed", private.message.clone())
             };
         }
-        // Only routes needing a DNS-01 certificate can lack one.
         if let Some(problem) = self.certificates.problem(&route.hostname) {
             return ("failed", format!("No DNS-01 certificate: {problem}"));
         }
-        // A broken app must not hide verified readiness for unrelated
-        // routes. Only probe destinations acknowledged by the gateway.
         if !applied
             .get(id)
             .is_some_and(|applied| applied.contains(route))
@@ -939,7 +920,6 @@ impl Ingress {
     /// Verifies a public route at its `resolved` addresses, pinned so the
     /// probe does not resolve `hostname` again.
     async fn probe_public(&self, hostname: &Hostname, resolved: &BTreeSet<IpAddr>) -> Result<()> {
-        // Port 0 keeps the URL's port.
         let addresses: Vec<SocketAddr> =
             resolved.iter().map(|ip| SocketAddr::new(*ip, 0)).collect();
         let client = Self::probe_client()

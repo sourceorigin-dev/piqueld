@@ -65,8 +65,6 @@ impl ProxyListener {
         let daemon = rustix::process::geteuid().as_raw();
         let permits = Arc::new(Semaphore::new(CHECKING));
         loop {
-            // A permit is taken before accepting, so connections past the
-            // limit wait in the kernel's backlog instead of piling up as tasks.
             let accepted = tokio::select! {
                 () = cancellation.cancelled() => return,
                 accepted = async {
@@ -74,12 +72,10 @@ impl ProxyListener {
                     (permit, Listener::accept(&mut listener).await)
                 } => accepted,
             };
-            // The semaphore is never closed.
             let (Ok(permit), (mut stream, local)) = accepted else {
                 return;
             };
             let connections = connections.clone();
-            // Headers are read concurrently so one stalled connection cannot block others.
             tokio::spawn(async move {
                 let _permit = permit;
                 let checked = tokio::time::timeout(
@@ -88,7 +84,6 @@ impl ProxyListener {
                 );
                 match checked.await {
                     Ok(Some(client)) => {
-                        // A closed queue means the server is shutting down.
                         #[expect(
                             clippy::let_underscore_must_use,
                             reason = "a closed queue means the server is shutting down"
@@ -232,7 +227,6 @@ impl Listener for ProxyListener {
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         match self.connections.recv().await {
             Some(connection) => connection,
-            // The accept task only stops on shutdown, which also stops serving.
             None => std::future::pending().await,
         }
     }

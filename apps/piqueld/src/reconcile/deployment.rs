@@ -160,8 +160,6 @@ impl<D: DockerApi> Controller<D> {
         OperationError,
     > {
         let mut manifest = Self::read_manifest(checkout, &backing.path).await?;
-        // Replaced before validation: `self` sources and `git.*` references
-        // need a connection, and the file's own may be absent or invalid.
         let declared = manifest.spec.manifest.replace(backing.clone());
         let warnings = Self::ignored_connection(declared.as_ref(), backing)
             .into_iter()
@@ -234,8 +232,6 @@ impl<D: DockerApi> Controller<D> {
         {
             Some(checkout.commit.clone())
         } else {
-            // Without its head, the previous one would replace this deployment
-            // at the next sync, so the fetch fails, as a failed clone does.
             crate::git::Heads::list(&url)
                 .await
                 .map_err(|error| {
@@ -261,7 +257,6 @@ impl<D: DockerApi> Controller<D> {
         template: ApplicationTemplate,
     ) -> Result<ApplicationTemplate, OperationError> {
         let mut files = Vec::new();
-        // Stop at the budget, rather than read every file first.
         let mut total = template.spec().inline_file_bytes();
         for relative in template.spec().repository_file_paths() {
             let content = Self::read_file(checkout, relative).await?;

@@ -43,15 +43,12 @@ impl Scenario {
         docker.ensure_swarm(true).await.unwrap();
         let mut gateway =
             Ingress::new(true, &socket, directory.path(), Arc::clone(&store)).unwrap();
-        // Test-only private CA: no public domain or ACME rate limits are needed.
         gateway.issuer = Some(json!({"module":"internal"}));
         gateway.extra_hosts = vec![
             "http-acme.example.test:127.0.0.1".into(),
             "alpn-acme.example.test:127.0.0.1".into(),
         ];
         gateway.private_port = Some(port("PIQUELD_INGRESS_PRIVATE_PORT"));
-        // Counted from the start, so Caddy dials the traffic socket as soon
-        // as it loads its first configuration.
         gateway.traffic = true;
         let gateway = Arc::new(gateway);
         let counting = CancellationToken::new();
@@ -81,8 +78,6 @@ impl Scenario {
             ],
         )
         .timeout(Duration::from_secs(3))
-        // Caddy closes idle connections on reload. Probe listener availability
-        // across cutover without racing a reused client connection.
         .http1_only()
         .pool_max_idle_per_host(0)
         .redirect(reqwest::redirect::Policy::none())

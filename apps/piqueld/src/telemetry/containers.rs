@@ -78,7 +78,6 @@ impl ContainerExport {
     pub(crate) fn relabel(&self, attributes: Vec<(&'static str, String)>) {
         let resource = ContainerResource::new(attributes);
         let mut current = self.resource.lock();
-        // Keeping the same resource lets a batch group its lines together.
         if *current != resource {
             *current = resource;
         }

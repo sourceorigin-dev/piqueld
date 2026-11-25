@@ -27,17 +27,11 @@ impl<D: DockerApi> Controller<D> {
         let started = std::time::Instant::now();
         tracing::info!("operation started");
         let result = {
-            // Once superseded, an operation is no longer a retention root,
-            // but its jobs and services may still start on its images, so
-            // cleanup waits until it stops.
             let _in_use = self.images_in_use().await;
             self.run_operation_inner(operation, cancellation).await
         };
-        // Finished deployments change the retention roots.
         self.images.request_cleanup();
         {
-            // Repair uses this operation's context too. Let any in-flight repair
-            // commit its result before recovering abandoned execution actions.
             let _guard = self.mutations.lock().await;
             self.store.interrupt_actions(Some(&operation.id)).await?;
         }
@@ -120,9 +114,6 @@ impl<D: DockerApi> Controller<D> {
                         None,
                     )
                     .await?;
-                // A stop or start accepted while it ran left it unchanged;
-                // it runs again under that state. Once it succeeded, a later
-                // one reopens it itself.
                 if self.store.is_stopped(&operation.environment_id).await? != stopped {
                     self.store
                         .request_reconcile(&operation.environment_id, &operation.id)
@@ -131,8 +122,6 @@ impl<D: DockerApi> Controller<D> {
                 Ok(())
             }
             Err(OperationError::Cancelled | OperationError::Superseded) => {
-                // A request may already have superseded the operation while a Docker
-                // call was in flight. Its durable state takes precedence.
                 match self
                     .store
                     .transition_operation(
@@ -174,13 +163,11 @@ impl<D: DockerApi> Controller<D> {
         operation: &Operation,
         cancellation: &CancellationToken,
     ) -> Result<bool, OperationError> {
-        // Keep preparation and persistence state out of the discovery future.
         let executed = Box::pin(self.execute_operation(operation, cancellation)).await;
         if cancellation.is_cancelled() {
             return executed;
         }
         let pruned = {
-            // Repair publishes configs too; let it finish mounting them.
             let _guard = self.mutations.lock().await;
             self.docker
                 .prune_files(&self.ownership_labels(&operation.environment_id))
@@ -197,10 +184,7 @@ impl<D: DockerApi> Controller<D> {
             if !names.is_empty() {
                 self.remove_secrets(operation, &names).await?;
             }
-            // Boxed: it would otherwise grow every operation's future.
             Box::pin(self.remove_preview_volumes(operation)).await?;
-            // Nothing enforces its links once it is gone, so it removes the
-            // networks of importers deleted before it now.
             let observed = self.docker.observe(&operation.environment_id).await?;
             Box::pin(self.enforce_links(&operation.environment_id, &operation.id, &observed))
                 .await?;
@@ -297,11 +281,9 @@ impl<D: DockerApi> Controller<D> {
                 .await?;
             self.run_jobs(operation, desired, cancellation).await?;
         }
-        // Jobs have their own timeouts; convergence starts after them.
         let mut deadline = tokio::time::Instant::now() + self.retry.convergence_timeout;
         if operation.kind == OperationKind::Delete {
             self.withdraw_routes(operation, deadline).await?;
-            // Job services would keep the private network attached.
             self.remove_jobs(operation, &ownership, JobRuns::All, cancellation)
                 .await?;
         }
@@ -309,8 +291,6 @@ impl<D: DockerApi> Controller<D> {
             timeout_seconds = self.retry.convergence_timeout.as_secs(),
             "convergence started"
         );
-        // The steps the last recorded plan has left, so a plan is recorded
-        // only when it changes.
         let mut recorded: Option<Vec<StepKey>> = None;
         loop {
             self.check_current(operation).await?;
@@ -348,7 +328,6 @@ impl<D: DockerApi> Controller<D> {
                 self.publish(operation, &request, &plan, deadline).await?;
             }
             if self.store.applied_routes(&operation.environment_id).await? != accepted_routes {
-                // Replan after cutover before dropping old ingress attachments.
                 continue;
             }
             let action = plan.actions.iter().find(|action| action.kind.runs());
@@ -372,8 +351,6 @@ impl<D: DockerApi> Controller<D> {
                 deadline,
             )
             .await?;
-            // Unless the next plan differs, it is this one without the step
-            // just run.
             if let Some(steps) = &mut recorded
                 && !steps.is_empty()
             {
@@ -404,8 +381,6 @@ impl<D: DockerApi> Controller<D> {
             self.check_current(operation).await?;
             self.store.publish_prepared(operation).await?;
         }
-        // Gateway I/O has its own writer lock. Never hold the global
-        // Docker mutation lock while waiting for another app's routing.
         if let PlanRequest::Reconcile { desired } = request {
             let ready = plan.desired_resources_ready();
             tokio::time::timeout_at(
@@ -477,8 +452,6 @@ impl<D: DockerApi> Controller<D> {
         if routes.is_empty() && !self.store.has_routes(&operation.environment_id).await? {
             return Ok(());
         }
-        // Staging rejects an operation that a newer request replaced while it
-        // waited, including behind another application's gateway update.
         let staging = async {
             if let Some(ingress) = &self.ingress {
                 Box::pin(ingress.apply(operation, routes, ready))
@@ -505,9 +478,6 @@ impl<D: DockerApi> Controller<D> {
             }
             Ok(())
         };
-        // Each pass stages the routes again. Its first pass is a step of the
-        // operation, since the gateway may keep it waiting, and so is putting
-        // new routes in service.
         if !self.store.routed(operation).await?
             || (ready && self.store.applied_routes(&operation.environment_id).await? != routes)
         {
@@ -577,7 +547,6 @@ impl<D: DockerApi> Controller<D> {
             }
             return Ok(target);
         }
-        // Releases and restores save their target on acceptance.
         if !builds {
             return Err(StoreError::Corrupt.into());
         }
@@ -596,7 +565,6 @@ impl<D: DockerApi> Controller<D> {
         .with_rebuild(self.store.rebuild_requested(&operation.id).await?);
         let (manifest, snapshot) = Box::pin(self.deployment_manifest(operation, tracking)).await?;
         let runtime = runtime.with_snapshot(snapshot);
-        // A rename changes display metadata without rewriting deployment history.
         let manifest =
             manifest.with_name(application.application.application.metadata().name.clone());
         let mut reusable = if operation.kind == OperationKind::Refresh {
@@ -627,7 +595,6 @@ impl<D: DockerApi> Controller<D> {
                 }
             })?;
         self.check_current(operation).await?;
-        // The topology may have changed while images were pulled or built.
         self.docker.ensure_swarm(false).await?;
         self.store
             .save_prepared(operation, &prepared)
@@ -692,297 +659,4 @@ impl<D: DockerApi> Controller<D> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::api::{Mutation, MutationResponse};
-    use piqueld_docker::BollardDocker;
-    use piqueld_store::Store;
-
-    /// A store in a temporary directory, and a Docker socket nothing serves.
-    struct Harness {
-        directory: tempfile::TempDir,
-        store: Arc<Store>,
-        sources: Arc<crate::git::Sources>,
-        socket: std::path::PathBuf,
-        _listener: tokio::net::UnixListener,
-    }
-
-    impl Harness {
-        async fn new() -> Self {
-            let directory = tempfile::tempdir().unwrap();
-            let store = Arc::new(
-                Store::open_unsynced(directory.path().join("db"))
-                    .await
-                    .unwrap(),
-            );
-            let sources = Arc::new(crate::git::Sources::open(directory.path()).await.unwrap());
-            let socket = directory.path().join("unused.sock");
-            let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-            Self {
-                directory,
-                store,
-                sources,
-                socket,
-                _listener: listener,
-            }
-        }
-
-        /// A controller of this store whose Docker Engine never answers.
-        fn controller(&self) -> Controller<BollardDocker> {
-            Controller::new(
-                Arc::new(BollardDocker::connect(&self.socket).unwrap()),
-                Arc::clone(&self.store),
-                Arc::clone(&self.sources),
-            )
-        }
-    }
-
-    /// Saves and deploys application `name` with `spec`, a TOML `[spec]`
-    /// table, returning its requested operation.
-    async fn deploy(store: &Store, name: &str, spec: &str) -> Operation {
-        let manifest = piqueld_core::manifest::parse_template_toml(&format!(
-            "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='{name}'\n{spec}"
-        ))
-        .unwrap();
-        let (MutationResponse::Saved(saved), _) = store
-            .accept(
-                crate::api::Actor::Daemon,
-                Mutation::save(manifest, None, true),
-                Some(0),
-                false,
-                None,
-            )
-            .await
-            .unwrap()
-        else {
-            panic!("saved deployment")
-        };
-        store.operation(&saved.operation_id.unwrap()).await.unwrap()
-    }
-
-    /// Accepts a routed environment and starts executing its operation.
-    async fn running_operation(store: &Store) -> Operation {
-        let spec = format!(
-            "[[spec.services]]\nname='web'\n[spec.services.source]\ntype='image'\nimage='{}'\n\
-             [[spec.routes]]\nhostname='routed.example.com'\nservice='web'\nport=80",
-            crate::ingress::CADDY_IMAGE
-        );
-        let operation = deploy(store, "routed", &spec).await;
-        store
-            .transition_operation(
-                &operation.id,
-                OperationState::Requested,
-                OperationState::Running,
-                None,
-            )
-            .await
-            .unwrap();
-        store.operation(&operation.id).await.unwrap()
-    }
-
-    #[tokio::test]
-    async fn routing_superseded_while_waiting_for_the_gateway_is_superseded() {
-        let harness = Harness::new().await;
-        let store = &harness.store;
-        let operation = running_operation(store).await;
-        let routes = store
-            .deployment_snapshot(&operation.id)
-            .await
-            .unwrap()
-            .rendering
-            .unwrap()
-            .application
-            .spec()
-            .routes
-            .clone();
-        let ingress = Arc::new(
-            crate::ingress::Ingress::new(
-                true,
-                &harness.socket,
-                harness.directory.path(),
-                Arc::clone(store),
-            )
-            .unwrap(),
-        );
-        let controller = Arc::new(harness.controller().with_ingress(Arc::clone(&ingress)));
-
-        let gateway = ingress.hold_updates().await;
-        let staging = tokio::spawn({
-            let operation = operation.clone();
-            async move { controller.sync_routes(&operation, &routes, true).await }
-        });
-        // The routing phase commits just before staging waits for the gateway.
-        store
-            .wait_until(async || {
-                store.operation(&operation.id).await.unwrap().phase == Some(Phase::Routing)
-            })
-            .await;
-        store
-            .accept(
-                crate::api::Actor::Daemon,
-                Mutation::deploy(operation.environment_id.clone()),
-                None,
-                true,
-                None,
-            )
-            .await
-            .unwrap();
-        drop(gateway);
-        assert!(matches!(
-            staging.await.unwrap(),
-            Err(OperationError::Superseded)
-        ));
-    }
-
-    #[tokio::test]
-    async fn reconciliation_leaves_concurrent_daemon_actions_open() {
-        let harness = Harness::new().await;
-        let store = &harness.store;
-        let operation = running_operation(store).await;
-        store
-            .transition_operation(
-                &operation.id,
-                OperationState::Running,
-                OperationState::Requested,
-                None,
-            )
-            .await
-            .unwrap();
-        let controller = harness.controller();
-        // Another worker, such as ingress, is mid-change when reconciliation starts.
-        let action = store
-            .begin_action(None, Phase::IngressStartGateway, None)
-            .await
-            .unwrap();
-        let cancellation = CancellationToken::new();
-        let run = controller.run(
-            Arc::new(tokio::sync::Notify::new()),
-            std::time::Duration::from_mins(1),
-            0,
-            0,
-            cancellation.clone(),
-        );
-        let finished = async {
-            // Operations start only after the first discovery pass, including recovery.
-            store
-                .wait_until(async || {
-                    store.operation(&operation.id).await.unwrap().state != OperationState::Requested
-                })
-                .await;
-            let finished = store.finish_action(&action, None).await;
-            cancellation.cancel();
-            finished
-        };
-        let (result, finished) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::join!(run, finished)
-        })
-        .await
-        .unwrap();
-        result.unwrap();
-        finished.unwrap();
-    }
-
-    /// Deleting a secret waits for Docker mutations in progress before it
-    /// checks that nothing uses the secret.
-    #[tokio::test]
-    async fn secret_deletion_waits_for_docker_mutations() {
-        let harness = Harness::new().await;
-        let store = &harness.store;
-        let operation = deploy(store, "secrets", "[spec]").await;
-        let environment = &operation.environment_id;
-        let daemon = crate::api::Actor::Daemon;
-        store
-            .put_secret(daemon, environment, "token", 0, b"value".to_vec())
-            .await
-            .unwrap();
-        let controller = harness.controller();
-        let service = crate::api::ApplicationService::new(
-            Arc::clone(store),
-            controller.runtime(Arc::default()),
-            Arc::clone(&harness.sources),
-        )
-        .unwrap();
-        let deleting = async || store.secrets(environment).await.unwrap()[0].deleting;
-        let guard = controller.mutations.lock().await;
-        let deletion = service.delete_secret(daemon, environment, "token", 1);
-        tokio::pin!(deletion);
-        let wait = std::time::Duration::from_millis(200);
-        tokio::time::timeout(wait, &mut deletion)
-            .await
-            .expect_err("`tokio::time::timeout` should be rejected");
-        assert!(!deleting().await);
-        drop(guard);
-        // Docker never answers, so deletion stops at removing the versions.
-        tokio::time::timeout(wait, &mut deletion)
-            .await
-            .expect_err("`tokio::time::timeout` should be rejected");
-        assert!(deleting().await);
-    }
-
-    #[tokio::test]
-    async fn execution_cleanup_waits_for_live_repair_to_commit() {
-        let harness = Harness::new().await;
-        let store = &harness.store;
-        let operation = deploy(store, "repair", "[spec]").await;
-        // A stale execution takes its normal early-exit path without calling Docker.
-        store
-            .transition_operation(
-                &operation.id,
-                OperationState::Requested,
-                OperationState::Running,
-                None,
-            )
-            .await
-            .unwrap();
-        store
-            .transition_operation(
-                &operation.id,
-                OperationState::Running,
-                OperationState::Succeeded,
-                None,
-            )
-            .await
-            .unwrap();
-        let controller = harness.controller();
-        let abandoned = store
-            .begin_action(Some(&operation.id), Phase::ResolveImage, Some("web"))
-            .await
-            .unwrap();
-        let guard = controller.mutations.lock().await;
-        let repair = store
-            .begin_action(Some(&operation.id), Phase::EnsureService, Some("web"))
-            .await
-            .unwrap();
-        store.action_request(&repair, 1).await.unwrap();
-        let cancellation = CancellationToken::new();
-        let cleanup = controller.run_operation(&operation, &cancellation);
-        tokio::pin!(cleanup);
-        tokio::time::timeout(std::time::Duration::from_millis(100), &mut cleanup)
-            .await
-            .expect_err("`tokio::time::timeout` should be rejected");
-        store.finish_action(&repair, None).await.unwrap();
-        drop(guard);
-        tokio::time::timeout(std::time::Duration::from_secs(1), cleanup)
-            .await
-            .unwrap()
-            .unwrap();
-        let events = store
-            .events(Some(&operation.environment_id), None, 100)
-            .await
-            .unwrap()
-            .items;
-        assert!(events.iter().any(|e| e.action_id.as_deref() == Some(&repair.id) && e.kind == "action_succeeded"));
-        assert!(
-            !events
-                .iter()
-                .any(|e| e.action_id.as_deref() == Some(&repair.id)
-                    && e.kind == "action_outcome_unknown")
-        );
-        assert!(
-            events
-                .iter()
-                .any(|e| e.action_id.as_deref() == Some(&abandoned.id)
-                    && e.kind == "action_outcome_unknown")
-        );
-    }
-}
+mod tests;

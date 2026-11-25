@@ -309,9 +309,6 @@ impl Ingress {
     ) -> Option<Desired> {
         let is =
             |name: Option<&Hostname>| name.is_some_and(|name| name.as_str() == hostname.as_str());
-        // The dashboard hostname is served on the private listener, and the
-        // webhook hostname on the public one, from the gateway's own
-        // configuration.
         let served = if is(self.dashboard_hostname()) {
             Some(Visibility::Private)
         } else if is(self.webhook_hostname()) {
@@ -355,7 +352,6 @@ impl Ingress {
         let dns = &self.certificates.dns;
         match dns.zone_for(&hostname.domain()).await {
             Ok((provider, zone)) if dns.manages_records(provider) => {
-                // Writing them would fail on every pass.
                 let desired = if desired.proxied() && !dns.provider(provider).proxies() {
                     Desired::Pending(
                         "Tunnel routes need a proxied CNAME, which only a Cloudflare zone can hold. Move the zone to Cloudflare",
@@ -456,7 +452,6 @@ impl Ingress {
             }
             Desired::Records(records) => Some(records),
             Desired::Removed => None,
-            // Never planned as managed.
             Desired::Manual => return Ok(RouteDns::default()),
         };
         let routes = self.store.hostname_routes(hostname).await?;
@@ -498,19 +493,14 @@ impl Ingress {
         let (current, ownership) = site.read().await?;
         let (ours_found, foreign): (Vec<&Found>, Vec<&Found>) =
             ownership.iter().partition(|found| found.record == ours);
-        // Another installation's claim makes the name shared: never exclusive.
         let owned = !ours_found.is_empty() && foreign.is_empty();
         let republish = self.store.dns_records_unpublished(hostname).await?;
-        // A withdrawal is done once our claim is gone and its deletion
-        // published, which a staged provider may not have done yet.
         let withdrawing =
             self.withdrawing.lock().contains(hostname) && (!ours_found.is_empty() || republish);
         if !withdrawing {
             self.withdrawing.lock().remove(hostname);
         }
         let Some(desired) = desired else {
-            // Only this installation's own records: the addresses when it
-            // owns the name, and its ownership records in any case.
             let delete: Vec<RecordId> = current
                 .iter()
                 .filter(|_| owned)
@@ -528,9 +518,6 @@ impl Ingress {
             self.store.release_dns_records(hostname).await?;
             return Ok(RouteDns::default());
         };
-        // A claim that lost a race and could not be deleted or published
-        // then. Claims that were ever established are never withdrawn this
-        // way.
         if withdrawing {
             let claims = ours_found.iter().map(|found| found.id.clone()).collect();
             return self.withdraw(&site, claims).await;
@@ -681,9 +668,6 @@ impl Site<'_> {
             let id = provider
                 .upsert(http, zone, &self.owner(), None, claim)
                 .await?;
-            // Two installations may both have read the name as free. Each
-            // reads it again before writing addresses, and the one that sees
-            // the other's claim backs off; if both do, the next pass retries.
             let ownership = provider.records(http, zone, &self.owner()).await?;
             if ownership
                 .iter()

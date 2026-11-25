@@ -121,8 +121,6 @@ impl Scenario {
             docker.create_container(name, &spec).await.unwrap();
             docker.start_container(name).await.unwrap();
         }
-        // `/archive` answers with a tar stream: a 512-byte header whose octal
-        // size field starts at byte 124, then the file.
         let path = bollard::query_parameters::DownloadFromContainerOptionsBuilder::default()
             .path("/test/certs/pebble.minica.pem")
             .build();
@@ -168,8 +166,6 @@ impl Scenario {
     /// A second manager of this scenario's gateway, issuing from Pebble.
     fn pebble_ingress(&self, root: &std::path::Path) -> Ingress {
         let mut dns = Dns::new(vec![DnsProvider::Challtestsrv(challtestsrv()).into()]).unwrap();
-        // One nameserver whose first address refuses connections, like an
-        // IPv6 address on an IPv4-only host: its second address answers.
         dns.nameservers = Some(vec![vec![
             SocketAddr::from(([127, 0, 0, 1], 1)),
             challtestsrv_dns(),
@@ -327,7 +323,6 @@ impl Scenario {
         let deployed =
             admin("private").with_id(piqueld_core::ApplicationId::parse(id.as_str()).unwrap());
         self.deploy(deployed).await;
-        // A forged Host gets a 404, and its SNI no certificate.
         assert_eq!(self.plain("admin.example.test", "").await.status(), 404);
         self.untrusted("admin.example.test", self.tls_port)
             .await
@@ -352,8 +347,6 @@ impl Scenario {
             .await
             .unwrap();
         assert_eq!(body, "100.64.0.9");
-        // The apps node runs hardened beside the gateway and answers on its
-        // LocalAPI, logged in or not.
         let node = ingress
             .named_container(&ingress.node_name())
             .await
@@ -427,7 +420,6 @@ impl Scenario {
         self.dns01_leftover(&ingress, now).await;
         self.dns01_retire(&ingress, now, expires).await;
         self.wildcard_routes(&ingress, now).await;
-        // Restore the scenario gateway's own configuration.
         ingress.synchronize().await.unwrap();
     }
 
@@ -442,7 +434,6 @@ impl Scenario {
             "{http.request.host} {http.request.header.X-Forwarded-Host}",
         );
         let exact = super::application("exact", "exact.tenants.example.test", "exact");
-        // Another application's exact name below the wildcard is routed first.
         self.deploy(exact).await;
         self.deploy(tenants).await;
         let desired = routes(&["*.tenants.example.test"]);
@@ -453,20 +444,16 @@ impl Scenario {
             .await;
         ingress.synchronize().await.unwrap();
 
-        // The certificate `host` is served and its response body, once it answers.
         let answer = |host: &'static str| async move {
             let response = self.untrusted(host, self.tls_port).await.ok()?;
             let certificate = peer_certificate(&response)?;
             Some((certificate, response.text().await.ok()?))
         };
         let wildcard = self.stored_leaf("_wildcard.tenants.example.test.pem").await;
-        // `X-Forwarded-Host` keeps the request's port, random here.
         for host in ["alice.tenants.example.test", "bob.tenants.example.test"] {
             let body = format!("{host} {host}:{}", self.tls_port);
             assert_eq!(answer(host).await, Some((wildcard.clone(), body)));
         }
-        // Caddy issues the exact route's own certificate, just now, though
-        // the loaded wildcard certificate covers it.
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 match answer("exact.tenants.example.test").await {
@@ -482,7 +469,6 @@ impl Scenario {
         .await
         .expect("the exact route gets its own certificate");
 
-        // Two labels deep: no certificate, and plain HTTP gets a 404.
         self.untrusted("a.b.tenants.example.test", self.tls_port)
             .await
             .expect_err("`self.untrusted` should fail the handshake: no certificate");
@@ -543,7 +529,6 @@ impl Scenario {
             self.served_certificate("admin.example.test").await,
             self.stored_leaf("_wildcard.example.test.pem").await
         );
-        // Pebble picks a random profile per order, so lifetimes differ.
         status
             .certificates
             .iter()

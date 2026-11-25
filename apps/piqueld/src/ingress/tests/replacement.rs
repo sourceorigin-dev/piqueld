@@ -26,8 +26,6 @@ impl Scenario {
     pub(super) async fn replacement_preserves_unverified_attachment(&self) {
         let original = self.gateway.container_id().await;
         let table = self.store.routing_table().await.unwrap();
-        // A retained route still works on the old attachment, but a replacement
-        // cannot inherit it unless its network passed validation.
         self.gateway
             .replace_gateway(&table, &BTreeSet::new(), &self.gateway.container_spec())
             .await
@@ -68,8 +66,6 @@ impl Scenario {
         assert_eq!(self.gateway.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
 
-        // Simulate process termination after the old gateway was stopped. Recovery
-        // uses Docker names and the persisted snapshot, not in-memory state.
         let configuration = self.gateway.caddy.get("/config/").await.unwrap();
         tokio::fs::write(
             self.directory
@@ -140,7 +136,6 @@ impl Scenario {
             .stage_routes(&unavailable, &app.spec().routes, true, None)
             .await
             .unwrap();
-        // Model an accepted route whose network subsequently disappeared.
         self.store
             .acknowledge_routes(&self.store.routing_table().await.unwrap())
             .await
@@ -188,7 +183,6 @@ impl Scenario {
             [] as [ValidatedRoute; 0]
         );
         assert_eq!(self.plain("one.example.test", "").await.status(), 404);
-        // Healthy applications can also restore/add routes while this app is broken.
         self.store
             .stage_routes(&self.first, &routes, true, None)
             .await
@@ -209,7 +203,6 @@ impl Scenario {
             .remove_network(&network)
             .await
             .unwrap();
-        // Restore the controller's specification before testing ordinary reloads.
         self.gateway.synchronize().await.unwrap();
     }
 }
@@ -227,7 +220,6 @@ async fn configuration_validation_runs_without_network_or_ports() {
     assert_eq!(host["RestartPolicy"]["Name"], "no");
     assert!(validation.get("NetworkingConfig").is_none());
     assert!(validation.get("ExposedPorts").is_none());
-    // Everything else keeps the gateway's hardening and mounts.
     assert_eq!(host["CapDrop"], spec["HostConfig"]["CapDrop"]);
     assert_eq!(host["Binds"], spec["HostConfig"]["Binds"]);
 }

@@ -23,8 +23,6 @@ impl<D: DockerApi> Controller<D> {
             Err(StoreError::NotFound) => return Ok(()),
             environment => environment?,
         };
-        // A deployment's job prerequisites start before it is promoted, so
-        // its prepared target's links stay open while it may still roll out.
         let mut granted = Vec::new();
         if !environment.delete_intent() {
             let prepared = self

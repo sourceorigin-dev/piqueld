@@ -460,14 +460,12 @@ impl Ingress {
     ) {
         let certificates = &self.certificates;
         let started = std::time::Instant::now();
-        // Planning changes nothing until its awaits finish, so dropping it is safe.
         let Some(due) = cancellation
             .run_until_cancelled(certificates.due(desired, now_ms))
             .await
         else {
             return;
         };
-        // Planning discovered the zones that saved challenge records live in.
         self.delete_leftover_challenges(now_ms).await;
         for due in due {
             let phase = if due.renewal {
@@ -489,8 +487,6 @@ impl Ingress {
                 }
                 Err(error) => {
                     tracing::warn!(certificate=%due.name, phase=%phase, error=format!("{error:#}"), "DNS-01 certificate failed; will retry with backoff");
-                    // Backoff starts when the attempt failed, which can be
-                    // minutes into the pass.
                     let failed_at_ms = now_ms.saturating_add(
                         i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX),
                     );
@@ -710,9 +706,6 @@ impl Ingress {
                     .filter(|found| found.record == Record::Txt(challenge.value.clone()))
                     .map(|found| found.id)
                     .collect(),
-                // A provider that can't or may not list, such as OVH without
-                // `manage_records`, leaves such a record behind. Any other
-                // failure is retried.
                 Err(error) if error.is_denied() => {
                     tracing::warn!(record=%challenge.name, error=format!("{error:#}"), "could not look for an ACME challenge record created without an ID; it is left in place");
                     Vec::new()
@@ -727,7 +720,6 @@ impl Ingress {
         journal.request().await?;
         provider.publish(dns.http(), &zone).await?;
         self.store.forget_acme_challenge(&challenge.name).await?;
-        // A record created at this name later starts without a backoff.
         self.certificates
             .challenge_backoff
             .lock()
@@ -772,7 +764,6 @@ impl Ingress {
                 .await?
                 .context("ACME order has no authorization")?;
             match authorization.status {
-                // A recent validation of this name is reused.
                 AuthorizationStatus::Valid => {}
                 AuthorizationStatus::Pending => {
                     let mut challenge = authorization
@@ -864,7 +855,6 @@ impl Ingress {
             .directory
             .join("acme")
             .join(format!("account-{}.json", &hash[..16]));
-        // Tests trust the test CA's root instead of the system roots.
         #[cfg(test)]
         let builder = match &certificates.acme_root {
             Some(root) => Account::builder_with_root(root)?,
@@ -935,10 +925,8 @@ mod tests {
             ("auth.staging.piquel.fr", "piquel.fr", "*.staging.piquel.fr"),
             ("pr-12.dev.piquel.fr", "piquel.fr", "*.dev.piquel.fr"),
             ("piquel.fr", "piquel.fr", "piquel.fr"),
-            // A delegated child zone cannot answer for its parent's wildcard.
             ("dev.piquel.fr", "dev.piquel.fr", "dev.piquel.fr"),
             ("a.dev.piquel.fr", "dev.piquel.fr", "*.dev.piquel.fr"),
-            // Wildcard routes, even of a zone's apex, use their own wildcard.
             ("*.piquel.fr", "piquel.fr", "*.piquel.fr"),
             ("*.dev.piquel.fr", "dev.piquel.fr", "*.dev.piquel.fr"),
         ] {
@@ -970,7 +958,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_stored_wildcard_keeps_serving_while_no_zone_is_known() {
-        // As after a restart whose zone discovery failed: no provider zones.
         let directory = tempfile::tempdir().unwrap();
         let certificates = Certificates::new(
             Dns::new(Vec::new()).unwrap(),
@@ -996,7 +983,6 @@ mod tests {
             certificates.loaded(),
             [("chain".to_owned(), "key".to_owned())]
         );
-        // Only the hostname without a stored certificate fails its route.
         assert_eq!(certificates.problem(&route("admin.piquel.fr")), None);
         assert_eq!(
             certificates.problem(&route("other.fr")).as_deref(),

@@ -5,7 +5,6 @@ use super::*;
 
 impl Scenario {
     async fn assert_public_routing(&self) {
-        // Deployment journaled the gateway start; a converged gateway records nothing.
         let history = self.store.events(None, None, 100).await.unwrap().items;
         assert!(history.iter().any(|event| event.kind == "action_succeeded"
             && event.phase.map(piqueld_core::Phase::as_str) == Some("ingress_start_gateway")));
@@ -189,8 +188,6 @@ impl Scenario {
     }
 
     async fn release_unhealthy_backend(&self) {
-        // Wait for a running but unhealthy replacement and prove the old
-        // backend keeps serving before releasing the health check.
         let next_name = piqueld_core::DockerServiceName::for_service(
             &self.first,
             &piqueld_core::ServiceName::parse("next").unwrap(),
@@ -283,7 +280,6 @@ impl Scenario {
         .map(Into::into)
         .collect();
         next.healthcheck = Some(piqueld_core::manifest::HealthCheck::Command {
-            // Keep the replacement unhealthy until the test explicitly releases it.
             command: vec!["test".into(), "-f".into(), "/tmp/ready".into()],
             interval_seconds: 3.into(),
             timeout_seconds: 1.into(),
@@ -417,8 +413,6 @@ impl Scenario {
             self.url("four.example.test")
         );
         self.client.get(probe).send().await.unwrap();
-        // Lines reach the daemon as Caddy writes them; stopping the counter
-        // flushes them.
         // wall-clock: Caddy writes access log lines on its own schedule and
         // signals nothing; give it time before the counter stops.
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -441,8 +435,6 @@ impl Scenario {
             .unwrap();
         let totals = &report.totals;
         assert_eq!((totals.page_views, totals.visitors), (3, 1), "{report:?}");
-        // Waiting for the certificate sent HEAD requests too; they count as
-        // requests, never as page views.
         assert!(totals.requests >= 4, "{report:?}");
         assert_eq!(report.routes.len(), 1);
         assert_eq!(
@@ -496,8 +488,6 @@ impl Scenario {
                     .scan(&CancellationToken::new())
                     .await
                     .unwrap();
-                // Re-enable may recreate Swarm endpoints; route application and
-                // public backend reachability are deliberately separate states.
                 if self.gateway.synchronize().await.is_ok()
                     && let Ok(response) = self.client.get(self.url("two.example.test")).send().await
                     && response.status().is_success()

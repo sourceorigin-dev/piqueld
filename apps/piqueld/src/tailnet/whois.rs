@@ -126,7 +126,6 @@ impl TailnetLookup for Whois {
             tracing::warn!(%address, "tailnet peer lookups are backed up");
             return Err(LookupTimedOut);
         };
-        // The lookup this waited for may have answered.
         if let Some(peer) = slot.current(fresh, asked) {
             return Ok(Some(peer));
         }

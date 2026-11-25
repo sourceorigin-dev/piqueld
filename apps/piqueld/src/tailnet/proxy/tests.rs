@@ -20,7 +20,6 @@ fn v4_header() -> Vec<u8> {
 
 #[tokio::test]
 async fn reads_ipv4_and_ipv6_clients_and_leaves_the_payload() {
-    // Client, then destination, addresses and ports, as the relays write them.
     assert_eq!(
         v4_header(),
         header(
@@ -42,7 +41,6 @@ async fn reads_ipv4_and_ipv6_clients_and_leaves_the_payload() {
         client.octets().as_slice(),
         &Ipv6Addr::LOCALHOST.octets(),
         &[0x9c, 0x40, 0x01, 0xbb],
-        // Trailing TLVs are skipped.
         &[0x04, 0x00, 0x01, 0x00],
     ]
     .concat();
@@ -61,7 +59,6 @@ async fn reads_ipv4_and_ipv6_clients_and_leaves_the_payload() {
 fn connections_are_attributed_to_their_owner() {
     let peer: SocketAddr = "127.0.0.1:40000".parse().unwrap();
     let listener: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-    // Columns: local, remote, state, queues, timer, retransmits, uid, timeout, inode.
     let line = |local: SocketAddr, remote: SocketAddr, state: &str, uid: u32, inode: u32| {
         let (local, remote) = (
             ProxyListener::proc_address(local),
@@ -77,7 +74,6 @@ fn connections_are_attributed_to_their_owner() {
     assert_eq!(ProxyListener::owner_in(&open, peer, listener), Some(1001));
     let elsewhere = "127.0.0.1:1".parse().unwrap();
     assert_eq!(ProxyListener::owner_in(&open, listener, elsewhere), None);
-    // A client that already closed is not vouched for, even with owner 0.
     let closed = table([
         line(listener, peer, "01", 1000, 7),
         line(peer, listener, "05", 0, 0),

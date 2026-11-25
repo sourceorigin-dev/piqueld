@@ -373,7 +373,6 @@ impl Telemetry {
             return;
         };
         if let Some(started) = hub.started.get() {
-            // The reader's final collection waits for its thread.
             let meter = started.meter.clone();
             #[expect(
                 clippy::let_underscore_must_use,

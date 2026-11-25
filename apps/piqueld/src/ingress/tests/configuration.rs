@@ -28,14 +28,11 @@ async fn each_listener_serves_only_its_own_routes() {
     ] {
         assert_eq!(hosts(&servers[https]), [host.to_owned()].into(), "{https}");
         assert_eq!(hosts(&servers[http]), [host.to_owned()].into(), "{http}");
-        // No other hostname completes TLS on this listener.
         assert_eq!(
             servers[https]["tls_connection_policies"][0]["match"]["sni"],
             json!([host])
         );
     }
-    // Applications reach the private listener over their networks, so only
-    // tailnet client addresses, set by edge peers' PROXY headers, complete TLS.
     let tailnet = json!({"ranges":["100.64.0.0/10", "fd7a:115c:a1e0::/48"]});
     assert_eq!(
         servers["private"]["tls_connection_policies"][0]["match"]["remote_ip"],
@@ -61,14 +58,11 @@ async fn each_listener_serves_only_its_own_routes() {
         servers["private_http"]["listener_wrappers"],
         json!([wrapper])
     );
-    // Private certificates come from DNS-01 only.
     assert_eq!(
         servers["private"]["automatic_https"],
         json!({"disable":true})
     );
 
-    // Without private ingress, private routes are served nowhere, never on
-    // the public listener.
     let configuration = ingress.build_configuration(
         &table,
         &ingress.exact_hostnames(&table).await.unwrap(),
@@ -92,7 +86,6 @@ async fn each_listener_serves_only_its_own_routes() {
 async fn exact_hostnames_win_over_wildcards_covering_them() {
     let (engine, ingress) = private_ingress().await;
     let hooks = Hostname::parse("hooks.example.com").unwrap();
-    // The website is reserved without being served by the gateway.
     let website = Hostname::parse("piqueld.example.com").unwrap();
     let reserved = [hooks.clone(), website];
     engine
@@ -132,9 +125,6 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
             .map(|route| route["match"][0].clone())
             .collect::<Vec<_>>()
     };
-    // The wildcard's probe, proxy and redirect leave out every exact
-    // hostname it covers, even one served on another listener or not by
-    // the gateway at all, but not deeper ones.
     let excluded = json!([{"host":[
         "hooks.example.com", "piqueld.example.com", "www.example.com", "admin.example.com"
     ]}]);
@@ -151,7 +141,6 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
             .iter()
             .all(|matcher| matcher.get("not").is_none())
     );
-    // Caddy obtains no certificate for it: DNS-01 does.
     let public = &servers["public"];
     assert_eq!(
         public["tls_connection_policies"][0]["match"]["sni"],
@@ -162,7 +151,6 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
             "hooks.example.com"
         ])
     );
-    // Caddy manages exact names a loaded wildcard certificate covers.
     assert_eq!(
         public["automatic_https"],
         json!({
@@ -172,7 +160,6 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
     );
     let wildcard = RouteHostname::parse("*.example.com").unwrap();
     assert!(ingress.dns01_hostnames(&table).contains(&wildcard));
-    // Through a tunnel, Cloudflare terminates its TLS.
     let (_engine, tunneled) = private_ingress().await;
     let tunneled = tunneled.with_tunnel(&tunnel::tunnel("c2VjcmV0"));
     assert!(!tunneled.dns01_hostnames(&table).contains(&wildcard));
@@ -197,13 +184,11 @@ async fn the_apps_node_forwards_to_the_private_listener_without_privileges() {
     let environment = spec["Env"].as_array().unwrap();
     assert!(environment.contains(&json!("TS_USERSPACE=true")));
     assert!(environment.contains(&json!("TS_HOSTNAME=piqueld-apps")));
-    // Without an auth key, the node logs in interactively.
     assert!(
         !environment
             .iter()
             .any(|value| value.as_str().unwrap().starts_with("TS_AUTHKEY"))
     );
-    // A replaced auth key replaces the container, which reads it again.
     let hash = |key: &str| {
         let config = PrivateIngressConfig {
             enabled: true,
@@ -227,7 +212,6 @@ async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
     let edge = edge();
     let build = |ingress: &Ingress| ingress.build_configuration(&table, &[], Some(&edge), None);
 
-    // Without counting, nothing is logged or tagged.
     let configuration = build(&ingress);
     assert!(configuration.get("logging").is_none());
     let servers = &configuration["apps"]["http"]["servers"];
@@ -245,7 +229,6 @@ async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
             servers[server]["logs"],
             json!({"default_logger_name":"traffic"})
         );
-        // The probe endpoint isn't tagged, so it isn't counted.
         let routes = servers[server]["routes"].as_array().unwrap();
         assert_eq!(routes[0]["handle"][0]["handler"], "static_response");
         let handle = routes[1]["handle"].as_array().unwrap();
@@ -259,7 +242,6 @@ async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
         );
         assert_eq!(handle[3]["handler"], "reverse_proxy");
     }
-    // HTTP servers only redirect, so they log nothing.
     assert!(servers["public_http"].get("logs").is_none());
     let logs = &configuration["logging"]["logs"];
     assert_eq!(
@@ -289,8 +271,6 @@ async fn the_webhook_hostname_forwards_only_its_webhook_path_to_the_daemon() {
         json!([hooks.as_str()])
     );
     let routes = public["routes"].as_array().unwrap();
-    // The webhook path goes to the daemon's socket, bounded like the
-    // daemon's own limit; every other path reaches the final 404.
     assert_eq!(routes.len(), 2);
     assert_eq!(
         routes[0]["match"],
@@ -314,18 +294,14 @@ async fn the_webhook_hostname_forwards_only_its_webhook_path_to_the_daemon() {
         listener.local_addr().unwrap().as_pathname(),
         Some(path.as_path())
     );
-    // Only the daemon's user, which the gateway runs as, may connect.
     assert_eq!(
         std::fs::metadata(&path).unwrap().permissions().mode() & 0o077,
         0
     );
-    // Without managed ingress the socket is still served, for another proxy
-    // running as the daemon's user, but the gateway routes nothing to it.
     drop(listener);
     let disabled = engine.ingress(false).with_webhooks(Some(hooks));
     assert!(disabled.bind_webhooks().await.unwrap().is_some());
     assert_eq!(disabled.webhook_hostname(), None);
-    // Without a webhook hostname, there is no socket.
     let none = engine.ingress(true);
     assert!(none.bind_webhooks().await.unwrap().is_none());
 }
@@ -350,8 +326,6 @@ async fn the_dashboard_hostname_is_a_private_host_forwarded_to_the_daemon() {
         servers["public"]["tls_connection_policies"][0]["match"]["sni"],
         json!([])
     );
-    // The gateway names each request's tailnet client, since one upstream
-    // connection carries many.
     let route = &servers["private"]["routes"][0];
     assert_eq!(route["match"], json!([{"host":[dashboard.as_str()]}]));
     assert_eq!(
@@ -362,12 +336,10 @@ async fn the_dashboard_hostname_is_a_private_host_forwarded_to_the_daemon() {
         route["handle"][0]["headers"]["request"]["set"]["X-Forwarded-For"],
         json!(["{http.request.remote.host}"])
     );
-    // Its certificate comes from DNS-01, like private routes'.
     assert_eq!(
         ingress.dns01_hostnames(&RoutingTable::new()),
         [dashboard.clone().into()].into()
     );
-    // Until the private listener runs, it is served nowhere.
     let configuration = ingress.build_configuration(&RoutingTable::new(), &[], None, None);
     assert!(configuration["apps"]["http"]["servers"]["private"].is_null());
 
@@ -383,7 +355,6 @@ async fn the_dashboard_hostname_is_a_private_host_forwarded_to_the_daemon() {
         socket.listener.local_addr().unwrap().as_pathname(),
         Some(path.as_path())
     );
-    // Only the daemon's user, which the gateway runs as, may connect.
     assert_eq!(
         std::fs::metadata(&path).unwrap().permissions().mode() & 0o077,
         0

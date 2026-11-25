@@ -81,7 +81,6 @@ async fn only_unserved_or_stale_ports_are_taken_over() {
     let bind = || tokio::net::TcpListener::bind("127.0.0.1:0");
     let listener = bind().await.unwrap();
     let live = listener.local_addr().unwrap();
-    // Its daemon is gone: nothing listens there any more.
     let stale = bind().await.unwrap().local_addr().unwrap();
     let config = format!(
         r#"{{"TCP":{{
@@ -102,7 +101,6 @@ async fn only_unserved_or_stale_ports_are_taken_over() {
     let refused = check(7001).await.unwrap_err().to_string();
     assert!(refused.contains("still accepts connections"), "{refused}");
     check(7002).await.unwrap();
-    // TEST-NET-1 never answers: a timeout or an unreachable network.
     let unreachable: ServeConfig =
         serde_json::from_str(r#"{"TCP":{"7004":{"TCPForward":"192.0.2.1:7"}}}"#).unwrap();
     let refused = Tailscaled::check_takeover(7004, unreachable.port(7004))

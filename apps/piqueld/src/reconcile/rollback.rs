@@ -41,7 +41,6 @@ impl<D: DockerApi> Controller<D> {
                 tracing::warn!(rollback_id = %rollback.id, "rollout failed; rolling back");
                 return Ok(());
             }
-            // No longer the latest or running: failing it reports that.
             Err(RollbackError::Store(StoreError::IllegalTransition)) => {
                 return self.fail_operation(operation, error).await;
             }
@@ -100,8 +99,6 @@ impl<D: DockerApi> Controller<D> {
             .await?
             .ok_or(RollbackError::NothingToRestore)?;
         let in_use = self.images_in_use().await;
-        // Bounded like a restore's: a hung pull would hold cleanup off, and
-        // the failed operation running.
         tokio::time::timeout(
             self.prepare_timeout,
             in_use.ensure(&*self.docker, target.sources()),

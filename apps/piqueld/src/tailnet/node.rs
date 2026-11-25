@@ -90,14 +90,12 @@ impl Node {
         let dns_name = status
             .dns_name()
             .context("logged-in tailnet node reported no DNS name")?;
-        // Issue the certificate now, so the first visitor does not wait for it.
         let expires_at_ms = tailscaled.certificate_expiry_ms(&dns_name).await?;
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .context("failed to bind the tailnet forwarding listener")?;
         let address = listener.local_addr()?;
         let https_port = config.tailscale.https_port.get();
-        // A dedicated node's entries are its own leftovers, overwritten below.
         if matches!(daemon, Daemon::Shared) {
             Tailscaled::check_takeover(https_port, tailscaled.serving(https_port).await?).await?;
         }
@@ -111,8 +109,6 @@ impl Node {
             ])
             .await
             .context("failed to forward the tailnet node's HTTPS port")?;
-        // `serve` overwrites silently, so another daemon starting at the same
-        // time may have replaced the forward since the check.
         ensure!(
             tailscaled.serving(https_port).await? == PortUse::Forwarded(address),
             "another process took tailnet HTTPS port {https_port} over while piqueld started; stop it or set another tailscale.https_port"
@@ -177,8 +173,6 @@ impl Node {
             .auth_key_file
             .as_ref()
             .map(|file| format!("--auth-key=file:{}", file.path().display()));
-        // `--reset` makes the flags the node's complete preferences, so state
-        // written by older versions or other tools never blocks `up`.
         let mut up = vec!["up", "--reset", &hostname];
         up.extend(auth_key.as_deref());
         tokio::select! {
@@ -192,7 +186,6 @@ impl Node {
     /// are forwarded at debug level. It shares piqueld's process group, so
     /// terminal interrupts stop both, and is killed when piqueld drops it.
     async fn spawn(dir: &Path, socket: &Path) -> Result<Child> {
-        // A stale socket from a killed daemon would look ready before it is.
         piqueld_config::directories::remove_file(socket)
             .await
             .context("failed to remove the stale tailscaled socket")?;
@@ -202,7 +195,6 @@ impl Node {
             .arg("--no-logs-no-support")
             .arg(format!("--statedir={}", dir.display()))
             .arg(format!("--socket={}", socket.display()))
-            // Keeps tailscaled's log configuration out of the home directory.
             .env("TS_LOGS_DIR", dir)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -345,7 +337,6 @@ impl Monitor {
         tokio::select! {
             () = cancellation.cancelled() => Ok(()),
             exit = daemon.wait() => {
-                // Shutdown signals reach tailscaled too, and may win the race.
                 if tokio::time::timeout(SHUTDOWN_RACE, cancellation.cancelled()).await.is_ok() {
                     return Ok(());
                 }
@@ -454,7 +445,6 @@ mod tests {
     #[tokio::test]
     async fn stalled_refresh_does_not_block_shutdown_or_child_exit() {
         for child_exits in [false, true] {
-            // EOF lets the test end the child without signalling other processes.
             let mut daemon = Command::new("sh")
                 .args(["-c", "read ignored"])
                 .stdin(Stdio::piped())
