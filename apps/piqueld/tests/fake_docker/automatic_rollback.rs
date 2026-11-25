@@ -64,7 +64,6 @@ async fn a_failed_rollout_restores_the_last_successful_deployment() {
             .iter()
             .any(|event| event.kind == "rollback_requested")
     );
-    // It runs the first deployment's image again, without its job.
     harness
         .docker
         .fail_convergence
@@ -83,7 +82,6 @@ async fn a_failed_rollout_restores_the_last_successful_deployment() {
         )
     );
     assert_eq!(harness.started_jobs().await, ["migrate", "migrate"]);
-    // Repair maintains the rollback, never the failed deployment.
     harness.scan().await;
     assert_eq!(harness.latest(environment).await.id, rollback.id);
 }

@@ -111,7 +111,6 @@ async fn fresh_database_persists_resolved_state_and_deletion_intent() {
         reopened.operation(&deleted.id).await,
         Err(StoreError::NotFound)
     ));
-    // Its events stay in the application's history until the application is deleted.
     let events = reopened
         .events(Some(&environment), None, 100)
         .await
@@ -223,15 +222,11 @@ async fn list_quarantines_corrupt_rows_and_get_stays_fail_closed() {
         .await
         .expect_err("`get` should be rejected");
 
-    // A corrupt row inside a full page must not suppress the pagination
-    // cursor: quarantined rows still consume page slots, so the surviving
-    // applications stay reachable on later pages.
     let third = application_named("app-persist-03", "gallery");
     let third = save(&store, &third).await.environment_id;
     let fourth = application_named("app-persist-04", "wiki");
     let fourth = save(&store, &fourth).await.environment_id;
 
-    // The corrupt row consumes one slot, but must not hide later applications.
     let ids = |page: &piqueld_store::EnvironmentPage| {
         page.items
             .iter()
@@ -336,7 +331,6 @@ async fn history_pages_remain_application_scoped_and_follow_id_cursors() {
     }
     expected_deployments.sort_unstable_by(|left, right| right.cmp(left));
 
-    // Equal creation times must not change the API's ID-based order or cursor.
     sqlx::query("UPDATE deployments SET created_at_ms=1")
         .execute(&mut sqlite::connect(&database).await)
         .await

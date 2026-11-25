@@ -37,7 +37,6 @@ async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
         manifest.spec.environments["production"].visibility,
         Visibility::Private
     );
-    // The block declares production, so it stays once back to the default.
     set(Visibility::Public, 2).await;
     let manifest = api
         .client
@@ -303,8 +302,6 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
         force: true,
         deploy: false,
     };
-    // Repository-backed configuration is edited like any other. Nothing was
-    // read from the repository yet, so nothing counts as edited.
     let edit = edit_web(ServiceEdit::Replicas(2.into()));
     api.client
         .edit_application(id, &edit, &options)

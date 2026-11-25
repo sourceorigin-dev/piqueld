@@ -38,7 +38,6 @@ struct Shop {
 impl Shop {
     async fn new(manifest: &str) -> Self {
         let harness = ControllerHarness::new().await;
-        // Boxed: saving holds a whole manifest across awaits.
         let saved = Box::pin(
             harness
                 .applications()
@@ -204,13 +203,10 @@ async fn promotes_the_source_release_rendered_for_the_target_without_building() 
             ))
         ));
     };
-    // A stale revision is refused first, even before the source deployed.
     stale().await;
     let built = shop.deploy_staging().await;
     let release = shop.release(&built.id).await;
     let image = shop.web(&shop.staging).await.1;
-    // Before its first promotion, production shows the manifest the
-    // release its source runs would deploy.
     let next = shop
         .harness
         .store
@@ -228,10 +224,7 @@ async fn promotes_the_source_release_rendered_for_the_target_without_building() 
         .unwrap();
     assert_eq!(detail.manifest, Some(next));
     let pulls = shop.harness.pulls().await;
-    // Cleanup or an operator removed the pulled image meanwhile.
     shop.harness.docker.local_images.lock().await.clear();
-    // And before the image is pulled again, like a malformed idempotency
-    // key.
     stale().await;
     let generation = shop.harness.store.get(&shop.production).await;
     let generation = generation.unwrap().application.generation;
@@ -308,8 +301,6 @@ async fn the_release_is_pinned_at_acceptance() {
     };
     let accepted = promote("promote-first").await.unwrap();
 
-    // The tag now resolves to another image, so staging's next deployment
-    // records another release. Running it also runs the promotion.
     shop.harness
         .docker
         .registry
@@ -344,7 +335,6 @@ async fn the_release_is_pinned_at_acceptance() {
         ),
         PromotionError::SourceChanged { deployment, .. } if deployment == first.id
     ));
-    // Repeating the accepted request returns its response all the same.
     let repeated = promote("promote-first").await.unwrap();
     assert_eq!(
         repeated.operation.operation_id,
@@ -442,8 +432,6 @@ async fn preconditions_are_checked_before_anything_is_captured() {
         .unwrap();
     assert_eq!(plan.release.unwrap().secrets, expected);
 
-    // Unhealthy right now, though its deployment succeeded; then healthy,
-    // but running another image than its release's.
     shop.harness.docker.observed.lock().await.services[0].convergence = Convergence::Degraded;
     assert!(matches!(
         refusal(shop.promote_current().await),
@@ -517,8 +505,6 @@ async fn generated_secrets_are_stored_with_the_accepted_promotion() {
             .collect::<Vec<_>>(),
         ["session"]
     );
-    // Planning the same release again changes nothing: services keep the
-    // secret version they run.
     let plan = applications
         .plan_release(&shop.production, &current)
         .await
@@ -582,7 +568,6 @@ async fn a_promoted_environment_never_builds_a_deployment_requested_before() {
     shop.declare_promoted().await;
     assert_eq!(source().await, None);
 
-    // It fails before preparing anything, then the environment is promoted.
     shop.harness
         .docker
         .incompatible_swarm
@@ -636,7 +621,6 @@ async fn a_promoted_environment_never_rolls_out_a_build_prepared_before() {
     let mut shop = Shop::tracking().await;
     shop.harness.set_convergence_timeout(Duration::from_secs(1));
     let requested = shop.deploy_production().await;
-    // It prepares, then fails before rolling out.
     shop.harness
         .docker
         .fail_observations

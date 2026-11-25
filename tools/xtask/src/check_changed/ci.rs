@@ -163,7 +163,6 @@ impl Recipe {
             Self::Boundary => &["just", "boundary"],
             Self::Test => &["just", "test"],
             Self::DocTest => &["just", "doc-test"],
-            // xtask inherits the workspace's `rust-version`.
             Self::Msrv => &[
                 "cargo",
                 concat!("+", env!("CARGO_PKG_RUST_VERSION")),
@@ -196,7 +195,6 @@ impl Recipe {
             Self::DocTest => Scoping::Crates {
                 libraries_only: true,
             },
-            // It checks the files generated from these crates.
             Self::OpenapiCheck => Scoping::Only(&["piqueld", "piquelctl"]),
             Self::FmtCheck
             | Self::LintCi

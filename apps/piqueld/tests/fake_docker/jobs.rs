@@ -51,12 +51,8 @@ async fn job_dependencies_converge_before_migration_and_other_services() {
         .slow_services
         .lock()
         .await
-        // Each dependency waits about 1.75s of backed-off polls, with room
-        // for journal I/O. Their combined wait still exceeds the three-second
-        // budget.
         .extend([("storage".into(), 5), ("db".into(), 5)]);
     let mut input = manifest_with_job_dependencies();
-    // A prerequisite's own job must succeed before that service is started.
     let mut storage_job = input.spec.jobs[0].clone();
     storage_job.name = "initialize-storage".into();
     storage_job.service = "storage".into();
@@ -193,7 +189,6 @@ async fn failed_migration_rolls_back_prerequisites_and_repairs_active_services()
                 .find(|service| service.labels[SERVICE_LABEL] == name)
                 .map(|service| service.replicas)
         };
-        // The job ran against the updated prerequisites.
         assert_eq!(
             replicas(&*harness.docker.observed.lock().await, "db"),
             Some(2)
@@ -206,8 +201,6 @@ async fn failed_migration_rolls_back_prerequisites_and_repairs_active_services()
                 }
             }
         }
-        // The failed deployment ended, so repair returns prerequisites to
-        // the active target, alongside the other active services.
         for _ in 0..8 {
             assert_eq!(
                 harness.scan_result(&operation).await,
@@ -267,7 +260,6 @@ async fn a_deployment_blocked_by_a_conflict_rolls_back_its_job_prerequisites() {
         );
     }
 
-    // A foreign service takes the name of the one the deployment adds.
     let foreign = harness.add_foreign_service(&operation, "extra").await;
     for _ in 0..8 {
         harness.scan().await;
@@ -275,7 +267,6 @@ async fn a_deployment_blocked_by_a_conflict_rolls_back_its_job_prerequisites() {
     assert_eq!(harness.owned_services().await, ["other", "web"]);
     assert_eq!(harness.started_jobs().await, [] as [String; 0]);
 
-    // Once the conflict is resolved, the deployment rolls out after all.
     harness.remove_foreign_service(&foreign).await;
     *harness.docker.conflicting_job.lock().await = None;
     harness.finish(&operation).await;
@@ -314,8 +305,6 @@ async fn job_prerequisites_keep_the_link_network_of_a_new_import() {
             service: "web".into(),
             environment: None,
         });
-    // The job fails as a conflict planning can't see, so the deployment
-    // may still roll out while scans repair the active target.
     *harness.docker.conflicting_job.lock().await = Some("migrate".into());
     let operation = harness.apply(replacement, None).await;
     let network = piqueld_core::DockerNetworkName::for_link(&operation.environment_id, &auth);
@@ -364,7 +353,6 @@ async fn a_conflict_after_the_job_succeeded_keeps_web_stopped(
     replacement.spec.services.push(extra);
     harness.docker.hold_jobs.store(true, Ordering::SeqCst);
     let operation = harness.apply(replacement, None).await;
-    // The conflict appears while the job runs.
     let conflict = async {
         harness.wait_for_job_starts(1).await;
         let foreign = harness.add_foreign_service(&operation, "extra").await;
@@ -394,7 +382,6 @@ async fn jobs_run_while_the_services_they_stop_are_stopped() {
         harness.finish(&first).await;
         let operation = harness.apply(replacement, None).await;
         harness.finish(&operation).await;
-        // Web stopped before the job and restarted with the rollout.
         assert_eq!(
             *harness.docker.job_starts.lock().await,
             [JobStart {
@@ -427,7 +414,6 @@ async fn a_failed_job_restarts_web_once_its_run_stopped(replacement: Application
         .fail_job_cleanup
         .store(true, Ordering::SeqCst);
     let operation = harness.apply(replacement, None).await;
-    // While the run may still be running, web stays stopped.
     for _ in 0..3 {
         assert_eq!(
             harness.scan_result(&operation).await,
@@ -460,7 +446,6 @@ async fn resumed_job_keeps_the_deadline_of_its_start() {
         shutdown.cancel();
     });
     scanned.unwrap();
-    // The daemon stays down past the run's deadline.
     for run in harness.docker.jobs.lock().await.values_mut() {
         run.deadline = std::time::SystemTime::now() - Duration::from_secs(1);
     }
@@ -477,7 +462,6 @@ async fn before_rollout_jobs_gate_service_changes_and_record_output() {
     let harness = ControllerHarness::new().await;
     let mut input = migration();
     let first = harness.apply(input.clone(), None).await;
-    // A run of a job an earlier manifest declared is removed before jobs start.
     let stored = harness.store.get(&first.environment_id).await.unwrap();
     let earlier = manifest_with_jobs(&["seed"], 300)
         .validate()
@@ -491,7 +475,6 @@ async fn before_rollout_jobs_gate_service_changes_and_record_output() {
         JobRunState::of(&leftover, 0),
     );
     harness.finish(&first).await;
-    // The first job sees its network and volume but no service yet.
     assert_eq!(
         *harness.docker.job_starts.lock().await,
         [JobStart {
@@ -515,7 +498,6 @@ async fn before_rollout_jobs_gate_service_changes_and_record_output() {
 
     assert!(!run.log_truncated);
 
-    // A failing job fails the deployment before the running service changes.
     harness.docker.job_exit.store(3, Ordering::SeqCst);
     harness
         .docker
@@ -543,7 +525,6 @@ async fn before_rollout_jobs_gate_service_changes_and_record_output() {
         (run.exit_code, run.state),
         (Some(3), piqueld_core::api::BuildState::Failed)
     );
-    // Output dropped by Docker is flagged, after Docker's explanation is kept.
     assert!(run.log_truncated);
     assert_eq!(output, "migrated\npiqueld: task: non-zero exit (3)\n");
     assert!(harness.docker.jobs.lock().await.is_empty());
@@ -595,7 +576,6 @@ async fn failed_job_keeps_an_unchanged_application_degraded() {
         harness.scan_result(&redeploy).await,
         (OperationState::Failed, Some("job_failed".into()))
     );
-    // Services already match the target, but the deployment still failed.
     harness.scan_result(&redeploy).await;
     let status = harness.store.status(&first.environment_id).await.unwrap();
     assert_eq!(status.state, piqueld_store::ApplicationState::Degraded);
@@ -613,8 +593,6 @@ async fn retried_operation_skips_jobs_that_already_succeeded() {
         harness.scan_result(&operation).await,
         (OperationState::Failed, Some("ownership_conflict".into()))
     );
-    // Planning cannot see the conflict, so the next scan retries the same
-    // operation, which runs only the job that has not succeeded yet.
     *harness.docker.conflicting_job.lock().await = None;
     harness.finish(&operation).await;
     assert_eq!(harness.started_jobs().await, ["migrate", "seed"]);
@@ -677,7 +655,6 @@ async fn shutdown_lets_a_running_job_record_its_interruption() {
     result.unwrap();
     let (run, _) = harness.latest_run(&operation.environment_id).await;
     assert_eq!(run.state, piqueld_core::api::BuildState::Interrupted);
-    // The run is kept for the retried deployment to resume.
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
 }
 
@@ -730,7 +707,6 @@ async fn restarted_daemon_resumes_a_running_job() {
         shutdown.cancel();
     });
     scanned.unwrap();
-    // Shutdown leaves the run in Docker for the restarted daemon.
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
 
     harness.reopen().await;
@@ -754,8 +730,6 @@ async fn superseded_job_run_is_stopped() {
         harness.apply(manifest(), None).await
     });
     scanned.unwrap();
-    // The replacement deployment declares no jobs, so the superseded
-    // operation must stop its own run.
     assert!(harness.docker.jobs.lock().await.is_empty());
     let (run, _) = harness.latest_run(&first.environment_id).await;
     assert_eq!(run.state, piqueld_core::api::BuildState::Interrupted);
@@ -774,7 +748,6 @@ async fn image_cleanup_waits_for_a_running_operation() {
     let (scanned, ()) = tokio::join!(harness.controller.scan(&cancellation), async {
         harness.wait_for_job_starts(1).await;
         assert!(!harness.controller.clean_images().await.unwrap());
-        // Superseded, the operation stops its job and finishes.
         harness.apply(manifest(), None).await;
     });
     scanned.unwrap();
@@ -818,8 +791,6 @@ async fn timed_out_job_cleanup_retries_after_restart_without_rerunning() {
         (OperationState::Failed, Some("job_timeout".into()))
     );
     let failed = harness.operation(&operation.id).await;
-    // Repeated scans retry stopping, without changing the job's failure or
-    // starting another run while Docker is unavailable.
     harness.scan().await;
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
     assert_eq!(harness.operation(&operation.id).await, failed);
@@ -890,8 +861,6 @@ async fn pending_cleanup_blocks_the_next_job() {
     );
     assert_eq!(harness.started_jobs().await, ["migrate"]);
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
-    // A still-failing cleanup on a due deployment retry must refresh the
-    // deployment's backoff, while keeping the successful job skipped.
     harness.expire_backoff(&operation).await;
     assert_eq!(
         harness.scan_result(&operation).await,
@@ -920,8 +889,6 @@ async fn unknown_job_status_keeps_the_run_for_a_retry() {
     let operation = harness
         .apply(manifest_with_jobs(&["migrate"], 1), None)
         .await;
-    // Docker never reported the status, so the outcome is unknown: the
-    // failure is transient and the run keeps going.
     assert_eq!(
         harness.scan_result(&operation).await,
         (OperationState::Failed, Some("docker_request_failed".into()))
@@ -930,7 +897,6 @@ async fn unknown_job_status_keeps_the_run_for_a_retry() {
     assert_eq!(run.state, piqueld_core::api::BuildState::Interrupted);
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
 
-    // The retry resumes the run instead of starting it again.
     harness
         .docker
         .fail_job_status
@@ -949,8 +915,6 @@ async fn recorded_success_survives_a_crash_before_cleanup() {
     let mut harness = ControllerHarness::new().await;
     let operation = harness.apply(migration(), None).await;
     let held = harness.docker.hold_job_cleanup.lock().await;
-    // The success is stored before the run is removed; dropping the scan
-    // there is a crash.
     let succeeded = tokio::time::timeout(
         Duration::from_secs(10),
         harness.store.wait_until(async || {
@@ -993,8 +957,6 @@ async fn retry_reruns_a_failed_run_left_in_place() {
         (OperationState::Failed, Some("job_failed".into()))
     );
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
-    // The failed run's outcome is recorded, so retrying the operation starts
-    // a new run.
     harness.docker.job_exit.store(0, Ordering::SeqCst);
     harness
         .docker
@@ -1031,7 +993,6 @@ async fn job_outcome_survives_output_and_cleanup_failures() {
     );
     assert_eq!(harness.docker.jobs.lock().await.len(), 1);
     assert_eq!(harness.started_jobs().await, ["migrate"]);
-    // A periodic scan removes the leftover without another deployment.
     harness
         .docker
         .fail_job_cleanup

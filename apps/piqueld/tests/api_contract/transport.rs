@@ -6,7 +6,6 @@ use super::*;
 #[tokio::test]
 async fn typed_client_exercises_the_lifecycle_over_tcp_and_a_unix_socket() {
     for unix in [false, true] {
-        // Each transport gets a daemon of its own, so both create `notes`.
         let temp = tempfile::tempdir().expect("temporary directory");
         let daemon = router(state(&temp).await, FakeAuth);
         let server = if unix {
@@ -245,8 +244,6 @@ async fn method_not_allowed_advertises_only_the_matched_route_methods() {
     let temp = tempfile::tempdir().expect("temporary directory");
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
 
-    // The Allow header advertises only the methods registered for the matched
-    // route; Axum serves HEAD automatically for every GET route.
     for (method, path, allowed) in [
         (Method::PUT, "/api/v1/applications", "GET, HEAD, POST"),
         (
@@ -375,8 +372,6 @@ async fn tcp_login_uses_canonical_origin_behind_https_proxy() {
         vec!["daemon.example.ts.net".into()],
     ))
     .await;
-    // A TLS proxy forwards an ordinary HTTP request, retaining the browser's
-    // HTTPS Origin. Its upstream Host may preserve the name or use localhost.
     for (host, browser_origin, site, expected_error) in [
         (
             "daemon.example.ts.net:8443",
@@ -426,7 +421,6 @@ async fn tcp_login_uses_canonical_origin_behind_https_proxy() {
         let mut headers = vec![
             ("host", host),
             ("sec-fetch-site", site),
-            // Forwarded headers must neither be required nor override policy.
             ("x-forwarded-host", "attacker.example"),
             ("x-forwarded-proto", "http"),
         ];
@@ -449,9 +443,6 @@ async fn tcp_login_uses_canonical_origin_behind_https_proxy() {
             serde_json::from_value::<piqueld_core::auth::Ceremony>(response.json()).unwrap();
         }
     }
-    // The browser trust policy runs before authentication, so an untrusted
-    // host learns nothing about the route's credentials. Like every API
-    // response, the refusal is never cached.
     let response = server
         .send(
             Method::GET,
@@ -468,8 +459,6 @@ async fn tcp_login_uses_canonical_origin_behind_https_proxy() {
 async fn tcp_rejects_cross_site_mutations_without_creating_deployments() {
     let temp = tempfile::tempdir().unwrap();
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
-    // Apply is a real POST handler, so successful controls prove the
-    // middleware allows same-origin and non-browser clients through.
     for (headers, expected) in [
         (
             vec![("sec-fetch-site", "cross-site")],

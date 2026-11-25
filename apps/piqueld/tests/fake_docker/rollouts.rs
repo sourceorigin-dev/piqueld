@@ -41,7 +41,6 @@ async fn assert_active_repair(docker: &FakeDocker, id: &EnvironmentId) {
 async fn image_resolution_repairs_a_single_tag_flip_through_a_retry() {
     let docker = FakeDocker::default();
     docker.arm_tag_flips(1).await;
-    // Pulling a pinned reference leaves the flip armed.
     let pinned = format!("ghcr.io/example/notes@sha256:{}", "c".repeat(64));
     assert_eq!(docker.resolve_image(&pinned).await.unwrap(), pinned);
 
@@ -328,7 +327,6 @@ async fn health_is_degraded_while_an_expected_service_is_missing() {
         .observe(&operation.environment_id)
         .await
         .unwrap();
-    // Only an unexpected, converged service runs; the target's is missing.
     observed.services[0].name = "unexpected".into();
 
     harness
@@ -588,8 +586,6 @@ async fn convergence_timeout_closes_the_waiting_action_as_failed() {
         .docker
         .stall_convergence
         .store(true, Ordering::SeqCst);
-    // The deadline covers network, volume and service creation before the wait
-    // starts. Leave headroom so a loaded runner still reaches the waiting action.
     harness.set_convergence_timeout(Duration::from_secs(3));
     let created = harness.create().await;
     harness.scan().await;
@@ -680,7 +676,6 @@ async fn a_service_removed_while_waiting_for_it_fails_the_attempt() {
 
 #[tokio::test]
 async fn dependents_roll_out_once_their_dependencies_converge() {
-    // `worker` is independent and sorts after the dependent `server`.
     let rollout = deploy_dependents(
         &[("db", &[]), ("server", &["db"]), ("worker", &[])],
         &[("db", 3)],
@@ -703,8 +698,6 @@ async fn dependents_roll_out_once_their_dependencies_converge() {
 
 #[tokio::test]
 async fn each_dependency_gets_the_full_convergence_timeout() {
-    // Each link converges in about 1.75s of backed-off polls: well within
-    // the 4s timeout alone, but the chain as a whole takes longer.
     let rollout = deploy_dependents(
         &[("db", &[]), ("api", &["db"]), ("web", &["api"])],
         &[("db", 5), ("api", 5), ("web", 5)],
@@ -770,7 +763,6 @@ async fn git_deploy_prepares_before_rollout_and_supersedes_pending_requests() {
     assert_eq!(accepted.operation_id, replay.operation_id);
     let operation = harness.operation(&accepted.operation_id).await;
     harness.finish(&operation).await;
-    // It prepared again, and reused the image of the unchanged commit.
     assert_eq!(harness.pulls().await, pulls);
     input.spec.services[0].source = fixture.failing_source();
     let failed = harness.apply(input, Some(1)).await;
@@ -992,7 +984,6 @@ async fn restoring_a_deployment_runs_its_image_again_without_jobs() {
             .to_string()
     };
     let original = image().await;
-    // The tag now resolves to another image.
     harness
         .docker
         .registry
@@ -1009,7 +1000,6 @@ async fn restoring_a_deployment_runs_its_image_again_without_jobs() {
     assert_ne!(image().await, original);
     assert_eq!(harness.started_jobs().await, ["migrate", "migrate"]);
 
-    // Cleanup or an operator removed the image meanwhile.
     harness.docker.local_images.lock().await.clear();
     let pulls = harness.pulls().await;
     let accepted = harness
@@ -1046,7 +1036,6 @@ async fn an_unreachable_build_machine_fails_the_deployment_as_builder_unavailabl
     assert_eq!(failure.state, OperationState::Failed);
     assert_eq!(failure.phase, Some(piqueld_core::Phase::BuildGit));
     assert_eq!(failure.error_code.as_deref(), Some("builder_unavailable"));
-    // Nothing was built, so the output doesn't say a build failed.
     let build = harness.builds(&deployment.environment_id).await.remove(0);
     let output = harness
         .store

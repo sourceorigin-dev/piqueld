@@ -56,7 +56,6 @@ impl Archive {
         let staging = self.dist.join(&self.name);
         fs::create_dir_all(&staging).with_context(|| format!("create {}", staging.display()))?;
         for (from, name) in &self.files {
-            // Keeps the binaries' executable mode.
             fs::copy(from, staging.join(name))
                 .with_context(|| format!("copy {}", from.display()))?;
         }
@@ -102,8 +101,6 @@ pub(crate) fn run(workspace: &Workspace) -> Result<ExitCode> {
         .args(["build", "--release", "--locked", "--target", TARGET])
         .args(["--package", "piqueld", "--package", "piquelctl"])
         .args(["--bin", "piqueld", "--bin", "piquelctl"])
-        // The daemon's feature. `piqueld/embedded-ui` would name the feature
-        // of its dev-dependency on itself, which this build leaves out.
         .args(["--features", "embedded-ui"])
         .status()
         .context("run cargo build")?;

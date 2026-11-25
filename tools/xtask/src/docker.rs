@@ -285,7 +285,6 @@ impl Engine {
             Ok(Err(error)) => return Err(error),
             Err(_) => format!("{what} in container {container} was not ready within 60 seconds"),
         };
-        // The engine may be what stalled, so reading the output is bounded too.
         if tokio::time::timeout(LOGS_TIMEOUT, self.print_logs(container))
             .await
             .is_err()

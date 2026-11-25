@@ -28,8 +28,6 @@ struct Boundary {
 const BOUNDARIES: [Boundary; 6] = [
     Boundary {
         package: "piqueld-core",
-        // The client and dashboard build it, so its build and development
-        // dependencies count too.
         edges: "all",
         forbidden: &[
             "axum",
@@ -44,8 +42,6 @@ const BOUNDARIES: [Boundary; 6] = [
     },
     Boundary {
         package: "piqueld-client",
-        // It builds for wasm32 and is published, so its build and development
-        // dependencies count too; its server framework is checked below.
         edges: "all",
         forbidden: &[
             "bollard",
@@ -53,7 +49,6 @@ const BOUNDARIES: [Boundary; 6] = [
             "leptos",
             "sqlx",
             "sqlx-core",
-            // Every workspace crate but `piqueld-core` and `piqueld-probe`.
             "piquelctl",
             "piqueld",
             "piqueld-build",
@@ -68,7 +63,6 @@ const BOUNDARIES: [Boundary; 6] = [
     },
     Boundary {
         package: "piqueld-client",
-        // Its native tests serve their requests with axum.
         edges: "normal,build",
         forbidden: &["axum", "axum-core"],
         reason: "is the published client, which builds for wasm32, so only its tests may use a server framework",
@@ -81,8 +75,6 @@ const BOUNDARIES: [Boundary; 6] = [
     },
     Boundary {
         package: "piqueld-store",
-        // Its tests must not reach for the configuration either, or a
-        // configuration change would rebuild them.
         edges: "all",
         forbidden: &["axum", "bollard", "leptos", "piqueld", "piqueld-config"],
         reason: "builds alongside the daemon's configuration and Docker crates, without a server, Docker, or browser framework",

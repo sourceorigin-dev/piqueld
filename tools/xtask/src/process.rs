@@ -104,8 +104,6 @@ impl Job {
                 .await
                 .is_ok_and(|n| n > 0)
             {
-                // Our own stderr may be closed, which leaves nowhere to report
-                // that; the log's failure is reported there.
                 #[expect(
                     clippy::unused_result_ok,
                     reason = "a closed stderr has nowhere to report its own failure"
@@ -127,7 +125,6 @@ fn strip_color(line: &[u8]) -> Vec<u8> {
     let mut bytes = line.iter().copied();
     while let Some(byte) = bytes.next() {
         if byte == 0x1b {
-            // Skip the introducer and parameters through the final byte.
             bytes
                 .by_ref()
                 .skip(1)

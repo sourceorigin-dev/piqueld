@@ -69,7 +69,6 @@ async fn pruning_deletes_previews_only_when_their_branch_is_confirmed_gone() {
         [BranchState::Gone, BranchState::Exists { .. }]
     ));
 
-    // An unreadable repository leaves every branch unknown and deletes nothing.
     let moved = temp.path().join("moved");
     std::fs::rename(repository.path(), &moved).unwrap();
     assert!(matches!(
@@ -147,7 +146,6 @@ async fn local_snapshots_upload_within_limits_and_are_never_pruned() {
         .id;
     repository.git(&["branch", "-D", "feat/gone"]);
 
-    // A working copy with a commit on a branch the repository never had.
     let work = repository.working_copy();
     work.git(&["switch", "-qc", "feat/local"]);
     work.commit(&[("app.toml", b"local")]);
@@ -172,7 +170,6 @@ async fn local_snapshots_upload_within_limits_and_are_never_pruned() {
         piqueld_client::DeploymentOrigin::Local(snapshot) if snapshot.base.as_deref() == Some(base.as_str())
     ));
 
-    // The never-pushed branch reads as `local`, not gone, and is kept.
     let states = client.previews(application).await.unwrap();
     let states = states
         .into_iter()
@@ -197,8 +194,6 @@ async fn local_snapshots_upload_within_limits_and_are_never_pruned() {
             .delete_intent
     );
 
-    // Oversized and invalid uploads are refused before deploying anything.
-    // The noise is a xorshift sequence, so it doesn't compress.
     let mut state = 0x9e37_79b9_7f4a_7c15_u64;
     let noise = (0..65_536)
         .map(|_| {
@@ -261,7 +256,6 @@ impl PreviewFixture {
             .await
             .application_id;
         let blog_id = piqueld_core::ApplicationId::parse(blog.as_str()).unwrap();
-        // The application's only long-lived environment stands for production.
         let production = state.application(&blog_id).await.unwrap().environments[0]
             .id
             .to_string();
@@ -359,7 +353,6 @@ async fn previews_permissions_manage_previews() {
     let build = format!("/api/v1/builds/{}/logs", f.build(&preview).await);
     let (status, body) = f.router.call(&f.agent, "GET", &build, none.clone()).await;
     assert_eq!(status, 200, "{body}");
-    // Restoring is allowed too: only the deployment is unknown.
     let restore = format!("/api/v1/previews/{preview}/restore");
     let request = serde_json::json!({"deployment": "operation-00000000000000000000000000000000"});
     let (status, body) = f.router.call(&f.agent, "POST", &restore, request).await;

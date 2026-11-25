@@ -68,7 +68,6 @@ async fn every_documented_operation_requires_authentication() {
                     StatusCode::UNAUTHORIZED,
                     "{method} {path} must require authentication"
                 );
-                // The daemon replaces a client-supplied request ID.
                 let request_id = response.header("x-request-id").unwrap();
                 assert_ne!(request_id, "anonymous-contract");
                 let error: piqueld_core::api::ErrorBody =
@@ -113,8 +112,6 @@ async fn device_sign_ins_are_audited() {
         .call(&f.deployer, "POST", poll, json!({"device_code": approved}))
         .await;
     assert_eq!(body["status"], "complete", "{body}");
-    // Two starts, the approval, and the completing poll, which records the
-    // CLI login it issued and who approved it.
     let body = f.audit(&f.auditor, "/api/v1/audit", 4).await;
     let polls: Vec<_> = body["data"]["items"]
         .as_array()
@@ -154,7 +151,6 @@ async fn setup_link_is_served_only_over_the_unix_socket() {
             assert_eq!(setup.url, link.trim());
         }
     }
-    // The refused remote request is audited in the background.
     let event = refusals(&state, |events| match events.as_slice() {
         [event] => Some(event.clone()),
         _ => None,
@@ -249,7 +245,6 @@ async fn admin_recovery_requires_the_host_operator_over_the_unix_socket() {
     ] {
         assert_eq!(recover(router, uid).await.0, 404, "{uid:?}");
     }
-    // A credential keeps its meaning, even an unusable one.
     let request = Request::post("/api/v1/auth/recovery")
         .header(http::header::AUTHORIZATION, "Bearer pqd_unknown");
     assert_eq!(as_peer(&unix, request, Some(operator), None).await.0, 404);
@@ -332,7 +327,6 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
     let foreign = Request::post(issue).header(header::ORIGIN, "https://attacker.example");
     assert_eq!(as_peer(&unix, foreign, Some(operator), None).await.0, 403);
 
-    // Issuing the link and signing in with it are audited as the operator.
     let operator = Some(HostOperator { uid: operator });
     let audited = written_until(&state, async || {
         let page = state
@@ -346,8 +340,6 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
                     && event.operator == operator
             })
         };
-        // Signing in records the session it opened. Refusals before
-        // authentication, like a cross-site request, are audited too.
         (audited("POST /api/v1/auth/sign-in-link", 200)
             && audited(
                 "POST /api/v1/auth/login/operator host operator session ",
@@ -386,7 +378,6 @@ async fn credentials_presented_by_the_host_operator_keep_their_meaning() {
         let status = as_peer(&unix, request, Some(operator), None).await.0;
         assert_eq!(status, 401, "{unusable}");
     }
-    // So does a session cookie, even in a later `Cookie` header.
     let cookies = |request: http::request::Builder| {
         request
             .header(header::COOKIE, "other=one")
@@ -396,15 +387,12 @@ async fn credentials_presented_by_the_host_operator_keep_their_meaning() {
         .await
         .0;
     assert_eq!(status, 401);
-    // Even one that cannot be parsed.
     let raw = header::HeaderValue::from_bytes(b"other=\xff; __Host-piqueld_session=x").unwrap();
     let request = Request::get(me).header(header::COOKIE, raw);
     assert_eq!(as_peer(&unix, request, Some(operator), None).await.0, 401);
     let issue = Request::post("/api/v1/auth/sign-in-link")
         .header(header::AUTHORIZATION, format!("Bearer {token}"));
     assert_eq!(as_peer(&unix, issue, Some(operator), None).await.0, 404);
-    // A cookie-authenticated write without the site's origin is refused
-    // outright, rather than issuing a link.
     let issue = cookies(Request::post("/api/v1/auth/sign-in-link"));
     assert_eq!(as_peer(&unix, issue, Some(operator), None).await.0, 403);
 }
@@ -527,7 +515,6 @@ async fn tailnet_bound_tokens_work_only_from_matching_devices() {
     })
     .await
     .expect("the refused requests were not audited");
-    // The vanished runner's refusal names no peer, not its cached one.
     let described = ["alice@example.com on laptop", "tag:old on retired"];
     let expected = std::iter::once(None)
         .chain(described.map(|who| Some(who.to_owned())))
@@ -638,13 +625,10 @@ async fn authentication_errors_preserve_request_and_diagnostic_ids() {
     let state = state(&temp).await;
     let store = Store::open_unsynced(database(&temp)).await.unwrap();
     let mut connection = sqlite::connect(&database(&temp)).await;
-    // Leave the observability tables healthy, but break authentication reads.
     sqlx::query("ALTER TABLE auth_credentials RENAME TO unavailable_credentials")
         .execute(&mut connection)
         .await
         .unwrap();
-    // A diagnostic write would block behind this transaction. Storage failures
-    // must return promptly with log-only diagnostic IDs instead.
     let transaction = connection.begin_with("BEGIN IMMEDIATE").await.unwrap();
     for website in [false, true] {
         let auth = piqueld::auth::Auth::new(&store, "https://piqueld.example").unwrap();
@@ -678,8 +662,6 @@ async fn authentication_errors_preserve_request_and_diagnostic_ids() {
                 503,
                 "storage_unavailable",
             ),
-            // A bearer that could not be checked is no reason to require
-            // the ceremony's Origin.
             (
                 "POST",
                 "/api/v1/auth/register/start",
@@ -782,7 +764,6 @@ async fn device_starts_echo_their_limits_and_refuse_large_bodies() {
     let large = format!(r#"{{"grants":[],"padding":"{}"}}"#, "x".repeat(16 * 1024));
     let response = start(large).await;
     assert_eq!(response.status, StatusCode::PAYLOAD_TOO_LARGE);
-    // The limit applies while reading, also without a `Content-Length`.
     let chunks = (0..64).map(|_| Ok::<_, std::io::Error>(vec![b' '; 1024]));
     let streamed = Request::builder()
         .method("POST")

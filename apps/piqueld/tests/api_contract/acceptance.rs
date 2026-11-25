@@ -18,7 +18,6 @@ async fn generations_deploy_reconcile_and_event_pagination_share_the_http_contra
     request.manifest.spec.services[0].replicas = 2.into();
     let changed = client.apply_and_deploy(&request).await.unwrap();
     assert_eq!(changed.generation, 2);
-    // A one-time manifest revision needs a repository-backed manifest.
     let revision = piqueld_client::ManifestRevision::Branch("feature".into());
     let unbacked = client
         .deploy_environment(&first.environment_id, 2, Some(&revision), false)
@@ -145,7 +144,6 @@ async fn acceptance_receipts_survive_restart_and_supersession() {
     );
     let error = keyed.apply_and_deploy(&replacement).await.unwrap_err();
     assert_eq!(api_error(error).code, "request_id_conflict");
-    // Two concurrent requests still produce exactly one durable acceptance.
     let mut fresh = request.clone();
     fresh.manifest.metadata.name = "another".into();
     let concurrent = api.client.clone().with_request_id("concurrent-command");
@@ -217,7 +215,6 @@ async fn rename_is_conditioned_idle_only_and_replayable_without_deployment() {
             .state,
         piqueld_core::OperationState::Failed
     );
-    // The old name now identifies a different app. A captured ID must prevent overwriting it.
     let old_name = api.deploy().await;
     let mut stale = new_application();
     stale.expected_generation = Some(1);
@@ -345,7 +342,6 @@ async fn mutations_require_preconditions_but_reconcile_uses_current_intent() {
     );
     request.expected_generation = Some(0);
     let accepted = api.client.apply_and_deploy(&request).await.unwrap();
-    // Creating it again finds its name taken, like a rename would.
     assert_eq!(
         api_error(api.client.apply_and_deploy(&request).await.unwrap_err()).code,
         "application_name_collision"
@@ -677,7 +673,6 @@ async fn event_kinds_list_each_recorded_kind_once_in_name_order() {
     let client = server.client();
     let request = new_application();
     let deployed = client.apply_and_deploy(&request).await.unwrap();
-    // Deploying again records a second `refresh_requested`.
     client
         .deploy_environment(&deployed.environment_id, 1, None, false)
         .await

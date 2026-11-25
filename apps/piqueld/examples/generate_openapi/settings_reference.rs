@@ -135,8 +135,7 @@ struct Schema {
     one_of: Vec<Schema>,
     #[serde(default)]
     all_of: Vec<Schema>,
-    // i128 holds both the signed bounds and the largest unsigned ones,
-    // such as `u64::MAX`.
+    /// Signed bounds and the largest unsigned ones, such as `u64::MAX`, fit in `i128`.
     minimum: Option<i128>,
     maximum: Option<i128>,
 }
@@ -290,8 +289,6 @@ impl<'a> Renderer<'a> {
     /// Writes a table's section, then the sections of the tables nested in
     /// it.
     fn section(&mut self, Section { path, table }: Section<'a>) -> Result<()> {
-        // "table" keeps the section's anchor, such as `#ingressprivate-table`,
-        // apart from its setting's entry in the parent table, `#ingressprivate`.
         let heading = if path.is_empty() {
             "Top level".to_owned()
         } else {
@@ -358,7 +355,6 @@ impl<'a> Renderer<'a> {
         }
         if let Some(shown) = shown {
             write!(facts, " Default: `{shown}`")?;
-            // Byte sizes, in settings ending in `_bytes`, also read in binary units.
             if let Some(size) = default
                 .and_then(Value::as_u64)
                 .filter(|_| path.ends_with("_bytes"))
@@ -563,7 +559,6 @@ impl<'a> Renderer<'a> {
         }
         let mut tables = match self.table(schema)? {
             Some(table) => vec![table],
-            // A value that is a table or not, such as a Git source's repository.
             None => schema
                 .one_of
                 .iter()
@@ -593,7 +588,6 @@ impl<'a> Renderer<'a> {
                 return self.alternatives(definition, plural);
             }
             self.value_types.insert(name, definition);
-            // Links to the type's heading, whose anchor is its title in lower case.
             let title = Self::title(name).to_lowercase();
             return Ok(vec![format!(
                 "[{}](#{})",

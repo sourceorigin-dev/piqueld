@@ -95,8 +95,6 @@ impl Supervisor {
             .custom_flags(OFlags::NONBLOCK.bits().cast_signed())
             .open(&self.pid_file)
             .ok()?;
-        // Taking the lock means no supervisor holds it; dropping the file
-        // releases it again.
         let Err(TryLockError::WouldBlock) = file.try_lock_shared() else {
             return None;
         };
@@ -120,8 +118,6 @@ impl Supervisor {
             .truncate(false)
             .open(path)
             .with_context(|| format!("open {}", path.display()))?;
-        // `running` holds the lock for a moment while it checks, so a few
-        // attempts tell it apart from a running supervisor.
         for _ in 0..20 {
             match file.try_lock() {
                 Ok(()) => {
@@ -157,7 +153,6 @@ impl Supervisor {
             .context("start the supervisor")?;
         while self.running().is_none() {
             if let Some(status) = child.try_wait()? {
-                // A concurrent launch's supervisor may hold dev.pid instead.
                 if self.running().is_some() {
                     break;
                 }
@@ -195,10 +190,8 @@ impl Instance {
     /// Supervises the instance in the foreground until a signal stops it.
     pub(super) async fn run(&self) -> Result<()> {
         let _claim = self.claim().await?;
-        // Signals arriving while the engine starts stop the first build.
         let mut shutdown = Shutdown::listen()?;
         let result = async {
-            // Boxed: the engine's container definition makes this future large.
             Box::pin(self.start_engine()).await?;
             self.supervise(&mut shutdown).await
         }
@@ -287,8 +280,6 @@ impl Instance {
     async fn watch(&self, since: SystemTime) -> Event {
         let mut changed = false;
         loop {
-            // After a change, let editors finish saving related files. Removing
-            // the worktree changes its sources too, so check for that first.
             let pause = if changed { 300 } else { 500 };
             tokio::time::sleep(Duration::from_millis(pause)).await;
             if !self.workspace.root().join(".git").exists() {
@@ -387,8 +378,6 @@ impl Instance {
                         .start_container(&name, None::<StartContainerOptions>)
                         .await?;
                 } else if !self.engine_socket_exists() {
-                    // A restart recreates the socket when its directory was
-                    // replaced while the engine ran.
                     engine
                         .restart_container(&name, None::<RestartContainerOptions>)
                         .await?;
@@ -398,7 +387,6 @@ impl Instance {
                 if let Some(container) = existing {
                     self.check_owner(&name, container.config.and_then(|config| config.labels))?;
                     eprintln!("[dev] recreating {name} for the configured directories");
-                    // The image store is a named volume, which outlives it.
                     engine.remove(&name).await?;
                 }
                 engine
@@ -417,8 +405,6 @@ impl Instance {
             self.config.server.data_dir.display().to_string(),
             self.config.server.runtime_dir.display().to_string(),
         );
-        // The data directory is mounted at the same path because the daemon
-        // bind-mounts files from it, such as the ingress configuration.
         let mut body = Engine::dind_container(
             Engine::dind_image(),
             format!("{runtime}/docker"),

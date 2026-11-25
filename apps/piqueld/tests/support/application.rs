@@ -35,7 +35,7 @@ impl TestApplications {
         }
     }
 
-    // Controller scenarios explicitly save and deploy in one acceptance.
+    /// Saves and deploys the manifest in one acceptance.
     pub(crate) async fn apply(
         &self,
         manifest: ValidatedTemplate,

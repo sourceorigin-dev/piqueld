@@ -247,11 +247,8 @@ async fn fetched_connections_are_ignored_with_a_warning() {
         current.application.application.spec().manifest,
         initial.spec.manifest
     );
-    // Only the branch differs, as it does between environments: no warning.
     let mut branched = initial.clone();
     branched.spec.manifest.as_mut().unwrap().repository.branch = "release".into();
-    // Without `spec.manifest`, the application stays connected, and
-    // references that need it still validate.
     let mut bare = initial.clone();
     bare.spec.manifest = None;
     bare.spec.services[0]
@@ -290,10 +287,7 @@ async fn deployments_record_the_branch_head_sync_follows_from() {
             .synced
             .and_then(|head| head.commit)
     };
-    // A deployment of its branch records the head it fetched.
     assert_eq!(synced().await.as_deref(), Some(first.as_str()));
-    // A one-off deployment of an older commit records the branch's head
-    // then, so it stays until the branch moves.
     let second = repository.commit(&[]);
     let deployed = harness
         .deploy_revision(&production, Some(ManifestRevision::Commit(first.clone())))
@@ -336,8 +330,6 @@ async fn environments_on_different_branches_deploy_independently() {
     assert_eq!(staged, Some(3));
     let (before, production_manifest) = replicas(&production).await;
     assert_eq!(before, Some(1));
-    // Only a manifest fetched from the branch `spec.manifest` names
-    // becomes the application's saved one.
     let saved_replicas = async || {
         let current = harness.store.get(&production).await.unwrap();
         current.application.application.spec().services[0]
@@ -348,7 +340,6 @@ async fn environments_on_different_branches_deploy_independently() {
     let deployed = harness.deploy(&production).await;
     assert_eq!(deployed.state, OperationState::Succeeded);
     assert_eq!(saved_replicas().await, main.spec.services[0].replicas);
-    // A new main commit reaches production only, when it deploys.
     main.spec.services[0].replicas = 2.into();
     repository.push(&main);
     let deployed = harness.deploy(&production).await;
@@ -356,7 +347,6 @@ async fn environments_on_different_branches_deploy_independently() {
     assert_eq!(replicas(&production).await.0, Some(2));
     assert_ne!(replicas(&production).await.1, production_manifest);
     assert_eq!(replicas(&staging).await, (Some(3), fetched));
-    // Pointing staging at main fetches main from its next deployment.
     harness
         .applications()
         .accept(
@@ -375,7 +365,6 @@ async fn environments_on_different_branches_deploy_independently() {
     let deployed = harness.deploy(&staging).await;
     assert_eq!(deployed.state, OperationState::Succeeded);
     assert_eq!(replicas(&staging).await.0, Some(2));
-    // One-off revisions deploy another branch without changing staging's.
     let deployed = harness
         .deploy_revision(&staging, Some(ManifestRevision::Branch("release".into())))
         .await;
@@ -435,7 +424,6 @@ async fn deleting_a_preview_removes_every_volume_it_ever_created() {
         .await;
     assert_eq!(created.unwrap().state, OperationState::Succeeded);
     let preview = preview.unwrap();
-    // Previews never record releases; the environment that deployed did.
     assert_eq!(harness.store.current_release(&preview).await.unwrap(), None);
     assert!(
         harness
@@ -445,7 +433,6 @@ async fn deleting_a_preview_removes_every_volume_it_ever_created() {
             .unwrap()
             .is_some()
     );
-    // The branch drops the cache volume; the preview keeps it until deleted.
     repository.push(&main);
     let (deployed, _) = harness
         .run_preview(Mutation::Preview(PreviewMutation::Deploy {
@@ -520,7 +507,6 @@ async fn edits_deploy_until_a_push_changes_the_manifest() {
     let mut edited = initial.clone();
     edited.spec.services[0].replicas = 4.into();
     harness.save(edited, Some(generation)).await;
-    // A push that leaves the manifest alone deploys the edit.
     repository.commit(&[("README.md", b"notes")]);
     harness.finish(&harness.deploy(&environment).await).await;
     let current = saved().await;
@@ -534,7 +520,6 @@ async fn edits_deploy_until_a_push_changes_the_manifest() {
             .collect::<Vec<_>>(),
         ["services.web.replicas"]
     );
-    // One that changes it replaces the saved manifest.
     let mut pushed = initial;
     pushed.spec.services[0]
         .environment
@@ -602,8 +587,6 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
     let feature = repository.commit(&[]);
     repository.git(&["checkout", "main"]);
     let (application, environment) = harness.bootstrap(repository.bootstrap()).await;
-    // The override is not saved, and saved configuration keeps "self":
-    // only the fetch of `main` itself becomes the saved manifest.
     let expected_spec = fetched
         .clone()
         .validate()
@@ -633,8 +616,6 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
             saved_main
         );
     }
-    // "self" builds the repository the manifest was fetched from, whatever
-    // the file's own `spec.manifest` says.
     let mut moved = fetched;
     moved.spec.manifest.as_mut().unwrap().repository.url = "/elsewhere".into();
     let head = repository.push(&moved);
@@ -660,8 +641,6 @@ async fn local_snapshots_deploy_their_manifest_and_build_self_sources_from_the_s
     let base = repository.push(&fetched);
     let (application, _) = harness.bootstrap(repository.bootstrap()).await;
 
-    // The snapshot changes the manifest and the Dockerfile on a branch
-    // the repository never had.
     let mut local = fetched.clone();
     local.spec.services[0]
         .environment
@@ -734,7 +713,6 @@ async fn retry_after_reopening_store_builds_self_sources_at_the_fetched_commit()
     std::fs::write(&dockerfile, "FROM alpine:3.20\n").unwrap();
     let pinned = repository.push(&fetched);
     let (_, environment) = harness.bootstrap(repository.bootstrap()).await;
-    // The image service fails preparation after the manifest is fetched.
     harness.docker.arm_tag_flips(100).await;
     let failed = harness
         .deploy_revision(

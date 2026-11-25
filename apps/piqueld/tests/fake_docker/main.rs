@@ -222,7 +222,6 @@ impl ControllerHarness {
 
     /// Saves and deploys `manifest`, expecting generation `expected`.
     async fn apply(&self, manifest: ApplicationManifest, expected: Option<u64>) -> Operation {
-        // Boxed: accepting a mutation holds a whole manifest across awaits.
         Box::pin(
             self.applications()
                 .apply(manifest.validate_template().unwrap(), expected),
@@ -583,11 +582,9 @@ impl ControllerHarness {
         assert_eq!(status.state, piqueld_store::ApplicationState::Degraded);
         let failed = self.operation(&created.id).await;
         assert_eq!(failed.state, OperationState::Failed);
-        // The recorded plan names what blocked it.
         assert_eq!(failed.phase, Some(piqueld_core::Phase::Planning));
         assert!(failed.resource.is_some(), "{failed:?}");
         let observed = self.docker.observed.lock().await;
-        // Nothing replaced them, and nothing else appeared beside them.
         assert_eq!(observed.services.len(), foreign.services.len());
         assert_eq!(observed.networks.len(), foreign.networks.len());
         assert_eq!(observed.volumes.len(), foreign.volumes.len());

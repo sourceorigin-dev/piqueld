@@ -149,7 +149,6 @@ async fn regular_files_and_symlinks_at_socket_path_are_preserved() {
     std::fs::remove_file(fixture.socket()).unwrap();
     let target = fixture.socket().with_file_name("target.sock");
     let _listener = tokio::net::UnixListener::bind(&target).unwrap();
-    // Relative to the link's own directory.
     std::os::unix::fs::symlink("target.sock", fixture.socket()).unwrap();
     runtime
         .bind_api()
