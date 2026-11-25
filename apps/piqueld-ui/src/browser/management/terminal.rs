@@ -99,7 +99,6 @@ impl Session {
                     break;
                 }
             }
-            // Input ending does not end the session; output does.
             std::future::pending().await
         };
         let receive = async {
@@ -109,8 +108,6 @@ impl Session {
                         update(Update::Output(data));
                     }
                     Some(ExecOutput::Exit(code)) => return Ok(Status::Exited(code)),
-                    // Start failures such as `service_not_running`, which a
-                    // refused handshake could not report to a browser.
                     Some(ExecOutput::Failed { error, .. }) => {
                         return Ok(Status::Failed(error.message));
                     }
@@ -276,7 +273,6 @@ impl Console {
 
     /// Sends the bytes of a key press the terminal encodes.
     fn key(self, event: &web_sys::KeyboardEvent) {
-        // Meta (Command) shortcuts belong to the browser.
         if event.is_composing() || event.meta_key() || !self.running() {
             return;
         }
@@ -334,7 +330,6 @@ impl Console {
 
     /// Scrolls through history by the wheel's vertical movement.
     fn wheel(self, event: &web_sys::WheelEvent) {
-        // Horizontal scrolling is the page's.
         let Some(probe) = self.probe.get_untracked() else {
             return;
         };
@@ -394,7 +389,6 @@ impl Console {
         let Ok(observer) = web_sys::ResizeObserver::new(callback.as_ref().unchecked_ref()) else {
             return;
         };
-        // Browser handles are not `Send`, so the owner keeps them until cleanup.
         let handles = StoredValue::new_local((observer, callback));
         Effect::new(move |_| {
             if let Some(element) = self.viewport.get() {

@@ -24,7 +24,6 @@ fn build(id: i64, state: &str) -> BuildRecord {
 
 #[test]
 fn a_refreshed_first_page_keeps_older_pages() {
-    // The first page (9, 8) and an older one (5, 4).
     let mut builds = vec![
         build(9, "running"),
         build(8, "succeeded"),
@@ -79,7 +78,6 @@ fn shown(chunks: &[BuildLogChunk]) -> Vec<(i64, &str)> {
 
 #[test]
 fn refetched_newest_output_keeps_older_chunks() {
-    // An older page (0, 10) loaded before the newest one (20, 30).
     let mut chunks = vec![
         chunk(0, "a"),
         chunk(10, "b"),

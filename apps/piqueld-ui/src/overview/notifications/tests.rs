@@ -39,7 +39,6 @@ fn only_checked_categories_send_their_trimmed_messages() {
     let mut draft = DestinationDraft::new(Some(&destination()));
     draft.name = "  ops ".into();
     draft.url = " https://hooks.example.com/a ".into();
-    // An unchecked category's message is not sent.
     draft
         .categories
         .remove(&NotificationCategory::BuildFailures);
@@ -83,7 +82,6 @@ fn an_invalid_message_names_its_category() {
     );
     let error = draft.request().expect_err("too long");
     assert!(error.starts_with("Build failures: "), "{error}");
-    // The same message on an unchecked category is not sent, so it saves.
     draft
         .categories
         .remove(&NotificationCategory::BuildFailures);

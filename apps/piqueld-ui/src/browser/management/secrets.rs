@@ -246,13 +246,11 @@ pub(super) fn StoredSecrets(
     #[prop(optional)] changed: Option<Callback<()>>,
 ) -> impl IntoView {
     let context = editor();
-    // The environment page's environment, when scoped to it.
     let scope = move || mounts.and_then(|_| context.selected_environment());
     let secrets = RwSignal::new(Vec::<StoredSecret>::new());
     let ready = RwSignal::new(false);
     let feedback = Feedback::new();
     let name = RwSignal::new(String::new());
-    // A typed value is an unsaved edit.
     let value = Draft::new("secret-value".into(), String::new()).value;
     let form = AccessForm::new();
     let id = StoredValue::new(context.id());
@@ -268,8 +266,6 @@ pub(super) fn StoredSecrets(
                 .map(|s| (s.metadata.generation, s.access.clone()))
         })
     };
-    // New secrets default to every environment, or on an environment's
-    // page to that environment, or on a preview's to previews.
     let default_access = move || match scope() {
         Some(environment) if environment.preview().is_some() => SecretAccess {
             environments: EnvironmentAccess::Only(BTreeSet::new()),
@@ -282,8 +278,6 @@ pub(super) fn StoredSecrets(
         None => SecretAccess::default(),
     };
     form.load(&default_access());
-    // Naming a stored secret, or refreshing the list, loads its access;
-    // naming a new one after it starts again from the default.
     Effect::new(move |editing: Option<bool>| {
         let name = name.get();
         let access = secrets.with(|items| {
@@ -323,7 +317,6 @@ pub(super) fn StoredSecrets(
             &e,
         );
     };
-    // Whether a change may start now.
     let idle = move || !context.blocked() && ready.get_untracked();
     let write = move |_| {
         if !idle() {
@@ -341,9 +334,6 @@ pub(super) fn StoredSecrets(
         }
         let bytes = value.get_untracked().into_bytes();
         value.set(String::new());
-        // Replacing a value sends access only when the form changed it, so the
-        // server keeps a list changed elsewhere, guarded by the list the form
-        // was loaded from, so one changed meanwhile isn't overwritten.
         let access = Some(form.access()).filter(|access| current.as_ref() != Some(access));
         let expected = current.filter(|_| access.is_some());
         let id = id.get_value();
@@ -370,8 +360,6 @@ pub(super) fn StoredSecrets(
             return;
         }
         let (id, name, access) = (id.get_value(), name.get_untracked(), form.access());
-        // The access the form was loaded from, so a concurrent change fails
-        // with `secret_access_conflict` instead of being overwritten.
         let expected = existing(&name).map(|(_, access)| access);
         feedback.send(
             context,
@@ -411,7 +399,6 @@ pub(super) fn StoredSecrets(
             failed,
         );
     });
-    // Every secret, or on an environment's page the ones it may mount or mounts.
     let shown = move || {
         let scope = scope();
         let mounts = mounts.map_or_default(|mounts| mounts.get());
@@ -530,7 +517,6 @@ pub(super) fn StoredSecrets(
                             } else if feedback.error.get().is_none() {
                                 loading("Loading secrets…")
                             } else {
-                                // The failed load's error is shown above.
                                 ().into_any()
                             }
                         } else {
@@ -863,7 +849,6 @@ pub(super) fn EnvironmentSecrets() -> impl IntoView {
                             } else if feedback.error.get().is_none() {
                                 loading("Loading secrets…")
                             } else {
-                                // The failed load's error is shown above.
                                 ().into_any()
                             }
                         } else {

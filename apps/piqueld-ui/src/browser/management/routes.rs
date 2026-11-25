@@ -175,7 +175,6 @@ pub(super) fn RouteSettings() -> impl IntoView {
     let dialog = RowDialog::<RouteDraft>::new();
     let draft = dialog.draft;
     let readiness = context.signals().readiness;
-    // Deployed routes of every environment and preview, with its name.
     let deployed = Memo::new(move |_| {
         readiness.get().map_or_default(|status| {
             context.saved.with(|saved| {
@@ -192,7 +191,6 @@ pub(super) fn RouteSettings() -> impl IntoView {
             })
         })
     });
-    // Saves `rows` as the application's routes, then closes the dialog.
     let save = move |rows: Vec<RouteDraft>| match rows
         .into_iter()
         .map(RouteDraft::route)

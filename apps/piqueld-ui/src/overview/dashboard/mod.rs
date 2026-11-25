@@ -21,7 +21,6 @@ pub struct ApplicationRow {
 
 impl From<ApplicationSummary> for ApplicationRow {
     fn from(application: ApplicationSummary) -> Self {
-        // An environment being deleted has no deployment to show.
         let deployments = application
             .environments
             .iter()

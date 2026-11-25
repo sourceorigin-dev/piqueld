@@ -44,8 +44,6 @@ impl LogLine {
             let mut position = 0;
             let mut chunk_index = 0;
             for line in text.split_inclusive('\n') {
-                // Both line and chunk positions only advance; visit each
-                // chunk boundary once, including partial and interleaved lines.
                 while chunk_index + 1 < starts.len() && starts[chunk_index + 1].0 <= position {
                     chunk_index += 1;
                 }

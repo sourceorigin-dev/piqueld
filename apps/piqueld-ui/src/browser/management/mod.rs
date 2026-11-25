@@ -28,7 +28,6 @@ use super::{
 use crate::application::ApplicationViewExt;
 pub(super) use crate::application::Page;
 
-// Imported here so child modules keep importing them as `super::{Draft, …}`.
 use forms::{Draft, RowDialog, Rows};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -505,8 +504,6 @@ impl EditorContext {
             },
             move |receipt| {
                 let application = validated.normalize(saved.application.id().clone());
-                // As the daemon keeps it: the manifest last read from the
-                // repository follows the connection, and goes with it.
                 let repository = application.spec().manifest.clone().and_then(|connection| {
                     saved
                         .repository
@@ -760,8 +757,6 @@ impl Mutation {
         reason = "a browser failure reaches the page only as this fixed message"
     )]
     fn new() -> Result<Self, String> {
-        // Unlike randomUUID, getRandomValues is available on the supported plain
-        // HTTP origins. Keep 128 bits of cryptographic entropy for replay identities.
         let error = "Browser could not create a request identity.";
         let mut bytes = [0; 16];
         window()
@@ -981,7 +976,6 @@ fn ApplicationEditor(initial: ApplicationView, page: Page) -> impl IntoView {
     };
     provide_context(context);
     remember_tab(context.tabs.selected);
-    // Refresh environment metadata without replacing shared configuration drafts.
     Effect::new(move |_| {
         if let Some(application) = signals.applications.with(|rows| {
             rows.iter()
@@ -993,8 +987,6 @@ fn ApplicationEditor(initial: ApplicationView, page: Page) -> impl IntoView {
                 .iter()
                 .map(|listed| listed.environment.clone())
                 .collect::<Vec<_>>();
-            // A listing of an older revision, requested before a save that
-            // advanced it, would undo the saved change.
             if context.saved.with_untracked(|saved| {
                 application.generation >= saved.generation
                     && (saved.environments != environments
@@ -1005,11 +997,6 @@ fn ApplicationEditor(initial: ApplicationView, page: Page) -> impl IntoView {
                     saved.delete_intent = application.delete_intent;
                 });
             }
-            // A fetch that only replaces a repository-backed application's
-            // repository manifest keeps its revision; reload it unless it is
-            // being edited. Newer revisions show the conflict notice instead. A
-            // save may finish while the reload is in flight, so its response
-            // is checked again on arrival.
             if context.fetched_since(application.generation, application.updated_at_ms)
                 && !context.editing()
             {
@@ -1026,7 +1013,6 @@ fn ApplicationEditor(initial: ApplicationView, page: Page) -> impl IntoView {
             }
         }
     });
-    // The listing has no previews or sync check; take them from the detail it reloads.
     Effect::new(move |_| {
         signals.detail.with(|detail| {
             let Some(application) = detail.as_ref().map(|detail| &detail.application) else {
@@ -1063,8 +1049,6 @@ fn ApplicationEditor(initial: ApplicationView, page: Page) -> impl IntoView {
 fn EditorFeedback() -> impl IntoView {
     let context = editor();
     let signals = context.signals();
-    // A notice tells of one action; it leaves on its own, like the action
-    // it confirms, rather than lingering on every later tab.
     Effect::new(move |_| {
         let shown = context.notice.get();
         if shown.is_empty() {

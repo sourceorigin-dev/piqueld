@@ -143,7 +143,6 @@ fn EnvironmentRow(id: String) -> impl IntoView {
             })
         })
     };
-    // Latest deployment of the environment, as the listing carries it.
     let latest = move || {
         signals.applications.with(|rows| {
             rows.iter()
@@ -386,7 +385,6 @@ fn NewEnvironment() -> impl IntoView {
     let opened = RwSignal::new(false);
     let name = RwSignal::new(String::new());
     let branch = RwSignal::new(context.default_branch());
-    // The environment to promote from; empty to build its own source.
     let promote_from = RwSignal::new(String::new());
     let builds = move || promote_from.with(String::is_empty);
     let sources = Signal::derive(move || context.promotion_sources(""));
@@ -520,15 +518,11 @@ fn SourceSettings() -> impl IntoView {
         })
     };
     let repository = move || context.repository_backed();
-    // The form as currently saved (see `SourceDraft::saved`), by default
-    // building the branch `spec.manifest` names. Memoized so unrelated saved
-    // changes keep unsaved edits.
     let saved = Memo::new(move |_| {
         source.with(|source| SourceDraft::saved(source.as_ref(), context.default_branch()))
     });
     let initial = saved.get_untracked();
     let branch = RwSignal::new(initial.branch);
-    // The environment to promote from; empty to build its own source.
     let promote_from = RwSignal::new(initial.promote_from);
     let shown = move || SourceDraft {
         branch: branch.get(),
@@ -547,11 +541,8 @@ fn SourceSettings() -> impl IntoView {
     };
     let sync_blocked =
         move || context.action_blocked() || context.selected_deleting() || declared();
-    // The change saving would make, if any.
     let change =
         move || source.with(|source| shown().change(id.get_value(), source.as_ref(), repository()));
-    // A change not yet saved blocks deploys and guards navigation. The form
-    // follows the saved source while it still shows the previous one.
     context.guard(SOURCE_FORM.into(), move || change().is_some());
     Effect::new(move |previous: Option<SourceDraft>| {
         let saved = saved.get();
@@ -717,7 +708,6 @@ fn EnvironmentTelemetry() -> impl IntoView {
             .selected_environment()
             .is_some_and(|environment| environment.telemetry)
     };
-    // The receiver and export, from the runtime detail's telemetry report.
     let report = move || detail.get().and_then(|detail| detail.telemetry);
     let receiver = move || {
         report().map(|report| {

@@ -17,7 +17,6 @@ fn scalars_show_side_by_side_and_structures_line_by_line() {
             after: Some("2".into()),
         }
     );
-    // A string that merely looks like JSON text stays a scalar.
     assert_eq!(
         ChangeDisplay::of(&change(None, Some("\"nginx:1.27\""))),
         ChangeDisplay::Scalar {

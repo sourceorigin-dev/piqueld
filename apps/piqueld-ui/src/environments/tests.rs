@@ -194,8 +194,6 @@ fn a_promoted_environment_changes_its_source_or_builds_again() {
             promote_from: Some("env-00000003".into()),
         }))
     );
-    // Building again follows the shown branch, even the default one, in
-    // a repository-backed application, and its saved manifest otherwise.
     assert_eq!(
         building("main", "").change(id(), Some(&saved), true),
         Some(Ok(EnvironmentEdit::Branch {
@@ -218,8 +216,6 @@ fn an_untouched_form_reports_no_change_so_it_never_blocks_deploys() {
         branch: "main".into(),
         commit: String::new(),
     };
-    // Repository-backed environments follow a branch unless promoted;
-    // the others build the saved manifest.
     let sources = [
         (
             EnvironmentSource::Branch(branch("release", Some(COMMIT))),

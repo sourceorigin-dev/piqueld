@@ -161,8 +161,6 @@ where
     match (request().await.map_err(Into::into), step_up) {
         (Err(ActionError::Client(error)), Some(step_up)) if error.step_up() => {
             step_up.confirm().await?;
-            // Never retry as someone else: the action belongs to whoever
-            // started it.
             if signed_in() != started {
                 return Err(ActionError::Message(
                     "Signed in as someone else, so the action was not retried.".into(),
@@ -520,10 +518,6 @@ pub(super) fn Gate() -> impl IntoView {
         }
         state.loaded.set(true);
     });
-    // Keep the editor mounted while reauthenticating so its unsaved drafts
-    // survive. Another identity signing in remounts the whole app, router
-    // included (which holds the routed pages), dropping the previous one's
-    // data, drafts, and one-time secrets.
     let identity = Memo::new(move |_| {
         state.current.with(|session| {
             session
@@ -531,8 +525,6 @@ pub(super) fn Gate() -> impl IntoView {
                 .map(|session| Identity::from(&session.principal))
         })
     });
-    // A pending confirmation belongs to the session that asked for it:
-    // losing that session, or another identity signing in, cancels it.
     Effect::new(move |_| {
         if state.expired.get() {
             step_up.finish(false);
@@ -551,12 +543,9 @@ pub(super) fn Gate() -> impl IntoView {
         }}>
             {move || {
                 identity.with(|_| ());
-                // Read, not only tracked: an unread memo never subscribes to `current`.
                 view! { <super::App /> }
             }}
         </div>
-        // One overlay at a time, mounted only while showing: signing in again
-        // comes before confirming the session it opens.
         <Show when={move || state.expired.get() || step_up.open.get()}>
             {move || {
                 if state.expired.get() {
@@ -1017,9 +1006,6 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
                         .into_any()
                 }
                 Some(pending) => {
-                    // Confirming a login already signed in names it and the
-                    // action it is about to take, instead of the access a
-                    // new login gets.
                     let (what, approve_label, printed) = match &pending.confirms {
                         Some(confirms) => {
                             (
@@ -1429,8 +1415,6 @@ fn OperatorSessions(directory: Directory, feedback: Feedback) -> impl IntoView {
                             }}>
                                 {
                                     let id = id.clone();
-                                    // Host operator sessions issue nothing to
-                                    // cascade to.
                                     revoke_button(
                                         feedback,
                                         move || Manage::RevokeCredential {
@@ -1567,12 +1551,9 @@ pub(super) fn AccountPage() -> impl IntoView {
     let params = use_params_map();
     let id = Memo::new(move |_| params.with(|params| params.get("id").unwrap_or_default()));
     let feedback = Feedback::new();
-    // The dialogs' own, so their errors stay in them.
     let adding = Feedback::new();
     let creating = Feedback::new();
     let directory = directory(&[feedback, adding, creating]);
-    // The shown account: `None` until the directory loads, then `None`
-    // inside when it is gone or hidden.
     let account = Memo::new(move |_| {
         directory.with(|data| {
             data.as_ref().map(|data| {
@@ -2093,8 +2074,6 @@ fn Credentials(
         .into_iter()
         .map(|credential| {
             let revoke = revoke_credential(feedback, credential.id.clone(), &credential.name);
-            // What the credential can do now: its grants within the
-            // account's current access.
             let access = credential
                 .grants
                 .as_ref()

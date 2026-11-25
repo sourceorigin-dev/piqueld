@@ -73,9 +73,6 @@ impl History {
                     }
                     match result {
                         Ok(page) => {
-                            // Starting an operation supersedes the one in
-                            // progress, so at most one row runs, whatever
-                            // the page's order.
                             if let (Some(listed), Some(running)) = (
                                 page.items
                                     .iter()
@@ -91,8 +88,6 @@ impl History {
                         Err(e) => self.error.set(Some(e.user_message())),
                     }
                 }
-                // Checked often while the tab is closed, so opening it
-                // never waits a whole poll interval.
                 let delay = if shown { 2000 } else { 250 };
                 gloo_timers::future::TimeoutFuture::new(delay).await;
             }
@@ -171,8 +166,6 @@ pub(in crate::browser::management) fn DeploymentHistory() -> impl IntoView {
                 history.loading,
                 move || history.load_older(id.clone()),
             )}
-            // The end of the list may not be the first deployment: the daemon
-            // prunes old history.
             <Show when={move || {
                 history.cursor.get().is_none() && history.items.with(|items| !items.is_empty())
             }}>

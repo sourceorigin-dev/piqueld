@@ -67,7 +67,6 @@ impl LiveTimeline {
             now,
             live,
             waterfall: Memo::new(move |_| {
-                // Only a running operation's waterfall follows the clock.
                 let now = live.get().then(|| now.get());
                 timeline.with(|t| t.as_ref().map_or_default(|t| Waterfall::new(&t.steps, now)))
             }),
@@ -168,7 +167,6 @@ impl LiveTimeline {
                 .set_value(Some(Interval::new(1_000, move || now.set(now_ms()))));
         }
         if !self.settled.get_value() {
-            // After this timeline's rows are drawn.
             let settled = self.settled;
             request_animation_frame(move || {
                 let _ = settled.try_set_value(true);
@@ -238,7 +236,6 @@ impl RunningDeployment {
             operation: RwSignal::new(None),
             live: RwSignal::new(None),
         };
-        // Followed under this effect, so the next operation's replaces it.
         Effect::new(move |_| {
             this.live
                 .set(this.operation.get().map(LiveTimeline::follow));
@@ -739,8 +736,6 @@ fn StepDetail(
             .get()
             .and_then(|id| live.waterfall.with(|w| w.row(&id).cloned()))
     });
-    // A build or job that started, which has output; remounted per step,
-    // and per run of it: a retry's output is not the failed run's.
     let output = Memo::new(move |_| {
         row.with(|row| {
             row.as_ref()
@@ -761,8 +756,6 @@ fn StepDetail(
         row.with(|row| row.as_ref().is_some_and(|row| row.step.state.running()))
     });
     let logs = editor().can(AppPermission::LogsRead);
-    // Redrawn when another step is shown or it changes state, unlike the
-    // rest, which follows the clock while it runs.
     let head = Memo::new(move |_| {
         row.with(|row| {
             row.as_ref()
@@ -905,7 +898,6 @@ const LOOKS: [(TaskLook, &str); 7] = [
 /// ticks, their open states grow to the `--now` the clock sets.
 #[component]
 fn RolloutTasks(row: Memo<Option<Row>>, now: RwSignal<i64>) -> impl IntoView {
-    // Changes with the step, not with the clock.
     let step = Memo::new(move |_| {
         row.with(|row| {
             row.as_ref()
@@ -978,7 +970,6 @@ fn RolloutTasks(row: Memo<Option<Row>>, now: RwSignal<i64>) -> impl IntoView {
                     monitor
                         .get()
                         .map(|window| {
-                            // The ring sweeps through CSS; only its count follows the clock.
                             let elapsed = now.get_untracked() - window.from_ms;
                             let length = window.to_ms - window.from_ms;
                             view! {
@@ -1085,7 +1076,6 @@ fn StepOutput(
     let error = RwSignal::new(None::<String>);
     let alive = Alive::new();
     let label = id.key.to_string();
-    // Scrolled to the newest line whenever lines arrive.
     let tail = NodeRef::<leptos::html::Pre>::new();
     Effect::new(move |_| {
         lines.track();
@@ -1120,7 +1110,6 @@ fn StepOutput(
                 }
                 let done = failed.is_none();
                 error.set(failed);
-                // Read after it ended, without failing: final.
                 if ran && done {
                     break;
                 }
@@ -1185,7 +1174,6 @@ async fn find_build(
             }
     };
     let mut cursor = None;
-    // An older deployment's builds are a few pages back at most.
     for _ in 0..5 {
         let page = client
             .builds(None, Some(environment), cursor.as_deref(), None)
@@ -1227,7 +1215,6 @@ fn EventFeed(operation: String, live: Memo<bool>, attempt: Memo<u64>) -> impl In
     };
     let url = format!("{}?operation_id={operation}", paths::stream_events());
     let history = operation_events(&operation);
-    // The newest event received, which a reopened stream resumes after.
     let last = StoredValue::new(0_i64);
     let open = move || {
         let url = match last.get_value() {
@@ -1252,7 +1239,6 @@ fn EventFeed(operation: String, live: Memo<bool>, attempt: Memo<u64>) -> impl In
                     request_animation_frame(flush);
                 }
             },
-            // The history the feed shows stays as it is.
             || {},
         ));
     };
@@ -1261,11 +1247,8 @@ fn EventFeed(operation: String, live: Memo<bool>, attempt: Memo<u64>) -> impl In
     Effect::new(move |was: Option<u64>| {
         let attempt = attempt.get();
         let rerun = was.is_some_and(|was| was != attempt);
-        if live.get() || rerun {
-            // The operation runs again: follow its new events.
-            if stream.with_value(Option::is_none) {
-                open();
-            }
+        if (live.get() || rerun) && stream.with_value(Option::is_none) {
+            open();
         }
         if !live.get_untracked() {
             let alive = alive.clone();

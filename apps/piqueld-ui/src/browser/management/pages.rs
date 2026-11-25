@@ -363,7 +363,6 @@ pub(super) fn EnvironmentPage() -> impl IntoView {
     }
     timeline::RunningDeployment::provide();
     let name = move || context.selected_name();
-    // Previews are not listed, so their health comes from the loaded detail.
     let health = {
         let id = id.clone();
         move || {
@@ -441,7 +440,6 @@ pub(super) fn EnvironmentPage() -> impl IntoView {
                     </Show>
                 },
             )}
-        // Kept mounted rather than unmounted, so a session survives switching tabs.
         {tabs.panel("Terminal", view! { <terminal::ExecTerminal /> })}
         {tabs
             .panel(

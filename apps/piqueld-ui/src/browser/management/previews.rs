@@ -62,7 +62,6 @@ fn branch_state(state: &BranchState) -> (AnyView, Option<String>) {
             )),
         ),
         BranchState::Gone => (Tone::Bad, None),
-        // The badge says it runs a local snapshot; Deploys details it.
         BranchState::Local { head } => (
             Tone::Neutral,
             Some(head.as_ref().map_or_else(
@@ -156,13 +155,10 @@ fn bounds(bounds: Vec<DiagnosticView>) -> AnyView {
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn PreviewList() -> impl IntoView {
     let context = editor();
-    // Listing runs a `git ls-remote` of the manifest repository, so it is
-    // fetched on demand rather than polled.
     let data = LocalResource::new(move || {
         let id = context.id();
         async move { Client::browser().previews(&id).await.user_error() }
     });
-    // Previews whose branch was gone when the list loaded.
     let gone = move || {
         data.get()
             .and_then(Result::ok)
@@ -172,7 +168,6 @@ pub(super) fn PreviewList() -> impl IntoView {
             .map(|view| view.preview)
             .collect::<Vec<_>>()
     };
-    // The daemon checks each branch again and keeps any no longer gone.
     let prune = move |_| {
         let previews = gone();
         let names = previews
@@ -463,7 +458,6 @@ pub(super) fn PreviewSettings() -> impl IntoView {
     let identity = context
         .selected_environment()
         .and_then(|preview| preview.preview().cloned());
-    // Reading the branch state runs a `git ls-remote`, so it is not polled.
     let data = LocalResource::new({
         let id = id.clone();
         move || {
@@ -471,7 +465,6 @@ pub(super) fn PreviewSettings() -> impl IntoView {
             async move { Client::browser().preview(&id).await.user_error() }
         }
     });
-    // `show` of the loaded preview; muted text while it loads or if loading failed.
     let detail = move |show: fn(PreviewView) -> AnyView| {
         move || match data.get() {
             None => view! { <span class="muted">"Loading…"</span> }.into_any(),

@@ -76,8 +76,6 @@ impl ShownDeployment {
     /// its end, or a rerun under the same ID.
     fn follow(self, live: LiveTimeline, environment: String, operation: String) {
         self.load(environment.clone(), operation.clone());
-        // Only a change reruns the effect, which would abandon a read under
-        // way; a read that lands current turns it back.
         let stale = Memo::new(move |_| {
             let Some(ended) = live.operation().filter(|_| live.ended() == Some(true)) else {
                 return false;
@@ -118,7 +116,6 @@ pub(in crate::browser::management) fn DeploymentPage(operation: String) -> impl 
     }
     let live = LiveTimeline::follow(operation.clone());
     let progress = live.progress();
-    // Starting or reconciling the environment runs this operation again.
     let signals = context.signals();
     Effect::new(move |_| {
         signals.detail.with(|detail| {
@@ -132,8 +129,6 @@ pub(in crate::browser::management) fn DeploymentPage(operation: String) -> impl 
     });
     let shown = ShownDeployment::new();
     shown.follow(live, environment.clone(), operation);
-    // The operation as its newest snapshot has it, which runs ahead of the
-    // history's.
     let deployment = Signal::derive(move || {
         let mut deployment = shown.deployment.get()?;
         if let Some(operation) = live.operation() {
@@ -141,7 +136,6 @@ pub(in crate::browser::management) fn DeploymentPage(operation: String) -> impl 
         }
         Some(deployment)
     });
-    // What brought it, as its page is titled.
     let title = Memo::new(move |_| {
         shown.deployment.with(|deployment| {
             deployment.as_ref().map_or_else(
@@ -188,7 +182,6 @@ pub(in crate::browser::management) fn DeploymentPage(operation: String) -> impl 
                 deployment.get().unwrap_or_else(|| initial.clone())
             });
             Some(
-                // Read, not just tracked: a memo only follows its source once read.
                 view! { <DeploymentSections deployment={deployment} /> },
             )
         }}

@@ -118,9 +118,6 @@ fn traffic(report: TrafficReport, measure: RwSignal<Measure>) -> AnyView {
                 </div>
                 <label class="field traffic-measure">
                     <span>"Show"</span>
-                    // The report, and this picker with it, is drawn again on
-                    // each refresh, so each option says whether it is the
-                    // measure kept outside.
                     <select on:change={move |e| {
                         let chosen = event_target_value(&e);
                         if let Some(choice) = Measure::ALL.into_iter().find(|m| m.label() == chosen) {
@@ -181,7 +178,6 @@ fn chart(report: &TrafficReport, measure: Measure) -> AnyView {
                 reason = "a column's height needs no more than f64's 52 bits"
             )]
             let height = value as f64 * 100.0 / top as f64;
-            // Tooltips near an edge open inwards, so they stay on the page.
             let side = match index * 3 / points.max(1) {
                 0 => "traffic-column tip-start",
                 2 => "traffic-column tip-end",
@@ -196,7 +192,6 @@ fn chart(report: &TrafficReport, measure: Measure) -> AnyView {
             let counts = point.counts.clone();
             view! {
                 <div class={side} tabindex="0" aria-label={described}>
-                    // Set through the CSSOM: the dashboard's CSP refuses style attributes.
                     <i style:height={format!("{height:.2}%")}></i>
                     <div class="traffic-tip" aria-hidden="true">
                         <strong>{when}</strong>
@@ -226,7 +221,6 @@ fn chart(report: &TrafficReport, measure: Measure) -> AnyView {
                 <span class="scale-middle">{format!("{:#}", Count(top / 2))}</span>
                 <span class="scale-zero">"0"</span>
             </div>
-            // A year of daily points has no room for gaps between columns.
             <div class={if points > DENSE { "traffic-plot dense" } else { "traffic-plot" }}>
                 {columns}
             </div>

@@ -384,8 +384,6 @@ fn BuildOutput(record: Signal<BuildRecord>) -> impl IntoView {
                     || older.get_untracked()
                     || (!final_loaded && elapsed >= 30))
             {
-                // A refresh or filter change replaces the output; the newest
-                // page fetched otherwise keeps the older output loaded.
                 let reload = refresh.get_untracked();
                 let replacing = reload || !older.get_untracked();
                 refresh.set(false);

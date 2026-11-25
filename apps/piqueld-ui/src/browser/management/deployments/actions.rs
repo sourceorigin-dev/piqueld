@@ -32,7 +32,6 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
             .selected_environment()
             .is_some_and(|environment| environment.source.promoted_from().is_some())
     });
-    // Environments promoted from this one, which its page promotes into.
     let dependents = Signal::derive(move || {
         let current = context.environment.get();
         context.saved.with(|saved| {
@@ -51,7 +50,6 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
                 .collect::<Vec<_>>()
         })
     });
-    // Promotes into those environments, from any environment of a chain.
     let promote_into = move || {
         view! {
             <Show when={move || !dependents.with(Vec::is_empty)}>
@@ -63,7 +61,6 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
             </Show>
         }
     };
-    // Deploys the shown environment, building its images again on `rebuild`.
     let deploy = move |rebuild| {
         let (environment, navigate) = (context.environment_id(), navigate.get_value());
         context.deploy(environment.clone(), None, rebuild, move || {
@@ -115,7 +112,6 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
                         })
                 });
                 view! {
-                    // Without environments, Deploy leads to creating one.
                     <Show
                         when={move || !environments.with(Vec::is_empty)}
                         fallback={move || {
@@ -172,7 +168,6 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
                     "Preview"
                 </button>
                 {promote_into()}
-                // A one-time revision overrides the branch the manifest is fetched from.
                 <Show when={move || {
                     context.can(AppPermission::Deploy)
                         && context
@@ -181,7 +176,6 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
                 }}>
                     <DeployRevision />
                 </Show>
-                // A deployment reuses the images of unchanged builds.
                 <Show when={move || {
                     context.can(AppPermission::Deploy) && context.builds_from_git()
                 }}>
@@ -204,7 +198,6 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
                     on:click={move |_| deploy(false)}
                 >
                     {icon(Icon::Rocket)}
-                    // Its own page names the environment already.
                     {move || match context.selected_environment() {
                         Some(environment) if !context.environment_page() => {
                             format!("Deploy to {}", environment.name)
@@ -270,13 +263,11 @@ fn DeployRevision() -> impl IntoView {
     let input = RwSignal::new(String::new());
     let navigate = StoredValue::new(use_navigate());
     let revision = move || input.with(|input| kind.get().revision(input));
-    // The branch the environment follows.
     let current = Memo::new(move |_| {
         context
             .selected_environment()
             .and_then(|environment| environment.source.branch().cloned())
     });
-    // Each opening starts from a blank form, without earlier errors.
     let open = move |_| {
         kind.set(RevisionKind::Branch);
         input.set(String::new());
@@ -288,7 +279,6 @@ fn DeployRevision() -> impl IntoView {
         let Some(revision) = untrack(revision) else {
             return;
         };
-        // Validated here for a precise error; the daemon validates it again.
         if let Some(current) = current.get_untracked()
             && let Err(error) = current.at(&revision)
         {
@@ -373,7 +363,6 @@ fn StopAction() -> impl IntoView {
             .selected_environment()
             .is_some_and(|environment| environment.stopped())
     };
-    // Previews are deleted instead.
     let deployed = move || {
         context.can(AppPermission::Deploy)
             && context.selected_environment().is_some_and(|environment| {
@@ -543,7 +532,6 @@ pub(in crate::browser::management) fn PromoteAction(
     let opened = RwSignal::new(false);
     let navigate = use_navigate();
     let verb = promotion.with_value(Promotion::verb);
-    // A promotion names its source; deploying a release names its target.
     let label = move || {
         let target = environment.get_value();
         let source = context.saved.with(|saved| {
@@ -574,7 +562,6 @@ pub(in crate::browser::management) fn PromoteAction(
             context.busy.set(false);
         });
     };
-    // The request promoting exactly what was reviewed, if it can be promoted.
     let promotable = move || {
         plan.with(|plan| promotion.with_value(|promotion| promotion.confirmed(plan.as_ref()?)))
     };
@@ -628,7 +615,6 @@ pub(in crate::browser::management) fn PromoteAction(
                 <button
                     type="button"
                     class="btn btn-primary"
-                    // A failed promotion stays blocked until inspected again.
                     disabled={move || {
                         context.action_blocked() || context.error.with(Option::is_some)
                             || promotable().is_none()

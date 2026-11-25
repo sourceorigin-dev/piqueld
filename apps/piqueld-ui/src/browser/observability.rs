@@ -173,14 +173,12 @@ pub(super) fn EventHistory(
     let owned = scoped || application.is_some();
     let scope_filter = StoredValue::new((application, environment, operation));
     let query = use_query_map();
-    // The operation shown: the one this list is about, else the address's.
     let operation = move || {
         scope_filter
             .with_value(|(_, _, operation)| operation.clone())
             .or_else(|| query.with(|query| query.get("operation")))
     };
     let cursor = RwSignal::new(None::<String>);
-    // The events whose details are shown, kept across refreshes.
     let expanded = RwSignal::new(BTreeSet::new());
     Effect::new(move |previous: Option<Option<String>>| {
         let operation = operation();
@@ -194,7 +192,6 @@ pub(super) fn EventHistory(
     let scope = RwSignal::new(String::new());
     let period = Period::new();
     let failures = RwSignal::new(errors_only);
-    // The kinds on offer, read once and again on Newest.
     let kinds_revision = RwSignal::new(0_u32);
     let kinds = LocalResource::new(move || {
         kinds_revision.track();
@@ -228,15 +225,12 @@ pub(super) fn EventHistory(
         }
     });
     let reset = move || cursor.set(None);
-    // Handler setting `value` to a filter's new text, restarting at the
-    // newest page.
     let filter = move |value: RwSignal<String>| {
         move |event: leptos::ev::Event| {
             value.set(event_target_value(&event));
             reset();
         }
     };
-    // The address's operation filter is the page's, so it is cleared by link.
     let filtered_by_address = move || {
         scope_filter.with_value(|(_, _, operation)| operation.is_none())
             && query.with(|query| query.get("operation").is_some())
@@ -401,7 +395,6 @@ fn EventCard(
     let opened = move || expanded.with(|expanded| expanded.contains(&id));
     let title = headline(&event);
     let diagnostic = event.diagnostic.as_ref().map(|d| d.id.clone());
-    // Context worth a glance, without repeating the headline.
     let unless_title = |value: &Option<String>| value.clone().filter(|value| *value != title);
     let meta = [
         unless_title(&event.phase.map(|phase| phase.to_string())),
@@ -534,7 +527,6 @@ pub(super) fn DiagnosticPage() -> impl IntoView {
 fn DiagnosticDetails(event: Event) -> impl IntoView {
     let detail = event.diagnostic.clone();
     let operation = event.operation_id.clone();
-    // Named once the application listing has loaded.
     let signals = dashboard_context().signals;
     let environment = event.environment_id.clone().map_or_else(
         || "Daemon".into_any(),

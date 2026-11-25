@@ -90,7 +90,6 @@ impl ChangeDisplay {
 fn diff_lines(before: &str, after: &str) -> Vec<DiffLine> {
     let old: Vec<&str> = before.lines().collect();
     let new: Vec<&str> = after.lines().collect();
-    // lengths[i][j]: the longest common subsequence of old[i..] and new[j..].
     let mut lengths = vec![vec![0_usize; new.len() + 1]; old.len() + 1];
     for i in (0..old.len()).rev() {
         for j in (0..new.len()).rev() {

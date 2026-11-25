@@ -176,7 +176,6 @@ pub(super) struct RowDialog<T: Send + Sync + 'static> {
     index: RwSignal<Option<usize>>,
 }
 
-// Copied by hand: deriving would demand `T: Copy`, and signals copy anyway.
 impl<T: Send + Sync + 'static> Clone for RowDialog<T> {
     fn clone(&self) -> Self {
         *self

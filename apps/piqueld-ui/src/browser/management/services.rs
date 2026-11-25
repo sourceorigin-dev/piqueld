@@ -34,7 +34,6 @@ const SERVICE_TABS: [&str; Section::ALL.len() + 1] = {
 pub(super) fn ServiceList() -> impl IntoView {
     let context = editor();
     let signals = context.signals();
-    // Observed runtime health for one saved service, when the detail has loaded.
     let observed = move |name: &str| {
         signals.detail.with(|detail| {
             detail.as_ref().and_then(|detail| {
@@ -155,7 +154,6 @@ pub(super) fn ServiceEditor(name: String) -> impl IntoView {
             move |_| navigate(&href, NavigateOptions::default()),
         );
     };
-    // The tab the address names, else the first.
     let requested = leptos_router::hooks::use_query_map().with_untracked(|query| query.get("tab"));
     let selected = RwSignal::new(
         SERVICE_TABS

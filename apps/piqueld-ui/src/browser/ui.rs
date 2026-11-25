@@ -678,8 +678,6 @@ pub(super) fn FormModal(
 ) -> impl IntoView {
     view! {
         <Modal title={title} opened={opened} busy={busy} wide={wide}>
-            // The form checks its own fields, with better messages than the
-            // browser's, so native validation never blocks a submission.
             <form
                 class="stack-sm"
                 novalidate
@@ -768,8 +766,6 @@ impl TabSet {
                 selected.set(options[0]);
             }
         };
-        // At once, so panels rendered after the tabs never mount a hidden one,
-        // then whenever the selected tab becomes hidden.
         untrack(reveal);
         Effect::new(move |_| reveal());
         let step = move |forward: bool| {

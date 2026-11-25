@@ -72,10 +72,8 @@ pub(super) fn RepositorySettings() -> impl IntoView {
         RepositoryDraft::new(manifest.spec.manifest.clone())
     });
     let form = draft.value;
-    // Once connected, each environment follows its own branch, changed on its page.
     let connected = move || draft.baseline.with(|saved| saved.enabled);
     let other_edits = move || context.other_edits(Some("repository"));
-    // How the saved connection syncs; `None` while disconnected.
     let saved_sync = move || {
         context.saved.with(|saved| {
             saved
@@ -86,7 +84,6 @@ pub(super) fn RepositorySettings() -> impl IntoView {
                 .map(|manifest| manifest.sync)
         })
     };
-    // Whether saving would let pushes deploy without `apps:deploy`.
     let undeployable = move || {
         let edit =
             ApplicationEdit::Repository(form.with(|v| v.enabled.then(|| v.manifest.clone())));
@@ -100,7 +97,6 @@ pub(super) fn RepositorySettings() -> impl IntoView {
             return;
         }
         let value = form.get_untracked();
-        // A valid typed interval is already in `sync`; a malformed one is not.
         if !value.interval_valid() {
             context.set_error(Some(format!(
                 "The poll interval must be a whole number of seconds from {} to {}.",
@@ -267,8 +263,6 @@ fn sync_fields(form: RwSignal<RepositoryDraft>) -> impl IntoView {
 #[component]
 fn SyncCheck() -> impl IntoView {
     let context = editor();
-    // Loaded when shown and on Refresh: dashboard polling only reloads the
-    // application when its configuration changes, which a check does not.
     let loaded = LocalResource::new(move || {
         let id = context.id();
         async move {
@@ -329,7 +323,6 @@ fn WebhookSettings() -> impl IntoView {
         let id = context.id();
         async move { Client::browser().webhook(&id).await.user_error() }
     });
-    // The secret just generated: never retrievable again.
     let generated = RwSignal::new(None::<String>);
     Effect::new(move |_| {
         if context.tabs.selected.get() != "Source" {
@@ -441,7 +434,6 @@ fn WebhookSettings() -> impl IntoView {
                             .into_any()
                     }
                 }}
-                // A secret arriving after the tab was left waits for it.
                 <Show when={move || context.tabs.selected.get() == "Source"}>
                     <Show when={move || generated.with(Option::is_some)}>
                         {notice(
@@ -555,9 +547,6 @@ pub(super) fn VolumeSettings() -> impl IntoView {
 #[component]
 pub(super) fn ServiceGroup(name: String, section: Section) -> impl IntoView {
     let context = editor();
-    // Every section's draft keeps the other sections as shown, so it
-    // compares and follows only its own fields. A service removed meanwhile
-    // keeps the form it was shown with.
     #[expect(
         clippy::expect_used,
         reason = "`ServiceEditor` checks the service exists before mounting its sections."
@@ -1042,7 +1031,6 @@ fn mount_fields(form: RwSignal<ServiceForm>) -> AnyView {
 /// File rows: container path, mode, and the inline content or, for files a
 /// repository-backed manifest declares, their repository path.
 fn file_fields(form: RwSignal<ServiceForm>) -> AnyView {
-    // Reads or writes the `i`th file's fields, if it still exists.
     let read = |i: usize, field: fn(&FileForm) -> String| {
         move |v: &ServiceForm| v.files.get(i).map_or_else(String::new, field)
     };
