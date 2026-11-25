@@ -35,5 +35,8 @@
     with subtest("Root runs piquelctl over the socket without signing in"):
         status = json.loads(machine.succeed("piquelctl --json status"))
         assert status["status"] == "running", status
+
+    with subtest("man finds the daemon's and piquelctl's manual pages"):
+        machine.succeed("man --where piqueld piquelctl")
   '';
 }

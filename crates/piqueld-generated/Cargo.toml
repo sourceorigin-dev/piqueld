@@ -9,6 +9,10 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+# Reads the commands the references and manual pages describe.
+clap.workspace = true
+# Writes the manual pages.
+roff.workspace = true
 thiserror.workspace = true
 
 [lints]

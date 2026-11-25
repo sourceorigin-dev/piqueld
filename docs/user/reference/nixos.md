@@ -256,6 +256,8 @@ modules require `services.tailscale.enable`, and open no firewall port.
 ## Packages
 
 Nix packages and development shells support x86_64 Linux and aarch64 macOS,
-where only the CLI package is available. Configuration and
+where only the CLI package is available. Each package installs the manual
+pages of its programs, `piqueld(8)` and `piquelctl(1)`, and the CLI's shell
+completions. Configuration and
 package changes require rebuilding NixOS; application state remains under
 `dataDir`.

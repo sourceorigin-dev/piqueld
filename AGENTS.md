@@ -147,9 +147,9 @@ walk this list and say which entries applied:
   `nix/module.nix` (`nix/cli-module.nix` for `piquelctl` profiles).
 - **Documentation**: each surface in the user guide, and its screenshots.
 
-`just generate` writes the OpenAPI document, the client, the JSON Schemas and
-the manifest, configuration and command references, and `just openapi-check`
-fails while one is stale.
+`just generate` writes the OpenAPI document, the client, the JSON Schemas, the
+manifest, configuration and command references and the manual pages in `man/`,
+and `just openapi-check` fails while one is stale.
 
 A way in needs a way out and a way to see it: create needs delete, enable
 needs disable, pause needs resume, and each state shows in `piquelctl` and the

@@ -1,18 +1,20 @@
 //! Generates or checks the `OpenAPI` specification, its Rust client bindings
 //! and operation paths, the standalone application manifest and daemon
-//! configuration JSON Schemas, and the documentation's settings references
-//! rendered from those schemas. `piquelctl`'s `cli_reference` example renders
-//! the command reference; it depends on the client this generates, so it runs
-//! as a separate step.
+//! configuration JSON Schemas, the documentation's settings references
+//! rendered from those schemas, and the daemon's manual page. `piquelctl`'s
+//! `cli_reference` example renders the command reference and its manual page;
+//! it depends on the client this generates, so it runs as a separate step.
 #![expect(
     clippy::print_stdout,
     reason = "an example is a command-line program that reports on stdout"
 )]
 
+mod manual;
 mod settings_reference;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use heck::ToSnakeCase;
+use manual::Manual;
 use piqueld::api::http::openapi_document;
 use piqueld_config::DaemonConfig;
 use piqueld_core::manifest::ApplicationManifest;
@@ -103,6 +105,7 @@ impl Generator {
             ),
             (SettingsPage::MANIFEST.path, manifest_settings),
             (SettingsPage::CONFIG.path, config_settings),
+            (Manual::PATH, Manual::render()),
         ])?;
         println!("{report}");
         Ok(())

@@ -41,7 +41,8 @@ unicode-width.workspace = true
 workspace = true
 
 [dev-dependencies]
-# The `cli_reference` example writes the command reference through it.
+# The `cli_reference` example writes the command reference and the manual
+# page through it.
 piqueld-generated.workspace = true
 # Serves exec WebSockets from the blocking test server.
 tokio-tungstenite.workspace = true

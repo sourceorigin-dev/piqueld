@@ -7,6 +7,7 @@ pub mod auth;
 pub mod backup;
 /// Executor-independent durable build recording.
 pub mod build;
+pub mod cli;
 pub mod ingress;
 pub mod operations;
 pub mod reconcile;

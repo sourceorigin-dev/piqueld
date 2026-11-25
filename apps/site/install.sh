@@ -5,12 +5,13 @@
 #   curl -fsSL https://piqueld.dev/install.sh | sh
 #
 # It says what it will do and asks before changing anything. It installs the
-# daemon and piquelctl from a GitHub release to /usr/local/bin, creates the
-# piqueld user, writes /etc/piqueld/config.toml unless it exists, installs and
-# (re)starts the piqueld systemd service, and offers to add you to the piqueld
-# group, so that you run piquelctl without sudo. The steps that need root run
-# with sudo, and print their command first. Running it again updates piqueld,
-# keeping its configuration and data. See
+# daemon and piquelctl from a GitHub release to /usr/local/bin, and their
+# manual pages to /usr/local/share/man, creates the piqueld user, writes
+# /etc/piqueld/config.toml unless it exists, installs and (re)starts the
+# piqueld systemd service, and offers to add you to the piqueld group, so that
+# you run piquelctl without sudo. The steps that need root run with sudo, and
+# print their command first. Running it again updates piqueld, keeping its
+# configuration and data. See
 # https://docs.piqueld.dev/user/getting-started/install.html.
 #
 # Options:
@@ -34,6 +35,7 @@ export PATH
 
 repository=https://github.com/sourceorigin-dev/piqueld
 prefix=/usr/local/bin
+man=/usr/local/share/man
 config=/etc/piqueld/config.toml
 unit=/etc/systemd/system/piqueld.service
 
@@ -121,7 +123,8 @@ plan() {
     say "  - Download $archive from"
     say "    $release,"
     say "    and check it against the release's SHA256SUMS."
-    say "  - Install piqueld and piquelctl to $prefix."
+    say "  - Install piqueld and piquelctl to $prefix,"
+    say "    and their manual pages to $man."
     getent passwd piqueld >/dev/null ||
         say "  - Create the piqueld system user, in the docker group."
     if [ -e "$config" ]; then
@@ -238,6 +241,11 @@ main() {
     files="$work/piqueld-$version-x86_64-linux"
     [ -z "$sudo" ] || say "Running the steps that need root with sudo"
     as_root install -m 0755 "$files/piqueld" "$files/piquelctl" "$prefix/"
+    # Releases up to 0.1.0 have no manual pages.
+    if [ -e "$files/piqueld.8" ]; then
+        as_root install -D -m 0644 "$files/piqueld.8" "$man/man8/piqueld.8"
+        as_root install -D -m 0644 "$files/piquelctl.1" "$man/man1/piquelctl.1"
+    fi
     getent passwd piqueld >/dev/null ||
         as_root useradd --system --user-group --groups docker --home-dir /var/lib/piqueld \
             --no-create-home --shell "$(command -v nologin || echo /bin/false)" piqueld

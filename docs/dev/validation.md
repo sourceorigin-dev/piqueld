@@ -34,7 +34,7 @@ by version.
 | Rust documentation, private items included, with warnings denied | `doc` | `rust (lint)` |
 | Native workspace tests, against the real embedded dashboard | `test` | `rust (test)` |
 | Documentation tests | `doc-test` | `rust (test)` |
-| Generated API specification, client, JSON Schemas, and command and settings references freshness | `openapi-check` | `rust (lint)` |
+| Generated API specification, client, JSON Schemas, command and settings references, and manual pages freshness | `openapi-check` | `rust (lint)` |
 | Crate dependency boundaries | `boundary` | `rust (lint)` |
 | Published crates on the minimum supported Rust, `rust-version` | `cargo +<rust-version> check` | `msrv` |
 | Browser compilation | `ui-check`, `check-wasm` | `wasm-ui` |
@@ -127,14 +127,14 @@ these checks run after a pull request merges instead of before:
 | Capability | Local recipe | Job |
 | --- | --- | --- |
 | Embedded daemon and CLI release builds | `nix build` | `nix packages` |
-| The piqueld and piquelctl modules, in a VM: the daemon reaches Docker, serves the dashboard on localhost, and root runs `piquelctl status` over its socket | `nix build .#checks.x86_64-linux.piqueld` | `nix packages` |
+| The piqueld and piquelctl modules, in a VM: the daemon reaches Docker, serves the dashboard on localhost, root runs `piquelctl status` over its socket, and `man` finds both manual pages | `nix build .#checks.x86_64-linux.piqueld` | `nix packages` |
 | The build machine and build registry modules, in a VM: a rootless build pushed to the registry, an emulated arm64 build, and garbage collection | `nix build .#checks.x86_64-linux.piqueld-builder` | `nix packages` |
 | Every published crate packaged and built from its package | `publish --dry-run` | `package` |
-| The static release archive, installed and then updated by `install.sh` | `dist` | `install` |
+| The static release archive, installed and then updated by `install.sh`, with its manual pages where `man` finds them | `dist` | `install` |
 
 They run on each push to `main` that changes what they build from, such as a
 manifest, the lockfile, a build script, a migration, the toolchain, the flake,
-the dashboard, the examples, `install.sh` or `xtask`. They also run every night at 04:00 UTC,
+the dashboard, the examples, the manual pages, `install.sh` or `xtask`. They also run every night at 04:00 UTC,
 which catches the rest and what breaks without a commit, such as a new stable
 Rust or a new runner image. Only the latest commit is checked: a push cancels
 the run of the one before it.

@@ -28,7 +28,7 @@ struct Archive {
     /// The archive's top-level directory, such as
     /// `piqueld-0.1.0-x86_64-linux`.
     name: String,
-    files: [(PathBuf, &'static str); 4],
+    files: [(PathBuf, &'static str); 6],
 }
 
 impl Archive {
@@ -42,6 +42,8 @@ impl Archive {
                 (binaries.join("piqueld"), "piqueld"),
                 (binaries.join("piquelctl"), "piquelctl"),
                 (root.join("apps/piqueld/piqueld.service"), "piqueld.service"),
+                (root.join("man/piqueld.8"), "piqueld.8"),
+                (root.join("man/piquelctl.1"), "piquelctl.1"),
                 (root.join("LICENSE"), "LICENSE"),
             ],
         }
