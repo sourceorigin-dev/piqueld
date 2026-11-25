@@ -14,7 +14,7 @@ pub use notifications::RetryError;
 
 /// Error recorded on a delivery cancelled because its destination was
 /// disabled, changed or deleted.
-pub const DESTINATION_CHANGED: &str = "The destination was disabled, changed or deleted";
+pub(crate) const DESTINATION_CHANGED: &str = "The destination was disabled, changed or deleted";
 use destinations::DestinationRow;
 use piqueld_core::EventKind;
 

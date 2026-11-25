@@ -25,15 +25,14 @@ pub use mutation::{
 mod observability;
 pub use audit::{AuditOrigin, AuditPrincipal, AuditRequest, Author, NewAuditEvent, Recorded};
 pub use auth::access::{Actor, Attribution, Caller, EnvironmentOwner, Visibility};
-pub use auth::{Cascade, CredentialKind, Lockout, Proof};
 pub use auth::{
-    DirectoryView, Invitation, NewCredential, NewInvitation, NewPasskey, PasskeyOwner,
-    SecurityEvent,
+    Cascade, CredentialKind, DirectoryView, Invitation, Lockout, NewCredential, NewInvitation,
+    NewPasskey, PasskeyOwner, Proof, SecurityEvent,
 };
 pub use backup::{DatabaseCopy, DatabaseFile, DatabaseIdentity};
 pub use build::{BuildOutcome, LogAppend, LogEnding, ReusableBuild};
 pub use journal::JournalAction;
-pub use observability::DESTINATION_CHANGED;
+pub(crate) use observability::DESTINATION_CHANGED;
 pub use observability::{ContainerCursors, DestinationError, RetryError, traffic};
 pub use secret::{SecretDeletion, SecretPrecondition};
 mod operation;
@@ -352,7 +351,7 @@ impl StoreError {
     }
 
     /// Wraps a decoding failure for persisted state that should always be valid.
-    pub fn corrupt(source: impl StdError + Send + Sync + 'static) -> Self {
+    fn corrupt(source: impl StdError + Send + Sync + 'static) -> Self {
         Self::CorruptSource(Box::new(source))
     }
 
@@ -536,8 +535,8 @@ impl Tracking<'_> {
     /// # Errors
     ///
     /// Rejects a revision for an environment without a branch.
-    pub fn candidate(
-        &self,
+    fn candidate(
+        self,
         revision: Option<&ManifestRevision>,
     ) -> Result<ApplicationTemplate, StoreError> {
         let template = self
@@ -571,7 +570,7 @@ const DEFAULT_HEALTH_REFRESH_MS: i64 = 60_000;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnvironmentStatus {
     /// Environment identity.
-    pub environment_id: EnvironmentId,
+    environment_id: EnvironmentId,
     /// Current status.
     pub state: ApplicationState,
     /// Last observed runtime health, independent of pending intent.
@@ -579,9 +578,9 @@ pub struct EnvironmentStatus {
     /// When `runtime_health` was last observed, in Unix milliseconds.
     pub health_observed_at_ms: Option<i64>,
     /// Latest diagnostic, when present.
-    pub message: Option<String>,
+    message: Option<String>,
     /// Observation timestamp.
-    pub updated_at_ms: i64,
+    updated_at_ms: i64,
 }
 
 /// Page of live environments.

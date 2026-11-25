@@ -26,27 +26,28 @@ macro_rules! sort_unordered {
     }};
 }
 
-pub mod declaration;
+mod declaration;
 pub(crate) mod dependencies;
-pub mod domain;
-pub mod files;
-pub mod input;
-pub mod limits;
-pub mod links;
-pub mod rollout;
-pub mod routes;
-pub mod security;
-pub mod template;
+pub(crate) mod domain;
+pub(crate) mod files;
+mod input;
+mod limits;
+pub(crate) mod links;
+mod rollout;
+mod routes;
+mod security;
+mod template;
 /// Shared tests for manifest variables and templates.
 #[cfg(test)]
 mod template_tests;
-pub mod validation;
-pub mod variables;
+mod validation;
+mod variables;
 
 pub use declaration::{Declaration, DeclaredSource, EnvironmentChange};
 pub use domain::{
     HealthExecution, HealthTiming, SecretSource, ValidatedBuild, ValidatedHealthCheck,
-    ValidatedResourceLimits, ValidatedSecretMount, ValidatedSource,
+    ValidatedJob, ValidatedMetadata, ValidatedMount, ValidatedResourceLimits, ValidatedSecretMount,
+    ValidatedService, ValidatedSource, ValidatedSpec, ValidatedVolume,
 };
 pub use files::{
     FileCaptureError, FileMode, FileModeError, FileSource, RepositoryFiles, ServiceFile,
@@ -64,14 +65,16 @@ pub use rollout::{
     Rollback, Rollout, RolloutOrder, RolloutOrderSource, RolloutPolicy, ValidatedRollout,
 };
 pub use routes::{
-    Hostname, RedirectStatus, RedirectUrl, RouteHostname, RouteTarget, ValidatedRedirect,
-    ValidatedRoute, Visibility, VisibilityError,
+    Hostname, HostnameError, RedirectStatus, RedirectStatusError, RedirectUrl, RedirectUrlError,
+    RouteHostname, RouteHostnameError, RouteTarget, ValidatedRedirect, ValidatedRoute, Visibility,
+    VisibilityError,
 };
 pub use security::{ContainerUser, ServiceSecurity};
 pub use template::{ApplicationTemplate, Rendering, ValidatedTemplate};
+pub(crate) use validation::valid_git_branch;
 pub use validation::{
-    ValidationError, ValidationErrors, parse_json, parse_template_json, parse_template_toml,
-    parse_toml, safe_decode_path, valid_git_branch, valid_git_commit, valid_repository_path,
+    ValidationError, ValidationErrors, parse_json, parse_template_toml, parse_toml,
+    safe_decode_path, valid_git_commit, valid_repository_path,
 };
 pub(crate) use validation::{registry_component, valid_image_reference};
 pub use variables::{
@@ -80,7 +83,6 @@ pub use variables::{
 };
 
 use crate::{ApplicationId, ApplicationName};
-use domain::{ValidatedMetadata, ValidatedSpec};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
@@ -91,7 +93,7 @@ pub const APPLICATION_API_VERSION: &str = "piqueld.dev/v1alpha1";
 pub const APPLICATION_KIND: &str = "Application";
 /// Envelope version for the specification hash. Version 2 hashes only the
 /// canonical spec, so cosmetic metadata changes no longer redeploy services.
-pub const SPEC_HASH_VERSION: &str = "piqueld-spec-hash/v2";
+const SPEC_HASH_VERSION: &str = "piqueld-spec-hash/v2";
 
 /// Validated domain application before canonical collection ordering.
 #[derive(Clone, Debug, PartialEq)]

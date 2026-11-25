@@ -11,7 +11,7 @@ use std::ops::AddAssign;
 /// Distinct pages, and referring sites, counted per route, day and kind.
 /// Later new values that day aren't counted, so a burst of distinct paths
 /// can't grow the table without bound.
-pub const TRAFFIC_RANK_LIMIT: i64 = 100;
+const TRAFFIC_RANK_LIMIT: i64 = 100;
 /// Pages, and referring sites, a report lists.
 const REPORT_RANKS: i64 = 20;
 /// An hour, in ms.

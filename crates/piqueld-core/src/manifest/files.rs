@@ -305,7 +305,7 @@ impl super::ApplicationSpec {
 /// The lowercase hexadecimal SHA-256 digest of `content`, which names the
 /// Swarm config a file is mounted from.
 #[must_use]
-pub fn content_digest(content: &str) -> String {
+pub(crate) fn content_digest(content: &str) -> String {
     format!("{:x}", Sha256::digest(content))
 }
 

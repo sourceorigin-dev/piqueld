@@ -25,9 +25,9 @@ const MAX_LOG_LINE_CHARS: usize = 4096;
 #[derive(Debug)]
 pub struct EngineVersion {
     /// Docker Engine's version; empty when the engine doesn't report one.
-    pub engine: String,
+    engine: String,
     /// The newest Engine API version it serves; empty when unreported.
-    pub api: String,
+    api: String,
 }
 
 impl EngineVersion {

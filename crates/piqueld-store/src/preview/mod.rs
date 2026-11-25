@@ -444,9 +444,9 @@ impl Store {
 /// current one running. A restore's is what it restored came from.
 pub struct PreviewOrigins {
     /// The deployment its current target comes from, if one was prepared.
-    pub current: Option<DeploymentOrigin>,
+    current: Option<DeploymentOrigin>,
     /// Its latest deployment, if any.
-    pub latest: Option<DeploymentOrigin>,
+    pub(crate) latest: Option<DeploymentOrigin>,
 }
 
 impl PreviewOrigins {

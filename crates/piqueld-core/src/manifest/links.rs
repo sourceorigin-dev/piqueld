@@ -17,7 +17,7 @@ use utoipa::ToSchema;
 
 /// Most exports or imports one application declares, and most applications
 /// one export grants.
-pub const MAX_LINKS: usize = 64;
+const MAX_LINKS: usize = 64;
 
 /// A service of this application that other applications may reach over a
 /// private link, as `<service>.<application>`.
@@ -89,7 +89,7 @@ impl ValidatedImport {
 /// The name an exported service answers to on its link networks:
 /// `<service>.<application>`.
 #[must_use]
-pub fn alias(service: &ServiceName, application: &ApplicationName) -> String {
+pub(crate) fn alias(service: &ServiceName, application: &ApplicationName) -> String {
     format!("{service}.{application}")
 }
 

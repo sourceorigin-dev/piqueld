@@ -123,20 +123,20 @@ pub struct Secret {
     /// The value it was created with; secrets are immutable.
     pub value: Vec<u8>,
     /// Ownership labels it was created with.
-    pub labels: BTreeMap<String, String>,
+    labels: BTreeMap<String, String>,
 }
 
 /// A job run, as its Swarm job service records it.
 #[derive(Clone, Debug)]
 pub struct JobRunState {
     /// The operation that started it.
-    pub operation: String,
+    operation: String,
     /// The exit code it reports once finished.
-    pub exit_code: i64,
+    exit_code: i64,
     /// When it times out.
     pub deadline: std::time::SystemTime,
     /// The labels of the job service, as the run's `DesiredJobRun` sets them.
-    pub labels: BTreeMap<String, String>,
+    labels: BTreeMap<String, String>,
 }
 
 impl JobRunState {

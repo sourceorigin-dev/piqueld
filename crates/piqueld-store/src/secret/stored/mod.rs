@@ -57,7 +57,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn stored_secrets_on(
+    pub(crate) async fn stored_secrets_on(
         connection: &mut SqliteConnection,
         application: &ApplicationId,
     ) -> Result<Vec<StoredSecret>, StoreError> {
@@ -338,7 +338,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub fn check_declared_names<'a>(
+    pub(crate) fn check_declared_names<'a>(
         declared: &[piqueld_core::manifest::SecretDeclaration],
         names: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), StoreError> {
@@ -368,7 +368,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn check_declared_against_store_on(
+    pub(crate) async fn check_declared_against_store_on(
         connection: &mut SqliteConnection,
         application: &str,
         declared: &[piqueld_core::manifest::SecretDeclaration],
@@ -390,7 +390,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn check_secret_access_on(
+    pub(crate) async fn check_secret_access_on(
         connection: &mut SqliteConnection,
         environment: &EnvironmentView,
         app: &NormalizedApplication,

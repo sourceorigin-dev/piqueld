@@ -85,7 +85,10 @@ impl<'a> Actor<'a> {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn load(self, db: &mut SqliteConnection) -> Result<Option<Authority>, StoreError> {
+    pub(crate) async fn load(
+        self,
+        db: &mut SqliteConnection,
+    ) -> Result<Option<Authority>, StoreError> {
         match self {
             Self::Daemon | Self::System(_) | Self::Operator { session: None, .. } => Ok(None),
             Self::Operator {
@@ -114,7 +117,7 @@ impl<'a> Actor<'a> {
     /// # Errors
     /// Returns [`Denied::Reauthenticate`], a revoked credential or session,
     /// or storage errors.
-    pub async fn require_fresh(self, db: &mut SqliteConnection) -> Result<(), StoreError> {
+    pub(crate) async fn require_fresh(self, db: &mut SqliteConnection) -> Result<(), StoreError> {
         match self.load(db).await? {
             Some(authority) => authority.require_fresh(),
             None => Ok(()),
@@ -126,7 +129,7 @@ impl<'a> Actor<'a> {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn require_on(
+    pub(crate) async fn require_on(
         self,
         db: &mut SqliteConnection,
         permission: Permission,
@@ -149,7 +152,7 @@ impl<'a> Actor<'a> {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn require_on_environment(
+    pub(crate) async fn require_on_environment(
         self,
         db: &mut SqliteConnection,
         permission: AppPermission,
@@ -169,7 +172,7 @@ impl<'a> Actor<'a> {
 impl Attribution<'_> {
     /// The host operator's Unix user ID, as stored in `actor_operator_uid`.
     #[must_use]
-    pub fn operator_uid(self) -> Option<u32> {
+    pub(crate) fn operator_uid(self) -> Option<u32> {
         self.operator.map(|operator| operator.uid)
     }
 }
@@ -251,7 +254,7 @@ impl Caller<'_> {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn load(self, db: &mut SqliteConnection) -> Result<Authority, StoreError> {
+    pub(super) async fn load(self, db: &mut SqliteConnection) -> Result<Authority, StoreError> {
         let now = now_secs();
         let idle = now - super::SESSION_IDLE_SECS;
         let row = sqlx::query!(
@@ -275,20 +278,20 @@ impl Caller<'_> {
 /// What a credential may do: its account's grants, limited by the
 /// credential's own grants when it is scoped, like an API token.
 #[derive(Clone, Debug)]
-pub struct Authority {
+pub(crate) struct Authority {
     /// Account the credential belongs to.
-    pub user_id: String,
+    pub(crate) user_id: String,
     /// Effective grants.
-    pub grants: Grants,
+    pub(crate) grants: Grants,
     /// Whether the credential is limited to its own grants.
-    pub scoped: bool,
+    pub(crate) scoped: bool,
     /// The credential's class and its last passkey proof.
-    pub proof: super::Proof,
+    pub(super) proof: super::Proof,
 }
 
 impl Authority {
     /// Reads the effective grants of `credential_id`, belonging to `user_id`.
-    pub async fn read(
+    pub(super) async fn read(
         db: &mut SqliteConnection,
         user_id: String,
         credential_id: &str,
@@ -313,7 +316,7 @@ impl Authority {
     ///
     /// # Errors
     /// Returns [`Denied::Reauthenticate`].
-    pub fn require_fresh(&self) -> Result<(), StoreError> {
+    pub(super) fn require_fresh(&self) -> Result<(), StoreError> {
         self.proof
             .require_fresh(now_secs())
             .map(drop)
@@ -323,7 +326,7 @@ impl Authority {
     /// Requires a credential with the account's full access: scoped
     /// credentials cannot create credentials or change their own account, so
     /// they cannot outlive or exceed their own limits.
-    pub fn require_unscoped(&self) -> Result<(), StoreError> {
+    pub(super) fn require_unscoped(&self) -> Result<(), StoreError> {
         if self.scoped {
             Err(StoreError::Denied(Denied::Scoped))
         } else {
@@ -334,7 +337,7 @@ impl Authority {
     /// Requires an unscoped credential (see [`Self::require_unscoped`])
     /// holding every grant in `grants`, if any: access it hands out to an
     /// account or a new credential outlives the credential handing it out.
-    pub fn may_hand_out(&self, grants: Option<&Grants>) -> Result<(), StoreError> {
+    pub(super) fn may_hand_out(&self, grants: Option<&Grants>) -> Result<(), StoreError> {
         self.require_unscoped()?;
         match grants {
             Some(grants) => self.grants.may_grant(grants).map_err(StoreError::Denied),
@@ -477,7 +480,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn commit_access_change(
+    pub(super) async fn commit_access_change(
         &self,
         tx: sqlx::Transaction<'_, sqlx::Sqlite>,
         author: impl Into<Author<'_>>,
@@ -535,7 +538,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn check_account_on(
+    pub(super) async fn check_account_on(
         db: &mut SqliteConnection,
         actor: Actor<'_>,
         user_id: &str,
@@ -571,7 +574,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn require_an_admin(db: &mut SqliteConnection) -> Result<(), StoreError> {
+    pub(super) async fn require_an_admin(db: &mut SqliteConnection) -> Result<(), StoreError> {
         let exists = sqlx::query_scalar!(
             r#"SELECT EXISTS(SELECT 1 FROM auth_grants g JOIN auth_passkeys p ON p.user_id=g.user_id WHERE g.permission='admin' AND g.application_id IS NULL) AS "exists!: bool""#
         )

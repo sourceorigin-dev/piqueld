@@ -164,7 +164,7 @@ impl ManifestRevision {
 /// "-x", "/main", "a..b", "a/.hidden", "x.lock" -> invalid
 /// ```
 #[must_use]
-pub fn valid_git_branch(branch: &str) -> bool {
+pub(crate) fn valid_git_branch(branch: &str) -> bool {
     !(branch.is_empty()
         || branch.len() > 255
         || branch == "@"

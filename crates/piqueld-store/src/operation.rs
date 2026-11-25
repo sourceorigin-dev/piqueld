@@ -64,7 +64,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn operation_on(
+    pub(crate) async fn operation_on(
         connection: &mut SqliteConnection,
         id: &str,
     ) -> Result<Operation, StoreError> {
@@ -334,7 +334,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns a storage error.
-    pub async fn retry_operation_on(
+    pub(crate) async fn retry_operation_on(
         tx: &mut Transaction<'_, Sqlite>,
         operation: &Operation,
     ) -> Result<(Operation, bool), StoreError> {

@@ -259,7 +259,7 @@ impl fmt::Display for Reference {
 /// Whether `value` is a variable or namespace name: an ASCII letter or `_`,
 /// then letters, digits, `_`, or `-`, at most 63 bytes.
 #[must_use]
-pub fn valid_identifier(value: &str) -> bool {
+pub(super) fn valid_identifier(value: &str) -> bool {
     value.len() <= 63
         && value
             .bytes()

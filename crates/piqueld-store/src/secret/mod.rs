@@ -27,7 +27,7 @@ use zeroize::Zeroizing;
 /// What a secret check or event concerns: an application, whose store all
 /// its environments share, or one environment.
 #[derive(Clone, Copy)]
-pub enum SecretScope<'a> {
+pub(crate) enum SecretScope<'a> {
     /// An application and every environment of it.
     Application(&'a ApplicationId),
     /// One environment.

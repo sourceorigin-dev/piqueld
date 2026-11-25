@@ -20,7 +20,7 @@ use utoipa::ToSchema;
 
 /// Name of the environment created with every new application, and of the one
 /// each application received when environments were introduced.
-pub const DEFAULT_ENVIRONMENT: &str = "production";
+const DEFAULT_ENVIRONMENT: &str = "production";
 
 /// What an environment is. Behaviour that differs between environments and
 /// previews matches on this kind.

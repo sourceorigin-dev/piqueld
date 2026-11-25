@@ -102,7 +102,7 @@ impl RemoteBuilder {
     ///
     /// # Errors
     /// Returns why it could not be reached.
-    pub async fn probe(&self) -> Result<(), BuilderUnavailable> {
+    pub(crate) async fn probe(&self) -> Result<(), BuilderUnavailable> {
         self.connect().await.1
     }
 
@@ -200,7 +200,7 @@ impl RemoteBuilder {
 
     /// The repository the build machine pushes to, and its registry.
     #[must_use]
-    pub fn registry(&self) -> &crate::BuildRegistry {
+    pub(crate) fn registry(&self) -> &crate::BuildRegistry {
         &self.registry
     }
 }
