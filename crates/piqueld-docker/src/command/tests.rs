@@ -13,11 +13,8 @@ async fn drains_both_streams_and_preserves_non_utf8_failures() {
 
 #[tokio::test]
 async fn cancellation_kills_descendants_in_the_command_group() {
-    // Exercise cancellation with both a live leader and an exited leader
-    // whose descendant still owns its output streams.
     for ending in ["wait", "exit 0"] {
         let directory = tempfile::tempdir().unwrap();
-        // A FIFO, so reading it waits for the descendant to write its PID.
         let pidfile = directory.path().join("descendant.pid");
         rustix::fs::mknodat(
             rustix::fs::CWD,
@@ -45,8 +42,6 @@ async fn cancellation_kills_descendants_in_the_command_group() {
         .unwrap()
         .unwrap();
         let pid = rustix::process::Pid::from_raw(pid.trim().parse().unwrap()).unwrap();
-        // Readable once the descendant exits, though it is not this
-        // process's child. It runs `sleep 60` until the cancellation.
         let pidfd = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()).unwrap();
         command.abort();
         assert!(command.await.unwrap_err().is_cancelled());
@@ -114,7 +109,6 @@ async fn quiet_output_is_appended_after_the_delay() {
     let read =
         LoggedCommand::tail_recorded(reader, Some(&log), piqueld_core::api::LogStream::Stdout);
     tokio::pin!(read);
-    // The stream stays open: only the delay can append it.
     tokio::time::timeout(Batch::DELAY * 2, &mut read)
         .await
         .unwrap_err();

@@ -118,8 +118,6 @@ impl BollardDocker {
             stream,
             budget: (LOG_BYTES / tasks.len().max(1)).max(TASK_LOG_BYTES),
         };
-        // Collected first: a lazy `map` over borrowed tasks fails the
-        // `async_trait` future's lifetime checks.
         let reads = tasks
             .iter()
             .map(|task| self.task_logs(task, &services, window))
@@ -187,8 +185,6 @@ impl BollardDocker {
                     .stderr(stream != Some(piqueld_core::api::LogStream::Stdout))
                     .timestamps(true)
                     .since(window.since)
-                    // One extra line reveals whether this container
-                    // alone already exceeds the requested tail.
                     .tail(&(u32::from(window.tail) + 1).to_string())
                     .build(),
             ),
@@ -207,12 +203,8 @@ impl BollardDocker {
                 continue;
             }
             for line in item.to_string().lines() {
-                // Docker prefixes each line with an RFC 3339 timestamp:
-                // `2026-01-01T00:00:00.000000000Z message`.
                 let (timestamp, message) = line.split_once(' ').unwrap_or(("", line));
                 let message = LogRecord::clean_message(message);
-                // Approximates the serialized record size, with 128 bytes of
-                // per-record overhead.
                 let size = message.len() + timestamp.len() + task_id.len() + service.len() + 128;
                 log.push(
                     LogRecord {

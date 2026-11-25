@@ -321,7 +321,6 @@ impl BollardDocker {
             return Ok(true);
         }
         let ownership = Self::ownership_filter(&job.container.labels)?;
-        // Tasks before containers: see `live_tasks`.
         if job.stop_service {
             let mut labels = ownership.clone();
             labels.push(format!("{SERVICE_LABEL}={}", job.container.logical_name));
@@ -380,7 +379,6 @@ impl BollardDocker {
                         .map(String::as_str),
                 )
         };
-        // Tasks before containers: see `live_tasks`.
         Ok(!(self
             .live_tasks(&labels)
             .await?
@@ -446,7 +444,6 @@ impl BollardDocker {
 
     /// Reads the progress of the operation's run of the job.
     pub(super) async fn inspect_job(&self, job: &DesiredJobRun) -> Result<JobStatus, DockerError> {
-        // A single-completion job without restarts schedules exactly one task.
         Ok(match self.job_run_tasks(job).await? {
             None => JobStatus::Missing,
             Some((deadline, tasks)) => tasks
@@ -486,7 +483,6 @@ impl BollardDocker {
         let mut output = JobOutput::default();
         let mut remaining = JOB_OUTPUT_MAX_BYTES;
         while let Some(item) = logs.next().await {
-            // The container is gone: its output so far is all there is.
             let Some(item) = item.found().or_request("read job output")? else {
                 break;
             };
@@ -546,7 +542,6 @@ impl BollardDocker {
                 .remove_owned_service(&name, ownership, ResourceKind::Job)
                 .await
             {
-                // Same-label services of another instance are not ours to remove.
                 Ok(()) | Err(DockerError::OwnershipConflict) => {}
                 Err(error) => return Err(error),
             }
@@ -600,7 +595,6 @@ mod tests {
             container.health_check.unwrap().test,
             Some(vec!["NONE".into()])
         );
-        // Labels find a run's container after its service is removed.
         assert_eq!(container.labels, Some(labels));
         let network = &task.networks.unwrap()[0];
         assert_eq!(network.target.as_deref(), Some("app-notes"));

@@ -168,8 +168,6 @@ impl BuildRegistry {
             let digest = if let Some(digest) = known {
                 digest
             } else {
-                // Only a digest is remembered: a 404, such as a proxy's, is
-                // asked again next time. `delete` marks the tags it emptied.
                 let digest = self.lookup(tag).await?;
                 if let Some(digest) = &digest {
                     self.digests
@@ -180,7 +178,6 @@ impl BuildRegistry {
             };
             images.extend(digest.map(|digest| self.repository.image(&digest)));
         }
-        // Forget the tags the registry no longer lists.
         self.digests.lock().retain(|tag, _| tags.contains(tag));
         Ok(images)
     }
@@ -210,7 +207,6 @@ impl BuildRegistry {
                 let status = response.status();
                 let answer = RegistryAnswer::read(response).await;
                 if answer.code == "NAME_UNKNOWN" {
-                    // The repository has no image yet.
                     break;
                 }
                 return Err(RegistryError::Unavailable {
@@ -244,7 +240,6 @@ impl BuildRegistry {
             ))
             .header(header::ACCEPT, Self::MANIFEST_TYPES);
         let response = self.send(request).await?;
-        // A HEAD's 404 has no body to say why: the tag is gone either way.
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -343,7 +338,6 @@ impl BuildRegistry {
                 });
             }
         }
-        // Its tags name nothing any more, even on a registry that keeps them.
         for known in self.digests.lock().values_mut() {
             if known.as_ref() == Some(&digest) {
                 *known = None;

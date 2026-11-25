@@ -41,10 +41,6 @@ impl BollardDocker {
             diagnostic,
             id: task.id.clone().unwrap_or_default(),
             slot: task.slot.and_then(|slot| u64::try_from(slot).ok()),
-            // Swarm creates the tasks of a specification once it applies it,
-            // so those created since the latest update started run it. Task
-            // specifications can't be compared with the service's: Docker
-            // reports defaults in one and not the other.
             current: updated.is_none_or(|updated| {
                 task.created_at
                     .as_deref()
@@ -80,8 +76,6 @@ impl BollardDocker {
         match health?.status? {
             HealthStatusEnum::HEALTHY => Some(true),
             HealthStatusEnum::UNHEALTHY => Some(false),
-            // "none" (no healthcheck), "starting", and absent states carry no
-            // verdict yet and must not fail an otherwise running task.
             HealthStatusEnum::NONE | HealthStatusEnum::STARTING | HealthStatusEnum::EMPTY => None,
         }
     }
@@ -411,8 +405,6 @@ impl BollardDocker {
                         || task.healthy == Some(false))
             })
             .count();
-        // Tasks of a service scaled to zero shut down after Swarm stops
-        // wanting them running.
         let stopping = replicas == 0 && tasks.iter().any(|task| task.state.is_live());
         match (running, failed) {
             (running, _) if running == usize::from(replicas) && !stopping => Convergence::Converged,
@@ -532,7 +524,6 @@ impl<'a> SwarmTime<'a> {
         }
         Some(Self {
             seconds,
-            // Go trims trailing zeros: `.5` is 500 ms.
             nanoseconds: format!("{fraction:0<9}").parse().ok()?,
         })
     }
@@ -641,7 +632,6 @@ mod tests {
                 "{tasks:?} {healthcheck}"
             );
         }
-        // `NONE` disables the image's health check.
         let disabled = HealthConfig {
             test: Some(vec!["NONE".into()]),
             ..Default::default()

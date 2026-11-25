@@ -59,7 +59,6 @@ async fn deletes_by_digest_and_reports_why_the_registry_kept_an_image() {
     for (answered, refused) in [
         (response("202 Accepted", None), None),
         (response("404 Not Found", unknown), None),
-        // A proxy's 404 says nothing of the image.
         (response("404 Not Found", None), Some("404 Not Found")),
         (
             response("405 Method Not Allowed", disabled),
@@ -79,14 +78,12 @@ async fn deletes_by_digest_and_reports_why_the_registry_kept_an_image() {
             (result, _) => panic!("unexpected {result:?}"),
         }
     }
-    // An image of another repository is never sent.
     let other = registry(port, "other").repository.image(&digest);
     assert!(matches!(
         piqueld.delete(&other).await,
         Err(RegistryError::NotPushed(_))
     ));
 
-    // Once nothing listens, the registry is unreachable.
     drop(listener);
     let owner = InstanceId::parse("instance-1").unwrap();
     assert!(matches!(
@@ -131,18 +128,13 @@ async fn lists_only_this_installations_tagged_images_page_by_page() {
         )
     };
     let tags = |tags: &str| format!(r#"{{"name":"piqueld","tags":[{tags}]}}"#);
-    // The next page is the link whose relation is `next`, on any `Link`
-    // line, sent to the registry even when a proxy names another host…
     let next = "link: <?last=0&n=1000>; rel=\"prev\"\r\n\
         link: <https://proxy.example/v2/piqueld/tags/list?last=instance-1.a&n=1000>; rel=\"next\"\r\n";
-    // …and it may be relative to the page.
     let last = "link: <?last=instance-1.gone&n=1000>; rel=next\r\n";
     let (requests, images) = tokio::join!(
         answer_all(
             &listener,
             vec![
-                // Another installation's tag and one not ours are skipped;
-                // the second page follows the link.
                 with_body(
                     "200 OK",
                     next,
@@ -152,7 +144,6 @@ async fn lists_only_this_installations_tagged_images_page_by_page() {
                 with_body("200 OK", "", &tags("")),
                 found('a'),
                 found('b'),
-                // Deleted since it was listed.
                 with_body("404 Not Found", "", ""),
             ],
         ),
@@ -176,8 +167,6 @@ async fn lists_only_this_installations_tagged_images_page_by_page() {
     });
     assert_eq!(images.unwrap(), expected.clone().into());
 
-    // A second listing looks up only the tag that wasn't found: tags never
-    // move, but a 404 may be a proxy's.
     let all = with_body(
         "200 OK",
         "",
@@ -196,8 +185,6 @@ async fn lists_only_this_installations_tagged_images_page_by_page() {
         ]
     );
     assert_eq!(images.unwrap(), expected.clone().into());
-    // Once its image is deleted, a tag names nothing, even on a registry
-    // that keeps it.
     let (_, deleted) = tokio::join!(
         answer(&listener, response("202 Accepted", None)),
         piqueld.delete(&expected[0])
@@ -210,20 +197,17 @@ async fn lists_only_this_installations_tagged_images_page_by_page() {
     assert_eq!(requests.len(), 2, "{requests:?}");
     assert_eq!(images.unwrap(), [expected[1].clone()].into());
 
-    // A repository the registry doesn't have yet holds nothing.
     let unknown = response(
         "404 Not Found",
         Some(("NAME_UNKNOWN", "repository name not known")),
     );
     let (_, images) = tokio::join!(answer(&listener, unknown), piqueld.pushed_images(&owner));
     assert!(images.unwrap().is_empty());
-    // A proxy's bare 404 says nothing of the repository.
     let (_, images) = tokio::join!(
         answer(&listener, response("404 Not Found", None)),
         piqueld.pushed_images(&owner)
     );
     assert!(matches!(images, Err(RegistryError::Unavailable { .. })));
-    // A proxy's 502, while the registry is stopped, makes it unavailable.
     let (_, images) = tokio::join!(
         answer(&listener, response("502 Bad Gateway", None)),
         piqueld.pushed_images(&owner)

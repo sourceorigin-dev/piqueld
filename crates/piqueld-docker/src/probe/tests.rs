@@ -40,7 +40,6 @@ fn the_probe_config_must_match_the_health_check() {
     let mut writable = probe.clone();
     writable.file.as_mut().unwrap().mode = Some(0o777);
 
-    // Service files mount other configs elsewhere, checked separately.
     let file = TaskSpecContainerSpecConfigs {
         config_name: Some("piqueld-app-file-0000".into()),
         file: Some(TaskSpecContainerSpecFile1 {
@@ -68,11 +67,8 @@ fn the_probe_config_must_match_the_health_check() {
 
 #[test]
 fn the_embedded_probe_fits_a_swarm_config() {
-    // Swarm rejects configs over 500 KiB on some Engine versions.
     assert!(BINARY.len() <= 500 * 1024, "{} bytes", BINARY.len());
     assert!(BINARY.starts_with(b"\x7fELF"));
-    // Within Swarm's name limit for the longest instance IDs, and distinct
-    // per installation.
     let name = HealthProbe::name(&"a".repeat(64));
     assert!(name.starts_with("piqueld-health-probe-") && name.len() <= 63);
     assert_ne!(name, HealthProbe::name("instance-1"));

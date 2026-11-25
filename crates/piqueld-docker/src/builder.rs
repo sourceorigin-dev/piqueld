@@ -144,7 +144,6 @@ impl RemoteBuilder {
         let check = piqueld_core::api::BuilderCheck {
             reachable: result.is_ok(),
             checked_at_ms: crate::now_ns() / 1_000_000,
-            // Why the connection failed; the rest is the status's.
             message: result.as_ref().err().map(|error| error.source.to_string()),
         };
         *self.last_check.lock() = Some(check.clone());
@@ -245,7 +244,6 @@ mod tests {
         assert_eq!(reachable.status().last_check, None);
         reachable.probe().await.unwrap();
         assert!(reachable.status().last_check.unwrap().reachable);
-        // A port nothing listens on: bound, then released.
         let closed = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .unwrap()
@@ -257,7 +255,6 @@ mod tests {
             error.to_string(),
             format!("the build machine's BuildKit daemon at {closed} is unreachable")
         );
-        // The check keeps why connecting failed, without the address.
         let check = unreachable.status().last_check.unwrap();
         assert!(!check.reachable);
         assert_eq!(check.message, Some(error.source.to_string()));

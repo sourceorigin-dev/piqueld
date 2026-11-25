@@ -160,7 +160,6 @@ async fn cancelling_service_request_closes_connection_driver() {
     while !headers.ends_with(b"\r\n\r\n") {
         headers.push(stream.read_u8().await.unwrap());
     }
-    // Leave the body pending so the driver still owns an open connection.
     stream
         .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n{")
         .await

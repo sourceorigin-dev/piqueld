@@ -9,8 +9,8 @@ use hyper_util::rt::TokioIo;
 use std::time::Duration;
 use tokio::net::UnixStream;
 
-// A valid API request may be 2 MiB; Docker adds service metadata around that
-// specification when it is inspected.
+/// Largest service response read: a valid API request may be 2 MiB, and Docker
+/// adds service metadata around that specification when it is inspected.
 const MAX_SERVICE_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 /// Pause before resubmitting a service update Docker answered out of sequence.
 const SERVICE_UPDATE_RETRY_DELAY: Duration = Duration::from_millis(250);
@@ -296,7 +296,6 @@ impl BollardDocker {
             .map_err(|source| DockerError::unavailable(connect, source))?
             .map_err(|source| DockerError::unavailable(connect, source))?;
         let open = "open Docker connection";
-        // Elapsed deadlines are unavailability, like every other timeout.
         let (mut sender, connection) = tokio::time::timeout_at(
             deadline,
             hyper::client::conn::http1::handshake(TokioIo::new(stream)),
@@ -304,10 +303,6 @@ impl BollardDocker {
         .await
         .map_err(|source| DockerError::unavailable(open, source))?
         .map_err(|source| DockerError::request(open, source))?;
-        // Hyper returns a connection driver separately from the request sender;
-        // it must run concurrently for the sender to make progress. Always
-        // abort and join it after the request. JoinSet also aborts on drop when
-        // an outer deadline or caller cancels this future.
         let mut drivers = tokio::task::JoinSet::new();
         drivers.spawn(async move {
             if let Err(source) = connection.await {
@@ -318,8 +313,6 @@ impl BollardDocker {
             let request = Request::builder()
                 .method(method)
                 .uri(path)
-                // Docker's Unix-socket HTTP endpoint still requires a Host
-                // header; localhost is the conventional placeholder.
                 .header(header::HOST, "localhost")
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::CONNECTION, "close")
@@ -329,7 +322,6 @@ impl BollardDocker {
                 .send_request(request)
                 .await
                 .map_err(|source| DockerError::request("send Docker request", source))?;
-            // The response names the request's path, which `read` never sees.
             read(response).await.map_err(|error| match error {
                 WireError::Response { status, body, .. } => WireError::Response {
                     path: path.to_owned(),
@@ -481,9 +473,6 @@ impl BollardDocker {
     ) -> Result<(), WireError> {
         self.service_request(
             Method::POST,
-            // registryAuthFrom=spec is intentional: piqueld specs are
-            // auth-free, so Docker must not fall back to credentials
-            // from its own store.
             &format!("/services/{id}/update?version={version}&registryAuthFrom=spec"),
             Some(spec),
         )

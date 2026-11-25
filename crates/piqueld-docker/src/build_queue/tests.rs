@@ -9,14 +9,12 @@ async fn environment_builds_go_ahead_of_waiting_preview_builds_but_never_interru
     let mut preview = pin!(queue.turn(Preview));
     let mut environment = pin!(queue.turn(Environment));
     assert!(poll!(&mut preview).is_pending());
-    // The running preview build keeps its turn.
     assert!(poll!(&mut environment).is_pending());
     drop(running);
     let environment = environment.await;
     assert!(poll!(&mut preview).is_pending());
     drop(environment);
     drop(preview.await);
-    // A cancelled build leaves its queue.
     let running = queue.turn(Environment).await;
     let mut cancelled = Box::pin(queue.turn(Environment));
     let mut waiting = pin!(queue.turn(Preview));
@@ -39,7 +37,6 @@ async fn builds_run_up_to_the_slots_at_once() {
         panic!("the freed slot goes to the waiting build");
     };
     drop((second, third));
-    // Both slots are free again: both turns are held at once.
     let mut first = pin!(queue.turn(Preview));
     let mut second = pin!(queue.turn(Preview));
     let (Poll::Ready(_first), Poll::Ready(_second)) = (poll!(&mut first), poll!(&mut second))

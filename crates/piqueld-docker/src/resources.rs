@@ -174,8 +174,6 @@ impl BollardDocker {
             .into_iter()
             .filter_map(|network| {
                 let runtime_configuration_matches = Self::network_configuration_matches(&network);
-                // Overlay networks list a load balancer endpoint on each node
-                // where any task uses them; only containers hold them.
                 let in_use = network.containers.as_ref().is_some_and(|containers| {
                     containers
                         .keys()
@@ -263,8 +261,6 @@ impl BollardDocker {
             |service| service.id.clone(),
         )
         .await?;
-        // One-shot jobs run outside the maintained target. Planning, repair, and
-        // health never see them; job execution and deletion remove them.
         listed.retain(|service| {
             !service
                 .spec
@@ -276,8 +272,6 @@ impl BollardDocker {
             .iter()
             .filter_map(|service| service.spec.as_ref()?.name.clone())
             .collect::<Vec<_>>();
-        // Complete inspections run concurrently so one slow service cannot
-        // serialize the whole snapshot.
         let services = Self::inspect_all(
             listed.into_iter().filter_map(|listed| listed.id),
             |id| async move { (id.clone(), self.inspect_service_wire(&id).await) },
@@ -303,8 +297,6 @@ impl BollardDocker {
     ) -> Result<Vec<ObservedService>, DockerError> {
         let (raw_services, service_names) = self.inspect_application_services(application).await?;
         let all_tasks = if service_names.is_empty() {
-            // Empty name filters rely on undocumented daemon behavior and
-            // there is nothing to list for.
             Vec::new()
         } else {
             self.client()?
@@ -404,8 +396,6 @@ impl BollardDocker {
             .ok_or(DockerError::Request("read existing service identity"))?;
         let labels = existing.spec.and_then(|s| s.labels).unwrap_or_default();
         Self::check_ownership(labels, ownership, kind, name)?;
-        // Delete the resource that was inspected, even if the name is replaced
-        // between the ownership check and this request.
         self.client()?
             .delete_service(&id)
             .await
@@ -581,8 +571,6 @@ impl DockerApi for BollardDocker {
                 }
                 self.client()?
                     .init_swarm(SwarmInitRequest {
-                        // piqueld is intentionally single-host. Do not expose the
-                        // manager control port while bootstrapping the local Swarm.
                         listen_addr: Some("127.0.0.1:2377".into()),
                         advertise_addr: Some("127.0.0.1".into()),
                         ..Default::default()
@@ -599,25 +587,20 @@ impl DockerApi for BollardDocker {
             .await
     }
 
+    /// Builds with Docker Buildx, on the engine's own builder or a build
+    /// machine's (see `RemoteBuilder`), never one the account selected, which
+    /// may not load into the engine. The image's digest comes from the build's
+    /// `--metadata-file`, e.g. `{"containerimage.digest": "sha256:<64 hex>"}`:
+    /// the ID the engine's builder gives it, or the digest a build machine
+    /// pushed it under. Provenance attestations are off, as they differ on
+    /// every build and would change that ID, so identical builds would never
+    /// share a release. A build on the engine's builder is then tagged (see
+    /// `ImageBuild::tag`); a build machine's image is pulled by its digest.
     async fn build_image(
         &self,
         build: &super::ImageBuild<'_>,
         log: Option<&dyn crate::command::OutputLog>,
     ) -> Result<piqueld_core::BuiltImage, DockerError> {
-        // Builds shell out to Docker Buildx, on the engine's own builder or
-        // on a build machine's (see `RemoteBuilder`), never on one the
-        // account selected, which may not load into the engine. Buildx also
-        // ignores `DOCKER_BUILDKIT=0`.
-        // They read the image's digest from the build's `--metadata-file`,
-        // e.g. `{"containerimage.digest": "sha256:<64 hex>"}`: the ID the
-        // engine's builder gives the image, or the digest a build machine
-        // pushed it under. Provenance attestations differ on every build
-        // and, with the containerd image store, change that ID, so identical
-        // builds would never share a release. Without them, `--iidfile`
-        // would hold the config digest, which that store does not know the
-        // image by. A build on the engine's own builder is then tagged (see
-        // `ImageBuild::tag`); a build machine's image is pulled by its
-        // digest only, and pulled again if it goes missing.
         #[derive(serde::Deserialize)]
         struct Metadata {
             #[serde(rename = "containerimage.digest")]
@@ -675,14 +658,11 @@ impl DockerApi for BollardDocker {
                     .map_err(BuildError::Tag)?;
                 return Ok(digest.into());
             };
-            // The build machine pushed it: the engine has to pull it.
             let image = remote.registry.repository.image(&digest);
             let pulled = self
                 .resolve_image(image.as_str())
                 .await
                 .map_err(BuildError::Pull);
-            // The push succeeded in the output above, so say why the build
-            // still failed.
             if let (Err(error), Some(log)) = (&pulled, log) {
                 let detail =
                     std::iter::successors(Some(error as &dyn std::error::Error), |error| {
@@ -766,11 +746,6 @@ impl DockerApi for BollardDocker {
     }
 
     async fn resolve_image(&self, reference: &str) -> Result<String, DockerError> {
-        // Pulling through the Engine records RepoDigests, and resolution
-        // verifies the tag was not re-pointed while the pull ran. Stream
-        // details are intentionally discarded because image-pull progress is
-        // not part of the durable API contract. A cold pull of a large image
-        // exceeds the per-request budget, so resolution carries its own.
         DockerTimeout::ImageResolution
             .run(
                 "resolve image",
@@ -783,7 +758,6 @@ impl DockerApi for BollardDocker {
         &self,
         application: &EnvironmentId,
     ) -> Result<ObservedApplication, DockerError> {
-        // One deadline covers every phase, including complete resource inspections.
         DockerTimeout::Request
             .run("observe application", async {
                 let node_id = self.local_node_id().await?;
@@ -943,9 +917,6 @@ impl DockerApi for BollardDocker {
                             == Some(desired.name.as_str())
                     }) {
                         Some(existing) => {
-                            // List responses can omit fields needed for semantic comparison.
-                            // Always use the complete service inspection before observing or
-                            // deciding whether an update is necessary.
                             let inspected = self
                                 .inspect_service_wire(
                                     existing.id.as_deref().unwrap_or(desired.name.as_str()),
@@ -1159,7 +1130,6 @@ impl DockerApi for BollardDocker {
                     .ok_or(DockerError::Request("read existing network identity"))?;
                 let labels = existing.labels.unwrap_or_default();
                 Self::check_ownership(labels, ownership, ResourceKind::Network, name)?;
-                // Network IDs make the ownership check and removal target the same object.
                 self.client()?
                     .remove_network(&id)
                     .await

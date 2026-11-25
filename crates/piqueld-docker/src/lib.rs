@@ -547,9 +547,6 @@ pub async fn resolve_image_digest(
         let before = matching_repo_digests(source, reference, &repository).await?;
         source.pull(reference).await?;
         let after = matching_repo_digests(source, reference, &repository).await?;
-        // Digest-pinned references must resolve to exactly that digest; tags
-        // must resolve to a digest that was already present before the pull (any
-        // digest when none was present yet).
         let Some(digest) = after
             .iter()
             .find(|digest| {

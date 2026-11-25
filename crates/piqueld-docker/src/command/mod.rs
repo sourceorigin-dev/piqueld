@@ -223,8 +223,6 @@ impl LoggedCommand {
         ));
         let stdout = child.stdout.take().ok_or(CommandError::Capture("stdout"))?;
         let stderr = child.stderr.take().ok_or(CommandError::Capture("stderr"))?;
-        // Keep the leader unreaped while draining pipes. Its reserved PID prevents
-        // the process-group ID from being reused while cancellation can signal it.
         let (stdout, stderr) = tokio::try_join!(
             read_stdout(stdout),
             Self::tail_recorded(stderr, log, piqueld_core::api::LogStream::Stderr),
@@ -234,7 +232,6 @@ impl LoggedCommand {
             .wait()
             .await
             .map_err(|source| CommandError::Wait { operation, source })?;
-        // No await may intervene between reaping the leader and disarming.
         group.0 = None;
         if !status.success() {
             return Err(CommandFailure {
@@ -264,7 +261,6 @@ impl LoggedCommand {
         loop {
             let due = batch.as_ref().and_then(|batch| batch.due);
             let read = match due {
-                // Reading is cancel safe: a read that times out read nothing.
                 Some(due) => match tokio::time::timeout_at(due, stream.read(&mut buffer)).await {
                     Ok(read) => read?,
                     Err(_elapsed) => {
