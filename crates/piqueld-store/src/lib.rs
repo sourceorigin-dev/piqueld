@@ -558,6 +558,10 @@ pub const DEFAULT_PAGE_SIZE: usize = piqueld_core::api::DEFAULT_PAGE_SIZE as usi
 /// [`piqueld_core::api::MAX_PAGE_SIZE`] as a store page length.
 pub const MAX_PAGE_SIZE: usize = piqueld_core::api::MAX_PAGE_SIZE as usize;
 
+/// How long a connection waits on another's lock before failing with a busy
+/// error.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// How old an unchanged health observation gets before it's written again,
 /// until [`Store::with_observability`] sets the daemon's scan interval: the
 /// default reconciliation scan interval of 60 seconds.
@@ -678,7 +682,7 @@ impl Store {
             .create_if_missing(true)
             .foreign_keys(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(5));
+            .busy_timeout(BUSY_TIMEOUT);
         match durability {
             Durability::Synced => options,
             #[cfg(any(test, feature = "testing"))]
