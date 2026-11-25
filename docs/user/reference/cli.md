@@ -53,7 +53,8 @@ curl -fsSL --create-dirs -o ~/.cargo/share/man/man1/piquelctl.1 \
 ```
 
 `man` looks for pages in `share/man` beside each directory of your `PATH`,
-such as `~/.cargo/bin`.
+such as `~/.cargo/bin`. Version 0.1.0 has no manual page, so the download
+fails for it.
 
 ## macOS support
 

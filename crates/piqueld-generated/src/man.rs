@@ -135,14 +135,30 @@ impl ManPage {
         self.comment + &self.roff.render()
     }
 
-    /// Adds the line saying how to write `command`, its name in bold.
+    /// Adds the line saying how to write `command`, with the words of its
+    /// name in bold. A parent's arguments may come between them.
+    ///
+    /// ```text
+    /// **tool secret** <APPLICATION> **list** [OPTIONS]
+    /// ```
     fn usage(&mut self, command: &CommandHelp) {
-        let arguments = command
-            .usage
-            .strip_prefix(&command.path)
-            .unwrap_or(&command.usage);
-        self.roff
-            .text([bold(command.path.as_str()), roman(arguments)]);
+        let mut path = command.path.split(' ').peekable();
+        let mut runs: Vec<(bool, String)> = Vec::new();
+        for word in command.usage.split(' ') {
+            let in_name = path.next_if_eq(&word).is_some();
+            match runs.last_mut() {
+                Some((last, run)) if *last == in_name => run.extend([" ", word]),
+                _ => runs.push((in_name, word.to_owned())),
+            }
+        }
+        let mut line = Vec::new();
+        for (in_name, run) in runs {
+            if !line.is_empty() {
+                line.push(roman(" "));
+            }
+            line.push(if in_name { bold(run) } else { roman(run) });
+        }
+        self.roff.text(line);
     }
 
     /// How to write `argument`: flags in bold, the values they take in
@@ -276,8 +292,9 @@ mod tests {
     use crate::CommandHelp;
     use clap::{Arg, Command};
 
-    /// The page of a program with one option and one subcommand, below its
-    /// comment and `roff`'s preamble.
+    /// The page of a program with one option, and a subcommand that takes an
+    /// argument before its own subcommand, below its comment and `roff`'s
+    /// preamble.
     fn page() -> String {
         let command = Command::new("tool")
             .about("Run the tool")
@@ -291,7 +308,12 @@ mod tests {
                     .default_value("safe")
                     .help("How to run"),
             )
-            .subcommand(Command::new("check-all").about("Check everything"));
+            .subcommand(
+                Command::new("secret")
+                    .about("Manage secrets")
+                    .arg(Arg::new("application").value_name("APPLICATION").required(true))
+                    .subcommand(Command::new("list").about("List the secrets")),
+            );
         let help = CommandHelp::new(command);
         let mut page = ManPage::new("a test", &help, Section::Administration, "a tool", "1.2.3");
         page.section("OPTIONS");
@@ -335,14 +357,25 @@ two.
 How to run. Default: \fBsafe\fR. Values: \fBfast\fR, \fBsafe\fR.
 .SH COMMANDS
 .TP
-\fBtool check\-all\fR
-Check everything.
+\fBtool secret\fR
+Manage secrets.
 .SS
-tool check\-all
+tool secret
 .PP
-Check everything.
+Manage secrets.
 .PP
-\fBtool check\-all\fR
+\fBtool secret\fR <APPLICATION> [COMMAND]
+.TP
+\fI<APPLICATION>\fR
+.TP
+\fBtool secret list\fR
+List the secrets.
+.SS
+tool secret list
+.PP
+List the secrets.
+.PP
+\fBtool secret\fR <APPLICATION> \fBlist\fR
 "#
         );
     }

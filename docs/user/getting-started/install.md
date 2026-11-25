@@ -264,7 +264,8 @@ To install piqueld without the script, do what it does yourself, on the host:
    sudo install -D -m 644 piquelctl.1 /usr/local/share/man/man1/piquelctl.1
    ```
 
-   To build them from source instead, see
+   The archive of 0.1.0 has no manual pages: leave out the last two commands
+   for it. To build the binaries from source instead, see
    [building from source](#build-from-source).
 
 2. Create a `piqueld` system user and group, and add the user to the `docker`

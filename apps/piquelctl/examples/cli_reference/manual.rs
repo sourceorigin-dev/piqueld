@@ -92,8 +92,7 @@ impl Manual {
         ),
         (
             "PIQUELD_REQUEST_ID",
-            "The ID that makes a change safe to run again, unless \
-             `--request-id` gives one.",
+            "The ID `--request-id` takes, unless it is given.",
         ),
         (
             "XDG_CONFIG_HOME",

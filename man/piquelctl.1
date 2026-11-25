@@ -3882,7 +3882,7 @@ List the application\*(Aqs stored secrets and who may mount them.
 .PP
 It shows each secret\*(Aqs version, never its value.
 .PP
-\fBpiquelctl app secret list\fRpiquelctl app secret <APPLICATION> list [OPTIONS]
+\fBpiquelctl app secret\fR <APPLICATION> \fBlist\fR [OPTIONS]
 .SS
 piquelctl app secret set
 .PP
@@ -3890,7 +3890,7 @@ Create or replace a stored secret.
 .PP
 The value, of 1 to 512000 bytes, comes from a file or standard input, never from an argument. Running services keep their value until the next deployment. A new secret may be mounted by every environment and no preview, unless you set its access. Needs \fBsecrets:write\fR.
 .PP
-\fBpiquelctl app secret set\fRpiquelctl app secret <APPLICATION> set [OPTIONS] <NAME>
+\fBpiquelctl app secret\fR <APPLICATION> \fBset\fR [OPTIONS] <NAME>
 .TP
 \fI<NAME>\fR
 Secret name.
@@ -3933,7 +3933,7 @@ Change which environments, and whether previews, may mount a stored secret.
 .PP
 Options you omit keep the current access. Deployments that mount a secret they may no longer use fail with \fBsecret_access_denied\fR; running ones keep their value. Needs \fBsecrets:write\fR.
 .PP
-\fBpiquelctl app secret access\fRpiquelctl app secret <APPLICATION> access [OPTIONS] <NAME>
+\fBpiquelctl app secret\fR <APPLICATION> \fBaccess\fR [OPTIONS] <NAME>
 .TP
 \fI<NAME>\fR
 Secret name.
@@ -3960,7 +3960,7 @@ Delete a stored secret and the Docker secrets made from it.
 .PP
 It fails while any environment\*(Aqs configuration or deployment still uses the secret. Needs \fBsecrets:write\fR.
 .PP
-\fBpiquelctl app secret delete\fRpiquelctl app secret <APPLICATION> delete [OPTIONS] <NAME>
+\fBpiquelctl app secret\fR <APPLICATION> \fBdelete\fR [OPTIONS] <NAME>
 .TP
 \fI<NAME>\fR
 Secret name.
@@ -5522,7 +5522,7 @@ How long a command may take, unless \fB\-\-timeout\fR says.
 How long a command waits for an operation, unless \fB\-\-wait\-timeout\fR says.
 .TP
 \fBPIQUELD_REQUEST_ID\fR
-The ID that makes a change safe to run again, unless \fB\-\-request\-id\fR gives one.
+The ID \fB\-\-request\-id\fR takes, unless it is given.
 .TP
 \fBXDG_CONFIG_HOME\fR
 The directory that holds \fBpiqueld/profiles.toml\fR and \fBpiqueld/credentials.json\fR, instead of \fB~/.config\fR.
