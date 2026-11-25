@@ -49,6 +49,7 @@ toml.workspace = true
 
 # The build script provisions the database `SQLx` checks queries against.
 [build-dependencies]
+piqueld-build.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 

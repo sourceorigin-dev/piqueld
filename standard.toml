@@ -31,7 +31,7 @@ paths = ["AGENTS.md"]
 
 [deviations.duplicate-items]
 reason = "2 findings, fixed in a follow-up"
-paths = ["apps/piquelctl/src/output/timeline.rs", "crates/piqueld-store/build.rs"]
+paths = ["apps/piquelctl/src/output/timeline.rs"]
 
 [deviations.generated-lints]
 reason = "160 findings: progenitor writes the `allow`s into the generated client; fixed in a follow-up"

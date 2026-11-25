@@ -46,7 +46,7 @@ fn embed_migrations(manifest_dir: &Path) -> Result<(), Box<dyn Error>> {
         .map(|path| {
             println!("cargo:rerun-if-changed={}", path.display());
             let sql = fs::read_to_string(&path)?;
-            Ok((utf8(&path)?.to_owned(), sql))
+            Ok((piqueld_build::utf8(&path)?.to_owned(), sql))
         })
         .collect::<Result<Vec<_>, io::Error>>()?;
 
@@ -120,10 +120,4 @@ fn out_dir() -> Result<PathBuf, Box<dyn Error>> {
     Ok(PathBuf::from(env::var_os("OUT_DIR").ok_or(
         "Cargo did not provide OUT_DIR to the piqueld-store build script",
     )?))
-}
-
-/// `path` as UTF-8, as the generated `include_*!` calls that name it need.
-fn utf8(path: &Path) -> io::Result<&str> {
-    path.to_str()
-        .ok_or_else(|| io::Error::other(format!("path is not valid UTF-8: {}", path.display())))
 }

@@ -65,7 +65,7 @@ fn write_bundle_module(dist: &Path) -> Result<(), Box<dyn Error>> {
             .map(|component| component.as_os_str().to_string_lossy())
             .collect::<Vec<_>>()
             .join("/");
-        let path = crate::utf8(&file)?;
+        let path = piqueld_build::utf8(&file)?;
         writeln!(module, "    ({name:?}, include_bytes!({path:?})),")?;
     }
     module.push_str("];\n");
