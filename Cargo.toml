@@ -20,15 +20,13 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-# The oldest Rust the crates build with, which the `msrv` CI job checks. Raise
-# it when code needs a newer Rust. Cargo then prefers dependency versions that
-# support it when updating the lockfile.
+# The oldest Rust the crates build with, checked by the `msrv` CI job. Raise it
+# when code needs a newer Rust.
 rust-version = "1.99"
 license = "Apache-2.0"
 repository = "https://github.com/sourceorigin-dev/piqueld"
 homepage = "https://piqueld.dev"
-# The daemon and CLI link the book; the library crates leave this unset, so
-# crates.io links their API documentation on docs.rs.
+# Unset in the library crates, so crates.io links their docs.rs documentation.
 documentation = "https://docs.piqueld.dev"
 readme = "README.md"
 keywords = ["docker", "swarm", "deployment", "paas", "self-hosted"]
@@ -36,9 +34,7 @@ keywords = ["docker", "swarm", "deployment", "paas", "self-hosted"]
 [workspace.dependencies]
 chacha20poly1305 = "0.10.1"
 zeroize = "1.8"
-# Internal. Published crates carry the version they are published with;
-# piqueld-generated isn't published, so the crates that use it as a development
-# dependency publish without it.
+# Internal; see docs/dev/rust-conventions.md#dependency-pins.
 piqueld-build     = { version = "0.1.0", path = "crates/piqueld-build"  }
 piqueld-client    = { version = "0.1.0", path = "crates/piqueld-client" }
 piqueld-config    = { version = "0.1.0", path = "crates/piqueld-config" }
@@ -64,19 +60,14 @@ hickory-resolver = { version = "0.26.3", default-features = false, features = ["
 instant-acme = { version = "0.8.5", default-features = false, features = ["hyper-rustls", "rcgen", "ring"] }
 openssl = "0.10.81"
 parking_lot = "0.12.5"
-# Telemetry export over OTLP/gRPC. The daemon queues records per destination
-# itself, so it sends with opentelemetry-proto's generated clients rather than
-# opentelemetry-otlp's exporters; tonic channels serve TCP, TLS (rustls on
-# ring, like reqwest) and Unix sockets alike.
+# Telemetry export over OTLP/gRPC, through opentelemetry-proto's clients.
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace", "metrics", "logs"] }
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "metrics", "logs"] }
 opentelemetry-proto = { version = "0.33.1", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs"] }
 opentelemetry-appender-tracing = { version = "0.33.1", default-features = false }
 tracing-opentelemetry = { version = "0.34.0", default-features = false }
 tonic = { version = "0.14.6", default-features = false, features = ["channel", "tls-ring", "tls-webpki-roots"] }
-# Exact, so a change to how passkeys are verified only arrives through a
-# deliberate, reviewed bump: piqueld uses this low-level crate directly,
-# without the checks webauthn-rs adds on top.
+# Exact, so passkey verification changes only through a reviewed bump.
 webauthn-rs-core = "=0.5.5"
 bytes = "1.10.1"
 bollard = "0.19.1"
@@ -121,13 +112,10 @@ uuid = { version = "1.17.0", features = ["v7"] }
 gloo-timers = "0.3.0"
 leptos = { version = "0.8.21", default-features = false }
 leptos_router = { version = "0.8.16", default-features = false }
-# Exact pin: web-sys patch releases regenerate bindings procedurally and move
-# in lockstep with js-sys/wasm-bindgen, so freeze one tested combination and
-# bump it deliberately.
+# Exact pins, bumped together: they move in lockstep.
 js-sys               = "=0.3.103"
 wasm-bindgen          = "=0.2.126"
-# The daemon build script binds the dashboard with the library behind the
-# wasm-bindgen CLI. Its schema must match the `wasm-bindgen` crate exactly.
+# Binds the dashboard in the build script: matches `wasm-bindgen` exactly.
 wasm-bindgen-cli-support = "=0.2.126"
 wasm-bindgen-futures  = "=0.4.76"
 wasm-bindgen-test     = "=0.3.76"
@@ -154,9 +142,8 @@ unused_qualifications = "warn"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-# Production code propagates errors; tests may expect, panic and dbg (see
-# clippy.toml). `unwrap_used` stays off until the tests' unwraps move to
-# `expect` (PQD-124).
+# Tests may expect, panic and dbg (see clippy.toml). `unwrap_used` stays off
+# until the tests' unwraps move to `expect` (PQD-124).
 expect_used = "warn"
 panic = "warn"
 todo = "warn"
@@ -178,9 +165,7 @@ undocumented_unsafe_blocks = "warn"
 # Modules with children live in `foo/mod.rs`, not `foo.rs` next to `foo/`.
 self_named_module_files = "warn"
 
-# Line tables keep file and line numbers in backtraces but drop the variable
-# and type info that makes up most of a debug build's output. Also applies to
-# tests, which inherit this profile.
+# Line tables keep backtraces readable without most of a debug build's size.
 [profile.dev]
 debug = "line-tables-only"
 
@@ -191,10 +176,8 @@ debug = false
 lto = "thin"
 strip = "symbols"
 
-# The embedded dashboard's wasm32 build, run by the daemon build script, which
-# strips host `CARGO_PROFILE_*` overrides so these settings alone apply.
-# Size beats speed here: this halves the gzipped module compared with release
-# settings plus `wasm-opt -Oz`, so no separate wasm optimizer is needed.
+# The embedded dashboard's wasm32 build. Size beats speed: no `wasm-opt` needed.
+# The build script strips host `CARGO_PROFILE_*` overrides.
 [profile.dashboard]
 inherits = "release"
 opt-level = "z"
