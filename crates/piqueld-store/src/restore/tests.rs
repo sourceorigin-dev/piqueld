@@ -132,8 +132,6 @@ async fn restores_exactly_what_the_deployment_ran() {
     );
     assert_ne!(first_target.secret_names, second_target.secret_names);
 
-    // As fetching a repository-backed manifest, and a preview's bounds,
-    // leave them.
     for statement in [
         "UPDATE deployments SET warnings_json='[{\"code\":\"preview_replicas_capped\",\"message\":\"capped\"}]' WHERE id=?1",
         "INSERT INTO deployment_inputs(operation_id,application_json,repository_commit,fetched) VALUES(?1,'{}','0123456789abcdef0123456789abcdef01234567',1)",
@@ -149,7 +147,6 @@ async fn restores_exactly_what_the_deployment_ran() {
         store.prepared_target(&restored.id).await.unwrap(),
         Some(first_target)
     );
-    // It was fetched at the same revision.
     let input = async |id: &str| -> (String, Option<String>, i64) {
         sqlx::query_as("SELECT application_json,repository_commit,fetched FROM deployment_inputs WHERE operation_id=?1")
             .bind(id)
@@ -211,7 +208,6 @@ async fn refuses_what_cannot_run_again() {
         restore(&store, &unknown, &succeeded.id).await,
         Err(StoreError::NotFound)
     ));
-    // The preview endpoint finds only previews.
     let preview = Restore::Preview {
         id: environment.clone(),
         deployment: succeeded.id.clone(),
@@ -221,7 +217,6 @@ async fn refuses_what_cannot_run_again() {
         Err(StoreError::NotFound)
     ));
 
-    // Key recovery discards the value `succeeded` pinned.
     std::fs::write(temp.path().join("secrets.key"), [42; 32]).unwrap();
     store.recover_secret_key(Daemon).await.unwrap();
     assert!(matches!(
@@ -229,7 +224,6 @@ async fn refuses_what_cannot_run_again() {
         Err(StoreError::Restore(RestoreError::SecretsGone { secrets, .. }))
             if secrets == ["stripe", "token"]
     ));
-    // Nothing was accepted.
     assert_eq!(
         store
             .latest_operation_for_environment(&environment)
@@ -281,7 +275,6 @@ async fn restored_links_stay_bound_to_their_applications() {
     let exporting = manifest.validate().unwrap().normalize(app.id().clone());
     let environment = save(&store, &exporting).await;
     let first = deploy(&store, &exporting, 'a', true).await;
-    // The next deployment exports nothing, so binds nothing.
     deploy(&store, &app, 'b', true).await;
     store
         .force(crate::testing::rename_application(&shop, "market"))

@@ -123,8 +123,6 @@ async fn environments_mount_the_stored_secret_their_variables_name_where_access_
         .await
         .unwrap();
 
-    // Each environment mounts its own stored secret through `stripe_key`, and
-    // its own generated `session`.
     let production_pins = deploy(&store, &production).await.unwrap();
     let staging_pins = deploy(&store, &staging).await.unwrap();
     for (environment, pins, value) in [
@@ -151,7 +149,6 @@ async fn environments_mount_the_stored_secret_their_variables_name_where_access_
         ["session", "stripe-dev"]
     );
 
-    // A secret every environment may mount gets one Docker secret per environment.
     let mut manifest = template().to_manifest();
     manifest.spec.environments.clear();
     let shared = manifest
@@ -199,7 +196,6 @@ async fn capture_and_pinning_deny_stored_secrets_outside_the_access_list() {
         )
         .await
         .unwrap();
-    // Captured while staging may still mount it, pinned after access narrowed.
     let captured = store.request_deploy(&staging, None).await.unwrap();
     store
         .set_secret_access(
@@ -352,7 +348,6 @@ async fn a_name_is_either_declared_and_generated_or_stored() {
             .await
             .map(|_| ())
     ));
-    // Editing only the declarations is checked the same way.
     assert!(conflict(
         store
             .accept(
@@ -388,7 +383,6 @@ async fn access_lists_keep_renamed_environments_and_drop_deleted_ones() {
         .unwrap();
     assert_eq!(stored.access, only([&staging]));
 
-    // A renamed environment keeps its access and is shown by its new name.
     store
         .force(Mutation::RenameEnvironment {
             id: staging.clone(),
@@ -404,8 +398,6 @@ async fn access_lists_keep_renamed_environments_and_drop_deleted_ones() {
     assert_eq!(access.describe(&environments), "qa");
     deploy(&store, &staging).await.unwrap();
 
-    // Deleting an environment removes it from every list. Every-environment
-    // access is unaffected, and covers environments created later.
     store
         .put_stored_secret(Daemon, &application, "shared", 0, b"all".to_vec(), None)
         .await
@@ -517,24 +509,19 @@ async fn versions_go_once_no_deployment_pins_them_and_they_are_not_current() {
         .await
         .unwrap();
     deploy(&store, &production).await.unwrap();
-    // The third generated version is current, but no deployment pins it.
     store
         .regenerate_secret(Daemon, &production, "session", 2)
         .await
         .unwrap();
-    // The third stored version is never deployed, and the fourth is current.
     put(2).await.unwrap();
     put(3).await.unwrap();
 
-    // The first deployment still pins the first versions.
     assert!(store.unused_secret_versions().await.unwrap().is_empty());
-    // As if deployment history pruned it.
     sqlx::query("DELETE FROM operations WHERE id=?1")
         .bind(&pinning)
         .execute(&store.pool)
         .await
         .unwrap();
-    // A running target still naming the first generated version keeps it.
     let resolved = |names: serde_json::Value| {
         sqlx::query("UPDATE environments SET resolved_json=?1 WHERE id=?2")
             .bind(
@@ -620,11 +607,9 @@ async fn requested_secret_changes_commit_with_their_audit_record() {
     put(1, Some(&staging_only))
         .await
         .expect("the upload with access is stored");
-    // Generated secrets, as regenerating stores them, too.
     let value = b"hunter2".to_vec();
     let generated = store.put_secret(author, &staging, "session", 0, value);
     generated.await.expect("the generated value is stored");
-    // A regeneration whose record can't be written keeps the last version.
     store.refuse_audit(true).await;
     let regenerated = store.regenerate_secret(author, &staging, "session", 1);
     regenerated

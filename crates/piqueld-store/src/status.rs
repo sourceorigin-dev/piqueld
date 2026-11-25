@@ -141,7 +141,6 @@ impl Store {
             .iter()
             .all(|service| service.convergence == piqueld_core::Convergence::Converged)
         {
-            // Stopped once Swarm runs nothing, not merely once the flag is set.
             let down = observed.services.iter().all(|service| {
                 service.replicas == 0 && service.tasks.iter().all(|task| !task.state.is_live())
             });

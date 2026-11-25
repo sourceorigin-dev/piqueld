@@ -210,8 +210,6 @@ impl Store {
             DAY_MS
         };
         let since = query.since_ms - query.since_ms.rem_euclid(bucket);
-        // Counts are hourly, so the hour `until_ms` falls in is included
-        // whole, and the window says so.
         let until = query
             .until_ms
             .saturating_add(HOUR_MS - 1)

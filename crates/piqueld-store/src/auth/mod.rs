@@ -727,8 +727,6 @@ impl Store {
                     .await?;
                 let issuer = Issued::Passkey(passkey.id);
                 session.insert(&mut tx, &user.id, Some(issuer)).await?;
-                // An enrolled account keeps its stored name, whatever the
-                // ceremony started with.
                 let username = match redeemed {
                     Redeemed::Enrollment(_) => Self::username_on(&mut tx, &user.id).await?,
                     Redeemed::Root(_) | Redeemed::Invitation { .. } => user.username.clone(),
@@ -1075,8 +1073,6 @@ impl Store {
             Err(error) => return Err(error),
         };
         authority.may_hand_out(credential.grants)?;
-        // The approval's proof, which the new login inherits: the approver
-        // confirming again later, for something else, doesn't extend it.
         let approval = Proof {
             authenticated_at: credential.authenticated_at,
             ..authority.proof
@@ -1142,7 +1138,6 @@ impl Store {
         .map_err(StoreError::database)?
         .rows_affected();
         if confirmed == 0 {
-            // Already proved as recently: live, but nothing to change.
             return sqlx::query_scalar!(
                 r#"SELECT EXISTS(SELECT 1 FROM auth_credentials WHERE id=?1 AND user_id=?2 AND kind='cli' AND (expires_at IS NULL OR expires_at>?3)) AS "live!: bool""#,
                 credential_id,

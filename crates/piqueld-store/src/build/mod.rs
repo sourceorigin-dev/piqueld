@@ -97,9 +97,6 @@ impl BuildRow {
     /// Converts raw columns into a build record, reporting unknown states as
     /// corruption.
     fn decode(self) -> Result<BuildRecord, StoreError> {
-        // Its image tells where a build ran; a job run or a reused image
-        // ran no build. It is only shown, so an image that doesn't parse
-        // leaves it unknown.
         let built_on = self
             .image_id
             .as_deref()
@@ -207,7 +204,6 @@ impl Store {
         if count < bytes.len() {
             count = BuildLogChunk::complete_prefix(&bytes[..count]);
         }
-        // Each chunk is bounded regardless of which executor records output.
         let mut offset = row.log_bytes;
         let mut remaining = &bytes[..count];
         while !remaining.is_empty() {
@@ -528,7 +524,6 @@ impl Store {
         .map_err(StoreError::database)?
         .ok_or(StoreError::NotFound)?;
         let before = before.unwrap_or(i64::MAX);
-        // Separate queries, so a stream filter seeks `build_log_stream`.
         let mut chunks = if let Some(stream) = stream {
             let stream = stream.as_str();
             sqlx::query_as!(

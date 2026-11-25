@@ -95,7 +95,6 @@ impl Store {
             Checked::New { caller, creating } => (caller, creating),
         };
         let owner = caller.as_ref().map(|authority| authority.user_id.as_str());
-        // Replay the original acceptance before applying an override to current intent.
         if force {
             expected_generation = None;
             if let Mutation::Save {
@@ -110,7 +109,6 @@ impl Store {
             .execute_mutation(&mut tx, mutation, expected_generation, now)
             .await
         {
-            // Lists only the previews the caller may read.
             Err(StoreError::PreviewLimitReached(mut reached)) => {
                 if let Some(authority) = &caller {
                     let readable = authority.grants.app_scope(AppPermission::Read);
@@ -122,8 +120,6 @@ impl Store {
             }
             accepted => accepted?,
         };
-        // Scoped credentials hand out no lasting access, so an application
-        // they create gives their account no creator grants.
         if creating
             && let Some(authority) = caller.as_ref().filter(|authority| !authority.scoped)
             && let MutationResponse::Saved(saved) = &accepted.response
@@ -322,7 +318,6 @@ impl Store {
             (Some(owner), Mutation::Save { .. }) => Target::Named(&owner.application),
             (owner, _) => EnvironmentOwner::target(owner.as_ref()),
         };
-        // Whether sync deploys the change depends on the current connection.
         let connection = match &owner {
             Some(owner) => Self::application_on(tx, owner.application.as_str())
                 .await?
@@ -440,7 +435,6 @@ impl Store {
             }
             Mutation::Edit { id, edit, deploy } => {
                 let current = Self::checked_application_on(tx, &id, expected).await?;
-                // Boxed: the largest arm would otherwise size every acceptance.
                 Box::pin(Self::accept_edit(tx, current, *edit, deploy, now)).await
             }
             Mutation::DeleteApplication { id, environments } => {
@@ -466,7 +460,6 @@ impl Store {
                 let changed = Self::set_branch_on(tx, &current, branch, now).await?;
                 Ok(Self::environment_accepted(tx, id).await?.changing(changed))
             }
-            // Boxed: it would otherwise grow every acceptance future.
             Mutation::Deploy {
                 id,
                 revision,
@@ -499,7 +492,6 @@ impl Store {
             Mutation::Stop { id } => Self::stop_on(tx, &id, expected, now).await,
             Mutation::Restore(restore) => Box::pin(Self::restore_on(tx, restore)).await,
             Mutation::Promotion(mutation) => self.promotion_on(tx, mutation, expected, now).await,
-            // Boxed: preview changes would otherwise grow every acceptance future.
             Mutation::Preview(mutation) => {
                 Box::pin(self.execute_preview_on(tx, mutation, now)).await
             }
@@ -545,7 +537,6 @@ impl Store {
                 let promotion = promotion.ok_or(StoreError::InvalidInput)?;
                 let current = Self::checked_environment_on(tx, &id, expected).await?;
                 let instance = self.instance_id().clone();
-                // Boxed: it would otherwise grow every acceptance future.
                 let operation =
                     Box::pin(self.accept_promotion_on(tx, &current, &promotion, instance)).await?;
                 Ok(Accepted {
@@ -618,8 +609,6 @@ impl Store {
             }
             PreviewMutation::Prune { id, repository } => {
                 let preview = Self::preview_on(tx, &id).await?;
-                // A branch gone from one repository says nothing about
-                // another, nor about a local snapshot it runs or deploys.
                 if preview
                     .tracking()?
                     .repository()
@@ -902,8 +891,6 @@ impl Store {
             Self::environments_on(tx, id.as_str())
                 .await?
                 .into_iter()
-                // Including those whose change to promoted is still waiting
-                // for a deployment in progress.
                 .filter(|environment| {
                     declared
                         .get(environment.name.as_str())
@@ -1001,7 +988,6 @@ impl Store {
         let desired = serde_json::to_string(&application).map_err(StoreError::corrupt)?;
         sqlx::query!("UPDATE applications SET name=?1,desired_json=?2,generation=?3,updated_at_ms=?4 WHERE id=?5",name,desired,revision,now,id)
             .execute(&mut **tx).await.map_err(StoreError::constraint)?;
-        // Resolved and latest targets may be retried after a rename. Only their display metadata changes.
         sqlx::query!("UPDATE environments SET resolved_json=CASE WHEN resolved_json IS NULL THEN NULL ELSE json_set(resolved_json,'$.name',?1) END WHERE application_id=?2",name,id)
             .execute(&mut **tx).await.map_err(StoreError::database)?;
         for environment in Self::deployables_on(tx, &id).await? {
@@ -1061,7 +1047,6 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
         }
-        // Without environments left, it is removed now.
         let mut changed = !current.delete_intent || environments.is_empty();
         let mut operations = Vec::with_capacity(environments.len());
         for environment in &environments {
@@ -1280,7 +1265,6 @@ mod tests {
         );
         assert_eq!(staging.source, EnvironmentSource::Saved);
         assert_eq!(production.source.promoted_from(), Some(&staging.id));
-        // Only staging builds; production waits for a promotion.
         let [deployment] = saved.operation_ids.as_slice() else {
             panic!("one deployment expected")
         };
@@ -1289,7 +1273,6 @@ mod tests {
             staging.id
         );
 
-        // Imperative changes to declared environments are refused.
         for refused in [
             Mutation::CreateEnvironment {
                 application: application.clone(),
@@ -1310,8 +1293,6 @@ mod tests {
             ));
         }
 
-        // Production builds again, and qa is created; staging, undeclared,
-        // stays until deleted explicitly.
         save(
             "[spec.environments.production]\n[spec.environments.qa.variables]\nlevel='debug'\n",
             false,
@@ -1391,7 +1372,6 @@ mod tests {
                 .save_template_forced(template("notes", &spec), true)
                 .await
         };
-        // Both build, and production's deployment is still in progress.
         assert_eq!(save("").await.operation_ids.len(), 2);
         let saved = save("promote_from='staging'\n").await;
         let application = ApplicationId::parse(&saved.application_id).unwrap();

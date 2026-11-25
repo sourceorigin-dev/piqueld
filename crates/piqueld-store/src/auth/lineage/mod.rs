@@ -211,7 +211,6 @@ impl Store {
         roots: String,
         cascade: Cascade,
     ) -> Result<Revoked, StoreError> {
-        // `[[kind, id], …]`: the roots, then what descends from them.
         let targets = match cascade {
             Cascade::No => roots,
             Cascade::Yes => sqlx::query_scalar!(

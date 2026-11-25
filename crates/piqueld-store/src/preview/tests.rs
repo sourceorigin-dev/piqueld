@@ -74,8 +74,6 @@ async fn creating_a_preview_is_idempotent_on_branch_and_slot_and_leaves_the_revi
     let (_temp, store) = Store::temporary().await;
     let application = save(&store, false).await;
 
-    // Concurrent agents creating the same preview get one preview and one
-    // deployment between them.
     let (first, second) = tokio::join!(
         create(&store, &application, "feat/login", None),
         create(&store, &application, "feat/login", None),
@@ -84,7 +82,6 @@ async fn creating_a_preview_is_idempotent_on_branch_and_slot_and_leaves_the_revi
     assert_eq!(first.preview.id, second.preview.id);
     assert_eq!(first.operation.operation_id, second.operation.operation_id);
     assert_ne!(first.created, second.created);
-    // Repeating it later still returns the same deployment, never a new one.
     let again = create(&store, &application, "feat/login", None)
         .await
         .unwrap();
@@ -98,7 +95,6 @@ async fn creating_a_preview_is_idempotent_on_branch_and_slot_and_leaves_the_revi
     assert_ne!(slotted.preview.id, first.preview.id);
     assert_ne!(slotted.preview.name, first.preview.name);
 
-    // Previews never needed or advanced the application revision.
     assert_eq!(store.application(&application).await.unwrap().generation, 1);
     assert_eq!(store.previews(&application).await.unwrap().len(), 2);
 }
@@ -124,7 +120,6 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
     let (created, refused): (Vec<_>, Vec<_>) = results.into_iter().partition(Result::is_ok);
     let created = created.into_iter().map(Result::unwrap).collect::<Vec<_>>();
     assert_eq!((created.len(), refused.len()), (2, 3));
-    // The error lists the previews counted, so an agent can choose one to delete.
     let Err(StoreError::PreviewLimitReached(reached)) = &refused[0] else {
         panic!("{:?}", refused[0]);
     };
@@ -157,15 +152,12 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
     expected.sort();
     assert_eq!(listed, expected);
 
-    // Repeating a creation returns the existing preview, even at the limit.
     let slot = created[0].preview.preview().unwrap().slot.clone().unwrap();
     let again = create(&store, &application, "feat/login", Some(slot.as_str()))
         .await
         .unwrap();
     assert!(!again.created);
 
-    // Lowering a limit keeps every preview and refuses new ones; status
-    // shows the overage.
     let lowered = store.clone().with_previews(PreviewLimits {
         max_total: 1,
         ..PreviewLimits::default()
@@ -184,7 +176,6 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
     assert_eq!((usage.total, usage.limits.max_total), (2, 1));
     assert_eq!(usage.applications[0].previews, 2);
 
-    // A preview being deleted counts until it is gone.
     store
         .accept(
             Daemon,
@@ -257,13 +248,11 @@ async fn previews_need_a_repository_and_environment_changes_never_reach_them() {
             "acted on the wrong kind: {result:?}"
         );
     }
-    // Even with a stale revision, which is no conflict for what isn't found.
     let stale = Mutation::deploy(preview.id.clone());
     assert!(matches!(
         store.accept(Daemon, stale, Some(99), false, None).await,
         Err(StoreError::NotFound)
     ));
-    // A preview's slug is its name, so no environment can take it.
     assert!(matches!(
         store
             .accept(
@@ -299,7 +288,6 @@ async fn previews_mount_shared_secrets_only_when_their_access_allows_previews() 
         .unwrap()
         .application;
 
-    // Every environment, by default, but no previews.
     store
         .put_stored_secret(Daemon, &application, "stripe", 0, b"key".to_vec(), None)
         .await
@@ -308,7 +296,6 @@ async fn previews_mount_shared_secrets_only_when_their_access_allows_previews() 
         store.check_secret_access(&preview, &rendered).await,
         Err(StoreError::SecretAccessDenied { secret, .. }) if secret == "stripe"
     ));
-    // A preview is never one of the environments a list names.
     let named = SecretAccess {
         environments: EnvironmentAccess::Only([preview.id.clone()].into()),
         previews: false,
@@ -345,7 +332,6 @@ async fn pruning_keeps_a_preview_once_the_repository_changed() {
             repository: repository.into(),
         })
     };
-    // The branch was found gone from a repository the application no longer reads.
     assert!(matches!(
         store
             .accept(
@@ -473,7 +459,6 @@ async fn local_snapshots_create_previews_within_limits_and_record_their_provenan
 async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
     let (_temp, store, application, created) = local_preview().await;
     let preview = created.preview;
-    // As preparing a deployment does.
     let prepared = async |operation: &str| {
         sqlx::query(
             "UPDATE operations SET promoted=1,state='succeeded',finished_at_ms=1 WHERE id=?1",
@@ -512,7 +497,6 @@ async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
             id: preview.id.clone(),
         })
     };
-    // Redeploying the branch head failed: the snapshot still runs.
     accept(redeploy()).await.unwrap();
     sqlx::query("UPDATE operations SET state='failed',finished_at_ms=1 WHERE environment_id=?1 AND promoted=0")
         .bind(preview.id.as_str())

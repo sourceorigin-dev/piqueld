@@ -36,7 +36,6 @@ async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation
         .await
         .expect_err("`tokio::time::timeout` should be rejected");
     tx.rollback().await.unwrap();
-    // The queued refresh holds no pool connection while it waits.
     let mut connections = Vec::new();
     for _ in 0..8 {
         connections.push(
@@ -46,7 +45,6 @@ async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation
                 .unwrap(),
         );
     }
-    // Revoke while the refresh is still queued behind the writer.
     sqlx::query!("DELETE FROM auth_credentials")
         .execute(&mut *connections[0])
         .await
@@ -62,7 +60,6 @@ async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation
 #[tokio::test]
 async fn refreshes_waiting_for_writers_respect_idle_expiry() {
     let (_dir, store) = browser_session().await;
-    // One second of idle time remains, and passes while the refresh waits.
     store.age_auth_credentials(SESSION_IDLE_SECS - 1).await;
     let (writer, tx) = store.begin_immediate().await.unwrap();
     let refresh = tokio::spawn({
@@ -71,7 +68,6 @@ async fn refreshes_waiting_for_writers_respect_idle_expiry() {
     });
     store.writer_waiting().await;
     // wall-clock: refreshes judge expiry by the system clock, which paused
-    // tokio time doesn't move, so a real second passes while it waits.
     tokio::time::sleep(Duration::from_secs(1)).await;
     tx.rollback().await.unwrap();
     drop(writer);
@@ -144,7 +140,6 @@ async fn writes_check_the_stored_proof_and_exempt_the_host_operator() {
     let mut db = store.connection().await.unwrap();
     account("fresh").require_fresh(&mut db).await.unwrap();
     for (id, reason) in [
-        // Signed in by `browser_session` without a passkey proof.
         ("credential", Reauthenticate::Stale),
         ("token", Reauthenticate::Token),
     ] {
@@ -233,8 +228,6 @@ async fn confirming_a_login_keeps_its_latest_proof() {
     let inserted = store.insert_credential("alice", &laptop).await;
     inserted.expect("the store keeps the login");
     let now = now_secs();
-    // The newer confirmation finishes first; the older one, and a repeat,
-    // change nothing and record nothing.
     let route = "POST /api/v1/auth/device/poll";
     for (proved, recorded) in [(now - 10, true), (now - 50, false), (now - 10, false)] {
         let request = crate::testing::audit_request(route);
@@ -318,12 +311,10 @@ async fn account_changes_record_what_they_changed() {
     };
     let invited = store.create_invitation(issuing, &invitation, &readers);
     invited.await.expect("the invitation is created");
-    // Revoking the login revokes the token it issued too.
     let revoked = store.revoke_credential(by, "second", Cascade::Yes).await;
     revoked.expect("the login is revoked");
     let nothing = store.revoke_credentials(by, "bob", Cascade::Yes).await;
     nothing.expect("bob has nothing to revoke");
-    // Deleting an account removes the links that target it, cascading or not.
     for (account, cascade) in [("bob", Cascade::Yes), ("carol", Cascade::No)] {
         let link = NewInvitation {
             id: format!("{account}-link"),
@@ -372,7 +363,6 @@ async fn sign_ins_record_who_they_signed_in() {
     let (_dir, store) = Store::temporary().await;
     let alice = store.admin_with_passkey("alice").await;
     let route = "POST /api/v1/auth/login/finish";
-    // A request made with alice's login, which a sign-in doesn't name.
     let mut request = crate::testing::audit_request(route);
     request.origin.username = Some("alice".into());
     request.origin.credential_id = Some("alice".into());
@@ -393,7 +383,6 @@ async fn sign_ins_record_who_they_signed_in() {
     };
     let confirmed = store.confirm_with_passkey(by, "alice-key", stored, now_secs());
     assert!(confirmed.await.expect("the step-up is stored"));
-    // Approved a minute ago, so confirming it now changes its proof.
     let cli = NewCredential {
         authenticated_at: Some(now_secs() - 60),
         ..credential("cli", CredentialKind::Cli)

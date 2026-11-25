@@ -176,7 +176,6 @@ impl SecretCipher {
         {
             return Err(KeyFailure::NotPrivate.into());
         }
-        // One byte more than a key tells a longer file apart.
         let mut bytes = Zeroizing::new(Vec::with_capacity(KEY_BYTES + 1));
         file.take(KEY_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
@@ -298,7 +297,6 @@ mod tests {
             EnvironmentId::parse("app-aaaaaaaa").unwrap(),
             EnvironmentId::parse("app-bbbbbbbb").unwrap(),
         );
-        // An application with the same ID as the environment.
         let application = ApplicationId::parse("app-aaaaaaaa").unwrap();
         let owner = SecretOwner::Environment(&environment);
         let mut encrypted = cipher

@@ -214,8 +214,6 @@ impl Store {
                 let categories = categories
                     .iter()
                     .filter(|rule| rule.destination_id == row.id)
-                    // A category this version does not know, such as one a
-                    // newer version added before a downgrade, is left out.
                     .filter_map(|rule| {
                         NotificationCategory::parse(&rule.category).map(|category| (category, rule))
                     })
@@ -306,7 +304,6 @@ impl Store {
             actor.attribution(),
         )
         .await?;
-        // Recorded after the event above, so a new receiver never gets it.
         Self::save_rules(&mut tx, &saved, &settings).await?;
         let change = saved.audit_change(name, &settings);
         author
@@ -384,7 +381,6 @@ impl Store {
         let new_url = match (url, &cipher) {
             (Some(url), Some(cipher)) => {
                 let owner = SecretOwner::NotificationDestination(&row.id);
-                // An undecryptable URL is replaced like a changed one.
                 let changed = cipher
                     .decrypt(owner, "url", 1, &stored)
                     .map_or(true, |old| old.as_slice() != url.0.as_bytes());

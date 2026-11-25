@@ -101,8 +101,6 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
             .await
             .unwrap()
     );
-    // Proved by its passkey sign-in, as the daemon records it, so it may add
-    // a passkey and create a token.
     let signed_in = proved(credential("signed-in", CredentialKind::Browser));
     let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
     store
@@ -128,14 +126,12 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         .create_token(bob_caller("signed-in"), &token, None)
         .await
         .unwrap();
-    // Device logins inherit the passkey proof of their approval.
     let cli = proved(credential("cli", CredentialKind::Cli));
     store
         .issue_for_credential_owner(bob_caller("redeemed"), &cli)
         .await
         .unwrap()
         .unwrap();
-    // A leaf nothing descends from, gone once its credential is.
     let leaf = proved(credential("leaf", CredentialKind::Token));
     store
         .issue_for_credential_owner(alice, &leaf)
@@ -143,7 +139,6 @@ async fn lineage_records_issuers_and_survives_vanished_intermediates() {
         .unwrap()
         .unwrap();
 
-    // Both of bob's sessions and the leaf log out.
     for id in ["redeemed", "signed-in", "leaf"] {
         let logout = store.revoke_credential(Actor::Daemon, id, Cascade::No);
         logout.await.unwrap();
@@ -189,7 +184,6 @@ async fn revoking_cascades_through_ended_issuers() {
         credential_id: "bob-session",
         user_id: "bob",
     };
-    // Bob signs in with his passkey, so his session may create a token.
     let signed_in_at = now_secs();
     sqlx::query!(
         "UPDATE auth_credentials SET authenticated_at=?1 WHERE id='bob-session'",
@@ -209,14 +203,11 @@ async fn revoking_cascades_through_ended_issuers() {
         credential_id: "other",
         user_id: "alice",
     };
-    // Device logins inherit the passkey proof of their approval.
     let sibling = proved(credential("sibling", CredentialKind::Cli));
     let issued = store.issue_for_credential_owner(other, &sibling).await;
     let issued = issued.expect("the other login issues a sibling");
     issued.expect("the other login is live");
 
-    // Alice's own passkey descends from her login, and nobody else could
-    // administer the installation without it.
     let revoke = store.revoke_credential(Actor::Daemon, "alice", Cascade::Yes);
     assert!(matches!(
         revoke.await,
@@ -250,7 +241,6 @@ async fn revoking_cascades_through_ended_issuers() {
 #[tokio::test]
 async fn revoking_reaches_accounts_the_actor_could_not_change() {
     let (_dir, store) = Store::temporary().await;
-    // An administrator nothing here touches, so no cascade locks out.
     let erin = store.admin_with_passkey("erin").await;
     let mut manage = Grants::default();
     let accounts = Permission::Global(GlobalPermission::AccountsManage);
@@ -286,11 +276,9 @@ async fn revoking_reaches_accounts_the_actor_could_not_change() {
 #[tokio::test]
 async fn bulk_revocations_cascade_from_every_root() {
     let (_dir, store) = Store::temporary().await;
-    // An administrator nothing here touches, so no cascade locks out.
     let erin = store.admin_with_passkey("erin").await;
     let passkey = async |id: &str| passkeys(&store).await.iter().any(|key| key == id);
 
-    // Alice's expired login had invited bob.
     store.seed_caller("alice", &Grants::admin()).await;
     let alice = Caller {
         credential_id: "alice",
@@ -306,8 +294,6 @@ async fn bulk_revocations_cascade_from_every_root() {
         .expect("the daemon revokes all of alice's credentials");
     assert!(!passkey("bob-key").await && !live(&store, "bob-session").await);
 
-    // Removing a passkey reaches the sessions it signed in and their
-    // tokens, unless asked not to.
     let stored = |stored: &str| Ok::<_, StoreError>(stored.to_owned());
     let none = Grants::default();
     for (user, cascade, kept) in [("carol", Cascade::No, true), ("grace", Cascade::Yes, false)] {
@@ -334,8 +320,6 @@ async fn bulk_revocations_cascade_from_every_root() {
         assert_eq!(live(&store, &token_id).await, kept, "{cascade:?}");
     }
 
-    // Deleting an account reaches what its credentials issued elsewhere,
-    // without deleting those accounts.
     store.seed_caller("dave", &Grants::admin()).await;
     let dave = Caller {
         credential_id: "dave",
@@ -383,7 +367,6 @@ async fn ended_issuer(store: &Store, user: &'static str) {
 #[tokio::test]
 async fn bulk_revocations_reach_what_ended_credentials_issued() {
     let (_dir, store) = Store::temporary().await;
-    // An administrator nothing here touches, so no cascade locks out.
     store.admin_with_passkey("erin").await;
     ended_issuer(&store, "alice").await;
     ended_issuer(&store, "dave").await;

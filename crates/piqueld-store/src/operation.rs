@@ -223,7 +223,6 @@ impl Store {
         if changed != 1 {
             return Err(StoreError::IllegalTransition);
         }
-        // Recorded while the operation still exists; it goes with its environment.
         Self::operation_event(
             &mut tx,
             &operation.id,
@@ -344,8 +343,6 @@ impl Store {
             .execute(&mut **tx).await.map_err(StoreError::database)?.rows_affected();
         if changed != 1 {
             let current = Self::operation_on(tx, &operation.id).await?;
-            // Another caller may already have requested or started this retry.
-            // Superseded operations remain terminal and cannot be resurrected.
             if matches!(
                 current.state,
                 OperationState::Requested | OperationState::Running

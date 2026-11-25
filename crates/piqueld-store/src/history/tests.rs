@@ -129,9 +129,6 @@ async fn deployments_go_once_past_both_limits_unless_current_latest_or_restorabl
     )
     .await;
     store.prune_deployment_history().await.unwrap();
-    // Only the third goes: the first still needs job cleanup, the latest
-    // restored the second, the fourth is current, the fifth the newest
-    // successful, the sixth recent, and the seventh among the newest three.
     let kept = |indexes: &[usize]| {
         indexes
             .iter()
@@ -143,8 +140,6 @@ async fn deployments_go_once_past_both_limits_unless_current_latest_or_restorabl
         kept(&[0, 1, 3, 4, 5, 6, 7, 8])
     );
 
-    // A preview keeps only those, of the deployments that finished over an
-    // hour ago, however few it has.
     execute(
         &store,
         "UPDATE environments SET kind='preview',branch='feature' WHERE id=?1",
@@ -156,7 +151,6 @@ async fn deployments_go_once_past_both_limits_unless_current_latest_or_restorabl
         remaining(&store, &production).await,
         kept(&[0, 1, 3, 4, 5, 7, 8])
     );
-    // Its origins, which follow restores back, still resolve.
     store.preview_origins(&production).await.unwrap();
 }
 
@@ -182,8 +176,6 @@ async fn pruning_keeps_the_current_deployment_when_an_older_one_has_a_higher_id(
         ],
     )
     .await;
-    // The first was published and its rollout then failed, so it's current;
-    // the second, published earlier, got the higher ID.
     execute(
         &store,
         "UPDATE operations SET promoted=1 WHERE id=?1",
@@ -195,7 +187,6 @@ async fn pruning_keeps_the_current_deployment_when_an_older_one_has_a_higher_id(
         execute(&store, &sql, &ids[1]).await;
     }
     store.prune_deployment_history().await.unwrap();
-    // The current one is past both limits, but stays.
     assert_eq!(remaining(&store, &production).await, ids);
 }
 
@@ -221,9 +212,6 @@ async fn pruning_removes_expired_builds_and_unused_releases_of_pruned_deployment
         .environment
         .application_id;
     let application = application.as_str();
-    // Builds of the pruned first deployment, one with its output expired, an
-    // expired one of the retained latest deployment, and an expired one of
-    // the pruned second deployment, whose image the latest one reused.
     for (operation, expired) in [
         (&ids[0], true),
         (&ids[0], false),
@@ -242,8 +230,6 @@ async fn pruning_removes_expired_builds_and_unused_releases_of_pruned_deployment
         .execute(&store.pool)
         .await
         .unwrap();
-    // The oldest release, which the latest deployment runs, then 51 that no
-    // deployment uses.
     for index in 0..=KEPT_RELEASES + 1 {
         sqlx::query("INSERT INTO releases(id,application_id,content_hash,release_json,created_at_ms) VALUES(?1,?2,?1,'{}',0)")
             .bind(format!("rel-test-{index:03}"))
@@ -273,7 +259,6 @@ async fn pruning_removes_expired_builds_and_unused_releases_of_pruned_deployment
             (ids[1].clone(), true)
         ]
     );
-    // The oldest unused release goes; the newest 50, and the one in use, stay.
     let releases: Vec<String> = sqlx::query_scalar("SELECT id FROM releases ORDER BY id")
         .fetch_all(&store.pool)
         .await
@@ -287,7 +272,6 @@ async fn deployment_analytics_over_pruned_history_are_incomplete() {
     let (_temp, store, production) = store().await;
     let old = Outcome::Failed { old: true };
     deploy(&store, &production, &[old, old, old, old, Outcome::Pending]).await;
-    // History recorded since the epoch, so only pruning can make it partial.
     execute(
         &store,
         "UPDATE history_coverage SET started_at_ms=0 WHERE singleton=?1",

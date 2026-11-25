@@ -476,7 +476,6 @@ impl Store {
         created_at_ms: i64,
     ) -> Result<(), StoreError> {
         let head = Self::audit_head_on(&mut *db).await?;
-        // Only a tampered trail reaches the highest possible ID.
         let id = head.id.checked_add(1).ok_or(StoreError::Corrupt)?;
         let mut row = event.row(id, created_at_ms);
         if row.application_id.is_none()
@@ -601,8 +600,6 @@ impl Store {
             head: None,
             broken_at: None,
         };
-        // Every row, including any at the lowest possible ID, in pages that
-        // seek to the inclusive cursor `from`.
         let page = format!(
             "SELECT {COLUMNS} FROM audit_events WHERE id >= ?1 AND id <= ?2 ORDER BY id LIMIT 500"
         );
@@ -617,7 +614,6 @@ impl Store {
             let Some(last) = rows.last() else {
                 return Ok(result);
             };
-            // The highest possible ID ends the trail.
             let next = last.id.checked_add(1);
             for row in rows {
                 let expected = row.link_from(&previous.link)?;
@@ -659,7 +655,6 @@ impl Store {
         let mut query =
             QueryBuilder::new(format!("SELECT {COLUMNS} FROM audit_events WHERE id < "));
         query.push_bind(before);
-        // Usernames compare case-insensitively, like accounts' own.
         for (column, value, collation) in [
             ("user_id", filter.user_id.as_deref(), ""),
             ("username", filter.username.as_deref(), " COLLATE NOCASE"),

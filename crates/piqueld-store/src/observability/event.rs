@@ -488,8 +488,6 @@ impl Store {
     async fn prune_scope(&self, cutoff: i64, scope: EventScope) -> Result<u64, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let scope = scope.as_str();
-        // Open incidents need their source and delivery history until recovery,
-        // even after every failure delivery has been acknowledged.
         let removed = sqlx::query!(
             "DELETE
             FROM events
@@ -766,7 +764,6 @@ mod tests {
             .save_application(&ApplicationTemplate::from(&app), None, None)
             .await
             .unwrap();
-        // An environment deleted while a command was running.
         let deleted = EnvironmentId::parse("env-deleted").unwrap();
         let gone = ApplicationId::parse("app-deleted").unwrap();
         for application in [app.id(), &gone] {
@@ -896,7 +893,6 @@ mod tests {
     fn event_kinds_in(table: &str, sql: &str) -> Vec<String> {
         let tokens = sql_tokens(sql);
         let token = |index: usize| tokens.get(index).map_or("", String::as_str);
-        // Bare `kind` is the events row's only in an object on `events`.
         let mut rows = vec![if table == "events" { "" } else { "events" }.to_owned()];
         for (index, name) in tokens.iter().enumerate() {
             let alias = token(index + 1);

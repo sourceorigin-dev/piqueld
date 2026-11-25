@@ -133,8 +133,6 @@ impl Store {
         if old == name {
             return Ok(false);
         }
-        // A branch environment's configuration is its last fetched manifest;
-        // before the first fetch there is none to switch.
         let manifest = environment.manifest();
         if let Some(configured) = [old, name]
             .into_iter()
@@ -229,7 +227,6 @@ impl Store {
                 let connection = environment.application.application.spec().manifest.as_ref();
                 EnvironmentSource::select(connection, None)?
             }
-            // Already tracking: keep its branch.
             None => environment.environment.source.clone(),
         };
         Self::set_source_on(tx, environment, source, now).await
@@ -296,7 +293,6 @@ impl Store {
         }
         let (branch, commit, promoted_from) = Self::source_columns(&source);
         sqlx::query!(
-            // What sync found on the former branch says nothing about this one.
             "UPDATE environments SET branch=?1,pinned_commit=?2,promoted_from=?3,synced_commit=NULL,synced_at_ms=NULL,resolved_generation=NULL,updated_at_ms=?4 WHERE id=?5",
             branch,
             commit,
@@ -431,7 +427,6 @@ impl Store {
             return Err(StoreError::IllegalTransition);
         }
         let now = now_ms();
-        // Keep the existing on-disk operation kind for deployment records.
         let operation =
             Self::insert_operation(tx, environment.id(), OperationKind::Refresh, now).await?;
         Self::write_status(
@@ -503,7 +498,6 @@ impl Store {
         if changed != 1 {
             return Err(StoreError::IllegalTransition);
         }
-        // Boxed: the read would otherwise grow every preparation's future.
         let kind = Box::pin(Self::existing_environment_on(
             &mut tx,
             operation.environment_id.as_str(),

@@ -57,7 +57,6 @@ impl Store {
         versions: &[String],
     ) -> Result<bool, StoreError> {
         let id = environment.id().as_str();
-        // Saved edits can remove a reference after Deploy captured it but before pinning.
         let captured = sqlx::query_scalar!("SELECT d.manifest_json FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND o.state!='superseded' AND o.id=(SELECT id FROM operations WHERE environment_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1)",id)
             .fetch_optional(&mut **tx).await.map_err(StoreError::database)?;
         let captured = captured
@@ -169,8 +168,6 @@ impl Store {
         let author = author.into();
         let (_writer, mut tx) = self.begin_immediate().await?;
         let id = application.as_str();
-        // Concurrent retries may finish after a new secret with the same name was created.
-        // The reservation token prevents those completions from touching the new value.
         sqlx::query!("DELETE FROM deployment_secret_pins WHERE environment_id=?1 AND name=?2 AND EXISTS(SELECT 1 FROM environment_secrets WHERE environment_id=?1 AND name=?2 AND deletion_id=?3)",id,name,deletion_id)
             .execute(&mut *tx).await.map_err(StoreError::database)?;
         let deleted = sqlx::query!("DELETE FROM environment_secrets WHERE environment_id=?1 AND name=?2 AND deletion_id=?3",id,name,deletion_id)

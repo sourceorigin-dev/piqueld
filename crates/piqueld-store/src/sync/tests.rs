@@ -86,8 +86,6 @@ async fn a_moved_head_deploys_once_by_its_actor_and_pushes_coalesce_while_deploy
     let SyncOutcome::Deployed(deployed) = sync(&store, &id, B).await else {
         panic!("deployed")
     };
-    // It deploys exactly the head sync listed, not whatever the branch
-    // holds when it fetches.
     let operation = store.operation(&deployed.operation_id).await.unwrap();
     let input = store.deployment_input(&operation).await.unwrap().unwrap();
     let fetched = input.template.spec().manifest.clone().unwrap().repository;
@@ -127,13 +125,10 @@ async fn a_moved_head_deploys_once_by_its_actor_and_pushes_coalesce_while_deploy
         Some(B.into())
     );
 
-    // A push while that deployment runs waits for it instead of
-    // superseding it.
     assert!(matches!(sync(&store, &id, B).await, SyncOutcome::Busy));
     assert!(matches!(sync(&store, &id, C).await, SyncOutcome::Busy));
     assert_eq!(operations(&store, &id).await, 2);
 
-    // A failing deployment is superseded: the push may fix it.
     sqlx::query("UPDATE operations SET state='running',error_code='image_pull_failed',error_message='failed' WHERE id=?1")
         .bind(&deployed.operation_id)
         .execute(&store.pool)
@@ -147,8 +142,6 @@ async fn a_moved_head_deploys_once_by_its_actor_and_pushes_coalesce_while_deploy
         piqueld_core::OperationState::Superseded
     );
 
-    // C fails before fetching too, then the branch is rolled back to A.
-    // A deployed once, but C's retry would replace it: A deploys again.
     sqlx::query("UPDATE operations SET state='running',error_code='image_pull_failed',error_message='failed' WHERE id=?1")
         .bind(&retrying.operation_id)
         .execute(&store.pool)
@@ -170,30 +163,22 @@ async fn a_rollback_after_a_manual_deployment_deploys_the_branch_head_again() {
     let id = notes(&store).await;
     store.deployed_at(&id, A).await;
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
-    // A listing that started before another deployment finished never
-    // undoes it, even when that deployment recorded the same commit
-    // again: it lists again. `now_ms` never repeats, so that deployment
-    // records a later sync.
     let before = store.get(&id).await.unwrap().environment.synced;
     store.deployed_at(&id, A).await;
     let stale = submit(&store, &id, "https://example.com/notes.git", B, before).await;
     assert!(matches!(stale, SyncOutcome::Busy));
-    // Someone deploys the branch at C by hand, then it goes back to A.
     store.deployed_at(&id, C).await;
     assert!(matches!(sync(&store, &id, C).await, SyncOutcome::Current));
     assert!(matches!(
         sync(&store, &id, A).await,
         SyncOutcome::Deployed(_)
     ));
-    // Once deployed, the same head never deploys twice.
     sqlx::query("UPDATE operations SET state='succeeded',finished_at_ms=1 WHERE environment_id=?1 AND state='requested'")
         .bind(id.as_str())
         .execute(&store.pool)
         .await
         .unwrap();
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
-    // A rollback while a deployment by hand runs waits for it: that
-    // deployment may still record another head.
     let deploy = Mutation::deploy(id.clone());
     store.force(deploy).await.unwrap();
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Busy));
@@ -204,11 +189,8 @@ async fn nothing_follows_before_its_first_deployment_nor_while_pinned_or_opted_o
     let (_temp, store) = Store::temporary().await;
     let id = notes(&store).await;
 
-    // Never deployed: pushes do nothing, not even record a head.
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
     assert_eq!(store.get(&id).await.unwrap().environment.synced, None);
-    // While its first deployment runs, a push waits for it, since that
-    // records the head it fetched; one that failed records nothing.
     let deploy = Mutation::deploy(id.clone());
     store.force(deploy).await.unwrap();
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Busy));
@@ -218,10 +200,8 @@ async fn nothing_follows_before_its_first_deployment_nor_while_pinned_or_opted_o
         .await
         .unwrap();
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
-    // A deployment's head is what it follows from.
     store.deployed_at(&id, B).await;
     assert!(matches!(sync(&store, &id, B).await, SyncOutcome::Current));
-    // Heads listed from a repository it no longer reads deploy nothing.
     let elsewhere = listed(&store, &id, "https://example.com/fork.git", C).await;
     assert!(matches!(elsewhere, SyncOutcome::Current));
     assert_eq!(operations(&store, &id).await, 2);
@@ -249,7 +229,6 @@ async fn nothing_follows_before_its_first_deployment_nor_while_pinned_or_opted_o
     };
     store.force(pin).await.unwrap();
     assert!(matches!(sync(&store, &id, C).await, SyncOutcome::Current));
-    // Unpinned again, it follows only from its next deployment.
     let unpin = Mutation::SetBranch {
         id: id.clone(),
         branch: piqueld_core::TrackedBranch::new("main".into(), None).unwrap(),
@@ -293,10 +272,7 @@ async fn only_turning_sync_on_or_opting_in_needs_the_permission_to_deploy() {
             result.err()
         );
     };
-    // While it syncs, opting in lets sync deploy the environment.
     refused(store.accept(alice, opt_in(), None, false, None).await);
-    // Changing branches, repositories, or environments deploys nothing:
-    // each follows only from its next deployment.
     let create = Mutation::CreateEnvironment {
         application: application.clone(),
         name: piqueld_core::EnvironmentName::parse("staging").unwrap(),
@@ -320,7 +296,6 @@ async fn only_turning_sync_on_or_opting_in_needs_the_permission_to_deploy() {
             .await
             .unwrap();
     }
-    // Turning it off needs nothing more; turning it back on does.
     let off = edit(ApplicationEdit::RepositorySync(RepositorySync::Off));
     store.accept(alice, off, None, true, None).await.unwrap();
     refused(
@@ -334,7 +309,6 @@ async fn only_turning_sync_on_or_opting_in_needs_the_permission_to_deploy() {
             )
             .await,
     );
-    // Opting in while it does not sync deploys nothing yet.
     store
         .accept(alice, opt_in(), None, false, None)
         .await
@@ -362,7 +336,6 @@ async fn a_deployment_records_its_head_only_while_it_follows_that_branch_and_rep
             tx.commit().await.unwrap();
         }
     };
-    // A fetch from a branch or repository it left changes nothing.
     record("https://example.com/notes.git", "release").await;
     record("https://example.com/fork.git", "main").await;
     assert_eq!(
@@ -388,8 +361,6 @@ async fn a_deployment_records_its_head_only_while_it_follows_that_branch_and_rep
             .commit,
         Some(C.into())
     );
-    // A deployment remembers the branch it was requested for, so one
-    // queued before a branch change never records the new branch's head.
     let deploy = Mutation::deploy(id.clone());
     let (MutationResponse::Operation(queued), _) = store
         .accept(Actor::Daemon, deploy, None, true, None)
@@ -474,7 +445,6 @@ async fn local_snapshots_stay_until_their_branch_moves_or_is_first_pushed() {
         .environment
         .application_id;
 
-    // The branch is at A, so the snapshot stays while it is.
     let preview = snapshot_deployed(&store, &application, Some(A)).await;
     assert!(matches!(
         sync(&store, &preview, A).await,
@@ -499,7 +469,6 @@ async fn local_snapshots_stay_until_their_branch_moves_or_is_first_pushed() {
         .await
         .unwrap();
 
-    // Never pushed: following, and the first push deploys.
     let preview = snapshot_deployed(&store, &application, None).await;
     let synced = store.get(&preview).await.unwrap().environment;
     assert_eq!(synced.synced.as_ref().unwrap().commit, None);

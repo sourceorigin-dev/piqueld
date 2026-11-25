@@ -94,7 +94,6 @@ async fn interrupted_actions_and_diagnostics_survive_restart_and_scope_controls_
             .await
             .unwrap();
     }
-    // Application history, including its environments', goes with the application.
     let (MutationResponse::Deleted(deleted), _) = store
         .accept(
             Actor::Daemon,
@@ -162,7 +161,6 @@ async fn retries_keep_cause_and_outbox_deduplicates_until_recovery() {
     let deliveries = store.deliveries(None, 100).await.unwrap();
     assert_eq!(deliveries.items.len(), 2);
     assert_eq!(deliveries.items[0].category, NotificationCategory::Recovery);
-    // Deliveries page like other listings, with opaque `v1:` cursors.
     let cursor = store
         .deliveries(None, 1)
         .await
@@ -194,7 +192,6 @@ async fn closed_incidents_cannot_be_retried_after_failed_delivery() {
             .await
             .unwrap();
         if failed_before_close {
-            // The same failure remains retryable while its condition is open.
             store
                 .retry_delivery(Actor::Daemon, &failure.id)
                 .await
@@ -225,8 +222,6 @@ async fn failed_recovery_cannot_be_retried_after_its_incident_reopens() {
     let (_temp, store) = Store::temporary().await;
     notify(&store).await;
     let op = application(&store).await;
-    // Finishes the deployment, failed unless `succeeded`, claims the
-    // delivery it raised, and retries it.
     let finish = async |succeeded: bool| {
         if succeeded {
             succeed(&store, &op).await;
@@ -248,7 +243,6 @@ async fn failed_recovery_cannot_be_retried_after_its_incident_reopens() {
         .complete_delivery(&recovery.id, DeliveryState::Failed, Some("Rejected"), 0)
         .await
         .unwrap();
-    // Before the incident reopens, the recovery is still accurate and retryable.
     store
         .retry_delivery(Actor::Daemon, &recovery.id)
         .await
@@ -338,7 +332,6 @@ async fn an_undeliverable_delivery_does_not_block_the_next() {
             .unwrap();
     }
     store.process_notifications().await.unwrap();
-    // The delivery due first can no longer be decoded.
     let poisoned: String = sqlx::query_scalar(
         "UPDATE notification_deliveries SET category='retired' WHERE id=(SELECT id FROM \
          notification_deliveries ORDER BY next_attempt_ms,id LIMIT 1) RETURNING id",
@@ -363,7 +356,6 @@ async fn an_undeliverable_delivery_does_not_block_the_next() {
             Some("Unknown notification category".into())
         )
     );
-    // History leaves it out and it cannot be retried, rather than failing.
     let listed = store.deliveries(None, 100).await.unwrap().items;
     assert_eq!(
         listed.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
@@ -519,7 +511,6 @@ async fn destinations_receive_their_applications_and_daemon_notifications() {
     settings.applications =
         ApplicationSelection::Only([application_of(&store, &watched).await].into());
     fail(&store, &other).await;
-    // Narrowing the applications cancels what is pending about the others.
     put(&store, &settings, None).await;
     let cancelled = store.deliveries(None, 100).await.unwrap().items.remove(0);
     assert_eq!(cancelled.state, DeliveryState::Cancelled);
@@ -600,7 +591,6 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
             .observe_condition(key, application, true, started, 45_000)
             .await
             .unwrap();
-        // Retention must also preserve an incident still waiting for its threshold.
         store.prune_events(cutoff).await.unwrap();
         store.prune_daemon_events().await.unwrap();
         for elapsed in [30_000, 60_000, 90_000, 120_000] {
@@ -650,7 +640,6 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
             .unwrap();
         assert!(store.claim_delivery().await.unwrap().is_none());
 
-        // Closing and acknowledging the incident releases its old history.
         store.prune_events(cutoff).await.unwrap();
         store.prune_daemon_events().await.unwrap();
         assert!(matches!(
@@ -684,7 +673,6 @@ async fn pruning_marks_stream_gaps_and_analytics_coverage() {
         .unwrap()
         .items[0]
         .id;
-    // A quiet filtered stream still advances to the newest scanned event.
     let quiet = EventFilter {
         kind: Some("no_such_kind".into()),
         ..EventFilter::default()
@@ -741,7 +729,6 @@ async fn recovery_waits_for_its_destination_failure_across_restart_and_pruning()
         .unwrap();
     drop(store);
 
-    // A new destination did not receive the failure and must not receive recovery.
     let store = Store::open_unsynced(&path).await.unwrap();
     let url = "https://example.com/new";
     store
@@ -763,7 +750,6 @@ async fn recovery_waits_for_its_destination_failure_across_restart_and_pruning()
     let store = Store::open_unsynced(&path).await.unwrap();
     store.restart_failure_windows().await.unwrap();
     assert!(store.claim_delivery().await.unwrap().is_none());
-    // The delayed failure's acknowledgement makes only its own recovery eligible.
     store
         .complete_delivery(&delayed.id, DeliveryState::Delivered, None, 0)
         .await
@@ -863,7 +849,6 @@ async fn recovery_waits_for_all_pending_failure_categories_at_the_same_destinati
         .unwrap();
     succeed(&store, &op).await;
     assert!(store.claim_delivery().await.unwrap().is_none());
-    // An unacknowledged terminal failure doesn't suppress recovery for an acknowledged one.
     store
         .complete_delivery(&second.id, DeliveryState::Failed, Some("Rejected"), 0)
         .await
@@ -947,8 +932,6 @@ async fn visibility_limits_history_builds_and_analytics() {
         .items;
     assert_eq!(builds.len(), 1);
     assert_eq!(builds[0].environment_id, ids[0].1.as_str());
-    // Analytics also leave out hidden applications' events and, without
-    // daemon visibility, daemon failures.
     let analytics = |applications: Scope, daemon: bool| {
         let store = &store;
         async move {
@@ -998,7 +981,6 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
     let url = "https://example.com/private-token";
     let settings = DestinationSettings::new(DestinationKind::Json);
     store.add_destination("test", url, settings).await;
-    // A sustained burst alerts once per cooldown, then again once it passes.
     for _ in 0..25 {
         store.record_audit(&refused("203.0.113.9")).await.unwrap();
     }
@@ -1006,7 +988,6 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
         "UPDATE events SET created_at_ms=created_at_ms-660000 WHERE kind='access_denial_burst'";
     sqlx::query(rearm).execute(&store.pool).await.unwrap();
     store.record_audit(&refused("203.0.113.9")).await.unwrap();
-    // Distinct user, credential and name, so the notice names the right one.
     store
         .seed_auth_user(&user("alice"), &piqueld_core::access::Grants::admin())
         .await;
@@ -1022,7 +1003,6 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
     }
     store.process_notifications().await.unwrap();
     let deliveries = store.deliveries(None, 10).await.unwrap().items;
-    // Security deliveries open no incident, yet stay manually retryable.
     let failed = &deliveries[0].id;
     let fail = "UPDATE notification_deliveries SET state='failed' WHERE id=?1";
     sqlx::query(fail)
@@ -1118,7 +1098,6 @@ async fn operator_and_anonymous_refusals_burst_separately() {
         store.record_audit(&socket(uid)).await.unwrap();
     }
     assert_eq!(bursts().await, Vec::<String>::new());
-    // Each reaches the threshold on its own, and the cooldown is separate too.
     for uid in std::iter::once(None).chain(std::iter::repeat_n(Some(0), 19)) {
         store.record_audit(&socket(uid)).await.unwrap();
     }
@@ -1159,8 +1138,6 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
     let now = now_ms();
     for (peer, at) in [("a", 0), ("b", 0), ("c", now), ("d", now)] {
         let mut event = refused(peer);
-        // Tailnet identities and the host operator, recorded only on some
-        // requests, are linked too.
         event.origin.tailnet = (peer == "d").then(|| "tag:ci on runner".into());
         event.origin.operator =
             (peer == "d").then_some(piqueld_core::auth::HostOperator { uid: 1000 });
@@ -1186,13 +1163,11 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
         sqlx::query(sql).execute(&store.pool).await.unwrap();
         store.verify_audit().await.unwrap()
     };
-    // A broken part is never pruned away.
     let edited = run("UPDATE audit_events SET status=200 WHERE peer='b'").await;
     assert_eq!(edited.broken_at, Some(2));
     store.prune_audit().await.unwrap();
     assert_eq!(store.verify_audit().await.unwrap(), edited);
     run("UPDATE audit_events SET status=404 WHERE peer='b'").await;
-    // Pruning the two oldest keeps the newest pruned one as the anchor.
     store.prune_audit().await.unwrap();
     let pruned = store.verify_audit().await.unwrap();
     assert_eq!((pruned.checked, pruned.broken_at), (2, None));
@@ -1203,7 +1178,6 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
     run("UPDATE audit_events SET environment_id=NULL WHERE peer='c'").await;
     let renumbered = run("UPDATE audit_events SET id=9223372036854775807 WHERE peer='d'").await;
     assert_eq!(renumbered.broken_at, Some(i64::MAX));
-    // Nothing can follow the highest possible ID, rather than wrapping around.
     assert!(matches!(
         store.record_audit(&refused("e")).await,
         Err(StoreError::Corrupt)
@@ -1215,12 +1189,10 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
             VALUES({id},0,'forged','allowed',200)"
         );
         assert_eq!(run(&forged).await.broken_at, Some(id));
-        // Pruning keeps the forged record as evidence.
         store.prune_audit().await.unwrap();
         assert_eq!(store.verify_audit().await.unwrap().broken_at, Some(id));
         run(&format!("DELETE FROM audit_events WHERE id={id}")).await;
     }
-    // The anchor is stored whole or not at all.
     let half = sqlx::query("UPDATE audit_chain SET pruned_link=NULL");
     half.execute(&store.pool)
         .await
@@ -1295,7 +1267,6 @@ async fn successful_deployments_notify_with_their_names() {
         .unwrap();
     assert!(store.claim_delivery().await.unwrap().is_none());
 
-    // After a failure, the success is the recovery alone.
     let mut both = settings();
     both.categories.retain(|category, _| {
         matches!(
@@ -1340,7 +1311,6 @@ async fn deployments_follow_cancelled_recoveries_and_stay_retryable() {
     fail(&store, &op).await;
     rerun(&store, &op).await;
     succeed(&store, &op).await;
-    // The failure, still unacknowledged, holds the recovery, which holds the deployment.
     let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
     assert_eq!(failure.category, NotificationCategory::DeploymentFailures);
     store
@@ -1388,7 +1358,6 @@ async fn migration_types_the_phases_recorded_before_them() {
             .await
             .unwrap();
     }
-    // Attempts save the operation as it ended, with its phase.
     for (attempt, phase) in [(1, "running_job"), (2, "preparing_sources"), (3, "deploy")] {
         sqlx::raw_sql(&format!(
             "PRAGMA foreign_keys = OFF; INSERT INTO deployment_attempts(deployment_id,attempt,outcome_json) \
@@ -1440,8 +1409,6 @@ async fn migration_types_the_phases_recorded_before_them() {
 async fn timeline_expectations_count_each_earlier_operations_last_run_of_a_step() {
     let (_temp, store) = Store::temporary().await;
     let op = application(&store).await;
-    // A slow build in a failed first attempt, then a quick one in the
-    // second; its job only ran in the first, which the second reused.
     for (attempt, phase, duration) in [
         (1, Phase::BuildGit, 90_000),
         (1, Phase::RunJob, 4_000),
@@ -1483,7 +1450,6 @@ async fn timeline_expectations_count_each_earlier_operations_last_run_of_a_step(
         expected(next).await,
         [(Phase::BuildGit, 1_000), (Phase::RunJob, 4_000)]
     );
-    // An operation created before it expects nothing from it.
     let earlier = Operation {
         id: "operation-earlier".into(),
         created_at_ms: op.created_at_ms - 1,
@@ -1538,7 +1504,6 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
         (failed.phase, failed.resource.as_deref()),
         (Some(Phase::Planning), Some("data"))
     );
-    // Cleanup failing afterwards, under the operation, names nothing.
     let cleanup = store
         .begin_action(Some(&operation.id), Phase::RemoveJobs, None)
         .await
@@ -1577,7 +1542,6 @@ async fn requested_notification_changes_commit_with_their_audit_record() {
         request: Some(&request),
     };
     let ops = DestinationName::parse("ops").expect("the name is valid");
-    // The replacement narrows it to one application, without previews.
     let put = async |url: &str, narrowed: bool| {
         let mut settings = settings();
         if narrowed {
@@ -1598,7 +1562,6 @@ async fn requested_notification_changes_commit_with_their_audit_record() {
             .fetch_one(&store.pool)
             .await
             .expect("the destination has an ID");
-    // Changes whose record can't be written keep what was there.
     store.refuse_audit(true).await;
     put(second, true)
         .await

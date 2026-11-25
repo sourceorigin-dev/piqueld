@@ -67,9 +67,6 @@ impl Store {
         .map_err(StoreError::database)?;
         tx.commit().await.map_err(StoreError::database)?;
         let mut forecast = Vec::new();
-        // Each operation's last succeeded run of each step, in any attempt:
-        // an operation retried, or run again to repair it, weighs as much as
-        // the others.
         let mut last = BTreeMap::<(String, String, Option<String>), u64>::new();
         for action in actions {
             let duration = u64::try_from(action.duration_ms).map_err(StoreError::corrupt)?;

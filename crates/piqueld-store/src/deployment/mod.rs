@@ -231,7 +231,6 @@ impl Store {
         let current = Self::application_on(tx, id)
             .await?
             .map(|current| current.application);
-        // What sync followed in another repository says nothing about this one.
         let previous_url = current
             .as_ref()
             .and_then(|current| Some(current.spec().manifest.as_ref()?.repository.url.clone()));

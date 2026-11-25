@@ -190,7 +190,6 @@ impl Store {
         .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::database)?;
-        // Only the outcome's state and times are read, not the whole operation.
         let attempts = sqlx::query!(
             r#"SELECT a.deployment_id,a.attempt,
             json_extract(a.outcome_json,'$.state') AS "state!: String",
