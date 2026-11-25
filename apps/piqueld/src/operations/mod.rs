@@ -1,5 +1,6 @@
 //! Errors encountered while reconciling application operations, and the
 //! diagnostics recorded for them.
+use piqueld_config::unix_http::UnixHttpError;
 use piqueld_core::observability::DiagnosticCode;
 
 /// A fresh, time-ordered ID for a recorded diagnostic, e.g.
@@ -374,7 +375,7 @@ impl OperationError {
                     error.status().as_u16()
                 ));
             }
-            if let Some(error) = error.downcast_ref::<crate::ingress::ResponseError>() {
+            if let Some(error) = error.downcast_ref().and_then(UnixHttpError::response) {
                 diagnostic.causes.push(format!(
                     "Ingress API returned HTTP status {}",
                     error.status.as_u16()

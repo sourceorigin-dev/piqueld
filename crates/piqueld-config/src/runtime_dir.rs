@@ -1,18 +1,82 @@
 //! Runtime-directory ownership and Unix API socket lifecycle.
 
-use anyhow::{Context, Result, bail};
 use std::{
     io,
     os::unix::fs::{FileTypeExt, PermissionsExt},
     path::{Path, PathBuf},
     time::Duration,
 };
+use thiserror::Error;
 use tokio::net::{UnixListener, UnixStream};
 
 use crate::directories::{DirectoryLock, validate_runtime_dir};
 
 /// File name of the Unix API socket inside the runtime directory.
 pub const SOCKET_NAME: &str = "piqueld.sock";
+
+/// Why a runtime directory could not be acquired or its API socket bound.
+#[derive(Debug, Error)]
+pub enum RuntimeDirError {
+    /// The directory is missing or unsafe.
+    #[error("invalid runtime directory {}; prepare it before starting the daemon", path.display())]
+    Invalid {
+        /// The runtime directory.
+        path: PathBuf,
+        /// The validation failure.
+        #[source]
+        source: io::Error,
+    },
+    /// Another daemon holds the directory.
+    #[error("failed to lock runtime directory {}", path.display())]
+    Lock {
+        /// The runtime directory.
+        path: PathBuf,
+        /// The locking failure.
+        #[source]
+        source: io::Error,
+    },
+    /// The API socket could not be bound.
+    #[error("failed to bind Unix API socket {}", path.display())]
+    Bind {
+        /// The socket's path.
+        path: PathBuf,
+        /// Why binding failed.
+        #[source]
+        source: BindError,
+    },
+}
+
+/// Why the Unix API socket could not be bound.
+#[derive(Debug, Error)]
+pub enum BindError {
+    /// A live listener holds the socket.
+    #[error("Unix API socket already has an active listener")]
+    Active,
+    /// The path exists and is not a socket.
+    #[error("refusing to replace non-socket Unix API path")]
+    NotSocket,
+    /// The path could not be inspected.
+    #[error("failed to inspect Unix API path")]
+    Inspect(#[source] io::Error),
+    /// A stale socket could not be removed.
+    #[error("failed to remove stale socket")]
+    RemoveStale(#[source] io::Error),
+    /// Connecting to the existing socket failed for a reason other than refusal.
+    #[error("could not establish whether existing socket is stale")]
+    Probe(#[source] io::Error),
+    /// Connecting to the existing socket took too long.
+    #[error("timed out checking existing socket; leaving it untouched")]
+    ProbeTimeout(#[source] tokio::time::error::Elapsed),
+    /// The listener could not be created.
+    #[error("failed to create Unix listener")]
+    Listen(#[source] io::Error),
+    /// The socket's group could not be set.
+    #[error("failed to set Unix socket group")]
+    Group(#[source] rustix::io::Errno),
+    /// The socket's permissions could not be set.
+    #[error("failed to set Unix socket permissions")]
+    Permissions(#[source] io::Error),
+}
 
 /// A validated runtime directory exclusively held for a daemon's lifetime.
 /// Keep this guard alive while serving the Unix API.
@@ -29,15 +93,18 @@ impl RuntimeDir {
     ///
     /// # Errors
     /// Rejects missing or unsafe directories and competing daemon instances.
-    pub async fn acquire(path: &Path) -> Result<Self> {
-        validate_runtime_dir(path).await.with_context(|| {
-            format!(
-                "invalid runtime directory {}; prepare it before starting the daemon",
-                path.display()
-            )
+    pub async fn acquire(path: &Path) -> Result<Self, RuntimeDirError> {
+        let owned = || path.to_owned();
+        validate_runtime_dir(path)
+            .await
+            .map_err(|source| RuntimeDirError::Invalid {
+                path: owned(),
+                source,
+            })?;
+        let lock = DirectoryLock::acquire(path).map_err(|source| RuntimeDirError::Lock {
+            path: owned(),
+            source,
         })?;
-        let lock = DirectoryLock::acquire(path)
-            .with_context(|| format!("failed to lock runtime directory {}", path.display()))?;
         Ok(Self {
             path: path.to_owned(),
             _lock: lock,
@@ -50,11 +117,11 @@ impl RuntimeDir {
     /// Refuses observed live listeners and non-sockets. A refused connection
     /// permits stale-socket recovery under the directory lock; other probe
     /// errors leave the path untouched.
-    pub async fn bind_api(&self) -> Result<UnixListener> {
+    pub async fn bind_api(&self) -> Result<UnixListener, RuntimeDirError> {
         let path = self.path.join(SOCKET_NAME);
         Self::bind_at(&path)
             .await
-            .with_context(|| format!("failed to bind Unix API socket {}", path.display()))
+            .map_err(|source| RuntimeDirError::Bind { path, source })
     }
 
     /// Binds a Unix listener at `path` with mode `0660` and the daemon's group.
@@ -62,7 +129,7 @@ impl RuntimeDir {
     /// An existing socket is probed first: a refused connection means it is stale
     /// and is removed, a live listener is an error, and a probe error or timeout
     /// leaves it untouched. Non-socket paths are never replaced.
-    async fn bind_at(path: &Path) -> Result<UnixListener> {
+    async fn bind_at(path: &Path) -> Result<UnixListener, BindError> {
         match tokio::fs::symlink_metadata(path).await {
             Ok(metadata) if metadata.file_type().is_socket() => {
                 match tokio::time::timeout(Duration::from_secs(1), UnixStream::connect(path)).await
@@ -73,22 +140,16 @@ impl RuntimeDir {
                         // uncooperative process sharing the daemon's identity.
                         tokio::fs::remove_file(path)
                             .await
-                            .context("failed to remove stale socket")?;
+                            .map_err(BindError::RemoveStale)?;
                     }
-                    Ok(Ok(_)) => bail!("Unix API socket already has an active listener"),
-                    Ok(Err(error)) => {
-                        return Err(error)
-                            .context("could not establish whether existing socket is stale");
-                    }
-                    Err(error) => {
-                        return Err(error)
-                            .context("timed out checking existing socket; leaving it untouched");
-                    }
+                    Ok(Ok(_)) => return Err(BindError::Active),
+                    Ok(Err(error)) => return Err(BindError::Probe(error)),
+                    Err(error) => return Err(BindError::ProbeTimeout(error)),
                 }
             }
-            Ok(_) => bail!("refusing to replace non-socket Unix API path"),
+            Ok(_) => return Err(BindError::NotSocket),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context("failed to inspect Unix API path"),
+            Err(error) => return Err(BindError::Inspect(error)),
         }
         // Bind synchronously while the umask is restrictive, then restore it
         // before yielding. Other threads can only receive stricter permissions.
@@ -96,14 +157,14 @@ impl RuntimeDir {
             rustix::process::umask(rustix::fs::Mode::RWXG | rustix::fs::Mode::RWXO);
         let bound = UnixListener::bind(path);
         rustix::process::umask(previous_umask);
-        let listener = bound.context("failed to create Unix listener")?;
+        let listener = bound.map_err(BindError::Listen)?;
         // A setgid directory can otherwise assign a different group, including
         // in a private development directory where its group is unrestricted.
         rustix::fs::chown(path, None, Some(rustix::process::getegid()))
-            .context("failed to set Unix socket group")?;
+            .map_err(BindError::Group)?;
         tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o660))
             .await
-            .context("failed to set Unix socket permissions")?;
+            .map_err(BindError::Permissions)?;
         tracing::info!(socket = %path.display(), "Unix API socket bound");
         Ok(listener)
     }

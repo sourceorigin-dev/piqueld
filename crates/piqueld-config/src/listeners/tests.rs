@@ -54,7 +54,7 @@ fn discovery_requires_running_state_and_valid_addresses() {
     let parse = |json: &str| {
         serde_json::from_str::<Status>(json)
             .map_err(anyhow::Error::from)
-            .and_then(|status| status.listen_addresses())
+            .and_then(|status| Ok(status.listen_addresses()?))
     };
     let valid = status(
         "Running",
@@ -93,7 +93,10 @@ async fn discovery_reads_the_local_api_and_reports_failures() {
     let error = Status::discover(&fake.api()).await.unwrap_err();
     assert_eq!(error.to_string(), "Tailscale is Stopped");
     let api = LocalApi::new("/nonexistent/tailscaled.sock".into(), DISCOVERY_TIMEOUT);
-    let error = format!("{:#}", Status::discover(&api).await.unwrap_err());
+    let error = format!(
+        "{:#}",
+        anyhow::Error::from(Status::discover(&api).await.unwrap_err())
+    );
     assert!(error.contains("/nonexistent/tailscaled.sock"), "{error}");
 }
 
@@ -104,7 +107,10 @@ async fn discovery_timeout_stops_waiting_for_tailscaled() {
     let socket = directory.path().join("tailscaled.sock");
     let _stuck = tokio::net::UnixListener::bind(&socket).unwrap();
     let api = LocalApi::new(socket, DISCOVERY_TIMEOUT);
-    let error = format!("{:#}", Status::discover(&api).await.unwrap_err());
+    let error = format!(
+        "{:#}",
+        anyhow::Error::from(Status::discover(&api).await.unwrap_err())
+    );
     assert!(error.contains("timed out after 5s"), "{error}");
 }
 

@@ -718,7 +718,8 @@ impl Ingress {
             })?;
             return Err(error.context("gateway replacement failed; previous gateway restored"));
         }
-        PrivateFile::at(self.rollback_path()).remove().await
+        PrivateFile::at(self.rollback_path()).remove().await?;
+        Ok(())
     }
 
     /// Runs `caddy validate` on the candidate configuration in a temporary
@@ -867,7 +868,8 @@ impl Ingress {
     async fn write_configuration(&self, file: &str, configuration: &Value) -> Result<()> {
         PrivateFile::at(self.directory.join("config/caddy").join(file))
             .write(serde_json::to_vec(configuration)?)
-            .await
+            .await?;
+        Ok(())
     }
 
     /// Writes the configuration for `table` as the autosave and starts the gateway.

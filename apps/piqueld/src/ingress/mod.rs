@@ -916,11 +916,11 @@ impl Ingress {
             self.route_dns(route).state,
             DnsRecordState::Managed | DnsRecordState::Pending
         ) {
-            return self
+            return Ok(self
                 .certificates
                 .dns
                 .resolve_authoritatively(hostname)
-                .await;
+                .await?);
         }
         Ok(tokio::net::lookup_host((hostname.as_str(), 0))
             .await

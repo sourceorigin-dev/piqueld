@@ -11,6 +11,7 @@ use std::{
     },
     path::{Path, PathBuf},
 };
+use thiserror::Error;
 
 /// Prepares private state, creating missing components with mode `0700`.
 /// Existing permissions are never changed.
@@ -41,6 +42,25 @@ pub async fn remove_file(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Why a [`PrivateFile`] could not be written or removed.
+#[derive(Debug, Error)]
+pub enum PrivateFileError {
+    /// The file system refused the operation.
+    #[error("{action} {}", path.display())]
+    Io {
+        /// What was attempted: `write` or `remove`.
+        action: &'static str,
+        /// The file.
+        path: PathBuf,
+        /// The I/O failure.
+        #[source]
+        source: io::Error,
+    },
+    /// The blocking task running the operation failed.
+    #[error(transparent)]
+    Task(#[from] tokio::task::JoinError),
+}
+
 /// A file only the daemon may read, replaced atomically and durably. Its
 /// directory may be writable by a container running as the daemon's user (the
 /// gateway's Caddy), so no operation follows a symlink planted there.
@@ -60,7 +80,7 @@ impl PrivateFile {
     ///
     /// # Errors
     /// Returns the I/O error, with the file's path as context.
-    pub async fn write(self, bytes: impl Into<Vec<u8>>) -> anyhow::Result<()> {
+    pub async fn write(self, bytes: impl Into<Vec<u8>>) -> Result<(), PrivateFileError> {
         let bytes = bytes.into();
         self.run("write", move |file| {
             use std::io::Write;
@@ -81,7 +101,7 @@ impl PrivateFile {
     ///
     /// # Errors
     /// Returns the I/O error, with the file's path as context.
-    pub async fn remove(self) -> anyhow::Result<()> {
+    pub async fn remove(self) -> Result<(), PrivateFileError> {
         self.run("remove", |file| {
             let removed =
                 file.remove_temporaries()? | Self::removed(std::fs::remove_file(&file.0))?;
@@ -99,10 +119,13 @@ impl PrivateFile {
         self,
         action: &'static str,
         operation: impl FnOnce(&Self) -> io::Result<()> + Send + 'static,
-    ) -> anyhow::Result<()> {
-        use anyhow::Context;
+    ) -> Result<(), PrivateFileError> {
         tokio::task::spawn_blocking(move || {
-            operation(&self).with_context(|| format!("{action} {}", self.0.display()))
+            operation(&self).map_err(|source| PrivateFileError::Io {
+                action,
+                path: self.0,
+                source,
+            })
         })
         .await?
     }
