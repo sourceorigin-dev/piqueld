@@ -2,7 +2,7 @@
 
 /// Starts `piqueld` with the configuration at `config`, expects it to exit
 /// unsuccessfully, and returns what it wrote to standard error.
-pub fn refused_start(config: &std::path::Path) -> String {
+pub(crate) fn refused_start(config: &std::path::Path) -> String {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_piqueld"))
         .arg("--config")
         .arg(config)

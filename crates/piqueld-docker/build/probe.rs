@@ -12,7 +12,7 @@ use piqueld_build::NestedCargo;
 /// `DEP_PIQUELD_PROBE_DIR`, so this works from the published crates too.
 /// docs.rs builds have neither the musl target nor the network, and embed an
 /// empty file instead.
-pub fn embed(manifest_dir: &Path) -> Result<(), Box<dyn Error>> {
+pub(crate) fn embed(manifest_dir: &Path) -> Result<(), Box<dyn Error>> {
     let copy = crate::out_dir()?.join("piqueld-probe");
     println!("cargo:rustc-env=PIQUELD_PROBE_BINARY={}", copy.display());
     if env::var_os("DOCS_RS").is_some() {

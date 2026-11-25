@@ -19,13 +19,13 @@ use piqueld_docker::{DockerApi, DockerError, Exec, ExecIo, JobOutput, JobRuns, J
 use std::{collections::BTreeMap, time::Duration};
 
 /// The image every service and job runs.
-pub const IMAGE: &str = "alpine:3.20";
+pub(crate) const IMAGE: &str = "alpine:3.20";
 /// A tag of [`IMAGE`]'s repository that doesn't exist.
-pub const MISSING_IMAGE: &str = "alpine:piqueld-missing";
+pub(crate) const MISSING_IMAGE: &str = "alpine:piqueld-missing";
 /// [`IMAGE`]'s repository, named by Docker Hub's registry endpoint. Docker
 /// doesn't normalize this name to [`IMAGE`]'s, so it is another repository
 /// serving the same images, from Docker Hub.
-pub const HUB_ALIAS: &str = "registry-1.docker.io/library/alpine";
+pub(crate) const HUB_ALIAS: &str = "registry-1.docker.io/library/alpine";
 
 /// How long a scenario waits for the Engine to apply a change; the fake
 /// applies each at once.
@@ -58,7 +58,7 @@ pub(crate) use scenarios;
 
 /// One environment of the `integration-instance` installation, and the
 /// resources piqueld desires for it.
-pub struct Environment {
+pub(crate) struct Environment {
     /// Its ID, unique to this run.
     pub app: EnvironmentId,
     /// Ownership labels of its networks, volumes, and jobs.
@@ -69,13 +69,13 @@ pub struct Environment {
 
 impl Environment {
     /// A new environment whose services run [`IMAGE`] as `docker` resolves it.
-    pub async fn new(docker: &impl DockerApi) -> Self {
+    pub(crate) async fn new(docker: &impl DockerApi) -> Self {
         Self::named(docker, format!("app-{}", uuid::Uuid::now_v7().simple())).await
     }
 
     /// A new environment whose ID starts with this one's, so its resources'
     /// names start with this one's readable name prefix.
-    pub async fn look_alike(&self, docker: &impl DockerApi) -> Self {
+    pub(crate) async fn look_alike(&self, docker: &impl DockerApi) -> Self {
         Self::named(docker, format!("{}-look-alike", self.app)).await
     }
 
@@ -97,22 +97,22 @@ impl Environment {
     }
 
     /// The installation that owns its resources.
-    pub fn instance(&self) -> InstanceId {
+    pub(crate) fn instance(&self) -> InstanceId {
         InstanceId::parse(&self.labels[piqueld_core::resource::INSTANCE_LABEL]).unwrap()
     }
 
     /// The labels secrets of the environment carry.
-    pub fn secret_labels(&self) -> BTreeMap<String, String> {
+    pub(crate) fn secret_labels(&self) -> BTreeMap<String, String> {
         Ownership::scope(&self.instance(), &self.app)
     }
 
     /// The name of its secret.
-    pub fn secret_name(&self) -> String {
+    pub(crate) fn secret_name(&self) -> String {
         format!("piqueld-secret-{}", self.app)
     }
 
     /// Its private network.
-    pub fn network(&self) -> DesiredNetwork {
+    pub(crate) fn network(&self) -> DesiredNetwork {
         DesiredNetwork {
             name: piqueld_core::DockerNetworkName::parse(docker_resource_name(
                 &self.app,
@@ -125,7 +125,7 @@ impl Environment {
     }
 
     /// Its `data` volume.
-    pub fn volume(&self) -> DesiredVolume {
+    pub(crate) fn volume(&self) -> DesiredVolume {
         DesiredVolume {
             logical_name: piqueld_core::VolumeName::parse("data").unwrap(),
             name: piqueld_core::DockerVolumeName::parse(docker_resource_name(
@@ -139,7 +139,7 @@ impl Environment {
     }
 
     /// Its `data` volume, mounted writable at `/data`.
-    pub fn data_mount(&self) -> piqueld_core::DesiredMount {
+    pub(crate) fn data_mount(&self) -> piqueld_core::DesiredMount {
         piqueld_core::DesiredMount {
             volume_name: self.volume().name,
             target: "/data".into(),
@@ -149,7 +149,7 @@ impl Environment {
 
     /// Its service `name`: one healthy replica of [`IMAGE`] that sleeps,
     /// attached to its network.
-    pub fn service(&self, name: &str) -> DesiredService {
+    pub(crate) fn service(&self, name: &str) -> DesiredService {
         let mut labels = self.labels.clone();
         labels.insert(SERVICE_LABEL.into(), name.into());
         DesiredService {
@@ -183,7 +183,7 @@ impl Environment {
     }
 
     /// A command health check that passes every second.
-    pub fn passing_healthcheck() -> ValidatedHealthCheck {
+    pub(crate) fn passing_healthcheck() -> ValidatedHealthCheck {
         ValidatedHealthCheck::Command {
             command: vec!["true".into()],
             interval_seconds: 1,
@@ -197,7 +197,7 @@ impl Environment {
     /// piqueld derives jobs, running `script` with `volume_access` to the
     /// `data` volume, mounted writable at `/data`, and stopping `service`
     /// first when `stop_service` is set.
-    pub fn job(
+    pub(crate) fn job(
         &self,
         service: &DesiredService,
         operation: &str,
@@ -226,7 +226,7 @@ impl Environment {
     }
 
     /// The `migrate` job's run by `operation`, which prints `migrated`.
-    pub fn migration(&self, operation: &str) -> piqueld_core::DesiredJobRun {
+    pub(crate) fn migration(&self, operation: &str) -> piqueld_core::DesiredJobRun {
         self.job(
             &self.service("web"),
             operation,
@@ -238,14 +238,14 @@ impl Environment {
 }
 
 /// An adapter and the environment a scenario changes through it.
-pub struct Contract<D> {
+pub(crate) struct Contract<D> {
     docker: D,
     environment: Environment,
 }
 
 impl<D: DockerApi> Contract<D> {
     /// A scenario of a new environment in `docker`.
-    pub async fn new(docker: D) -> Self {
+    pub(crate) async fn new(docker: D) -> Self {
         let environment = Environment::new(&docker).await;
         Self {
             docker,
@@ -256,7 +256,7 @@ impl<D: DockerApi> Contract<D> {
     /// Ensured resources are observed as desired, with their labels, and the
     /// service converged with healthy running tasks; ensuring them again
     /// changes nothing Docker reports.
-    pub async fn ensured_resources_are_observed_and_ensuring_again_changes_nothing(&self) {
+    pub(crate) async fn ensured_resources_are_observed_and_ensuring_again_changes_nothing(&self) {
         let service = self.ensure_web(&self.environment).await;
         let observed = self.converged(&service).await;
         let network = self.environment.network();
@@ -279,7 +279,7 @@ impl<D: DockerApi> Contract<D> {
     }
 
     /// An updated service is observed with the change once it converged.
-    pub async fn service_updates_are_observed(&self) {
+    pub(crate) async fn service_updates_are_observed(&self) {
         let service = self.ensure_web(&self.environment).await;
         self.converged(&service).await;
         let mut updated = service.clone();
@@ -295,7 +295,7 @@ impl<D: DockerApi> Contract<D> {
 
     /// A service with every security setting on converges, healthy, and is
     /// observed with them; without them, it is `security` drift.
-    pub async fn hardened_services_are_observed(&self) {
+    pub(crate) async fn hardened_services_are_observed(&self) {
         let plain = self.ensure_web(&self.environment).await;
         let hardened = DesiredService {
             security: piqueld_core::manifest::ServiceSecurity {
@@ -316,7 +316,7 @@ impl<D: DockerApi> Contract<D> {
 
     /// Detaching a network changes only the service's networks. A missing
     /// service or network, or one already detached, counts as detached.
-    pub async fn detaching_a_network_changes_only_the_service_networks(&self) {
+    pub(crate) async fn detaching_a_network_changes_only_the_service_networks(&self) {
         let service = self.ensure_web(&self.environment).await;
         self.converged(&service).await;
         let network = self.environment.network();
@@ -348,7 +348,7 @@ impl<D: DockerApi> Contract<D> {
     /// releases the network, removing it fails with an error the controller
     /// retries for longer (see [`DockerError::releases_network`]); once that
     /// succeeds after the network was deleted, it is no longer observed.
-    pub async fn removing_services_and_networks_is_idempotent(&self) {
+    pub(crate) async fn removing_services_and_networks_is_idempotent(&self) {
         let service = self.ensure_web(&self.environment).await;
         self.converged(&service).await;
         let network = self.environment.network();
@@ -410,7 +410,7 @@ impl<D: DockerApi> Contract<D> {
     /// A secret keeps its owner: another environment can neither take it
     /// over nor remove it, and its owner can remove it once, after which its
     /// name is free.
-    pub async fn secrets_are_only_changed_by_their_owner(&self) {
+    pub(crate) async fn secrets_are_only_changed_by_their_owner(&self) {
         let name = self.environment.secret_name();
         let names = std::slice::from_ref(&name);
         let owner = self.environment.secret_labels();
@@ -445,7 +445,7 @@ impl<D: DockerApi> Contract<D> {
 
     /// Resolving a tag the registry doesn't have is rejected, so the
     /// controller doesn't retry it.
-    pub async fn missing_images_are_rejected(&self) {
+    pub(crate) async fn missing_images_are_rejected(&self) {
         let error = self
             .docker
             .resolve_image(MISSING_IMAGE)
@@ -460,7 +460,7 @@ impl<D: DockerApi> Contract<D> {
     /// A digest-pinned reference resolves to that digest, in [`IMAGE`]'s
     /// repository as in another one serving the image, as the controller
     /// pulls a stored digest again.
-    pub async fn pinned_references_resolve_to_their_digest(&self) {
+    pub(crate) async fn pinned_references_resolve_to_their_digest(&self) {
         let image = &self.environment.image;
         assert_eq!(self.docker.resolve_image(image).await.unwrap(), *image);
         let aliased = self.aliased();
@@ -469,7 +469,7 @@ impl<D: DockerApi> Contract<D> {
 
     /// An image pulled from two repositories is listed once, with both
     /// repositories' digests, from either image store.
-    pub async fn an_image_in_two_repositories_lists_both_digests(&self) {
+    pub(crate) async fn an_image_in_two_repositories_lists_both_digests(&self) {
         let aliased = self.docker.resolve_image(&self.aliased()).await.unwrap();
         let resolved = [self.environment.image.as_str(), aliased.as_str()];
         let images = self.docker.images().await.unwrap();
@@ -491,7 +491,7 @@ impl<D: DockerApi> Contract<D> {
     /// A job's run is missing, without output, until its operation starts
     /// it, then finishes with its exit code and output. Another operation's
     /// run replaces it, and removing every run leaves none.
-    pub async fn job_runs_report_their_status_and_output_per_operation(&self) {
+    pub(crate) async fn job_runs_report_their_status_and_output_per_operation(&self) {
         self.ensure_storage(&self.environment).await;
         let first = self.environment.migration("operation-1");
         let second = self.environment.migration("operation-2");
@@ -512,7 +512,9 @@ impl<D: DockerApi> Contract<D> {
 
     /// Removing job runs removes only the selected runs of the environment
     /// the ownership labels name, so other environments keep theirs.
-    pub async fn removing_job_runs_removes_only_the_selected_runs_of_their_environment(&self) {
+    pub(crate) async fn removing_job_runs_removes_only_the_selected_runs_of_their_environment(
+        &self,
+    ) {
         let other = Environment::new(&self.docker).await;
         let ours = self.environment.migration("operation-1");
         let theirs = other.migration("operation-1");
@@ -531,7 +533,7 @@ impl<D: DockerApi> Contract<D> {
     }
 
     /// Observing an environment reports none of another's resources.
-    pub async fn observations_report_only_their_environment(&self) {
+    pub(crate) async fn observations_report_only_their_environment(&self) {
         let other = Environment::new(&self.docker).await;
         assert_ne!(other.app, self.environment.app);
         let service = self.ensure_web(&self.environment).await;
@@ -552,7 +554,7 @@ impl<D: DockerApi> Contract<D> {
     /// planning sees the foreign volume (and ignores it, as its name isn't
     /// one this environment wants). That environment's network and service,
     /// named for their owner, aren't reported.
-    pub async fn observations_report_volumes_named_like_their_environment(&self) {
+    pub(crate) async fn observations_report_volumes_named_like_their_environment(&self) {
         let look_alike = self.environment.look_alike(&self.docker).await;
         self.ensure_web(&look_alike).await;
         assert_eq!(
@@ -564,7 +566,7 @@ impl<D: DockerApi> Contract<D> {
     /// A command runs in its service's running task: `true` prints nothing
     /// and exits with 0. A service the environment doesn't have, or that
     /// another installation owns, has no task to run one in.
-    pub async fn commands_run_in_a_running_task_of_their_own_service(&self) {
+    pub(crate) async fn commands_run_in_a_running_task_of_their_own_service(&self) {
         let service = self.ensure_web(&self.environment).await;
         self.converged(&service).await;
         let instance = self.environment.instance();
@@ -588,7 +590,7 @@ impl<D: DockerApi> Contract<D> {
 
     /// A service with no running task, once scaled to zero replicas, has no
     /// task to run a command in.
-    pub async fn commands_need_a_running_task(&self) {
+    pub(crate) async fn commands_need_a_running_task(&self) {
         let mut service = self.ensure_web(&self.environment).await;
         self.converged(&service).await;
         service.replicas = 0;

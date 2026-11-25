@@ -9,13 +9,13 @@ use crate::Workspace;
 
 /// The workspace's crates, as `cargo metadata --no-deps` lists them.
 #[derive(Deserialize)]
-pub struct Metadata {
+pub(crate) struct Metadata {
     pub packages: Vec<Package>,
 }
 
 /// A workspace crate.
 #[derive(Deserialize)]
-pub struct Package {
+pub(crate) struct Package {
     pub name: String,
     pub manifest_path: PathBuf,
     /// Of every kind: normal, development and build.
@@ -25,19 +25,19 @@ pub struct Package {
 
 /// A crate a package depends on, named as its package is.
 #[derive(Deserialize)]
-pub struct Dependency {
+pub(crate) struct Dependency {
     pub name: String,
 }
 
 /// A package's library, binary, test, example, benchmark or build script.
 #[derive(Deserialize)]
-pub struct Target {
+pub(crate) struct Target {
     /// Such as `lib`, `rlib`, `bin` or `test`.
     pub kind: Vec<String>,
 }
 
 impl Workspace {
-    pub fn metadata(&self) -> Result<Metadata> {
+    pub(crate) fn metadata(&self) -> Result<Metadata> {
         self.cargo_json(&["metadata", "--locked", "--no-deps", "--format-version", "1"])
     }
 }
@@ -45,7 +45,7 @@ impl Workspace {
 impl Metadata {
     /// The crate whose directory holds `file`, an absolute path: the deepest,
     /// since a crate's directory may contain another's.
-    pub fn package_of(&self, file: &Path) -> Option<&Package> {
+    pub(crate) fn package_of(&self, file: &Path) -> Option<&Package> {
         self.packages
             .iter()
             .filter_map(|package| Some((package, package.manifest_path.parent()?)))
@@ -57,7 +57,7 @@ impl Metadata {
 
 impl Package {
     /// Whether the crate has a library, which doc tests need.
-    pub fn has_library(&self) -> bool {
+    pub(crate) fn has_library(&self) -> bool {
         self.targets
             .iter()
             .flat_map(|target| &target.kind)

@@ -85,7 +85,7 @@ impl std::fmt::Display for Revoked {
 
 /// A credential, invitation or passkey, as a node of the issuance tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Issued<'a> {
+pub(super) enum Issued<'a> {
     /// A browser session, CLI login or API token, by ID.
     Credential(&'a str),
     /// An account invitation or enrollment link, by ID.

@@ -53,7 +53,7 @@ const DATA_LABEL: &str = "io.piqueld.dev.data";
 const RUNTIME_LABEL: &str = "io.piqueld.dev.runtime";
 
 #[derive(Subcommand)]
-pub enum Command {
+pub(crate) enum Command {
     /// Watch the sources, rebuilding and restarting the daemon on every change.
     Run,
     /// Run in the background, then wait until ready.
@@ -91,7 +91,7 @@ pub enum Command {
 }
 
 impl Command {
-    pub async fn run(self, workspace: Workspace) -> Result<ExitCode> {
+    pub(crate) async fn run(self, workspace: Workspace) -> Result<ExitCode> {
         match self {
             Self::Config { force } => {
                 if !Instance::configure(&workspace, force)? {
@@ -183,7 +183,7 @@ struct State {
 }
 
 /// This worktree's instance, as configured by piqueld.local.toml.
-pub struct Instance {
+pub(crate) struct Instance {
     workspace: Workspace,
     config: Config,
 }

@@ -11,7 +11,7 @@ use sqlx::SqliteConnection;
 
 /// Who a set of grants belongs to.
 #[derive(Clone, Copy, Debug)]
-pub enum Holder<'a> {
+pub(crate) enum Holder<'a> {
     /// An account's own access.
     User(&'a str),
     /// The grants a scoped credential is limited to.
@@ -226,7 +226,7 @@ impl Visibility {
     clippy::expect_used,
     reason = "A list of strings always serializes to JSON."
 )]
-pub fn scope_json(scope: &Scope) -> Option<String> {
+pub(crate) fn scope_json(scope: &Scope) -> Option<String> {
     scope.applications().map(|ids| {
         serde_json::to_string(&ids.iter().map(ApplicationId::as_str).collect::<Vec<_>>())
             .expect("application IDs are serialized as a list of strings")
@@ -355,7 +355,7 @@ impl Holder<'_> {
     }
 
     /// Reads the holder's grants.
-    pub async fn grants(self, db: &mut SqliteConnection) -> Result<Grants, StoreError> {
+    pub(crate) async fn grants(self, db: &mut SqliteConnection) -> Result<Grants, StoreError> {
         let (user, credential, invitation) = self.ids();
         let rows = sqlx::query!(
             "SELECT permission,application_id FROM auth_grants WHERE user_id IS ?1 AND credential_id IS ?2 AND invitation_id IS ?3",
@@ -382,7 +382,7 @@ impl Holder<'_> {
 
     /// Replaces the holder's grants. A grant on an unknown application fails
     /// with `NotFound`.
-    pub async fn replace(
+    pub(crate) async fn replace(
         self,
         db: &mut SqliteConnection,
         grants: &Grants,
@@ -421,7 +421,7 @@ impl Holder<'_> {
     }
 
     /// Adds `grants` to the holder's existing grants.
-    pub async fn extend(
+    pub(crate) async fn extend(
         self,
         db: &mut SqliteConnection,
         grants: &Grants,

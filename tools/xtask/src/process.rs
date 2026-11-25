@@ -15,14 +15,14 @@ use tokio::signal::unix::{SignalKind, signal};
 /// xtask, which stops the whole group, so no build script, test, or daemon
 /// child outlives it. A job dropped without being waited for, such as on an
 /// error, is killed.
-pub struct Job {
+pub(crate) struct Job {
     name: String,
     child: Child,
     group: Pid,
 }
 
 impl Job {
-    pub fn spawn(command: &mut Command) -> Result<Self> {
+    pub(crate) fn spawn(command: &mut Command) -> Result<Self> {
         let name = command
             .as_std()
             .get_program()
@@ -38,7 +38,7 @@ impl Job {
         Ok(Self { name, child, group })
     }
 
-    pub async fn wait(&mut self) -> Result<ExitStatus> {
+    pub(crate) async fn wait(&mut self) -> Result<ExitStatus> {
         self.child
             .wait()
             .await
@@ -47,7 +47,7 @@ impl Job {
 
     /// Waits for the job to exit. When `limit` elapses or a shutdown signal
     /// arrives first, stops it, allowing 30 seconds to exit, and fails.
-    pub async fn finish(
+    pub(crate) async fn finish(
         mut self,
         limit: Option<Duration>,
         shutdown: &mut Shutdown,
@@ -69,7 +69,7 @@ impl Job {
 
     /// Asks the group to terminate, kills it after `grace`, and returns the
     /// leader's status. Descendants outliving the leader are killed too.
-    pub async fn stop(mut self, grace: Duration) -> Result<ExitStatus> {
+    pub(crate) async fn stop(mut self, grace: Duration) -> Result<ExitStatus> {
         self.signal(Signal::TERM);
         let status = if let Ok(status) = tokio::time::timeout(grace, self.child.wait()).await {
             status?
@@ -91,7 +91,7 @@ impl Job {
 
     /// Copies the job's piped stderr to ours and, without color codes, to
     /// `log`, until the job closes it.
-    pub fn tee_stderr(&mut self, mut log: std::fs::File) -> Result<()> {
+    pub(crate) fn tee_stderr(&mut self, mut log: std::fs::File) -> Result<()> {
         let stderr = self.child.stderr.take().context("stderr is not piped")?;
         tokio::spawn(async move {
             let mut reader = BufReader::new(stderr);
@@ -137,7 +137,7 @@ fn strip_color(line: &[u8]) -> Vec<u8> {
 }
 
 /// The exit code that reports `status` to our caller.
-pub fn exit_code(status: ExitStatus) -> ExitCode {
+pub(crate) fn exit_code(status: ExitStatus) -> ExitCode {
     status
         .code()
         .and_then(|code| u8::try_from(code).ok())
@@ -146,7 +146,7 @@ pub fn exit_code(status: ExitStatus) -> ExitCode {
 
 /// The trimmed standard output of `name`, a finished command, or an error
 /// with its status and standard error when it failed.
-pub fn checked_stdout(name: &str, output: Output) -> Result<String> {
+pub(crate) fn checked_stdout(name: &str, output: Output) -> Result<String> {
     ensure!(
         output.status.success(),
         "{name} failed ({}): {}",
@@ -161,14 +161,14 @@ pub fn checked_stdout(name: &str, output: Output) -> Result<String> {
 
 /// SIGINT, SIGTERM, and SIGHUP, each asking xtask to stop its jobs and clean
 /// up before exiting.
-pub struct Shutdown {
+pub(crate) struct Shutdown {
     interrupt: tokio::signal::unix::Signal,
     terminate: tokio::signal::unix::Signal,
     hangup: tokio::signal::unix::Signal,
 }
 
 impl Shutdown {
-    pub fn listen() -> Result<Self> {
+    pub(crate) fn listen() -> Result<Self> {
         let listen = |kind| signal(kind).context("listen for signals");
         Ok(Self {
             interrupt: listen(SignalKind::interrupt())?,
@@ -178,7 +178,7 @@ impl Shutdown {
     }
 
     /// Resolves when a shutdown signal arrives.
-    pub async fn requested(&mut self) {
+    pub(crate) async fn requested(&mut self) {
         tokio::select! {
             _ = self.interrupt.recv() => {}
             _ = self.terminate.recv() => {}

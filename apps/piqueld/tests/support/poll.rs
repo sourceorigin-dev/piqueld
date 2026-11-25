@@ -6,7 +6,7 @@ use std::time::Duration;
 
 /// Runs `check` every `interval` until it returns `Some`, giving up with
 /// `None` once `timeout` passed.
-pub async fn eventually<T>(
+pub(crate) async fn eventually<T>(
     timeout: Duration,
     interval: Duration,
     mut check: impl AsyncFnMut() -> Option<T>,

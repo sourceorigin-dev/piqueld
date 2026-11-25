@@ -349,7 +349,7 @@ struct DashboardContext {
 }
 
 /// Mounts the CSR application into the document body.
-pub fn mount() {
+pub(super) fn mount() {
     mount_to_body(|| view! { <auth::Gate /> });
 }
 

@@ -18,7 +18,7 @@ use crate::process::{Job, Shutdown, exit_code};
 
 /// A group of Docker integration tests, run by one nextest invocation.
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum Suite {
+pub(crate) enum Suite {
     /// The daemon library's `ingress_caddy` tests, against Caddy, Pebble and
     /// challtestsrv in the engine.
     // They reach them on the ports of `PUBLISHED`.
@@ -43,7 +43,7 @@ impl Suite {
 /// Where the engine keeps images. Docker reports the same images
 /// differently from each store, and hosts use both.
 #[derive(Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
-pub enum Store {
+pub(crate) enum Store {
     /// The classic image store, on the overlay2 graph driver: older engines'
     /// default, and engines upgraded from them.
     #[default]
@@ -55,7 +55,7 @@ pub enum Store {
 /// Runs `suite`, or every suite, against one engine keeping images in
 /// `store`. `partition`, nextest's `--partition` such as `count:1/2`, selects
 /// a shard of each suite's tests.
-pub async fn run(
+pub(crate) async fn run(
     workspace: &Workspace,
     suite: Option<Suite>,
     partition: Option<&str>,

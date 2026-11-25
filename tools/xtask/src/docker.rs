@@ -33,7 +33,7 @@ const REGISTRY_MIRROR: &str = "https://mirror.gcr.io";
 const DIND_SOCKET_DIR: &str = "/piqueld-socket";
 
 /// A Docker engine client, connected to the host's engine by [`Engine::host`].
-pub struct Engine(Docker);
+pub(crate) struct Engine(Docker);
 
 impl Deref for Engine {
     type Target = Docker;
@@ -47,7 +47,7 @@ impl Engine {
     /// Connects to the engine the Docker CLI uses: `DOCKER_HOST`, else the
     /// current context, else `/var/run/docker.sock`. It must be local, since
     /// xtask bind-mounts host directories into its containers.
-    pub async fn host() -> Result<Self> {
+    pub(crate) async fn host() -> Result<Self> {
         let endpoint = match std::env::var("DOCKER_HOST") {
             Ok(host) => host,
             Err(_) => Self::context_endpoint()?,
@@ -82,7 +82,7 @@ impl Engine {
         }
     }
 
-    pub fn dind_image() -> String {
+    pub(crate) fn dind_image() -> String {
         std::env::var("PIQUELD_DIND_IMAGE").unwrap_or_else(|_| DIND_IMAGE.to_owned())
     }
 
@@ -90,7 +90,7 @@ impl Engine {
     /// listens in `socket_dir`, a private host directory, as `docker.sock`,
     /// and pulls through [`REGISTRY_MIRROR`]. `binds` mounts more host paths
     /// or volumes.
-    pub fn dind_container(
+    pub(crate) fn dind_container(
         image: String,
         socket_dir: impl Display,
         binds: impl IntoIterator<Item = String>,
@@ -117,7 +117,7 @@ impl Engine {
     }
 
     /// Pulls `image` unless the engine has it.
-    pub async fn pull_missing(&self, image: &str) -> Result<()> {
+    pub(crate) async fn pull_missing(&self, image: &str) -> Result<()> {
         if self.inspect_image(image).await.is_err() {
             let options = CreateImageOptionsBuilder::new().from_image(image).build();
             self.create_image(Some(options), None, None)
@@ -129,7 +129,11 @@ impl Engine {
     }
 
     /// Creates and starts a container, returning its ID.
-    pub async fn launch(&self, name: Option<&str>, body: ContainerCreateBody) -> Result<String> {
+    pub(crate) async fn launch(
+        &self,
+        name: Option<&str>,
+        body: ContainerCreateBody,
+    ) -> Result<String> {
         let image = body.image.clone().unwrap_or_default();
         let options = name.map(|name| CreateContainerOptionsBuilder::new().name(name).build());
         let id = self
@@ -144,7 +148,7 @@ impl Engine {
     }
 
     /// Runs a container to completion, then removes it.
-    pub async fn run_once(&self, body: ContainerCreateBody) -> Result<()> {
+    pub(crate) async fn run_once(&self, body: ContainerCreateBody) -> Result<()> {
         let id = self.launch(None, body).await?;
         let result = self
             .wait_container(&id, None::<WaitContainerOptions>)
@@ -156,7 +160,7 @@ impl Engine {
     }
 
     /// Removes a container and its anonymous volumes, if it exists.
-    pub async fn remove(&self, container: &str) -> Result<()> {
+    pub(crate) async fn remove(&self, container: &str) -> Result<()> {
         let options = RemoveContainerOptionsBuilder::new()
             .force(true)
             .v(true)
@@ -168,7 +172,7 @@ impl Engine {
 
     /// The outcome of a request about a container or volume, with one that
     /// doesn't exist as `None`.
-    pub fn found<T>(
+    pub(crate) fn found<T>(
         result: Result<T, bollard::errors::Error>,
     ) -> Result<Option<T>, bollard::errors::Error> {
         match result {
@@ -180,7 +184,7 @@ impl Engine {
         }
     }
 
-    pub async fn running(&self, container: &str) -> Result<bool> {
+    pub(crate) async fn running(&self, container: &str) -> Result<bool> {
         let state = self
             .inspect_container(container, None::<InspectContainerOptions>)
             .await
@@ -207,7 +211,7 @@ impl Engine {
     }
 
     /// Prints a container's output, for diagnosing startup failures.
-    pub async fn print_logs(&self, container: &str) {
+    pub(crate) async fn print_logs(&self, container: &str) {
         let options = LogsOptionsBuilder::new().stdout(true).stderr(true).build();
         let mut logs = self.logs(container, Some(options));
         while let Some(Ok(output)) = logs.next().await {
@@ -217,7 +221,7 @@ impl Engine {
 
     /// Waits up to 60 seconds for the Docker-in-Docker engine in `container`,
     /// then gives its socket to the host user, in their private directory.
-    pub async fn wait_for_dind(&self, container: &str) -> Result<()> {
+    pub(crate) async fn wait_for_dind(&self, container: &str) -> Result<()> {
         let ready = format!(
             "docker -H unix://{DIND_SOCKET_DIR}/docker.sock info >/dev/null 2>&1 \
              && chown {uid} {DIND_SOCKET_DIR}/docker.sock",
@@ -234,7 +238,7 @@ impl Engine {
 
     /// Waits up to 60 seconds for `container`, on the host network, to accept
     /// connections on `port` on loopback.
-    pub async fn wait_for_port(&self, container: &str, port: u16) -> Result<()> {
+    pub(crate) async fn wait_for_port(&self, container: &str, port: u16) -> Result<()> {
         let what = format!("a listener on port {port}");
         self.wait_until(container, &what, Duration::from_millis(250), || async {
             TcpStream::connect((Ipv4Addr::LOCALHOST, port))

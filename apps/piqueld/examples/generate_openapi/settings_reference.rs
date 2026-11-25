@@ -19,7 +19,7 @@ use serde_json::Value;
 use std::{collections::BTreeMap, fmt::Write as _};
 
 /// A settings reference page: where it goes, and its hand-written parts.
-pub struct SettingsPage {
+pub(crate) struct SettingsPage {
     /// Where the page is written, relative to the repository root.
     pub path: &'static str,
     /// What the page is generated from, named in its do-not-edit comment.
@@ -31,7 +31,7 @@ pub struct SettingsPage {
 
 impl SettingsPage {
     /// Every setting of an application manifest.
-    pub const MANIFEST: Self = Self {
+    pub(crate) const MANIFEST: Self = Self {
         path: "docs/user/reference/manifest-settings.md",
         source: "the doc comments of the manifest types in `crates/piqueld-core/src/manifest`",
         title: "Manifest settings",
@@ -63,7 +63,7 @@ start with a letter and end with a letter or digit."#,
     };
 
     /// Every setting of the daemon's configuration file.
-    pub const CONFIG: Self = Self {
+    pub(crate) const CONFIG: Self = Self {
         path: "docs/user/reference/configuration-settings.md",
         source: "the configuration types in `crates/piqueld-config`",
         title: "Daemon configuration settings",
@@ -91,7 +91,7 @@ stands for each entry of an array of tables: `dns.providers[].kind` is the
     /// # Errors
     /// If the schema has a shape the page cannot show, or lacks a
     /// description the page needs.
-    pub fn render(&self, schema: &Value) -> Result<String> {
+    pub(crate) fn render(&self, schema: &Value) -> Result<String> {
         let document = Document::deserialize(schema)
             .with_context(|| format!("read the JSON Schema of {}", self.path))?;
         Renderer {

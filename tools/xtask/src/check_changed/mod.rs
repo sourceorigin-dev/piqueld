@@ -30,7 +30,7 @@ const BUILDS: [(&str, &str); 1] = [("piqueld", "piqueld-ui")];
 
 /// Runs the checks the change since the merge base of HEAD and `base` needs,
 /// and prints a summary of each check CI could run.
-pub fn run(workspace: &Workspace, base: &str) -> Result<ExitCode> {
+pub(crate) fn run(workspace: &Workspace, base: &str) -> Result<ExitCode> {
     let filters = Filters::load(workspace.root())?;
     let (merge_base, paths) = workspace.changed_paths(base)?;
     if paths.is_empty() {

@@ -55,6 +55,10 @@ pub mod system;
 mod builds;
 mod client;
 mod editing;
+#[expect(
+    unreachable_pub,
+    reason = "Progenitor writes the generated client with `pub` items"
+)]
 mod generated;
 mod secrets;
 mod sse;

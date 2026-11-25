@@ -11,7 +11,7 @@ use crate::Workspace;
 use crate::docker::Engine;
 use crate::process::{Job, Shutdown, exit_code};
 
-pub async fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
+pub(crate) async fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
     let tests = workspace.root().join("tests/playwright");
     let package: serde_json::Value = serde_json::from_slice(
         &std::fs::read(tests.join("package.json")).context("read package.json")?,

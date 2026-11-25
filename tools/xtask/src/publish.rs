@@ -147,7 +147,7 @@ impl Release<'_> {
 }
 
 /// Runs [`Release::run`] for `cargo xtask release`, for the workspace version.
-pub fn release(workspace: &Workspace, dry_run: bool) -> Result<ExitCode> {
+pub(crate) fn release(workspace: &Workspace, dry_run: bool) -> Result<ExitCode> {
     Release {
         workspace,
         version: workspace.version()?,
@@ -157,7 +157,7 @@ pub fn release(workspace: &Workspace, dry_run: bool) -> Result<ExitCode> {
 }
 
 /// Runs [`publish`] for `cargo xtask publish`.
-pub fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
+pub(crate) fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
     publish(workspace, args).map(exit_code)
 }
 

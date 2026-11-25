@@ -4,7 +4,7 @@ use std::process::{Command, Output};
 
 /// Builds a `piquelctl` command isolated from inherited connection,
 /// profile, and login configuration.
-pub fn command() -> Command {
+pub(crate) fn command() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_piquelctl"));
     for name in [
         "PIQUELD_PROFILE",
@@ -36,7 +36,7 @@ pub fn command() -> Command {
 
 /// The one error event of a `--json` failure, checking that every stderr
 /// line is a JSON event and that stdout is empty.
-pub fn json_error(output: &Output) -> Value {
+pub(crate) fn json_error(output: &Output) -> Value {
     assert!(!output.status.success());
     assert_eq!(output.stdout, b"", "a failure writes nothing on stdout");
     let events: Vec<Value> = String::from_utf8_lossy(&output.stderr)
