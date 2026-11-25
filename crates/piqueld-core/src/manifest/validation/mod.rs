@@ -368,14 +368,11 @@ impl ApplicationManifest {
     /// its literal values allow. Values that reference variables are checked
     /// again once rendered for an environment.
     ///
-    /// Collects every independent error rather than stopping at the first:
-    /// 1. Header, metadata, and optional repository manifest source.
-    /// 2. Route, service, and volume budgets; exceeding one returns early to
-    ///    bound work.
-    /// 3. Routes, duplicate names, services, volumes, and variables.
-    /// 4. On success, canonicalizes literal hostnames and image registries.
-    ///
-    /// Errors are sorted by path then code.
+    /// Collects every independent error rather than stopping at the first,
+    /// sorted by path then code: header, metadata and repository manifest
+    /// source; the route, service and volume budgets (exceeding one returns
+    /// early); then routes, names, services, volumes and variables. On
+    /// success, canonicalizes literal hostnames and image registries.
     ///
     /// # Errors
     /// Returns all detected manifest validation errors.

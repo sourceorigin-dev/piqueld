@@ -199,19 +199,14 @@ pub struct RetentionConfig {
     pub finished_operation_days: u64,
     /// Days each environment's deployment history is kept; `0` keeps it
     /// forever. A deployment is removed only once it is older than this and
-    /// beyond the newest `deployments_per_environment`, never while it is
-    /// its environment's current or latest deployment, one of its newest
-    /// `images.keep_deployments` successful ones (at least one, even when
-    /// that is `0`, so automatic rollback has a target), one a remaining
-    /// deployment restored, or one whose jobs still need cleaning up. A preview keeps only its current and latest
-    /// deployments, its newest successful one, and those a remaining
-    /// deployment restored, of the deployments that finished over an hour
-    /// ago, however recent or few. Releases no remaining deployment uses
-    /// are removed beyond each application's newest 50, and build and job
-    /// records once their deployment is gone and their output expired, except
-    /// a build whose image a remaining build reused. `0`
-    /// here or in `deployments_per_environment` stops all of this pruning,
-    /// of previews, releases and build records too.
+    /// beyond the newest `deployments_per_environment`, and never while it is
+    /// current or latest, among the newest `images.keep_deployments`
+    /// successful ones (at least one), restored by a remaining deployment, or
+    /// has jobs to clean up. Of a preview's deployments that finished over an
+    /// hour ago, only its newest successful one and those a remaining one
+    /// restored stay. Unused releases beyond each application's newest 50, and
+    /// the build and job records of removed deployments, go too. `0` here or
+    /// in `deployments_per_environment` stops all pruning.
     pub deployment_days: u64,
     /// Deployments each environment keeps however old they are; `0` keeps
     /// every deployment, release and build record, as for `deployment_days`.

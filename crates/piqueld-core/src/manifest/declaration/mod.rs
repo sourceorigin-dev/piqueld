@@ -81,21 +81,17 @@ impl Declaration {
 }
 
 impl ApplicationSpec {
-    /// The environments this manifest declares, ordered so that every
-    /// promotion source comes before the environments promoting from it.
-    /// Tracking environments deploy the saved manifest, or follow a branch of
-    /// `spec.manifest`'s repository: their own `branch`, or the one
-    /// `spec.manifest` names, pinned at `commit` when set.
+    /// The environments this manifest declares, each promotion source before
+    /// the environments promoting from it. Tracking environments deploy the
+    /// saved manifest or follow a branch of `spec.manifest`'s repository.
     ///
     /// # Errors
     ///
     /// Returns every problem at its field path: invalid names, branches and
-    /// commits; a source on a promoted environment
-    /// (`environment_source_conflict`); `branch`, `commit` or `sync` without
-    /// a manifest repository (`manifest_repository_required`); `sync` with its
-    /// own `commit` (`environment_sync_pinned`); and a `promote_from`
-    /// naming an undeclared environment (`promotion_source_invalid`) or
-    /// leading back to itself (`promotion_cycle`).
+    /// commits; a source on a promoted environment; `branch`, `commit` or
+    /// `sync` without a manifest repository; `sync` with its own `commit`; and
+    /// a `promote_from` naming an undeclared environment or leading back to
+    /// itself.
     pub fn declared_environments(&self) -> Result<Vec<Declaration>, ValidationErrors> {
         self.declared_environments_since(None)
     }

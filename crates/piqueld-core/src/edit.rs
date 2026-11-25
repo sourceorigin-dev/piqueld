@@ -719,31 +719,20 @@ impl ServiceEdit {
     }
 }
 
-/// The table of field endpoints: every HTTP endpoint that submits one
-/// [`ApplicationEdit`], listed once. The daemon builds its handlers, routes
-/// and `OpenAPI` entries from it, and `piqueld-client` its per-field methods
-/// and `Client::edit_application`, so adding a field takes one entry here and
-/// its edit variant.
-///
-/// `field_endpoints!(callback)` expands to `callback! { entries }`. Each
-/// entry reads:
+/// The table of field endpoints, one per HTTP endpoint that submits an
+/// [`ApplicationEdit`]. `field_endpoints!(callback)` expands to
+/// `callback! { entries }`; an entry reads:
 ///
 /// ```text
 /// /// Optional docs, the operation's `OpenAPI` description.
 /// operation_id: method "/api/v1/applications/{id}/..." (param = "param", ...) [body] => { edit };
 /// ```
 ///
-/// - The path parameters follow the application `{id}`, which every
-///   endpoint takes first, in path order.
-/// - `[body]` is `[Type { value }]` for a `{ "value": ... }` body binding
-///   `value`, `[name: Type]` for a whole body binding `name`, or `[]` for
-///   none.
-/// - `edit` uses only the path parameters and body bindings, so it reads both
-///   as an expression, which the daemon builds from a request, and as a
-///   pattern, which the client matches to choose the request. The client's
-///   match is exhaustive, so every edit has an endpoint, and an edit two
-///   entries could match goes to the first: removals precede the entries
-///   that set the same thing.
+/// - Path parameters follow the application `{id}`, in path order.
+/// - `[body]` is `[Type { value }]` for a `{ "value": ... }` body, `[name: Type]`
+///   for a whole body bound to `name`, or `[]` for none.
+/// - `edit` reads as an expression (the daemon's) and a pattern (the client's,
+///   first match wins).
 ///
 /// The edit and body types are named unqualified: callers import them from
 /// this module and [`crate::manifest`].

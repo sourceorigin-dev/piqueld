@@ -394,24 +394,20 @@ impl From<Vec<CompileError>> for crate::ValidationErrors {
     }
 }
 
-/// Compiles normalized intent for one environment after all image references have
-/// immutable resolutions.
-///
-/// Validates resolutions first, then derives one owned private network (only
-/// when there are services), one Docker volume per declared volume, and one
-/// `DesiredService` per service, all named after and labelled with `environment`.
+/// Compiles normalized intent for one environment once all image references
+/// have immutable resolutions: one private network (when there are services),
+/// one Docker volume per declared volume and one `DesiredService` per service,
+/// all named after and labelled with `environment`.
 ///
 /// # Errors
 ///
-/// Returns bounded compilation diagnostics when a service has no matching image
-/// resolution or its resolved image is not an immutable reference to the
-/// requested repository.
+/// Returns diagnostics for a service whose image resolution is missing or
+/// not an immutable reference to the requested repository.
 ///
 /// # Panics
 ///
-/// Panics only if the domain hasher produced a malformed spec hash, a
-/// validated resolution is missing, or a validated job references an
-/// undeclared service, all of which indicate internal bugs.
+/// Panics on a malformed spec hash, a missing validated resolution or a job
+/// naming an undeclared service, all internal bugs.
 pub fn compile_application(
     app: &NormalizedApplication,
     environment: &EnvironmentId,
