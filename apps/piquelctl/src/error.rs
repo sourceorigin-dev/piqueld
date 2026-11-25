@@ -56,7 +56,6 @@ impl ErrorKind {
     /// The code of a CLI-side failure of this class with no more specific one.
     const fn code(self) -> CliCode {
         match self {
-            // Only API errors are `Unauthorized`, and they keep the daemon's code.
             Self::General | Self::Unauthorized => CliCode::Failed,
             Self::Input => CliCode::InvalidInput,
             Self::Conflict => CliCode::Conflict,
@@ -274,10 +273,6 @@ impl CliError {
         use tokio::signal::unix::{SignalKind, signal};
         let signal = async {
             let mut terminate = signal(SignalKind::terminate())?;
-            // SIGHUP is handled only to restore a terminal on standard input.
-            // Handling it replaces an inherited `SIG_IGN`, which would make a
-            // command run with `nohup` or `trap '' HUP` exit when its terminal
-            // closes. `nohup` redirects a terminal stdin, so it is left alone.
             let mut hangup = io::stdin()
                 .is_terminal()
                 .then(|| signal(SignalKind::hangup()))
@@ -445,7 +440,6 @@ impl From<io::Error> for CliError {
 impl From<ClientError> for CliError {
     fn from(error: ClientError) -> Self {
         match error {
-            // Join the source chain so the reqwest cause stays on one line.
             ClientError::Configuration { source } => {
                 let chain: Vec<String> =
                     std::iter::successors(Some(&source as &dyn std::error::Error), |error| {
@@ -471,7 +465,6 @@ impl From<ClientError> for CliError {
             ClientError::Api { status, error } => {
                 let kind = match status.as_u16() {
                     400 | 404 | 413 | 415 | 422 => ErrorKind::Input,
-                    // 412 has no current producer; kept for forward compatibility.
                     409 | 412 => ErrorKind::Conflict,
                     401 | 403 => ErrorKind::Unauthorized,
                     408 | 429 | 502..=504 => ErrorKind::Unavailable,
@@ -483,9 +476,6 @@ impl From<ClientError> for CliError {
                 {
                     Some(Diagnostic::Response(Some(status)))
                 } else {
-                    // Only missing or rejected credentials and missing grants get a
-                    // hint: other 401s and 403s, such as a tailnet-bound token used
-                    // elsewhere or an untrusted client, explain themselves.
                     match code {
                         Some(ApiErrorCode::AuthenticationRequired) => {
                             Some(Diagnostic::Unauthenticated)
@@ -553,7 +543,6 @@ impl<'a> ErrorReport<'a> {
                 source.clone(),
             ));
         } else {
-            // Rejected endpoint input can contain credentials; never echo it.
             if !matches!(diagnostic, Diagnostic::Endpoint) {
                 facts.push(("  Endpoint", "endpoint", cli.transport()));
             }
@@ -624,7 +613,6 @@ impl<'a> ErrorReport<'a> {
     /// reconcile hint, and `preview_limit_reached` lists the previews it counts;
     /// any other details are printed as raw JSON.
     fn details(details: &Value, out: &mut HumanWriter<'_>) -> io::Result<()> {
-        // Local and daemon manifest validation share the `ValidationErrors` shape.
         if let Some(errors) = details.get("errors").and_then(Value::as_array) {
             for error in errors {
                 let field = |name| error.get(name).and_then(Value::as_str).unwrap_or("?");

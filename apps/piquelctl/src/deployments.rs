@@ -93,7 +93,6 @@ impl Deployed {
     ) -> Result<Self> {
         let id = &deployment.operation.id;
         let mut origin = deployment.origin.clone();
-        // Restores run what they restored, which may be a restore too.
         while let DeploymentOrigin::Restore { deployment, .. } = &origin {
             origin = find_deployment(client, environment, deployment)
                 .await?
@@ -216,7 +215,6 @@ pub(crate) async fn wait_for_accepted(
     })
 }
 
-// How ready `wait` waits for a deployment to be; `///` on variants is help.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub(crate) enum Readiness {
     /// The deployment succeeded, and the daemon observes every service
@@ -257,7 +255,6 @@ pub(crate) trait Target {
     }
 }
 
-// `wait` arguments shared by `env wait` and `preview wait`.
 #[derive(Debug, Args)]
 pub(crate) struct WaitArgs<T: Args> {
     #[command(flatten)]
@@ -284,11 +281,8 @@ impl<T: Args + Target> WaitArgs<T> {
                 if operation.state == OperationState::Superseded {
                     return Err(superseded(&id, None));
                 }
-                // Read before the detail, so the detail is the newest evidence.
                 let mut deployment = find_deployment(client, environment, &id).await?;
                 let detail = client.environment_detail(environment.id.as_str()).await?;
-                // The detail's copy of the operation is the one its runtime
-                // state goes with: a retry may have started or failed since.
                 let latest = match &detail.latest_operation {
                     Some(latest) if latest.id == id => latest.clone(),
                     newer => {
@@ -299,7 +293,6 @@ impl<T: Args + Target> WaitArgs<T> {
                 if !latest.state.terminal() {
                     return Ok(Settled::Waiting(format!("{} again", latest.state)));
                 }
-                // The latest operation, so the daemon retries this failure.
                 if let Some(code) = Wait::retryable(&latest) {
                     return Ok(Settled::Waiting(format!(
                         "attempt {} failed with {code}; the daemon retries it",
@@ -345,7 +338,6 @@ impl<T: Args + Target> WaitArgs<T> {
     }
 }
 
-// `history` arguments shared by `env history` and `preview history`.
 #[derive(Debug, Args)]
 pub(crate) struct HistoryArgs<T: Args> {
     #[command(flatten)]
@@ -369,7 +361,6 @@ impl<T: Args + Target> HistoryArgs<T> {
     }
 }
 
-// `attempts` arguments shared by `env attempts` and `preview attempts`.
 #[derive(Debug, Args)]
 pub(crate) struct AttemptsArgs<T: Args> {
     #[command(flatten)]
@@ -389,9 +380,6 @@ impl<T: Args + Target> AttemptsArgs<T> {
     /// API retains its outcome.
     pub(crate) async fn run(&self, console: &mut Console, client: &Client) -> Result<()> {
         let environment = &self.target.environment(client).await?;
-        // The deployment's operation is read before its attempts, so the
-        // attempt it runs is newer than any retained outcome. `--cursor`
-        // needs `--deployment`, and a later page lists retained ones alone.
         let (deployment, live) = match (&self.deployment, &self.cursor) {
             (None, _) => {
                 let latest = latest_deployment(client, environment)
@@ -404,7 +392,6 @@ impl<T: Args + Target> AttemptsArgs<T> {
                     })?;
                 (latest.id.clone(), Some(latest))
             }
-            // Reading it reports an unknown deployment by name.
             (Some(id), None) => {
                 let deployment = find_deployment(client, environment, id).await?;
                 (id.clone(), Some(deployment.operation))
@@ -422,7 +409,6 @@ impl<T: Args + Target> AttemptsArgs<T> {
     }
 }
 
-// `restore` arguments shared by `env restore` and `preview restore`.
 #[derive(Debug, Args)]
 pub(crate) struct RestoreArgs<T: Args> {
     #[command(flatten)]
@@ -468,7 +454,6 @@ fn superseded(deployment: &str, newer: Option<&str>) -> CliError {
     .with_details(json!({"deployment_id": deployment, "superseded_by": newer}))
 }
 
-// `url` arguments shared by `env url` and `preview url`.
 #[derive(Debug, Args)]
 pub(crate) struct UrlArgs<T: Args> {
     #[command(flatten)]

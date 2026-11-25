@@ -151,7 +151,6 @@ pub(crate) struct AddFileArgs {
     #[arg(long, default_value_t = FileMode::default())]
     mode: FileMode,
 }
-// Exactly one source of a file's content.
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
 pub(crate) struct FileSourceArgs {

@@ -37,7 +37,6 @@ report!(Vec<ServiceRow<SecretMount>> as [ServiceRow<SecretMount>], self, out, {
     })
 });
 
-// `export list` result.
 report!(Vec<Export> as [Export], self, out, {
     out.table(self, "No exports.", ["SERVICE", "APPLICATIONS", "PREVIEWS"], |export| {
         [
@@ -48,7 +47,6 @@ report!(Vec<Export> as [Export], self, out, {
     })
 });
 
-// `generated-secret list` result.
 report!(Vec<SecretDeclaration> as [SecretDeclaration], self, out, {
     out.table(self, "No generated secrets declared.", ["NAME", "GENERATES"], |secret| {
         let generates = match secret.generate {
@@ -61,7 +59,6 @@ report!(Vec<SecretDeclaration> as [SecretDeclaration], self, out, {
     })
 });
 
-// `import list` result.
 report!(Vec<Import> as [Import], self, out, {
     out.table(self, "No imports.", ["NAME", "ENVIRONMENT"], |import| {
         [
@@ -110,7 +107,6 @@ report!(Vec<RouteRow> as [RouteRow], self, out, {
                     route.dns_state.to_string(),
                     route.dns.to_string(),
                 ],
-                // What keeps an unready route from serving.
                 note: (route.state != "ready").then(|| route.message.clone()),
             }
         },
@@ -237,11 +233,8 @@ report!(ShowReport<'_>, self, out, {
     Ok(())
 });
 
-// `url --route`: only the URL, so it can be used as is; `url` warns while
-// it is pending.
 report!(RouteUrl, self, out, { out.line(&self.url) });
 
-// `url` result.
 report!(Vec<RouteUrl> as [RouteUrl], self, out, {
     if self.is_empty() {
         return out.line("No routes.");
@@ -249,7 +242,6 @@ report!(Vec<RouteUrl> as [RouteUrl], self, out, {
     out.urls(self)
 });
 
-// `app repository webhook show` result.
 report!(WebhookView, self, out, {
     match &self.url {
         Some(url) => out.label("Payload URL", url)?,
@@ -270,7 +262,6 @@ report!(WebhookView, self, out, {
     Ok(())
 });
 
-// `app repository webhook rotate` result: the only time the secret is shown.
 report!(once WebhookSecret, self, out, {
     if let Some(url) = &self.url {
         out.label("Payload URL", url)?;
@@ -293,8 +284,6 @@ report!(ValidManifestReport, self, out, {
 
 /// Saved TOML in human mode; a JSON string in machine mode.
 pub(crate) struct ManifestReport(pub(crate) String);
-// TOML escapes control characters in strings itself, so only its newlines
-// and tabs reach the terminal.
 report!(ManifestReport as str = 0, self, out, {
     out.log_text(self.0.trim_end())?;
     out.blank()

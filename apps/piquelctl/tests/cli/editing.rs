@@ -99,7 +99,6 @@ fn file_add_inlines_local_files_and_names_repository_files() {
     let local = directory.path().join("prometheus.yml");
     fs::write(&local, "scrape: ${HOME} {{ .x }}\n").expect("local file");
     let local = local.to_str().expect("UTF-8 path");
-    // Local files are inlined verbatim, never rendered.
     assert_saves_field(
         &[
             "app",
@@ -138,7 +137,6 @@ fn file_add_inlines_local_files_and_names_repository_files() {
 fn job_commands_edit_the_loaded_jobs_and_save_the_whole_list() {
     let job = |name: &str, command: &[&str], timeout: u32| json!({"name": name, "service": "web", "command": command, "run": "before-rollout", "timeout_seconds": timeout});
     for (arguments, expected) in [
-        // Replacing keeps the job's position and, without --timeout, its timeout.
         (
             vec![
                 "app",
@@ -179,7 +177,6 @@ fn job_commands_edit_the_loaded_jobs_and_save_the_whole_list() {
                 job("cleanup", &["notes", "cleanup"], 30)
             ]),
         ),
-        // Moving reorders without changing the job; past the end moves it last.
         (
             vec![
                 "app",
@@ -215,7 +212,6 @@ fn job_commands_edit_the_loaded_jobs_and_save_the_whole_list() {
 fn secret_mount_commands_edit_the_loaded_mounts_and_save_the_whole_list() {
     let mount = |name: &str, target: &str| json!({"name": name, "target": target});
     for (arguments, expected) in [
-        // Adding at a mounted target replaces that mount in place.
         (
             vec!["add", "stripe-live", "/run/secrets/db"],
             json!([
@@ -271,7 +267,6 @@ fn link_commands_edit_the_loaded_links_and_save_the_whole_list() {
     let saved_export = json!({"service": "web", "applications": ["billing"]});
     let saved_import = json!({"application": "auth", "service": "api"});
     for (arguments, field, expected) in [
-        // Setting an exported service replaces who may import it.
         (
             vec![
                 "app",
@@ -287,7 +282,6 @@ fn link_commands_edit_the_loaded_links_and_save_the_whole_list() {
             "exports",
             json!([{"service": "web", "applications": ["auth", "billing"], "previews": true}]),
         ),
-        // Importing again replaces the environment it reaches.
         (
             vec![
                 "app",
@@ -352,7 +346,6 @@ fn generated_secret_commands_edit_the_loaded_declarations_and_save_the_whole_lis
     let saved =
         json!({"name": "session", "generate": {"type": "random", "bytes": 32, "encoding": "hex"}});
     for (arguments, expected) in [
-        // Setting a declared name replaces how it is generated, in place.
         (
             vec![
                 "app",
@@ -404,7 +397,6 @@ fn generated_secret_commands_edit_the_loaded_declarations_and_save_the_whole_lis
         );
     }
 
-    // A generator is required, and `--encoding` applies only to random bytes.
     for arguments in [
         &[
             "app",
@@ -566,8 +558,6 @@ fn self_git_sources_build_the_manifest_repository() {
         "source",
         &json!({"value":{"type":"git","repository":"self","build":{"type":"docker","dockerfile":"build/Dockerfile","context":"."}}}),
     );
-    // `self` always builds the manifest's commit, so a revision is rejected
-    // before contacting the daemon.
     let server = start_server(false, 0, |_| {
         panic!("`self` with a branch must fail locally")
     });
@@ -591,8 +581,6 @@ fn self_git_sources_build_the_manifest_repository() {
     let _ = server.finish();
 }
 
-// Runs over TCP so the global `--url` endpoint and the positional repository
-// URL are both given.
 #[test]
 fn repository_connect_sends_the_repository_without_replacing_the_endpoint() {
     assert_saves(
@@ -638,8 +626,6 @@ fn sync_settings_and_environment_opt_outs_are_sent_as_typed_requests() {
         &json!({"value": {"mode": "poll", "interval_seconds": 120}}),
     );
 
-    // An interval only applies to polling: the parser rejects it with any
-    // other mode, before anything is sent.
     for arguments in [
         &["sync", "app-notes-01", "off", "--interval", "120", "--yes"][..],
         &[

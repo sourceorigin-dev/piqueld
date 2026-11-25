@@ -104,9 +104,6 @@ report!(StatusReport<'_> as SystemStatus = status, self, out, {
     s.dns.render_human(out)
 });
 
-// Where the daemon's own telemetry goes and how its export is going: the
-// configured endpoint and each granted environment's receiving service.
-// Headers appear only as the file they were read from.
 report!(TelemetryStatus, self, out, {
     if self.destinations.is_empty() {
         return out.label(
@@ -142,7 +139,6 @@ report!(TelemetryStatus, self, out, {
     out.label("Telemetry exports", self.exported())
 });
 
-// The build machine images build on, and how its latest check went.
 report!(BuilderStatus, self, out, {
     out.label(
         "Build machine",
@@ -155,7 +151,6 @@ report!(BuilderStatus, self, out, {
     )
 });
 
-// One check of the build machine, as `builder check` makes it.
 report!(BuilderCheck, self, out, {
     out.label("Build machine", checked(Some(self)))
 });
@@ -175,7 +170,6 @@ fn checked(check: Option<&BuilderCheck>) -> String {
     }
 }
 
-// The built images cleanup kept, and what it removed since the daemon started.
 report!(ImageStatus, self, out, {
     match self.cleaned_at_ms {
         Some(at) => out.label(
@@ -195,7 +189,6 @@ report!(ImageStatus, self, out, {
     Ok(())
 });
 
-// The images this host's builds pushed to the build registry.
 report!(RegistryImageStatus, self, out, {
     let held = self.images.map_or_else(
         || format!("{} not listed yet", self.repository),
@@ -214,8 +207,6 @@ report!(RegistryImageStatus, self, out, {
     }
 });
 
-// Previews against their limits, then each readable application's. A count
-// over its limit, after the limit was lowered, is flagged.
 report!(PreviewUsage, self, out, {
     let limits = &self.limits;
     let count = |count: u32, max: u32| {
@@ -259,8 +250,6 @@ report!(PreviewUsage, self, out, {
     Ok(())
 });
 
-// DNS providers with their zones and health, then DNS-01 certificates; shown
-// by `status` and `dns refresh`.
 report!(DnsStatus, self, out, {
     for provider in &self.providers {
         out.label(
@@ -300,8 +289,6 @@ report!(DnsStatus, self, out, {
     Ok(())
 });
 
-// `resources`: the measurements the dashboard's Daemon status page shows.
-// Measurements the host cannot provide are unavailable rather than zero.
 report!(DaemonStats, self, out, {
     let unavailable = || "unavailable on this host".to_owned();
     out.label("Measured", Timestamp(self.sampled_at_ms))?;
@@ -311,7 +298,6 @@ report!(DaemonStats, self, out, {
         self.memory_bytes
             .map_or_else(unavailable, |bytes| format!("{} resident", Bytes(bytes))),
     )?;
-    // CPU usage compares two measurements, so the daemon's first has none.
     out.label(
         "CPU",
         match (self.cpu_percent, self.cpu_seconds) {
@@ -358,8 +344,6 @@ report!(DaemonStats, self, out, {
     )
 });
 
-// `settings`: each group of host settings, as the dashboard's Host settings
-// page shows them.
 report!(HostConfiguration, self, out, {
     for (index, (group, settings)) in self.groups.iter().enumerate() {
         if index > 0 {

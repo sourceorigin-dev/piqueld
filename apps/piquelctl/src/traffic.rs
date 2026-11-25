@@ -13,7 +13,6 @@ use piqueld_client::{
     observability::{Bytes, Elapsed, TrafficCounts, TrafficRank, TrafficReport, UtcTime},
 };
 
-// `env traffic` arguments; `///` on fields is user-facing help.
 #[derive(Debug, Args)]
 pub(crate) struct TrafficArgs {
     #[command(flatten)]
@@ -71,7 +70,6 @@ struct TrafficView<'a> {
 report!(TrafficView<'_> as TrafficReport = traffic, self, out, {
     let t = self.traffic;
     let daily = t.bucket_ms >= 86_400_000;
-    // Times to the day for daily points, to the minute otherwise.
     let time = |ms: i64| if daily { format!("{:#}", UtcTime(ms)) } else { UtcTime(ms).to_string() };
     out.label("Environment", &self.environment)?;
     out.label("Window", format_args!("{} to {} UTC", time(t.since_ms), time(t.until_ms)))?;

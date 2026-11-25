@@ -94,8 +94,6 @@ impl Credentials {
         };
         let opened = std::fs::OpenOptions::new()
             .read(true)
-            // Without NONBLOCK, opening a FIFO would wait for a writer
-            // instead of reaching the regular-file check.
             .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed())
             .open(path);
         let file = match opened {
@@ -203,8 +201,6 @@ impl Credentials {
     /// then reselects the first remaining account if the selected one is gone.
     fn remove(&mut self, key: &str, id: &str, token: &str) {
         if let Some(endpoint) = self.endpoints.get_mut(key) {
-            // A login completed while remote revocation was in flight. Keep its
-            // replacement token, which the logout request did not revoke.
             if endpoint
                 .accounts
                 .get(id)
@@ -249,7 +245,6 @@ impl Credentials {
     /// it, so `--account` finds its login by the new name. Does nothing, and
     /// creates no file, without a saved login for it on this daemon.
     pub(crate) fn rename(cli: &Cli, id: &str, username: &str) -> Result<()> {
-        // Without a credentials location there is no saved login to rename.
         let Ok(path) = Self::path() else {
             return Ok(());
         };
@@ -336,12 +331,9 @@ impl std::fmt::Display for TokenSource {
         }
     }
 }
-// `login` result: the signed-in account.
 report!(User, self, out, {
     out.line(format_args!("{} ({})", self.username, self.id))
 });
-// Links served only over the Unix socket; human output is the bare URL so it
-// can be piped.
 report!(once SetupLink, self, out, { out.line(&self.url) });
 report!(once OperatorLink, self, out, { out.line(&self.url) });
 /// Refuses `command` locally unless it will reach the daemon's Unix socket,
@@ -516,7 +508,6 @@ impl Approval {
                 let mut lines = vec![format!(
                     "The daemon sees this confirmation coming from: {requester}"
                 )];
-                // The page names the same login, so the approver can match it.
                 if let Some(confirms) = &start.confirms {
                     lines.push(format!("The page names this login: {}", confirms.login));
                 }
@@ -559,12 +550,10 @@ impl Approval {
         console: &mut Console,
         start: &DeviceStart,
     ) -> Result<DeviceToken> {
-        // A link with the code filled in only needs the code checked, not typed.
         let (link, code) = match &start.verification_uri_complete {
             Some(link) => (link, "Check the page shows code"),
             None => (&start.verification_uri, "Enter code"),
         };
-        // The approval page shows the same address, so the approver can match them.
         let requester = start
             .requester
             .as_deref()
@@ -576,7 +565,6 @@ impl Approval {
         lines.extend(self.instructions(start, requester));
         console.prompt_lines(&lines)?;
         let finish = async {
-            // Never let a daemon response turn polling into a tight loop.
             let mut interval = u64::from(start.interval).max(1);
             loop {
                 tokio::time::sleep(Duration::from_secs(interval)).await;
@@ -675,7 +663,6 @@ mod tests {
         let link = dir.path().join("credentials.json");
         std::os::unix::fs::symlink(&real, &link).unwrap();
         let fifo = dir.path().join("fifo.json");
-        // rustix has no portable `mkfifo`: `mknodat` is missing on macOS.
         let made = std::process::Command::new("mkfifo")
             .arg(&fifo)
             .status()
@@ -684,7 +671,6 @@ mod tests {
         for (path, problem) in [
             (link, "must not be a symbolic link"),
             (dir.path().to_owned(), "must be a regular file"),
-            // Refused without waiting for a writer.
             (fifo, "must be a regular file"),
         ] {
             let error = Credentials::read_at(&path).err().expect("refused");
@@ -700,8 +686,6 @@ mod tests {
             .endpoints
             .entry("unix:/run/piqueld/piqueld.sock".into())
             .or_default();
-        // Alice's username is Bob's account ID, and her account sorts
-        // first, so only an ID-first lookup finds Bob by his ID.
         for (id, username) in [("alice-id", "bob-id"), ("bob-id", "Bob")] {
             endpoint.accounts.insert(
                 id.into(),
@@ -714,7 +698,6 @@ mod tests {
         for (account, id) in [
             ("bob-id", "bob-id"),
             ("BOB", "bob-id"),
-            // IDs match exactly, so this is Alice's username.
             ("BOB-ID", "alice-id"),
         ] {
             let cli = Cli::try_parse_from(["piquelctl", "--account", account, "whoami"]).unwrap();

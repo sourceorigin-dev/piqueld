@@ -73,7 +73,6 @@ impl TimelineProgress {
                 let drawn = Arc::clone(&view);
                 let draw = move |state: &ProgressState, out: &mut dyn fmt::Write| {
                     let frame = usize::try_from(state.elapsed().as_millis() / 100).unwrap_or(0);
-                    // A failed write only cuts this frame short.
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "a failed write only cuts this frame short"
@@ -126,8 +125,6 @@ impl TimelineProgress {
             }
         }
         let mut view = self.view.lock();
-        // A running operation's timeline supersedes what was shown under
-        // it, such as a failure the wait rode out.
         if !timeline.operation.state.terminal() {
             view.waiting = None;
         }
@@ -171,7 +168,6 @@ impl TimelineProgress {
             let view = self.view.lock();
             let mut rows = String::new();
             if let (Backend::Terminal(_), Some(timeline)) = (&self.output.backend, &view.timeline) {
-                // Writing to a `String` cannot fail.
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "writing to a `String` cannot fail"
@@ -365,7 +361,6 @@ struct Rows<'a> {
 
 impl<'a> Rows<'a> {
     fn new(steps: &'a [Step], max_rows: usize) -> Self {
-        // Folding n steps into one row saves n - 1 rows.
         let over = steps.len().saturating_sub(max_rows);
         let needed = if over > 0 { over + 1 } else { 0 };
         let count = |failed: bool| {
@@ -375,8 +370,6 @@ impl<'a> Rows<'a> {
                 .count()
         };
         let succeeded = count(false).min(needed);
-        // Failed steps fold only as far as needed to keep the steps under
-        // way drawn: until then, cutting the steps left is enough.
         let under_way = steps
             .iter()
             .filter(|step| step.state.started() && !step.state.finished())
@@ -485,7 +478,6 @@ impl fmt::Display for StepDetail<'_> {
                 None => Ok(()),
             };
         }
-        // Separates the parts written.
         let mut gap = "";
         let now_ms = self.now_ms.or(step.finished_at_ms);
         if let Some(took) = now_ms.and_then(|now_ms| step.duration_ms(now_ms)) {
@@ -500,7 +492,6 @@ impl fmt::Display for StepDetail<'_> {
             )?;
             gap = "  ";
         }
-        // A rollout's new tasks while it runs, then how long it was down.
         let mut parts = Vec::new();
         if let Some(tasks) = step.new_tasks().filter(|_| step.state.running()) {
             parts.push(tasks.to_string());
@@ -606,7 +597,6 @@ mod tests {
             header("requested", None, None),
             ("⠋ Queued op  ▕░░░░░░░░░░░░▏ 0/1  ~24.0 s left".into(), None)
         );
-        // The build started a second before the operation did.
         assert_eq!(
             header("running", Some(2_000), None),
             (
@@ -625,7 +615,6 @@ mod tests {
 
     #[test]
     fn steps_running_after_others_succeeded_stay_drawn() {
-        // A build running, fourteen done, a second running, then four left.
         let mut steps = vec![step("building_git", "running")];
         steps.extend((0..14).map(|_| step("building_git", "succeeded")));
         steps.push(step("building_git", "running"));
@@ -642,8 +631,6 @@ mod tests {
         assert_eq!(running(&rows), 2);
         assert_eq!(rows.folded + rows.shown.len() + rows.more, steps.len());
 
-        // Failed repairs piling up during a long build fold too, once no
-        // succeeded step is left to fold.
         let mut steps: Vec<_> = (0..18).map(|_| step("ensure_service", "failed")).collect();
         steps.push(step("building_git", "running"));
         steps.extend((0..3).map(|_| step("ensure_service", "planned")));
@@ -652,7 +639,6 @@ mod tests {
         assert_eq!(running(&rows), 1);
         assert_eq!(rows.folded + rows.shown.len() + rows.more, steps.len());
 
-        // A failure stays drawn when cutting the steps left is enough.
         let mut steps: Vec<_> = (0..3).map(|_| step("building_git", "succeeded")).collect();
         steps.push(step("building_git", "failed"));
         steps.push(step("building_git", "running"));

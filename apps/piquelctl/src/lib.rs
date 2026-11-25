@@ -47,18 +47,13 @@ pub async fn run() -> ExitCode {
         Ok(matches) => matches,
         Err(error) => return usage_error(&error),
     };
-    // Building `Cli` checks the rules clap can't, such as `--interval`
-    // applying only to `poll` (see `cli::parsed_args`).
     let mut cli = match Cli::from_arg_matches(&matches) {
         Ok(cli) => cli,
         Err(error) => return usage_error(&error.format(&mut invoked(&matches))),
     };
     let mut console = Console::new(&cli);
     let result = async {
-        // Completions and validation are purely local, so they need neither
-        // profiles nor a daemon.
         if let cli::Command::Completions { shell } = &cli.command {
-            // `generate` panics on a write failure, such as a closed pipe.
             let mut script = Vec::new();
             clap_complete::generate(*shell, &mut command(), "piquelctl", &mut script);
             std::io::Write::write_all(&mut std::io::stdout(), &script)?;
@@ -81,13 +76,9 @@ pub async fn run() -> ExitCode {
                 .map(|()| ExitCode::SUCCESS);
         }
         profiles.resolve(&mut cli, &matches)?;
-        // Built before the supervisor's deadline can win, so timeout
-        // diagnostics can never echo rejected URL input.
         let client = commands::build_client(&cli)?;
         match &cli.command {
             cli::Command::Login { .. } => auth::login(&cli, &client, &mut console).await?,
-            // One request, bounded by the client's own timeout, so a timeout
-            // still reports the resolved connection rather than dropping it.
             cli::Command::Doctor => commands::doctor(&cli, &client, &mut console).await?,
             cli::Command::App {
                 command: cli::AppCommand::Exec(args),
@@ -96,7 +87,6 @@ pub async fn run() -> ExitCode {
                 command: previews::PreviewCommand::Exec(args),
             } => return run_with_timeout(&cli, args.run(&client)).await,
             _ => {
-                // Boxed: every command's state would otherwise be inlined here.
                 let command = Box::pin(commands::run(&cli, &client, &mut console));
                 run_with_timeout(&cli, command).await?;
             }
@@ -109,8 +99,6 @@ pub async fn run() -> ExitCode {
         Err(error) => {
             console.error(&ErrorReport::new(&error, &cli));
             let code = error.exit_code();
-            // A blocking stdin reader cannot be cancelled. Do not let runtime
-            // shutdown wait for it after the command has been interrupted.
             if support::interaction_active() {
                 std::process::exit(i32::from(code));
             }
@@ -151,7 +139,6 @@ fn usage_error(error: &clap::Error) -> ExitCode {
     if !json || !error.use_stderr() {
         error.exit();
     }
-    // The first paragraph names the problem; usage and help hints follow it.
     let rendered = error.render().to_string();
     let message = rendered
         .split("\n\n")
@@ -185,13 +172,9 @@ async fn run_with_timeout<T>(
     tokio::pin!(command, interrupt);
     let mut deadline = checked_deadline(Instant::now(), cli.timeout)
         .map_err(|error| error.configuration(cli.connection_sources.timeout.to_string()))?;
-    // Checked now, not once a mutation was accepted and a wait starts.
     checked_deadline(Instant::now(), cli.wait_timeout)
         .map_err(|error| error.configuration(cli.connection_sources.wait_timeout.to_string()))?;
-    // Set while an interactive prompt is open or the command waits; that
-    // time is excluded by shifting the deadline once it ends.
     let mut suspended: Option<Instant> = None;
-    // The current wait's number and its own deadline.
     let mut wait: Option<(NonZeroU64, Instant)> = None;
     loop {
         let waiting = Waiting::current();
@@ -214,9 +197,6 @@ async fn run_with_timeout<T>(
             (None, _) => None,
         };
         tokio::select! {
-            // Requests share the `--timeout` budget, so one can time out at the
-            // command's own deadline, and either branch can then win. Once the
-            // deadline has passed, the command is what timed out.
             result = &mut command => {
                 return match result {
                     Err(error)
@@ -230,13 +210,8 @@ async fn run_with_timeout<T>(
                 };
             }
             error = &mut interrupt => return Err(error),
-            // An interaction or wait started or finished; re-evaluate from the top.
             () = support::interaction_changed() => {}
-            // The deadline is suspended while a prompt is open or the command waits.
             () = tokio::time::sleep_until(deadline), if suspended.is_none() => {
-                // The guard above is evaluated when the branch is registered.
-                // A prompt or wait can start afterwards, so recheck before
-                // treating the elapsed deadline as a command timeout.
                 if !support::interaction_active() && Waiting::current().is_none() {
                     return Err(timeout_error(cli.timeout));
                 }

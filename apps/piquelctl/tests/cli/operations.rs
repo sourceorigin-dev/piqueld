@@ -6,7 +6,6 @@ use super::*;
 fn progress_is_visible_before_the_server_completes_the_command() {
     let (release, wait) = mpsc::channel();
     let mut calls = 0;
-    // The first stream ends after one timeline; the client reconnects.
     let server = start_server(false, 2, move |request| {
         assert_eq!(request.path, TIMELINE_STREAM);
         calls += 1;
@@ -81,7 +80,6 @@ fn stepped_timelines() -> Vec<Value> {
     succeeded["finished_at_ms"] = json!(42_000);
     vec![
         first.clone(),
-        // Unchanged steps print nothing again.
         first,
         timeline(&running, &json!([build, retrying])),
         timeline(&succeeded, &json!([build, updated])),
@@ -114,7 +112,6 @@ fn non_terminal_progress_prints_a_line_per_step_change() {
 /// and its last line says how long no task served.
 #[test]
 fn non_terminal_progress_prints_a_rollouts_new_tasks_and_downtime() {
-    // A stop-first rollout: the old task stops at 2 s, the new one runs at 5.2 s.
     let lane = |id: &str, current: bool, spans: &[(&str, i64)]| {
         let spans: Vec<_> = spans
             .iter()
@@ -234,14 +231,11 @@ fn waits_ride_out_an_unavailable_daemon_and_retried_failures() {
     let server = start_server(false, 6, move |request| {
         reads += 1;
         match (reads, request.path.as_str()) {
-            // The stream ends as the daemon restarts…
             (1, TIMELINE_STREAM) => Reply::timeline(&operation("running")),
-            // …which then refuses it, so the timeline is polled instead…
             (2, TIMELINE_STREAM) => Reply::status(
                 "503 Service Unavailable",
                 &json!({"code": "unavailable", "message": "too many streams"}),
             ),
-            // …through a gateway error while it starts.
             (3, "/api/v1/operations/operation-01/timeline") => Reply::status(
                 "502 Bad Gateway",
                 &json!({"code": "unavailable", "message": "restarting"}),
@@ -251,7 +245,6 @@ fn waits_ride_out_an_unavailable_daemon_and_retried_failures() {
                 failed["error_code"] = json!("swarm_manager_unavailable");
                 Reply::json(timeline(&failed, &json!([])))
             }
-            // Still the latest operation, so the daemon retries its failure.
             (5, "/api/v1/environments/app-notes-01/detail") => {
                 Reply::json(detail("operation-01", true, "ready"))
             }
@@ -261,7 +254,6 @@ fn waits_ride_out_an_unavailable_daemon_and_retried_failures() {
             (read, path) => panic!("unexpected read {read} of {path}"),
         }
     });
-    // `--timeout` bounds each request, not the wait.
     let output = run_with_timeout(&server, &["operation", "operation-01"], "100ms");
     let value = assert_json_success(&output);
     assert_eq!(value["state"], "succeeded");
@@ -271,14 +263,11 @@ fn waits_ride_out_an_unavailable_daemon_and_retried_failures() {
 #[test]
 fn a_retryable_failure_is_waited_on_only_while_it_is_the_latest_operation() {
     for (latest, exit, code) in [
-        // The daemon keeps retrying: the wait times out, naming the failure.
         ("operation-01", 4, "timeout"),
-        // A newer operation replaced it, so nothing retries it.
         ("operation-02", 5, "operation_failed"),
     ] {
         let server = start_server(false, usize::MAX, move |request| {
             match request.path.as_str() {
-                // Each stream ends, and is reopened, while the wait goes on.
                 TIMELINE_STREAM => {
                     let mut failed = operation("failed");
                     failed["error_code"] = json!("swarm_manager_unavailable");
@@ -359,8 +348,6 @@ fn timeout_and_ctrl_c_end_only_the_local_wait() {
     let interrupt_server = start_server(false, 1, move |request| {
         assert_eq!(request.path, TIMELINE_STREAM);
         received.send(()).expect("test is waiting");
-        // Keep the request pending until the child exits, or fail the test
-        // through its exit code if SIGINT never ends it.
         #[expect(
             clippy::let_underscore_must_use,
             reason = "a timeout is reported through the child's exit code"
@@ -376,8 +363,6 @@ fn timeout_and_ctrl_c_end_only_the_local_wait() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("piquelctl child");
-    // The handlers are installed before any request is sent, and the request
-    // was read, so SIGINT interrupts a pending request.
     request_read
         .recv_timeout(Duration::from_secs(10))
         .expect("timeline requested");

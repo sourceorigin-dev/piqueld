@@ -13,7 +13,6 @@ use piqueld_client::{
 };
 use std::time::Duration;
 
-// Analytics filters; `///` on fields is user-facing help.
 #[derive(Debug, Args)]
 pub(crate) struct AnalyticsArgs {
     /// Only deployments of this application's environment, by name or ID;
@@ -27,8 +26,6 @@ pub(crate) struct AnalyticsArgs {
     window: Window,
 }
 
-// A time window ending some time ago, shared with `env traffic`; `///` on
-// fields is user-facing help.
 #[derive(Debug, Args)]
 pub(crate) struct Window {
     /// Start this long ago, such as 24h or 7d; defaults to 30 days before the end.

@@ -8,7 +8,6 @@ use piqueld_client::{
 };
 use serde::Serialize;
 
-// `wait` result: the deployment is as ready as asked.
 report!(Deployed, self, out, {
     out.line(format_args!(
         "Deployment {} of {} is ready",
@@ -44,9 +43,7 @@ report!(ApplicationLogs, self, out, {
     Ok(())
 });
 
-// Build output is joined before cleaning, then printed as log text.
 report!(BuildLogPage, self, out, {
-    // ANSI sequences can span capture chunks within this fetched page.
     let text = self
         .items
         .iter()
@@ -57,13 +54,10 @@ report!(BuildLogPage, self, out, {
 
 report!(Page<BuildRecord>, self, out, {
     for build in &self.items {
-        // Job runs share build history; name the job and its service.
         let subject = build.job.as_ref().map_or_else(
             || build.service.clone(),
             |job| format!("job {job} ({})", build.service),
         );
-        // A build that used an earlier build's image names it; one that
-        // built says where.
         let origin = match (build.reused_build, build.built_on) {
             (Some(earlier), _) => format!("  reused #{earlier}"),
             (None, Some(BuiltOn::BuildMachine)) => "  on the build machine".into(),

@@ -72,11 +72,8 @@ async fn snapshots_of_an_unchanged_worktree_are_the_same_commit() {
 async fn files_not_in_head_that_likely_hold_credentials_are_found() {
     let root = tempfile::tempdir().unwrap();
     let work = fixture(root.path());
-    // The fixture's `.env` is in `HEAD`, and `ignored` is ignored.
     let worktree = Worktree::at(&work).await.unwrap();
     assert_eq!(worktree.secret_files().await.unwrap(), Vec::<String>::new());
-    // Staged but not committed counts, like untracked; source files,
-    // templates and other names don't.
     sh(
         &work,
         "mkdir -p deploy && echo x > .env.local && git add .env.local \
@@ -108,7 +105,6 @@ async fn snapshots_include_untracked_files_and_leave_the_repository_untouched() 
     let thin = snapshot.bundle(History::Thin).await.unwrap();
     let complete = snapshot.bundle(History::Full).await.unwrap();
     assert_eq!(state(&work), before);
-    // Read from the snapshot's own repository: the worktree's lacks it.
     let snapshot_git = format!(
         "git --git-dir={}",
         snapshot.directory.path().join("bundle.git").display()
@@ -125,13 +121,11 @@ async fn snapshots_include_untracked_files_and_leave_the_repository_untouched() 
         snapshot.uncommitted,
         ["app.toml", "staged.txt", "untracked.txt"]
     );
-    // A tracked file ignored since is sent as committed.
     let env = sh(
         &work,
         &format!("{snapshot_git} show {}:.env", snapshot.commit),
     );
     assert_eq!(env, "template");
-    // Edits hidden from `git status` by assume-unchanged are included.
     let manifest = sh(
         &work,
         &format!("{snapshot_git} show {}:app.toml", snapshot.commit),
@@ -143,12 +137,10 @@ async fn snapshots_include_untracked_files_and_leave_the_repository_untouched() 
     );
     assert_eq!(parent, sh(&work, "git rev-parse HEAD"));
 
-    // Thin against the nearest commit the remote has, which is not HEAD.
     let base = sh(&work, "git rev-parse origin/main");
     assert_eq!(thin.snapshot.base.as_deref(), Some(base.as_str()));
     assert_eq!(complete.snapshot.base, None);
     assert!(thin.length < complete.length);
-    // Either applies to a clone of the remote, and carries the snapshot.
     for bundle in [&thin, &complete] {
         let heads = sh(
             &root.path().join("remote"),
@@ -159,7 +151,6 @@ async fn snapshots_include_untracked_files_and_leave_the_repository_untouched() 
         );
         assert_eq!(heads, format!("{} refs/heads/snapshot", snapshot.commit));
     }
-    // The objects of the snapshot were never written to the repository.
     let written = sh(
         &work,
         &format!("git cat-file -e {} && echo yes || echo no", snapshot.commit),
@@ -188,7 +179,6 @@ async fn tracked_ignored_files_are_sent_as_committed() {
     };
     let snapshot = worktree.snapshot("feat/x", Some(&limits)).await.unwrap();
     snapshot.bundle(History::Thin).await.unwrap();
-    // Its local content was never even staged.
     let local = sh(&work, "git hash-object -- ':(exclude)x'");
     let object = snapshot.objects().join(&local[..2]).join(&local[2..]);
     assert!(!object.exists());
@@ -312,7 +302,6 @@ async fn filtered_files_partial_clones_and_sha256_repositories_are_refused() {
     };
     assert!(error.to_string().contains("big.bin"), "{error}");
     assert_eq!(state(&work), before);
-    // A path starting with a space, listed first, is checked as is.
     sh(
         &work,
         "rm big.bin && echo '\" a.bin\" filter=cache' > .gitattributes && echo data > ' a.bin'",

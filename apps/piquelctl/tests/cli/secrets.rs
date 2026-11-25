@@ -24,7 +24,6 @@ fn ctrl_c_ends_a_pending_secret_read_from_stdin() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("piquelctl child");
-    // Keep stdin open without data, so the secret read stays pending.
     let stdin = child.stdin.take().expect("child stdin");
     secrets_listed
         .recv_timeout(Duration::from_secs(10))
@@ -36,7 +35,6 @@ fn ctrl_c_ends_a_pending_secret_read_from_stdin() {
         .args(["-INT", &child.id().to_string()])
         .status()
         .expect("send SIGINT");
-    // Waits off the test thread, which holds stdin open meanwhile.
     let (exited, exit) = mpsc::channel();
     thread::spawn(move || exited.send(child.wait_with_output()));
     let output = exit
@@ -128,7 +126,6 @@ fn secret_values_from_stdin_drop_one_trailing_newline() {
             .spawn()
             .expect("piquelctl child");
         let mut stdin = child.stdin.take().expect("child stdin");
-        // The CLI may refuse before reading everything.
         #[expect(
             clippy::let_underscore_must_use,
             reason = "the CLI may refuse before reading everything"
@@ -227,7 +224,6 @@ fn refused_sensitive_actions_confirm_the_login_then_retry_once() {
                     "verification_uri": "http://localhost:7845/dashboard/auth#device",
                     "verification_uri_complete": "http://localhost:7845/dashboard/auth#device=ABCD-EFGH",
                     "expires_in": 600,
-                    // Longer than `--timeout`, which approval doesn't count.
                     "interval": 3,
                     "requester": null,
                     "confirms": {"action": "recover_secret_key", "login": "login-01"}

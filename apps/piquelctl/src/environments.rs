@@ -25,7 +25,6 @@ use piqueld_client::{
     Operation, PromoteRequest, Rollback, Visibility, edit::ApplicationEdit,
 };
 
-// `env` subcommands; `///` on variants and fields is user-facing help.
 #[derive(Debug, Subcommand)]
 pub(crate) enum EnvCommand {
     /// List an application's environments and their status.
@@ -213,7 +212,6 @@ pub(crate) enum EnvCommand {
     Traffic(crate::traffic::TrafficArgs),
 }
 
-// An application and, when it has several, one of its environments.
 #[derive(Debug, Args)]
 pub(crate) struct EnvironmentArgs {
     /// Application name or stable ID.
@@ -223,7 +221,6 @@ pub(crate) struct EnvironmentArgs {
     pub(crate) environment: Option<String>,
 }
 
-// An application and one of its environments, named.
 #[derive(Debug, Args)]
 pub(crate) struct NamedEnvironment {
     /// Application name or stable ID.
@@ -232,7 +229,6 @@ pub(crate) struct NamedEnvironment {
     environment: String,
 }
 
-// Precondition and confirmation flags for environment lifecycle changes.
 #[derive(Debug, Args)]
 pub(crate) struct ChangeFlags {
     /// Change the environment only if the application's generation is still
@@ -320,7 +316,6 @@ impl EnvCommand {
     }
 }
 
-// `env sync` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct SyncArgs {
     #[command(flatten)]
@@ -341,7 +336,6 @@ impl SyncArgs {
     }
 }
 
-// `env telemetry` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct TelemetryArgs {
     #[command(flatten)]
@@ -363,7 +357,6 @@ impl TelemetryArgs {
     }
 }
 
-// `env visibility` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct VisibilityArgs {
     #[command(flatten)]
@@ -391,7 +384,6 @@ impl VisibilityArgs {
     }
 }
 
-// `env rollback` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct RollbackArgs {
     #[command(flatten)]
@@ -403,7 +395,6 @@ pub(crate) struct RollbackArgs {
     flags: EditFlags,
 }
 
-// `env rollback` values; `///` on variants is help.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum RollbackChoice {
     /// Restore the last successful deployment.
@@ -445,7 +436,6 @@ async fn list(cli: &Cli, client: &Client, console: &mut Console, application: &s
     console.emit(&rows)
 }
 
-// `env create` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct CreateArgs {
     /// Application name or stable ID.
@@ -466,9 +456,6 @@ pub(crate) struct CreateArgs {
     /// Make the environment promoted: it never builds, and only receives
     /// releases promoted from this environment of the application, given by
     /// name or stable ID, with `env promote`.
-    // It also conflicts with `--commit`: clap skips `--commit`'s
-    // `requires = "branch"` once an argument conflicting with `--branch` is
-    // present.
     #[arg(long, value_name = "ENV", conflicts_with_all = ["branch", "commit"])]
     promote_from: Option<String>,
     #[command(flatten)]
@@ -513,7 +500,6 @@ impl CreateArgs {
     }
 }
 
-// `env branch` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct BranchArgs {
     #[command(flatten)]
@@ -567,7 +553,6 @@ fn promotion_source(application: &ApplicationView, source: &str) -> Result<Strin
         .ok_or_else(|| CliError::environment_not_found(source, application))
 }
 
-// `env source` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct SourceArgs {
     #[command(flatten)]
@@ -621,7 +606,6 @@ impl SourceArgs {
     }
 }
 
-// `env promote` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct PromoteArgs {
     /// Application name or stable ID.
@@ -733,7 +717,6 @@ async fn show(client: &Client, console: &mut Console, target: &EnvironmentArgs) 
     Ok(())
 }
 
-// `env rename` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct RenameArgs {
     #[command(flatten)]
@@ -773,7 +756,6 @@ impl RenameArgs {
     }
 }
 
-// `env delete` arguments.
 #[derive(Debug, Args)]
 pub(crate) struct DeleteArgs {
     #[command(flatten)]
@@ -965,8 +947,6 @@ pub(crate) async fn deploy(
     })
     .await?;
     let result = wait_for_accepted(console, client, environment, flags.no_wait, &accepted).await;
-    // The outcome matters more than its warnings, so failing to read or
-    // print them is ignored.
     if !flags.no_wait
         && let Ok(deployment) = client
             .deployment(environment.id.as_str(), &accepted.operation_id)

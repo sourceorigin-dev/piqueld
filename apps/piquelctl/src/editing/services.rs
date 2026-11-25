@@ -19,7 +19,6 @@ use piqueld_client::{
 };
 use std::collections::BTreeMap;
 
-// Positional `<app> <service>` pair addressed by service-level edits.
 #[derive(Debug, Args)]
 pub(crate) struct ServiceTarget {
     /// Application name or stable ID.
@@ -180,15 +179,10 @@ pub(crate) struct AddServiceArgs {
     #[command(flatten)]
     source: NewSource,
 }
-// Where a new service's image comes from: exactly one of an image or `--git`,
-// with the build settings only alongside `--git`.
 #[derive(Debug, Args)]
 struct NewSourceFlags {
     /// Image to run, such as `nginx:stable`. It may reference variables.
     /// Omit it when you pass `--git`.
-    // The image also conflicts with the build settings, the `GitBuildArgs`
-    // group: clap skips their `requires = "git"` once an argument conflicting
-    // with `--git` is present.
     #[arg(required_unless_present = "git", conflicts_with_all = ["git", "GitBuildArgs"])]
     image: Option<Template>,
     /// Build this Git repository with Docker instead of running an image.
@@ -196,7 +190,6 @@ struct NewSourceFlags {
     /// manifest's own repository, at the commit the manifest was read from.
     #[arg(long, value_name = "URL|self")]
     git: Option<BuildRepository>,
-    // Boxed to keep the CLI command enum small.
     #[command(flatten)]
     build: Box<GitBuildArgs>,
 }
@@ -238,7 +231,6 @@ pub(crate) enum EnvironmentCommand {
         key: String,
     },
 }
-// Application and optional service whose saved declarations a `list` shows.
 #[derive(Debug, Args)]
 pub(crate) struct ServiceListArgs {
     /// Application name or stable ID.
@@ -327,7 +319,6 @@ pub(crate) enum HealthCommand {
     /// Change how many consecutive failed checks make the container unhealthy.
     Retries(HealthRetriesArgs),
 }
-// When a new health check probes and how many failures it tolerates.
 #[derive(Debug, Args)]
 pub(crate) struct HealthTimingArgs {
     /// Seconds between checks, from 1 to 3600.

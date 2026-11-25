@@ -94,7 +94,6 @@ fn explicit_transport_and_timeout_override_environment_and_profile() {
             ("PIQUELD_TIMEOUT", "invalid"),
         ],
     );
-    // Resolution succeeds; the deliberately absent socket is a transport error.
     assert_eq!(
         result.status.code(),
         Some(4),
@@ -105,7 +104,6 @@ fn explicit_transport_and_timeout_override_environment_and_profile() {
         &["--profile", "testing", "status"],
         &[("PIQUELD_URL", "invalid")],
     );
-    // Environment URL replaced the profile socket and is now validated as a URL.
     assert_eq!(result.status.code(), Some(2));
 }
 
@@ -204,7 +202,6 @@ fn explicit_file_flag_replaces_environment_file_and_automatic_discovery() {
     let fixture = ProfilesFixture::new();
     let file = fixture.directory.path().join("explicit.toml");
     std::fs::write(&file, "[profiles.explicit]\nurl = 'http://localhost:7845'").unwrap();
-    // Neither the default environment-selected file nor the user file contributes entries.
     let user_directory = fixture.directory.path().join("piqueld");
     std::fs::create_dir(&user_directory).unwrap();
     std::fs::write(user_directory.join("profiles.toml"), "invalid TOML").unwrap();
@@ -360,7 +357,6 @@ fn connection_failures_identify_the_effective_endpoint_source() {
         assert_eq!(output.status.code(), Some(4));
         assert_eq!(output.stdout, b"");
         if args.contains(&"--json") {
-            // The same facts, as data.
             let error = support::json_error(&output);
             assert_eq!(error["code"], "connection_failed");
             assert_eq!(

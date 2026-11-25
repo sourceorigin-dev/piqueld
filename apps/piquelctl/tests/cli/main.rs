@@ -311,7 +311,6 @@ fn serve_request(
         .write_all(header.as_bytes())
         .and_then(|()| stream.write_all(&reply.body))
     {
-        // Timeout and interrupt tests deliberately close the client connection.
         assert!(
             matches!(
                 error.kind(),

@@ -23,7 +23,6 @@ pub(crate) fn command() -> Command {
             "/tests/fixtures/empty-profiles.toml"
         ),
     );
-    // Absent on purpose: a missing credentials file means no saved login.
     command.env(
         "PIQUELD_CREDENTIALS_FILE",
         concat!(

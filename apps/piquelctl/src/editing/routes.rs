@@ -124,7 +124,6 @@ impl RouteCommand {
         };
         let current = resolve_application(client, &target.app).await?;
         let mut routes = current.application.to_manifest().spec.routes;
-        // Literal hostnames are saved canonically; references as written.
         let hostname = if Template::mentions_reference(&target.hostname) {
             target.hostname.clone()
         } else {

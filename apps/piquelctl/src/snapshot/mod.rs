@@ -148,8 +148,6 @@ impl Worktree {
         let files = self
             .ls_files(&["--cached", "--others"], "list the worktree's files")
             .await?;
-        // Tracked files ignored since, including deleted ones: they are sent
-        // as committed.
         let ignored = self
             .ls_files(
                 &["--cached", "--ignored", "--with-tree=HEAD"],
@@ -170,7 +168,6 @@ impl Worktree {
             commit: String::new(),
             uncommitted: Vec::new(),
         };
-        // Git refuses an object directory that does not exist.
         tokio::fs::create_dir(snapshot.objects())
             .await
             .map_err(|error| Git::failure("create the object directory", error))?;
@@ -210,8 +207,6 @@ impl Worktree {
             ));
         }
         let message = format!("piquelctl snapshot of {branch}");
-        // Dated like `HEAD`, so the same worktree always makes the same
-        // commit, and rerunning an upload with its `--request-id` replays.
         let date = Git::run(
             Git::command(&self.root).args(["show", "-s", "--format=%cd", "--date=raw", &head]),
             "read HEAD's date",
@@ -314,15 +309,12 @@ impl Worktree {
             .split('\0')
             .filter(|path| !path.is_empty() && !ignored.contains(path))
         {
-            // Deleted files are not in the snapshot, and a file replaced
-            // by a directory is counted as its files' ancestor.
             if let Ok(metadata) = tokio::fs::symlink_metadata(self.root.join(path)).await
                 && !metadata.is_dir()
             {
                 sizes.push((metadata.len(), path));
             }
         }
-        // Directories are charged a block each, like empty files.
         let directories = sizes
             .iter()
             .flat_map(|(_, path)| Path::new(path).ancestors().skip(1))
@@ -376,8 +368,6 @@ impl Worktree {
                 format!("--local supports SHA-1 repositories only, not {format}"),
             ));
         }
-        // Older Git marks a partial clone with `extensions.partialClone`,
-        // newer Git with its remote's `promisor` setting.
         let partial = Git::optional(
             Git::command(&self.root).args([
                 "config",
@@ -418,7 +408,6 @@ impl Worktree {
             "read the filters",
         )
         .await?;
-        // `<path>\0filter\0<driver>\0`, for every file.
         let filtered = attributes
             .split('\0')
             .collect::<Vec<_>>()
@@ -458,7 +447,6 @@ impl Worktree {
         if remotes.is_empty() {
             return Ok(None);
         }
-        // Exit code 1: no common ancestor.
         Git::optional(
             Git::command(&self.root)
                 .args(["merge-base", "HEAD"])
@@ -586,8 +574,6 @@ impl Snapshot<'_> {
     /// `HEAD` and marked assume-unchanged first, so staging never reads
     /// their local content.
     async fn stage(&self, ignored: String) -> Result<()> {
-        // `git add` skips files marked assume-unchanged, so the snapshot
-        // would keep their committed content; only the copy's marks go.
         let index_entries = Git::run(
             &mut self.staged(&["ls-files", "-v", "-z"]),
             "list the index",
@@ -608,7 +594,6 @@ impl Snapshot<'_> {
             .await?;
         }
         if !ignored.is_empty() {
-            // Names, not pathspecs: an ignored file may be named `:(exclude)x`.
             Git::run_with_input(
                 &mut self.staged(&[
                     "--literal-pathspecs",
@@ -622,7 +607,6 @@ impl Snapshot<'_> {
                 "keep ignored files as committed",
             )
             .await?;
-            // Marked so `git add` never reads their local content.
             let committed = Git::run(
                 &mut self.staged(&[
                     "ls-files",
@@ -727,7 +711,6 @@ impl Git {
                 .stderr(Stdio::piped())
                 .spawn()?;
             let mut stdin = child.stdin.take().ok_or(std::io::ErrorKind::BrokenPipe)?;
-            // Written concurrently with reading the output, so neither pipe fills.
             let write = async move {
                 tokio::io::AsyncWriteExt::write_all(&mut stdin, input.as_bytes()).await
             };

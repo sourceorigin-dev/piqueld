@@ -5,7 +5,6 @@ use super::*;
 #[test]
 fn builds_list_resolves_names_and_sends_its_filters() {
     for (arguments, filter) in [
-        // The plural noun and `--application` stay as hidden aliases.
         (
             &["builds", "list", "--application", "app-notes-01"][..],
             "application_id=app-notes-01&cursor=v1%3A7&limit=50",
@@ -14,7 +13,6 @@ fn builds_list_resolves_names_and_sends_its_filters() {
             &["build", "list", "--app", "notes", "--limit", "5"],
             "application_id=app-notes-01&cursor=v1%3A7&limit=5",
         ),
-        // A name of ID length is looked up as a name once no ID matches.
         (
             &["build", "list", "--app", "welcome-to-docker"],
             "application_id=app-welcome-01&cursor=v1%3A7&limit=50",
@@ -23,14 +21,12 @@ fn builds_list_resolves_names_and_sends_its_filters() {
             &["build", "list", "--app", "notes", "--env", "production"],
             "application_id=app-notes-01&cursor=v1%3A7&environment_id=app-notes-01&limit=50",
         ),
-        // A preview is found by its ID, which its history is recorded under.
         (
             &["build", "list", "--app", "notes", "--env", "env-preview-01"],
             "application_id=app-notes-01&cursor=v1%3A7&environment_id=env-preview-01&limit=50",
         ),
     ] {
         let server = start_server(false, usize::MAX, |request| match request.path.as_str() {
-            // Names are looked up with one filtered request.
             "/api/v1/applications?name=notes" => {
                 Reply::json(page(vec![app_summary("app-notes-01", "notes")], None))
             }
@@ -58,9 +54,6 @@ fn builds_list_resolves_names_and_sends_its_filters() {
             "{arguments:?}"
         );
     }
-    // An application neither its ID nor its name finds is not found, even
-    // shaped like an ID: a deleted application's history is deleted with it.
-    // So is an environment the application doesn't have.
     for arguments in [
         &["--app", "blog"][..],
         &["--app", "app-gone-01"],

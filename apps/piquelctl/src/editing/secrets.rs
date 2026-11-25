@@ -33,7 +33,6 @@ pub(crate) struct SetGeneratedSecretArgs {
     #[command(flatten)]
     generator: Generator,
 }
-// How the value is generated: exactly one of `--bytes` or `--rsa-bits`.
 #[derive(Debug, Args)]
 #[command(group(clap::ArgGroup::new("generator").required(true).args(["bytes", "rsa_bits"])))]
 struct GeneratorFlags {

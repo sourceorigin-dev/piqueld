@@ -67,7 +67,6 @@ fn parser_takes_env_secret_targets_positionally_and_short_yes() {
         Cli::try_parse_from(arguments).expect("command parses");
     }
     for arguments in [
-        // A generated secret is always named in one environment.
         &["piquelctl", "env", "secret", "regenerate", "notes", "db"][..],
         &[
             "piquelctl",
@@ -101,7 +100,6 @@ fn parser_rejects_conflicting_transports_and_invalid_timeout() {
         .expect_err("`Cli::try_parse_from` should be rejected");
     Cli::try_parse_from(["piquelctl", "app", "plan", "status"])
         .expect_err("`Cli::try_parse_from` should be rejected");
-    // Commands follow `--`, and services are validated logical names.
     Cli::try_parse_from(["piquelctl", "app", "exec", "notes", "web"])
         .expect_err("`Cli::try_parse_from` should be rejected");
     Cli::try_parse_from(["piquelctl", "app", "exec", "notes", "Web", "--", "id"])
@@ -129,8 +127,6 @@ fn account_targets_do_not_select_the_credential() {
     }
 }
 
-// Clap stores arguments by id, so a subcommand argument sharing a global's
-// id silently overwrites it (`app repository connect <URL>` once replaced `--url`).
 #[test]
 fn subcommand_arguments_never_reuse_global_ids() {
     fn check(command: &clap::Command, globals: &[String], path: &str) {
