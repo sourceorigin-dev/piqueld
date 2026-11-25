@@ -158,7 +158,7 @@ async fn a_failure_without_an_earlier_success_says_why_it_was_not_rolled_back() 
 /// including one a job depends on, which runs the new spec before the job.
 #[tokio::test]
 async fn a_rollout_that_never_converges_is_rolled_back() {
-    for manifest in [migration(), super::jobs::manifest_with_job_dependencies()] {
+    for manifest in [migration(), jobs::manifest_with_job_dependencies()] {
         let mut harness = ControllerHarness::new().await;
         harness.set_convergence_timeout(Duration::from_secs(3));
         let manifest = with_rollback(manifest, Some(Rollback::Automatic));
