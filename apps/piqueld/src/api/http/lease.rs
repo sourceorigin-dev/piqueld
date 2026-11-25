@@ -28,12 +28,19 @@ pub struct ConnectionTiming {
     pub close: Duration,
 }
 
+/// Default for [`ConnectionTiming::tick`].
+const DEFAULT_TICK: Duration = Duration::from_secs(1);
+/// Default for [`ConnectionTiming::ping`].
+const DEFAULT_PING: Duration = Duration::from_secs(5);
+/// Default for [`ConnectionTiming::close`].
+const DEFAULT_CLOSE: Duration = Duration::from_secs(5);
+
 impl Default for ConnectionTiming {
     fn default() -> Self {
         Self {
-            tick: Duration::from_secs(1),
-            ping: Duration::from_secs(5),
-            close: Duration::from_secs(5),
+            tick: DEFAULT_TICK,
+            ping: DEFAULT_PING,
+            close: DEFAULT_CLOSE,
         }
     }
 }

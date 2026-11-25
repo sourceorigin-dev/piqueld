@@ -25,6 +25,10 @@ const NAMES_TTL: Duration = Duration::from_secs(300);
 /// How often receivers are refreshed, so one deployed or removed reaches
 /// export within seconds. Grants and deletions refresh them at once.
 const RECEIVERS_INTERVAL: Duration = Duration::from_secs(5);
+/// How often journal events are exported.
+const JOURNAL_INTERVAL: Duration = Duration::from_secs(1);
+/// How often daemon and service gauges are sampled.
+const GAUGE_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Names labelling an environment's telemetry, looked up when first needed
 /// and forgotten every [`NAMES_TTL`].
@@ -83,9 +87,9 @@ impl ApplicationService {
             cursor: start.event,
             names: Names::default(),
         };
-        let mut journal_tick = Ticker::new(Duration::from_secs(1));
-        let mut daemon_tick = Ticker::new(Duration::from_secs(30));
-        let mut services_tick = Ticker::new(Duration::from_secs(30));
+        let mut journal_tick = Ticker::new(JOURNAL_INTERVAL);
+        let mut daemon_tick = Ticker::new(GAUGE_INTERVAL);
+        let mut services_tick = Ticker::new(GAUGE_INTERVAL);
         let mut receivers_tick = Ticker::new(RECEIVERS_INTERVAL);
         // A failure left open while an endpoint was configured closes.
         let mut exported = HashSet::from([None]);

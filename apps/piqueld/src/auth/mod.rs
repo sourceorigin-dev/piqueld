@@ -20,6 +20,8 @@ use webauthn_rs_core::WebauthnCore;
 
 /// One day in seconds, the unit for credential and invitation lifetimes.
 const DAY: i64 = 86_400;
+/// How long a browser has to finish a WebAuthn ceremony.
+const WEBAUTHN_TIMEOUT: Duration = Duration::from_mins(5);
 /// Seconds a started passkey ceremony, and its binding cookie, stay redeemable.
 pub(crate) const CEREMONY_LIFETIME: i64 = 300;
 /// Seconds a passkey browser session lasts, unless a day passes unused.
@@ -202,7 +204,7 @@ impl Auth {
             "piqueld",
             host,
             vec![origin.clone()],
-            Duration::from_mins(5),
+            WEBAUTHN_TIMEOUT,
             Some(false),
             Some(false),
         );
