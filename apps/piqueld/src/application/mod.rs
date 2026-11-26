@@ -15,6 +15,24 @@ use piqueld_docker::{
 use piqueld_store::{StoreError, StoredEnvironment};
 use std::collections::BTreeMap;
 
+/// Why a Git source could not be checked out and built, retaining internal
+/// diagnostics.
+#[derive(Debug, thiserror::Error)]
+pub enum GitBuildError {
+    /// The checkout or the image build failed.
+    #[error("{0}")]
+    Git(#[from] crate::git::GitError),
+    /// Recording the build failed.
+    #[error("{0}")]
+    Store(#[from] StoreError),
+    /// Docker could not list images to reuse.
+    #[error("{0}")]
+    Docker(#[from] DockerError),
+    /// The manifest's own repository was not fetched, so it has no commit.
+    #[error("the manifest repository source has no fetched manifest commit")]
+    NoFetchedCommit,
+}
+
 #[derive(Debug, thiserror::Error)]
 /// Errors crossing the runtime boundary.
 pub enum BoundaryError {
@@ -23,7 +41,7 @@ pub enum BoundaryError {
     Runtime(#[from] DockerError),
     /// Git checkout or image building failed, retaining internal diagnostics.
     #[error("Git source build failed")]
-    GitBuild(#[source] anyhow::Error),
+    GitBuild(#[source] GitBuildError),
     /// Progress persistence failed.
     #[error(transparent)]
     Store(#[from] StoreError),
