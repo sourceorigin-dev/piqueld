@@ -67,29 +67,49 @@ pub struct LogEnding {
 /// `builds` row read by the build listing.
 #[derive(sqlx::FromRow)]
 struct BuildRow {
+    /// Build ID.
     id: i64,
+    /// ID of the owning environment.
     environment_id: String,
+    /// ID of the operation it belongs to.
     operation_id: String,
+    /// Service the build is for.
     service: String,
+    /// Job the build runs, when it builds a job.
     job: Option<String>,
+    /// Build source, in JSON.
     source_json: String,
+    /// Build state, as stored text.
     state: String,
+    /// When it started, in Unix milliseconds.
     started_at_ms: i64,
+    /// When it finished, in Unix milliseconds; `NULL` while running.
     finished_at_ms: Option<i64>,
+    /// Resolved Git commit, once checked out.
     commit_hash: Option<String>,
+    /// Image the build produced or ran.
     image_id: Option<String>,
+    /// Build whose image this build reused.
     reused_build_id: Option<i64>,
+    /// Exit code of a job run.
     exit_code: Option<i64>,
+    /// Output bytes retained.
     log_bytes: i64,
+    /// Nonzero when output exceeded the cap.
     log_truncated: i64,
+    /// Nonzero when retention removed the output.
     log_expired: i64,
 }
 
 /// `build_log_chunks` row shared by the stream-filtered and unfiltered page queries.
 struct BuildLogRow {
+    /// Byte offset of the chunk in the log.
     offset: i64,
+    /// Chunk bytes.
     data: Vec<u8>,
+    /// Output stream, as stored text.
     stream: String,
+    /// When the chunk was written, in Unix milliseconds.
     timestamp_ms: i64,
 }
 

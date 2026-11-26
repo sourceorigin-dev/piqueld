@@ -14,19 +14,29 @@ use sqlx::{Sqlite, Transaction};
 pub struct JournalAction {
     /// Stable action ID.
     pub id: String,
+    /// Operation it ran under, if any.
     operation_id: Option<String>,
+    /// Environment it acted on, if any.
     environment_id: Option<String>,
+    /// Application generation it ran against.
     generation: Option<i64>,
+    /// Phase it belongs to.
     phase: Phase,
+    /// Resource it acted on.
     resource: Option<String>,
+    /// Operation attempt it ran in.
     attempt: Option<i64>,
+    /// When it started, in Unix milliseconds.
     started_at_ms: i64,
     /// Who requested the action: its operation's actor when it started (a
     /// later restart by someone else does not change it), or the caller of a
     /// request outside any operation.
     actor_user_id: Option<String>,
+    /// Credential that requested it.
     actor_credential_id: Option<String>,
+    /// Host operator UID that requested it.
     actor_operator_uid: Option<i64>,
+    /// Daemon component that requested it.
     actor_system: Option<String>,
 }
 impl JournalAction {
@@ -53,12 +63,18 @@ enum Step<'a> {
     /// `action_started`: the action was journaled.
     Started,
     /// `action_requested`: attempt `retry` is about to be sent.
-    Requested { retry: i64 },
+    Requested {
+        /// Attempt number.
+        retry: i64,
+    },
     /// `action_retry`: attempt `retry` failed with `diagnostic` and will be
     /// retried, as `message` says.
     Retry {
+        /// Attempt number.
         retry: i64,
+        /// Why the attempt failed.
         diagnostic: &'a Diagnostic,
+        /// Description of the retry.
         message: &'a str,
     },
     /// `action_progressed`: what the running action observed.

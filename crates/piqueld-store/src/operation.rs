@@ -10,20 +10,35 @@ use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 /// Raw `operations` columns as stored; `decode` validates them into an `Operation`.
 struct OperationRow {
+    /// Operation ID.
     id: String,
+    /// ID of the owning environment.
     environment_id: String,
+    /// Operation kind, as stored text.
     kind: String,
+    /// Operation state, as stored text.
     state: String,
+    /// Application generation it ran against.
     generation: i64,
+    /// Current attempt.
     attempt: i64,
+    /// Failed attempts in a row.
     consecutive_failures: i64,
+    /// Current phase, as stored text.
     phase: Option<String>,
+    /// Resource being worked on.
     resource: Option<String>,
+    /// Diagnostic code of the last failure.
     error_code: Option<String>,
+    /// Message of the last failure.
     error_message: Option<String>,
+    /// When it was created, in Unix milliseconds.
     created_at_ms: i64,
+    /// When it last changed, in Unix milliseconds.
     updated_at_ms: i64,
+    /// When it started, in Unix milliseconds; `NULL` until it does.
     started_at_ms: Option<i64>,
+    /// When it finished, in Unix milliseconds; `NULL` while unfinished.
     finished_at_ms: Option<i64>,
 }
 impl OperationRow {

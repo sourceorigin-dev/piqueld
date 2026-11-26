@@ -932,6 +932,7 @@ impl Store {
 /// transactions, and wakes [`Store::written`] receivers each time a writer
 /// leaves it.
 struct Writers {
+    /// Held by the writer whose turn it is.
     queue: tokio::sync::Mutex<()>,
     /// How many writers wait for their turn: reported in the daemon's
     /// statistics, and so a test holding the queue knows when another
@@ -941,6 +942,7 @@ struct Writers {
     waits: std::sync::atomic::AtomicU64,
     /// How long, in all, those writers waited, in nanoseconds.
     waited_ns: std::sync::atomic::AtomicU64,
+    /// Notified each time a writer leaves the queue.
     written: tokio::sync::watch::Sender<()>,
 }
 
@@ -997,6 +999,7 @@ impl Writers {
 struct Waiting<'a>(&'a tokio::sync::watch::Sender<usize>);
 
 impl<'a> Waiting<'a> {
+    /// Counts a writer as waiting until the returned guard drops.
     fn new(waiting: &'a tokio::sync::watch::Sender<usize>) -> Self {
         waiting.send_modify(|waiting| *waiting += 1);
         Self(waiting)
@@ -1012,7 +1015,9 @@ impl Drop for Waiting<'_> {
 /// A writer's turn in the queue. Dropping it, once its transaction committed
 /// or rolled back, wakes readers following the database.
 pub struct Writer<'a> {
+    /// Holds the turn in the queue.
     _turn: tokio::sync::MutexGuard<'a, ()>,
+    /// Notified when this writer drops.
     written: &'a tokio::sync::watch::Sender<()>,
 }
 
@@ -1154,11 +1159,17 @@ impl Paging {
 /// Raw `applications` row.
 #[derive(Debug)]
 struct ApplicationRow {
+    /// Row ID.
     id: String,
+    /// Application manifest as stored, in JSON.
     desired_json: String,
+    /// Application generation, advanced by each save.
     generation: i64,
+    /// Nonzero once deletion was requested.
     delete_intent: i64,
+    /// When it was created, in Unix milliseconds.
     created_at_ms: i64,
+    /// When it last changed, in Unix milliseconds.
     updated_at_ms: i64,
 }
 
@@ -1184,22 +1195,39 @@ impl ApplicationRow {
 /// Raw `environments` row.
 #[derive(Debug)]
 struct EnvironmentRow {
+    /// Row ID.
     id: String,
+    /// ID of the owning application.
     application_id: String,
+    /// Environment name.
     name: String,
+    /// `environment` or `preview`.
     kind: String,
+    /// Tracked Git branch.
     branch: Option<String>,
+    /// Commit the branch is pinned to.
     pinned_commit: Option<String>,
+    /// ID of the environment it was promoted from.
     promoted_from: Option<String>,
+    /// Preview slot, for a preview.
     preview_slot: Option<String>,
+    /// Nonzero when it syncs from its branch.
     sync: i64,
+    /// Nonzero when telemetry is enabled.
     telemetry: i64,
+    /// Nonzero when it is stopped.
     stopped: i64,
+    /// Commit last synced; empty when none was resolved.
     synced_commit: Option<String>,
+    /// When it last synced, in Unix milliseconds.
     synced_at_ms: Option<i64>,
+    /// Application generation last resolved.
     resolved_generation: Option<i64>,
+    /// Nonzero once deletion was requested.
     delete_intent: i64,
+    /// When it was created, in Unix milliseconds.
     created_at_ms: i64,
+    /// When it last changed, in Unix milliseconds.
     updated_at_ms: i64,
 }
 
@@ -1264,29 +1292,53 @@ impl EnvironmentRow {
 /// An environment joined with its application, as selected by full environment reads.
 #[derive(Debug)]
 struct StoredEnvironmentRow {
+    /// Row ID.
     id: String,
+    /// ID of the owning application.
     application_id: String,
+    /// Environment name.
     name: String,
+    /// `environment` or `preview`.
     kind: String,
+    /// Tracked Git branch.
     branch: Option<String>,
+    /// Commit the branch is pinned to.
     pinned_commit: Option<String>,
+    /// ID of the environment it was promoted from.
     promoted_from: Option<String>,
+    /// Preview slot, for a preview.
     preview_slot: Option<String>,
+    /// Nonzero when it syncs from its branch.
     sync: i64,
+    /// Nonzero when telemetry is enabled.
     telemetry: i64,
+    /// Nonzero when it is stopped.
     stopped: i64,
+    /// Commit last synced; empty when none was resolved.
     synced_commit: Option<String>,
+    /// When it last synced, in Unix milliseconds.
     synced_at_ms: Option<i64>,
+    /// Environment's own manifest as stored, in JSON.
     manifest_json: Option<String>,
+    /// Resolved application as stored, in JSON.
     resolved_json: Option<String>,
+    /// Application generation last resolved.
     resolved_generation: Option<i64>,
+    /// Nonzero once deletion was requested.
     delete_intent: i64,
+    /// When it was created, in Unix milliseconds.
     created_at_ms: i64,
+    /// When it last changed, in Unix milliseconds.
     updated_at_ms: i64,
+    /// Application manifest as stored, in JSON.
     desired_json: String,
+    /// Application generation, advanced by each save.
     generation: i64,
+    /// Nonzero once the application's deletion was requested.
     application_delete_intent: i64,
+    /// When the application was created, in Unix milliseconds.
     application_created_at_ms: i64,
+    /// When the application last changed, in Unix milliseconds.
     application_updated_at_ms: i64,
 }
 

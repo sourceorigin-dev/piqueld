@@ -28,6 +28,7 @@ pub(super) struct DeploymentRetention {
 }
 
 impl DeploymentRetention {
+    /// Combines the retention settings for deployments and their images.
     pub(super) fn new(retention: &RetentionConfig, images: &ImagesConfig) -> Self {
         Self {
             days: retention.deployment_days,

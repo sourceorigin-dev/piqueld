@@ -11,13 +11,21 @@ use std::collections::BTreeMap;
 
 /// `deployments` row shared by the snapshot and history page queries.
 struct DeploymentRow {
+    /// Deployment ID.
     id: String,
+    /// Manifest deployed, in JSON.
     manifest_json: String,
+    /// Application template deployed, in JSON.
     template_json: String,
+    /// Variables the deployment resolved, in JSON.
     variables_json: String,
+    /// Warnings raised at deployment, in JSON.
     warnings_json: String,
+    /// When it succeeded, in Unix milliseconds; `NULL` if it has not.
     succeeded_at_ms: Option<i64>,
+    /// Release the deployment ran.
     release_id: Option<String>,
+    /// What started the deployment, in JSON.
     origin_json: String,
 }
 
@@ -27,11 +35,17 @@ const NEWEST: &str = "\u{10FFFF}";
 
 /// `deployments` columns of a [`DeploymentSummary`].
 struct SummaryRow {
+    /// Deployment ID.
     id: String,
+    /// When it succeeded, in Unix milliseconds; `NULL` if it has not.
     succeeded_at_ms: Option<i64>,
+    /// Release the deployment ran.
     release_id: Option<String>,
+    /// What started the deployment, in JSON.
     origin_json: String,
+    /// Git commit of the source, when known.
     git_sha: Option<String>,
+    /// Git branch of the source, when known.
     git_branch: Option<String>,
 }
 
@@ -62,7 +76,9 @@ impl SummaryRow {
 /// Which of an environment's deployments are its current target and its
 /// last successful one.
 struct Flags {
+    /// ID of the current target deployment.
     current: Option<String>,
+    /// ID of the last successful deployment.
     successful: Option<String>,
 }
 

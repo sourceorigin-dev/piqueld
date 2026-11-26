@@ -38,8 +38,11 @@ pub(crate) enum SecretScope<'a> {
 /// generation it replaces (zero for none).
 #[derive(Clone)]
 pub struct GeneratedSecret {
+    /// Secret name.
     name: String,
+    /// Generation of the value it replaces; zero for none.
     expected: i64,
+    /// The generated value.
     value: Zeroizing<Vec<u8>>,
 }
 

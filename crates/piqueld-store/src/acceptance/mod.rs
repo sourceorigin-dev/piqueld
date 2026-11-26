@@ -18,8 +18,11 @@ use sqlx::{Sqlite, SqliteConnection, Transaction};
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", rename = "save")]
 struct SaveIdentity<'a> {
+    /// The application as saved.
     application: &'a piqueld_core::manifest::ApplicationTemplate,
+    /// ID the save expected the application to have.
     expected_application_id: Option<String>,
+    /// Whether the save also deploys.
     deploy: bool,
 }
 

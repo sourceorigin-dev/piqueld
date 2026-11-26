@@ -11,10 +11,15 @@ use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 /// `releases` row shared by the listing and single-release queries.
 struct ReleaseRow {
+    /// Release ID.
     id: String,
+    /// ID of the owning application.
     application_id: String,
+    /// Hash of the release content.
     content_hash: String,
+    /// Release, in JSON.
     release_json: String,
+    /// When it was created, in Unix milliseconds.
     created_at_ms: i64,
 }
 

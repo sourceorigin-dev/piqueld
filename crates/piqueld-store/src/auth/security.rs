@@ -29,6 +29,7 @@ pub enum SecurityEvent {
 }
 
 impl SecurityEvent {
+    /// Every security event.
     const ALL: [Self; 8] = [
         Self::AdminGranted,
         Self::PrivilegedToken,
