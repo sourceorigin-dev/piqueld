@@ -3,6 +3,7 @@ use super::auth::access::{EnvironmentOwner, Holder};
 use super::{
     Actor, Author, Operation, OperationKind, Store, StoreError, StoredApplication, now_ms,
 };
+use crate::EnvironmentError;
 use crate::{Mutation, MutationResponse, PreviewMutation, PromotionMutation};
 use piqueld_core::EventKind;
 use piqueld_core::access::{AppPermission, Grants, Target};
@@ -112,14 +113,16 @@ impl Store {
             .execute_mutation(&mut tx, mutation, expected_generation, now)
             .await
         {
-            Err(StoreError::PreviewLimitReached(mut reached)) => {
+            Err(StoreError::Environment(EnvironmentError::PreviewLimitReached(mut reached))) => {
                 if let Some(authority) = &caller {
                     let readable = authority.grants.app_scope(AppPermission::Read);
                     reached
                         .previews
                         .retain(|preview| readable.contains(&preview.application_id));
                 }
-                return Err(StoreError::PreviewLimitReached(reached));
+                return Err(StoreError::Environment(
+                    EnvironmentError::PreviewLimitReached(reached),
+                ));
             }
             accepted => accepted?,
         };
@@ -1032,9 +1035,11 @@ impl Store {
         confirmed.sort();
         confirmed.dedup();
         if names.len() > 1 && confirmed != names {
-            return Err(StoreError::ConfirmationRequired {
-                environments: names,
-            });
+            return Err(StoreError::Environment(
+                EnvironmentError::ConfirmationRequired {
+                    environments: names,
+                },
+            ));
         }
         let mut generation = current.generation;
         if !current.delete_intent {

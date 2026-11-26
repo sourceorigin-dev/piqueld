@@ -1,5 +1,6 @@
 use super::*;
 use crate::Actor::Daemon;
+use crate::EnvironmentError;
 use crate::testing::template;
 use crate::{Mutation, MutationResponse};
 use piqueld_core::{ApplicationId, EnvironmentId, OperationState, ResolutionSet};
@@ -608,7 +609,7 @@ async fn environments_reserve_and_rename_by_their_own_fetched_manifest() {
     };
     assert!(matches!(
         store.force(rename(&production)).await,
-        Err(StoreError::EnvironmentConfigured { .. })
+        Err(StoreError::Environment(EnvironmentError::Configured { .. }))
     ));
     store
         .force(rename(&staging.id))
@@ -903,7 +904,7 @@ async fn declared_environments_keep_their_names() {
     };
     assert!(matches!(
         store.force(rename).await,
-        Err(StoreError::EnvironmentDeclared { environment }) if environment.as_str() == "staging"
+        Err(StoreError::Environment(EnvironmentError::Declared { environment })) if environment.as_str() == "staging"
     ));
 }
 

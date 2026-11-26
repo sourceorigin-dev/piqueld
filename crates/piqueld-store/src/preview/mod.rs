@@ -7,6 +7,7 @@ use super::{
     ApplicationState, Operation, ResolvedApplication, Store, StoreError, StoredApplication,
     StoredEnvironment, now_ms,
 };
+use crate::EnvironmentError;
 use piqueld_core::EventKind;
 use piqueld_core::{
     ApiErrorCode, ApplicationId, EnvironmentId, GitBranch, Preview, PreviewSlot, PreviewSlug,
@@ -74,7 +75,9 @@ impl Store {
         }
         let template = &application.application;
         if template.spec().manifest.is_none() {
-            return Err(StoreError::PreviewRequiresRepository);
+            return Err(StoreError::Environment(
+                EnvironmentError::PreviewRequiresRepository,
+            ));
         }
         let slug = PreviewSlug::derive(&template.metadata().name, branch, slot);
         let id = super::new_id("preview");
@@ -185,13 +188,13 @@ impl Store {
             })
         })
         .collect::<Result<_, StoreError>>()?;
-        Err(StoreError::PreviewLimitReached(Box::new(
-            PreviewLimitReached {
+        Err(StoreError::Environment(
+            EnvironmentError::PreviewLimitReached(Box::new(PreviewLimitReached {
                 limit,
                 max,
                 previews,
-            },
-        )))
+            })),
+        ))
     }
 
     /// Loads a preview for a change. Environments are `NotFound`, as previews
@@ -213,7 +216,9 @@ impl Store {
         preview: &StoredEnvironment,
     ) -> Result<Operation, StoreError> {
         if preview.tracking()?.repository().is_none() {
-            return Err(StoreError::PreviewRequiresRepository);
+            return Err(StoreError::Environment(
+                EnvironmentError::PreviewRequiresRepository,
+            ));
         }
         Self::deploy_revision_on(tx, preview, None).await
     }

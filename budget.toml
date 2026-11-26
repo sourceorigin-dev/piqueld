@@ -3,7 +3,7 @@
 # until a count equals its budget.
 [expect]
 piquelctl = 27
-piqueld = 71
+piqueld = 68
 piqueld-build = 1
 piqueld-client = 19
 piqueld-config = 6

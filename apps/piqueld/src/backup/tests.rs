@@ -348,7 +348,9 @@ async fn restore_refuses_backups_it_cannot_trust() {
     assert!(
         error.chain().any(|cause| matches!(
             cause.downcast_ref(),
-            Some(piqueld_store::StoreError::SecretSource(_))
+            Some(piqueld_store::StoreError::Secret(
+                piqueld_store::SecretFailure::Source(_)
+            ))
         )),
         "{error:#}"
     );

@@ -289,24 +289,22 @@ impl From<piqueld_store::StoreError> for OperationError {
     /// Keeps secret and hostname failures distinct; every other storage error
     /// is a journal failure.
     fn from(error: piqueld_store::StoreError) -> Self {
+        use piqueld_store::{PromotionError, SecretFailure, StoreError};
         match error {
-            error @ piqueld_store::StoreError::SecretSource(_) => {
+            error @ StoreError::Secret(SecretFailure::Source(_)) => {
                 Self::SecretStorageUnavailable(error)
             }
-            piqueld_store::StoreError::SecretUnavailable { names } => {
+            StoreError::Secret(SecretFailure::Unavailable { names }) => {
                 Self::SecretUnavailable { names }
             }
-            error @ piqueld_store::StoreError::SecretMissing { .. } => Self::SecretMissing(error),
-            error @ piqueld_store::StoreError::SecretAccessDenied { .. } => {
+            error @ StoreError::Secret(SecretFailure::Missing { .. }) => Self::SecretMissing(error),
+            error @ StoreError::Secret(SecretFailure::AccessDenied { .. }) => {
                 Self::SecretAccessDenied(error)
             }
-            error @ piqueld_store::StoreError::Promotion(
-                piqueld_store::PromotionError::Promoted { .. },
-            ) => Self::EnvironmentPromoted(error),
-            error @ (piqueld_store::StoreError::HostnameConflict { .. }
-            | piqueld_store::StoreError::SharedHostnameConflict { .. }) => {
-                Self::HostnameConflict(error)
+            error @ StoreError::Promotion(PromotionError::Promoted { .. }) => {
+                Self::EnvironmentPromoted(error)
             }
+            error @ StoreError::Hostname(_) => Self::HostnameConflict(error),
             other => Self::Journal(other),
         }
     }

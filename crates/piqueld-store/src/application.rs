@@ -4,6 +4,7 @@ use super::{
     ApplicationId, ApplicationRow, ApplicationState, EnvironmentRow, Operation, OperationKind,
     Paging, ResolvedApplication, Store, StoreError, StoredApplication, now_ms,
 };
+use crate::EnvironmentError;
 use piqueld_core::manifest::ApplicationTemplate;
 use piqueld_core::{
     EnvironmentId, EnvironmentName, EnvironmentSource,
@@ -299,12 +300,12 @@ impl Store {
         {
             return Ok(environment.id);
         }
-        Err(StoreError::EnvironmentRequired {
+        Err(StoreError::Environment(EnvironmentError::Required {
             environments: environments
                 .into_iter()
                 .map(|environment| environment.name)
                 .collect(),
-        })
+        }))
     }
 
     /// Creates the application's first environment, named `production`, which

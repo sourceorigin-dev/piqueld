@@ -24,6 +24,65 @@ use sqlx::SqliteConnection;
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
+/// Why a secret could not be stored, read or mounted.
+#[derive(Debug, thiserror::Error)]
+pub enum SecretFailure {
+    /// Secret ciphertext or its master key could not be used.
+    #[error("secret storage is unavailable")]
+    Source(#[source] SecretError),
+    /// Required values were discarded during lost-key recovery.
+    #[error(
+        "secret values unavailable: {names}; supply replacement values and start a new deployment"
+    )]
+    Unavailable {
+        /// Logical names only, never values.
+        names: String,
+    },
+    /// Mounted secrets have no value: neither stored in the application's
+    /// store nor generated.
+    #[error(
+        "secret values missing: {names}; store them with `piquelctl app secret` or declare them in spec.secrets, then deploy again"
+    )]
+    Missing {
+        /// Logical names only, never values.
+        names: String,
+    },
+    /// An environment mounts a stored secret whose access list excludes it.
+    #[error("environment {environment} may not mount secret {secret}: its access list excludes it")]
+    AccessDenied {
+        /// Environment being deployed or planned.
+        environment: piqueld_core::EnvironmentName,
+        /// Logical secret name.
+        secret: String,
+    },
+    /// Lost-key recovery was requested, but the current key still works.
+    #[error("the secret master key still works; recovery would discard values needlessly")]
+    KeyUsable,
+    /// Saved configuration or a retained deployment still refers to the secret.
+    #[error("secret is still referenced by application configuration or deployment")]
+    Referenced,
+    /// Runtime cleanup is pending and may already have removed some versions.
+    #[error("secret deletion is in progress; retry deletion to finish cleanup")]
+    Deleting,
+    /// The secret's access changed since the caller read it.
+    #[error("the secret's access changed since it was read")]
+    AccessConflict,
+    /// A store holds a bounded number of secrets and retained ciphertext,
+    /// without evicting deployment pins.
+    #[error(
+        "secret storage quota exceeded (100 secrets, 1000 versions or 100 MiB per environment or application store); delete unused secrets to free space"
+    )]
+    Quota,
+    /// A secret changed after the caller inspected its metadata.
+    #[error("secret generation changed: expected {expected}, actual {actual}")]
+    VersionConflict {
+        /// Version supplied by the caller.
+        expected: i64,
+        /// Current logical secret version.
+        actual: i64,
+    },
+}
+
 /// What a secret check or event concerns: an application, whose store all
 /// its environments share, or one environment.
 #[derive(Clone, Copy)]
@@ -62,7 +121,7 @@ impl GeneratedSecret {
     /// wins over it, so losing that race is no error.
     fn stored(result: Result<SecretMetadata, StoreError>) -> Result<(), StoreError> {
         match result {
-            Ok(_) | Err(StoreError::SecretVersionConflict { .. }) => Ok(()),
+            Ok(_) | Err(StoreError::Secret(SecretFailure::VersionConflict { .. })) => Ok(()),
             Err(error) => Err(error),
         }
     }
@@ -165,7 +224,7 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
             if count >= 100 {
-                return Err(StoreError::SecretQuota);
+                return Err(StoreError::Secret(SecretFailure::Quota));
             }
         }
         let usage = sqlx::query!("SELECT COUNT(*) AS versions, COALESCE(SUM(length(ciphertext)),0) AS bytes FROM secret_versions WHERE environment_id=?1 AND available=1",id)
@@ -179,7 +238,7 @@ impl Store {
                 generation,
                 value,
             )
-            .map_err(StoreError::SecretSource)?;
+            .map_err(StoreError::secret)?;
         let now = now_ms();
         let swarm_name = new_id("piqueld-secret");
         sqlx::query!("INSERT INTO environment_secrets(environment_id,name,generation,updated_at_ms) VALUES(?1,?2,?3,?4) ON CONFLICT(environment_id,name) DO UPDATE SET generation=excluded.generation,updated_at_ms=excluded.updated_at_ms",id,name,generation,now).execute(&mut **tx).await.map_err(StoreError::database)?;
@@ -238,7 +297,10 @@ impl Store {
         if expected == actual {
             Ok(())
         } else {
-            Err(StoreError::SecretVersionConflict { expected, actual })
+            Err(StoreError::Secret(SecretFailure::VersionConflict {
+                expected,
+                actual,
+            }))
         }
     }
 
@@ -251,7 +313,7 @@ impl Store {
     ) -> Result<i64, StoreError> {
         let (current, deleting) = existing.unwrap_or_default();
         if deleting {
-            return Err(StoreError::SecretDeleting);
+            return Err(StoreError::Secret(SecretFailure::Deleting));
         }
         Self::secret_version_matches(expected, current)?;
         current.checked_add(1).ok_or(StoreError::InvalidInput)
@@ -315,7 +377,7 @@ impl Store {
                 name: secret.name.clone(),
                 source: Box::new(source),
             })
-            .map_err(StoreError::SecretSource)?;
+            .map_err(StoreError::secret)?;
         Ok(std::mem::take(&mut *value))
     }
 
@@ -437,9 +499,9 @@ impl Store {
                 }
             }
             if !missing.is_empty() {
-                return Err(StoreError::SecretMissing {
+                return Err(StoreError::Secret(SecretFailure::Missing {
                     names: missing.join(", "),
-                });
+                }));
             }
             sqlx::query!(
                 "INSERT INTO deployment_secrets_prepared(operation_id) VALUES(?1)",
@@ -456,9 +518,9 @@ impl Store {
             .map(|(name, _)| name.as_str())
             .collect::<Vec<_>>();
         if !unavailable.is_empty() {
-            return Err(StoreError::SecretUnavailable {
+            return Err(StoreError::Secret(SecretFailure::Unavailable {
                 names: unavailable.join(", "),
-            });
+            }));
         }
         Ok(pinned
             .into_iter()
@@ -541,7 +603,9 @@ impl Store {
         let row=sqlx::query!(r#"SELECT NULL AS "application_id?: String",name AS "name!",generation AS "generation!",nonce AS "nonce!",ciphertext AS "ciphertext!",available AS "available!" FROM secret_versions WHERE environment_id=?1 AND swarm_name=?2
             UNION ALL SELECT v.application_id,v.name,v.generation,v.nonce,v.ciphertext,v.available FROM application_secret_copies c JOIN application_secret_versions v ON v.application_id=c.application_id AND v.name=c.name AND v.generation=c.generation WHERE c.environment_id=?1 AND c.swarm_name=?2"#,id,swarm_name).fetch_optional(&self.pool).await.map_err(StoreError::database)?.ok_or(StoreError::NotFound)?;
         if row.available == 0 {
-            return Err(StoreError::SecretUnavailable { names: row.name });
+            return Err(StoreError::Secret(SecretFailure::Unavailable {
+                names: row.name,
+            }));
         }
         let application = row
             .application_id
@@ -552,8 +616,7 @@ impl Store {
             SecretOwner::Environment(environment),
             SecretOwner::Application,
         );
-        let cipher =
-            SecretCipher::load(&self.secret_key_path, true).map_err(StoreError::SecretSource)?;
+        let cipher = SecretCipher::load(&self.secret_key_path, true).map_err(StoreError::secret)?;
         cipher
             .decrypt(
                 owner,
@@ -564,7 +627,7 @@ impl Store {
                     ciphertext: row.ciphertext,
                 },
             )
-            .map_err(StoreError::SecretSource)
+            .map_err(StoreError::secret)
     }
     /// Swarm secret names of every version the environment created, generated
     /// or stored, used to clean up after environment deletion.
@@ -591,7 +654,7 @@ impl Store {
             || bytes + i64::try_from(incoming + 16).map_err(StoreError::invalid_input)?
                 > 100 * 1024 * 1024
         {
-            return Err(StoreError::SecretQuota);
+            return Err(StoreError::Secret(SecretFailure::Quota));
         }
         Ok(())
     }

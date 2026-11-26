@@ -1,5 +1,6 @@
 //! Authenticate the database's key before accepting any new ciphertext.
 use super::{Envelope, SecretCipher, SecretOwner, Store, StoreError};
+use crate::SecretFailure;
 use crate::secrets::{KeyFailure, SecretError};
 use piqueld_core::EventKind;
 use piqueld_core::api::{CheckStatus, SecretKeyRecovery, SystemCheck, SystemCheckId};
@@ -137,17 +138,17 @@ impl Store {
     ) -> Result<SecretCipher, StoreError> {
         let Some(verifier) = Self::secret_key_verifier_on(&mut **tx).await? else {
             let encrypted = !matches!(Self::probe_ciphertext_on(tx, None).await?, Ciphertext::None);
-            let cipher = SecretCipher::load(&self.secret_key_path, encrypted)
-                .map_err(StoreError::SecretSource)?;
+            let cipher =
+                SecretCipher::load(&self.secret_key_path, encrypted).map_err(StoreError::secret)?;
             if encrypted
                 && !matches!(
                     Self::probe_ciphertext_on(tx, Some(&cipher)).await?,
                     Ciphertext::Decrypts
                 )
             {
-                return Err(StoreError::SecretSource(
+                return Err(StoreError::Secret(SecretFailure::Source(
                     KeyFailure::AuthenticationFailed.into(),
-                ));
+                )));
             }
             let envelope = cipher
                 .encrypt(
@@ -156,7 +157,7 @@ impl Store {
                     1,
                     b"piqueld-secret-key-v1",
                 )
-                .map_err(StoreError::SecretSource)?;
+                .map_err(StoreError::secret)?;
             sqlx::query!(
                 "INSERT INTO secret_key_verification(singleton,nonce,ciphertext) VALUES(1,?1,?2)",
                 envelope.nonce,
@@ -167,9 +168,8 @@ impl Store {
             .map_err(StoreError::database)?;
             return Ok(cipher);
         };
-        let cipher =
-            SecretCipher::load(&self.secret_key_path, true).map_err(StoreError::SecretSource)?;
-        cipher.verify(&verifier).map_err(StoreError::SecretSource)?;
+        let cipher = SecretCipher::load(&self.secret_key_path, true).map_err(StoreError::secret)?;
+        cipher.verify(&verifier).map_err(StoreError::secret)?;
         Ok(cipher)
     }
 
@@ -243,12 +243,12 @@ impl Store {
     /// moving the old key aside; the next value write generates a new key. The key
     /// is lost when it is missing or has the wrong length (see
     /// [`KeyFailure::lost`]) while something is encrypted, or decrypts nothing
-    /// stored. A usable key is [`StoreError::SecretKeyUsable`]; one decrypting a
+    /// stored. A usable key is [`SecretFailure::KeyUsable`]; one decrypting a
     /// value but not the verifier is [`KeyFailure::VerifierCorrupt`]. The author's
     /// actor needs `system:operate` and a recent passkey sign-in (see
     /// [`crate::Actor::require_fresh`]), checked in the transaction.
     /// # Errors
-    /// Returns [`StoreError::SecretKeyUsable`] for a usable key or persistence errors.
+    /// Returns [`SecretFailure::KeyUsable`] for a usable key or persistence errors.
     pub async fn recover_secret_key(
         &self,
         author: impl Into<crate::Author<'_>>,
@@ -266,26 +266,26 @@ impl Store {
             Ok(cipher) => Ok(cipher),
             Err(error) => match error.key_failure() {
                 Some(failure) if failure.lost() => Err(failure),
-                _ => return Err(StoreError::SecretSource(error)),
+                _ => return Err(StoreError::Secret(SecretFailure::Source(error))),
             },
         };
         let cipher = key.as_ref().ok();
         if let (Some(cipher), Some(verifier)) = (cipher, &verifier)
             && cipher.verify(verifier).is_ok()
         {
-            return Err(StoreError::SecretKeyUsable);
+            return Err(StoreError::Secret(SecretFailure::KeyUsable));
         }
         match (
             Self::probe_ciphertext_on(&mut tx, cipher).await?,
             verifier.is_some(),
             key,
         ) {
-            (Ciphertext::Decrypts, true, _) => {
-                Err(StoreError::SecretSource(KeyFailure::VerifierCorrupt.into()))
-            }
+            (Ciphertext::Decrypts, true, _) => Err(StoreError::Secret(SecretFailure::Source(
+                KeyFailure::VerifierCorrupt.into(),
+            ))),
             (Ciphertext::Decrypts, false, _)
             | (Ciphertext::None, false, Ok(_) | Err(KeyFailure::Missing)) => {
-                Err(StoreError::SecretKeyUsable)
+                Err(StoreError::Secret(SecretFailure::KeyUsable))
             }
             _ => self.discard_secret_values(tx, author).await,
         }
@@ -362,7 +362,7 @@ impl Store {
         author
             .commit_recorded(tx, 200, Some(&change), (None, None))
             .await?;
-        SecretCipher::retire(&self.secret_key_path, now).map_err(StoreError::SecretSource)?;
+        SecretCipher::retire(&self.secret_key_path, now).map_err(StoreError::secret)?;
         Ok(SecretKeyRecovery {
             affected_environments: usage.environments,
             affected_applications: stored.applications,

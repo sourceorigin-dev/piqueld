@@ -616,7 +616,7 @@ impl Store {
                     &destination.envelope,
                 )
             })
-            .map_err(StoreError::SecretSource)?;
+            .map_err(StoreError::secret)?;
         String::from_utf8(url.to_vec())
             .map(Zeroizing::new)
             .map_err(StoreError::corrupt)
@@ -635,7 +635,7 @@ impl Store {
                 1,
                 url.0.as_bytes(),
             )
-            .map_err(StoreError::SecretSource)
+            .map_err(StoreError::secret)
     }
 
     /// Cancels the destination `id`'s pending deliveries that `cancel` selects.

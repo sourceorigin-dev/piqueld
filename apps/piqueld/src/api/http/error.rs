@@ -12,7 +12,9 @@ use piqueld_core::api::{ApiErrorCode, ErrorBody};
 use piqueld_core::{
     ApplicationIdError, EnvironmentIdError, EnvironmentNameError, GitBranchError, PreviewSlotError,
 };
-use piqueld_store::{PromotionError, RestoreError, StoreError};
+use piqueld_store::{
+    EnvironmentError, HostnameError, PromotionError, RestoreError, SecretFailure, StoreError,
+};
 use serde_json::{Value, json};
 
 /// Handler failure rendered as a structured JSON `ErrorBody` response.
@@ -81,7 +83,7 @@ impl ApiError {
     fn log_storage_error(error: &StoreError) {
         if matches!(
             error,
-            StoreError::SecretSource(_)
+            StoreError::Secret(SecretFailure::Source(_))
                 | StoreError::Database
                 | StoreError::DatabaseSource(_)
                 | StoreError::SchemaMismatch
@@ -96,36 +98,35 @@ impl ApiError {
 }
 
 impl ApiError {
-    /// Maps secret lifecycle failures selected by `From<StoreError>`.
-    ///
-    /// Panics if given a non-secret variant; callers must pre-filter.
-    fn from_secret_error(error: StoreError) -> Self {
+    /// Maps secret lifecycle failures.
+    fn from_secret_error(error: SecretFailure) -> Self {
         match error {
-            StoreError::SecretVersionConflict { expected, actual } => Self::new(
+            SecretFailure::VersionConflict { expected, actual } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::SecretGenerationConflict,
                 "Secret changed since inspection; read its metadata and retry",
             )
             .details(json!({"expected_generation": expected, "actual_generation": actual})),
-            StoreError::SecretUnavailable { names } => Self::new(
+            SecretFailure::Unavailable { names } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::SecretUnavailable,
                 "Supply replacement secret values and start a new deployment",
             )
             .details(json!({"names": names})),
-            ref error @ StoreError::SecretMissing { ref names } => Self::new(
+            ref error @ SecretFailure::Missing { ref names } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::SecretMissing,
                 error.to_string(),
             )
             .details(json!({"names": names})),
-            StoreError::SecretKeyUsable => Self::new(
+            SecretFailure::KeyUsable => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::SecretKeyUsable,
                 "The secret master key still works; recovery would discard values needlessly",
             ),
-            error @ StoreError::SecretSource(_) => {
-                let diagnostic = crate::operations::OperationError::from(error).diagnostic();
+            error @ SecretFailure::Source(_) => {
+                let diagnostic =
+                    crate::operations::OperationError::from(StoreError::from(error)).diagnostic();
                 let mut error = Self::new(
                     StatusCode::SERVICE_UNAVAILABLE,
                     ApiErrorCode::SecretStorageUnavailable,
@@ -134,27 +135,27 @@ impl ApiError {
                 error.diagnostic = Some(Box::new(diagnostic));
                 error
             }
-            StoreError::SecretDeleting => Self::new(
+            SecretFailure::Deleting => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::SecretDeleting,
                 "Secret deletion is in progress; retry deletion to finish cleanup",
             ),
-            StoreError::SecretAccessConflict => Self::new(
+            SecretFailure::AccessConflict => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::SecretAccessConflict,
                 "The secret's access changed since you read it; read it again and retry",
             ),
-            StoreError::SecretQuota => Self::new(
+            SecretFailure::Quota => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::SecretQuotaExceeded,
                 "Secret storage quota exceeded (100 secrets, 1000 versions or 100 MiB per environment or application store); delete unused secrets to free space",
             ),
-            StoreError::SecretReferenced => Self::new(
+            SecretFailure::Referenced => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::SecretReferenced,
                 "Secret is still referenced by application configuration or a deployment",
             ),
-            ref error @ StoreError::SecretAccessDenied {
+            ref error @ SecretFailure::AccessDenied {
                 ref environment,
                 ref secret,
             } => Self::new(
@@ -163,68 +164,56 @@ impl ApiError {
                 error.to_string(),
             )
             .details(json!({"environment": environment, "secret": secret})),
-            #[expect(
-                clippy::unreachable,
-                reason = "`From<StoreError>` sends this function only the variants matched above"
-            )]
-            other => unreachable!("non-secret storage error: {other}"),
         }
     }
 
-    /// Maps environment selection and rename failures selected by
-    /// `From<StoreError>`, naming the environments in `details`, previews
+    /// Maps environment selection and rename failures, naming the
+    /// environments in `details`, previews
     /// of applications without a manifest repository, and previews over a
     /// `[previews]` limit, listing the previews it counts in `details`.
-    ///
-    /// Panics if given another variant; callers must pre-filter.
-    fn from_environment_error(error: StoreError) -> Self {
+    fn from_environment_error(error: EnvironmentError) -> Self {
         match error {
-            StoreError::EnvironmentRequired { environments } => Self::new(
+            EnvironmentError::Required { environments } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::EnvironmentRequired,
                 "The application does not have exactly one environment; name the environment explicitly",
             )
             .details(json!({"environments": environments})),
-            StoreError::ConfirmationRequired { environments } => Self::new(
+            EnvironmentError::ConfirmationRequired { environments } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::EnvironmentConfirmationRequired,
                 "Deleting this application also deletes all its environments; confirm by naming every one",
             )
             .details(json!({"environments": environments})),
-            ref error @ StoreError::EnvironmentConfigured { ref environment } => Self::new(
+            ref error @ EnvironmentError::Configured { ref environment } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::EnvironmentConfigured,
                 error.to_string(),
             )
             .details(json!({"environment": environment})),
-            ref error @ StoreError::EnvironmentDeclared { ref environment } => Self::new(
+            ref error @ EnvironmentError::Declared { ref environment } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::EnvironmentDeclared,
                 error.to_string(),
             )
             .details(json!({"environment": environment})),
-            ref error @ StoreError::EnvironmentUnknown { ref environment } => Self::new(
+            ref error @ EnvironmentError::Unknown { ref environment } => Self::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 ApiErrorCode::EnvironmentUnknown,
                 error.to_string(),
             )
             .details(json!({"environment": environment})),
-            ref error @ StoreError::PreviewRequiresRepository => Self::new(
+            ref error @ EnvironmentError::PreviewRequiresRepository => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::PreviewRequiresRepository,
                 error.to_string(),
             ),
-            ref error @ StoreError::PreviewLimitReached(ref reached) => Self::new(
+            ref error @ EnvironmentError::PreviewLimitReached(ref reached) => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::PreviewLimitReached,
                 error.to_string(),
             )
             .details(json!(reached)),
-            #[expect(
-                clippy::unreachable,
-                reason = "`From<StoreError>` sends this function only the variants matched above"
-            )]
-            other => unreachable!("non-environment storage error: {other}"),
         }
     }
 
@@ -303,28 +292,21 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, code, error.to_string()).details(details)
     }
 
-    /// Maps hostname reservation conflicts selected by `From<StoreError>`,
-    /// naming the hostname, and the sibling environment reserving it if any.
-    ///
-    /// Panics if given another variant; callers must pre-filter.
-    fn from_hostname_conflict(error: StoreError) -> Self {
+    /// Maps hostname reservation conflicts, naming the hostname, and the
+    /// sibling environment reserving it if any.
+    fn from_hostname_conflict(error: HostnameError) -> Self {
         match error {
-            StoreError::HostnameConflict { hostname } => Self::new(
+            HostnameError::Conflict { hostname } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::HostnameConflict,
                 "Hostname is reserved by another environment, another application's wildcard, or this installation",
             )
             .details(json!({"hostname": hostname})),
-            ref error @ StoreError::SharedHostnameConflict {
+            ref error @ HostnameError::SiblingConflict {
                 ref hostname,
                 ref environment,
             } => Self::new(StatusCode::CONFLICT, ApiErrorCode::HostnameConflict, error.to_string())
                 .details(json!({"hostname": hostname, "environment": environment})),
-            #[expect(
-                clippy::unreachable,
-                reason = "`From<StoreError>` sends this function only the variants matched above"
-            )]
-            other => unreachable!("non-hostname storage error: {other}"),
         }
     }
 }
@@ -337,25 +319,9 @@ impl From<StoreError> for ApiError {
         match value {
             StoreError::Validation(errors) => errors.into(),
             StoreError::Edit(error) => error.into(),
-            error @ (StoreError::SecretVersionConflict { .. }
-            | StoreError::SecretUnavailable { .. }
-            | StoreError::SecretMissing { .. }
-            | StoreError::SecretKeyUsable
-            | StoreError::SecretSource(_)
-            | StoreError::SecretDeleting
-            | StoreError::SecretAccessConflict
-            | StoreError::SecretQuota
-            | StoreError::SecretReferenced
-            | StoreError::SecretAccessDenied { .. }) => Self::from_secret_error(error),
-            error @ (StoreError::HostnameConflict { .. }
-            | StoreError::SharedHostnameConflict { .. }) => Self::from_hostname_conflict(error),
-            error @ (StoreError::EnvironmentRequired { .. }
-            | StoreError::ConfirmationRequired { .. }
-            | StoreError::EnvironmentConfigured { .. }
-            | StoreError::EnvironmentDeclared { .. }
-            | StoreError::EnvironmentUnknown { .. }
-            | StoreError::PreviewRequiresRepository
-            | StoreError::PreviewLimitReached(_)) => Self::from_environment_error(error),
+            StoreError::Secret(error) => Self::from_secret_error(error),
+            StoreError::Hostname(error) => Self::from_hostname_conflict(error),
+            StoreError::Environment(error) => Self::from_environment_error(error),
             StoreError::Promotion(error) => Self::from_promotion_error(&error),
             StoreError::Restore(error) => Self::from_restore_error(&error),
             StoreError::GenerationConflict { expected, actual } => Self::new(

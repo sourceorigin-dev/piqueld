@@ -87,7 +87,7 @@ async fn captured_deployment_protects_secrets_before_pinning() {
         store
             .begin_stored_secret_deletion(Daemon, app.id(), "token", 1)
             .await,
-        Err(StoreError::SecretReferenced)
+        Err(StoreError::Secret(SecretFailure::Referenced))
     ));
     assert_eq!(
         store
@@ -141,17 +141,17 @@ async fn deletion_reservations_survive_restart_and_do_not_block_other_writes() {
         store
             .put_secret(Daemon, &env, "token", 1, b"replacement".to_vec())
             .await,
-        Err(StoreError::SecretDeleting)
+        Err(StoreError::Secret(SecretFailure::Deleting))
     ));
     assert!(matches!(
         store
             .save_application(&ApplicationTemplate::from(&with_secret(&app)), None, None)
             .await,
-        Err(StoreError::SecretDeleting)
+        Err(StoreError::Secret(SecretFailure::Deleting))
     ));
     assert!(matches!(
         store.pin_secrets(&op, &with_secret(&app)).await,
-        Err(StoreError::SecretDeleting)
+        Err(StoreError::Secret(SecretFailure::Deleting))
     ));
     let retry = store
         .begin_secret_deletion(Daemon, &env, "token", 1)
@@ -211,7 +211,7 @@ async fn wrong_master_key_blocks_writes_and_original_key_restores_them() {
         store
             .put_secret(Daemon, &env, "token", 1, b"wrong key".to_vec())
             .await,
-        Err(StoreError::SecretSource(_))
+        Err(StoreError::Secret(SecretFailure::Source(_)))
     ));
     assert_eq!(
         store.secrets(&env).await.expect("the store can secrets")[0].generation,
@@ -242,7 +242,7 @@ async fn wrong_master_key_blocks_writes_and_original_key_restores_them() {
         store
             .put_secret(Daemon, &env, "new", 0, b"value".to_vec())
             .await,
-        Err(StoreError::SecretSource(_))
+        Err(StoreError::Secret(SecretFailure::Source(_)))
     ));
     assert!(
         !key.exists(),
@@ -267,14 +267,14 @@ async fn retained_version_quota_rejects_writes_without_removing_values() {
         .expect("the store can check secret quota");
     assert!(matches!(
         Store::check_secret_quota(1, 17, 100 * 1024 * 1024 - 32),
-        Err(StoreError::SecretQuota)
+        Err(StoreError::Secret(SecretFailure::Quota))
     ));
     sqlx::query!("WITH RECURSIVE versions(n) AS (SELECT 2 UNION ALL SELECT n+1 FROM versions WHERE n<1000) INSERT INTO secret_versions(environment_id,name,generation,swarm_name,nonce,ciphertext) SELECT s.environment_id,s.name,v.n,'fixture-'||v.n,s.nonce,s.ciphertext FROM versions v CROSS JOIN secret_versions s WHERE s.generation=1").execute(&store.pool).await.expect("the statement executes");
     assert!(matches!(
         store
             .put_secret(Daemon, &env, "token", 1, b"blocked".to_vec())
             .await,
-        Err(StoreError::SecretQuota)
+        Err(StoreError::Secret(SecretFailure::Quota))
     ));
     assert_eq!(
         store.secrets(&env).await.expect("the store can secrets")[0].generation,
@@ -341,7 +341,7 @@ async fn rotation_preserves_retry_pins_and_secret_values_never_enter_snapshots()
         store
             .begin_stored_secret_deletion(Daemon, app.id(), "token", 2)
             .await,
-        Err(StoreError::SecretReferenced)
+        Err(StoreError::Secret(SecretFailure::Referenced))
     ));
     store
         .secret_plaintext(
@@ -421,7 +421,7 @@ async fn lost_key_recovery_discards_values_until_replacements_are_deployed() {
     let env = &deployed.environment_id;
     assert!(matches!(
         store.recover_secret_key(Daemon).await,
-        Err(StoreError::SecretKeyUsable)
+        Err(StoreError::Secret(SecretFailure::KeyUsable))
     ));
     assert_eq!(
         &*store
@@ -454,7 +454,7 @@ async fn lost_key_recovery_discards_values_until_replacements_are_deployed() {
     assert_eq!(std::fs::read(retired).expect("the file reads"), [42; 32]);
     assert!(matches!(
         store.recover_secret_key(Daemon).await,
-        Err(StoreError::SecretKeyUsable)
+        Err(StoreError::Secret(SecretFailure::KeyUsable))
     ));
     assert!(!key.exists());
     assert!(
@@ -467,11 +467,11 @@ async fn lost_key_recovery_discards_values_until_replacements_are_deployed() {
     );
     assert!(matches!(
         store.secret_plaintext(env, &pinned["token"]).await,
-        Err(StoreError::SecretUnavailable { names }) if names == "token"
+        Err(StoreError::Secret(SecretFailure::Unavailable { names })) if names == "token"
     ));
     assert!(matches!(
         store.pin_secrets(&deployed, &app).await,
-        Err(StoreError::SecretUnavailable { .. })
+        Err(StoreError::Secret(SecretFailure::Unavailable { .. }))
     ));
 
     store
@@ -496,7 +496,7 @@ async fn lost_key_recovery_discards_values_until_replacements_are_deployed() {
     );
     assert!(matches!(
         store.recover_secret_key(Daemon).await,
-        Err(StoreError::SecretKeyUsable)
+        Err(StoreError::Secret(SecretFailure::KeyUsable))
     ));
 }
 
@@ -511,7 +511,7 @@ async fn key_recovery_keeps_values_of_a_key_that_is_not_lost() {
         .expect("the permissions apply");
     assert!(matches!(
         store.recover_secret_key(Daemon).await,
-        Err(StoreError::SecretSource(_))
+        Err(StoreError::Secret(SecretFailure::Source(_)))
     ));
     let stored = store
         .stored_secrets(app.id())
@@ -548,7 +548,9 @@ async fn key_recovery_keeps_values_behind_a_corrupt_verifier() {
             .execute(&store.pool)
             .await
             .expect("the statement executes");
-        let Err(StoreError::SecretSource(error)) = store.recover_secret_key(Daemon).await else {
+        let Err(StoreError::Secret(SecretFailure::Source(error))) =
+            store.recover_secret_key(Daemon).await
+        else {
             panic!("recovery refused expected");
         };
         assert!(matches!(
@@ -602,7 +604,7 @@ async fn writes_bind_only_the_key_of_values_without_a_verifier() {
             .await
     };
     std::fs::write(&key, [42; 32]).expect("the file writes");
-    let Err(StoreError::SecretSource(error)) = write().await else {
+    let Err(StoreError::Secret(SecretFailure::Source(error))) = write().await else {
         panic!("a wrong key must not be bound");
     };
     assert!(matches!(
@@ -610,7 +612,10 @@ async fn writes_bind_only_the_key_of_values_without_a_verifier() {
         Some(crate::secrets::KeyFailure::AuthenticationFailed)
     ));
     std::fs::remove_file(&key).expect("the file is removed");
-    assert!(matches!(write().await, Err(StoreError::SecretSource(_))));
+    assert!(matches!(
+        write().await,
+        Err(StoreError::Secret(SecretFailure::Source(_)))
+    ));
     assert!(!key.exists(), "no key is generated over stored values");
     std::fs::write(&key, &*original).expect("the file writes");
     std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600))
@@ -618,7 +623,7 @@ async fn writes_bind_only_the_key_of_values_without_a_verifier() {
     write().await.expect("the file writes");
     assert!(matches!(
         store.recover_secret_key(Daemon).await,
-        Err(StoreError::SecretKeyUsable)
+        Err(StoreError::Secret(SecretFailure::KeyUsable))
     ));
 }
 
@@ -813,7 +818,7 @@ async fn sibling_environment_deletions_do_not_block_another_environments_deploym
     );
     assert!(matches!(
         save(&store, &captured, 3).await,
-        Err(StoreError::SecretDeleting)
+        Err(StoreError::Secret(SecretFailure::Deleting))
     ));
 }
 
