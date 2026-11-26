@@ -18,6 +18,7 @@ use crate::{
     reconcile::Controller,
 };
 use hyper::Method;
+use piqueld_core::wait;
 use piqueld_core::{
     EnvironmentId, NormalizedApplication, OperationState, manifest::ApplicationTemplate,
 };
@@ -223,7 +224,7 @@ async fn deploy(
             );
             // wall-clock: each scan advances the deployment as far as the real
             // Swarm has converged, which signals nothing the scan could await.
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            wait::pause(Duration::from_millis(250)).await;
         }
     })
     .await

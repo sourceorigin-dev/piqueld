@@ -18,6 +18,7 @@ use piqueld_config::dns::{
     Dns,
     provider::{DnsProvider, Record, challtestsrv::Challtestsrv},
 };
+use piqueld_core::wait;
 use piqueld_core::{
     api::DnsRecordState,
     event::Event,
@@ -405,7 +406,7 @@ impl Scenario {
                 }
                 // wall-clock: the apps node is a real container that reports its
                 // state on its own; synchronize and look again.
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                wait::pause(Duration::from_millis(500)).await;
             }
         })
         .await
@@ -520,7 +521,7 @@ impl Scenario {
                     }
                     // wall-clock: Caddy, a real process, issues the certificate on its
                     // own and signals nothing; ask again until it serves it.
-                    _ => tokio::time::sleep(Duration::from_millis(200)).await,
+                    _ => wait::pause(Duration::from_millis(200)).await,
                 }
             }
         })
@@ -699,7 +700,7 @@ impl Scenario {
                 {
                     // wall-clock: the TXT record shows up in the real test DNS server,
                     // which signals nothing; resolve it again until it does.
-                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    wait::pause(Duration::from_millis(50)).await;
                 }
                 shutdown.cancel();
             }

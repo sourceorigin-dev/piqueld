@@ -1,5 +1,6 @@
 use super::*;
 use crate::testing::{credential, proved, user};
+use piqueld_core::wait;
 use std::time::Duration;
 
 /// Opens a store whose admin `alice` holds the browser session
@@ -83,7 +84,7 @@ async fn refreshes_waiting_for_writers_respect_idle_expiry() {
     });
     store.writer_waiting().await;
     // wall-clock: refreshes judge expiry by the system clock, which paused
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    wait::pause(Duration::from_secs(1)).await;
     tx.rollback().await.expect("rollback succeeds");
     drop(writer);
     assert!(

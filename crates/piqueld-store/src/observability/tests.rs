@@ -7,6 +7,7 @@ use piqueld_core::observability::{
     ApplicationSelection, DeliveryState, DestinationKind, DestinationName, DestinationRequest,
     DestinationSettings, Diagnostic, EventFilter, EventScope, NotificationCategory,
 };
+use piqueld_core::wait;
 
 async fn application(store: &Store) -> Operation {
     named_application(store, "observable").await
@@ -2183,7 +2184,7 @@ async fn daemon_stats_report_write_waits_and_queue_ages() {
     let writer = store.hold_writer().await;
     let release = async {
         store.writer_waiting().await;
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        wait::pause(Duration::from_millis(20)).await;
         drop(writer);
     };
     let (saved, ()) = tokio::join!(

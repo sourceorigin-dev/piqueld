@@ -1,6 +1,7 @@
 //! The controller's own guarantees: refusing foreign resources, bounded I/O, scans, traces and the action journal.
 
 use super::*;
+use piqueld_core::wait;
 
 /// Captures traces written as JSON lines.
 #[derive(Clone, Default)]
@@ -309,7 +310,7 @@ async fn full_scan_records_one_docker_failure_for_overlapping_observers() {
     // wall-clock: nothing outside the controller signals that the second
     // observer finished its failure without recording it; give it time to
     // record a duplicate.
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait::pause(Duration::from_millis(100)).await;
     cancellation.cancel();
     task.await
         .expect("the controller task joins")

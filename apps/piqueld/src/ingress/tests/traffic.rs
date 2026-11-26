@@ -4,6 +4,7 @@ use axum::{body::Body, http::Request, response::Response};
 use futures_util::stream;
 use hyper::Method;
 use hyper_util::rt::TokioIo;
+use piqueld_core::wait;
 use std::{convert::Infallible, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -138,7 +139,7 @@ async fn backend(mut request: Request<hyper::body::Incoming>) -> Result<Response
                 |sequence| async move {
                     // wall-clock: paces the live event stream through the real gateway,
                     // so it keeps flowing across the reload.
-                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    wait::pause(Duration::from_millis(50)).await;
                     Some((
                         Ok::<_, Infallible>(format!("data: {sequence}\n\n")),
                         sequence + 1,

@@ -2,6 +2,7 @@
 //! signals nothing to await. In-process work is awaited by its events
 //! instead, such as `Store::wait_until`.
 
+use piqueld_core::wait;
 use std::time::Duration;
 
 /// Runs `check` every `interval` until it returns `Some`, giving up with
@@ -18,7 +19,7 @@ pub(crate) async fn eventually<T>(
             }
             // wall-clock: Docker converges on its own and signals nothing;
             // check again after a pause.
-            tokio::time::sleep(interval).await;
+            wait::pause(interval).await;
         }
     })
     .await

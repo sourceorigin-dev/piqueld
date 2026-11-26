@@ -11,6 +11,7 @@ use piqueld_client::{
     ApplyOptions, Client, ClientError, Envelope, ListApplicationsOptions, SystemStatus,
     TransportFailure,
 };
+use piqueld_core::wait;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::{
@@ -276,7 +277,7 @@ async fn timeline_streams_outlive_the_request_timeout() {
         // `.streaming()` drops. Paused time would jump to the 30s connect
         // timeout while the loopback connect is still in flight (seen on
         // macOS), failing the request before the stream opens.
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        wait::pause(Duration::from_millis(150)).await;
         let ended =
             r#"{"code":"forbidden","message":"access ended","details":null,"request_id":"r1"}"#;
         let last = format!(":\n\nevent: access_ended\ndata: {ended}\n\n");
