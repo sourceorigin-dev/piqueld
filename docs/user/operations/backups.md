@@ -327,8 +327,8 @@ backup you [took yourself](#back-up), restore it by hand:
    command. It runs the same checks as `piqueld roll-back`, and restores
    nothing if one fails. Add `--check` to run the checks only. The data
    directory must be empty, but for what `piqueld roll-back` leaves in place:
-   `backups`, `telemetry`, `checkouts`, `snapshots`, `buildx` and
-   `rolled-back-<time>` directories.
+   `roll-back.json`, `backups`, `telemetry`, `checkouts`, `snapshots`,
+   `buildx` and `rolled-back-<time>` directories.
 
    To restore a backup you [took yourself](#back-up) instead, copy it in
    place, without the upgraded database's `-wal` and `-shm` files, then give
@@ -410,9 +410,10 @@ repairs any drift.
      sudo install -d -o piqueld -g piqueld -m 0700 /var/lib/piqueld/rolled-back-recovered
      ```
 
-     Move the data directory's other contents into it, but for `backups`,
-     `telemetry`, `checkouts`, `snapshots`, `buildx`, the
-     `rolled-back-<time>` directories and the directory the error names.
+     Move the data directory's other contents into it, but for
+     `roll-back.json`, `backups`, `telemetry`, `checkouts`, `snapshots`,
+     `buildx`, the `rolled-back-<time>` directories and the directory the
+     error names.
   3. Remove the directory the error names.
   4. Restore the backup again, as the daemon's user. A roll-back's backup is
      in `/var/lib/piqueld/backups`; for another restore, use the backup you

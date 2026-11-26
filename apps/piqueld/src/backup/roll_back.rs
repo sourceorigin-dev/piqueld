@@ -109,13 +109,31 @@ impl RollBackReport {
     }
 
     /// Writes it into `data_dir`, privately and atomically.
-    async fn write(&self, data_dir: &Path) -> Result<()> {
+    pub(super) async fn write(&self, data_dir: &Path) -> Result<()> {
         let bytes = serde_json::to_vec_pretty(self).context("encode the roll-back report")?;
         Ok(
             piqueld_config::directories::PrivateFile::at(data_dir.join(Self::FILE))
                 .write(bytes)
                 .await?,
         )
+    }
+
+    /// Removes the report in `data_dir`, durably, if there is one.
+    async fn remove(data_dir: &Path) -> Result<()> {
+        Ok(
+            piqueld_config::directories::PrivateFile::at(data_dir.join(Self::FILE))
+                .remove()
+                .await?,
+        )
+    }
+
+    /// `error`, once the report in `data_dir` is removed, or with why it
+    /// couldn't be.
+    async fn remove_after(data_dir: &Path, error: anyhow::Error) -> anyhow::Error {
+        match Self::remove(data_dir).await {
+            Ok(()) => error,
+            Err(removal) => error.context(format!("{removal:#}")),
+        }
     }
 
     /// The report in `data_dir`, if a roll-back left one.
@@ -134,27 +152,39 @@ impl RollBackReport {
 impl Backups {
     /// Reports the roll-back that left a [`RollBackReport`] in the data
     /// directory, if any: logs a warning, and records a `daemon_rolled_back`
-    /// event, which notifies, then removes the report. Call it once the
-    /// daemon has started on the restored state.
+    /// event, which notifies, then removes the report. A report whose
+    /// rolled-back directory is missing, left by a roll-back stopped before
+    /// it began, is removed unsent. Call it once the daemon has started on
+    /// the restored state.
     ///
     /// # Errors
     /// Returns the failed step, and the report stays, to be sent on the next
-    /// start. The daemon logs it rather than stopping: an unsent report must
-    /// not keep it down.
+    /// start, unless it can't be parsed, which removes it. The daemon logs it
+    /// rather than stopping: an unsent report must not keep it down.
     pub async fn report_roll_back(&self, store: &piqueld_store::Store) -> Result<()> {
-        let Some(report) = RollBackReport::read(&self.data_dir).await? else {
-            return Ok(());
+        let report = match RollBackReport::read(&self.data_dir).await {
+            Ok(Some(report)) => report,
+            Ok(None) => return Ok(()),
+            Err(error) if error.downcast_ref::<serde_json::Error>().is_some() => {
+                let error = error.context("removed the roll-back report it can't parse");
+                return Err(RollBackReport::remove_after(&self.data_dir, error).await);
+            }
+            Err(error) => return Err(error),
         };
+        let replaced = &report.replaced;
+        if !tokio::fs::try_exists(replaced)
+            .await
+            .with_context(|| format!("inspect {}", replaced.display()))?
+        {
+            return RollBackReport::remove(&self.data_dir).await;
+        }
         let message = report.message();
         tracing::warn!(backup = %report.backup, replaced = %report.replaced.display(), "{message}");
         store
             .record_daemon_rolled_back(&report.backup, &message)
             .await
             .context("record the roll-back")?;
-        let path = self.data_dir.join(RollBackReport::FILE);
-        piqueld_config::directories::remove_file(&path)
-            .await
-            .with_context(|| format!("remove {}", path.display()))
+        RollBackReport::remove(&self.data_dir).await
     }
 
     /// Finishes an unfinished restore, if any. Otherwise, once a newer piqueld
@@ -211,8 +241,8 @@ impl Backups {
         stop_ingress(&live.instance_id).await?;
         RolledBack::prune(data_dir, RolledBack::KEEP - 1)?;
 
-        let staging = self.mark(staged)?;
-        let aside = data_dir.join(RolledBack::name(staging.at_ms));
+        let at_ms = piqueld_store::now_ms();
+        let aside = data_dir.join(RolledBack::name(at_ms));
         RollBackReport {
             backup: newest.name(),
             from_schema: live.schema_version,
@@ -221,6 +251,10 @@ impl Backups {
         }
         .write(data_dir)
         .await?;
+        let staging = match self.mark(staged, at_ms) {
+            Ok(staging) => staging,
+            Err(error) => return Err(RollBackReport::remove_after(data_dir, error).await),
+        };
         self.finish(staging).with_context(|| {
             format!(
                 "roll back to {}, with the state it replaced in {}",

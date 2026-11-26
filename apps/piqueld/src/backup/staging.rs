@@ -82,12 +82,12 @@ impl Backups {
     }
 
     /// Makes the verified copy `staged` the staging directory of a restore
-    /// starting now, which marks it unfinished until [`Self::finish`]
+    /// started at `at_ms`, which marks it unfinished until [`Self::finish`]
     /// removes it. If that can't be synced, removes it again.
-    pub(super) fn mark(&self, staged: tempfile::TempDir) -> Result<Staging> {
+    pub(super) fn mark(&self, staged: tempfile::TempDir, at_ms: i64) -> Result<Staging> {
         let data_dir = &self.data_dir;
         let staging = Staging {
-            at_ms: piqueld_store::now_ms(),
+            at_ms,
             publishing: false,
         };
         let path = staging.path(data_dir);

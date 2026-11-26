@@ -94,7 +94,8 @@ impl Backups {
         if !entries(data_dir, |name| !Self::kept(name))?.is_empty() {
             bail!(Refusal::NotEmpty(data_dir.clone()));
         }
-        let staging = self.mark(self.copy_verified(backup, &manifest).await?)?;
+        let staged = self.copy_verified(backup, &manifest).await?;
+        let staging = self.mark(staged, piqueld_store::now_ms())?;
         self.finish(staging)?;
         Ok(manifest)
     }
