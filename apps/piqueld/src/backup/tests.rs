@@ -403,7 +403,8 @@ fn an_unfinished_restore_blocks_startup() {
 }
 
 /// Finishing a restore never moves its backup over state in the data
-/// directory: it stops, leaving the restore unfinished and its copy whole.
+/// directory: it stops there, leaving the restore unfinished, with the
+/// entry it couldn't move still in its copy.
 #[test]
 fn finishing_never_replaces_state() {
     let data_dir = tempfile::tempdir().expect("a data directory is created");
