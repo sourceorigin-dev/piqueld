@@ -220,8 +220,9 @@ delete it.
 ### What a roll-back undoes
 
 Restoring a backup returns piqueld's records to when the backup was taken,
-just before the upgrade. Rolled back within minutes of an upgrade, that is
-next to nothing. Rolled back later, it is everything since:
+just before the upgrade, and undoes every change made since, however soon
+you roll back. Within minutes of an upgrade, that is still anything done in
+those minutes, such as an automated deployment or a secret rotation:
 
 - **Records:** applications, environments, deployments, accounts, API
   tokens, sessions, secret values and notification destinations go back to
@@ -240,8 +241,13 @@ next to nothing. Rolled back later, it is everything since:
   piqueld doesn't list once you no longer need their data.
 - **DNS records:** ones piqueld created since for new routes stay, pointing at
   this host.
-- **Tailnet nodes:** a node that logged in again since needs to log in again,
-  which it does by itself with an auth key.
+- **Tailnet nodes:** a node that logged in again since needs to log in again.
+  It does so by itself with a valid auth key, from
+  [`tailscale.auth_key_file`](../reference/configuration-settings.md#tailscaleauth_key_file)
+  or
+  [`ingress.private.auth_key_file`](../reference/configuration-settings.md#ingressprivateauth_key_file).
+  If that key has expired or been revoked, the node stays offline: put a new
+  key in that file and restart the daemon.
 
 Your applications' data in Docker volumes is never deleted by a roll-back.
 
