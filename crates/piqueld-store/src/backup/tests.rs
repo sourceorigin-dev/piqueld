@@ -150,3 +150,28 @@ async fn integrity_problems_include_rows_that_break_their_constraints() {
     let problems = copy.integrity_problems().await.expect("the check runs");
     assert_eq!(problems, ["CHECK constraint failed in checked"]);
 }
+
+/// The statements [`DatabaseFile::identity`] has read a database's identity
+/// with since `piqueld roll-back` first shipped. An older binary rolling back
+/// runs them on a newer database, so every migration must keep them working:
+/// change them only together with a migration that keeps the old ones too.
+const IDENTITY_STATEMENTS: [&str; 3] = [
+    "PRAGMA user_version",
+    "SELECT schema_version FROM instance_metadata WHERE singleton=1",
+    "SELECT instance_id FROM instance_metadata WHERE singleton=1",
+];
+
+/// A database at the latest schema still answers the statements older
+/// binaries read its identity with.
+#[tokio::test]
+async fn older_binaries_read_the_identity_of_the_latest_schema() {
+    let (directory, _store) = Store::temporary().await;
+    let mut database = snapshot(directory.path(), "copy.db").await;
+    for statement in IDENTITY_STATEMENTS {
+        let row = sqlx::query(statement)
+            .fetch_optional(&mut database.0.0)
+            .await
+            .unwrap_or_else(|error| panic!("{statement} fails: {error}"));
+        assert!(row.is_some(), "{statement} returns nothing");
+    }
+}
