@@ -46,6 +46,7 @@ pub(super) async fn resources(
 ) -> Result<impl IntoResponse, ApiError> {
     Ok(ok(state.daemon_stats().await?))
 }
+/// Query parameters of reading deployment analytics.
 #[derive(Default, serde::Deserialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in=Query)]
@@ -80,6 +81,7 @@ pub(super) async fn analytics(
         )
         .await?))
 }
+/// Query parameters of listing notification deliveries.
 #[derive(Default, serde::Deserialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in=Query)]
@@ -195,6 +197,7 @@ pub(super) async fn test_destination(
         .test_notification_destination(&DestinationName::parse(name)?)
         .await?))
 }
+/// Query parameters of listing the audit trail.
 #[derive(Default, serde::Deserialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in=Query)]

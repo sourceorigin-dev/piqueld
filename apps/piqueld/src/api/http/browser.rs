@@ -10,18 +10,23 @@ use axum::{
 use piqueld_core::ApiErrorCode;
 use std::{net::IpAddr, sync::Arc};
 
+/// Rejects browser requests whose host or fetch metadata the daemon does not trust.
 #[derive(Clone)]
 pub(super) struct BrowserPolicy {
+    /// Host names, besides IP addresses and `localhost`, that requests may address.
     hosts: Arc<[String]>,
 }
 
 impl BrowserPolicy {
+    /// Creates a policy allowing requests addressed to `hosts`.
     pub(super) fn new(hosts: Vec<String>) -> Self {
         Self {
             hosts: hosts.into(),
         }
     }
 
+    /// Middleware: passes the request on if [`BrowserPolicy::check`] accepts it, else answers with
+    /// its error.
     pub(super) async fn enforce(self, request: Request, next: Next) -> Response {
         if let Err(error) = self.check(&request) {
             return error.into_response();
@@ -29,6 +34,8 @@ impl BrowserPolicy {
         next.run(request).await
     }
 
+    /// Fails with `BrowserAccessDenied` unless the request's authority and fetch metadata are
+    /// trusted.
     fn check(&self, request: &Request) -> Result<(), ApiError> {
         let denied = || {
             ApiError::new(

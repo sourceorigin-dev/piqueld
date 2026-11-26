@@ -43,11 +43,17 @@ impl Expensive {
 
 /// One budget per [`Expensive`] kind, shared by clones of the service.
 pub(super) struct Admission {
+    /// Budget for analytics queries.
     analytics: Arc<Semaphore>,
+    /// Budget for log queries.
     logs: Arc<Semaphore>,
+    /// Budget for interactive commands.
     exec: Arc<Semaphore>,
+    /// Budget for open event streams.
     event_streams: Arc<Semaphore>,
+    /// Budget for open log streams.
     log_streams: Arc<Semaphore>,
+    /// Budget for installation checks.
     checks: Arc<Semaphore>,
 }
 

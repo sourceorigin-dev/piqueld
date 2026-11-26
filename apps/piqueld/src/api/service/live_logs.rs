@@ -19,7 +19,9 @@ const MAX_REPLAY_NS: i64 = 86_400 * 1_000_000_000;
 /// their containers is followed until it stops, and containers that start
 /// later, such as a rollout's new tasks, once Docker reports them starting.
 pub struct LogFollower {
+    /// Runtime the logs are read from.
     runtime: Arc<dyn RuntimeBoundary>,
+    /// Environment whose logs are followed.
     environment: EnvironmentId,
     /// The only service followed, or all of them.
     service: Option<String>,

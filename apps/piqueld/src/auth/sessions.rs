@@ -196,7 +196,9 @@ pub(super) struct Device {
     user_code: String,
     /// Peer address that started the login; `None` for the Unix socket.
     requester: Option<std::net::IpAddr>,
+    /// When the login started, in Unix seconds.
     created: i64,
+    /// When the login expires, in Unix seconds.
     expires: i64,
     /// Earliest time the CLI may poll again without receiving `slow_down`.
     pub(super) next_poll: i64,
@@ -223,8 +225,11 @@ enum Approved {
     /// Issues a session limited to `grants`, from its `prepared` secret;
     /// `retry` when an earlier poll began storing it.
     Issue {
+        /// Grants the issued session is limited to; `None` for the approver's full access.
         grants: Option<Grants>,
+        /// The session to issue, with its secret.
         prepared: Prepared,
+        /// Whether an earlier poll began storing the session.
         retry: bool,
     },
 }
@@ -234,7 +239,9 @@ enum Approved {
 struct Confirmation {
     /// The CLI login, which only its own account may confirm.
     credential_id: String,
+    /// Account whose login is confirmed.
     user: User,
+    /// Sensitive action the confirmation allows.
     action: SensitiveAction,
 }
 
@@ -252,8 +259,11 @@ impl Confirmation {
 /// present, which the issued CLI session inherits.
 #[derive(Clone)]
 pub(super) struct Approval {
+    /// ID of the browser session that approved.
     credential_id: String,
+    /// ID of the account that approved.
     user_id: String,
+    /// When the approver's passkey last proved them present, in Unix seconds.
     pub(super) authenticated_at: i64,
 }
 
@@ -294,6 +304,7 @@ impl Prepared {
 /// concurrent poll issues or answers it too. Dropped unfinished, when the
 /// poll fails or is cancelled, it makes the login pollable again.
 struct Issuing<'a> {
+    /// All pending device logins, by the hash of their device code.
     devices: &'a parking_lot::Mutex<HashMap<String, Device>>,
     /// The login's key; `None` once finished.
     key: Option<String>,

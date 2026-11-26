@@ -72,6 +72,7 @@ pub enum AuthError {
     #[error("could not generate an authentication secret")]
     Random(#[source] getrandom::Error),
 }
+/// Result of an authentication operation.
 type Result<T> = std::result::Result<T, AuthError>;
 
 impl AuthError {
@@ -108,7 +109,9 @@ pub struct Auth(Arc<Inner>);
 /// Shared state behind [`Auth`]. Pending ceremonies and device logins live only
 /// in memory, so a restart cancels them.
 struct Inner {
+    /// Database holding accounts, credentials and sessions.
     store: piqueld_store::Store,
+    /// WebAuthn relying party that starts and verifies ceremonies.
     webauthn: WebauthnCore,
     /// Serialized public origin, e.g. `https://piqueld.example.com`.
     origin: String,
@@ -120,6 +123,7 @@ struct Inner {
     ceremonies: Mutex<HashMap<String, ceremonies::Pending>>,
     /// Pending CLI device logins keyed by the hash of their device code.
     devices: parking_lot::Mutex<HashMap<String, sessions::Device>>,
+    /// Limits how often one peer may start ceremonies.
     throttle: Mutex<throttle::Throttle>,
     /// When each credential's last-used time was last claimed for refresh,
     /// by credential ID (see `Auth::authenticate`).
@@ -337,6 +341,7 @@ impl Auth {
         };
         Ok((secret, credential))
     }
+    /// The public origin, as serialized.
     pub(crate) fn origin(&self) -> &str {
         &self.0.origin
     }

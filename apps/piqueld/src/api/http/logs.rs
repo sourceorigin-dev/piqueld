@@ -159,8 +159,11 @@ pub(super) async fn stream(
 struct FollowLogs {
     /// The stream's share of the log stream budget, while it is open.
     _admitted: tokio::sync::OwnedSemaphorePermit,
+    /// Rechecks the caller's access while the stream is open.
     lease: Lease,
+    /// Environment whose logs are followed.
     environment: EnvironmentId,
+    /// Reads the environment's log output.
     logs: LogFollower,
     /// The newest timestamp sent, each message's ID. Timestamps share one
     /// fixed-width format, so they compare as text.

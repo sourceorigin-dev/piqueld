@@ -50,9 +50,13 @@ impl utoipa::IntoParams for IdempotencyKey {
 /// extracts what the handler's leading `State`, `Extension<Identity>`,
 /// `Audited` and `HeaderMap` would, failing as they would.
 pub(super) struct Mutator {
+    /// Application state the mutation is submitted to.
     state: ApiState,
+    /// Caller making the mutation.
     identity: Identity,
+    /// Records the request's audit entry once the mutation is accepted.
     audited: Audited,
+    /// Request headers, read for the idempotency key.
     headers: HeaderMap,
 }
 
@@ -296,6 +300,7 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for ApiJson<T> {
 ///
 /// Any other content type fails with 415.
 pub(super) struct ManifestUpload {
+    /// The validated manifest.
     pub(super) manifest: ValidatedTemplate,
     /// The inspected application revision.
     pub(super) expected_generation: Option<u64>,

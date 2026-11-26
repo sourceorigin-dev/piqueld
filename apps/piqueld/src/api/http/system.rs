@@ -1,3 +1,5 @@
+//! System endpoints: status, configuration, checks, DNS refresh, health and
+//! readiness.
 use crate::auth::Identity;
 use axum::{
     Extension,
@@ -107,6 +109,7 @@ pub(super) async fn refresh_dns(
 /// Static liveness body: `{"status":"ok"}`.
 #[derive(serde::Serialize)]
 struct HealthResponse {
+    /// Always `"ok"`.
     status: &'static str,
 }
 

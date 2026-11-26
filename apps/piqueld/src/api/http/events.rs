@@ -186,12 +186,17 @@ pub(super) async fn stream(
 struct FollowEvents {
     /// The stream's share of the event stream budget, while it is open.
     _admitted: tokio::sync::OwnedSemaphorePermit,
+    /// Application state the stream reads from.
     state: ApiState,
+    /// Rechecks the caller's access while the stream is open.
     lease: Lease,
+    /// When the stream reads the store again.
     pace: Pace,
+    /// Which events the caller asked for.
     filter: EventFilter,
     /// What the caller may read, updated whenever its access is rechecked.
     visible: Visibility,
+    /// How many events are read from the store at once.
     batch_size: usize,
     /// ID of the last event sent.
     after: i64,

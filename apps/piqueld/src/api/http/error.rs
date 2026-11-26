@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 /// still produce a stable machine-readable `code` plus a sanitized message.
 #[derive(Debug)]
 pub(super) struct ApiError {
+    /// HTTP status of the response.
     pub(super) status: StatusCode,
     /// Stable machine-readable error code.
     code: ApiErrorCode,

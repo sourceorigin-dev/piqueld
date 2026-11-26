@@ -31,6 +31,7 @@ async fn authorize(state: &ApiState, grants: &Grants, id: &str) -> Result<Operat
     Ok(operation)
 }
 
+/// Returns one operation.
 #[utoipa::path(
     get,
     path = "/api/v1/operations/{id}",
@@ -121,9 +122,13 @@ pub(super) async fn stream_timeline(
 struct FollowTimeline {
     /// The stream's share of the event stream budget, while it is open.
     _admitted: tokio::sync::OwnedSemaphorePermit,
+    /// Application state the stream reads from.
     state: ApiState,
+    /// Rechecks the caller's access while the stream is open.
     lease: Lease,
+    /// Schedules when updates and keep-alives are sent.
     pace: Pace,
+    /// The operation's progress, as last read.
     timeline: Timeline,
     /// Whether the timeline was sent since it last changed.
     sent: bool,

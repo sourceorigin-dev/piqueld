@@ -16,6 +16,7 @@ use piqueld_core::{
     manifest::ManifestRevision,
 };
 
+/// Query parameters of listing an environment's deployment history.
 #[derive(Default, serde::Deserialize, utoipa::IntoParams)]
 #[serde(deny_unknown_fields)]
 #[into_params(parameter_in=Query)]

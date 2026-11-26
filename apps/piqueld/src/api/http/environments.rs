@@ -81,6 +81,7 @@ pub(super) async fn create(
         .await
 }
 
+/// Returns one environment.
 #[utoipa::path(
     get,
     path = "/api/v1/environments/{id}",
@@ -99,6 +100,7 @@ pub(super) async fn get(
     Ok(ok(state.environment(&EnvironmentId::parse(id)?).await?))
 }
 
+/// Returns an environment's desired and observed state.
 #[utoipa::path(
     get,
     path = "/api/v1/environments/{id}/detail",
@@ -123,6 +125,7 @@ pub(super) async fn detail(
         .await?))
 }
 
+/// Returns an environment's status.
 #[utoipa::path(
     get,
     path = "/api/v1/environments/{id}/status",
@@ -386,6 +389,7 @@ pub(super) async fn plan_promotion(
         .await?))
 }
 
+/// Deletes an environment's services and networks, retaining its volumes.
 #[utoipa::path(
     delete, path = "/api/v1/environments/{id}", operation_id = "deleteEnvironment",
     summary = "Delete an environment's services and networks, retaining volumes",
@@ -513,6 +517,7 @@ pub(super) async fn restore(
         .await
 }
 
+/// Query parameters of endpoints that only accept `force`.
 #[derive(Default, Deserialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in = Query)]

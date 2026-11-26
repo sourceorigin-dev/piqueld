@@ -14,7 +14,9 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 /// Effective settings the checks inspect, captured at startup once the
 /// tailnet node may have filled `auth.public_url`.
 pub(super) struct CheckSettings {
+    /// Public URL of the daemon, from `auth.public_url`.
     public_url: String,
+    /// Directory of the daemon's runtime files, from `server.runtime_dir`.
     runtime_dir: PathBuf,
     /// The data directory's backups.
     backups: Backups,

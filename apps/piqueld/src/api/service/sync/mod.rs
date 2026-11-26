@@ -50,7 +50,9 @@ impl Lister for Git {
 /// the worker, which they wake.
 #[derive(Default)]
 pub(crate) struct Hints {
+    /// Applications hinted since the worker last took them.
     applications: parking_lot::Mutex<BTreeSet<ApplicationId>>,
+    /// Wakes the worker when a hint arrives.
     wake: tokio::sync::Notify,
 }
 
