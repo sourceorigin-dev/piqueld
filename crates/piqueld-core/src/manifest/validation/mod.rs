@@ -273,7 +273,7 @@ impl ApplicationManifest {
             let hostname = route
                 .hostname
                 .as_literal()
-                .map(|hostname| super::RouteHostname::canonicalize(&hostname));
+                .map(|hostname| super::Hostname::canonicalize(&hostname));
             if let Some(hostname) = &hostname {
                 route.hostname = Template::literal(hostname);
             }

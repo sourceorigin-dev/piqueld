@@ -30,13 +30,27 @@ validated_string!(
 );
 
 impl Hostname {
-    /// Parses a hostname after giving it its canonical spelling; see
-    /// [`RouteHostname::canonicalize`].
+    /// The canonical spelling of a hostname, exact or wildcard, as written in
+    /// a manifest: lowercase, without a trailing dot. The result may still be
+    /// invalid.
+    ///
+    /// ```text
+    /// "NOTES.Example.COM." -> "notes.example.com"
+    /// ```
+    #[must_use]
+    pub(crate) fn canonicalize(hostname: &str) -> String {
+        hostname
+            .strip_suffix('.')
+            .unwrap_or(hostname)
+            .to_ascii_lowercase()
+    }
+
+    /// Parses a hostname after giving it its canonical spelling.
     ///
     /// # Errors
     /// Returns [`HostnameError`] when the canonical spelling is invalid.
     pub fn parse_canonical(hostname: &str) -> Result<Self, HostnameError> {
-        Self::parse(RouteHostname::canonicalize(hostname))
+        Self::parse(Self::canonicalize(hostname))
     }
 
     /// Whether this is `domain` itself or one of its subdomains.
@@ -77,26 +91,13 @@ validated_string!(
 );
 
 impl RouteHostname {
-    /// The canonical spelling of a hostname as written in a manifest:
-    /// lowercase, without a trailing dot. The result may still be invalid.
-    ///
-    /// ```text
-    /// "NOTES.Example.COM." -> "notes.example.com"
-    /// ```
-    #[must_use]
-    pub(crate) fn canonicalize(hostname: &str) -> String {
-        hostname
-            .strip_suffix('.')
-            .unwrap_or(hostname)
-            .to_ascii_lowercase()
-    }
-
-    /// Parses a route hostname after giving it its canonical spelling.
+    /// Parses a route hostname after giving it its canonical spelling; see
+    /// [`Hostname::canonicalize`].
     ///
     /// # Errors
     /// Returns [`RouteHostnameError`] when the canonical spelling is invalid.
     pub fn parse_canonical(hostname: &str) -> Result<Self, RouteHostnameError> {
-        Self::parse(Self::canonicalize(hostname))
+        Self::parse(Hostname::canonicalize(hostname))
     }
 
     /// The hostname whose direct children a wildcard matches; `None` when
