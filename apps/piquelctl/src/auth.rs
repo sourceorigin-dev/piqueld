@@ -171,6 +171,10 @@ impl Credentials {
             match lock.try_lock() {
                 Ok(()) => return Ok(lock),
                 Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                    #[expect(
+                        clippy::disallowed_methods,
+                        reason = "Taking the lock is synchronous, so it cannot await `wait::pause`."
+                    )]
                     std::thread::sleep(LOCK_POLL);
                 }
                 Err(std::fs::TryLockError::WouldBlock) => {

@@ -14,12 +14,20 @@ pub trait Until {
 }
 
 impl Until for Duration {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "`pause` is the one place allowed to sleep."
+    )]
     fn timer(self) -> Sleep {
         tokio::time::sleep(self)
     }
 }
 
 impl Until for Instant {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "`pause` is the one place allowed to sleep."
+    )]
     fn timer(self) -> Sleep {
         tokio::time::sleep_until(self)
     }
