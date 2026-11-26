@@ -262,7 +262,7 @@ fn RestoreDeployment(
                                     navigate(
                                         &context
                                             .deployment_href(
-                                                &accepted.environment_id,
+                                                accepted.environment_id.as_str(),
                                                 &accepted.operation_id,
                                             ),
                                         NavigateOptions::default(),

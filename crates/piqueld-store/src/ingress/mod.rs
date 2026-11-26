@@ -413,7 +413,7 @@ impl Store {
         .map_err(StoreError::database)?
         .into_iter()
         .collect();
-        routes.retain(|route| environments.contains(&route.environment_id));
+        routes.retain(|route| environments.contains(route.environment_id.as_str()));
         Ok(routes)
     }
 

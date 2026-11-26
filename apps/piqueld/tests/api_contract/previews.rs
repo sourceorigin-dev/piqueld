@@ -109,7 +109,7 @@ async fn connected_application(
         })
         .await
         .expect("the application applies");
-    (server, saved.application_id)
+    (server, saved.application_id.into())
 }
 
 /// The contract manifest, connected to `app.toml` on `repository`'s `main`.
@@ -263,11 +263,10 @@ impl PreviewFixture {
         let database = database(&temp);
         let repository = repository_with_branches(&["feat/one", "feat/two"]);
         let state = state(&temp).await;
-        let blog = save(&state, connected_manifest(&repository))
+        let blog_id = save(&state, connected_manifest(&repository))
             .await
             .application_id;
-        let blog_id =
-            piqueld_core::ApplicationId::parse(blog.as_str()).expect("the application id parses");
+        let blog = blog_id.to_string();
         let production = state
             .application(&blog_id)
             .await

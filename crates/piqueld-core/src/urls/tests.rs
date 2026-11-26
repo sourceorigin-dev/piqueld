@@ -4,7 +4,7 @@ use crate::api::{
     RouteStatus,
 };
 use crate::manifest::{RouteTarget, ValidatedRoute, Visibility};
-use crate::{Convergence, RouteName, ServiceName};
+use crate::{Convergence, EnvironmentId, RouteName, ServiceName};
 
 fn route() -> ValidatedRoute {
     ValidatedRoute {
@@ -21,7 +21,7 @@ fn route() -> ValidatedRoute {
 
 fn status(route: &ValidatedRoute) -> RouteStatus {
     RouteStatus {
-        environment_id: "app-notes-01".into(),
+        environment_id: EnvironmentId::parse("app-notes-01").expect("the environment id parses"),
         name: route.name.clone(),
         hostname: route.hostname.to_string(),
         visibility: route.visibility,

@@ -184,8 +184,7 @@ async fn declared_environments_are_managed_by_the_manifest() {
         true,
     )
     .await;
-    let application =
-        ApplicationId::parse(&saved.application_id).expect("the application id parses");
+    let application = saved.application_id.clone();
     let named = async |name: &str| {
         store
             .environments(&application)
@@ -265,11 +264,7 @@ async fn blocks_without_a_source_keep_existing_sources() {
         promote_from: Some(staging.clone()),
     });
     store.force(promote).await.expect("force succeeds");
-    let save = Mutation::save(
-        template("notes", spec),
-        Some(application.to_string()),
-        false,
-    );
+    let save = Mutation::save(template("notes", spec), Some(application.clone()), false);
     store.force(save).await.expect("force succeeds");
     let source = store
         .get(&production)
@@ -327,8 +322,7 @@ async fn deploying_a_save_skips_environments_becoming_promoted() {
     };
     assert_eq!(save("").await.operation_ids.len(), 2);
     let saved = save("promote_from='staging'\n").await;
-    let application =
-        ApplicationId::parse(&saved.application_id).expect("the application id parses");
+    let application = saved.application_id.clone();
     let production = store.production(&application).await;
     assert!(
         store
@@ -422,7 +416,7 @@ async fn requested_changes_commit_with_their_audit_record() {
         "allowed".into(),
         200,
         "alice".into(),
-        saved.application_id,
+        saved.application_id.into(),
     );
     assert_eq!(rows, [allowed]);
 }
@@ -461,8 +455,7 @@ async fn renaming_an_application_to_its_name_records_nothing() {
     let saved = store
         .save_template(template("notes", "[spec]"), false)
         .await;
-    let id =
-        ApplicationId::parse(&saved.application_id).expect("the saved application has a valid ID");
+    let id = saved.application_id.clone();
     let state = async || {
         let id = id.as_str();
         let row = "SELECT generation,updated_at_ms,(SELECT COUNT(*) FROM events \

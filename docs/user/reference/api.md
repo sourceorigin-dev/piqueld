@@ -306,7 +306,9 @@ readable and reports unavailable runtime observation as a diagnostic.
 Apply and plan accept JSON `{ "manifest": ..., "expected_generation": 3,
 "expected_application_id": "app-..." }`, or complete TOML with
 `Content-Type: application/toml` or `text/toml`. TOML preconditions use
-`X-Expected-Generation` and `X-Expected-Application-Id`.
+`X-Expected-Generation` and `X-Expected-Application-Id`. A malformed
+application ID returns 400: `json_malformed` in JSON, `application_id_invalid`
+in the header.
 
 Every mutation of an application or one of its environments, except sync opt-ins,
 telemetry grants and previews, is conditioned on the inspected application revision. Apply, deploy, delete, [field edits](#field-endpoints), environment renames,

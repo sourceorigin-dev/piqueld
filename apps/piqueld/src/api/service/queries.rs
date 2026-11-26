@@ -224,9 +224,7 @@ impl ApplicationService {
         let id = &stored.environment.id;
         let applied = self.store.applied_routes(id).await?;
         let mut ingress = self.ingress_status().await;
-        ingress
-            .routes
-            .retain(|status| status.environment_id == id.as_str());
+        ingress.routes.retain(|status| status.environment_id == *id);
         Ok(target
             .routes
             .iter()
@@ -240,7 +238,7 @@ impl ApplicationService {
         grants: &Grants,
         current: Option<&StoredApplication>,
         expected: Option<u64>,
-        expected_id: Option<String>,
+        expected_id: Option<ApplicationId>,
     ) -> Result<(), ApplicationError> {
         let target = current.map_or(Target::New, |current| {
             Target::Named(current.application.id())
@@ -250,7 +248,7 @@ impl ApplicationService {
             .map_err(StoreError::Denied)?;
         piqueld_store::Store::check_generation(expected, current.map_or(0, |app| app.generation))?;
         if let Some(expected_id) = expected_id
-            && current.is_none_or(|app| app.application.id().as_str() != expected_id)
+            && current.is_none_or(|app| *app.application.id() != expected_id)
         {
             return Err(StoreError::IdentityConflict.into());
         }
@@ -276,7 +274,7 @@ impl ApplicationService {
         grants: &Grants,
         manifest: ValidatedTemplate,
         expected: Option<u64>,
-        expected_id: Option<String>,
+        expected_id: Option<ApplicationId>,
         environment: Option<&EnvironmentId>,
     ) -> Result<PlanView, ApplicationError> {
         let current = self.store.find_by_name(manifest.name().as_str()).await?;

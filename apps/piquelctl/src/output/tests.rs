@@ -621,7 +621,8 @@ fn route_list_shows_visibility_dns_records_and_unready_causes() {
         environment: "staging".into(),
         route: RouteStatus {
             name: None,
-            environment_id: "env-1".into(),
+            environment_id: piqueld_client::EnvironmentId::parse("env-00000001")
+                .expect("the environment id parses"),
             hostname: hostname.into(),
             visibility,
             dns,

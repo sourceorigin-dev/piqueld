@@ -263,6 +263,6 @@ async fn deleting_a_promotion_source_needs_its_dependents_gone() {
         deleted
             .operations
             .iter()
-            .any(|operation| operation.environment_id == chained.as_str())
+            .any(|operation| operation.environment_id == chained)
     );
 }

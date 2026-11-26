@@ -60,7 +60,7 @@ async fn fetched_snapshot_preserves_intervening_saved_configuration() {
             Daemon,
             Mutation::Save {
                 application: Box::new(edited.clone()),
-                expected_application_id: Some(captured.id().to_string()),
+                expected_application_id: Some(captured.id().clone()),
                 deploy: false,
             },
             Some(1),
@@ -619,7 +619,7 @@ async fn environments_reserve_and_rename_by_their_own_fetched_manifest() {
 /// Saves the repository-backed application `notes` (see `connection`).
 async fn saved_connection(store: &Store) -> ApplicationId {
     let saved = store.save_template(connection(), false).await;
-    ApplicationId::parse(&saved.application_id).expect("the application id parses")
+    saved.application_id.clone()
 }
 
 /// A manifest with the image service `web` that declares the generated
@@ -648,8 +648,7 @@ async fn fetches_of_the_connection_branch_converge_declared_environments() {
         "[spec.manifest]\npath='app.toml'\nsync={mode='poll'}\n[spec.manifest.repository]\nurl='https://example.com/notes.git'\nbranch='main'",
     );
     let saved = store.save_template(polled, false).await;
-    let application =
-        ApplicationId::parse(&saved.application_id).expect("the application id parses");
+    let application = saved.application_id.clone();
     let production = store.production(&application).await;
     let declared = format!(
         "[spec.environments.staging]\nsync=true\n[spec.environments.production]\npromote_from='staging'\n[spec.environments.canary]\nbranch='next'\n{}",

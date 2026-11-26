@@ -305,7 +305,7 @@ pub(super) struct ManifestUpload {
     /// The inspected application revision.
     pub(super) expected_generation: Option<u64>,
     /// The inspected application identity.
-    pub(super) expected_application_id: Option<String>,
+    pub(super) expected_application_id: Option<ApplicationId>,
 }
 
 impl<S: Send + Sync> FromRequest<S> for ManifestUpload {
@@ -362,7 +362,9 @@ impl ManifestUpload {
                 Ok(Self {
                     manifest: piqueld_core::manifest::parse_template_toml(text)?,
                     expected_generation,
-                    expected_application_id: optional_header(headers, "x-expected-application-id")?,
+                    expected_application_id: optional_header(headers, "x-expected-application-id")?
+                        .map(ApplicationId::parse)
+                        .transpose()?,
                 })
             }
             _ => Err(ApiError::new(

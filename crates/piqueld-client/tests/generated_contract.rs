@@ -118,7 +118,7 @@ async fn log_parameters_are_encoded_and_readiness_keeps_its_503_payload() {
 async fn toml_adapter_preserves_headers_and_unsigned_revisions() {
     let mut server = Server::start(
         http::StatusCode::OK,
-        r#"{"data":{"application_id":"app","generation":1,"operation_id":"op-1"}}"#,
+        r#"{"data":{"application_id":"app-00000001","generation":1,"operation_id":"op-1"}}"#,
     )
     .await;
     let client = server
@@ -141,7 +141,7 @@ async fn toml_adapter_preserves_headers_and_unsigned_revisions() {
         )
         .await
         .expect("the application applies");
-    assert_eq!(saved.application_id, "app");
+    assert_eq!(saved.application_id.as_str(), "app-00000001");
     let request = server.requests.recv().await.expect("a message is received");
     assert_eq!(request.uri, "/api/v1/applications/apply?deploy=true");
     assert_eq!(request.headers["content-type"], "application/toml");

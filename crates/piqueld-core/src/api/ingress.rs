@@ -198,7 +198,7 @@ pub struct CertificateStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct RouteStatus {
     /// Owning environment identity.
-    pub environment_id: String,
+    pub environment_id: crate::EnvironmentId,
     /// The route's name, when it has one.
     #[serde(default)]
     pub name: Option<crate::RouteName>,

@@ -811,7 +811,7 @@ impl Ingress {
                     message = format!("DNS records ({}): {problem}", dns.state);
                 }
                 RouteStatus {
-                    environment_id: id.to_string(),
+                    environment_id: id.clone(),
                     name: route.name.clone(),
                     hostname: route.hostname.to_string(),
                     visibility: route.visibility,

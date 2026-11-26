@@ -70,7 +70,7 @@ async fn generations_deploy_reconcile_and_event_pagination_share_the_http_contra
             .all(|event| event.id > first_page.items.last().expect("the last item exists").id)
     );
     let deletion = client
-        .delete_application_with_generation(&first.application_id, Some(2))
+        .delete_application_with_generation(first.application_id.as_str(), Some(2))
         .await
         .expect("the application deletes");
     assert_eq!(deletion.generation, 3);
@@ -79,7 +79,10 @@ async fn generations_deploy_reconcile_and_event_pagination_share_the_http_contra
         .await
         .expect_err("`` should be rejected");
     let repeated = client
-        .delete_application_with_generation(&first.application_id, Some(deletion.generation))
+        .delete_application_with_generation(
+            first.application_id.as_str(),
+            Some(deletion.generation),
+        )
         .await
         .expect("the application deletes");
     assert_eq!(
@@ -112,7 +115,7 @@ async fn a_rerun_with_the_same_request_id_replays_its_acceptance() {
     assert_eq!(replayed.operation_id, accepted.operation_id);
     assert_eq!(
         api.client
-            .application(&accepted.application_id)
+            .application(accepted.application_id.as_str())
             .await
             .expect("the application loads")
             .generation,
@@ -155,7 +158,7 @@ async fn acceptance_receipts_survive_restart_and_supersession() {
     assert_eq!(replayed.generation, 1);
     assert_eq!(
         api.client
-            .application(&accepted.application_id)
+            .application(accepted.application_id.as_str())
             .await
             .expect("the application loads")
             .generation,
@@ -198,7 +201,7 @@ async fn rename_is_conditioned_idle_only_and_replayable_without_deployment() {
     let options = at_generation(1);
     let keyed = api.client.clone().with_request_id("rename-command");
     let error = keyed
-        .set_application_name(&accepted.application_id, &name, &options)
+        .set_application_name(accepted.application_id.as_str(), &name, &options)
         .await
         .expect_err("the rename is rejected");
     assert_eq!(api_error(error).code, "application_busy");
@@ -208,20 +211,20 @@ async fn rename_is_conditioned_idle_only_and_replayable_without_deployment() {
     )
     .await;
     let renamed = keyed
-        .set_application_name(&accepted.application_id, &name, &options)
+        .set_application_name(accepted.application_id.as_str(), &name, &options)
         .await
         .expect("the name is set");
     assert_eq!(renamed.application_id, accepted.application_id);
     assert_eq!(renamed.generation, 2);
     assert_eq!(renamed.operation_id, None);
     let replay = keyed
-        .set_application_name(&accepted.application_id, &name, &options)
+        .set_application_name(accepted.application_id.as_str(), &name, &options)
         .await
         .expect("the name is set");
     assert_eq!(replay.generation, 2);
     let app = api
         .client
-        .application(&accepted.application_id)
+        .application(accepted.application_id.as_str())
         .await
         .expect("the application loads");
     assert_eq!(app.application.metadata().name.as_str(), "renamed");
@@ -265,7 +268,7 @@ async fn rename_is_conditioned_idle_only_and_replayable_without_deployment() {
     assert_eq!(api_error(error).code, "identity_conflict");
     assert_eq!(
         api.client
-            .application(&old_name.application_id)
+            .application(old_name.application_id.as_str())
             .await
             .expect("the application loads")
             .application
@@ -340,7 +343,7 @@ async fn preview_resolves_images_again_and_redacts_manifest_and_runtime_configur
         .await
         .expect("the application saves");
     request.expected_generation = Some(1);
-    request.expected_application_id = Some(normalized.id().to_string());
+    request.expected_application_id = Some(normalized.id().clone());
     request.manifest.spec.services[0].replicas = 3.into();
     request.manifest.spec.services[0]
         .environment
@@ -446,7 +449,7 @@ async fn mutations_require_preconditions_but_reconcile_uses_current_intent() {
     assert_eq!(
         api_error(
             api.client
-                .delete_application_with_generation(&accepted.application_id, None)
+                .delete_application_with_generation(accepted.application_id.as_str(), None)
                 .await
                 .expect_err("the delete is rejected")
         )
@@ -456,7 +459,7 @@ async fn mutations_require_preconditions_but_reconcile_uses_current_intent() {
     assert_eq!(
         api_error(
             api.client
-                .delete_application_with_generation(&accepted.application_id, Some(1))
+                .delete_application_with_generation(accepted.application_id.as_str(), Some(1))
                 .await
                 .expect_err("the delete is rejected")
         )
@@ -471,7 +474,7 @@ async fn mutations_require_preconditions_but_reconcile_uses_current_intent() {
     assert_eq!(refreshed.generation, 2);
     let deletion = api
         .client
-        .delete_application_with_preconditions(&accepted.application_id, Some(1), true, &[])
+        .delete_application_with_preconditions(accepted.application_id.as_str(), Some(1), true, &[])
         .await
         .expect("the application deletes");
     assert_eq!(deletion.generation, 3);
@@ -495,7 +498,7 @@ async fn environments_stay_stopped_until_started_or_deployed() {
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
     let client = &api.client;
-    let id = &production_through(client, &saved.application_id).await;
+    let id = &production_through(client, saved.application_id.as_str()).await;
     let stopped = async || {
         client
             .environment(id)
@@ -556,7 +559,7 @@ async fn forced_apply_retargets_reused_names_and_creates_absent_names() {
         .expect("the forced deploy succeeds");
     let deletion = api
         .client
-        .delete_application_with_generation(&original.application_id, Some(1))
+        .delete_application_with_generation(original.application_id.as_str(), Some(1))
         .await
         .expect("the application deletes");
     api.finish_deletion(&deletion).await;
@@ -584,7 +587,7 @@ async fn forced_apply_retargets_reused_names_and_creates_absent_names() {
     assert_eq!(forced.generation, 2);
     assert_eq!(
         api.client
-            .application(&forced.application_id)
+            .application(forced.application_id.as_str())
             .await
             .expect("the application loads")
             .application
@@ -603,7 +606,7 @@ async fn forced_apply_retargets_reused_names_and_creates_absent_names() {
     );
     assert_eq!(
         api.client
-            .application(&forced.application_id)
+            .application(forced.application_id.as_str())
             .await
             .expect("the application loads")
             .generation,
@@ -647,7 +650,7 @@ async fn forced_receipts_replay_after_restart_without_overwriting_newer_intent()
     );
     let current = api
         .client
-        .application(&accepted.application_id)
+        .application(accepted.application_id.as_str())
         .await
         .expect("the application loads");
     assert_eq!(current.generation, newer.generation);
@@ -680,7 +683,7 @@ async fn forced_rename_bypasses_revision_but_preserves_busy_and_name_checks() {
     };
     let rename = async |name: &StringValue, options: EditOptions| {
         api.client
-            .set_application_name(&accepted.application_id, name, &options)
+            .set_application_name(accepted.application_id.as_str(), name, &options)
             .await
     };
     let forced = EditOptions {

@@ -12,7 +12,7 @@ pub struct BuildRecord {
     /// Monotonic build identifier.
     pub id: i64,
     /// Owning environment ID.
-    pub environment_id: String,
+    pub environment_id: crate::EnvironmentId,
     /// Source operation ID, retained even after operation pruning.
     pub operation_id: String,
     /// Logical service name; for job runs, the service whose container the job reuses.

@@ -410,7 +410,7 @@ impl EditFlags {
                 self.expected_generation,
                 current.generation,
             ),
-            expected_application_id: (!self.force).then(|| current.application.id().to_string()),
+            expected_application_id: (!self.force).then(|| current.application.id().clone()),
         };
         let options = ApplyOptions {
             force: self.force,

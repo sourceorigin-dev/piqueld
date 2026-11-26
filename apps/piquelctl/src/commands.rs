@@ -516,7 +516,7 @@ impl DeleteArgs {
         wait_for_deletion(
             console,
             client,
-            || client.application(&deleted.application_id),
+            || client.application(deleted.application_id.as_str()),
             &operations,
         )
         .await?;

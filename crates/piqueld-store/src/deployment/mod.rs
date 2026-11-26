@@ -270,7 +270,7 @@ impl Store {
         Self::follow_connection_on(tx, app, previous_url.as_deref()).await?;
         Self::converge_environments_on(tx, app.id(), &declarations, None, now).await?;
         Ok(SavedApplication {
-            application_id: id.into(),
+            application_id: app.id().clone(),
             generation: u64::try_from(generation).map_err(StoreError::corrupt)?,
             operation_id: None,
             operation_ids: Vec::new(),

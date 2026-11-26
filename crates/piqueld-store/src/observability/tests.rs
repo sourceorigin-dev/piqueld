@@ -1238,7 +1238,7 @@ async fn visibility_limits_history_builds_and_analytics() {
         .expect("the store can builds")
         .items;
     assert_eq!(builds.len(), 1);
-    assert_eq!(builds[0].environment_id, ids[0].1.as_str());
+    assert_eq!(builds[0].environment_id, ids[0].1);
     let analytics = |applications: Scope, daemon: bool| {
         let store = &store;
         async move {

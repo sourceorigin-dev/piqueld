@@ -106,15 +106,12 @@ async fn create_and_inspect(client: &Client, manifest: &ApplicationManifest) -> 
     assert_ne!(created.operation_id, replay.operation_id);
     let summaries = client.applications().await.expect("the applications list");
     assert_eq!(summaries.items.len(), 1);
-    assert_eq!(
-        summaries.items[0].id,
-        created.application_id.parse().expect("the value parses")
-    );
+    assert_eq!(summaries.items[0].id, created.application_id);
     assert_eq!(summaries.items[0].name, "notes");
     let summary_json = serde_json::to_value(&summaries.items[0]).expect("the value serialises");
     assert!(summary_json.get("application").is_none());
     let application = client
-        .application(&created.application_id)
+        .application(created.application_id.as_str())
         .await
         .expect("full application read succeeds");
     assert_eq!(application.application.spec().services.len(), 1);
@@ -122,10 +119,7 @@ async fn create_and_inspect(client: &Client, manifest: &ApplicationManifest) -> 
         .environment_detail(&created.environment_id)
         .await
         .expect("detail succeeds");
-    assert_eq!(
-        detail.application.application.id().as_str(),
-        created.application_id
-    );
+    assert_eq!(detail.application.application.id(), &created.application_id);
     assert_eq!(detail.application.application.spec().services.len(), 1);
     assert!(detail.observed.services.is_empty());
     assert_eq!(detail.environment.resolved_generation, None);
@@ -143,7 +137,10 @@ async fn create_and_inspect(client: &Client, manifest: &ApplicationManifest) -> 
 
 async fn delete(client: &Client, created: &Deployed) {
     let deleted = client
-        .delete_application_with_generation(&created.application_id, Some(created.generation))
+        .delete_application_with_generation(
+            created.application_id.as_str(),
+            Some(created.generation),
+        )
         .await
         .expect("delete succeeds");
     assert_eq!(
@@ -521,7 +518,7 @@ async fn tcp_rejects_cross_site_mutations_without_creating_deployments() {
             .await;
         response.assert_error(StatusCode::FORBIDDEN, "browser_access_denied");
     }
-    let production = production_through(&client, &saved.application_id).await;
+    let production = production_through(&client, saved.application_id.as_str()).await;
     assert!(
         client
             .deployments(&production, None, None)
@@ -564,12 +561,12 @@ async fn typed_edits_enforce_the_tcp_browser_policy() {
         response.assert_error(StatusCode::FORBIDDEN, "browser_access_denied");
     }
     let unchanged = client
-        .application(&saved.application_id)
+        .application(saved.application_id.as_str())
         .await
         .expect("the application loads");
     assert_eq!(unchanged.generation, saved.generation);
     assert_eq!(unchanged.application.spec().services.len(), 1);
-    let production = production_through(client, &saved.application_id).await;
+    let production = production_through(client, saved.application_id.as_str()).await;
     assert!(
         client
             .deployments(&production, None, None)
@@ -596,7 +593,7 @@ async fn typed_edits_enforce_the_tcp_browser_policy() {
         .await;
     assert_eq!(edit.status, StatusCode::OK);
     let edited = client
-        .application(&saved.application_id)
+        .application(saved.application_id.as_str())
         .await
         .expect("the application loads");
     assert_eq!(edited.generation, saved.generation + 1);

@@ -389,7 +389,7 @@ async fn telemetry_grants_need_the_telemetry_grant_permission() {
     let state = state(&temp).await;
     let database = database(&temp);
     let saved = save(&state, manifest()).await;
-    let id = production(&state, &saved.application_id).await;
+    let id = production(&state, saved.application_id.as_str()).await;
     let account = |name| {
         Actor::Account(Caller {
             credential_id: name,

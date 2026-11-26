@@ -15,7 +15,7 @@ async fn exec_rechecks_grants_when_the_command_starts() {
     let database = database(&temp);
     let grant = [("apps:exec", Some(saved.application_id.as_str()))];
     seed_account(&database, "operator", &grant).await;
-    let environment = production(&state, &saved.application_id).await;
+    let environment = production(&state, saved.application_id.as_str()).await;
     let request = piqueld_core::exec::ExecRequest {
         service: "web".parse().expect("the value parses"),
         command: piqueld_core::exec::ExecCommand::parse(vec!["true".into()])
@@ -545,7 +545,7 @@ async fn exec_notices_a_client_that_left_behind_unread_input() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let state = state(&temp).await;
     let saved = save(&state, manifest()).await;
-    let environment = production(&state, &saved.application_id).await;
+    let environment = production(&state, saved.application_id.as_str()).await;
     let timing = piqueld::api::http::ConnectionTiming {
         ping: Duration::from_millis(50),
         ..Default::default()

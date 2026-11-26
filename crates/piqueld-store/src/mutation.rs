@@ -17,7 +17,7 @@ pub enum Mutation {
         /// Validated configuration, with references unresolved.
         application: Box<ApplicationTemplate>,
         /// Inspected application identity.
-        expected_application_id: Option<String>,
+        expected_application_id: Option<ApplicationId>,
         /// Whether to create a deployment of the only environment after saving.
         deploy: bool,
     },
@@ -321,10 +321,10 @@ impl MutationResponse {
     /// names them; an environment's application is recorded with it.
     pub(crate) fn target(&self) -> (Option<&str>, Option<&str>) {
         match self {
-            Self::Saved(saved) => (Some(&saved.application_id), None),
-            Self::Deleted(deleted) => (Some(&deleted.application_id), None),
-            Self::Operation(operation) => (None, Some(&operation.environment_id)),
-            Self::Promotion(promotion) => (None, Some(&promotion.operation.environment_id)),
+            Self::Saved(saved) => (Some(saved.application_id.as_str()), None),
+            Self::Deleted(deleted) => (Some(deleted.application_id.as_str()), None),
+            Self::Operation(operation) => (None, Some(operation.environment_id.as_str())),
+            Self::Promotion(promotion) => (None, Some(promotion.operation.environment_id.as_str())),
             Self::Environment(environment) => (None, Some(environment.id.as_str())),
             Self::Preview(preview) => (None, Some(preview.preview.id.as_str())),
             Self::Synced(_) => (None, None),
@@ -515,7 +515,7 @@ impl Mutation {
     #[must_use]
     pub fn save(
         manifest: ValidatedTemplate,
-        expected_application_id: Option<String>,
+        expected_application_id: Option<ApplicationId>,
         deploy: bool,
     ) -> Self {
         Self::Save {

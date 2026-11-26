@@ -130,8 +130,7 @@ async fn environments_of_one_application_cannot_share_a_hostname() {
         .await
         .expect("save succeeds");
     let staging = Mutation::CreateEnvironment {
-        application: piqueld_core::ApplicationId::parse(&saved.application_id)
-            .expect("the application id parses"),
+        application: saved.application_id.clone(),
         name: piqueld_core::EnvironmentName::parse("staging").expect("the environment name parses"),
         source: None,
     };
@@ -162,8 +161,7 @@ async fn environments_render_their_own_hostnames_from_variables() {
         "[spec.variables]\ndomain='piquel.fr'\n[spec.environments.production]\n[spec.environments.staging.variables]\ndomain='staging.piquel.fr'\n[[spec.services]]\nname='web'\n[spec.services.source]\ntype='image'\nimage='nginx:alpine'\n[[spec.routes]]\nhostname='${{ vars.domain }}'\nservice='web'\nport=80",
     );
     let saved = store.save_template(template, false).await;
-    let application = piqueld_core::ApplicationId::parse(&saved.application_id)
-        .expect("the application id parses");
+    let application = saved.application_id.clone();
     let staging = store
         .environments(&application)
         .await
@@ -727,7 +725,7 @@ async fn route_statuses_are_limited_to_readable_applications() {
         let route = &input.spec().routes[0];
         statuses.push(RouteStatus {
             name: None,
-            environment_id: store.production(&application).await.to_string(),
+            environment_id: store.production(&application).await,
             hostname: hostname.into(),
             visibility: route.visibility,
             dns: piqueld_core::api::DnsRecords::ServerAddresses {
