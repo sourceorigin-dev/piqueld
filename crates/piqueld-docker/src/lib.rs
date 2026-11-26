@@ -29,7 +29,7 @@ use piqueld_core::resource::{
     APPLICATION_LABEL, Convergence, DesiredNetwork, DesiredService, DesiredVolume,
     INGRESS_PROXIES_ENV, INSTANCE_LABEL, MANAGED_LABEL, NetworkAttachment, ObservedMount,
     ObservedNetwork, ObservedService, ObservedTask, ObservedVolume, SERVICE_LABEL, TaskDiagnostic,
-    TaskState, image_repository,
+    TaskState,
 };
 use piqueld_core::wait;
 use piqueld_core::{
@@ -583,7 +583,7 @@ async fn matching_repo_digests(
         .unwrap_or_default()
         .into_iter()
         .filter_map(|digest| RepositoryDigest::parse(digest).ok())
-        .filter(|digest| image_repository(digest.as_str()).as_deref() == Some(repository))
+        .filter(|digest| digest.repository() == repository)
         .collect())
 }
 

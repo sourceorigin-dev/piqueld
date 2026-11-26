@@ -26,9 +26,9 @@ pub(crate) struct ImageParts<'a> {
     pub(crate) name: &'a str,
     /// The registry host and port, when `name` starts with one: a first
     /// component containing `.` or `:`, or `localhost`.
-    pub(crate) registry: Option<&'a str>,
+    registry: Option<&'a str>,
     /// The tag, after the last `:` that follows the last `/`.
-    pub(crate) tag: Option<&'a str>,
+    tag: Option<&'a str>,
     /// The digest, after `@`.
     pub(crate) digest: Option<&'a str>,
 }
@@ -156,12 +156,16 @@ fn valid_tag(tag: &str) -> bool {
 }
 
 /// Whether a registry authority is `localhost` or DNS-like labels, with an
-/// optional nonzero port.
+/// optional nonzero port of decimal digits only.
 fn valid_registry_authority(value: &str) -> bool {
     let (host, port) = value
         .rsplit_once(':')
         .map_or((value, None), |(host, port)| (host, Some(port)));
-    if port.is_some_and(|port| port.parse::<u16>().map_or(true, |port| port == 0)) {
+    if port.is_some_and(|port| {
+        port.is_empty()
+            || !port.bytes().all(|byte| byte.is_ascii_digit())
+            || port.parse::<u16>().map_or(true, |port| port == 0)
+    }) {
         return false;
     }
     let lowered = host.to_ascii_lowercase();

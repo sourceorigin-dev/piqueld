@@ -55,6 +55,8 @@ const CORPUS: &[(&str, Option<&str>)] = &[
     ("app@SHA256:0123456789abcdef0123456789abcdef", None),
     ("app@{sha256}@{sha256}", None),
     ("ghcr.io:0/app", None),
+    ("ghcr.io:+80/app", None),
+    ("localhost:+5000/app", None),
     ("ghcr.io:65536/app", None),
     ("-ghcr.io/app", None),
     ("[::1]:5000/app", None),
