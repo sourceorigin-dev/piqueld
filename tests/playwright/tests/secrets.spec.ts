@@ -7,8 +7,9 @@ const sent = (request: Request, method: string, path: string) =>
 
 /** Stores `api-token` in a new application, readable by `environments`
  * (its production environment's ID when omitted), and opens the
- * application's Secrets tab: the production environment's ID `env`, the
- * secret's API `path`, the `store` card and the secret's `row` in it. */
+ * application's Secrets tab: the application's ID `app`, the production
+ * environment's ID `env`, the secret's API `path`, the `store` card and the
+ * secret's `row` in it. */
 async function storedSecret(page: Page, environments?: string) {
   const { app, env } = await apply(page, webManifest('vault'));
   const path = `applications/${app}/secrets/api-token`;
@@ -16,8 +17,25 @@ async function storedSecret(page: Page, environments?: string) {
   await page.goto(`/dashboard/applications/${app}`);
   await applicationTab(page, 'Secrets').click();
   const store = card(page, 'Secret store');
-  return { env, path, store, row: store.getByRole('row').filter({ hasText: 'api-token' }) };
+  return { app, env, path, store, row: store.getByRole('row').filter({ hasText: 'api-token' }) };
 }
+
+test('a row\'s confirmation stays open while its list re-renders', async ({ page, account }) => {
+  void account;
+  await page.clock.install();
+  const { app, store, row } = await storedSecret(page);
+  const { generation } = await call(page, 'GET', `applications/${app}`);
+  await row.getByRole('button', { name: 'Delete', exact: true }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Delete secret', exact: true });
+  await expect(dialog).toBeVisible();
+  // The next dashboard refresh lists the new environment, re-rendering the rows.
+  await call(page, 'POST', `applications/${app}/environments`, { name: 'staging', expected_generation: generation });
+  await page.clock.runFor(16_000);
+  await expect(store.locator('label', { hasText: 'staging' })).toHaveCount(1);
+  await expect(dialog).toBeVisible();
+  await confirmDialog(page, 'Delete secret');
+  await expect(row).toHaveCount(0);
+});
 
 test('replacing a stored value keeps an access list changed elsewhere, and access saves on its own', async ({ page, account }) => {
   void account;

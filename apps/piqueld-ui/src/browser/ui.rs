@@ -724,9 +724,6 @@ pub(super) struct Confirmation {
     action: RwSignal<&'static str>,
     message: RwSignal<String>,
     then: StoredValue<Option<Box<dyn FnOnce()>>, LocalStorage>,
-    /// Counts questions, so cleaning up the owner of an earlier one leaves
-    /// a newer one open.
-    asked: StoredValue<u64>,
 }
 
 impl Confirmation {
@@ -738,20 +735,16 @@ impl Confirmation {
             action: RwSignal::new(""),
             message: RwSignal::new(String::new()),
             then: StoredValue::new_local(None),
-            asked: StoredValue::new(0),
         });
     }
 
     /// Opens the dialog asking whether to `action`. `then` runs in the
-    /// asking owner, so it reads the same context. Once that owner is
-    /// cleaned up, such as when its page unmounts, the question is dropped.
+    /// asking owner, so it reads the same context, even if a re-render
+    /// cleaned that owner up meanwhile: cleanup keeps an owner's parents
+    /// and their context. [`ConfirmationDialog`] drops the question when
+    /// the route changes.
     fn ask(self, action: &'static str, message: String, then: impl FnOnce() + 'static) {
-        self.asked.update_value(|asked| *asked += 1);
-        let ticket = self.asked.get_value();
         let owner = Owner::current();
-        if let Some(owner) = &owner {
-            owner.with(|| on_cleanup(move || self.cancel_if(ticket)));
-        }
         self.action.set(action);
         self.message.set(message);
         self.then.set_value(Some(Box::new(move || match owner {
@@ -767,13 +760,6 @@ impl Confirmation {
         self.then.set_value(None);
     }
 
-    /// [`Self::cancel`], unless a question newer than `ticket` was asked.
-    fn cancel_if(self, ticket: u64) {
-        if self.asked.try_get_value() == Some(ticket) {
-            self.cancel();
-        }
-    }
-
     /// Closes the dialog and runs the pending action.
     fn accept(self) {
         self.opened.set(false);
@@ -785,8 +771,7 @@ impl Confirmation {
 
 /// Asks the user, in the [`ConfirmationDialog`], whether to `action`, such
 /// as "Delete preview", explaining what happens in `message`. Runs `then`
-/// once they confirm, and nothing when they cancel or the asking page goes
-/// away.
+/// once they confirm, and nothing when they cancel or the route changes.
 pub(super) fn confirm(
     action: &'static str,
     message: impl Into<String>,
@@ -810,12 +795,21 @@ pub(super) fn confirm_if(
 }
 
 /// The dashboard's one confirmation dialog, which [`confirm`] opens. Mount
-/// it once, under [`Confirmation::provide`]. Its confirm button is never
-/// focused first, so Enter alone doesn't confirm.
+/// it once, inside the router and under [`Confirmation::provide`]: a
+/// question is dropped when the path changes, as its page is gone. Its
+/// confirm button is never focused first, so Enter alone doesn't confirm.
 #[component]
 pub(super) fn ConfirmationDialog() -> impl IntoView {
     const MESSAGE: &str = "confirmation-message";
     let confirmation = expect_context::<Confirmation>();
+    let path = leptos_router::hooks::use_location().pathname;
+    Effect::new(move |previous: Option<String>| {
+        let path = path.get();
+        if previous.is_some_and(|previous| previous != path) {
+            confirmation.cancel();
+        }
+        path
+    });
     view! {
         <Modal
             title={confirmation.action}

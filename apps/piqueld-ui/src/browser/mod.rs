@@ -384,8 +384,8 @@ fn App() -> impl IntoView {
     management::HistoryGuard::install();
     ui::Confirmation::provide();
     view! {
-        <ui::ConfirmationDialog />
         <Router>
+            <ui::ConfirmationDialog />
             <Routes fallback={|| view! { <NotFoundPage /> }}>
                 <Route path={path!("/dashboard/auth")} view={auth::AuthPage} />
                 <ParentRoute path={path!("/dashboard")} view={auth::ProtectedDashboardLayout}>
