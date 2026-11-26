@@ -22,7 +22,7 @@ include = ["/build.rs", "/build", "/dashboard", "/src", "/LICENSE"]
 # rust-toolchain.toml) must be installed. The published crate embeds the
 # prebuilt bundle it ships instead, without the feature.
 [features]
-embedded-ui = ["dep:wasm-bindgen-cli-support"]
+embedded-ui = ["dep:hex", "dep:sha2", "dep:wasm-bindgen-cli-support"]
 # The in-memory Docker engine (`piqueld_docker::fake`) of the integration
 # tests and the browser fixture, and `Store::open_unsynced` for their
 # throwaway stores. It only adds API: the daemon's store syncs regardless.
@@ -108,10 +108,10 @@ progenitor.workspace = true
 syn.workspace = true
 
 [build-dependencies]
-# Only the dashboard's nested build uses it.
-hex.workspace = true
+# Only the dashboard's nested build uses these, behind `embedded-ui`.
+hex = { workspace = true, optional = true }
 piqueld-build.workspace = true
-sha2.workspace = true
+sha2 = { workspace = true, optional = true }
 wasm-bindgen-cli-support = { workspace = true, optional = true }
 
 [lints]
