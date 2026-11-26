@@ -20,8 +20,8 @@ fn manifest() -> serde_json::Value {
 fn git_sources_validate_paths_and_explicit_build_backend() {
     let valid = manifest();
     let parsed = parse_json(&valid.to_string())
-        .unwrap()
-        .normalize(ApplicationId::parse("example-id").unwrap());
+        .expect("the json parses")
+        .normalize(ApplicationId::parse("example-id").expect("the application id is valid"));
     let Source::Git {
         build: Build::Docker { context, .. },
         ..
@@ -65,21 +65,23 @@ fn git_sources_validate_paths_and_explicit_build_backend() {
 #[test]
 fn git_resolution_retains_commit_and_local_image_and_rejects_mismatched_inputs() {
     let app = parse_json(&manifest().to_string())
-        .unwrap()
-        .normalize(ApplicationId::parse("example-id").unwrap());
+        .expect("the json parses")
+        .normalize(ApplicationId::parse("example-id").expect("the application id is valid"));
     let mut resolutions = ResolutionSet::default();
-    let image_id = Sha256Digest::parse(format!("sha256:{}", "a".repeat(64))).unwrap();
+    let image_id = Sha256Digest::parse(format!("sha256:{}", "a".repeat(64)))
+        .expect("the sha256 digest is valid");
     resolutions.sources.insert(
-        piqueld_core::ServiceName::parse("web").unwrap(),
+        piqueld_core::ServiceName::parse("web").expect("the service name is valid"),
         ResolvedSource::Git {
             requested: app.spec().services[0].source.clone(),
             commit: "b".repeat(40),
             image_id: image_id.clone().into(),
         },
     );
-    let instance = InstanceId::parse("test").unwrap();
-    let environment = EnvironmentId::parse("example-id").unwrap();
-    let resolved = compile_application(&app, &environment, instance.clone(), &resolutions).unwrap();
+    let instance = InstanceId::parse("test").expect("the instance id is valid");
+    let environment = EnvironmentId::parse("example-id").expect("the environment id is valid");
+    let resolved = compile_application(&app, &environment, instance.clone(), &resolutions)
+        .expect("the application compiles");
     assert_eq!(resolved.services[0].image.as_str(), image_id.as_str());
     assert_eq!(resolved.reusable_resolutions(&app), resolutions);
     let mut changed = app.to_manifest();
@@ -91,7 +93,10 @@ fn git_resolution_retains_commit_and_local_image_and_rejects_mismatched_inputs()
         panic!("the service builds from Git")
     };
     repository.commit = Some("c".repeat(40));
-    let changed = changed.validate().unwrap().normalize(app.id().clone());
+    let changed = changed
+        .validate()
+        .expect("the manifest validates")
+        .normalize(app.id().clone());
     compile_application(&changed, &environment, instance, &resolutions)
         .expect_err("`compile_application` should be rejected");
     assert!(resolved.reusable_resolutions(&changed).sources.is_empty());
@@ -101,17 +106,22 @@ fn git_resolution_retains_commit_and_local_image_and_rejects_mismatched_inputs()
 fn self_sources_build_from_the_manifest_revision() {
     let mut valid = manifest();
     valid["spec"]["services"][0]["source"]["repository"] = "self".into();
-    let error = parse_json(&valid.to_string()).unwrap_err();
+    let error = parse_json(&valid.to_string()).expect_err("the json is rejected");
     assert_eq!(error.0[0].code, "manifest_repository_required");
     valid["spec"]["manifest"] = serde_json::json!({
         "path": "app.json",
         "repository": {"url": "https://example.com/app.git", "branch": "main"},
     });
     let app = parse_json(&valid.to_string())
-        .unwrap()
-        .normalize(ApplicationId::parse("example-id").unwrap());
+        .expect("the json parses")
+        .normalize(ApplicationId::parse("example-id").expect("the application id is valid"));
     let manifest_repository = |app: &piqueld_core::NormalizedApplication| {
-        app.spec().manifest.as_ref().unwrap().repository.clone()
+        app.spec()
+            .manifest
+            .as_ref()
+            .expect("the value is present")
+            .repository
+            .clone()
     };
     let service_repository = |app: &piqueld_core::NormalizedApplication| {
         let Source::Git { repository, .. } = &app.spec().services[0].source else {
@@ -134,8 +144,11 @@ fn self_sources_build_from_the_manifest_revision() {
     let mut disconnected = app.to_manifest();
     ApplicationEdit::Repository(None)
         .apply(&mut disconnected)
-        .unwrap();
-    let disconnected = disconnected.validate().unwrap().normalize(app.id().clone());
+        .expect("the change applies");
+    let disconnected = disconnected
+        .validate()
+        .expect("the manifest validates")
+        .normalize(app.id().clone());
     assert_eq!(
         service_repository(&disconnected),
         SourceRepository::Git(manifest_repository(&app))
@@ -149,8 +162,8 @@ fn docker_build_arguments_and_target_validate_and_are_part_of_source_identity() 
         serde_json::json!({"VITE_AUTH_ORIGIN": "https://auth.example.com"});
     valid["spec"]["services"][0]["source"]["build"]["target"] = "runtime".into();
     let app = parse_json(&valid.to_string())
-        .unwrap()
-        .normalize(ApplicationId::parse("example-id").unwrap());
+        .expect("the json parses")
+        .normalize(ApplicationId::parse("example-id").expect("the application id is valid"));
     for (field, value, code) in [
         (
             "args",
@@ -174,7 +187,7 @@ fn docker_build_arguments_and_target_validate_and_are_part_of_source_identity() 
     ] {
         let mut invalid = valid.clone();
         invalid["spec"]["services"][0]["source"]["build"][field] = value.clone();
-        let errors = parse_json(&invalid.to_string()).unwrap_err();
+        let errors = parse_json(&invalid.to_string()).expect_err("the json is rejected");
         assert!(
             errors.0.iter().any(|error| error.code == code),
             "{field}: {value}"
@@ -183,35 +196,35 @@ fn docker_build_arguments_and_target_validate_and_are_part_of_source_identity() 
 
     let resolutions = ResolutionSet {
         sources: [(
-            piqueld_core::ServiceName::parse("web").unwrap(),
+            piqueld_core::ServiceName::parse("web").expect("the service name is valid"),
             ResolvedSource::Git {
                 requested: app.spec().services[0].source.clone(),
                 commit: "b".repeat(40),
                 image_id: Sha256Digest::parse(format!("sha256:{}", "a".repeat(64)))
-                    .unwrap()
+                    .expect("the sha256 digest is valid")
                     .into(),
             },
         )]
         .into(),
         ..ResolutionSet::default()
     };
-    let environment = EnvironmentId::parse("example-id").unwrap();
+    let environment = EnvironmentId::parse("example-id").expect("the environment id is valid");
     let resolved = compile_application(
         &app,
         &environment,
-        InstanceId::parse("test").unwrap(),
+        InstanceId::parse("test").expect("the instance id is valid"),
         &resolutions,
     )
-    .unwrap();
+    .expect("the application compiles");
     assert_eq!(resolved.reusable_resolutions(&app), resolutions);
     for field in ["args", "target"] {
         let mut changed = valid.clone();
         changed["spec"]["services"][0]["source"]["build"]
             .as_object_mut()
-            .unwrap()
+            .expect("the value is an object")
             .remove(field);
         let changed = parse_json(&changed.to_string())
-            .unwrap()
+            .expect("the json parses")
             .normalize(app.id().clone());
         assert!(
             resolved.reusable_resolutions(&changed).sources.is_empty(),

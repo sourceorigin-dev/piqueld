@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn names_are_bounded_safe_stable_and_distinct() {
-        let id = EnvironmentId::parse("01jz8r7b4w-test").unwrap();
+        let id = EnvironmentId::parse("01jz8r7b4w-test").expect("the environment id is valid");
         let a = docker_resource_name(&id, ResourceKind::Service, Some(&"a".repeat(100)));
         let b = docker_resource_name(
             &id,
@@ -171,7 +171,8 @@ mod tests {
 
     #[test]
     fn readable_prefix_matches_names_with_a_trailing_hyphen_at_the_limit() {
-        let id = EnvironmentId::parse(format!("{}-a", "a".repeat(41))).unwrap();
+        let id = EnvironmentId::parse(format!("{}-a", "a".repeat(41)))
+            .expect("the environment id is valid");
         let name = docker_resource_name(&id, ResourceKind::Network, None);
         assert!(name.starts_with(&docker_resource_readable_prefix(&id)));
     }
@@ -179,7 +180,7 @@ mod tests {
     #[test]
     fn parsing_and_deserialization_preserve_the_id_invariant() {
         assert_eq!(
-            EnvironmentId::parse("UPPERCASE").unwrap_err(),
+            EnvironmentId::parse("UPPERCASE").expect_err("the environment id is rejected"),
             EnvironmentIdError
         );
         serde_json::from_str::<EnvironmentId>(r#""01jz8r7b4w-test""#)

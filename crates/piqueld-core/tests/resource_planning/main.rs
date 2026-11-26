@@ -1,4 +1,8 @@
 //! Focused resolution and supported-runtime planning coverage.
+#![expect(
+    clippy::expect_used,
+    reason = "Test helpers expect on fixtures that are valid by construction."
+)]
 
 use std::collections::BTreeMap;
 
@@ -20,31 +24,31 @@ mod resolution;
 
 fn application() -> piqueld_core::NormalizedApplication {
     parse_toml(include_str!("../fixtures/manifests/prebuilt.toml"))
-        .unwrap()
-        .normalize(ApplicationId::parse("app-notes-01").unwrap())
+        .expect("the toml parses")
+        .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"))
 }
 
 fn environment() -> EnvironmentId {
-    EnvironmentId::parse("app-notes-01").unwrap()
+    EnvironmentId::parse("app-notes-01").expect("the environment id is valid")
 }
 
 fn instance() -> InstanceId {
-    InstanceId::parse("instance-test").unwrap()
+    InstanceId::parse("instance-test").expect("the instance id is valid")
 }
 
 fn resolutions() -> ResolutionSet {
     ResolutionSet {
         secret_names: BTreeMap::new(),
         sources: [(
-            piqueld_core::ServiceName::parse("web").unwrap(),
+            piqueld_core::ServiceName::parse("web").expect("the service name is valid"),
             ResolvedSource::Image {
                 requested: piqueld_core::ImageReference::parse("ghcr.io/example/notes:1.4.0")
-                    .unwrap(),
+                    .expect("the image reference is valid"),
                 digest_reference: piqueld_core::RepositoryDigest::parse(format!(
                     "ghcr.io/example/notes@sha256:{}",
                     "a".repeat(64)
                 ))
-                .unwrap(),
+                .expect("the repository digest is valid"),
             },
         )]
         .into_iter()
@@ -138,7 +142,11 @@ fn reconcile_plan(desired: &ResolvedApplication, observed: &ObservedApplication)
 
 /// Resolves every service of `app` to the fixture image.
 fn resolve_all(app: &piqueld_core::NormalizedApplication) -> ResolvedApplication {
-    let source = resolutions().sources.into_values().next().unwrap();
+    let source = resolutions()
+        .sources
+        .into_values()
+        .next()
+        .expect("the next item exists");
     let resolutions = ResolutionSet {
         secret_names: BTreeMap::new(),
         sources: app
@@ -148,5 +156,6 @@ fn resolve_all(app: &piqueld_core::NormalizedApplication) -> ResolvedApplication
             .map(|service| (service.name.clone(), source.clone()))
             .collect(),
     };
-    compile_application(app, &environment(), instance(), &resolutions).unwrap()
+    compile_application(app, &environment(), instance(), &resolutions)
+        .expect("the application compiles")
 }

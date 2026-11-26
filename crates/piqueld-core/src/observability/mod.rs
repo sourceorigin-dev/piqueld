@@ -449,14 +449,17 @@ mod tests {
         for (schema, values) in [
             (
                 DeliveryState::schema(),
-                serde_json::to_value(DeliveryState::ALL).unwrap(),
+                serde_json::to_value(DeliveryState::ALL).expect("the value serializes"),
             ),
             (
                 NotificationCategory::schema(),
-                serde_json::to_value(NotificationCategory::ALL).unwrap(),
+                serde_json::to_value(NotificationCategory::ALL).expect("the value serializes"),
             ),
         ] {
-            assert_eq!(serde_json::to_value(schema).unwrap()["enum"], values);
+            assert_eq!(
+                serde_json::to_value(schema).expect("the value serializes")["enum"],
+                values
+            );
         }
     }
 }

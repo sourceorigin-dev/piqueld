@@ -19,12 +19,23 @@ fn hostnames_render_per_environment_before_deployment() {
 #[test]
 fn literal_rendering_conversion_hash_and_exports_match_the_domain_model() {
     for manifest in [base(), complete()] {
-        let validated = manifest.clone().validate_template().unwrap();
+        let validated = manifest
+            .clone()
+            .validate_template()
+            .expect("the template validates");
         assert_eq!(validated.name().as_str(), "notes");
         assert_eq!(validated.spec(), &manifest.spec);
-        let normalized = manifest.clone().validate().unwrap().normalize(id());
+        let normalized = manifest
+            .clone()
+            .validate()
+            .expect("the manifest validates")
+            .normalize(id());
         assert_eq!(
-            validated.clone().into_literal().unwrap().normalize(id()),
+            validated
+                .clone()
+                .into_literal()
+                .expect("the template is literal")
+                .normalize(id()),
             normalized
         );
         let template = validated.normalize(id());
@@ -32,25 +43,40 @@ fn literal_rendering_conversion_hash_and_exports_match_the_domain_model() {
         assert_eq!(template.metadata(), normalized.metadata());
         assert_eq!(template.spec(), &manifest.spec);
         assert_eq!(ApplicationTemplate::from(&normalized), template);
-        let canonical = normalized.canonical_json().unwrap();
-        assert_eq!(template.canonical_json().unwrap(), canonical);
-        assert_eq!(serde_json::to_string(&template).unwrap(), canonical);
+        let canonical = normalized.canonical_json().expect("the json canonicalizes");
         assert_eq!(
-            serde_json::from_str::<ApplicationTemplate>(&canonical).unwrap(),
+            template.canonical_json().expect("the json canonicalizes"),
+            canonical
+        );
+        assert_eq!(
+            serde_json::to_string(&template).expect("the value serializes"),
+            canonical
+        );
+        assert_eq!(
+            serde_json::from_str::<ApplicationTemplate>(&canonical)
+                .expect("the application template deserializes"),
             template
         );
         assert_eq!(template.spec_hash(), normalized.spec_hash());
-        assert_eq!(template.render(&saved()).unwrap().application, normalized);
         assert_eq!(
-            parse_toml(&template.export_toml().unwrap())
-                .unwrap()
+            template
+                .render(&saved())
+                .expect("the template renders")
+                .application,
+            normalized
+        );
+        assert_eq!(
+            parse_toml(&template.export_toml().expect("the manifest exports"))
+                .expect("the toml parses")
                 .normalize(id()),
             normalized
         );
         assert_eq!(
-            parse_template_json(&serde_json::to_string(&template.to_manifest()).unwrap())
-                .unwrap()
-                .normalize(id()),
+            parse_template_json(
+                &serde_json::to_string(&template.to_manifest()).expect("the value serializes")
+            )
+            .expect("the template json parses")
+            .normalize(id()),
             template
         );
     }
@@ -90,7 +116,7 @@ fn normalization_orders_unordered_collections_but_preserves_process_order() {
         {"name":"z", "generate":{"type":"random", "bytes":32, "encoding":"hex"}},
         {"name":"a", "generate":{"type":"random", "bytes":32, "encoding":"hex"}}
     ]))
-    .unwrap();
+    .expect("the input deserializes");
     let first = normalize(manifest.clone());
     manifest.spec.services.reverse();
     manifest.spec.routes.reverse();
@@ -104,13 +130,17 @@ fn normalization_orders_unordered_collections_but_preserves_process_order() {
     let second = normalize(manifest.clone());
     assert_eq!(first, second);
     assert_eq!(
-        first.canonical_json().unwrap(),
-        second.canonical_json().unwrap()
+        first.canonical_json().expect("the json canonicalizes"),
+        second.canonical_json().expect("the json canonicalizes")
     );
     assert_eq!(first.spec_hash(), second.spec_hash());
     assert_eq!(
         first.spec_hash(),
-        manifest.validate().unwrap().normalize(id()).spec_hash()
+        manifest
+            .validate()
+            .expect("the manifest validates")
+            .normalize(id())
+            .spec_hash()
     );
     assert_eq!(
         first.spec().services[0].command,
@@ -122,14 +152,16 @@ fn normalization_orders_unordered_collections_but_preserves_process_order() {
 
 #[test]
 fn into_literal_reports_each_unresolved_slot_in_path_order() {
-    let wire = serde_json::to_value(complete()).unwrap();
+    let wire = serde_json::to_value(complete()).expect("the value serializes");
     let mut input = wire.clone();
     input["spec"]["variables"] = json!({"value":"unused"});
     for &(pointer, _) in FIELDS {
-        *input.pointer_mut(pointer).unwrap() = json!("${{vars.value}}");
+        *input.pointer_mut(pointer).expect("the pointer exists") = json!("${{vars.value}}");
     }
-    let validated = parse_template_json(&input.to_string()).unwrap();
-    let errors = validated.into_literal().unwrap_err();
+    let validated = parse_template_json(&input.to_string()).expect("the template json parses");
+    let errors = validated
+        .into_literal()
+        .expect_err("the template is not literal");
     let mut expected: Vec<_> = FIELDS
         .iter()
         .map(|&(_, path)| (ApiErrorCode::VariableUnresolved, path))
@@ -147,29 +179,44 @@ fn into_literal_reports_each_unresolved_slot_in_path_order() {
 #[test]
 fn template_export_round_trips_overrides_escapes_and_identity() {
     let original = template(VARIABLES);
-    let id = ApplicationId::parse("app-renamed-02").unwrap();
-    let name = ApplicationName::parse("renamed").unwrap();
+    let id = ApplicationId::parse("app-renamed-02").expect("the application id is valid");
+    let name = ApplicationName::parse("renamed").expect("the application name is valid");
     let changed = original.clone().with_id(id.clone()).with_name(name.clone());
     assert_eq!(changed.id(), &id);
     assert_eq!(&changed.metadata().name, &name);
     assert_eq!(changed.spec(), original.spec());
     assert_eq!(changed.spec_hash(), original.spec_hash());
     assert_ne!(
-        changed.canonical_json().unwrap(),
-        original.canonical_json().unwrap()
+        changed.canonical_json().expect("the json canonicalizes"),
+        original.canonical_json().expect("the json canonicalizes")
     );
     assert_eq!(changed.to_manifest().metadata.name, "renamed");
-    assert!(changed.configures(&EnvironmentName::parse("production").unwrap()));
-    assert!(changed.configures(&EnvironmentName::parse("staging").unwrap()));
-    assert!(!changed.configures(&EnvironmentName::parse("other").unwrap()));
-    let exported = changed.export_toml().unwrap();
+    assert!(
+        changed.configures(
+            &EnvironmentName::parse("production").expect("the environment name is valid")
+        )
+    );
+    assert!(
+        changed
+            .configures(&EnvironmentName::parse("staging").expect("the environment name is valid"))
+    );
+    assert!(
+        !changed
+            .configures(&EnvironmentName::parse("other").expect("the environment name is valid"))
+    );
+    let exported = changed.export_toml().expect("the manifest exports");
     assert!(exported.contains("$${{ vars.tag }}"));
     assert_eq!(
-        parse_template_toml(&exported).unwrap().normalize(id),
+        parse_template_toml(&exported)
+            .expect("the template toml parses")
+            .normalize(id),
         changed
     );
     assert_eq!(
-        serde_json::from_str::<ApplicationTemplate>(&changed.canonical_json().unwrap()).unwrap(),
+        serde_json::from_str::<ApplicationTemplate>(
+            &changed.canonical_json().expect("the json canonicalizes")
+        )
+        .expect("the application template deserializes"),
         changed
     );
     let mut edited = changed.to_manifest();
@@ -179,7 +226,9 @@ fn template_export_round_trips_overrides_escapes_and_identity() {
         .insert("tag".into(), Variable::String("next".into()));
     assert_ne!(normalize(edited).spec_hash(), changed.spec_hash());
     assert_eq!(
-        render(&changed, "production").unwrap().values["app.name"],
+        render(&changed, "production")
+            .expect("the template renders")
+            .values["app.name"],
         VariableValue::String("renamed".into())
     );
 }
@@ -193,16 +242,27 @@ fn revision_overrides_validate_and_do_not_change_the_spec_hash() {
     let pinned = template
         .clone()
         .with_manifest_revision(&ManifestRevision::Commit(sha.clone()))
-        .unwrap();
+        .expect("the manifest revision applies");
     assert_eq!(
-        pinned.spec().manifest.as_ref().unwrap().repository.commit,
+        pinned
+            .spec()
+            .manifest
+            .as_ref()
+            .expect("the value is present")
+            .repository
+            .commit,
         Some(sha)
     );
     let branched = pinned
         .clone()
         .with_manifest_revision(&ManifestRevision::Branch("release".into()))
-        .unwrap();
-    let repository = &branched.spec().manifest.as_ref().unwrap().repository;
+        .expect("the manifest revision applies");
+    let repository = &branched
+        .spec()
+        .manifest
+        .as_ref()
+        .expect("the value is present")
+        .repository;
     assert_eq!(repository.branch, "release");
     assert_eq!(repository.commit, None);
     assert_eq!(pinned.spec_hash(), template.spec_hash());
@@ -215,7 +275,7 @@ fn revision_overrides_validate_and_do_not_change_the_spec_hash() {
         let errors = template
             .clone()
             .with_manifest_revision(&revision)
-            .unwrap_err();
+            .expect_err("the revision is rejected");
         assert!(
             errors
                 .0
@@ -226,7 +286,7 @@ fn revision_overrides_validate_and_do_not_change_the_spec_hash() {
     }
     let errors = normalize(base())
         .with_manifest_revision(&ManifestRevision::Branch("main".into()))
-        .unwrap_err();
+        .expect_err("the revision is rejected");
     assert_eq!(
         codes_and_paths(&errors),
         [(
@@ -239,11 +299,18 @@ fn revision_overrides_validate_and_do_not_change_the_spec_hash() {
 #[test]
 fn deserialization_revalidates_and_normalizes_saved_templates() {
     let template = normalize(complete());
-    let mut wire = serde_json::to_value(&template).unwrap();
-    wire["spec"]["services"].as_array_mut().unwrap().reverse();
-    wire["spec"]["routes"].as_array_mut().unwrap().reverse();
+    let mut wire = serde_json::to_value(&template).expect("the value serializes");
+    wire["spec"]["services"]
+        .as_array_mut()
+        .expect("the value is an array")
+        .reverse();
+    wire["spec"]["routes"]
+        .as_array_mut()
+        .expect("the value is an array")
+        .reverse();
     assert_eq!(
-        serde_json::from_value::<ApplicationTemplate>(wire.clone()).unwrap(),
+        serde_json::from_value::<ApplicationTemplate>(wire.clone())
+            .expect("the application template deserializes"),
         template
     );
     for (pointer, value, diagnostic) in [
@@ -275,16 +342,16 @@ fn deserialization_revalidates_and_normalizes_saved_templates() {
         ),
     ] {
         let mut invalid = wire.clone();
-        *invalid.pointer_mut(pointer).unwrap() = value;
+        *invalid.pointer_mut(pointer).expect("the pointer exists") = value;
         let error = serde_json::from_value::<ApplicationTemplate>(invalid)
-            .unwrap_err()
+            .expect_err("the application template is rejected")
             .to_string();
         assert!(error.contains(diagnostic), "{pointer}: {error}");
     }
     wire["unexpected"] = json!(true);
     assert!(
         serde_json::from_value::<ApplicationTemplate>(wire)
-            .unwrap_err()
+            .expect_err("the application template is rejected")
             .to_string()
             .contains("unknown field")
     );
@@ -358,7 +425,7 @@ fn renders_like_compares_names_read_with_deployment_values() {
         let target = environment("production");
         let renamed = template
             .clone()
-            .with_name(ApplicationName::parse("renamed").unwrap());
+            .with_name(ApplicationName::parse("renamed").expect("the application name is valid"));
         template.renders_like(&target, &renamed, &target)
     };
     assert!(renamed("${{ deployment.id }}-${{ git.sha }}.example.com"));
@@ -396,9 +463,9 @@ fn into_literal_preserves_text_escapes_and_rejects_unresolved_typed_escapes() {
     let literal = manifest
         .clone()
         .validate_template()
-        .unwrap()
+        .expect("the template validates")
         .into_literal()
-        .unwrap();
+        .expect("the template is literal");
     assert_eq!(
         literal.spec().services[0].environment["VALUE"],
         "${{vars.literal}}"
@@ -409,13 +476,19 @@ fn into_literal_preserves_text_escapes_and_rejects_unresolved_typed_escapes() {
         converted.spec().services[0].environment["VALUE"],
         "$${{vars.literal}}"
     );
-    assert_eq!(converted.render(&saved()).unwrap().application, normalized);
+    assert_eq!(
+        converted
+            .render(&saved())
+            .expect("the template renders")
+            .application,
+        normalized
+    );
     manifest.spec.services[0].replicas = Typed::Template("$${{vars.literal}}".into());
     let errors = manifest
         .validate_template()
-        .unwrap()
+        .expect("the template validates")
         .into_literal()
-        .unwrap_err();
+        .expect_err("the template is not literal");
     assert_eq!(
         codes_and_paths(&errors),
         [(
@@ -443,7 +516,7 @@ fn route_names_are_validated_unique_and_stable_across_environments() {
         ("staging", "staging.piquel.fr"),
         ("production", "piquel.fr"),
     ] {
-        let rendering = render(&template, environment).unwrap();
+        let rendering = render(&template, environment).expect("the template renders");
         let route = rendering
             .application
             .spec()
@@ -455,7 +528,7 @@ fn route_names_are_validated_unique_and_stable_across_environments() {
                     .as_ref()
                     .is_some_and(|name| name.as_str() == "web")
             })
-            .unwrap();
+            .expect("the item is found");
         assert_eq!(route.hostname.as_str(), hostname);
     }
 
@@ -480,7 +553,8 @@ fn route_names_are_validated_unique_and_stable_across_environments() {
             "spec.routes[1].name",
         ),
     ] {
-        let errors = parse_template_toml(&manifest(&format!("{VARIABLES}\n{routes}"))).unwrap_err();
+        let errors = parse_template_toml(&manifest(&format!("{VARIABLES}\n{routes}")))
+            .expect_err("the manifest is rejected");
         assert_eq!(codes_and_paths(&errors), [(code, path)], "{routes}");
     }
 }

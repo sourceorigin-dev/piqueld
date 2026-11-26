@@ -117,7 +117,13 @@ mod tests {
     #[test]
     fn users_are_numeric_ids() {
         for valid in ["0", "1000", "1000:1000", "65534:0", "2147483647:2147483647"] {
-            assert_eq!(valid.parse::<ContainerUser>().unwrap().to_string(), valid);
+            assert_eq!(
+                valid
+                    .parse::<ContainerUser>()
+                    .expect("the container user parses")
+                    .to_string(),
+                valid
+            );
         }
         for invalid in [
             "",

@@ -2,7 +2,11 @@ use super::*;
 
 #[test]
 fn references_allow_whitespace_and_escapes_while_shell_syntax_stays_text() {
-    let segments = |text: &str| Template::from(text).segments().unwrap();
+    let segments = |text: &str| {
+        Template::from(text)
+            .segments()
+            .expect("the template segments")
+    };
     let domain = Segment::Reference(Reference::Variable("domain".into()));
     assert_eq!(segments("${{vars.domain}}"), std::slice::from_ref(&domain));
     assert_eq!(
@@ -36,7 +40,10 @@ fn references_allow_whitespace_and_escapes_while_shell_syntax_stays_text() {
         ("${{ env.region }}", ApiErrorCode::VariableUnknown),
     ] {
         assert_eq!(
-            Template::from(text).segments().unwrap_err().code(),
+            Template::from(text)
+                .segments()
+                .expect_err("the template is rejected")
+                .code(),
             code,
             "{text}"
         );
@@ -81,7 +88,9 @@ fn parser_preserves_dollar_edges_and_adjacent_references() {
         ),
     ] {
         assert_eq!(
-            Template::from(source).segments().unwrap(),
+            Template::from(source)
+                .segments()
+                .expect("the template segments"),
             expected,
             "{source}"
         );
@@ -157,7 +166,12 @@ fn identifiers_and_reference_errors_have_bounded_precise_diagnostics() {
             "unknown system variable `app.x`",
         ),
     ] {
-        assert_eq!(Template::from(source).segments().unwrap_err(), error);
+        assert_eq!(
+            Template::from(source)
+                .segments()
+                .expect_err("the template is rejected"),
+            error
+        );
         assert_eq!(error.to_string(), message);
     }
     let long = "é".repeat(100);
@@ -169,7 +183,7 @@ fn identifiers_and_reference_errors_have_bounded_precise_diagnostics() {
         assert_eq!(
             Template::from(format!("${{{{{inner}}}}}"))
                 .segments()
-                .unwrap_err()
+                .expect_err("the template is rejected")
                 .code(),
             ApiErrorCode::TemplateInvalid
         );
@@ -180,7 +194,7 @@ fn identifiers_and_reference_errors_have_bounded_precise_diagnostics() {
         assert_eq!(
             Template::from(format!("${{{{ {} }}}}", variable.as_str()))
                 .segments()
-                .unwrap(),
+                .expect("the template segments"),
             [Segment::Reference(reference)]
         );
     }
@@ -198,9 +212,12 @@ fn template_wire_and_comparisons_preserve_the_raw_spelling() {
     assert_eq!(template, raw);
     assert!(<Template as PartialEq<str>>::eq(&template, raw));
     assert_ne!(template, "${{vars.a}}");
-    assert_eq!(serde_json::to_value(&template).unwrap(), json!(raw));
     assert_eq!(
-        serde_json::from_value::<Template>(json!(raw)).unwrap(),
+        serde_json::to_value(&template).expect("the value serializes"),
+        json!(raw)
+    );
+    assert_eq!(
+        serde_json::from_value::<Template>(json!(raw)).expect("the template deserializes"),
         template
     );
     serde_json::from_value::<Template>(json!(1))
@@ -222,28 +239,37 @@ fn typed_parsing_and_slots_preserve_types_and_failed_assignments() {
     let mut number = Typed::from(7_u16);
     assert_eq!(number.literal(), Some(&7));
     assert_eq!(number.to_string(), "7");
-    assert_eq!("7".parse::<Typed<u16>>().unwrap(), number);
+    assert_eq!("7".parse::<Typed<u16>>().expect("the typed parses"), number);
     "bad"
         .parse::<Typed<u16>>()
         .expect_err("`parse` should be rejected");
     assert!(Slot::Typed(&mut number).template().is_none());
     for raw in ["${{ vars.n }}", "$${{vars.n}}", "${{"] {
-        let mut typed: Typed<u16> = raw.parse().unwrap();
+        let mut typed: Typed<u16> = raw.parse().expect("the input parses");
         assert_eq!(typed.literal(), None);
         assert_eq!(typed.to_string(), raw);
         assert_eq!(
-            serde_json::from_value::<Typed<u16>>(json!(raw)).unwrap(),
+            serde_json::from_value::<Typed<u16>>(json!(raw)).expect("the typed deserializes"),
             typed
         );
-        assert_eq!(serde_json::to_value(&typed).unwrap(), json!(raw));
-        assert_eq!(Slot::Typed(&mut typed).template().unwrap().as_str(), raw);
+        assert_eq!(
+            serde_json::to_value(&typed).expect("the value serializes"),
+            json!(raw)
+        );
+        assert_eq!(
+            Slot::Typed(&mut typed)
+                .template()
+                .expect("the template is built")
+                .as_str(),
+            raw
+        );
         assert!(typed.set(json!("7")).is_err());
         assert_eq!(typed.to_string(), raw);
-        typed.set(json!(9)).unwrap();
+        typed.set(json!(9)).expect("the value sets");
         assert_eq!(typed.literal(), Some(&9));
     }
     assert_eq!(
-        serde_json::from_value::<Typed<u16>>(json!(7)).unwrap(),
+        serde_json::from_value::<Typed<u16>>(json!(7)).expect("the typed deserializes"),
         number
     );
     for value in [
@@ -259,7 +285,13 @@ fn typed_parsing_and_slots_preserve_types_and_failed_assignments() {
             .expect_err("`serde_json::from_value` should be rejected");
     }
     let mut text = Template::from("hello");
-    assert_eq!(Slot::Text(&mut text).template().unwrap().as_str(), "hello");
+    assert_eq!(
+        Slot::Text(&mut text)
+            .template()
+            .expect("the template is built")
+            .as_str(),
+        "hello"
+    );
 }
 
 #[test]
@@ -269,9 +301,12 @@ fn variable_values_round_trip_native_types_and_interpolate_as_text() {
         (VariableValue::Integer(-42), json!(-42), "-42"),
         (VariableValue::String("42".into()), json!("42"), "42"),
     ] {
-        assert_eq!(serde_json::to_value(&value).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<VariableValue>(wire).unwrap(),
+            serde_json::to_value(&value).expect("the value serializes"),
+            wire
+        );
+        assert_eq!(
+            serde_json::from_value::<VariableValue>(wire).expect("the variable value deserializes"),
             value
         );
         assert_eq!(value.to_string(), display);
@@ -285,14 +320,17 @@ fn variable_values_round_trip_native_types_and_interpolate_as_text() {
 #[test]
 fn typed_template_schema_describes_reference_text() {
     use utoipa::PartialSchema;
-    let schema = serde_json::to_value(Typed::<u16>::schema()).unwrap();
+    let schema = serde_json::to_value(Typed::<u16>::schema()).expect("the value serializes");
     assert!(schema.to_string().contains("TypedTemplate"));
     let mut schemas = Vec::new();
     <Typed<u16> as ToSchema>::schemas(&mut schemas);
     let schema = schemas
         .into_iter()
         .find(|(name, _)| name == "TypedTemplate")
-        .unwrap()
+        .expect("the item is found")
         .1;
-    assert_eq!(serde_json::to_value(schema).unwrap()["pattern"], r"\$\{\{");
+    assert_eq!(
+        serde_json::to_value(schema).expect("the value serializes")["pattern"],
+        r"\$\{\{"
+    );
 }

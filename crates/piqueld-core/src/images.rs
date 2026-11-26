@@ -182,7 +182,7 @@ mod tests {
     fn mutable_references_cannot_be_decoded_as_runtime_images() {
         for value in ["alpine:latest", "ghcr.io/example/app:v1"] {
             ImageReference::parse(value).expect("`ImageReference::parse` should succeed");
-            let wire = serde_json::to_string(value).unwrap();
+            let wire = serde_json::to_string(value).expect("the value serializes");
             serde_json::from_str::<RepositoryDigest>(&wire)
                 .expect_err("`serde_json::from_str` should be rejected");
             serde_json::from_str::<ImmutableImage>(&wire)
@@ -193,17 +193,24 @@ mod tests {
         RepositoryDigest::parse(&repository).expect("`RepositoryDigest::parse` should succeed");
         ImmutableImage::parse(&repository).expect("`ImmutableImage::parse` should succeed");
         for (value, pushed) in [(&digest, false), (&repository, true)] {
-            let image: BuiltImage = serde_json::from_value(value.as_str().into()).unwrap();
+            let image: BuiltImage =
+                serde_json::from_value(value.as_str().into()).expect("the input deserializes");
             assert_eq!(matches!(image, BuiltImage::Pushed(_)), pushed);
-            assert_eq!(image, BuiltImage::parse(value.as_str()).unwrap());
-            assert_eq!(serde_json::to_value(&image).unwrap(), value.as_str());
+            assert_eq!(
+                image,
+                BuiltImage::parse(value.as_str()).expect("the built image is valid")
+            );
+            assert_eq!(
+                serde_json::to_value(&image).expect("the value serializes"),
+                value.as_str()
+            );
         }
         BuiltImage::parse("alpine:latest").expect_err("`BuiltImage::parse` should be rejected");
         ImmutableImage::parse(&digest).expect("`ImmutableImage::parse` should succeed");
         RepositoryDigest::parse(&digest).expect_err("`RepositoryDigest::parse` should be rejected");
         assert_eq!(
             RepositoryDigest::parse(&repository)
-                .unwrap()
+                .expect("the repository digest is valid")
                 .digest()
                 .as_str(),
             digest

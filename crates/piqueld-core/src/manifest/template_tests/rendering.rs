@@ -3,11 +3,11 @@ use super::*;
 #[test]
 fn rendering_selects_each_environments_values_and_never_reevaluates_text() {
     let template = template(VARIABLES);
-    let exported = parse_template_toml(&template.export_toml().unwrap())
-        .unwrap()
+    let exported = parse_template_toml(&template.export_toml().expect("the manifest exports"))
+        .expect("the template toml parses")
         .normalize(template.id().clone());
     assert_eq!(exported, template);
-    let staging = render(&template, "staging").unwrap();
+    let staging = render(&template, "staging").expect("the template renders");
     let service = &staging.application.spec().services[0];
     assert_eq!(service.replicas, 1);
     assert_eq!(
@@ -23,7 +23,7 @@ fn rendering_selects_each_environments_values_and_never_reevaluates_text() {
         VariableValue::String("operation-1".into())
     );
 
-    let production = render(&template, "production").unwrap();
+    let production = render(&template, "production").expect("the template renders");
     assert_eq!(production.application.spec().services[0].replicas, 3);
     assert_eq!(
         production.values["vars.domain"],
@@ -45,11 +45,11 @@ fn rendering_selects_each_environments_values_and_never_reevaluates_text() {
     let rendered = render(
         &manifest
             .validate_template()
-            .unwrap()
+            .expect("the template validates")
             .normalize(template.id().clone()),
         "production",
     )
-    .unwrap();
+    .expect("the template renders");
     assert_eq!(
         rendered.application.spec().services[0].environment["TAG"],
         "${{ vars.domain }}"
@@ -61,19 +61,22 @@ fn whole_references_keep_their_type_and_mixed_text_renders_to_a_string() {
     let typed = |replicas: &str, value: &str| {
         let spec = format!("[spec.variables]\nweb_replicas = {value}\ntag = \"stable\"\n");
         let text = manifest(&spec).replace("\"${{ vars.web_replicas }}\"", replicas);
-        parse_template_toml(&text).unwrap().normalize(id())
+        parse_template_toml(&text)
+            .expect("the template toml parses")
+            .normalize(id())
     };
     let integer = typed("\"${{ vars.web_replicas }}\"", "2");
     assert_eq!(
         render(&integer, "production")
-            .unwrap()
+            .expect("the template renders")
             .application
             .spec()
             .services[0]
             .replicas,
         2
     );
-    let errors = render(&typed("\"${{ vars.web_replicas }}\"", "0"), "production").unwrap_err();
+    let errors = render(&typed("\"${{ vars.web_replicas }}\"", "0"), "production")
+        .expect_err("the render is rejected");
     assert_eq!(
         codes_and_paths(&errors),
         [(
@@ -86,10 +89,12 @@ fn whole_references_keep_their_type_and_mixed_text_renders_to_a_string() {
             "[spec.services.source]",
             "[spec.services.rollout]\norder = \"${{ vars.kind }}-first\"\n[spec.services.source]",
         );
-    let order = parse_template_toml(&order).unwrap().normalize(id());
+    let order = parse_template_toml(&order)
+        .expect("the template toml parses")
+        .normalize(id());
     assert_eq!(
         render(&order, "production")
-            .unwrap()
+            .expect("the template renders")
             .application
             .spec()
             .services[0]
@@ -105,7 +110,7 @@ fn variables_without_a_value_fail_only_the_environment_that_needs_them() {
         "[spec.variables]\nweb_replicas = 1\n[spec.environments.staging.variables]\ntag = \"stable\"\n[spec.environments.production.variables]\ndomain = \"piquel.fr\"\n",
     );
     render(&template, "staging").expect("`render` should succeed");
-    let errors = render(&template, "production").unwrap_err();
+    let errors = render(&template, "production").expect_err("the render is rejected");
     assert_eq!(
         codes_and_paths(&errors),
         [(
@@ -138,8 +143,11 @@ fn rendering_stops_at_its_size_budget() {
     manifest.spec.services[0]
         .environment
         .insert("LARGE".into(), references.as_str().into());
-    let template = manifest.validate_template().unwrap().normalize(id());
-    let errors = render(&template, "production").unwrap_err();
+    let template = manifest
+        .validate_template()
+        .expect("the template validates")
+        .normalize(id());
+    let errors = render(&template, "production").expect_err("the render is rejected");
     assert_eq!(
         codes_and_paths(&errors),
         [(
@@ -152,20 +160,24 @@ fn rendering_stops_at_its_size_budget() {
 #[test]
 fn every_templated_field_renders_from_variables() {
     let literal = complete();
-    let expected = literal.clone().validate().unwrap().normalize(id());
-    let wire = serde_json::to_value(&literal).unwrap();
+    let expected = literal
+        .clone()
+        .validate()
+        .expect("the manifest validates")
+        .normalize(id());
+    let wire = serde_json::to_value(&literal).expect("the value serializes");
     for &(pointer, path) in FIELDS {
         let mut input = wire.clone();
-        let value = input.pointer(pointer).unwrap().clone();
-        *input.pointer_mut(pointer).unwrap() = json!("${{ vars.value }}");
+        let value = input.pointer(pointer).expect("the pointer exists").clone();
+        *input.pointer_mut(pointer).expect("the pointer exists") = json!("${{ vars.value }}");
         input["spec"]["variables"] = json!({"value": value});
-        let template = normalize(serde_json::from_value(input).unwrap());
+        let template = normalize(serde_json::from_value(input).expect("the input deserializes"));
         let before = template.clone();
         let rendering =
             render(&template, "production").unwrap_or_else(|errors| panic!("{path}: {errors}"));
         assert_eq!(rendering.application, expected, "{path}");
         assert_eq!(
-            render(&template, "production").unwrap(),
+            render(&template, "production").expect("the template renders"),
             rendering,
             "{path}"
         );
@@ -187,7 +199,7 @@ fn every_templated_field_renders_from_variables() {
                 .is_empty()
         );
         assert_eq!(
-            serde_json::to_value(&rendering.values["vars.value"]).unwrap(),
+            serde_json::to_value(&rendering.values["vars.value"]).expect("the value serializes"),
             value
         );
     }
@@ -195,14 +207,14 @@ fn every_templated_field_renders_from_variables() {
 
 #[test]
 fn every_templated_field_reports_its_missing_value_path() {
-    let wire = serde_json::to_value(complete()).unwrap();
+    let wire = serde_json::to_value(complete()).expect("the value serializes");
     for &(pointer, path) in FIELDS {
         let mut input = wire.clone();
-        let value = input.pointer(pointer).unwrap().clone();
-        *input.pointer_mut(pointer).unwrap() = json!("${{ vars.value }}");
+        let value = input.pointer(pointer).expect("the pointer exists").clone();
+        *input.pointer_mut(pointer).expect("the pointer exists") = json!("${{ vars.value }}");
         input["spec"]["environments"] = json!({"staging": {"variables": {"value": value}}});
-        let template = normalize(serde_json::from_value(input).unwrap());
-        let errors = render(&template, "production").unwrap_err();
+        let template = normalize(serde_json::from_value(input).expect("the input deserializes"));
+        let errors = render(&template, "production").expect_err("the render is rejected");
         let path = if pointer == "/spec/routes/1/hostname" {
             "spec.routes[0].hostname"
         } else {
@@ -266,6 +278,10 @@ fn visit_values_covers_all_present_slots_and_skips_absent_options() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one table of contexts and expected values"
+)]
 fn contexts_supply_exact_system_values_and_explain_unavailable_ones() {
     let mut manifest = base();
     manifest.spec.manifest = Some(repository());
@@ -279,7 +295,12 @@ fn contexts_supply_exact_system_values_and_explain_unavailable_ones() {
     });
     let preview = RenderContext::preview(environment("production"), spec.manifest.as_ref());
     let mut pinned = spec.clone();
-    pinned.manifest.as_mut().unwrap().repository.commit = Some(pinned_sha.clone());
+    pinned
+        .manifest
+        .as_mut()
+        .expect("it is set")
+        .repository
+        .commit = Some(pinned_sha.clone());
     let pinned_preview =
         RenderContext::preview(environment("production"), pinned.manifest.as_ref());
     assert_eq!(
@@ -318,7 +339,7 @@ fn contexts_supply_exact_system_values_and_explain_unavailable_ones() {
         ]);
         if let Some((branch, sha)) = git {
             assert_eq!(
-                context.git.as_ref().unwrap(),
+                context.git.as_ref().expect("the value is present"),
                 &GitRevision {
                     branch: branch.into(),
                     sha: sha.into()
@@ -331,7 +352,10 @@ fn contexts_supply_exact_system_values_and_explain_unavailable_ones() {
             expected.insert("deployment.id".into(), VariableValue::String(value.into()));
         }
         assert_eq!(
-            normalize(manifest.clone()).render(&context).unwrap().values,
+            normalize(manifest.clone())
+                .render(&context)
+                .expect("it renders")
+                .values,
             expected
         );
         for system in SystemVariable::ALL {
@@ -343,11 +367,11 @@ fn contexts_supply_exact_system_values_and_explain_unavailable_ones() {
             let result = normalize(input).render(&context);
             if let Some(value) = expected.get(system.as_str()) {
                 assert_eq!(
-                    result.unwrap().application.spec().services[0].environment["VALUE"],
+                    result.expect("it renders").application.spec().services[0].environment["VALUE"],
                     value.to_string()
                 );
             } else {
-                let errors = result.unwrap_err();
+                let errors = result.expect_err("the result is rejected");
                 assert_eq!(
                     codes_and_paths(&errors),
                     [(
@@ -397,7 +421,7 @@ fn variable_values_render_system_references_overrides_and_native_interpolation()
         "${{vars.text}}: ${{vars.flag}}/${{vars.number}}/${{vars.changed}}".into(),
     );
     let template = normalize(manifest);
-    let result = render(&template, "production").unwrap();
+    let result = render(&template, "production").expect("the template renders");
     assert_eq!(
         result.application.spec().services[0].environment["VALUES"],
         "notes/production/production/operation-1: true/-12/false"
@@ -410,14 +434,16 @@ fn variable_values_render_system_references_overrides_and_native_interpolation()
     assert_eq!(template.values(&environment("staging"))["only"], None);
     assert_eq!(template.values(&environment("production"))["text"], None);
     assert_eq!(
-        render(&template, "staging").unwrap().values["vars.changed"],
+        render(&template, "staging")
+            .expect("the template renders")
+            .values["vars.changed"],
         VariableValue::Integer(1)
     );
 }
 
 #[test]
 fn typed_fields_reject_wrong_types_ranges_and_mixed_text() {
-    let wire = serde_json::to_value(complete()).unwrap();
+    let wire = serde_json::to_value(complete()).expect("the value serializes");
     for (pointer, path, expression, value) in [
         (
             "/spec/services/0/replicas",
@@ -469,13 +495,13 @@ fn typed_fields_reject_wrong_types_ranges_and_mixed_text() {
         ),
     ] {
         let mut input = wire.clone();
-        *input.pointer_mut(pointer).unwrap() = json!(expression);
+        *input.pointer_mut(pointer).expect("the pointer exists") = json!(expression);
         input["spec"]["variables"] = json!({"n": value});
         let errors = render(
-            &normalize(serde_json::from_value(input).unwrap()),
+            &normalize(serde_json::from_value(input).expect("the input deserializes")),
             "production",
         )
-        .unwrap_err();
+        .expect_err("the render is rejected");
         assert_eq!(
             codes_and_paths(&errors),
             [(ApiErrorCode::VariableTypeInvalid, path)],
@@ -489,12 +515,13 @@ fn typed_fields_reject_wrong_types_ranges_and_mixed_text() {
         input["spec"]["services"][0]["rollout"]["order"] = json!("${{ \t vars.n \n }}");
         input["spec"]["variables"] = json!({"n": order});
         let result = render(
-            &normalize(serde_json::from_value(input).unwrap()),
+            &normalize(serde_json::from_value(input).expect("the input deserializes")),
             "production",
         )
-        .unwrap();
+        .expect("the template renders");
         assert_eq!(
-            serde_json::to_value(result.application.spec().services[0].rollout.order).unwrap(),
+            serde_json::to_value(result.application.spec().services[0].rollout.order)
+                .expect("the value serializes"),
             json!(order)
         );
     }
@@ -519,7 +546,7 @@ fn rendering_collects_sorted_errors_and_only_the_first_missing_value_per_field()
     manifest.spec.services[0]
         .environment
         .insert("VALUE".into(), "${{vars.a}}${{vars.b}}".into());
-    let errors = render(&normalize(manifest), "production").unwrap_err();
+    let errors = render(&normalize(manifest), "production").expect_err("the render is rejected");
     assert_eq!(
         codes_and_paths(&errors),
         [
@@ -638,14 +665,14 @@ service = "web"
 port = 3000
 "#
     ));
-    let exported = parse_template_toml(&template.export_toml().unwrap())
-        .unwrap()
+    let exported = parse_template_toml(&template.export_toml().expect("the manifest exports"))
+        .expect("the template toml parses")
         .normalize(template.id().clone());
     assert_eq!(exported, template);
     assert_eq!(template.spec().previews.visibility, Visibility::Private);
     let visibilities = |environment: &str| {
         render(&template, environment)
-            .unwrap()
+            .expect("the template renders")
             .application
             .spec()
             .routes
@@ -682,7 +709,7 @@ fn secret_mount_names_select_each_environments_secret_and_resolve_once_rendered(
         .spec
         .environments
         .get_mut("production")
-        .unwrap()
+        .expect("the entry exists")
         .variables
         .insert("stripe_key".into(), Variable::String("stripe-prod".into()));
     manifest.spec.services[0].secrets = vec![
@@ -698,14 +725,14 @@ fn secret_mount_names_select_each_environments_secret_and_resolve_once_rendered(
     manifest.spec.secrets = serde_json::from_value(json!([
         {"name":"session", "generate":{"type":"random", "bytes":32}}
     ]))
-    .unwrap();
+    .expect("the input deserializes");
     let template = manifest
         .clone()
         .validate_template()
-        .unwrap()
+        .expect("the template validates")
         .normalize(id());
     for (environment, stripe) in [("staging", "stripe-dev"), ("production", "stripe-prod")] {
-        let rendering = render(&template, environment).unwrap();
+        let rendering = render(&template, environment).expect("the template renders");
         assert_eq!(
             rendering.application.spec().mounted_secrets(),
             [
@@ -731,17 +758,20 @@ fn secret_mount_names_select_each_environments_secret_and_resolve_once_rendered(
         .spec
         .variables
         .insert("stripe_key".into(), Variable::String("Not A Name".into()));
-    let template = manifest.validate_template().unwrap().normalize(id());
+    let template = manifest
+        .validate_template()
+        .expect("the template validates")
+        .normalize(id());
     let path = format!(
         "spec.services[0].secrets[{}].name",
         template.spec().services[0]
             .secrets
             .iter()
             .position(|secret| secret.name.as_str().contains("vars"))
-            .unwrap()
+            .expect("the item is present")
     );
     assert_eq!(
-        codes_and_paths(&render(&template, "staging").unwrap_err()),
+        codes_and_paths(&render(&template, "staging").expect_err("the render is rejected")),
         [(ApiErrorCode::NameInvalid, path.as_str())]
     );
 }
@@ -749,8 +779,8 @@ fn secret_mount_names_select_each_environments_secret_and_resolve_once_rendered(
 /// A preview of `feat/login` of the `notes` application.
 fn preview() -> RenderTarget {
     RenderTarget::Preview(crate::PreviewSlug::derive(
-        &ApplicationName::parse("notes").unwrap(),
-        &crate::GitBranch::parse("feat/login").unwrap(),
+        &ApplicationName::parse("notes").expect("the application name is valid"),
+        &crate::GitBranch::parse("feat/login").expect("the git branch is valid"),
         None,
     ))
 }
@@ -780,7 +810,7 @@ port = 3000
     ));
     let rendering = template
         .render(&RenderContext::deployment(preview(), "operation-1".into()))
-        .unwrap();
+        .expect("the template renders");
     let spec = rendering.application.spec();
     assert_eq!(spec.services[0].replicas, 1);
     assert_eq!(
@@ -804,7 +834,7 @@ port = 3000
         hostnames,
         [format!("{slug}.dev.piquel.fr"), "preview.piquel.fr".into()]
     );
-    let errors = render(&template, "staging").unwrap_err();
+    let errors = render(&template, "staging").expect_err("the render is rejected");
     assert_eq!(
         errors.0[0].message,
         "vars.only has no value for environment staging"
@@ -823,7 +853,7 @@ visibility = "public"
     let visibility = |previews: &str| {
         template(&format!("{VARIABLES}{previews}{routes}"))
             .render(&RenderContext::deployment(preview(), "operation-1".into()))
-            .unwrap()
+            .expect("the template renders")
             .application
             .spec()
             .routes[0]
@@ -835,7 +865,7 @@ visibility = "public"
         Visibility::Public
     );
     let template = template(&format!("{VARIABLES}{routes}"));
-    let rendered = render(&template, "production").unwrap();
+    let rendered = render(&template, "production").expect("the template renders");
     assert_eq!(
         rendered.application.spec().routes[0].visibility,
         Visibility::Public
@@ -847,18 +877,18 @@ visibility = "public"
 #[test]
 fn piqueld_dev_previews_serve_private_hostnames_apart_from_production() {
     let template = parse_template_toml(include_str!("../../../../../deploy/piqueld-dev.toml"))
-        .unwrap()
+        .expect("the template toml parses")
         .normalize(id());
     let preview = RenderTarget::Preview(crate::PreviewSlug::derive(
-        &ApplicationName::parse("piqueld-dev").unwrap(),
-        &crate::GitBranch::parse("feat/landing").unwrap(),
+        &ApplicationName::parse("piqueld-dev").expect("the application name is valid"),
+        &crate::GitBranch::parse("feat/landing").expect("the git branch is valid"),
         None,
     ));
     let routes = |target: RenderTarget| {
         let manifest = template.spec().manifest.as_ref();
         template
             .render(&RenderContext::preview(target, manifest))
-            .unwrap()
+            .expect("the template renders")
             .application
             .spec()
             .routes
@@ -867,7 +897,7 @@ fn piqueld_dev_previews_serve_private_hostnames_apart_from_production() {
             .collect::<Vec<_>>()
     };
     let production = routes(RenderTarget::Environment(
-        EnvironmentName::parse("production").unwrap(),
+        EnvironmentName::parse("production").expect("the environment name is valid"),
     ));
     let slug = preview.name().to_owned();
     assert_eq!(

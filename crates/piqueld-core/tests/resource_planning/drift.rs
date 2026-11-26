@@ -10,7 +10,8 @@ use super::{application, environment, instance, observed, resolutions};
 #[test]
 fn changed_rollout_settings_drift_until_applied() {
     let mut desired =
-        compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
+        compile_application(&application(), &environment(), instance(), &resolutions())
+            .expect("the application compiles");
     let converged = observed(&desired).services.remove(0);
     assert_eq!(converged.drift(&desired.services[0]), [] as [&str; 0]);
 
@@ -34,7 +35,8 @@ fn changed_rollout_settings_drift_until_applied() {
 #[test]
 fn telemetry_mounts_follow_the_grant_onto_the_receiver_only() {
     let mut desired =
-        compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
+        compile_application(&application(), &environment(), instance(), &resolutions())
+            .expect("the application compiles");
     let unmounted = observed(&desired).services.remove(0);
     desired.services[0].receives_telemetry = true;
     let mount = piqueld_core::resource::TelemetryMount {
@@ -59,7 +61,8 @@ fn telemetry_mounts_follow_the_grant_onto_the_receiver_only() {
 #[test]
 fn drift_fields_are_granular_for_command_and_arguments() {
     let app = application();
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let mut drifted = observed(&desired);
     drifted.services[0].command = vec!["sh".into()];
     drifted.services[0].arguments = vec!["-c".into(), "true".into()];
@@ -86,8 +89,8 @@ fn drift_fields_are_granular_for_command_and_arguments() {
 #[test]
 fn unsupported_observed_healthcheck_is_healthcheck_drift() {
     let app = application();
-    let mut desired =
-        compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let mut desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     desired.services[0].healthcheck = None;
     let mut drifted = observed(&desired);
     drifted.services[0].healthcheck_configured = true;
@@ -100,7 +103,8 @@ fn unsupported_observed_healthcheck_is_healthcheck_drift() {
 #[test]
 fn observation_matching_ignores_order_but_not_multiplicity() {
     let app = application();
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
 
     let mut reordered = observed(&desired);
     reordered.services[0].mounts.reverse();
@@ -118,7 +122,8 @@ fn observation_matching_ignores_order_but_not_multiplicity() {
 #[test]
 fn command_and_http_health_checks_have_the_same_runtime_meaning() {
     let mut desired =
-        compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
+        compile_application(&application(), &environment(), instance(), &resolutions())
+            .expect("the application compiles");
     let http = piqueld_core::manifest::ValidatedHealthCheck::Http {
         port: 8080,
         path: "/health".into(),

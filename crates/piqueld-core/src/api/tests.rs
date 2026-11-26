@@ -14,9 +14,9 @@ fn incomplete_characters_wait_for_the_next_read() {
 
 fn environment(id: &str, name: &str) -> EnvironmentView {
     EnvironmentView {
-        id: EnvironmentId::parse(id).unwrap(),
-        application_id: ApplicationId::parse("app-notes-01").unwrap(),
-        name: EnvironmentName::parse(name).unwrap(),
+        id: EnvironmentId::parse(id).expect("the environment id is valid"),
+        application_id: ApplicationId::parse("app-notes-01").expect("the application id is valid"),
+        name: EnvironmentName::parse(name).expect("the environment name is valid"),
         source: EnvironmentSource::Saved,
         kind: crate::EnvironmentKind::Environment,
         sync: true,
@@ -35,8 +35,8 @@ fn stable_ids_select_before_names_that_look_like_them() {
     let manifest = crate::manifest::parse_template_toml(
         "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='notes'\n[spec]",
     )
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
+    .expect("the template toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     let view = ApplicationView {
         spec_hash: manifest.spec_hash(),
         application: manifest,
@@ -54,11 +54,17 @@ fn stable_ids_select_before_names_that_look_like_them() {
         repository: None,
     };
     assert_eq!(
-        view.environment("app-notes-01").unwrap().name.as_str(),
+        view.environment("app-notes-01")
+            .expect("the environment exists")
+            .name
+            .as_str(),
         "production"
     );
     assert_eq!(
-        view.environment("production").unwrap().id.as_str(),
+        view.environment("production")
+            .expect("the environment exists")
+            .id
+            .as_str(),
         "app-notes-01"
     );
 }
@@ -81,8 +87,8 @@ name='session'
 generate={type='random',bytes=16}
 ",
     )
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes-01").unwrap());
+    .expect("the template toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
     let production = environment("app-notes-01", "production");
     let stored = |name: &str, environments, unavailable| StoredSecret {
         access: SecretAccess {
@@ -97,7 +103,9 @@ generate={type='random',bytes=16}
             unavailable,
         },
     };
-    let others = EnvironmentAccess::Only([EnvironmentId::parse("env-staging-01").unwrap()].into());
+    let others = EnvironmentAccess::Only(
+        [EnvironmentId::parse("env-staging-01").expect("the environment id is valid")].into(),
+    );
     let stored = [
         stored("stripe", EnvironmentAccess::All, false),
         stored("other", others, false),

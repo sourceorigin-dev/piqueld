@@ -1,5 +1,9 @@
 //! Read-only service files: validation, verbatim contents, and repository
 //! files captured with a deployment's manifest.
+#![expect(
+    clippy::expect_used,
+    reason = "Test helpers expect on fixtures that are valid by construction."
+)]
 
 use piqueld_core::api::ManifestChange;
 use piqueld_core::manifest::{
@@ -17,7 +21,7 @@ fn template(spec: &str) -> Result<ApplicationTemplate, ValidationErrors> {
     parse_template_toml(&format!(
         "api_version = \"piqueld.dev/v1alpha1\"\nkind = \"Application\"\n[metadata]\nname = \"notes\"\n{spec}"
     ))
-    .map(|template| template.normalize(ApplicationId::parse("app-notes-01").unwrap()))
+    .map(|template| template.normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid")))
 }
 
 /// An image service named `name`, with `files` appended as written.
@@ -30,16 +34,18 @@ fn service(name: &str, files: &str) -> String {
 const REPOSITORY: &str = "[spec.manifest]\npath = \"piqueld.toml\"\n[spec.manifest.repository]\nurl = \"https://example.com/notes.git\"\nbranch = \"main\"\n";
 
 fn environment() -> EnvironmentId {
-    EnvironmentId::parse("env-production-01").unwrap()
+    EnvironmentId::parse("env-production-01").expect("the environment id is valid")
 }
 
 fn render(template: &ApplicationTemplate) -> NormalizedApplication {
     template
         .render(&RenderContext::deployment(
-            RenderTarget::Environment(EnvironmentName::parse("production").unwrap()),
+            RenderTarget::Environment(
+                EnvironmentName::parse("production").expect("the environment name is valid"),
+            ),
             "operation-1".into(),
         ))
-        .unwrap()
+        .expect("the template renders")
         .application
 }
 
@@ -49,7 +55,7 @@ fn compile(application: &NormalizedApplication) -> Result<ResolvedApplication, V
         "ghcr.io/example/notes:1.4.0",
         format!("ghcr.io/example/notes@sha256:{}", "a".repeat(64)),
     )
-    .unwrap();
+    .expect("the image parses");
     let resolutions = ResolutionSet {
         sources: application
             .spec()
@@ -62,7 +68,7 @@ fn compile(application: &NormalizedApplication) -> Result<ResolvedApplication, V
     compile_application(
         application,
         &environment(),
-        InstanceId::parse("instance").unwrap(),
+        InstanceId::parse("instance").expect("the instance id is valid"),
         &resolutions,
     )
     .map_err(|errors| errors.into_iter().map(|error| error.code).collect())
@@ -83,22 +89,32 @@ fn contents_are_mounted_verbatim_and_survive_storage() {
             "[[spec.services.files]]\ntarget = \"/etc/app.conf\"\ncontent = '{content}'\n[spec.services.environment]\nfiles = '$${{{{ literal }}}}'\n"
         ),
     ))
-    .unwrap();
+    .expect("the template is built");
     let application = render(&template);
     assert_eq!(
         application.spec().services[0].files[0].source,
         FileSource::Content(content.into())
     );
-    let stored: NormalizedApplication =
-        serde_json::from_str(&application.canonical_json().unwrap()).unwrap();
+    let stored: NormalizedApplication = serde_json::from_str(
+        &application
+            .canonical_json()
+            .expect("the json canonicalizes"),
+    )
+    .expect("the text deserializes");
     assert_eq!(stored, application);
-    let web = &compile(&application).unwrap().services[0];
+    let web = &compile(&application)
+        .expect("the application compiles")
+        .services[0];
     assert_eq!(web.files[0].content, content);
     assert_eq!(web.files[0].mode.bits(), 0o444);
     assert_eq!(web.environment["files"], "${{ literal }}");
     assert_ne!(
         DockerConfigName::for_file(&environment(), content, web.files[0].mode),
-        DockerConfigName::for_file(&environment(), content, "0400".parse().unwrap())
+        DockerConfigName::for_file(
+            &environment(),
+            content,
+            "0400".parse().expect("the input parses")
+        )
     );
 }
 
@@ -125,13 +141,13 @@ fn validation_keeps_files_apart_from_mounts_secrets_and_piqueld() {
         "[[spec.volumes]]\nname = \"data\"\n{}[[spec.services.mounts]]\nvolume = \"data\"\ntarget = \"/data\"\n{files}{oversized}",
         service("web", "")
     ))
-    .unwrap_err();
+    .expect_err("the template is rejected");
     assert_eq!(
         errors
             .0
             .iter()
             .map(|error| (
-                ApiErrorCode::parse(&error.code).unwrap(),
+                ApiErrorCode::parse(&error.code).expect("the api error code is valid"),
                 error.path.as_str()
             ))
             .collect::<Vec<_>>(),
@@ -185,16 +201,23 @@ fn repository_files_are_captured_hashed_and_mounted_by_content() {
         service("api", ""),
         service("web", file)
     ))
-    .unwrap();
+    .expect("the template is built");
     assert_eq!(
-        compile(&render(&template)).unwrap_err(),
+        compile(&render(&template)).expect_err("the application is rejected"),
         [ApiErrorCode::FileUnresolved]
     );
 
     let deployed = |content: &str| {
-        let template = template.clone().with_files(captured(content)).unwrap();
+        let template = template
+            .clone()
+            .with_files(captured(content))
+            .expect("the files apply");
         let application = render(&template);
-        (template, compile(&application).unwrap(), application)
+        (
+            template,
+            compile(&application).expect("the application compiles"),
+            application,
+        )
     };
     let (first, target, application) = deployed("a: 1");
     let (_, changed, changed_application) = deployed("a: 2");
@@ -227,11 +250,16 @@ fn repository_files_are_captured_hashed_and_mounted_by_content() {
 
     let release = Release::new(first.clone(), Some("0".repeat(40)), &target);
     let promoted = release
-        .render(EnvironmentName::parse("staging").unwrap(), None)
-        .unwrap()
+        .render(
+            EnvironmentName::parse("staging").expect("the environment name is valid"),
+            None,
+        )
+        .expect("the template renders")
         .application;
     assert_eq!(promoted.files().get("otel.yaml"), Some("a: 1"));
-    let stored: Release = serde_json::from_str(&serde_json::to_string(&release).unwrap()).unwrap();
+    let stored: Release =
+        serde_json::from_str(&serde_json::to_string(&release).expect("the value serializes"))
+            .expect("the text deserializes");
     assert_eq!(stored.content_hash(), release.content_hash());
     let (second, changed_target, _) = deployed("a: 2");
     assert_ne!(
@@ -255,7 +283,7 @@ fn repository_files_are_captured_hashed_and_mounted_by_content() {
     let change = plan
         .iter()
         .find(|change| change.field == "services.web.files./etc/otel.yaml")
-        .unwrap();
+        .expect("the item is found");
     assert_eq!(change.after.as_deref(), Some("path: otel.yaml, mode: 0440"));
     assert!(
         plan.iter()

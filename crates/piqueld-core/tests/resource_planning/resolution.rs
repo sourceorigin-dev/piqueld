@@ -16,7 +16,8 @@ fn image_resolution_is_the_only_pending_compilation_input() {
     assert!(
         matches!(preview_resolution(&app, &missing).as_slice(), [ResolutionRequirement::ResolveImage { service, .. }] if service.as_str() == "web")
     );
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     assert_eq!(
         desired.services[0].image.as_str(),
         format!("ghcr.io/example/notes@sha256:{}", "a".repeat(64))
@@ -64,7 +65,8 @@ fn preview_plans_splice_resolution_actions_first() {
     ));
     assert!(!plan.is_blocked());
 
-    let desired = compile_application(&app, &environment(), instance(), &resolutions()).unwrap();
+    let desired = compile_application(&app, &environment(), instance(), &resolutions())
+        .expect("the application compiles");
     let with_desired = Plan::from_request(
         &PlanRequest::Preview {
             unresolved: Vec::new(),
@@ -77,7 +79,8 @@ fn preview_plans_splice_resolution_actions_first() {
 
 #[test]
 fn wire_decoding_enforces_domain_guards() {
-    let task: TaskState = serde_json::from_str("\"some-future-state\"").unwrap();
+    let task: TaskState =
+        serde_json::from_str("\"some-future-state\"").expect("the text deserializes");
     assert_eq!(task, TaskState::Unknown);
 
     let good = serde_json::json!({
@@ -85,7 +88,7 @@ fn wire_decoding_enforces_domain_guards() {
         "requested": "nginx:1",
         "digest_reference": format!("docker.io/library/nginx@{}", digest()),
     });
-    let decoded: ResolvedSource = serde_json::from_value(good).unwrap();
+    let decoded: ResolvedSource = serde_json::from_value(good).expect("the input deserializes");
     assert!(decoded.digest_reference().ends_with(&digest()));
 
     let bad = serde_json::json!({

@@ -340,19 +340,23 @@ mod tests {
     #[test]
     fn logical_names_enforce_boundaries_during_parsing_and_decoding() {
         for value in ["a".into(), "a-1".into(), "a".repeat(63)] {
-            let wire = serde_json::to_string(&value).unwrap();
+            let wire = serde_json::to_string(&value).expect("the value serializes");
             assert_eq!(
                 serde_json::from_str::<ApplicationName>(&wire)
-                    .unwrap()
+                    .expect("the application name deserializes")
                     .as_str(),
                 value
             );
             assert_eq!(
-                serde_json::from_str::<ServiceName>(&wire).unwrap().as_str(),
+                serde_json::from_str::<ServiceName>(&wire)
+                    .expect("the service name deserializes")
+                    .as_str(),
                 value
             );
             assert_eq!(
-                serde_json::from_str::<VolumeName>(&wire).unwrap().as_str(),
+                serde_json::from_str::<VolumeName>(&wire)
+                    .expect("the volume name deserializes")
+                    .as_str(),
                 value
             );
         }
@@ -364,7 +368,7 @@ mod tests {
             "é".into(),
             "a".repeat(64),
         ] {
-            let wire = serde_json::to_string(&value).unwrap();
+            let wire = serde_json::to_string(&value).expect("the value serializes");
             ApplicationName::parse(&value)
                 .expect_err("`ApplicationName::parse` should be rejected");
             ServiceName::parse(&value).expect_err("`ServiceName::parse` should be rejected");
@@ -380,7 +384,7 @@ mod tests {
 
     #[test]
     fn names_debug_as_their_quoted_value() {
-        let name = ApplicationName::parse("notes").unwrap();
+        let name = ApplicationName::parse("notes").expect("the application name is valid");
         assert_eq!(format!("application {name:?}"), r#"application "notes""#);
     }
 }

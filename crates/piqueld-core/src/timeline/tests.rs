@@ -11,7 +11,7 @@ fn key(phase: Phase, resource: &str) -> StepKey {
 fn timeline(expected: &[(Phase, &str, u64)]) -> Timeline {
     let operation = Operation {
         id: "op".into(),
-        environment_id: EnvironmentId::parse("env-web-01").unwrap(),
+        environment_id: EnvironmentId::parse("env-web-01").expect("the environment id is valid"),
         kind: OperationKind::Refresh,
         generation: 1,
         attempt: 1,
@@ -40,7 +40,7 @@ fn timeline(expected: &[(Phase, &str, u64)]) -> Timeline {
 /// Applies events numbered from the timeline's cursor.
 fn apply(timeline: &mut Timeline, events: Vec<Event>) {
     for (offset, mut event) in events.into_iter().enumerate() {
-        event.id = timeline.cursor + 1 + i64::try_from(offset).unwrap();
+        event.id = timeline.cursor + 1 + i64::try_from(offset).expect("the conversion holds");
         event.operation_id = Some("op".into());
         event.attempt = Some(1);
         timeline.apply(&event);
@@ -364,7 +364,7 @@ fn rollouts_summarize_their_new_tasks_monitor_window_and_downtime() {
         ],
     );
     let step = &timeline.steps[0];
-    let tasks = step.new_tasks().unwrap();
+    let tasks = step.new_tasks().expect("the tasks are created");
     assert_eq!(
         tasks,
         NewTasks {
@@ -388,7 +388,7 @@ fn rollouts_summarize_their_new_tasks_monitor_window_and_downtime() {
         )],
     );
     let step = &timeline.steps[0];
-    assert_eq!(step.new_tasks().unwrap().running, 1);
+    assert_eq!(step.new_tasks().expect("the tasks are created").running, 1);
     let window = Window {
         from_ms: 2_000,
         to_ms: 7_000,

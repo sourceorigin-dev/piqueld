@@ -20,19 +20,21 @@ fn linked_environments() -> (
     let compiled = |id: &str| {
         compile_application(
             &application(),
-            &EnvironmentId::parse(id).unwrap(),
+            &EnvironmentId::parse(id).expect("the environment id is valid"),
             instance(),
             &resolutions(),
         )
-        .unwrap()
+        .expect("the application compiles")
     };
     let importer = compiled("env-importer");
     let exporter = compiled("env-exporter");
     let link = piqueld_core::links::Link {
         importer: importer.id.clone(),
         exporter: exporter.id.clone(),
-        exporter_application: piqueld_core::ApplicationName::parse("auth").unwrap(),
-        services: [piqueld_core::ServiceName::parse("web").unwrap()].into(),
+        exporter_application: piqueld_core::ApplicationName::parse("auth")
+            .expect("the application name is valid"),
+        services: [piqueld_core::ServiceName::parse("web").expect("the service name is valid")]
+            .into(),
     };
     (importer, exporter, link)
 }
@@ -122,7 +124,7 @@ fn importers_remove_link_networks_once_nothing_is_attached() {
         .networks
         .into_iter()
         .find(|network| network.name == name)
-        .unwrap();
+        .expect("the item is found");
     let mut runtime = observed(&importer);
     runtime.networks.push(ObservedNetwork {
         name: name.to_string(),
@@ -159,7 +161,11 @@ fn importers_remove_link_networks_once_nothing_is_attached() {
         })
         .collect::<Vec<_>>();
     assert!(!deleted_networks.is_empty() && !deleted_networks.contains(&name.as_str()));
-    runtime.networks.last_mut().unwrap().in_use = false;
+    runtime
+        .networks
+        .last_mut()
+        .expect("the last entry exists")
+        .in_use = false;
     assert!(removes(&runtime));
 }
 
@@ -181,7 +187,7 @@ fn services_lose_link_networks_their_links_no_longer_grant() {
                 .contains_key(piqueld_core::resource::LINK_LABEL)
         })
         .cloned()
-        .unwrap();
+        .expect("the value is present");
     let web = as_importer.services[0].name.as_str();
     assert_eq!(
         runtime.revoked_links(

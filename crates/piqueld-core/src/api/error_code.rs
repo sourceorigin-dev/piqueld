@@ -589,9 +589,13 @@ mod tests {
                     .all(|byte| byte.is_ascii_lowercase() || byte == b'_'),
                 "{value}"
             );
-            assert_eq!(serde_json::to_value(code).unwrap(), value);
             assert_eq!(
-                serde_json::from_value::<ApiErrorCode>(value.into()).unwrap(),
+                serde_json::to_value(code).expect("the value serializes"),
+                value
+            );
+            assert_eq!(
+                serde_json::from_value::<ApiErrorCode>(value.into())
+                    .expect("the api error code deserializes"),
                 code
             );
             assert_eq!(ApiErrorCode::parse(value), Some(code));

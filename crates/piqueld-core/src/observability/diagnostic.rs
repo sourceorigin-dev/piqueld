@@ -312,7 +312,7 @@ mod tests {
             assert_eq!(diagnostic.scope, EventScope::Daemon, "{code:?}");
             assert_eq!(DiagnosticCode::parse(code.as_str()), Some(code));
             assert_eq!(
-                serde_json::to_value(&diagnostic).unwrap()["code"],
+                serde_json::to_value(&diagnostic).expect("the value serializes")["code"],
                 code.as_str()
             );
         }

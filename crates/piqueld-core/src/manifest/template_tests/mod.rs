@@ -46,7 +46,7 @@ web_replicas = 3
 
 fn template(spec: &str) -> ApplicationTemplate {
     parse_template_toml(&manifest(spec))
-        .unwrap()
+        .expect("the template toml parses")
         .normalize(id())
 }
 
@@ -66,7 +66,7 @@ fn codes_and_paths(errors: &ValidationErrors) -> Vec<(ApiErrorCode, &str)> {
         .iter()
         .map(|error| {
             (
-                ApiErrorCode::parse(&error.code).unwrap(),
+                ApiErrorCode::parse(&error.code).expect("the api error code is valid"),
                 error.path.as_str(),
             )
         })
@@ -74,11 +74,11 @@ fn codes_and_paths(errors: &ValidationErrors) -> Vec<(ApiErrorCode, &str)> {
 }
 
 fn id() -> ApplicationId {
-    ApplicationId::parse("app-notes-01").unwrap()
+    ApplicationId::parse("app-notes-01").expect("the application id is valid")
 }
 
 fn environment(name: &str) -> RenderTarget {
-    RenderTarget::Environment(EnvironmentName::parse(name).unwrap())
+    RenderTarget::Environment(EnvironmentName::parse(name).expect("the environment name is valid"))
 }
 
 fn saved() -> RenderContext {
@@ -89,11 +89,14 @@ fn base() -> ApplicationManifest {
     toml::from_str(include_str!(
         "../../../tests/fixtures/manifests/prebuilt.toml"
     ))
-    .unwrap()
+    .expect("the text deserializes")
 }
 
 fn normalize(manifest: ApplicationManifest) -> ApplicationTemplate {
-    manifest.validate_template().unwrap().normalize(id())
+    manifest
+        .validate_template()
+        .expect("the template validates")
+        .normalize(id())
 }
 
 fn repository() -> RepositoryManifest {
@@ -183,7 +186,7 @@ command = ["echo", "migrate"]
 run = "before-rollout"
 "#,
     )
-    .unwrap()
+    .expect("the value deserializes")
 }
 
 /// JSON pointer paired with its diagnostic spelling; values come from `complete`.

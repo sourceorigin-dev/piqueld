@@ -10,7 +10,7 @@ fn spec(body: &str) -> Result<ApplicationSpec, ValidationErrors> {
     ))
     .map(|template| {
         template
-            .normalize(ApplicationId::parse("app-notes").unwrap())
+            .normalize(ApplicationId::parse("app-notes").expect("the application id is valid"))
             .spec()
             .clone()
     })
@@ -18,7 +18,7 @@ fn spec(body: &str) -> Result<ApplicationSpec, ValidationErrors> {
 
 fn codes(body: &str) -> Vec<(String, String)> {
     spec(body)
-        .unwrap_err()
+        .expect_err("the spec is rejected")
         .0
         .into_iter()
         .map(|error| (error.path, error.code))
@@ -26,17 +26,20 @@ fn codes(body: &str) -> Vec<(String, String)> {
 }
 
 fn name(name: &str) -> EnvironmentName {
-    EnvironmentName::parse(name).unwrap()
+    EnvironmentName::parse(name).expect("the environment name is valid")
 }
 
 fn branch(branch: &str, commit: Option<&str>) -> DeclaredSource {
-    DeclaredSource::Branch(TrackedBranch::new(branch.into(), commit.map(Into::into)).unwrap())
+    DeclaredSource::Branch(
+        TrackedBranch::new(branch.into(), commit.map(Into::into))
+            .expect("the tracked branch is valid"),
+    )
 }
 
 fn environment(id: &str, source: EnvironmentSource, sync: bool) -> EnvironmentView {
     EnvironmentView {
-        id: EnvironmentId::parse(format!("env-0000-{id}")).unwrap(),
-        application_id: ApplicationId::parse("app-notes").unwrap(),
+        id: EnvironmentId::parse(format!("env-0000-{id}")).expect("the environment id is valid"),
+        application_id: ApplicationId::parse("app-notes").expect("the application id is valid"),
         name: name(id),
         source,
         kind: crate::EnvironmentKind::Environment,
@@ -57,8 +60,10 @@ fn declarations_resolve_sources_with_promotion_sources_first() {
         "{CONNECTION}[spec.environments.production]\npromote_from='staging'\n[spec.environments.staging]\nsync=true\n[spec.environments.canary]\nbranch='next'\ncommit='{}'\n",
         "a".repeat(40)
     ))
-    .unwrap();
-    let declarations = spec.declared_environments().unwrap();
+    .expect("the spec is built");
+    let declarations = spec
+        .declared_environments()
+        .expect("the environments declare");
     assert_eq!(
         declarations,
         [
@@ -84,9 +89,13 @@ fn declarations_resolve_sources_with_promotion_sources_first() {
             },
         ]
     );
-    let saved = self::spec("[spec.environments.staging.variables]\nx=1\n").unwrap();
+    let saved =
+        self::spec("[spec.environments.staging.variables]\nx=1\n").expect("the spec is built");
     assert_eq!(
-        saved.declared_environments().unwrap()[0].source,
+        saved
+            .declared_environments()
+            .expect("the environments declare")[0]
+            .source,
         DeclaredSource::Saved
     );
 }
@@ -96,13 +105,13 @@ fn the_staging_and_production_example_declares_both() {
     let example = parse_template_toml(include_str!(
         "../../../../../examples/staging-production.toml"
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes").unwrap());
+    .expect("the template toml parses")
+    .normalize(ApplicationId::parse("app-notes").expect("the application id is valid"));
     assert_eq!(
         example
             .spec()
             .declared_environments()
-            .unwrap()
+            .expect("the environments declare")
             .into_iter()
             .map(|declaration| (
                 declaration.name.to_string(),
@@ -128,24 +137,24 @@ fn disconnecting_drops_what_needs_a_repository() {
     let mut manifest = parse_template_toml(include_str!(
         "../../../../../examples/staging-production.toml"
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-notes").unwrap())
+    .expect("the template toml parses")
+    .normalize(ApplicationId::parse("app-notes").expect("the application id is valid"))
     .to_manifest();
     manifest
         .spec
         .environments
         .get_mut("staging")
-        .unwrap()
+        .expect("the entry exists")
         .branch = Some("next".into());
     crate::edit::ApplicationEdit::Repository(None)
         .apply(&mut manifest)
-        .unwrap();
+        .expect("the change applies");
     let sources = manifest
         .validate_template()
-        .unwrap()
+        .expect("the template validates")
         .spec()
         .declared_environments()
-        .unwrap()
+        .expect("the environments declare")
         .into_iter()
         .map(|declaration| (declaration.source.to_string(), declaration.sync))
         .collect::<Vec<_>>();
@@ -165,7 +174,9 @@ fn disconnecting_drops_what_needs_a_repository() {
 fn only_declared_sources_change_existing_environments() {
     let staging = environment(
         "staging",
-        EnvironmentSource::Branch(TrackedBranch::new("main".into(), None).unwrap()),
+        EnvironmentSource::Branch(
+            TrackedBranch::new("main".into(), None).expect("the tracked branch is valid"),
+        ),
         true,
     );
     let production = environment(
@@ -179,15 +190,19 @@ fn only_declared_sources_change_existing_environments() {
     let legacy = spec(&format!(
         "{CONNECTION}[spec.environments.staging.variables]\nx=1\n[spec.environments.production]\nvisibility='private'\n"
     ))
-    .unwrap();
-    let declarations = legacy.declared_environments().unwrap();
+    .expect("the spec is built");
+    let declarations = legacy
+        .declared_environments()
+        .expect("the environments declare");
     assert_eq!(EnvironmentChange::between(&declarations, &environments), []);
 
     let declared = spec(&format!(
         "{CONNECTION}[spec.environments.staging]\nsync=true\n[spec.environments.production]\npromote_from='staging'\n"
     ))
-    .unwrap();
-    let removed = legacy.declared_environments_since(Some(&declared)).unwrap();
+    .expect("the spec is built");
+    let removed = legacy
+        .declared_environments_since(Some(&declared))
+        .expect("the removed environments declare");
     assert_eq!(
         EnvironmentChange::between(&removed, &environments)
             .iter()
@@ -274,7 +289,9 @@ fn changes_create_resource_and_report_what_the_manifest_dropped() {
     let staging = environment("staging", EnvironmentSource::Saved, false);
     let production = environment(
         "production",
-        EnvironmentSource::Branch(TrackedBranch::new("main".into(), None).unwrap()),
+        EnvironmentSource::Branch(
+            TrackedBranch::new("main".into(), None).expect("the tracked branch is valid"),
+        ),
         false,
     );
     let old = environment(

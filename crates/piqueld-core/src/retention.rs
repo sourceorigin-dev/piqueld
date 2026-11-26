@@ -307,7 +307,7 @@ mod tests {
             "example.com/web:1",
             format!("example.com/web@sha256:{}", digest.to_string().repeat(64)),
         )
-        .unwrap()
+        .expect("the image parses")
     }
 
     fn built(id: char) -> ResolvedSource {
@@ -317,7 +317,7 @@ mod tests {
             },
             commit: "a".repeat(40),
             image_id: Sha256Digest::parse(format!("sha256:{}", id.to_string().repeat(64)))
-                .unwrap()
+                .expect("the sha256 digest is valid")
                 .into(),
         }
     }
@@ -325,8 +325,8 @@ mod tests {
     #[test]
     fn missing_registry_images_are_pullable_and_missing_builds_unavailable() {
         let (web, api) = (
-            ServiceName::parse("web").unwrap(),
-            ServiceName::parse("api").unwrap(),
+            ServiceName::parse("web").expect("the service name is valid"),
+            ServiceName::parse("api").expect("the service name is valid"),
         );
         let sources = BTreeMap::from([(web.clone(), pulled('a')), (api.clone(), built('b'))]);
         let all = LocalImages::new(sources.values().map(ResolvedSource::image));
@@ -355,7 +355,11 @@ mod tests {
 
         let mut pushed = built('b');
         if let ResolvedSource::Git { image_id, .. } = &mut pushed {
-            *image_id = pulled('c').repository_digest().unwrap().clone().into();
+            *image_id = pulled('c')
+                .repository_digest()
+                .expect("the repository digest is valid")
+                .clone()
+                .into();
         }
         assert!(matches!(
             LocalImages::default().availability([(&api, &pushed)]),
@@ -367,7 +371,7 @@ mod tests {
     /// the promotion; one whose images can be pulled again is not.
     #[test]
     fn only_unavailable_releases_block_plans() {
-        let web = ServiceName::parse("web").unwrap();
+        let web = ServiceName::parse("web").expect("the service name is valid");
         let sources = BTreeMap::from([(web, built('b'))]);
         let diagnostics = LocalImages::default().availability(&sources).diagnostics();
         assert_eq!(

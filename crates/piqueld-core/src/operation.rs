@@ -283,7 +283,8 @@ mod tests {
     fn attempt(attempt: u64, state: OperationState) -> Operation {
         Operation {
             id: "operation-1".into(),
-            environment_id: EnvironmentId::parse("env-web-01").unwrap(),
+            environment_id: EnvironmentId::parse("env-web-01")
+                .expect("the environment id is valid"),
             kind: OperationKind::Apply,
             generation: 1,
             attempt,

@@ -888,7 +888,7 @@ mod tests {
             3000,
         )])
         .apply(&mut manifest)
-        .unwrap();
+        .expect("the change applies");
         ApplicationEdit::Jobs(vec![Job {
             name: "migrate".into(),
             service: "web".into(),
@@ -901,23 +901,23 @@ mod tests {
             stop_service: false,
         }])
         .apply(&mut manifest)
-        .unwrap();
+        .expect("the change applies");
         ApplicationEdit::Service {
             name: "web".into(),
             edit: ServiceEdit::Name("frontend".into()),
         }
         .apply(&mut manifest)
-        .unwrap();
+        .expect("the change applies");
         assert_eq!(manifest.spec.routes[0].service.as_deref(), Some("frontend"));
         assert_eq!(manifest.spec.jobs[0].service, "frontend");
         assert_eq!(manifest.spec.services[1].depends_on, ["frontend"]);
-        manifest.clone().validate().unwrap();
+        manifest.clone().validate().expect("the manifest validates");
         ApplicationEdit::RemoveService("frontend".into())
             .apply(&mut manifest)
-            .unwrap();
+            .expect("the change applies");
         assert_eq!(manifest.spec.routes, [] as [Route; 0]);
         assert_eq!(manifest.spec.jobs, [] as [Job; 0]);
         assert_eq!(manifest.spec.services[0].depends_on, [] as [String; 0]);
-        manifest.validate().unwrap();
+        manifest.validate().expect("the manifest validates");
     }
 }
