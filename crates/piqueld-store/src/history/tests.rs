@@ -297,7 +297,7 @@ async fn pruning_keeps_the_newest_releases_by_creation_time_not_by_id() {
     let application = store
         .get(&production)
         .await
-        .unwrap()
+        .expect("get succeeds")
         .environment
         .application_id;
     for index in 0..=KEPT_RELEASES {
@@ -307,14 +307,17 @@ async fn pruning_keeps_the_newest_releases_by_creation_time_not_by_id() {
             .bind(1_000 - index)
             .execute(&store.pool)
             .await
-            .unwrap();
+            .expect("insert release succeeds");
     }
 
-    store.prune_deployment_history().await.unwrap();
+    store
+        .prune_deployment_history()
+        .await
+        .expect("prune succeeds");
     let releases: Vec<String> = sqlx::query_scalar("SELECT id FROM releases ORDER BY id")
         .fetch_all(&store.pool)
         .await
-        .unwrap();
+        .expect("list releases succeeds");
     let newest: Vec<String> = (0..KEPT_RELEASES)
         .map(|index| format!("rel-test-{index:03}"))
         .collect();

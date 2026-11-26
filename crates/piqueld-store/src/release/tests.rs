@@ -185,13 +185,13 @@ async fn a_release_recorded_with_the_clock_behind_comes_after_the_newest() {
         .bind(ahead)
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("move release time succeeds");
 
     prepare(&store, &production, pulled('b')).await;
     let created: Vec<i64> =
         sqlx::query_scalar("SELECT created_at_ms FROM releases ORDER BY created_at_ms")
             .fetch_all(&store.pool)
             .await
-            .unwrap();
+            .expect("list release times succeeds");
     assert_eq!(created, [ahead, ahead + 1]);
 }
