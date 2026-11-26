@@ -11,10 +11,10 @@ use piqueld_core::api::{
 };
 use piqueld_core::{ApplicationId, EnvironmentId, EnvironmentName, EventDetail};
 use sha2::{Digest, Sha256};
+use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 /// How long a request receipt answers a retry of its request ID.
 const RECEIPT_TTL_MS: i64 = piqueld_core::observability::DAY_MS;
-use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 /// A save as fingerprinted: its mutation without the inspected application
 /// ID, in `Mutation::Save`'s serialized form.
