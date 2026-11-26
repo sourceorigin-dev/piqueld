@@ -720,9 +720,13 @@ pub(super) fn Modal(
 /// [`Confirmation::provide`] makes it the context [`confirm`] asks through.
 #[derive(Clone, Copy)]
 pub(super) struct Confirmation {
+    /// Whether the dialog is open.
     opened: RwSignal<bool>,
+    /// The action asked about, such as "Delete preview".
     action: RwSignal<&'static str>,
+    /// Why the action needs confirming.
     message: RwSignal<String>,
+    /// What runs once confirmed; `None` once answered.
     then: StoredValue<Option<Box<dyn FnOnce()>>, LocalStorage>,
 }
 
