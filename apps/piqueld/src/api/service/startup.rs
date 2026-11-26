@@ -79,11 +79,7 @@ impl ApplicationService {
             .await
             .context("failed to bind the webhook socket")?;
         let traffic = ingress.bind_traffic().await?;
-        service
-            .store
-            .record_daemon_started(env!("CARGO_PKG_VERSION"))
-            .await
-            .context("failed to record the daemon start")?;
+        service.record_start(config).await?;
         let scan_interval = Duration::from_secs(config.reconciliation.scan_interval_seconds);
         let finished_operation_days = config.retention.finished_operation_days;
         let event_days = config.retention.event_days;
@@ -191,6 +187,26 @@ impl ApplicationService {
             .finish_action(&action, Some(error.diagnostic()))
             .await?;
         Ok(false)
+    }
+
+    /// Records this start, then reports the roll-back it follows, if any.
+    /// A report that can't be sent is logged rather than stopping the
+    /// daemon, and is sent on the next start.
+    async fn record_start(&self, config: &DaemonConfig) -> anyhow::Result<()> {
+        self.store
+            .record_daemon_started(env!("CARGO_PKG_VERSION"))
+            .await
+            .context("failed to record the daemon start")?;
+        if let Err(error) = crate::backup::Backups::new(&config.server.data_dir)
+            .report_roll_back(&self.store)
+            .await
+        {
+            tracing::error!(
+                error = format!("{error:#}"),
+                "failed to report the roll-back"
+            );
+        }
+        Ok(())
     }
 
     /// Configures the Docker Engine client, which builds on the build machine

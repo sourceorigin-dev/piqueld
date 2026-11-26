@@ -713,13 +713,13 @@ Options:
   `false` pauses the destination and cancels its pending deliveries. `true` resumes it, without sending what happened meanwhile. Values: `true`, `false`.
 - `--categories <CATEGORIES>`: Receive only these categories: comma-separated, or `''` for none.
 
-  A category that stays keeps its message. Values: `build_failures`, `deployment_failures`, `service_degradation`, `daemon_failures`, `recovery`, `security`, `daemon_started`, `deployment_succeeded`.
+  A category that stays keeps its message. Values: `build_failures`, `deployment_failures`, `service_degradation`, `daemon_failures`, `recovery`, `security`, `daemon_started`, `daemon_rolled_back`, `deployment_succeeded`.
 - `--message <CATEGORY=TEXT>`: Send TEXT with each notification of CATEGORY, and receive that category.
 
   TEXT has 1 to 1000 characters, such as a Discord role mention `<@&ROLE_ID>`. CATEGORY is one of the values `--categories` accepts. Repeat it for several categories.
 - `--no-message <CATEGORY>`: Stop sending text with this category's notifications.
 
-  Repeat it for several categories. Values: `build_failures`, `deployment_failures`, `service_degradation`, `daemon_failures`, `recovery`, `security`, `daemon_started`, `deployment_succeeded`.
+  Repeat it for several categories. Values: `build_failures`, `deployment_failures`, `service_degradation`, `daemon_failures`, `recovery`, `security`, `daemon_started`, `daemon_rolled_back`, `deployment_succeeded`.
 - `--apps <APPS>`: Receive notifications only about these applications: comma-separated names or IDs, or `''` for none.
 
   Daemon-wide notifications, such as daemon failures and security events, arrive either way.

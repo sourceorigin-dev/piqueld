@@ -9739,6 +9739,7 @@
           "recovery",
           "security",
           "daemon_started",
+          "daemon_rolled_back",
           "deployment_succeeded"
         ],
         "type": "string"

@@ -43,6 +43,7 @@ impl Notification<'_> {
             Some(NotificationCategory::DeploymentSucceeded) => ("🚀", "Deployed", GREEN),
             Some(NotificationCategory::Security) => ("🔐", "Security event", BLURPLE),
             Some(NotificationCategory::DaemonStarted) => ("🔄", "Daemon started", BLUE),
+            Some(NotificationCategory::DaemonRolledBack) => ("⏪", "Daemon rolled back", AMBER),
             None => ("🔔", "Test notification", BLURPLE),
         };
         Heading {

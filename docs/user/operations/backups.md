@@ -217,6 +217,11 @@ the three newest of these directories, deleting older ones when it rolls back
 again. A directory you name `rolled-back-<anything>` yourself stays until you
 delete it.
 
+Once the daemon starts on the restored state, it logs a warning naming the
+backup and where the replaced state is, records it in the daemon's
+[history](history.md), and sends it to the
+[notification destinations](notifications.md) that receive `daemon_rolled_back`.
+
 ### What a roll-back undoes
 
 Restoring a backup returns piqueld's records to when the backup was taken,

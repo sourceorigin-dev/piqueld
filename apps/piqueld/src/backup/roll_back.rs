@@ -11,6 +11,7 @@ use super::{Backups, Manifest, PreMigration, Refusal, entries, millis_after};
 use anyhow::{Context, Result, bail};
 use piqueld_core::InstanceId;
 use piqueld_store::SCHEMA_VERSION;
+use serde::{Deserialize, Serialize};
 use std::{
     ffi::OsStr,
     fs,
@@ -76,7 +77,86 @@ pub enum RollBack {
     },
 }
 
+/// What a roll-back did, left in the data directory for the daemon to report
+/// once it starts on the restored state.
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RollBackReport {
+    /// The name of the backup restored.
+    pub backup: String,
+    /// The schema version of the database it replaced.
+    pub from_schema: u64,
+    /// The schema version it restored.
+    pub to_schema: u64,
+    /// The directory holding the state it replaced.
+    pub replaced: PathBuf,
+}
+
+impl RollBackReport {
+    /// Its file in the data directory, which restores and roll-backs leave
+    /// in place.
+    pub(super) const FILE: &str = "roll-back.json";
+
+    /// What it says, for people.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "piqueld rolled back to backup {}, from schema {} to {}; the state it replaced is in {}",
+            self.backup,
+            self.from_schema,
+            self.to_schema,
+            self.replaced.display()
+        )
+    }
+
+    /// Writes it into `data_dir`, privately and atomically.
+    async fn write(&self, data_dir: &Path) -> Result<()> {
+        let bytes = serde_json::to_vec_pretty(self).context("encode the roll-back report")?;
+        Ok(
+            piqueld_config::directories::PrivateFile::at(data_dir.join(Self::FILE))
+                .write(bytes)
+                .await?,
+        )
+    }
+
+    /// The report in `data_dir`, if a roll-back left one.
+    pub(super) async fn read(data_dir: &Path) -> Result<Option<Self>> {
+        let path = data_dir.join(Self::FILE);
+        let bytes = match tokio::fs::read(&path).await {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            read => read.with_context(|| format!("read {}", path.display()))?,
+        };
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .with_context(|| format!("parse {}", path.display()))
+    }
+}
+
 impl Backups {
+    /// Reports the roll-back that left a [`RollBackReport`] in the data
+    /// directory, if any: logs a warning, and records a `daemon_rolled_back`
+    /// event, which notifies, then removes the report. Call it once the
+    /// daemon has started on the restored state.
+    ///
+    /// # Errors
+    /// Returns the failed step, and the report stays, to be sent on the next
+    /// start. The daemon logs it rather than stopping: an unsent report must
+    /// not keep it down.
+    pub async fn report_roll_back(&self, store: &piqueld_store::Store) -> Result<()> {
+        let Some(report) = RollBackReport::read(&self.data_dir).await? else {
+            return Ok(());
+        };
+        let message = report.message();
+        tracing::warn!(backup = %report.backup, replaced = %report.replaced.display(), "{message}");
+        store
+            .record_daemon_rolled_back(&report.backup, &message)
+            .await
+            .context("record the roll-back")?;
+        let path = self.data_dir.join(RollBackReport::FILE);
+        piqueld_config::directories::remove_file(&path)
+            .await
+            .with_context(|| format!("remove {}", path.display()))
+    }
+
     /// Finishes an unfinished restore, if any. Otherwise, once a newer piqueld
     /// migrated the database, rolls it back to the newest pre-migration
     /// backup this binary opens: verifies it as [`Self::restore`] does, calls
@@ -133,6 +213,14 @@ impl Backups {
 
         let staging = self.mark(staged)?;
         let aside = data_dir.join(RolledBack::name(staging.at_ms));
+        RollBackReport {
+            backup: newest.name(),
+            from_schema: live.schema_version,
+            to_schema: manifest.schema_version,
+            replaced: aside.clone(),
+        }
+        .write(data_dir)
+        .await?;
         self.finish(staging).with_context(|| {
             format!(
                 "roll back to {}, with the state it replaced in {}",

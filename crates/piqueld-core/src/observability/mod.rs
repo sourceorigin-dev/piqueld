@@ -152,6 +152,9 @@ string_enum! {
         Security => "security",
         /// Each daemon start, with its version, once it is ready to serve.
         DaemonStarted => "daemon_started",
+        /// Each roll-back of the daemon's state to a backup, once the
+        /// rolled-back daemon starts.
+        DaemonRolledBack => "daemon_rolled_back",
         /// Each successful deployment. New destinations do not receive it.
         DeploymentSucceeded => "deployment_succeeded",
     }
@@ -168,6 +171,7 @@ impl NotificationCategory {
             Self::Recovery => "Recoveries",
             Self::Security => "Security events",
             Self::DaemonStarted => "Daemon starts",
+            Self::DaemonRolledBack => "Roll-backs",
             Self::DeploymentSucceeded => "Deployments",
         }
     }

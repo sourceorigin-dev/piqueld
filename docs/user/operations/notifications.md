@@ -81,6 +81,7 @@ Each destination picks:
 | `recovery` | Recoveries | A failure the destination was sent is resolved |
 | `security` | Security events | Access to piqueld changes; see [the audit trail](audit.md#get-alerted) |
 | `daemon_started` | Daemon starts | The daemon starts, including after an update |
+| `daemon_rolled_back` | Roll-backs | The daemon starts after [`piqueld roll-back`](backups.md#roll-back) restored a backup |
 | `deployment_succeeded` | Deployments | A deployment succeeds |
 
 For example, to send only deployment failures and recoveries about `shop`, and
@@ -163,6 +164,9 @@ non-2xx answer fails the delivery at once. To send a failed delivery again, sele
   version, such as `piqueld 0.2.0 started (previously 0.1.0)`. A missing one
   doesn't prove the start failed: check the daemon's
   [history](history.md).
+- `daemon_rolled_back` names the backup restored, the schema versions, and
+  where the state it replaced is. A destination made before piqueld had this
+  category doesn't receive it until you choose it.
 
 ## Receive notifications in your own service
 

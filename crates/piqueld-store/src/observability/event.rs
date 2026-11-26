@@ -446,6 +446,33 @@ impl Store {
         tx.commit().await.map_err(StoreError::database)
     }
 
+    /// Records a daemon-scoped `daemon_rolled_back` event, `message`, whose
+    /// resource is the backup restored. Delivered as a `daemon_rolled_back`
+    /// notification.
+    /// # Errors
+    /// Returns storage errors.
+    pub async fn record_daemon_rolled_back(
+        &self,
+        backup: &str,
+        message: &str,
+    ) -> Result<(), StoreError> {
+        let (_writer, mut tx) = self.begin_immediate().await?;
+        let kind = EventKind::DaemonRolledBack.as_str();
+        let now = now_ms();
+        sqlx::query!(
+            "INSERT INTO events(scope,kind,message,resource,created_at_ms)
+            VALUES('daemon',?4,?1,?2,?3)",
+            message,
+            backup,
+            now,
+            kind,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::database)?;
+        tx.commit().await.map_err(StoreError::database)
+    }
+
     /// Logs a control-plane failure and records it in the journal, falling back
     /// to the daemon log alone when the journal write fails.
     pub async fn report_diagnostic(
