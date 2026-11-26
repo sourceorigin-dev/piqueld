@@ -1,6 +1,8 @@
-//! One-shot job editing. Jobs run in list order before each rollout.
-use super::super::ui::{add_button, empty, limited_add_button, remove_button};
-use super::{Draft, Rows, editor};
+//! One-shot jobs, which run in list order before each rollout. Each is a
+//! row, added and edited in a dialog; saving replaces the whole list.
+use super::super::confirm;
+use super::super::ui::{FormModal, add_button, empty, remove_button, row_detail};
+use super::{RowDialog, editor};
 use crate::editor::ServiceForm;
 use leptos::prelude::*;
 use piqueld_client::{
@@ -8,7 +10,7 @@ use piqueld_client::{
 };
 
 /// One editable job. The command keeps one element per row, without shell parsing.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 struct JobDraft {
     name: String,
     service: String,
@@ -41,6 +43,40 @@ impl JobDraft {
     /// The manifest's jobs as editable rows.
     fn rows(manifest: &ApplicationManifest) -> Vec<Self> {
         manifest.spec.jobs.iter().cloned().map(Self::from).collect()
+    }
+
+    /// What the job runs, as its row says it: its service, timeout and
+    /// command. An empty command element, or one holding spaces, is quoted,
+    /// since elements are never split.
+    fn summary(&self) -> String {
+        let command = self
+            .command
+            .iter()
+            .map(|element| {
+                if element.is_empty() || element.contains(char::is_whitespace) {
+                    format!("'{element}'")
+                } else {
+                    element.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("on {}, up to {}s: {command}", self.service, self.timeout)
+    }
+
+    /// What the job adds to its service's container, as its row says it:
+    /// its environment variables and secret files, or nothing.
+    fn additions(&self) -> Option<String> {
+        let environment = self
+            .environment
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"));
+        let secrets = self
+            .secrets
+            .iter()
+            .map(|(name, target)| format!("secret {name} at {target}"));
+        let additions = environment.chain(secrets).collect::<Vec<_>>();
+        (!additions.is_empty()).then(|| format!("adds {}", additions.join(", ")))
     }
 
     /// The job input, or a message when an environment key repeats or the
@@ -101,12 +137,13 @@ impl From<Job> for JobDraft {
     }
 }
 
-/// Command elements of job `index`, one row each, plus a button adding one.
-fn command_rows(jobs: RwSignal<Vec<JobDraft>>, index: usize) -> AnyView {
+/// Command elements of the `job` in the dialog, one row each, plus a button
+/// adding one.
+fn command_rows(job: RwSignal<JobDraft>) -> AnyView {
     view! {
         <div class="form-list">
             <For
-                each={move || (0..jobs.field(index, |j| j.command.len())).collect::<Vec<_>>()}
+                each={move || (0..job.with(|j| j.command.len())).collect::<Vec<_>>()}
                 key={|element| *element}
                 children={move |element| {
                     view! {
@@ -116,30 +153,25 @@ fn command_rows(jobs: RwSignal<Vec<JobDraft>>, index: usize) -> AnyView {
                                 <input
                                     type="text"
                                     prop:value={move || {
-                                        jobs.field(
-                                            index,
-                                            |j| j.command.get(element).cloned().unwrap_or_default(),
-                                        )
+                                        job.with(|j| {
+                                            j.command.get(element).cloned().unwrap_or_default()
+                                        })
                                     }}
                                     on:input={move |event| {
-                                        jobs.edit(
-                                            index,
-                                            |j| {
-                                                if let Some(value) = j.command.get_mut(element) {
-                                                    *value = event_target_value(&event);
-                                                }
-                                            },
-                                        );
+                                        job.update(|j| {
+                                            if let Some(value) = j.command.get_mut(element) {
+                                                *value = event_target_value(&event);
+                                            }
+                                        });
                                     }}
                                 />
                             </label>
                             {remove_button(move || {
-                                jobs.edit(
-                                    index,
-                                    |j| {
+                                job.update(|j| {
+                                    if element < j.command.len() {
                                         j.command.remove(element);
-                                    },
-                                );
+                                    }
+                                });
                             })}
                         </div>
                     }
@@ -149,7 +181,7 @@ fn command_rows(jobs: RwSignal<Vec<JobDraft>>, index: usize) -> AnyView {
         <div>
             {add_button(
                 "Add command element",
-                move || jobs.edit(index, |j| j.command.push(String::new())),
+                move || job.update(|j| j.command.push(String::new())),
             )}
         </div>
     }
@@ -189,8 +221,7 @@ impl PairRows {
     /// The `column` of `row`, as an input labelled `label` editing it.
     fn input(
         self,
-        jobs: RwSignal<Vec<JobDraft>>,
-        index: usize,
+        job: RwSignal<JobDraft>,
         row: usize,
         label: &'static str,
         column: fn(&mut (String, String)) -> &mut String,
@@ -201,25 +232,19 @@ impl PairRows {
                 <input
                     type="text"
                     prop:value={move || {
-                        jobs.field(
-                            index,
-                            |j| {
-                                (self.read)(j)
-                                    .get(row)
-                                    .cloned()
-                                    .map_or_default(|mut pair| std::mem::take(column(&mut pair)))
-                            },
-                        )
+                        job.with(|j| {
+                            (self.read)(j)
+                                .get(row)
+                                .cloned()
+                                .map_or_default(|mut pair| std::mem::take(column(&mut pair)))
+                        })
                     }}
                     on:input={move |event| {
-                        jobs.edit(
-                            index,
-                            |j| {
-                                if let Some(pair) = (self.write)(j).get_mut(row) {
-                                    *column(pair) = event_target_value(&event);
-                                }
-                            },
-                        );
+                        job.update(|j| {
+                            if let Some(pair) = (self.write)(j).get_mut(row) {
+                                *column(pair) = event_target_value(&event);
+                            }
+                        });
                     }}
                 />
             </label>
@@ -227,8 +252,9 @@ impl PairRows {
         .into_any()
     }
 
-    /// The rows of job `index`, one per pair, plus a button adding one.
-    fn view(self, jobs: RwSignal<Vec<JobDraft>>, index: usize) -> AnyView {
+    /// The rows of the `job` in the dialog, one per pair, plus a button
+    /// adding one.
+    fn view(self, job: RwSignal<JobDraft>) -> AnyView {
         view! {
             <div>
                 <h4 class="hint mb-sm">
@@ -236,22 +262,20 @@ impl PairRows {
                 </h4>
                 <div class="form-list">
                     <For
-                        each={move || {
-                            (0..jobs.field(index, |j| (self.read)(j).len())).collect::<Vec<_>>()
-                        }}
+                        each={move || (0..job.with(|j| (self.read)(j).len())).collect::<Vec<_>>()}
                         key={|row| *row}
                         children={move |row| {
                             view! {
                                 <div class="form-row">
-                                    {self.input(jobs, index, row, self.labels[0], |pair| &mut pair.0)}
-                                    {self.input(jobs, index, row, self.labels[1], |pair| &mut pair.1)}
+                                    {self.input(job, row, self.labels[0], |pair| &mut pair.0)}
+                                    {self.input(job, row, self.labels[1], |pair| &mut pair.1)}
                                     {remove_button(move || {
-                                        jobs.edit(
-                                            index,
-                                            |j| {
-                                                (self.write)(j).remove(row);
-                                            },
-                                        );
+                                        job.update(|j| {
+                                            let pairs = (self.write)(j);
+                                            if row < pairs.len() {
+                                                pairs.remove(row);
+                                            }
+                                        });
                                     })}
                                 </div>
                             }
@@ -261,10 +285,7 @@ impl PairRows {
                 {add_button(
                     self.add,
                     move || {
-                        jobs.edit(
-                            index,
-                            |j| (self.write)(j).push(self.new.map(String::from).into()),
-                        );
+                        job.update(|j| (self.write)(j).push(self.new.map(String::from).into()));
                     },
                 )}
             </div>
@@ -273,163 +294,178 @@ impl PairRows {
     }
 }
 
-/// Job editor. Rows are drafted as [`JobDraft`] text and re-synced from saved
-/// configuration only while there are no local edits. Saving validates the
-/// timeouts and replaces all jobs; their order is their execution order.
+/// Jobs of the saved configuration, in the order they run: each a row saying
+/// what it runs and what it adds to its service's container, moved up or
+/// down, and added and edited in a dialog. Every change validates the list
+/// and saves it whole.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn JobSettings() -> impl IntoView {
     let context = editor();
-    let draft = Draft::synced("jobs", JobDraft::rows);
-    let jobs = draft.value;
-    let save = move || match jobs
-        .get_untracked()
-        .into_iter()
-        .map(JobDraft::job)
-        .collect()
-    {
-        Ok(saved) => draft.save(ApplicationEdit::Jobs(saved), JobDraft::rows),
-        Err(message) => context.error.set(Some(message)),
+    let dialog = RowDialog::<JobDraft>::new("jobs");
+    let job = dialog.draft;
+    let save = move |rows: Vec<JobDraft>| match rows.into_iter().map(JobDraft::job).collect() {
+        Ok(jobs) => dialog.save(ApplicationEdit::Jobs(jobs)),
+        Err(message) => context.set_error(Some(message)),
+    };
+    let remove = move |index: usize| {
+        if !confirm("Remove this job from the saved configuration? Later deployments skip it.") {
+            return;
+        }
+        save(RowDialog::without(
+            JobDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     let swap = move |first: usize| {
-        jobs.update(|jobs| {
-            if first + 1 < jobs.len() {
-                jobs.swap(first, first + 1);
-            }
-        });
+        let mut rows = JobDraft::rows(&context.manifest());
+        if first + 1 < rows.len() {
+            rows.swap(first, first + 1);
+            save(rows);
+        }
     };
+    let full = move || context.manifest().spec.jobs.len() >= Job::MAX_PER_APPLICATION;
     view! {
         <section class="card">
             <header>
                 <div>
                     <h3>"Jobs"</h3>
                     <p>
-                        "Each deployment runs these commands to completion, in order, after preparing images. A job reuses its service's image, environment, secrets, and volume mounts, and waits for that service's startup dependencies to be healthy. Environment variables and secrets added here reach only the job's container, never the service's replicas, and can't replace ones the service sets. Dependencies start or update first; other services roll out only after all jobs succeed. A failed job stops the deployment and dependencies return to the running deployment. Volumes are read-only unless the job has exclusive access, which stops every service using its writable volumes until the rollout. A job can also stop its own service, so its previous version never runs against what the job changes. Each command element is one row; no shell parsing is applied."
+                        "Each deployment runs these commands to completion, in order, after preparing images. A job reuses its service's image, environment, secrets, and volume mounts, and waits for that service's startup dependencies to be healthy. Environment variables and secrets added here reach only the job's container, never the service's replicas, and can't replace ones the service sets. Dependencies start or update first; other services roll out only after all jobs succeed. A failed job stops the deployment and dependencies return to the running deployment. Volumes are read-only unless the job has exclusive access, which stops every service using its writable volumes until the rollout. A job can also stop its own service, so its previous version never runs against what the job changes."
                     </p>
                 </div>
+                {dialog.add_button("Add job", full)}
             </header>
-            <fieldset class="stack-sm" disabled={move || context.blocked()}>
-                <Show when={move || {
-                    jobs.with(Vec::is_empty)
-                }}>{empty("No jobs. Deployments roll out services directly.")}</Show>
-                <For
-                    each={move || jobs.indices()}
-                    key={|index| *index}
-                    children={move |index| {
-                        view! {
-                            <div class="stack-sm job-draft" data-job={index}>
-                                <div class="form-row">
-                                    <label class="field">
-                                        <span>"Name"</span>
-                                        <input
-                                            type="text"
-                                            placeholder="migrate"
-                                            prop:value={move || jobs.field(index, |j| j.name.clone())}
-                                            on:input={move |event| {
-                                                jobs.edit(index, |j| j.name = event_target_value(&event));
-                                            }}
-                                        />
-                                    </label>
-                                    <label class="field">
-                                        <span>"Service"</span>
-                                        <select
-                                            prop:value={move || {
-                                                jobs.field(index, |j| j.service.clone())
-                                            }}
-                                            on:change={move |event| {
-                                                jobs.edit(
-                                                    index,
-                                                    |j| j.service = event_target_value(&event),
-                                                );
-                                            }}
-                                        >
-                                            {context.service_options()}
-                                        </select>
-                                    </label>
-                                    <label class="field field-short">
-                                        <span>"Timeout (seconds)"</span>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max={Job::MAX_TIMEOUT_SECONDS}
-                                            prop:value={move || {
-                                                jobs.field(index, |j| j.timeout.clone())
-                                            }}
-                                            on:input={move |event| {
-                                                jobs.edit(
-                                                    index,
-                                                    |j| j.timeout = event_target_value(&event),
-                                                );
-                                            }}
-                                        />
-                                    </label>
-                                    <label class="field field-short">
-                                        <span>"Volume access"</span>
-                                        <select
-                                            prop:value={move || {
-                                                jobs.field(index, |j| j.volume_access.as_str())
-                                            }}
-                                            on:change={move |event| {
-                                                if let Ok(access) = event_target_value(&event).parse() {
-                                                    jobs.edit(index, |j| j.volume_access = access);
-                                                }
-                                            }}
-                                        >
-                                            <option value={JobVolumeAccess::ReadOnly
-                                                .as_str()}>"Read-only"</option>
-                                            <option value={JobVolumeAccess::Exclusive
-                                                .as_str()}>"Exclusive"</option>
-                                        </select>
-                                    </label>
-                                    <label class="checkbox">
-                                        <input
-                                            type="checkbox"
-                                            prop:checked={move || jobs.field(index, |j| j.stop_service)}
-                                            on:change={move |event| {
-                                                jobs.edit(
-                                                    index,
-                                                    |j| j.stop_service = event_target_checked(&event),
-                                                );
-                                            }}
-                                        />
-                                        <span>"Stop service first"</span>
-                                    </label>
-                                    <div class="btn-group">
-                                        <button
-                                            type="button"
-                                            class="btn btn-ghost"
-                                            disabled={move || index == 0}
-                                            on:click={move |_| swap(index - 1)}
-                                        >
-                                            "Move up"
-                                        </button>
-                                        <button
-                                            type="button"
-                                            class="btn btn-ghost"
-                                            disabled={move || index + 1 >= jobs.with(Vec::len)}
-                                            on:click={move |_| swap(index)}
-                                        >
-                                            "Move down"
-                                        </button>
-                                        {remove_button(move || jobs.remove(index))}
-                                    </div>
-                                </div>
-                                {command_rows(jobs, index)}
-                                {PairRows::ENVIRONMENT.view(jobs, index)}
-                                {PairRows::SECRETS.view(jobs, index)}
-                            </div>
-                        }
-                    }}
-                />
-                <div>
-                    {limited_add_button(
-                        "Add job",
-                        move || jobs.with(Vec::len) >= Job::MAX_PER_APPLICATION,
-                        move || jobs.update(|jobs| jobs.push(JobDraft::default())),
-                    )}
+            {move || {
+                let rows = JobDraft::rows(&context.manifest());
+                if rows.is_empty() {
+                    return empty("No jobs. Deployments roll out services directly.");
+                }
+                let last = rows.len() - 1;
+                view! {
+                    <ol class="list" aria-label="Jobs">
+                        {rows
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, row)| {
+                                let edited = row.clone();
+                                view! {
+                                    <li class="list-row">
+                                        <span class="title">
+                                            <code>{row.name.clone()}</code>
+                                            {row_detail(row.summary())}
+                                            {row.additions().map(row_detail)}
+                                        </span>
+                                        {(row.volume_access == JobVolumeAccess::Exclusive)
+                                            .then(|| view! { <span class="tag">"exclusive volumes"</span> })}
+                                        {row
+                                            .stop_service
+                                            .then(|| view! { <span class="tag">"stops its service"</span> })}
+                                        <span class="btn-group">
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-ghost"
+                                                disabled={move || context.blocked() || index == 0}
+                                                on:click={move |_| swap(index - 1)}
+                                            >
+                                                "Move up"
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-ghost"
+                                                disabled={move || context.blocked() || index == last}
+                                                on:click={move |_| swap(index)}
+                                            >
+                                                "Move down"
+                                            </button>
+                                        </span>
+                                        {dialog.row_actions(index, edited, move || remove(index))}
+                                    </li>
+                                }
+                            })
+                            .collect_view()}
+                    </ol>
+                }
+                    .into_any()
+            }}
+            <FormModal
+                title={dialog.title("Add job", "Edit job")}
+                opened={dialog.opened}
+                busy={context.busy}
+                error={context.error}
+                submit={dialog.title("Add job", "Save job")}
+                on_submit={Callback::new(move |()| {
+                    save(dialog.apply(JobDraft::rows(&context.manifest())));
+                })}
+                wide=true
+            >
+                <div class="form-grid">
+                    <label class="field">
+                        <span>"Name"</span>
+                        <input
+                            type="text"
+                            placeholder="migrate"
+                            prop:value={move || job.with(|j| j.name.clone())}
+                            on:input={move |event| {
+                                job.update(|j| j.name = event_target_value(&event));
+                            }}
+                        />
+                    </label>
+                    <label class="field">
+                        <span>"Service"</span>
+                        <select
+                            prop:value={move || job.with(|j| j.service.clone())}
+                            on:change={move |event| {
+                                job.update(|j| j.service = event_target_value(&event));
+                            }}
+                        >
+                            {context.service_options()}
+                        </select>
+                    </label>
                 </div>
-                {draft.actions(save, || false)}
-            </fieldset>
+                <div class="form-grid">
+                    <label class="field">
+                        <span>"Timeout (seconds)"</span>
+                        <input
+                            type="number"
+                            min="1"
+                            max={Job::MAX_TIMEOUT_SECONDS}
+                            prop:value={move || job.with(|j| j.timeout.clone())}
+                            on:input={move |event| {
+                                job.update(|j| j.timeout = event_target_value(&event));
+                            }}
+                        />
+                    </label>
+                    <label class="field">
+                        <span>"Volume access"</span>
+                        <select
+                            prop:value={move || job.with(|j| j.volume_access.as_str())}
+                            on:change={move |event| {
+                                if let Ok(access) = event_target_value(&event).parse() {
+                                    job.update(|j| j.volume_access = access);
+                                }
+                            }}
+                        >
+                            <option value={JobVolumeAccess::ReadOnly.as_str()}>"Read-only"</option>
+                            <option value={JobVolumeAccess::Exclusive.as_str()}>"Exclusive"</option>
+                        </select>
+                    </label>
+                </div>
+                <label class="checkbox">
+                    <input
+                        type="checkbox"
+                        prop:checked={move || job.with(|j| j.stop_service)}
+                        on:change={move |event| {
+                            job.update(|j| j.stop_service = event_target_checked(&event));
+                        }}
+                    />
+                    <span>"Stop service first"</span>
+                </label>
+                <p class="hint">"Each command element is one row; no shell parsing is applied."</p>
+                {command_rows(job)}
+                {PairRows::ENVIRONMENT.view(job)}
+                {PairRows::SECRETS.view(job)}
+            </FormModal>
         </section>
     }
 }

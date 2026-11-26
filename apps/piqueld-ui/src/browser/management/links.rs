@@ -2,7 +2,7 @@
 //! services of other applications it reaches. Each is a row, added and
 //! edited in a dialog; saving replaces the whole list.
 use super::super::confirm;
-use super::super::ui::{FormModal, Icon, empty, icon, row_actions, text_input};
+use super::super::ui::{FormModal, empty, text_input};
 use super::{RowDialog, editor};
 use crate::application::{ExportDraft, ImportDraft};
 use leptos::prelude::*;
@@ -13,13 +13,11 @@ use piqueld_client::edit::ApplicationEdit;
 #[component]
 fn ExportSettings() -> impl IntoView {
     let context = editor();
-    let dialog = RowDialog::<ExportDraft>::new();
+    let dialog = RowDialog::<ExportDraft>::new("exports");
     let draft = dialog.draft;
     let save = move |rows: Vec<ExportDraft>| {
         let exports = rows.into_iter().map(ExportDraft::export).collect();
-        context.save(ApplicationEdit::Exports(exports), move |_| {
-            dialog.opened.set(false);
-        });
+        dialog.save(ApplicationEdit::Exports(exports));
     };
     let remove = move |index: usize| {
         if !confirm(
@@ -27,11 +25,10 @@ fn ExportSettings() -> impl IntoView {
         ) {
             return;
         }
-        let mut rows = ExportDraft::rows(&context.manifest());
-        if index < rows.len() {
-            rows.remove(index);
-        }
-        save(rows);
+        save(RowDialog::without(
+            ExportDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <section class="card">
@@ -42,15 +39,7 @@ fn ExportSettings() -> impl IntoView {
                         "Services other applications may reach, without a route, as service.application on a network only the two share. Each environment exports to the same-named environment of the listed applications; previews only when allowed."
                     </p>
                 </div>
-                <button
-                    type="button"
-                    class="btn btn-sm"
-                    disabled={move || context.blocked()}
-                    on:click={move |_| dialog.add()}
-                >
-                    {icon(Icon::Plus)}
-                    "Add export"
-                </button>
+                {dialog.add_button("Add export", || false)}
             </header>
             {move || {
                 let rows = ExportDraft::rows(&context.manifest());
@@ -81,10 +70,7 @@ fn ExportSettings() -> impl IntoView {
                                             <code>{row.service.clone()}</code>
                                             <small>{reach}</small>
                                         </span>
-                                        {row_actions(
-                                            move || dialog.edit(index, edited.clone()),
-                                            move || remove(index),
-                                        )}
+                                        {dialog.row_actions(index, edited, move || remove(index))}
                                     </li>
                                 }
                             })
@@ -140,23 +126,20 @@ fn ExportSettings() -> impl IntoView {
 #[component]
 fn ImportSettings() -> impl IntoView {
     let context = editor();
-    let dialog = RowDialog::<ImportDraft>::new();
+    let dialog = RowDialog::<ImportDraft>::new("imports");
     let draft = dialog.draft;
     let save = move |rows: Vec<ImportDraft>| {
         let imports = rows.into_iter().map(ImportDraft::import).collect();
-        context.save(ApplicationEdit::Imports(imports), move |_| {
-            dialog.opened.set(false);
-        });
+        dialog.save(ApplicationEdit::Imports(imports));
     };
     let remove = move |index: usize| {
         if !confirm("Stop importing this service? Services lose it at the next deployment.") {
             return;
         }
-        let mut rows = ImportDraft::rows(&context.manifest());
-        if index < rows.len() {
-            rows.remove(index);
-        }
-        save(rows);
+        save(RowDialog::without(
+            ImportDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <section class="card">
@@ -167,15 +150,7 @@ fn ImportSettings() -> impl IntoView {
                         "Services of other applications this one reaches, as service.application, once exported to it. Without an environment, each environment reaches its namesake; previews must name one, for example with a variable. Each environment's page shows whether its imports connect."
                     </p>
                 </div>
-                <button
-                    type="button"
-                    class="btn btn-sm"
-                    disabled={move || context.blocked()}
-                    on:click={move |_| dialog.add()}
-                >
-                    {icon(Icon::Plus)}
-                    "Add import"
-                </button>
+                {dialog.add_button("Add import", || false)}
             </header>
             {move || {
                 let rows = ImportDraft::rows(&context.manifest());
@@ -204,10 +179,7 @@ fn ImportSettings() -> impl IntoView {
                                             </code>
                                             <small>{environment}</small>
                                         </span>
-                                        {row_actions(
-                                            move || dialog.edit(index, edited.clone()),
-                                            move || remove(index),
-                                        )}
+                                        {dialog.row_actions(index, edited, move || remove(index))}
                                     </li>
                                 }
                             })

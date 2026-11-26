@@ -701,20 +701,36 @@ pub(super) fn FormModal(
 }
 
 /// The buttons of a row edited in a dialog: **Edit**, opening it, and
-/// **Remove**.
-pub(super) fn row_actions(edit: impl Fn() + 'static, remove: impl Fn() + 'static) -> AnyView {
+/// **Remove**, both off while `disabled`.
+pub(super) fn row_actions(
+    disabled: impl Fn() -> bool + Copy + Send + Sync + 'static,
+    edit: impl Fn() + 'static,
+    remove: impl Fn() + 'static,
+) -> AnyView {
     view! {
         <span class="btn-group">
-            <button type="button" class="btn btn-sm" on:click={move |_| edit()}>
+            <button type="button" class="btn btn-sm" disabled={disabled} on:click={move |_| edit()}>
                 {icon(Icon::Pencil)}
                 "Edit"
             </button>
-            <button type="button" class="btn btn-sm btn-ghost" on:click={move |_| remove()}>
+            <button
+                type="button"
+                class="btn btn-sm btn-ghost"
+                disabled={disabled}
+                on:click={move |_| remove()}
+            >
                 "Remove"
             </button>
         </span>
     }
     .into_any()
+}
+
+/// A row's detail line. The row cuts a long line short, so its title holds
+/// `text` whole.
+pub(super) fn row_detail(text: String) -> AnyView {
+    let whole = text.clone();
+    view! { <small title={whole}>{text}</small> }.into_any()
 }
 
 /// A row of tabs and the panels they show, keyed so each tab labels its

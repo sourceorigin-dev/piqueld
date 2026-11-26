@@ -189,7 +189,7 @@ server {
   reader += `\n${await manifest(jobs, 'Set it up', 1)}`;
   await piquelctl.apply(reader);
   await application(page, 'reader', 'Jobs');
-  await shoot(page, 'applications/jobs-tab');
+  await shoot(page, 'applications/jobs-tab', card(page, 'Jobs'));
   await lasting(page, 1_100);
   await output(page, 1);
   await application(page, 'reader', 'Builds');

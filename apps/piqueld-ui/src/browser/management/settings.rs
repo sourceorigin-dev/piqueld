@@ -1,10 +1,10 @@
 //! Saved configuration forms and service editors.
 use super::super::ui::{
-    Icon, Modal, Tone, add_button, copy_button, icon, notice, one_time_secret, remove_button,
-    text_input, when,
+    FormModal, Icon, Modal, Tone, add_button, copy_button, empty, icon, notice, one_time_secret,
+    remove_button, row_detail, text_field, text_input, when,
 };
 use super::super::{UserError, confirm};
-use super::{Draft, editor};
+use super::{Draft, RowDialog, editor};
 use crate::editor::{Choice, FileForm, HealthKind, Section, ServiceForm, SourceKind};
 use leptos::prelude::*;
 use piqueld_client::{
@@ -481,19 +481,37 @@ fn volume_names(manifest: &ApplicationManifest) -> Vec<String> {
         .collect()
 }
 
-/// Named volume list editor, saved as one group.
+/// The services of `manifest` mounting volume `name`, as the row's summary.
+fn mounted_by(manifest: &ApplicationManifest, name: &str) -> String {
+    let services = manifest
+        .spec
+        .services
+        .iter()
+        .filter(|service| service.mounts.iter().any(|mount| mount.volume == name))
+        .map(|service| service.name.as_str())
+        .collect::<Vec<_>>();
+    if services.is_empty() {
+        "not mounted".to_owned()
+    } else {
+        format!("mounted by {}", services.join(", "))
+    }
+}
+
+/// Named volumes: each a row with the services mounting it, added and
+/// renamed in a dialog; saving replaces the whole list.
 #[component]
 pub(super) fn VolumeSettings() -> impl IntoView {
     let context = editor();
-    let draft = Draft::synced("volumes", volume_names);
-    let volumes = draft.value;
-    let save = move || {
-        let changed = volumes
-            .get_untracked()
-            .into_iter()
-            .map(|name| Volume { name })
-            .collect();
-        draft.save(ApplicationEdit::Volumes(changed), volume_names);
+    let dialog = RowDialog::<String>::new("volumes");
+    let save = move |names: Vec<String>| {
+        let volumes = names.into_iter().map(|name| Volume { name }).collect();
+        dialog.save(ApplicationEdit::Volumes(volumes));
+    };
+    let remove = move |index: usize| {
+        if !confirm("Remove this volume from the saved configuration? Its Docker data is kept.") {
+            return;
+        }
+        save(RowDialog::without(volume_names(&context.manifest()), index));
     };
     view! {
         <section class="card">
@@ -504,39 +522,48 @@ pub(super) fn VolumeSettings() -> impl IntoView {
                         "Volumes persist across deployments. Mount them from a service’s Volume mounts tab. Removing a volume here keeps its Docker data."
                     </p>
                 </div>
+                {dialog.add_button("Add volume", || false)}
             </header>
-            <fieldset disabled={move || context.blocked()}>
-                <div class="form-list">
-                    <For
-                        each={move || (0..volumes.with(Vec::len)).collect::<Vec<_>>()}
-                        key={|i| *i}
-                        children={move |i| {
-                            view! {
-                                <div class="form-row">
-                                    {text_input(
-                                        "Volume name",
-                                        volumes,
-                                        move |v| v.get(i).cloned().unwrap_or_default(),
-                                        move |v, s| {
-                                            if let Some(value) = v.get_mut(i) {
-                                                *value = s;
-                                            }
-                                        },
-                                    )}
-                                    {remove_button(move || {
-                                        volumes
-                                            .update(|v| {
-                                                v.remove(i);
-                                            });
-                                    })}
-                                </div>
-                            }
-                        }}
-                    />
-                </div>
-                {add_button("Add volume", move || volumes.update(|v| v.push(String::new())))}
-                {draft.actions(save, || false)}
-            </fieldset>
+            {move || {
+                let manifest = context.manifest();
+                let names = volume_names(&manifest);
+                if names.is_empty() {
+                    return empty("No volumes. Add one to keep a service's data across deployments.");
+                }
+                view! {
+                    <ul class="list" aria-label="Named volumes">
+                        {names
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, name)| {
+                                let edited = name.clone();
+                                view! {
+                                    <li class="list-row">
+                                        <span class="title">
+                                            <code>{name.clone()}</code>
+                                            {row_detail(mounted_by(&manifest, &name))}
+                                        </span>
+                                        {dialog.row_actions(index, edited, move || remove(index))}
+                                    </li>
+                                }
+                            })
+                            .collect_view()}
+                    </ul>
+                }
+                    .into_any()
+            }}
+            <FormModal
+                title={dialog.title("Add volume", "Edit volume")}
+                opened={dialog.opened}
+                busy={context.busy}
+                error={context.error}
+                submit={dialog.title("Add volume", "Save volume")}
+                on_submit={Callback::new(move |()| {
+                    save(dialog.apply(volume_names(&context.manifest())));
+                })}
+            >
+                {text_field("Volume name", dialog.draft)}
+            </FormModal>
         </section>
     }
 }

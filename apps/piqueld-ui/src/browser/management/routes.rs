@@ -2,9 +2,7 @@
 //! the state of its deployments, and where each deployed route stands with
 //! DNS and HTTPS.
 use super::super::confirm;
-use super::super::ui::{
-    FormModal, Icon, Tone, badge, empty, icon, notice, route_name, row_actions,
-};
+use super::super::ui::{FormModal, Tone, badge, empty, notice, route_name};
 use super::{RowDialog, editor};
 use leptos::prelude::*;
 use piqueld_client::{
@@ -172,7 +170,7 @@ fn serves(deployed: &RouteStatus, route: &Route) -> bool {
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn RouteSettings() -> impl IntoView {
     let context = editor();
-    let dialog = RowDialog::<RouteDraft>::new();
+    let dialog = RowDialog::<RouteDraft>::new("routes");
     let draft = dialog.draft;
     let readiness = context.signals().readiness;
     let deployed = Memo::new(move |_| {
@@ -196,9 +194,7 @@ pub(super) fn RouteSettings() -> impl IntoView {
         .map(RouteDraft::route)
         .collect::<Result<Vec<_>, _>>()
     {
-        Ok(routes) => context.save(ApplicationEdit::Routes(routes), move |_| {
-            dialog.opened.set(false);
-        }),
+        Ok(routes) => dialog.save(ApplicationEdit::Routes(routes)),
         Err(message) => context.set_error(Some(message.into())),
     };
     let remove = move |index: usize| {
@@ -207,11 +203,10 @@ pub(super) fn RouteSettings() -> impl IntoView {
         ) {
             return;
         }
-        let mut rows = RouteDraft::rows(&context.manifest());
-        if index < rows.len() {
-            rows.remove(index);
-        }
-        save(rows);
+        save(RowDialog::without(
+            RouteDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <div class="stack">
@@ -223,15 +218,7 @@ pub(super) fn RouteSettings() -> impl IntoView {
                             "Hostnames that reach a service of this application, or redirect elsewhere. A public route is reachable from the internet; a private one, the default, only from the tailnet. Save a route, then deploy to serve it."
                         </p>
                     </div>
-                    <button
-                        type="button"
-                        class="btn btn-sm"
-                        disabled={move || context.blocked()}
-                        on:click={move |_| dialog.add()}
-                    >
-                        {icon(Icon::Plus)}
-                        "Add route"
-                    </button>
+                    {dialog.add_button("Add route", || false)}
                 </header>
                 <div class="stack-sm">
                     {move || {
@@ -295,10 +282,7 @@ pub(super) fn RouteSettings() -> impl IntoView {
                                                     .map(|name| view! { <span class="tag">{name}</span> })}
                                                 {badge(Tone::Neutral, route.visibility.to_string())}
                                                 <span class="route-states">{states}</span>
-                                                {row_actions(
-                                                    move || dialog.edit(index, edited.clone()),
-                                                    move || remove(index),
-                                                )}
+                                                {dialog.row_actions(index, edited, move || remove(index))}
                                             </li>
                                         }
                                     })

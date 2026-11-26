@@ -3,7 +3,8 @@
 The Leptos dashboard manages application configuration through forms. Create an
 empty application in a modal, add services in a modal and declare named volumes, and edit images, Git builds
 (including Docker build arguments and targets), replicas, environment variables, commands, arguments, mounts, read-only files, health checks, startup
-dependencies, rollout order and monitor window, and resource limits. Each settings group has its own **Save changes** button. Saving updates
+dependencies, rollout order and monitor window, and resource limits. Each settings group has its own **Save changes** button, and lists edited row by row
+(routes, links, jobs and named volumes) save each change at once: a row's dialog, its **Remove**, or moving a job. Saving updates
 the database without changing running containers.
 
 **Preview** opens a dialog with the planned changes, the variable values it
@@ -215,8 +216,9 @@ lists every environment it was promoted into, deployed again by release ID, or
 restored in, with that deployment. **Deploy to \<environment>**, offered for each promoted
 environment, plans deploying the release there with that environment's current
 secrets, like `piquelctl env promote --release`, and deploys it once confirmed. The Jobs
-tab adds, edits, reorders, and removes the one-shot jobs that run before each
-rollout, with one row per command element; saving replaces only the job list.
+tab lists the one-shot jobs that run before each rollout, in the order they
+run, and adds, edits, reorders, and removes them. A job's fields, with one row
+per command element, are in its dialog; each change saves the job list at once.
 Jobs inherit the referenced service's startup dependencies, which start or
 update and become healthy first. Other services wait for all jobs to succeed;
 if a job fails, its dependencies return to the running deployment. A job's
@@ -224,7 +226,8 @@ volume access is read-only by default; exclusive access stops the services
 using its writable volumes until the rollout. **Stop service first** stops
 the job's own service before it runs, until the rollout. Each job also lists the
 environment variables and secret files only its container gets, added to its
-service's. The Links tab edits the
+service's. The Volumes tab lists the named volumes with the services mounting
+each, and adds, renames, and removes them in a dialog too. The Links tab edits the
 application's [links](reference/manifest.md#links): the services it exports
 and the applications that may import them (and whether their previews may),
 and the services of other applications it imports, with an optional

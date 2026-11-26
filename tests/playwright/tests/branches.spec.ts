@@ -125,9 +125,12 @@ test('a repository-backed application is edited like any other, and resets to it
   const edits = page.getByText('Edited since the manifest was last read from the repository.', { exact: false });
   await expect(edits).toHaveCount(0);
   await page.getByRole('button', { name: 'Add volume', exact: true }).click();
-  await page.getByLabel('Volume name', { exact: true }).fill('cache');
-  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
-  await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: 'Add volume' });
+  await dialog.getByLabel('Volume name', { exact: true }).fill('cache');
+  await dialog.getByRole('button', { name: 'Add volume', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const volumes = page.getByRole('list', { name: 'Named volumes' });
+  await expect(volumes).toContainText('cache');
   // The edit is listed against the repository's manifest, which has no volume.
   await expect(edits).toBeVisible();
   await expect(page.locator('.diff-row', { hasText: 'volumes.cache' })).toBeVisible();
@@ -136,10 +139,10 @@ test('a repository-backed application is edited like any other, and resets to it
   await page.getByRole('button', { name: 'Reset to repository', exact: true }).click();
   await expect(page.getByText("Reset to the repository's manifest.", { exact: true })).toBeVisible();
   await expect(edits).toHaveCount(0);
-  await expect(page.getByLabel('Volume name', { exact: true })).toHaveCount(0);
+  await expect(volumes).toHaveCount(0);
   await page.reload();
   await applicationTab(page, 'Volumes').click();
-  await expect(page.getByLabel('Volume name', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('No volumes.', { exact: false })).toBeVisible();
   await expect(edits).toHaveCount(0);
 });
 
@@ -215,6 +218,18 @@ test('a repository-backed application page reloads what environments fetch', asy
     data.repository = { ...structuredClone(data.application), spec: { ...structuredClone(data.application.spec), volumes: [{ name: 'cache' }] } };
     data.updated_at_ms += 1_000;
   });
+  // An open row dialog edits the saved rows by position, so the view is not
+  // reloaded under it.
+  await page.getByRole('button', { name: 'Add volume', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add volume' });
+  await expect(dialog).toBeVisible();
+  for (let poll = 0; poll < 2; poll += 1) {
+    const listed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/applications');
+    await page.clock.runFor(16_000);
+    await listed;
+  }
+  await expect(edits).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close dialog' }).click();
   await page.clock.runFor(16_000);
   // The view is reloaded: the saved manifest now differs from the repository's.
   await expect(edits).toBeVisible();
