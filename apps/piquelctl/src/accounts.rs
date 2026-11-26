@@ -27,6 +27,7 @@ use piqueld_client::{
 use serde::Serialize;
 use std::{collections::BTreeMap, io};
 
+/// `piquelctl account` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum AccountCommand {
     /// List the accounts you can see, with their grants.
@@ -46,6 +47,7 @@ pub(crate) enum AccountCommand {
         /// Account username or ID.
         #[arg(value_name = "ACCOUNT")]
         target: String,
+        /// The grants the account gets.
         #[command(flatten)]
         grants: GrantArgs,
         /// Skip the confirmation prompt.
@@ -60,6 +62,7 @@ pub(crate) enum AccountCommand {
     /// with your passkey more than 2 minutes ago, it asks you to confirm in a
     /// browser first.
     Invite {
+        /// The grants the invitation hands out.
         #[command(flatten)]
         grants: GrantArgs,
     },
@@ -108,6 +111,7 @@ pub(crate) enum AccountCommand {
         /// Account username or ID.
         #[arg(value_name = "ACCOUNT")]
         target: String,
+        /// Whether to also revoke what the account issued.
         #[command(flatten)]
         cascade: CascadeArg,
         /// Skip the confirmation prompt.
@@ -118,16 +122,19 @@ pub(crate) enum AccountCommand {
     ///
     /// Add a passkey with an `account enroll` link.
     Passkey {
+        /// The passkey operation to run.
         #[command(subcommand)]
         command: PasskeyCommand,
     },
     /// List and revoke pending invitation and enrollment links.
     Invitation {
+        /// The invitation operation to run.
         #[command(subcommand)]
         command: InvitationCommand,
     },
 }
 
+/// `piquelctl account passkey` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum PasskeyCommand {
     /// List the passkeys of the accounts you can see, with their owners.
@@ -166,6 +173,7 @@ pub(crate) enum PasskeyCommand {
         /// Passkey ID, from `account passkey list`.
         #[arg(allow_hyphen_values = true)]
         id: String,
+        /// Whether to also revoke what the passkey issued.
         #[command(flatten)]
         cascade: CascadeArg,
         /// Skip the confirmation prompt.
@@ -174,6 +182,7 @@ pub(crate) enum PasskeyCommand {
     },
 }
 
+/// `piquelctl account invitation` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum InvitationCommand {
     /// List pending invitation and enrollment links, with the grants they
@@ -193,6 +202,8 @@ pub(crate) enum InvitationCommand {
     },
 }
 
+/// The grants of a new account, invitation or token: a preset, permissions and
+/// application limits.
 #[derive(Debug, Args)]
 pub(crate) struct GrantArgs {
     /// Grant the permissions of this preset.
@@ -287,6 +298,7 @@ impl GrantArgs {
     }
 }
 
+/// `piquelctl token` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum TokenCommand {
     /// Create an API token for your account, and print it.
@@ -300,6 +312,7 @@ pub(crate) enum TokenCommand {
     Create {
         /// Token name, up to 200 bytes.
         name: String,
+        /// The grants the token has.
         #[command(flatten)]
         grants: GrantArgs,
         /// Expire the token after this many days, from 1.
@@ -345,6 +358,7 @@ pub(crate) enum TokenCommand {
         /// Credential ID.
         #[arg(required_unless_present = "all")]
         id: Option<String>,
+        /// Whether to also revoke what the credential issued.
         #[command(flatten)]
         cascade: CascadeArg,
         /// Revoke every session and API token of an account instead.
@@ -666,6 +680,8 @@ async fn owner(client: &Client, directory: &Directory, user: Option<&str>) -> Re
         })
 }
 
+/// Flag that limits a revocation to what was named, leaving what it issued
+/// valid.
 #[derive(Clone, Copy, Debug, Args)]
 pub(crate) struct CascadeArg {
     /// Revoke only what you name, leaving valid the credentials, links and
@@ -782,7 +798,9 @@ impl Names {
 
 /// `whoami` result: the account and the current credential's grants.
 pub(crate) struct SessionReport {
+    /// The account and the current credential's grants.
     pub(crate) session: Session,
+    /// Application names, for human output.
     pub(crate) names: Names,
 }
 report!(SessionReport as Session = session, self, out, {
@@ -804,12 +822,16 @@ report!(SessionReport as Session = session, self, out, {
 /// not accounts (revoke one with `token revoke`).
 #[derive(Serialize)]
 struct AccountList<'a> {
+    /// The accounts the caller can see.
     accounts: &'a [Account],
+    /// The live host operator browser sessions.
     operator_sessions: &'a [OperatorSessionView],
 }
 /// An [`AccountList`], with application names for human output.
 struct AccountsReport<'a> {
+    /// The accounts and operator sessions to print.
     list: AccountList<'a>,
+    /// Application names, for human output.
     names: &'a Names,
 }
 impl AccountsReport<'_> {
@@ -850,9 +872,12 @@ impl<'a> Report for AccountsReport<'a> {
     }
 }
 
+/// Arguments of `piquelctl audit`: filters and paging for the audit trail, or a
+/// subcommand.
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
 pub(crate) struct AuditArgs {
+    /// A subcommand to run instead of listing requests.
     #[command(subcommand)]
     command: Option<AuditCommand>,
     /// Only show the requests of this account, by username or ID, even a
@@ -868,14 +893,17 @@ pub(crate) struct AuditArgs {
     /// Only show the requests with this outcome.
     #[arg(long, value_parser = one_of!(AuditOutcome::ALL, AuditOutcome::parse, AuditArgs::describe_outcome))]
     outcome: Option<AuditOutcome>,
+    /// Which page of requests to show.
     #[command(flatten)]
     page: crate::support::PageArgs,
 }
 
+/// Parses a `--tailnet` value, returning the parse error's message on failure.
 fn parse_tailnet(value: &str) -> std::result::Result<TailnetBinding, String> {
     TailnetBinding::parse(value).map_err(str::to_owned)
 }
 
+/// `piquelctl audit` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum AuditCommand {
     /// Check that no one altered the audit trail.
@@ -994,13 +1022,16 @@ report!(Page<AuditEvent>, self, out, {
 /// A newly created token; human output is the bare secret so it can be piped.
 #[derive(Serialize)]
 struct TokenReport {
+    /// The token secret.
     token: String,
 }
 report!(once TokenReport, self, out, { out.line(&self.token) });
 
 /// The caller's sessions and tokens with their limits.
 struct CredentialsReport {
+    /// The caller's sessions and API tokens.
     credentials: Vec<CredentialView>,
+    /// Application names, for human output.
     names: Names,
 }
 report!(
@@ -1031,7 +1062,9 @@ report!(
 
 /// Passkeys, with their owners' usernames for human output.
 struct PasskeysReport {
+    /// The passkeys to print.
     passkeys: Vec<PasskeyView>,
+    /// The accounts, to name each passkey's owner.
     users: Vec<Account>,
 }
 report!(PasskeysReport as [PasskeyView] = passkeys, self, out, {
@@ -1048,8 +1081,11 @@ report!(PasskeysReport as [PasskeyView] = passkeys, self, out, {
 
 /// Pending invitation and enrollment links with the grants they hand out.
 struct InvitationsReport {
+    /// The pending links to print.
     invitations: Vec<InvitationView>,
+    /// The accounts, to name each link's issuer and owner.
     users: Vec<Account>,
+    /// Application names, for human output.
     names: Names,
 }
 report!(
@@ -1081,9 +1117,12 @@ report!(
 /// A newly created invitation or enrollment link; human output is the bare URL.
 #[derive(Serialize)]
 struct LinkReport {
+    /// The link's URL.
     url: String,
 }
 impl LinkReport {
+    /// Wraps the daemon's link, failing as an invalid response when it returned
+    /// none.
     fn new(url: Option<String>) -> Result<Self> {
         let url = url.ok_or_else(|| {
             CliError::new(ErrorKind::General, "the daemon returned no link").invalid_response()
