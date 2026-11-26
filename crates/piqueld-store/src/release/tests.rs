@@ -172,3 +172,26 @@ async fn identical_preparations_share_a_release_that_outlives_its_environment() 
         [&newer.id, &older.id]
     );
 }
+
+/// A release recorded while the clock is behind the application's newest one,
+/// as after a restart with the clock behind, still comes after it.
+#[tokio::test]
+async fn a_release_recorded_with_the_clock_behind_comes_after_the_newest() {
+    let (_temp, store) = Store::temporary().await;
+    let (_, production, _) = save_with_staging(&store).await;
+    prepare(&store, &production, pulled('a')).await;
+    let ahead: i64 = 4_102_444_800_000;
+    sqlx::query("UPDATE releases SET created_at_ms=?1")
+        .bind(ahead)
+        .execute(&store.pool)
+        .await
+        .expect("move release time succeeds");
+
+    prepare(&store, &production, pulled('b')).await;
+    let created: Vec<i64> =
+        sqlx::query_scalar("SELECT created_at_ms FROM releases ORDER BY created_at_ms")
+            .fetch_all(&store.pool)
+            .await
+            .expect("list release times succeeds");
+    assert_eq!(created, [ahead, ahead + 1]);
+}

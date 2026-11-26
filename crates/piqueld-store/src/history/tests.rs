@@ -289,6 +289,41 @@ async fn pruning_removes_expired_builds_and_unused_releases_of_pruned_deployment
     assert_eq!(releases[..2], ["rel-test-000", "rel-test-002"]);
 }
 
+/// The lowest ID is the newest release, as after a restart with the clock
+/// behind: pruning past [`KEPT_RELEASES`] removes the oldest by creation time.
+#[tokio::test]
+async fn pruning_keeps_the_newest_releases_by_creation_time_not_by_id() {
+    let (_temp, store, production) = store().await;
+    let application = store
+        .get(&production)
+        .await
+        .expect("get succeeds")
+        .environment
+        .application_id;
+    for index in 0..=KEPT_RELEASES {
+        sqlx::query("INSERT INTO releases(id,application_id,content_hash,release_json,created_at_ms) VALUES(?1,?2,?1,'{}',?3)")
+            .bind(format!("rel-test-{index:03}"))
+            .bind(application.as_str())
+            .bind(1_000 - index)
+            .execute(&store.pool)
+            .await
+            .expect("insert release succeeds");
+    }
+
+    store
+        .prune_deployment_history()
+        .await
+        .expect("prune succeeds");
+    let releases: Vec<String> = sqlx::query_scalar("SELECT id FROM releases ORDER BY id")
+        .fetch_all(&store.pool)
+        .await
+        .expect("list releases succeeds");
+    let newest: Vec<String> = (0..KEPT_RELEASES)
+        .map(|index| format!("rel-test-{index:03}"))
+        .collect();
+    assert_eq!(releases, newest);
+}
+
 #[tokio::test]
 async fn deployment_analytics_over_pruned_history_are_incomplete() {
     let (_temp, store, production) = store().await;
