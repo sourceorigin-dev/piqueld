@@ -83,6 +83,14 @@ archive holds the daemon, with its dashboard, `piquelctl`, the systemd unit
 and the license. The binaries link musl and OpenSSL statically, so they run on
 any x86_64 Linux: the daemon builds OpenSSL from source for musl targets.
 
+Each binary knows its version, and the commit it was built from and when
+that commit was made, which `piquelctl status` shows. The dashboard shows the
+version and the commit.
+`piqueld_core::version` reads them at compile time from `PIQUELD_BUILD_*`
+variables: `cargo xtask dist` and the Nix packages set the commit, and the
+release workflow sets the channel, `stable`. A build without them, such as
+`cargo install` or a development build, knows only its version.
+
 `just dist`, which runs `cargo xtask dist`, builds them into `target/dist`. It
 needs `musl-gcc`, from the `musl-tools` package on Debian and Ubuntu, for the
 C code of OpenSSL, SQLite and ring. The `install` job of the

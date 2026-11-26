@@ -107,7 +107,7 @@ pub(crate) use choice_args;
 /// `PIQUELD_TOKEN`, or with the login that `piquelctl login` saved. On the
 /// daemon host, root and the daemon's user need no login.
 #[derive(Debug, Parser)]
-#[command(name = "piquelctl", version)]
+#[command(name = "piquelctl", version = piqueld_client::version::NUMBER)]
 pub(crate) struct Cli {
     /// Where the effective endpoint and timeout came from, filled in by
     /// `Profiles::resolve` and shown in connection diagnostics.

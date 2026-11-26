@@ -289,7 +289,7 @@ impl Telemetry {
         let resource = Resource::builder_empty()
             .with_attributes([
                 KeyValue::new("service.name", "piqueld"),
-                KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+                KeyValue::new("service.version", piqueld_core::version::NUMBER),
                 KeyValue::new("service.instance.id", instance_id.to_string()),
             ])
             .build();

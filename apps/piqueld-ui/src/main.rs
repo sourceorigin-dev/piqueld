@@ -12,6 +12,6 @@ fn main() {
 fn main() {
     println!(
         "piqueld-ui {} (build for wasm32-unknown-unknown to run)",
-        piqueld_client::version()
+        piqueld_client::version::NUMBER
     );
 }

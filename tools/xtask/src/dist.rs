@@ -96,10 +96,16 @@ impl Archive {
 }
 
 /// Builds the binaries for [`TARGET`], with the embedded dashboard, then
-/// writes their [`Archive`].
+/// writes their [`Archive`]. The binaries report `HEAD`'s commit, and when it
+/// was made (`piqueld_core::version`), even when the tree has changes.
 pub(crate) fn run(workspace: &Workspace) -> Result<ExitCode> {
+    let root = workspace.root();
+    let commit = Workspace::git(root, &["rev-parse", "HEAD"])?;
+    let committed_at = Workspace::git(root, &["log", "-1", "--format=%ct", "HEAD"])?;
     let status = workspace
         .cargo()
+        .env("PIQUELD_BUILD_COMMIT", commit)
+        .env("PIQUELD_BUILD_COMMIT_TIME", committed_at)
         .args(["build", "--release", "--locked", "--target", TARGET])
         .args(["--package", "piqueld", "--package", "piquelctl"])
         .args(["--bin", "piqueld", "--bin", "piquelctl"])

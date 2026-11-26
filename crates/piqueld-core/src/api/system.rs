@@ -14,8 +14,13 @@ pub struct SystemStatus {
     pub status: String,
     /// Version of the exposed API.
     pub api_version: String,
-    /// Version of the running daemon binary.
+    /// Version of the running daemon binary; [`Self::version`] also says
+    /// what it was built from.
     pub daemon_version: String,
+    /// The running daemon's version, with the commit and channel it was
+    /// built from; absent from older daemons.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<crate::version::Version>,
     /// Control-plane instance identifier.
     pub instance_id: String,
     /// Dedicated tailnet node serving the website over HTTPS.

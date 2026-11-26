@@ -195,7 +195,7 @@ impl ApplicationService {
     /// daemon, and is sent on the next start.
     async fn record_start(&self, config: &DaemonConfig) -> anyhow::Result<()> {
         self.store
-            .record_daemon_started(env!("CARGO_PKG_VERSION"))
+            .record_daemon_started(piqueld_core::version::NUMBER)
             .await
             .context("failed to record the daemon start")?;
         if let Err(error) = crate::backup::Backups::new(&config.server.data_dir)
