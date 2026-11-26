@@ -5,3 +5,4 @@
 !book.toml
 !docs
 !apps/piqueld-ui/assets
+!deploy/docs/sws.toml

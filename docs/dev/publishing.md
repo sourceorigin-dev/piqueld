@@ -27,7 +27,9 @@ the files its services build and mount, from the same commit:
   holds the `Dockerfile` of the `docs` service. It builds the book with the
   mdBook that `flake.lock` pins, through `nix develop .#docs`, the shell
   `just docs` and CI use. It serves the pages with static-web-server
-  too.
+  too, configured by `deploy/docs/sws.toml`, which redirects each
+  `index.html` to its directory, such as `/index.html` to `/`, so search
+  engines see one address for each page.
 - [`deploy/observability`](https://github.com/sourceorigin-dev/piqueld/tree/main/deploy/observability)
   holds the configuration of the telemetry stack: an OpenTelemetry Collector
   receiving the daemon's telemetry, Prometheus keeping metrics for 15 days,

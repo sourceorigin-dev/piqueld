@@ -1,0 +1,12 @@
+# static-web-server's configuration for the documentation book, which
+# deploy/docs/Dockerfile copies into the image.
+
+# mdBook writes each README.md as index.html, and links to it by that name, so
+# each such page is served both as `/dir/` and `/dir/index.html`. Search
+# engines then index only one of them, and report the other as a duplicate:
+# send the second to the first, so each page has one address. The destination
+# is relative, so it stays on this host whatever the path, `//` included.
+[[advanced.redirects]]
+source = "/**/index.html"
+destination = "./"
+kind = 301
