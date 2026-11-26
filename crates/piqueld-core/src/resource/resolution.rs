@@ -243,7 +243,8 @@ impl ResolutionSet {
             errors.extend(
                 secrets
                     .iter()
-                    .filter_map(|secret| self.secret_file(owner, secret).err()),
+                    .filter(|secret| !self.secret_names.contains_key(&secret.name))
+                    .map(|secret| CompileError::secret_unresolved(owner, &secret.name)),
             );
         }
         for service in &app.spec().services {

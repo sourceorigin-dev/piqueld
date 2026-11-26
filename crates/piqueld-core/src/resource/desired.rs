@@ -343,7 +343,8 @@ impl DesiredJob {
     /// check, dependencies, or rollout settings, and its own Docker name and
     /// labels. Validation guarantees that every job references a declared
     /// service and overrides none of its settings; like
-    /// [`DesiredService::compile`], it fails on an unpinned secret.
+    /// [`DesiredService::compile`], it fails on a missing service or an
+    /// unpinned secret rather than panicking.
     pub(super) fn compile(
         job: &Job,
         services: &[DesiredService],
