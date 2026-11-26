@@ -10,6 +10,7 @@ use piqueld_client::{
         DeviceLoginStatus, DeviceStart, DeviceToken, OperatorLink, SensitiveAction, SetupLink, User,
     },
 };
+use piqueld_core::wait;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -582,7 +583,7 @@ impl Approval {
         let finish = async {
             let mut interval = u64::from(start.interval).max(1);
             loop {
-                tokio::time::sleep(Duration::from_secs(interval)).await;
+                wait::pause(Duration::from_secs(interval)).await;
                 let result = client.auth_device_poll(&start.device_code).await?;
                 match DeviceLoginStatus::parse(&result.status) {
                     Some(DeviceLoginStatus::AuthorizationPending) => {}
@@ -602,7 +603,7 @@ impl Approval {
         crate::support::interactive(async {
             tokio::select! {
                 result = finish => result,
-                () = tokio::time::sleep(expiry) => Err(CliError::new(ErrorKind::Input, expired)),
+                () = wait::pause(expiry) => Err(CliError::new(ErrorKind::Input, expired)),
                 error = CliError::on_interrupt(cancelled) => Err(error),
             }
         })

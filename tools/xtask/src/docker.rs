@@ -1,6 +1,7 @@
 //! The host's Docker engine, and the Docker-in-Docker engines xtask runs on it
 //! so tests and development instances never touch the host's own containers.
 
+use piqueld_core::wait;
 use std::fmt::Display;
 use std::net::Ipv4Addr;
 use std::ops::Deref;
@@ -279,7 +280,7 @@ impl Engine {
                 if ready().await {
                     return Ok(true);
                 }
-                tokio::time::sleep(interval).await;
+                wait::pause(interval).await;
             }
         };
         let failure = match tokio::time::timeout(READY_TIMEOUT, poll).await {

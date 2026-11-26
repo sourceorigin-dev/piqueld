@@ -25,6 +25,7 @@ use piqueld_client::{
     Operation, PromoteRequest, Rollback, Visibility, edit::ApplicationEdit,
     environments::LogRecordStream,
 };
+use piqueld_core::wait;
 
 /// `piquelctl env` subcommands.
 #[derive(Debug, Subcommand)]
@@ -1286,7 +1287,7 @@ async fn follow_logs(
                 Err(_) => CliError::new(ErrorKind::Unavailable, "it went silent"),
             }
         } else {
-            tokio::time::sleep(pause).await;
+            wait::pause(pause).await;
             pause = (pause * 2).min(MAX_POLL_INTERVAL);
             match client
                 .environment_logs_stream(id, service, None, Some(&after))

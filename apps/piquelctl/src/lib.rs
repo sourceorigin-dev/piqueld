@@ -25,6 +25,7 @@ use clap::{CommandFactory, FromArgMatches};
 use cli::Cli;
 use error::{CliCode, CliError, ErrorKind, ErrorReport};
 use output::{Console, reports::ProfilesReport};
+use piqueld_core::wait;
 use std::{num::NonZeroU64, process::ExitCode, time::Duration};
 use support::Waiting;
 use tokio::time::Instant;
@@ -211,12 +212,12 @@ async fn run_with_timeout<T>(
             }
             error = &mut interrupt => return Err(error),
             () = support::interaction_changed() => {}
-            () = tokio::time::sleep_until(deadline), if suspended.is_none() => {
+            () = wait::pause(deadline), if suspended.is_none() => {
                 if !support::interaction_active() && Waiting::current().is_none() {
                     return Err(timeout_error(cli.timeout));
                 }
             }
-            () = tokio::time::sleep_until(wait.map_or(deadline, |(_, until)| until)),
+            () = wait::pause(wait.map_or(deadline, |(_, until)| until)),
                 if wait.is_some() =>
             {
                 if Waiting::current() == wait.map(|(number, _)| number) {
