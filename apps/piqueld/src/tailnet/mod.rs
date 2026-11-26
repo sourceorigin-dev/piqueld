@@ -7,16 +7,17 @@
 //! node in and change its Serve configuration, which the `LocalAPI` can't do
 //! as simply. So the CLI (and `tailscaled`, unless shared) must be on `PATH`.
 
+mod error;
 mod node;
 mod proxy;
 mod whois;
 
+pub use error::{CommandError, TailnetError};
 pub use node::{Node, NodeListener};
 pub use proxy::ProxyListener;
 pub use whois::{LookupTimedOut, TailnetLookup, Whois};
 
-use anyhow::{Context, Result, bail, ensure};
-use piqueld_config::tailscale::{LocalApi, PortUse};
+use piqueld_config::tailscale::{LocalApi, LocalApiError, PortUse};
 use std::{io::ErrorKind, path::PathBuf, process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
@@ -49,31 +50,34 @@ impl Tailscaled {
     /// is unserved, or forwards to an address that refuses connections, such
     /// as that of a daemon that crashed without removing it. Only a refusal
     /// shows the owner is gone: a timeout may be a live owner that is stuck.
-    async fn check_takeover(port: u16, serving: PortUse) -> Result<()> {
+    async fn check_takeover(port: u16, serving: PortUse) -> Result<(), TailnetError> {
         match serving {
             PortUse::Unserved => Ok(()),
             PortUse::Forwarded(target) => {
-                let in_use = format!(
-                    "tailnet HTTPS port {port} already forwards to {target}; stop that process or set another tailscale.https_port"
-                );
                 match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(target)).await {
                     Ok(Err(error)) if error.kind() == ErrorKind::ConnectionRefused => {
                         tracing::info!(port, %target, "replacing the tailnet HTTPS port's stale forward");
                         Ok(())
                     }
-                    Ok(Ok(_)) => bail!("{in_use} (it still accepts connections)"),
-                    Ok(Err(error)) => Err(anyhow::Error::new(error).context(in_use)),
-                    Err(elapsed) => Err(anyhow::Error::new(elapsed).context(in_use)),
+                    Ok(Ok(_)) => Err(TailnetError::ForwardAccepting { port, target }),
+                    Ok(Err(source)) => Err(TailnetError::ForwardUnreachable {
+                        port,
+                        target,
+                        source,
+                    }),
+                    Err(source) => Err(TailnetError::ForwardTimedOut {
+                        port,
+                        target,
+                        source,
+                    }),
                 }
             }
-            PortUse::Other => bail!(
-                "tailnet HTTPS port {port} is already in the node's Serve configuration; remove it or set another tailscale.https_port"
-            ),
+            PortUse::Other => Err(TailnetError::PortServed { port }),
         }
     }
 
     /// How the node serves `port`.
-    async fn serving(&self, port: u16) -> Result<PortUse> {
+    async fn serving(&self, port: u16) -> Result<PortUse, LocalApiError> {
         Ok(self.api.serve_config().await?.port(port))
     }
 
@@ -81,7 +85,7 @@ impl Tailscaled {
     /// logged as it arrives, which is how interactive login URLs from `up`
     /// reach the operator, and is included in the error on failure. Only `up`
     /// may wait indefinitely for interactive approval.
-    async fn run(&self, args: &[&str]) -> Result<Vec<u8>> {
+    async fn run(&self, args: &[&str]) -> Result<Vec<u8>, CommandError> {
         let operation = args.first().copied().unwrap_or_default();
         Self::run_command(
             Command::new("tailscale")
@@ -94,30 +98,32 @@ impl Tailscaled {
 
     /// Runs `command` to completion and returns its standard output; fails with `operation` in the
     /// context if it exits unsuccessfully.
-    async fn run_command(command: &mut Command, operation: &str) -> Result<Vec<u8>> {
+    async fn run_command(command: &mut Command, operation: &str) -> Result<Vec<u8>, CommandError> {
         let output = Self::output(command, operation);
         if operation == "up" {
             output.await
         } else {
             tokio::time::timeout(COMMAND_TIMEOUT, output)
                 .await
-                .with_context(|| {
-                    format!("tailscale {operation} timed out after {COMMAND_TIMEOUT:?}")
+                .map_err(|source| CommandError::TimedOut {
+                    operation: operation.to_owned(),
+                    timeout: COMMAND_TIMEOUT,
+                    source,
                 })?
         }
     }
 
     /// Dropping this future on timeout or shutdown kills the CLI child.
-    async fn output(command: &mut Command, operation: &str) -> Result<Vec<u8>> {
+    async fn output(command: &mut Command, operation: &str) -> Result<Vec<u8>, CommandError> {
         let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .context("failed to run tailscale")?;
-        let mut stdout = child.stdout.take().context("capture tailscale stdout")?;
-        let stderr = child.stderr.take().context("capture tailscale stderr")?;
+            .map_err(CommandError::Spawn)?;
+        let mut stdout = child.stdout.take().ok_or(CommandError::CaptureStdout)?;
+        let stderr = child.stderr.take().ok_or(CommandError::CaptureStderr)?;
         let (stdout, stderr) = tokio::try_join!(
             async {
                 let mut output = Vec::new();
@@ -136,26 +142,31 @@ impl Tailscaled {
                 Ok(output)
             },
         )
-        .with_context(|| format!("failed to read tailscale {operation} output"))?;
-        let status = child.wait().await.context("failed to wait for tailscale")?;
-        ensure!(
-            status.success(),
-            "tailscale {operation} failed ({status}): {}",
-            stderr.trim()
-        );
+        .map_err(|source| CommandError::ReadOutput {
+            operation: operation.to_owned(),
+            source,
+        })?;
+        let status = child.wait().await.map_err(CommandError::Wait)?;
+        if !status.success() {
+            return Err(CommandError::Failed {
+                operation: operation.to_owned(),
+                status,
+                stderr: stderr.trim().to_owned(),
+            });
+        }
         Ok(stdout)
     }
 
     /// Fetches the certificate for the node's name and returns its expiry.
     /// tailscaled caches it in the node state and renews it before expiry.
-    async fn certificate_expiry_ms(&self, dns_name: &str) -> Result<i64> {
+    async fn certificate_expiry_ms(&self, dns_name: &str) -> Result<i64, TailnetError> {
         let pem = self
             .api
             .certificate(dns_name)
             .await
-            .context("failed to obtain the tailnet HTTPS certificate; enable HTTPS certificates for the tailnet")?;
+            .map_err(TailnetError::Certificate)?;
         let validity = crate::certificate::Validity::of_leaf(&pem)
-            .map_err(|error| anyhow::anyhow!("invalid {error}"))?;
+            .map_err(TailnetError::InvalidCertificate)?;
         Ok(validity.not_after_ms)
     }
 }

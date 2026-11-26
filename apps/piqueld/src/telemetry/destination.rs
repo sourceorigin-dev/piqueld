@@ -1,4 +1,5 @@
 //! One OTLP/gRPC collector and the bounded queues feeding it.
+use super::TelemetryError;
 use opentelemetry::InstrumentationScope;
 use opentelemetry_proto::tonic::collector::{
     logs::v1::{ExportLogsServiceRequest, logs_service_client::LogsServiceClient},
@@ -167,20 +168,19 @@ impl Destination {
         endpoint: &OtlpEndpoint,
         headers: Option<&Credential>,
         receiver: Option<EnvironmentId>,
-    ) -> anyhow::Result<Self> {
-        use anyhow::Context as _;
+    ) -> Result<Self, TelemetryError> {
         let uri = match endpoint {
             OtlpEndpoint::Tcp(url) => url.to_string(),
             OtlpEndpoint::Unix(_) => "http://localhost".to_owned(),
         };
         let mut builder = tonic::transport::Endpoint::from_shared(uri)
-            .context("invalid telemetry endpoint")?
+            .map_err(TelemetryError::Endpoint)?
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(EXPORT_TIMEOUT);
         if matches!(endpoint, OtlpEndpoint::Tcp(url) if url.scheme() == "https") {
             builder = builder
                 .tls_config(ClientTlsConfig::new().with_webpki_roots())
-                .context("invalid telemetry TLS configuration")?;
+                .map_err(TelemetryError::Tls)?;
         }
         let channel = match endpoint {
             OtlpEndpoint::Tcp(_) => builder.connect_lazy(),

@@ -1,8 +1,8 @@
 //! Authenticate the database's key before accepting any new ciphertext.
 use super::{Envelope, SecretCipher, SecretOwner, Store, StoreError};
 use crate::secrets::{KeyFailure, SecretError};
-use piqueld_core::EventKind;
 use piqueld_core::api::{CheckStatus, SecretKeyRecovery, SystemCheck, SystemCheckId};
+use piqueld_core::{ErrorChain as _, EventKind};
 
 /// How a master key file relates to the database it should decrypt.
 pub(crate) enum KeyBinding {

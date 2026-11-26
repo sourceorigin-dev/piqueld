@@ -8,8 +8,7 @@ use piqueld::api::http::{self, ApiState, UiAssets, UnixPeer};
 use piqueld::auth::Auth;
 use piqueld::backup::{Backups, RollBack};
 use piqueld::ingress::{DashboardSocket, Ingress};
-use piqueld::tailnet::Node;
-use piqueld::tailnet::TailnetLookup;
+use piqueld::tailnet::{Node, TailnetError, TailnetLookup};
 use piqueld::telemetry::{Sockets, Telemetry};
 use piqueld_config::{ConfigError, DaemonConfig};
 use piqueld_core::wait;
@@ -295,7 +294,7 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
                 supervisor
                     .await
                     .context("tailnet supervisor failed")
-                    .flatten(),
+                    .and_then(|result| result.map_err(anyhow::Error::from)),
             );
         }
         results.into_iter().collect::<Result<()>>()
@@ -355,7 +354,10 @@ impl Listeners {
         auth: Auth,
         tailnet: Option<Node>,
         cancellation: &CancellationToken,
-    ) -> (Vec<ApiTask>, Option<tokio::task::JoinHandle<Result<()>>>) {
+    ) -> (
+        Vec<ApiTask>,
+        Option<tokio::task::JoinHandle<Result<(), TailnetError>>>,
+    ) {
         let ui_assets = UiAssets::resolve();
         log_ui_status(&ui_assets);
         let web_router =
