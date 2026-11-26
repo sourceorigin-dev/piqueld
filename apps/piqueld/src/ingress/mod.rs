@@ -6,6 +6,7 @@ mod backoff;
 mod certificates;
 mod checks;
 mod configuration;
+mod error;
 mod gateway;
 mod node;
 mod records;
@@ -14,9 +15,10 @@ mod tunnel;
 mod wire;
 
 use crate::ticker::Ticker;
-use anyhow::{Context, Result};
 use certificates::Certificates;
+pub use error::{ControlError, IngressError};
 use futures_util::{StreamExt, stream};
+pub use gateway::UnmetRequirement;
 use piqueld_config::dns::Dns;
 use piqueld_config::{
     AcmeConfig, DnsConfig, PrivateIngressConfig, TunnelConfig, TunnelCredentials,
@@ -43,6 +45,9 @@ use tokio_util::sync::CancellationToken;
 pub use traffic::Traffic;
 use wire::CaddyApi;
 pub use wire::ResponseError;
+
+/// What an ingress operation returns.
+type Result<T> = std::result::Result<T, IngressError>;
 
 /// Version released with piqueld; upgrades deliberately replace the gateway.
 pub const CADDY_IMAGE: &str =
@@ -196,7 +201,7 @@ impl Ingress {
             caddy: CaddyApi::new(directory.join("control/admin.sock"), request_timeout),
             directory,
             docker: piqueld_docker::Infrastructure::connect(socket)
-                .context("Docker socket is not UTF-8")?,
+                .map_err(IngressError::Socket)?,
             changes: wire::DockerChanges::connect(socket)?,
             store,
             update: Mutex::new(()),
@@ -263,22 +268,25 @@ impl Ingress {
     /// # Errors
     /// Returns the failed Docker request.
     pub async fn stop_offline(socket: &Path, instance: &InstanceId) -> Result<usize> {
-        let docker = piqueld_docker::Infrastructure::connect(socket)
-            .context("Docker socket is not UTF-8")?;
+        let docker =
+            piqueld_docker::Infrastructure::connect(socket).map_err(IngressError::Socket)?;
         let running = docker
             .running_containers(vec![
                 format!("{INGRESS_LABEL}=true"),
                 format!("{INSTANCE_LABEL}={instance}"),
             ])
             .await
-            .context("list the running ingress containers")?;
-        let changes = piqueld_docker::InfrastructureChanges::connect(socket)
-            .context("Docker socket is not UTF-8")?;
+            .map_err(IngressError::ListContainers)?;
+        let changes =
+            piqueld_docker::InfrastructureChanges::connect(socket).map_err(IngressError::Socket)?;
         futures_util::future::try_join_all(running.iter().map(async |id| {
             changes
                 .stop_container(id, gateway::STOP_SECONDS)
                 .await
-                .with_context(|| format!("stop the ingress container {id}"))
+                .map_err(|source| IngressError::StopContainer {
+                    id: id.clone(),
+                    source,
+                })
         }))
         .await?;
         Ok(running.len())
@@ -309,7 +317,7 @@ impl Ingress {
         }
         let listener = Self::bind_control(&self.directory, traffic::TRAFFIC_SOCKET)
             .await
-            .context("failed to bind the gateway's traffic socket")?;
+            .map_err(IngressError::BindTraffic)?;
         Ok(Some(Traffic::new(listener, Arc::clone(&self.store))))
     }
 
@@ -347,6 +355,7 @@ impl Ingress {
         Self::bind_control(&self.directory, WEBHOOK_SOCKET)
             .await
             .map(Some)
+            .map_err(IngressError::from)
     }
 
     /// Binds the socket the private listener forwards the dashboard hostname
@@ -373,19 +382,30 @@ impl Ingress {
     /// the ingress `directory`. Only the daemon's user, which the gateway
     /// runs as, may connect. A socket left by an earlier run is replaced: the
     /// data directory lock is held.
-    async fn bind_control(directory: &Path, name: &str) -> Result<tokio::net::UnixListener> {
+    async fn bind_control(
+        directory: &Path,
+        name: &str,
+    ) -> std::result::Result<tokio::net::UnixListener, ControlError> {
         let control = directory.join("control");
         for directory in [directory, &control] {
-            piqueld_config::directories::prepare_data_dir(directory).await?;
+            piqueld_config::directories::prepare_data_dir(directory)
+                .await
+                .map_err(ControlError::Prepare)?;
         }
         let path = control.join(name);
         piqueld_config::directories::remove_file(&path)
             .await
-            .with_context(|| format!("remove the previous {name}"))?;
+            .map_err(|source| ControlError::RemovePrevious {
+                name: name.to_owned(),
+                source,
+            })?;
         let previous = rustix::process::umask(rustix::fs::Mode::RWXG | rustix::fs::Mode::RWXO);
         let bound = tokio::net::UnixListener::bind(&path);
         rustix::process::umask(previous);
-        let listener = bound.with_context(|| format!("bind {name}"))?;
+        let listener = bound.map_err(|source| ControlError::Bind {
+            name: name.to_owned(),
+            source,
+        })?;
         tracing::info!(socket = %path.display(), "control socket bound");
         Ok(listener)
     }
@@ -640,10 +660,13 @@ impl Ingress {
                 self.gateway_converged
                     .store(true, std::sync::atomic::Ordering::SeqCst);
             }
-            anyhow::Ok(())
+            Ok(())
         }
         .await
-        .context(stage);
+        .map_err(|source| IngressError::Stage {
+            stage,
+            source: Box::new(source),
+        });
         let private = self.private_status(gateway).await;
         let public = self.public_status().await;
         let disconnected = self.enabled
@@ -674,7 +697,7 @@ impl Ingress {
             Err(error) => {
                 tracing::error!(error=?error, "managed ingress is unhealthy");
                 let cause = error
-                    .downcast_ref::<gateway::UnmetRequirement>()
+                    .unmet()
                     .map_or_default(|unmet| format!(": {unmet}"));
                 format!(
                     "Ingress unavailable: could not {stage}{cause}. See daemon logs for details."
@@ -684,7 +707,7 @@ impl Ingress {
         result?;
         for (id, error) in failures {
             if application.is_none_or(|target| target == &id) {
-                anyhow::bail!("application {id} ingress network: {error}");
+                return Err(IngressError::ApplicationNetwork { id, message: error });
             }
         }
         Ok(())
@@ -893,7 +916,7 @@ impl Ingress {
             let hostname = route
                 .hostname
                 .served(exact)
-                .context("every one-character name below the wildcard has its own exact route")?;
+                .ok_or(IngressError::NoServedHostname)?;
             let resolved = self.resolve(&route.hostname, &hostname).await?;
             if is_private {
                 self.probe_private(&hostname, &resolved, &private.addresses)
@@ -903,7 +926,7 @@ impl Ingress {
             }
         })
         .await
-        .context("the route check took over 10s")
+        .map_err(IngressError::RouteCheckTimedOut)
         .and_then(|result| result);
         match result {
             Ok(()) if is_private => ("ready", "DNS points at the apps node and the private listener serves trusted HTTPS; the tailnet hop and backend health are reported separately".into()),
@@ -944,7 +967,10 @@ impl Ingress {
         }
         Ok(tokio::net::lookup_host((hostname.as_str(), 0))
             .await
-            .with_context(|| format!("resolve {hostname}"))?
+            .map_err(|source| IngressError::Resolve {
+                hostname: hostname.to_string(),
+                source,
+            })?
             .map(|address| address.ip())
             .collect())
     }
@@ -978,13 +1004,15 @@ impl Ingress {
             .iter()
             .filter_map(|address| address.parse().ok())
             .collect();
-        anyhow::ensure!(
-            !expected.is_empty() && *resolved == expected,
-            "DNS answers {resolved:?} instead of the apps node's addresses {expected:?}"
-        );
+        if expected.is_empty() || *resolved != expected {
+            return Err(IngressError::DnsMismatch {
+                resolved: resolved.clone(),
+                expected,
+            });
+        }
         let (relay, _relay) = node::proxy_relay(self.private_listener().await?, PROBE_CLIENT)
             .await
-            .context("start the private probe's PROXY relay")?;
+            .map_err(IngressError::ProxyRelay)?;
         let client = Self::probe_client()
             .resolve(hostname.as_str(), relay)
             .build()?;
@@ -1004,25 +1032,21 @@ impl Ingress {
             .get(format!("{origin}/.well-known/piqueld-ingress"))
             .send()
             .await?;
-        anyhow::ensure!(
-            response.status().is_success(),
-            "HTTPS probe returned {}",
-            response.status()
-        );
+        if !response.status().is_success() {
+            return Err(IngressError::ProbeStatus(response.status()));
+        }
         let mut body = response.bytes_stream();
         let mut bytes = Vec::new();
         while let Some(chunk) = body.next().await {
             let chunk = chunk?;
-            anyhow::ensure!(
-                bytes.len() + chunk.len() <= 256,
-                "HTTPS probe body exceeds its limit"
-            );
+            if bytes.len() + chunk.len() > 256 {
+                return Err(IngressError::ProbeBody);
+            }
             bytes.extend(chunk);
         }
-        anyhow::ensure!(
-            bytes == self.instance_id.as_bytes(),
-            "DNS points at another server or gateway"
-        );
+        if bytes != self.instance_id.as_bytes() {
+            return Err(IngressError::OtherGateway);
+        }
         Ok(())
     }
 }

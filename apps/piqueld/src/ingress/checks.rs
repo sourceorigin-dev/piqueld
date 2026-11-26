@@ -2,6 +2,7 @@
 //! ports the gateway publishes.
 
 use super::{Ingress, gateway::UnmetRequirement};
+use piqueld_core::ErrorChain as _;
 use piqueld_core::api::{CheckStatus, SystemCheck, SystemCheckId};
 use std::collections::BTreeSet;
 
@@ -11,12 +12,15 @@ impl Ingress {
     pub(crate) async fn docker_check(&self) -> SystemCheck {
         let check =
             |status, message: String| SystemCheck::new(SystemCheckId::Docker, status, message);
-        let version = match self.docker.version().await.map_err(anyhow::Error::from) {
+        let version = match self.docker.version().await {
             Ok(version) => version,
             Err(error) => {
                 return check(
                     CheckStatus::Fail,
-                    format!("Docker Engine did not report its version: {error:#}"),
+                    format!(
+                        "Docker Engine did not report its version: {}",
+                        error.chain()
+                    ),
                 )
                 .next_step(
                     "Start Docker and make sure the daemon's user can reach docker.socket.",
@@ -65,7 +69,7 @@ impl Ingress {
             Err(error) => {
                 return check(
                     CheckStatus::Fail,
-                    &format!("could not inspect the managed gateway: {error:#}"),
+                    &format!("could not inspect the managed gateway: {}", error.chain()),
                 )
                 .next_step("Check Docker; daemon logs have details.");
             }

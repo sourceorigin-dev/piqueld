@@ -1,6 +1,7 @@
 //! Steps of the routing scenario that replace, recover and resynchronize
 //! the gateway.
 use super::*;
+use piqueld_core::ErrorChain as _;
 
 impl Scenario {
     async fn reject_invalid_replacement_configuration(
@@ -16,8 +17,9 @@ impl Scenario {
             .await
             .expect_err("replace gateway fails");
         assert!(
-            format!("{error:#}").contains("configuration validation failed"),
-            "{error:#}"
+            error.chain().contains("configuration validation failed"),
+            "{}",
+            error.chain()
         );
         assert_eq!(self.gateway.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");
@@ -72,8 +74,9 @@ impl Scenario {
             .await
             .expect_err("replace gateway fails");
         assert!(
-            format!("{error:#}").contains("previous gateway restored"),
-            "{error:#}"
+            error.chain().contains("previous gateway restored"),
+            "{}",
+            error.chain()
         );
         assert_eq!(self.gateway.container_id().await, original);
         assert_eq!(self.body("one.example.test").await, "first backend");

@@ -22,9 +22,10 @@ use super::{
     backoff::{Backoff, BackoffPolicy},
     wire::Journaled,
 };
+use super::{IngressError, Result};
 use crate::ticker::Ticker;
-use anyhow::{Context, Result};
 use piqueld_config::dns::provider::{DnsProvider, Found, Record, RecordId, Zone};
+use piqueld_core::ErrorChain as _;
 use piqueld_core::Phase;
 use piqueld_core::{
     api::DnsRecordState,
@@ -431,7 +432,7 @@ impl Ingress {
                 return None;
             }
             let state = self.converge(hostname, plan).await.unwrap_or_else(|error| {
-                tracing::warn!(%hostname, error=format!("{error:#}"), "route DNS records could not be updated; will retry");
+                tracing::warn!(%hostname, error=error.chain(), "route DNS records could not be updated; will retry");
                 failed.insert(hostname.clone());
                 RouteDns::new(
                     DnsRecordState::Pending,
@@ -598,7 +599,7 @@ impl Ingress {
                 site.hostname.as_str(),
             )
             .await
-            .context("record the DNS change in the journal")?;
+            .map_err(|error| IngressError::JournalDns(Box::new(error)))?;
         let result = site.apply(&journal, claim, changes).await;
         let written = journal.finish(result).await?;
         if stages {

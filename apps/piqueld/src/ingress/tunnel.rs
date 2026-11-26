@@ -22,7 +22,7 @@
 //! differs is replaced.
 
 use super::{CLOUDFLARED_IMAGE, Ingress};
-use anyhow::{Context, Result};
+use super::{IngressError, Result};
 use piqueld_config::TunnelCredentials;
 use piqueld_config::directories::PrivateFile;
 use piqueld_core::Phase;
@@ -117,7 +117,7 @@ impl Ingress {
         PrivateFile::at(self.tunnel_directory().join("credentials.json"))
             .remove()
             .await
-            .context("remove the tunnel credentials written for cloudflared")
+            .map_err(IngressError::RemoveTunnelCredentials)
     }
 
     /// Writes the tunnel's configuration and credentials, and pulls its image.
@@ -180,11 +180,13 @@ impl Ingress {
         let container = self
             .named_container(&self.tunnel_name())
             .await?
-            .context("cloudflared does not exist")?;
-        anyhow::ensure!(Self::running(&container), "cloudflared is not running");
+            .ok_or(IngressError::CloudflaredMissing)?;
+        if !Self::running(&container) {
+            return Err(IngressError::CloudflaredStopped);
+        }
         container["State"]["Health"]["Status"]
             .as_str()
             .map(str::to_owned)
-            .context("cloudflared reports no health status")
+            .ok_or(IngressError::CloudflaredNoHealth)
     }
 }

@@ -5,6 +5,7 @@ use super::{
     OperationError, OperationKind, OperationState, Plan, PlanRequest, StoreError,
 };
 use crate::application::RuntimeBoundary;
+use crate::ingress::IngressError;
 use piqueld_core::Phase;
 use piqueld_core::api::DeploymentOrigin;
 use piqueld_core::timeline::{PlanCoverage, StepKey};
@@ -458,9 +459,11 @@ impl<D: DockerApi> Controller<D> {
             if let Some(ingress) = &self.ingress {
                 Box::pin(ingress.apply(operation, routes, ready))
                     .await
-                    .map_err(|error| match error.downcast_ref::<StoreError>() {
-                        Some(StoreError::IllegalTransition) => OperationError::Superseded,
-                        _ => OperationError::Ingress(error),
+                    .map_err(|error| match error {
+                        IngressError::Store(StoreError::IllegalTransition) => {
+                            OperationError::Superseded
+                        }
+                        error => OperationError::Ingress(error.into()),
                     })?;
             } else {
                 self.store

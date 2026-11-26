@@ -27,7 +27,7 @@ use super::{
     backoff::{Backoff, BackoffPolicy},
     wire::Journaled,
 };
-use anyhow::{Context, Result, bail};
+use super::{IngressError, Result};
 use instant_acme::{
     Account, AuthorizationStatus, ChallengeType, Identifier, NewAccount, NewOrder, OrderStatus,
     RetryPolicy,
@@ -38,6 +38,7 @@ use piqueld_config::dns::{
     Dns, ZoneError,
     provider::{Record, RecordId, Zone},
 };
+use piqueld_core::ErrorChain as _;
 use piqueld_core::Phase;
 use piqueld_core::{
     api::{CertificateStatus, DnsStatus},
@@ -64,8 +65,6 @@ const CHALLENGE_BACKOFF: BackoffPolicy = BackoffPolicy {
     first_ms: 60 * 1000,
     max_ms: 3600 * 1000,
 };
-/// Error of an order interrupted by daemon shutdown.
-const SHUTDOWN: &str = "cancelled by daemon shutdown";
 /// Longest wait for one ACME step, polling included: instant-acme's HTTP
 /// client has no deadline of its own.
 const ACME_TIMEOUT: Duration = Duration::from_mins(2);
@@ -162,7 +161,7 @@ impl Stored {
     fn from_bundle(bundle: &str) -> Result<Self> {
         let (key, chain) = bundle
             .split_once(Self::KEY_END)
-            .context("no PKCS#8 private key")?;
+            .ok_or(IngressError::NoPrivateKey)?;
         Self::parse(
             chain.trim_start().to_owned(),
             format!("{key}{}\n", Self::KEY_END),
@@ -175,7 +174,7 @@ impl Stored {
             not_before_ms,
             not_after_ms,
         } = crate::certificate::Validity::of_leaf(chain.as_bytes())
-            .map_err(|error| anyhow::anyhow!("decode {error}"))?;
+            .map_err(IngressError::DecodeCertificate)?;
         Ok(Self {
             chain,
             key,
@@ -203,7 +202,7 @@ struct Due {
 }
 
 /// The provider and zone owning a hostname, or why there is none.
-type Owner = Result<(usize, Zone), ZoneError>;
+type Owner = std::result::Result<(usize, Zone), ZoneError>;
 
 /// What piqueld knows about one certificate name.
 #[derive(Default)]
@@ -261,7 +260,7 @@ impl Certificates {
                 continue;
             };
             match std::fs::read_to_string(entry.path())
-                .map_err(anyhow::Error::from)
+                .map_err(IngressError::from)
                 .and_then(|bundle| Stored::from_bundle(&bundle))
             {
                 Ok(stored) => {
@@ -274,7 +273,7 @@ impl Certificates {
                     );
                 }
                 Err(error) => {
-                    tracing::warn!(certificate=%name, error=format!("{error:#}"), "ignoring unreadable stored certificate");
+                    tracing::warn!(certificate=%name, error=error.chain(), "ignoring unreadable stored certificate");
                 }
             }
         }
@@ -417,20 +416,21 @@ impl Entry {
 impl Certificates {
     /// Awaits one ACME `step`, bounded by [`ACME_TIMEOUT`] and interrupted by
     /// `cancellation`. Every ACME call goes through here.
-    async fn acme<T, E>(
+    async fn acme<T>(
         cancellation: &CancellationToken,
         step: &'static str,
-        future: impl Future<Output = Result<T, E>>,
-    ) -> Result<T>
-    where
-        E: std::error::Error + Send + Sync + 'static,
-    {
+        future: impl Future<Output = std::result::Result<T, instant_acme::Error>>,
+    ) -> Result<T> {
         cancellation
             .run_until_cancelled(tokio::time::timeout(ACME_TIMEOUT, future))
             .await
-            .with_context(|| format!("{step}: {SHUTDOWN}"))?
-            .with_context(|| format!("{step}: no answer within {}s", ACME_TIMEOUT.as_secs()))?
-            .context(step)
+            .ok_or(IngressError::AcmeShutdown { step })?
+            .map_err(|source| IngressError::AcmeTimedOut {
+                step,
+                seconds: ACME_TIMEOUT.as_secs(),
+                source,
+            })?
+            .map_err(|source| IngressError::Acme { step, source })
     }
 }
 
@@ -495,12 +495,12 @@ impl Ingress {
                     };
                 }
                 Err(error) => {
-                    tracing::warn!(certificate=%due.name, phase=%phase, error=format!("{error:#}"), "DNS-01 certificate failed; will retry with backoff");
+                    tracing::warn!(certificate=%due.name, phase=%phase, error=error.chain(), "DNS-01 certificate failed; will retry with backoff");
                     let failed_at_ms = now_ms.saturating_add(
                         i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX),
                     );
                     entry.backoff.fail(ISSUANCE_BACKOFF, failed_at_ms);
-                    entry.error = Some(format!("{error:#}"));
+                    entry.error = Some(error.chain());
                 }
             }
             drop(entries);
@@ -561,7 +561,7 @@ impl Ingress {
                     PrivateFile::at(self.certificates.path(&name))
                         .remove()
                         .await
-                        .context("delete expired certificate")
+                        .map_err(IngressError::DeleteCertificate)
                 }
                 .await;
                 journal.finish(result).await
@@ -572,7 +572,7 @@ impl Ingress {
                     self.certificates.entries.write().remove(&name);
                 }
                 Err(error) => {
-                    tracing::warn!(certificate=%name, error=format!("{error:#}"), "expired certificate could not be deleted; will retry");
+                    tracing::warn!(certificate=%name, error=error.chain(), "expired certificate could not be deleted; will retry");
                 }
             }
         }
@@ -627,7 +627,7 @@ impl Ingress {
             let owner = dns.zone_for(&leftover.zone).await?;
             self.delete_challenge(journal, &leftover, owner)
                 .await
-                .context("delete the challenge record left by an earlier attempt")?;
+                .map_err(|error| IngressError::DeleteLeftoverChallenge(Box::new(error)))?;
         }
         let result = self.complete_order(journal, due, cancellation).await;
         let deleted = async {
@@ -641,7 +641,7 @@ impl Ingress {
         }
         .await;
         if let Err(error) = deleted {
-            tracing::warn!(certificate=%due.name, error=format!("{error:#}"), "ACME challenge record could not be deleted; the next pass retries");
+            tracing::warn!(certificate=%due.name, error=error.chain(), "ACME challenge record could not be deleted; the next pass retries");
         }
         result
     }
@@ -671,7 +671,7 @@ impl Ingress {
             let owner = match self.certificates.dns.zone_for(&challenge.zone).await {
                 Ok(owner) => owner,
                 Err(error) => {
-                    tracing::warn!(record=%challenge.name, error=format!("{error:#}"), "leftover ACME challenge record's zone is unknown; keeping it");
+                    tracing::warn!(record=%challenge.name, error=error.chain(), "leftover ACME challenge record's zone is unknown; keeping it");
                     continue;
                 }
             };
@@ -684,7 +684,7 @@ impl Ingress {
             }
             .await;
             if let Err(error) = result {
-                tracing::warn!(record=%challenge.name, error=format!("{error:#}"), "leftover ACME challenge record could not be deleted; will retry with backoff");
+                tracing::warn!(record=%challenge.name, error=error.chain(), "leftover ACME challenge record could not be deleted; will retry with backoff");
                 let mut backoff = backoff.lock();
                 let entry = backoff.entry(challenge.name).or_default();
                 entry.fail(CHALLENGE_BACKOFF, now_ms);
@@ -716,7 +716,7 @@ impl Ingress {
                     .map(|found| found.id)
                     .collect(),
                 Err(error) if error.is_denied() => {
-                    tracing::warn!(record=%challenge.name, error=format!("{error:#}"), "could not look for an ACME challenge record created without an ID; it is left in place");
+                    tracing::warn!(record=%challenge.name, error=error.chain(), "could not look for an ACME challenge record created without an ID; it is left in place");
                     Vec::new()
                 }
                 Err(error) => return Err(error.into()),
@@ -771,13 +771,13 @@ impl Ingress {
                     authorizations.next().await.transpose()
                 })
                 .await?
-                .context("ACME order has no authorization")?;
+                .ok_or(IngressError::NoAuthorization)?;
             match authorization.status {
                 AuthorizationStatus::Valid => {}
                 AuthorizationStatus::Pending => {
                     let mut challenge = authorization
                         .challenge(ChallengeType::Dns01)
-                        .context("the CA offered no DNS-01 challenge")?;
+                        .ok_or(IngressError::NoDns01Challenge)?;
                     let value = challenge.key_authorization().dns_value();
                     let challenge_name = name.challenge();
                     let mut saved = AcmeChallenge {
@@ -809,7 +809,7 @@ impl Ingress {
                             self.certificates.propagation_timeout,
                         ))
                         .await
-                        .context(SHUTDOWN)??;
+                        .ok_or(IngressError::Shutdown)??;
                     journal.request().await?;
                     Certificates::acme(
                         cancellation,
@@ -818,7 +818,11 @@ impl Ingress {
                     )
                     .await?;
                 }
-                status => bail!("ACME authorization is {status:?}"),
+                status => {
+                    return Err(IngressError::AuthorizationStatus {
+                        status: format!("{status:?}"),
+                    });
+                }
             }
         }
         let retries = RetryPolicy::new().timeout(ACME_TIMEOUT);
@@ -829,10 +833,14 @@ impl Ingress {
         )
         .await?;
         if status != OrderStatus::Ready {
-            match &order.state().error {
-                Some(problem) => bail!("ACME order is {status:?}: {problem}"),
-                None => bail!("ACME order is {status:?}"),
-            }
+            return Err(IngressError::OrderNotReady {
+                status: format!("{status:?}"),
+                problem: order
+                    .state()
+                    .error
+                    .as_ref()
+                    .map_or_else(String::new, |problem| format!(": {problem}")),
+            });
         }
         journal.request().await?;
         let key = Certificates::acme(cancellation, "finalize ACME order", order.finalize()).await?;
@@ -873,7 +881,7 @@ impl Ingress {
         let builder = Account::builder()?;
         let account = if tokio::fs::try_exists(&path).await? {
             let credentials = serde_json::from_slice(&tokio::fs::read(&path).await?)
-                .context("decode stored ACME account")?;
+                .map_err(IngressError::DecodeAccount)?;
             Certificates::acme(
                 cancellation,
                 "load ACME account",
