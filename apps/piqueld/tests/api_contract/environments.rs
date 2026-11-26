@@ -6,13 +6,13 @@ use super::*;
 /// malformed request field rather than a manifest validation failure.
 #[tokio::test]
 async fn environment_branches_are_validated_like_preview_branches() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
     let saved = server
         .client()
         .apply_and_deploy(&new_application())
         .await
-        .unwrap();
+        .expect("the application deploys");
     let (application, environment) = (&saved.application_id, &saved.environment_id);
     let json = [("content-type", "application/json")];
     for (method, path, body, code) in [
@@ -38,21 +38,33 @@ async fn environment_branches_are_validated_like_preview_branches() {
 /// `view=summary` lists the same deployments without their manifests.
 #[tokio::test]
 async fn deployments_read_alone_and_list_as_summaries() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
     let client = server.client();
-    let deployed = client.apply_and_deploy(&new_application()).await.unwrap();
+    let deployed = client
+        .apply_and_deploy(&new_application())
+        .await
+        .expect("the application deploys");
     let (environment, id) = (&deployed.environment_id, &deployed.operation_id);
-    let one = client.deployment(environment, id).await.unwrap();
+    let one = client
+        .deployment(environment, id)
+        .await
+        .expect("the deployment loads");
     assert_eq!(&one.operation.id, id);
-    let missing = client.deployment("app-missing", id).await.unwrap_err();
+    let missing = client
+        .deployment("app-missing", id)
+        .await
+        .expect_err("the lookup is rejected");
     assert_eq!(api_error(missing).status, StatusCode::NOT_FOUND);
 
-    let full = client.deployments(environment, None, None).await.unwrap();
+    let full = client
+        .deployments(environment, None, None)
+        .await
+        .expect("the deployments list");
     let summaries = client
         .deployment_summaries(environment, None, None)
         .await
-        .unwrap();
+        .expect("the deployment summaries list");
     let ids = |ids: Vec<&String>| ids.into_iter().cloned().collect::<Vec<_>>();
     assert_eq!(
         ids(full.items.iter().map(|item| &item.operation.id).collect()),
@@ -66,7 +78,7 @@ async fn deployments_read_alone_and_list_as_summaries() {
     let body = server.send(Method::GET, &path, &[], Vec::new()).await.body;
     assert!(
         !String::from_utf8(body.to_vec())
-            .unwrap()
+            .expect("the bytes are utf-8")
             .contains("\"template\"")
     );
 }
@@ -75,18 +87,26 @@ async fn deployments_read_alone_and_list_as_summaries() {
 /// operation, so listing applications needs no request per environment.
 #[tokio::test]
 async fn the_listing_carries_each_environments_status_and_latest_operation() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
     let client = server.client();
-    let deployed = client.apply_and_deploy(&new_application()).await.unwrap();
-    let listed = client.applications().await.unwrap().items.remove(0);
+    let deployed = client
+        .apply_and_deploy(&new_application())
+        .await
+        .expect("the application deploys");
+    let listed = client
+        .applications()
+        .await
+        .expect("the applications list")
+        .items
+        .remove(0);
     let environment = &listed.environments[0];
     assert_eq!(environment.environment.id.as_str(), deployed.environment_id);
     let status = environment.status.as_ref().expect("a status");
     let expected = client
         .environment_status(&deployed.environment_id)
         .await
-        .unwrap();
+        .expect("the environment status loads");
     assert_eq!(status.state, expected.state);
     let latest = environment.latest_operation.as_ref().expect("an operation");
     assert_eq!(latest.id, deployed.operation_id);
@@ -97,21 +117,25 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
     use piqueld::api::{ApplicationError, Mutation, MutationResponse};
     use piqueld_core::EnvironmentName;
     use piqueld_store::StoreError;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("tempdir opens");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
-    let application = piqueld_core::ApplicationId::parse(&saved.application_id).unwrap();
-    let view = service.application(&application).await.unwrap();
+    let application = piqueld_core::ApplicationId::parse(&saved.application_id).expect("id parses");
+    let view = service.application(&application).await.expect("app loads");
     assert_eq!(view.generation, saved.generation);
-    let production = view.environment("production").unwrap().id.clone();
+    let production = view
+        .environment("production")
+        .expect("env loads")
+        .id
+        .clone();
     assert!(production.as_str().starts_with("env-"), "{production}");
-    assert_eq!(view.sole_environment().unwrap_err().len(), 2);
+    assert_eq!(view.sole_environment().expect_err("lookup fails").len(), 2);
 
     assert!(matches!(
         service
             .accept(Daemon,
                 Mutation::save(
-                    manifest().validate_template().unwrap(),
+                    manifest().validate_template().expect("it validates"),
                     Some(saved.application_id.clone()),
                     true,
                 ),
@@ -133,7 +157,7 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
             None,
         )
         .await
-        .unwrap()
+        .expect("it accepts")
     else {
         panic!("deployment")
     };
@@ -142,7 +166,7 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
         service
             .environment_detail(&production, &piqueld_core::access::Scope::All)
             .await
-            .unwrap()
+            .expect("detail loads")
             .latest_operation
             .is_none()
     );
@@ -150,9 +174,9 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
         service
             .environment_detail(&staging.id, &piqueld_core::access::Scope::All)
             .await
-            .unwrap()
+            .expect("detail loads")
             .latest_operation
-            .unwrap()
+            .expect("operation exists")
             .id,
         deployed.operation_id
     );
@@ -161,7 +185,7 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
         id: application.clone(),
         environments: names
             .iter()
-            .map(|name| EnvironmentName::parse(*name).unwrap())
+            .map(|name| EnvironmentName::parse(*name).expect("name parses"))
             .collect(),
     };
     assert!(matches!(
@@ -187,7 +211,7 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
             None,
         )
         .await
-        .unwrap()
+        .expect("it accepts")
     else {
         panic!("deleted")
     };
@@ -199,10 +223,11 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
 async fn application_history_spans_its_environments() {
     use piqueld::api::Mutation;
     use piqueld_core::observability::EventFilter;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
-    let application = piqueld_core::ApplicationId::parse(&saved.application_id).unwrap();
+    let application = piqueld_core::ApplicationId::parse(&saved.application_id)
+        .expect("the application id parses");
     let production = production(&service, &saved.application_id).await;
     service
         .accept(
@@ -213,7 +238,7 @@ async fn application_history_spans_its_environments() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     service
         .accept(
             Daemon,
@@ -223,14 +248,14 @@ async fn application_history_spans_its_environments() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     let events = |filter: EventFilter| {
         let service = service.clone();
         async move {
             service
                 .filtered_events(&filter, &piqueld_store::Visibility::ALL, None, 100)
                 .await
-                .unwrap()
+                .expect("the filtered events list")
                 .items
                 .into_iter()
                 .map(|event| (event.kind, event.environment_id))
@@ -268,7 +293,7 @@ async fn previews_compare_with_the_selected_environment() {
     use piqueld::api::{ApplicationError, Mutation};
     use piqueld_core::api::RuntimeCoverage;
     use piqueld_store::StoreError;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
     let production = production(&service, &saved.application_id).await;
@@ -281,14 +306,16 @@ async fn previews_compare_with_the_selected_environment() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     let plan = |environment: Option<piqueld_core::EnvironmentId>| {
         let service = service.clone();
         async move {
             service
                 .plan(
                     &piqueld_core::access::Grants::admin(),
-                    manifest().validate_template().unwrap(),
+                    manifest()
+                        .validate_template()
+                        .expect("the template validates"),
                     None,
                     None,
                     environment.as_ref(),
@@ -297,11 +324,13 @@ async fn previews_compare_with_the_selected_environment() {
         }
     };
 
-    let unselected = plan(None).await.unwrap();
+    let unselected = plan(None).await.expect("the plan builds");
     assert!(unselected.operation.is_none() && unselected.plan.actions.is_empty());
     assert_eq!(unselected.runtime_coverage, RuntimeCoverage::Omitted);
 
-    let deployed = plan(Some(staging.id.clone())).await.unwrap();
+    let deployed = plan(Some(staging.id.clone()))
+        .await
+        .expect("the plan builds");
     assert!(deployed.identical);
     assert!(deployed.operation.is_some());
     let resolves_image = |plan: &piqueld_core::api::PlanView| {
@@ -313,7 +342,7 @@ async fn previews_compare_with_the_selected_environment() {
     assert!(resolves_image(&deployed));
     assert_eq!(deployed.runtime_coverage, RuntimeCoverage::Resolution);
 
-    let undeployed = plan(Some(production)).await.unwrap();
+    let undeployed = plan(Some(production)).await.expect("the plan builds");
     assert!(!undeployed.identical && undeployed.operation.is_none());
     assert!(!undeployed.changes.is_empty() && resolves_image(&undeployed));
 
@@ -323,12 +352,12 @@ async fn previews_compare_with_the_selected_environment() {
     let foreign = service
         .applications(&piqueld_core::access::Scope::All, None, None, None)
         .await
-        .unwrap()
+        .expect("the applications list")
         .items;
     let foreign = foreign
         .iter()
         .find(|application| application.name == "other")
-        .unwrap()
+        .expect("the item exists")
         .environments[0]
         .environment
         .id
@@ -344,7 +373,7 @@ async fn previews_render_variables_for_the_selected_environment() {
     use piqueld::api::ApplicationError;
     use piqueld_core::manifest::{EnvironmentConfig, Variable, VariableValue};
     use piqueld_store::StoreError;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
     let production = production(&service, &saved.application_id).await;
@@ -366,7 +395,9 @@ async fn previews_render_variables_for_the_selected_environment() {
             service
                 .plan(
                     &piqueld_core::access::Grants::admin(),
-                    manifest.validate_template().unwrap(),
+                    manifest
+                        .validate_template()
+                        .expect("the template validates"),
                     None,
                     None,
                     Some(&environment),
@@ -375,7 +406,7 @@ async fn previews_render_variables_for_the_selected_environment() {
         }
     };
 
-    let rendered = plan(staging.id.clone()).await.unwrap();
+    let rendered = plan(staging.id.clone()).await.expect("the plan builds");
     assert_eq!(
         rendered.variables["vars.level"],
         VariableValue::String("debug".into())
@@ -384,7 +415,9 @@ async fn previews_render_variables_for_the_selected_environment() {
         rendered.variables["env.name"],
         VariableValue::String("staging".into())
     );
-    let name = |name: &str| piqueld_core::EnvironmentName::parse(name).unwrap();
+    let name = |name: &str| {
+        piqueld_core::EnvironmentName::parse(name).expect("the environment name parses")
+    };
     assert_eq!(
         rendered.environments,
         [

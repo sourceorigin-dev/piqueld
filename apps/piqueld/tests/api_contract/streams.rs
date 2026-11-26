@@ -9,7 +9,7 @@ use super::*;
 async fn exec_rechecks_grants_when_the_command_starts() {
     use piqueld_core::access::Denied;
     use piqueld_store::{Caller, StoreError};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let state = state(&temp).await;
     let saved = save(&state, manifest()).await;
     let database = database(&temp);
@@ -17,8 +17,9 @@ async fn exec_rechecks_grants_when_the_command_starts() {
     seed_account(&database, "operator", &grant).await;
     let environment = production(&state, &saved.application_id).await;
     let request = piqueld_core::exec::ExecRequest {
-        service: "web".parse().unwrap(),
-        command: piqueld_core::exec::ExecCommand::parse(vec!["true".into()]).unwrap(),
+        service: "web".parse().expect("the value parses"),
+        command: piqueld_core::exec::ExecCommand::parse(vec!["true".into()])
+            .expect("the exec command parses"),
         stdin: false,
         tty: None,
     };
@@ -29,7 +30,7 @@ async fn exec_rechecks_grants_when_the_command_starts() {
     let session = state
         .exec(caller, &environment, &request, "operator")
         .await
-        .unwrap();
+        .expect("the exec runs");
     let (_, input) = tokio::sync::mpsc::channel(1);
     let (output, _output) = tokio::sync::mpsc::channel(1);
     let io = piqueld_docker::ExecIo {
@@ -37,7 +38,7 @@ async fn exec_rechecks_grants_when_the_command_starts() {
         output,
         stop: tokio_util::sync::CancellationToken::new(),
     };
-    assert_eq!(session.run(io).await.unwrap(), 0);
+    assert_eq!(session.run(io).await.expect("the command runs"), 0);
     let filter = piqueld_core::observability::EventFilter {
         kind: Some("command_started".into()),
         ..Default::default()
@@ -45,7 +46,7 @@ async fn exec_rechecks_grants_when_the_command_starts() {
     let started = state
         .filtered_events(&filter, &piqueld_store::Visibility::ALL, None, 10)
         .await
-        .unwrap()
+        .expect("the filtered events list")
         .items;
     assert_eq!(
         started[0].actor,
@@ -72,7 +73,7 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
     use futures_util::{SinkExt, StreamExt};
     use piqueld_client::exec::{ExecCommand, ExecInput, ExecOutput, ExecRequest};
     use tokio_tungstenite::tungstenite::Message;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let state = state(&temp).await;
     let unix = Server::unix(
         api_router(state.clone(), FakeAuth),
@@ -80,8 +81,9 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
     );
     let tcp = Server::tcp(router(state, FakeAuth)).await;
     let request = |service: &str| ExecRequest {
-        service: service.parse().unwrap(),
-        command: ExecCommand::parse(vec!["invite".into(), "create".into()]).unwrap(),
+        service: service.parse().expect("the value parses"),
+        command: ExecCommand::parse(vec!["invite".into(), "create".into()])
+            .expect("the exec command parses"),
         stdin: true,
         tty: None,
     };
@@ -89,20 +91,23 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
         .client()
         .apply_and_deploy(&new_application())
         .await
-        .unwrap();
+        .expect("the application deploys");
     for client in [unix.client(), tcp.client()] {
         let (mut output, mut input) = client
             .exec(&app.environment_id, &request("web"))
             .await
-            .unwrap();
+            .expect("the exec runs");
         input
             .send(&ExecInput::Stdin(b"hello".to_vec()))
             .await
-            .unwrap();
+            .expect("the request is sent");
         assert!(
             matches!(output.next().await, Ok(Some(ExecOutput::Stdout(data))) if data == b"hello")
         );
-        input.send(&ExecInput::CloseStdin).await.unwrap();
+        input
+            .send(&ExecInput::CloseStdin)
+            .await
+            .expect("the request is sent");
         assert!(
             matches!(output.next().await, Ok(Some(ExecOutput::Stderr(data))) if data == b"closed")
         );
@@ -112,7 +117,7 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
         let (mut output, _input) = client
             .exec(&app.environment_id, &request("worker"))
             .await
-            .unwrap();
+            .expect("the exec runs");
         assert!(matches!(
             output.next().await,
             Ok(Some(ExecOutput::Failed { status: 409, error }))
@@ -123,7 +128,7 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
         .client()
         .events(None, Some(&app.environment_id), None, false, None, 100)
         .await
-        .unwrap()
+        .expect("the events list")
         .items
         .into_iter()
         .filter(|event| event.kind.starts_with("command_"))
@@ -131,7 +136,13 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
     assert_eq!(commands.len(), 4);
     for event in &commands {
         assert_eq!(event.resource.as_deref(), Some("web"));
-        assert!(!event.message.as_deref().unwrap().contains("invite"));
+        assert!(
+            !event
+                .message
+                .as_deref()
+                .expect("the value is present")
+                .contains("invite")
+        );
     }
     assert_eq!(
         commands[1].message.as_deref(),
@@ -144,9 +155,12 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
         app.environment_id
     );
     let (mut socket, _) = connect_exec(tcp.address(), url, None).await;
-    let start = serde_json::to_string(&request("web")).unwrap();
-    socket.send(Message::text(start)).await.unwrap();
-    socket.close(None).await.unwrap();
+    let start = serde_json::to_string(&request("web")).expect("the value serialises");
+    socket
+        .send(Message::text(start))
+        .await
+        .expect("the request is sent");
+    socket.close(None).await.expect("the socket closes");
     let reply = tokio::time::timeout(Duration::from_secs(5), socket.next()).await;
     assert!(
         matches!(reply, Ok(Some(Ok(Message::Close(_))))),
@@ -156,7 +170,7 @@ async fn exec_streams_over_both_transports_and_records_history_without_the_comma
 
 #[tokio::test]
 async fn event_stream_replays_after_cursor_and_rejects_pruned_history() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let app = api.deploy().await;
     api.finish_operation(
@@ -168,7 +182,7 @@ async fn event_stream_replays_after_cursor_and_rejects_pruned_history() {
         .client
         .events(None, None, None, false, None, 100)
         .await
-        .unwrap()
+        .expect("the events list")
         .items;
     let after = events[events.len() - 2].id;
     let router = api.router();
@@ -185,7 +199,7 @@ async fn event_stream_replays_after_cursor_and_rejects_pruned_history() {
                 .header("host", "localhost")
                 .header("last-event-id", format!("v1:{after}"))
                 .body(Body::empty())
-                .unwrap(),
+                .expect("the request body builds"),
         )
         .await;
     assert_eq!(response.status(), 200);
@@ -194,7 +208,11 @@ async fn event_stream_replays_after_cursor_and_rejects_pruned_history() {
     let frame = tokio::time::timeout(Duration::from_secs(2), async {
         let mut bytes = Vec::new();
         loop {
-            let frame = body.frame().await.unwrap().unwrap();
+            let frame = body
+                .frame()
+                .await
+                .expect("the frame is present")
+                .expect("the nested value is present");
             if let Ok(data) = frame.into_data() {
                 bytes.extend_from_slice(&data);
                 if let Some(end) = bytes.windows(2).position(|window| window == b"\n\n") {
@@ -205,11 +223,17 @@ async fn event_stream_replays_after_cursor_and_rejects_pruned_history() {
         }
     })
     .await
-    .unwrap();
-    let text = std::str::from_utf8(&frame).unwrap();
+    .expect("the call finishes in time");
+    let text = std::str::from_utf8(&frame).expect("the bytes are utf-8");
     assert!(text.contains("operation_failed"));
-    assert!(text.contains(&format!("id: v1:{}", events.last().unwrap().id)));
-    api.store.prune_events(i64::MAX).await.unwrap();
+    assert!(text.contains(&format!(
+        "id: v1:{}",
+        events.last().expect("the last item exists").id
+    )));
+    api.store
+        .prune_events(i64::MAX)
+        .await
+        .expect("the events prune");
     let response = router
         .send(request(&format!("/api/v1/events/stream?cursor=v1:{after}")))
         .await;
@@ -220,7 +244,7 @@ async fn event_stream_replays_after_cursor_and_rejects_pruned_history() {
 /// a write between batches.
 #[tokio::test]
 async fn event_stream_replays_its_whole_backlog_in_small_batches() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let app = api.deploy().await;
     api.finish_operation(&app.operation_id, None).await;
@@ -228,7 +252,7 @@ async fn event_stream_replays_its_whole_backlog_in_small_batches() {
         .client
         .events(None, None, None, false, None, 100)
         .await
-        .unwrap()
+        .expect("the events list")
         .items;
     assert!(stored.len() > 2, "{stored:?}");
     let response = api
@@ -238,7 +262,11 @@ async fn event_stream_replays_its_whole_backlog_in_small_batches() {
     let mut body = response.into_body();
     let last = format!(
         "id: v1:{}",
-        stored.iter().map(|event| event.id).max().unwrap()
+        stored
+            .iter()
+            .map(|event| event.id)
+            .max()
+            .expect("the list is not empty")
     );
     let replayed =
         tokio::time::timeout(Duration::from_secs(2), read_stream(&mut body, Some(&last)))
@@ -251,7 +279,7 @@ async fn event_stream_replays_its_whole_backlog_in_small_batches() {
 /// again as soon as an event changes it.
 #[tokio::test]
 async fn timeline_stream_sends_the_timeline_then_each_change() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let app = api.deploy().await;
     let response = api
@@ -266,7 +294,7 @@ async fn timeline_stream_sends_the_timeline_then_each_change() {
     let mut body = response.into_body();
     let first = tokio::time::timeout(Duration::from_secs(2), read_stream(&mut body, Some("\n\n")))
         .await
-        .unwrap();
+        .expect("the call finishes in time");
     assert!(first.starts_with("event: timeline\n"), "{first}");
     assert!(first.contains(r#""state":"requested""#), "{first}");
     api.finish_operation(&app.operation_id, None).await;
@@ -275,7 +303,7 @@ async fn timeline_stream_sends_the_timeline_then_each_change() {
         read_stream(&mut body, Some(r#""state":"succeeded""#)),
     )
     .await
-    .unwrap();
+    .expect("the call finishes in time");
     assert!(next.contains("event: timeline\n"), "{next}");
 }
 
@@ -304,7 +332,10 @@ async fn exec_refusals_after_the_upgrade_are_audited() {
     )
     .await;
     let start = serde_json::json!({"service": "web", "command": ["true"], "stdin": false});
-    socket.send(Message::text(start.to_string())).await.unwrap();
+    socket
+        .send(Message::text(start.to_string()))
+        .await
+        .expect("the request is sent");
     while let Some(Ok(message)) = socket.next().await {
         if message.is_close() {
             break;
@@ -315,7 +346,7 @@ async fn exec_refusals_after_the_upgrade_are_audited() {
         .await;
     let outcomes: Vec<_> = body["data"]["items"]
         .as_array()
-        .unwrap()
+        .expect("the value is an array")
         .iter()
         .map(|event| {
             assert_eq!(event["action"], "GET /api/v1/environments/{id}/exec");
@@ -342,15 +373,17 @@ async fn connect_exec(
     tokio_tungstenite::tungstenite::handshake::client::Response,
 ) {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-    let mut request = url.into_client_request().unwrap();
+    let mut request = url.into_client_request().expect("the request builds");
     if let Some(token) = token {
-        let bearer = format!("Bearer {token}").parse().unwrap();
+        let bearer = format!("Bearer {token}").parse().expect("the value parses");
         request.headers_mut().insert("authorization", bearer);
     }
-    let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+    let stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("the connection opens");
     tokio_tungstenite::client_async(request, stream)
         .await
-        .unwrap()
+        .expect("the websocket handshakes")
 }
 
 /// Opens an exec WebSocket on `environment` at `address` as `token` and
@@ -366,7 +399,10 @@ async fn open_exec(
     let url = format!("ws://{address}/api/v1/environments/{environment}/exec");
     let (mut socket, _) = connect_exec(address, url, token).await;
     let start = serde_json::json!({"service": "web", "command": [command], "stdin": true});
-    socket.send(Message::text(start.to_string())).await.unwrap();
+    socket
+        .send(Message::text(start.to_string()))
+        .await
+        .expect("the request is sent");
     socket
 }
 
@@ -420,10 +456,15 @@ async fn exec_sessions_end_once_access_is_lost() {
         let mut socket =
             open_exec(server.address(), &f.blog_production, Some(&token), command).await;
         let echo = ExecInput::Stdin(b"hi".to_vec()).encode();
-        socket.send(Message::binary(echo)).await.unwrap();
+        socket
+            .send(Message::binary(echo))
+            .await
+            .expect("the request is sent");
         let mut next = async || loop {
             match socket.next().await {
-                Some(Ok(Message::Binary(data))) => return Some(ExecOutput::decode(&data).unwrap()),
+                Some(Ok(Message::Binary(data))) => {
+                    return Some(ExecOutput::decode(&data).expect("the exec output decodes"));
+                }
                 Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
                 _ => return None,
             }
@@ -458,7 +499,10 @@ async fn exec_rechecks_access_once_the_command_is_created() {
     let server = f.serve().await;
     let mut socket = open_exec(server.address(), &f.blog_production, Some(&token), "held").await;
     for input in [ExecInput::Stdin(b"hi".to_vec()), ExecInput::CloseStdin] {
-        socket.send(Message::binary(input.encode())).await.unwrap();
+        socket
+            .send(Message::binary(input.encode()))
+            .await
+            .expect("the request is sent");
     }
     let gate = &f.runtime.exec_gate;
     tokio::time::timeout(Duration::from_secs(10), gate.started.notified())
@@ -471,7 +515,7 @@ async fn exec_rechecks_access_once_the_command_is_created() {
     let mut outputs = Vec::new();
     while let Some(Ok(message)) = socket.next().await {
         if let Message::Binary(data) = message {
-            outputs.push(ExecOutput::decode(&data).unwrap());
+            outputs.push(ExecOutput::decode(&data).expect("the exec output decodes"));
         }
     }
     assert!(
@@ -486,7 +530,7 @@ async fn exec_rechecks_access_once_the_command_is_created() {
         .state
         .filtered_events(&filter, &piqueld_store::Visibility::ALL, None, 10)
         .await
-        .unwrap();
+        .expect("the filtered events list");
     assert!(started.items.is_empty());
 }
 
@@ -498,7 +542,7 @@ async fn exec_notices_a_client_that_left_behind_unread_input() {
     use futures_util::SinkExt;
     use piqueld_core::exec::{ExecFrame, ExecInput};
     use tokio_tungstenite::tungstenite::Message;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let state = state(&temp).await;
     let saved = save(&state, manifest()).await;
     let environment = production(&state, &saved.application_id).await;
@@ -511,7 +555,10 @@ async fn exec_notices_a_client_that_left_behind_unread_input() {
     let mut socket = open_exec(server.address(), environment.as_str(), None, "block").await;
     for _ in 0..32 {
         let input = ExecInput::Stdin(vec![0; 1024]).encode();
-        socket.send(Message::binary(input)).await.unwrap();
+        socket
+            .send(Message::binary(input))
+            .await
+            .expect("the request is sent");
     }
     drop(socket);
     let filter = piqueld_core::observability::EventFilter {
@@ -522,7 +569,7 @@ async fn exec_notices_a_client_that_left_behind_unread_input() {
         let events = state
             .filtered_events(&filter, &piqueld_store::Visibility::ALL, None, 10)
             .await
-            .unwrap()
+            .expect("the filtered events list")
             .items;
         (!events.is_empty()).then_some(events)
     });
@@ -540,8 +587,8 @@ async fn exec_notices_a_client_that_left_behind_unread_input() {
 async fn read_stream(body: &mut Body, needle: Option<&str>) -> String {
     let mut text = String::new();
     while let Some(frame) = body.frame().await {
-        if let Ok(data) = frame.unwrap().into_data() {
-            text.push_str(std::str::from_utf8(&data).unwrap());
+        if let Ok(data) = frame.expect("the frame is present").into_data() {
+            text.push_str(std::str::from_utf8(&data).expect("the bytes are utf-8"));
             if needle.is_some_and(|needle| text.contains(needle)) {
                 break;
             }
@@ -567,7 +614,7 @@ async fn event_streams_end_once_access_is_lost_or_the_daemon_stops() {
             .uri("/api/v1/events/stream")
             .header("authorization", format!("Bearer {token}"))
             .body(Body::empty())
-            .unwrap();
+            .expect("the request body builds");
         let response = router.open(request).await;
         assert_eq!(response.status(), 200);
         response.into_body()
@@ -621,7 +668,7 @@ async fn log_streams_follow_new_tasks_until_access_is_lost() {
         .header("authorization", format!("Bearer {reader}"))
         .header("last-event-id", resume.to_string())
         .body(Body::empty())
-        .unwrap();
+        .expect("the request builds");
     let response = f.router.open(request).await;
     assert_eq!(response.status(), 200);
     let mut body = response.into_body();
@@ -630,7 +677,7 @@ async fn log_streams_follow_new_tasks_until_access_is_lost() {
         read_stream(&mut body, Some("hello one")),
     )
     .await
-    .unwrap();
+    .expect("the first log line arrives in time");
     assert!(
         first.contains("id: 20") && first.contains("event: log\n"),
         "{first}"
@@ -644,7 +691,7 @@ async fn log_streams_follow_new_tasks_until_access_is_lost() {
         read_stream(&mut body, Some("hello two")),
     )
     .await
-    .unwrap();
+    .expect("the new container's log line arrives in time");
     for skipped in ["debug", "other"] {
         assert!(!format!("{first}{next}").contains(skipped), "{first}{next}");
     }

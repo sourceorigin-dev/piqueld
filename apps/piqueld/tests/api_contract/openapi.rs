@@ -98,9 +98,10 @@ fn collect_unresolved_refs(
 
 #[tokio::test]
 async fn routed_statuses_and_media_types_are_documented_in_openapi() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
     let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
-    let document = serde_json::to_value(piqueld::api::http::openapi_document()).unwrap();
+    let document =
+        serde_json::to_value(piqueld::api::http::openapi_document()).expect("the value serialises");
     let cases = [
         (Method::GET, "/system/status", 200),
         (Method::GET, "/system/configuration", 503),

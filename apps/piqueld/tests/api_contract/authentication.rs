@@ -19,13 +19,20 @@ async fn every_documented_operation_requires_authentication() {
         "/api/v1/auth/device/start",
         "/api/v1/auth/device/poll",
     ];
-    let temp = TempDir::new().unwrap();
-    let store = Arc::new(Store::open_unsynced(database(&temp)).await.unwrap());
-    let auth = piqueld::auth::Auth::new(&store, "https://piqueld.example").unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
+    let store = Arc::new(
+        Store::open_unsynced(database(&temp))
+            .await
+            .expect("the store opens"),
+    );
+    let auth = piqueld::auth::Auth::new(&store, "https://piqueld.example")
+        .expect("the auth service builds");
     let runtime = Arc::new(FakeRuntime::new(&store));
     let state = api_state(&temp, store, runtime).await;
     let document = piqueld::api::http::openapi_document();
-    let paths = document["paths"].as_object().unwrap();
+    let paths = document["paths"]
+        .as_object()
+        .expect("the value is an object");
     let mut checked = 0;
     for listener in [
         web_router(state.clone(), UiAssets::Embedded(TEST_BUNDLE), auth.clone()),
@@ -60,7 +67,7 @@ async fn every_documented_operation_requires_authentication() {
                             .header("content-type", "application/json")
                             .header("x-request-id", "anonymous-contract")
                             .body(Body::from("{}"))
-                            .unwrap(),
+                            .expect("the request body builds"),
                     )
                     .await;
                 assert_eq!(
@@ -68,10 +75,12 @@ async fn every_documented_operation_requires_authentication() {
                     StatusCode::UNAUTHORIZED,
                     "{method} {path} must require authentication"
                 );
-                let request_id = response.header("x-request-id").unwrap();
+                let request_id = response
+                    .header("x-request-id")
+                    .expect("the header is present");
                 assert_ne!(request_id, "anonymous-contract");
                 let error: piqueld_core::api::ErrorBody =
-                    serde_json::from_slice(&response.body).unwrap();
+                    serde_json::from_slice(&response.body).expect("the body is valid json");
                 assert_eq!(error.request_id, request_id);
                 checked += 1;
             }
@@ -94,7 +103,8 @@ async fn device_sign_ins_are_audited() {
         assert_eq!(status, 200, "{body}");
         codes.push((body["device_code"].clone(), body["user_code"].clone()));
     }
-    let [(pending, _), (approved, user_code)] = <[_; 2]>::try_from(codes).unwrap();
+    let [(pending, _), (approved, user_code)] =
+        <[_; 2]>::try_from(codes).expect("the conversion fits");
     let (_, body) = f
         .router
         .call(&f.deployer, "POST", poll, json!({"device_code": pending}))
@@ -130,12 +140,12 @@ async fn device_sign_ins_are_audited() {
 /// link; remote requests for it are audited as refusals.
 #[tokio::test]
 async fn setup_link_is_served_only_over_the_unix_socket() {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let state = state(&temp).await;
     let auth = auth(&temp).await;
     let path = temp.path().join("setup-link");
-    auth.prepare_setup(&path).await.unwrap();
-    let link = std::fs::read_to_string(&path).unwrap();
+    auth.prepare_setup(&path).await.expect("the setup prepares");
+    let link = std::fs::read_to_string(&path).expect("the file reads");
     for (listener, status) in [
         (
             web_router(state.clone(), UiAssets::Embedded(TEST_BUNDLE), auth.clone()),
@@ -147,7 +157,7 @@ async fn setup_link_is_served_only_over_the_unix_socket() {
         assert_eq!(response.status, status);
         if status == 200 {
             let setup: piqueld_core::auth::SetupLink =
-                serde_json::from_slice(&response.body).unwrap();
+                serde_json::from_slice(&response.body).expect("the body is valid json");
             assert_eq!(setup.url, link.trim());
         }
     }
@@ -174,7 +184,13 @@ async fn refusals<T>(
         ..Default::default()
     };
     let found = written_until(state, async || {
-        check(state.audit_events(&denied, None, 10).await.unwrap().items)
+        check(
+            state
+                .audit_events(&denied, None, 10)
+                .await
+                .expect("the audit events list")
+                .items,
+        )
     });
     tokio::time::timeout(Duration::from_secs(10), found)
         .await
@@ -198,7 +214,7 @@ async fn as_peer(
             .body(Body::from(body.to_string())),
         None => request.body(Body::empty()),
     }
-    .unwrap();
+    .expect("the value is present");
     request
         .extensions_mut()
         .insert(axum::extract::ConnectInfo(piqueld::api::http::UnixPeer {
@@ -219,7 +235,7 @@ fn unix_peers() -> (u32, u32) {
 /// daemon's own user, and only once setup has completed.
 #[tokio::test]
 async fn admin_recovery_requires_the_host_operator_over_the_unix_socket() {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let state = state(&temp).await;
     let database = database(&temp);
     let auth = auth(&temp).await;
@@ -253,7 +269,7 @@ async fn admin_recovery_requires_the_host_operator_over_the_unix_socket() {
     assert!(
         body["url"]
             .as_str()
-            .unwrap()
+            .expect("the value is a string")
             .contains("/dashboard/auth#invite=")
     );
 }
@@ -267,7 +283,7 @@ async fn admin_recovery_requires_the_host_operator_over_the_unix_socket() {
 async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
     use axum::http::header;
     use piqueld_core::{audit::AuditFilter, auth::HostOperator};
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let state = state(&temp).await;
     let auth = auth(&temp).await;
     let (operator, stranger) = unix_peers();
@@ -299,9 +315,9 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
     assert_eq!(status, 200, "{link}");
     let secret = link["url"]
         .as_str()
-        .unwrap()
+        .expect("the value is a string")
         .split_once("#operator=")
-        .unwrap()
+        .expect("the separator is present")
         .1;
     let login = || {
         Request::post("/api/v1/auth/login/operator")
@@ -311,14 +327,14 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
     let (status, body, cookie) = as_peer(&web, login(), None, redeem.clone()).await;
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["operator"]["uid"].as_u64(), Some(u64::from(operator)));
-    let cookie = cookie.unwrap();
+    let cookie = cookie.expect("the cookie is present");
     assert!(cookie.contains("Max-Age=43200"), "{cookie}");
     assert_eq!(
         as_peer(&web, login(), None, redeem).await.0,
         401,
         "single use"
     );
-    let session = cookie.split(';').next().unwrap();
+    let session = cookie.split(';').next().expect("the stream yields an item");
     let request = Request::get(me).header(header::COOKIE, session);
     let (status, body, _) = as_peer(&web, request, None, None).await;
     assert_eq!(status, 200, "{body}");
@@ -332,7 +348,7 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
         let page = state
             .audit_events(&AuditFilter::default(), None, 50)
             .await
-            .unwrap();
+            .expect("the audit events list");
         let audited = |action: &str, status: u16| {
             page.items.iter().any(|event| {
                 event.action.starts_with(action)
@@ -360,7 +376,7 @@ async fn the_host_operator_acts_without_a_token_over_the_unix_socket() {
 #[tokio::test]
 async fn credentials_presented_by_the_host_operator_keep_their_meaning() {
     use axum::http::header;
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let state = state(&temp).await;
     let auth = auth(&temp).await;
     let (operator, _) = unix_peers();
@@ -387,7 +403,8 @@ async fn credentials_presented_by_the_host_operator_keep_their_meaning() {
         .await
         .0;
     assert_eq!(status, 401);
-    let raw = header::HeaderValue::from_bytes(b"other=\xff; __Host-piqueld_session=x").unwrap();
+    let raw = header::HeaderValue::from_bytes(b"other=\xff; __Host-piqueld_session=x")
+        .expect("the header value is valid");
     let request = Request::get(me).header(header::COOKIE, raw);
     assert_eq!(as_peer(&unix, request, Some(operator), None).await.0, 401);
     let issue = Request::post("/api/v1/auth/sign-in-link")
@@ -438,17 +455,23 @@ async fn tailnet_bound_token(temp: &TempDir) -> (ApiState, piqueld::auth::Auth, 
     let database = database(temp);
     let admin = seed_account(&database, "admin", &[("admin", None)]).await;
     sign_in_with_passkey(&database, "admin").await;
-    let store = Store::open_unsynced(&database).await.unwrap();
+    let store = Store::open_unsynced(&database)
+        .await
+        .expect("the store opens");
     let tokens = TokenPolicy {
         max_days: None,
         tailnet: true,
     };
-    let auth = Auth::configured(&store, "https://piqueld.example", tokens).unwrap();
+    let auth = Auth::configured(&store, "https://piqueld.example", tokens)
+        .expect("the auth service builds");
     let create = piqueld_core::auth::Manage::CreateToken {
         grants: piqueld_core::access::Grants::admin(),
         name: "ci".into(),
         days: Some(1),
-        tailnet: Some(piqueld_core::tailnet::TailnetBinding::parse("tag:ci").unwrap()),
+        tailnet: Some(
+            piqueld_core::tailnet::TailnetBinding::parse("tag:ci")
+                .expect("the tailnet binding parses"),
+        ),
     };
     let unix = api_router(state.clone(), auth.clone());
     let (_, managed) = unix
@@ -456,7 +479,7 @@ async fn tailnet_bound_token(temp: &TempDir) -> (ApiState, piqueld::auth::Auth, 
             &admin,
             "POST",
             "/api/v1/auth/manage",
-            serde_json::to_value(&create).unwrap(),
+            serde_json::to_value(&create).expect("the value serialises"),
         )
         .await;
     let token = managed["token"].as_str().expect("token").to_owned();
@@ -468,7 +491,7 @@ async fn tailnet_bound_token(temp: &TempDir) -> (ApiState, piqueld::auth::Auth, 
 /// audit trail.
 #[tokio::test]
 async fn tailnet_bound_tokens_work_only_from_matching_devices() {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let (state, auth, token) = tailnet_bound_token(&temp).await;
     let unix = api_router(state.clone(), auth.clone());
     let lookup: Arc<dyn piqueld::tailnet::TailnetLookup> = Arc::new(FakeTailnet);
@@ -479,7 +502,7 @@ async fn tailnet_bound_tokens_work_only_from_matching_devices() {
             .header("host", "localhost")
             .header("authorization", format!("Bearer {token}"))
             .body(Body::empty())
-            .unwrap();
+            .expect("the request body builds");
         if let Some(ip) = peer {
             let address = std::net::SocketAddr::from((ip, 40_000));
             request
@@ -527,7 +550,7 @@ async fn tailnet_bound_tokens_work_only_from_matching_devices() {
 /// sets, so tailnet-bound tokens work from matching devices there too.
 #[tokio::test]
 async fn the_dashboard_socket_names_clients_by_the_gateways_header() {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let (state, auth, token) = tailnet_bound_token(&temp).await;
     let lookup: Arc<dyn piqueld::tailnet::TailnetLookup> = Arc::new(FakeTailnet);
     let gateway = piqueld::api::http::gateway_router(
@@ -541,7 +564,9 @@ async fn the_dashboard_socket_names_clients_by_the_gateways_header() {
         if let Some(client) = client {
             request = request.header("x-forwarded-for", client);
         }
-        let request = request.body(Body::empty()).unwrap();
+        let request = request
+            .body(Body::empty())
+            .expect("the request body builds");
         gateway.send(request).await.status.as_u16()
     };
     assert_eq!(
@@ -584,7 +609,7 @@ impl piqueld::tailnet::TailnetLookup for Retagged {
 #[tokio::test]
 async fn tailnet_bindings_are_rechecked_when_a_command_starts() {
     use piqueld_client::exec::{ExecCommand, ExecOutput, ExecRequest};
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let (state, auth, token) = tailnet_bound_token(&temp).await;
     let saved = save(&state, manifest()).await;
     let lookup: Arc<dyn piqueld::tailnet::TailnetLookup> =
@@ -592,15 +617,21 @@ async fn tailnet_bindings_are_rechecked_when_a_command_starts() {
     let tailnet = web_router(state.clone(), UiAssets::Embedded(TEST_BUNDLE), auth)
         .layer(axum::Extension(lookup));
     let server = Server::tcp_with_peers(tailnet).await;
-    let client = server.client().with_bearer(&token).unwrap();
+    let client = server
+        .client()
+        .with_bearer(&token)
+        .expect("the bearer token applies");
     let request = ExecRequest {
-        service: "web".parse().unwrap(),
-        command: ExecCommand::parse(vec!["true".into()]).unwrap(),
+        service: "web".parse().expect("the value parses"),
+        command: ExecCommand::parse(vec!["true".into()]).expect("the exec command parses"),
         stdin: false,
         tty: None,
     };
     let environment = production(&state, &saved.application_id).await;
-    let (mut output, _input) = client.exec(environment.as_str(), &request).await.unwrap();
+    let (mut output, _input) = client
+        .exec(environment.as_str(), &request)
+        .await
+        .expect("the exec runs");
     assert!(matches!(
         output.next().await,
         Ok(Some(ExecOutput::Failed { status: 401, error }))
@@ -621,17 +652,23 @@ async fn tailnet_bindings_are_rechecked_when_a_command_starts() {
 async fn authentication_errors_preserve_request_and_diagnostic_ids() {
     use sqlx::Connection as _;
 
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the tempdir opens");
     let state = state(&temp).await;
-    let store = Store::open_unsynced(database(&temp)).await.unwrap();
+    let store = Store::open_unsynced(database(&temp))
+        .await
+        .expect("the store opens");
     let mut connection = sqlite::connect(&database(&temp)).await;
     sqlx::query("ALTER TABLE auth_credentials RENAME TO unavailable_credentials")
         .execute(&mut connection)
         .await
-        .unwrap();
-    let transaction = connection.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        .expect("it executes");
+    let transaction = connection
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .expect("it begins");
     for website in [false, true] {
-        let auth = piqueld::auth::Auth::new(&store, "https://piqueld.example").unwrap();
+        let auth =
+            piqueld::auth::Auth::new(&store, "https://piqueld.example").expect("auth builds");
         let listener = if website {
             web_router(state.clone(), UiAssets::Embedded(TEST_BUNDLE), auth)
         } else {
@@ -682,19 +719,19 @@ async fn authentication_errors_preserve_request_and_diagnostic_ids() {
             }
             let response = tokio::time::timeout(
                 Duration::from_secs(2),
-                listener.send(request.body(Body::empty()).unwrap()),
+                listener.send(request.body(Body::empty()).expect("the body builds")),
             )
             .await
             .expect("authentication errors must not wait for a diagnostic write");
             assert_eq!(response.status.as_u16(), status);
-            let request_id = response.header("x-request-id").unwrap();
+            let request_id = response.header("x-request-id").expect("the header exists");
             assert_ne!(request_id, "auth-correlation");
             let error: piqueld_core::api::ErrorBody =
-                serde_json::from_slice(&response.body).unwrap();
+                serde_json::from_slice(&response.body).expect("the body is json");
             assert_eq!(error.code, code);
             assert_eq!(error.request_id, request_id);
             if status == 503 {
-                let id = error.details["diagnostic_id"].as_str().unwrap();
+                let id = error.details["diagnostic_id"].as_str().expect("a string");
                 assert!(id.starts_with("diagnostic-"));
                 assert!(matches!(
                     store.diagnostic(id).await,
@@ -705,7 +742,7 @@ async fn authentication_errors_preserve_request_and_diagnostic_ids() {
             }
         }
     }
-    transaction.rollback().await.unwrap();
+    transaction.rollback().await.expect("it rolls back");
 }
 
 /// Authentication endpoints answer undecodable bodies, and bodies over the
@@ -713,7 +750,7 @@ async fn authentication_errors_preserve_request_and_diagnostic_ids() {
 /// and request ID.
 #[tokio::test]
 async fn authentication_bodies_fail_with_structured_errors() {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let unix = api_router(state(&temp).await, auth(&temp).await);
     let oversized = format!(r#"{{"device_code":"{}"}}"#, "x".repeat(64 * 1024));
     for (content_type, body, status, code) in [
@@ -729,10 +766,11 @@ async fn authentication_bodies_fail_with_structured_errors() {
         let request = Request::post("/api/v1/auth/device/poll")
             .header("content-type", content_type)
             .body(Body::from(body.to_owned()))
-            .unwrap();
+            .expect("the request body builds");
         let response = unix.send(request).await;
         assert_eq!(response.status.as_u16(), status);
-        let error: piqueld_core::api::ErrorBody = serde_json::from_slice(&response.body).unwrap();
+        let error: piqueld_core::api::ErrorBody =
+            serde_json::from_slice(&response.body).expect("the body is valid json");
         assert_eq!(error.code, code);
         assert_eq!(
             response.header("x-request-id"),
@@ -745,7 +783,7 @@ async fn authentication_bodies_fail_with_structured_errors() {
 /// the limit applies, and are kept in memory, so large bodies are refused.
 #[tokio::test]
 async fn device_starts_echo_their_limits_and_refuse_large_bodies() {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temporary directory is created");
     let state = state(&temp).await;
     let router = api_router(state, auth(&temp).await);
     let start = |body: String| {
@@ -754,7 +792,7 @@ async fn device_starts_echo_their_limits_and_refuse_large_bodies() {
             .uri("/api/v1/auth/device/start")
             .header("content-type", "application/json")
             .body(Body::from(body))
-            .unwrap();
+            .expect("the request body builds");
         router.send(request)
     };
     let limited = serde_json::json!({"grants": [{"permission": "apps:read"}]});
@@ -770,7 +808,7 @@ async fn device_starts_echo_their_limits_and_refuse_large_bodies() {
         .uri("/api/v1/auth/device/start")
         .header("content-type", "application/json")
         .body(Body::from_stream(futures_util::stream::iter(chunks)))
-        .unwrap();
+        .expect("the request body builds");
     let response = router.send(streamed).await;
     assert_eq!(response.status, StatusCode::PAYLOAD_TOO_LARGE);
 }
