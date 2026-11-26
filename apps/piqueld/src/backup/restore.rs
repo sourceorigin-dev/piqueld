@@ -4,12 +4,12 @@
 //! The backup is copied into a `.staged-*` directory inside the data
 //! directory and verified there: its database's integrity, its schema and
 //! instance against the manifest, and its secret key against the database.
-//! Only then is it renamed to `.restore-*`, each entry moved into place, and
-//! that directory removed last. While one exists, the restore is unfinished
-//! and the daemon refuses to start (see [`Backups::ensure_restore_complete`]).
+//! Only then does it become the restore's
+//! [`Staging`](super::staging::Staging) directory, which
+//! [`Backups::finish`] moves into place.
 use super::{
-    Backups, DATABASE, FORMAT, KEPT, MANIFEST, Manifest, Moved, RolledBack, SECRET_KEY, TREES,
-    copy_file, copy_tree, entries, move_entries, sync, verify,
+    Backups, DATABASE, FORMAT, KEPT, MANIFEST, Manifest, RolledBack, SECRET_KEY, TREES, copy_file,
+    copy_tree, entries, sync, verify,
 };
 use anyhow::{Context, Result, bail};
 use piqueld_config::directories::DirectoryLock;
@@ -21,8 +21,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// The name prefix of an unfinished restore's staging directory.
-pub(super) const STAGING: &str = ".restore-";
 /// The name prefix of a backup's copy while it is verified, before it
 /// becomes a staging directory.
 const STAGED: &str = ".staged-";
@@ -64,10 +62,10 @@ pub enum Refusal {
     /// A roll-back's backup belongs to another instance than the database.
     #[error("the newest backup belongs to instance {0}, not the database's")]
     OtherInstance(String),
-    /// A restore was interrupted, or failed and couldn't be undone.
+    /// A restore or roll-back stopped part way.
     #[error(
-        "{} holds an unfinished restore, {}, which only holds a copy of the backup: with the daemon stopped, move the data directory's other entries but backups, telemetry, checkouts, snapshots, buildx, rolled-back-* and that copy into a new rolled-back-<name> directory there, then remove {} and run piqueld restore again",
-        .0.display(), .1.display(), .1.display()
+        "{} holds an unfinished restore, {}; run piqueld roll-back as the daemon's user to finish it",
+        .0.display(), .1.display()
     )]
     Unfinished(PathBuf, PathBuf),
 }
@@ -81,8 +79,8 @@ impl Backups {
     ///
     /// # Errors
     /// Returns a [`Refusal`] for a backup or data directory it won't
-    /// restore, or the failed step. A failed restore is undone, unless
-    /// undoing it failed too, which [`Refusal::Unfinished`] reports.
+    /// restore, or the failed step. A restore that fails once its backup is
+    /// verified stays unfinished, and `piqueld roll-back` finishes it.
     pub async fn restore(&self, backup: &Path, check_only: bool) -> Result<Manifest> {
         let manifest = Self::manifest(backup)?;
         if check_only {
@@ -91,13 +89,13 @@ impl Backups {
             return Ok(manifest);
         }
         let _lock = self.lock().await?;
+        self.ensure_restore_complete()?;
         let data_dir = &self.data_dir;
         if !entries(data_dir, |name| !Self::kept(name))?.is_empty() {
             bail!(Refusal::NotEmpty(data_dir.clone()));
         }
         let staging = self.mark(self.copy_verified(backup, &manifest).await?)?;
-        let published = self.publish(&staging);
-        self.finish(&staging, published)?;
+        self.finish(staging)?;
         Ok(manifest)
     }
 
@@ -151,49 +149,6 @@ impl Backups {
             .with_context(|| format!("create a directory in {}", data_dir.display()))?;
         Self::stage_restore(backup, staged.path(), manifest).await?;
         Ok(staged)
-    }
-
-    /// Makes the verified copy `staged` the staging directory, which marks
-    /// the restore unfinished until [`Self::finish`] removes it, and returns
-    /// its path. If that can't be synced, removes it again, and reports
-    /// [`Refusal::Unfinished`] when that fails too.
-    pub(super) fn mark(&self, staged: tempfile::TempDir) -> Result<PathBuf> {
-        let data_dir = &self.data_dir;
-        let staging = data_dir.join(format!("{STAGING}{}", piqueld_store::now_ms()));
-        fs::rename(staged.path(), &staging)
-            .with_context(|| format!("move the verified backup to {}", staging.display()))?;
-        drop(staged.keep());
-        let Err(error) = sync(data_dir) else {
-            return Ok(staging);
-        };
-        Err(match fs::remove_dir_all(&staging) {
-            Ok(()) => error,
-            Err(removal) => error
-                .context(format!("remove {}: {removal}", staging.display()))
-                .context(Refusal::Unfinished(data_dir.clone(), staging)),
-        })
-    }
-
-    /// Refuses to go on while the data directory holds an unfinished
-    /// restore, so the daemon never starts on partly restored state.
-    ///
-    /// # Errors
-    /// Returns [`Refusal::Unfinished`], or the error reading the directory.
-    pub fn ensure_restore_complete(&self) -> Result<()> {
-        let data_dir = &self.data_dir;
-        for entry in
-            fs::read_dir(data_dir).with_context(|| format!("read {}", data_dir.display()))?
-        {
-            let entry = entry.with_context(|| format!("read {}", data_dir.display()))?;
-            if entry
-                .file_name()
-                .as_encoded_bytes()
-                .starts_with(STAGING.as_bytes())
-            {
-                bail!(Refusal::Unfinished(data_dir.clone(), entry.path()));
-            }
-        }
-        Ok(())
     }
 
     /// Reads `backup`'s manifest, refusing one this binary can't restore.
@@ -260,43 +215,5 @@ impl Backups {
             bail!(Refusal::Mismatch);
         }
         Ok(())
-    }
-
-    /// Moves the verified state in `staging` into the data directory, in
-    /// name order, syncing it. If a move fails, the entries already moved go
-    /// back into `staging`.
-    pub(super) fn publish(&self, staging: &Path) -> Result<(), Moved> {
-        sync(&self.data_dir)?;
-        let names = entries(staging, |_| true)?;
-        move_entries(staging, &self.data_dir, &names)
-    }
-
-    /// Ends the restore staged in `staging`, after `published`: removes
-    /// `staging`, which only holds a copy of the backup, so the daemon can
-    /// start. When the failure `published` reports couldn't all be undone,
-    /// `staging` stays, marking the restore unfinished.
-    ///
-    /// # Errors
-    /// The failure `published` reports, and [`Refusal::Unfinished`] when
-    /// `staging` stays.
-    pub(super) fn finish(&self, staging: &Path, published: Result<(), Moved>) -> Result<()> {
-        let (error, undo) = match published {
-            Ok(()) => (None, None),
-            Err(Moved { error, undo }) => (Some(error), undo),
-        };
-        let undo = undo.or_else(|| {
-            fs::remove_dir_all(staging)
-                .with_context(|| format!("remove {}", staging.display()))
-                .and_then(|()| sync(&self.data_dir))
-                .err()
-        });
-        let Some(undo) = undo else {
-            return error.map_or(Ok(()), Err);
-        };
-        let unfinished = Refusal::Unfinished(self.data_dir.clone(), staging.to_path_buf());
-        Err(match error {
-            Some(error) => error.context(format!("{undo:#}")).context(unfinished),
-            None => undo.context(unfinished),
-        })
     }
 }

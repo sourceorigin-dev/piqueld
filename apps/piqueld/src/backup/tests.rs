@@ -392,7 +392,7 @@ fn an_unfinished_restore_blocks_startup() {
     backups
         .ensure_restore_complete()
         .expect("nothing is unfinished");
-    fs::create_dir(data_dir.path().join(".restore-abc")).expect("a staging directory is created");
+    fs::create_dir(data_dir.path().join(".publish-1")).expect("a staging directory is created");
     let error = backups
         .ensure_restore_complete()
         .expect_err("the unfinished restore is refused");
@@ -402,24 +402,36 @@ fn an_unfinished_restore_blocks_startup() {
     );
 }
 
-/// A publish that fails part way, here on a directory no rename replaces,
-/// moves back what it moved and ends the restore, so it can run again.
+/// Finishing a restore never moves its backup over state in the data
+/// directory: it stops there, leaving the restore unfinished, with the
+/// entry it couldn't move still in its copy.
 #[test]
-fn a_failed_publish_moves_back_what_it_moved() {
+fn finishing_never_replaces_state() {
     let data_dir = tempfile::tempdir().expect("a data directory is created");
-    let staging = data_dir.path().join(format!("{}1", restore::STAGING));
-    fs::create_dir(&staging).expect("a staging directory is created");
-    fs::write(staging.join("a"), b"restored").expect("a file is staged");
-    fs::create_dir(staging.join("b")).expect("a directory is staged");
-    fs::create_dir(data_dir.path().join("b")).expect("a directory is in the way");
-    fs::write(data_dir.path().join("b/kept"), b"").expect("it isn't empty");
+    let staging = staging::Staging {
+        at_ms: 1,
+        publishing: true,
+    };
+    let path = staging.path(data_dir.path());
+    fs::create_dir(&path).expect("a staging directory is created");
+    fs::write(path.join("a"), b"restored").expect("a file is staged");
+    fs::write(data_dir.path().join("a"), b"state").expect("state is in the way");
 
     let backups = Backups::new(data_dir.path());
-    let error = backups
-        .finish(&staging, backups.publish(&staging))
-        .expect_err("the publish fails");
-    assert!(error.downcast_ref::<Refusal>().is_none(), "{error:#}");
-    assert_eq!(files(data_dir.path()), ["b/kept"]);
+    backups
+        .finish(staging)
+        .expect_err("the restore can't finish");
+    assert_eq!(
+        fs::read(data_dir.path().join("a")).expect("the state reads"),
+        b"state"
+    );
+    assert_eq!(
+        fs::read(path.join("a")).expect("the copy reads"),
+        b"restored"
+    );
+    backups
+        .ensure_restore_complete()
+        .expect_err("the restore stays unfinished");
 }
 
 /// Rolls `data_dir` back, with ingress stopping as `stopped` says,
@@ -628,22 +640,16 @@ async fn a_copy_left_while_verifying_is_removed() {
 }
 
 /// A roll-back whose backup fails to publish once the state moved aside,
-/// here because its copy holds an entry the data directory keeps, moves the
-/// state back and leaves no marker or rolled-back directory.
+/// here because its copy holds an entry the data directory keeps, stays
+/// unfinished, and the next roll-back finishes it once that is fixed.
 #[tokio::test]
-async fn a_roll_back_that_cannot_publish_moves_the_state_back() {
+async fn a_roll_back_that_cannot_publish_is_finished_by_the_next() {
     let (data_dir, _, _) = migrated_by_a_newer_daemon().await;
     let data_dir = data_dir.path();
     fs::create_dir_all(data_dir.join("telemetry/env")).expect("a receiver's directory is created");
     fs::write(data_dir.join("telemetry/env/otlp.sock"), b"").expect("its socket is created");
-    let entries_now = || {
-        let mut names = names(data_dir);
-        names.retain(|name| !name.ends_with("-wal") && !name.ends_with("-shm"));
-        names
-    };
-    let (before, entries_before) = (state(data_dir), entries_now());
 
-    let error = Backups::new(data_dir)
+    Backups::new(data_dir)
         .roll_back(async |_| {
             for name in entries(data_dir, |name| {
                 name.as_encoded_bytes().starts_with(b".staged-")
@@ -654,9 +660,58 @@ async fn a_roll_back_that_cannot_publish_moves_the_state_back() {
         })
         .await
         .expect_err("the roll-back fails");
-    assert!(error.downcast_ref::<Refusal>().is_none(), "{error:#}");
-    assert_eq!(state(data_dir), before);
-    assert_eq!(entries_now(), entries_before);
+    let backups = Backups::new(data_dir);
+    let staging = backups
+        .unfinished()
+        .expect("the data directory reads")
+        .expect("the roll-back is unfinished");
+    assert!(staging.publishing, "{staging:?}");
+    fs::remove_dir(staging.path(data_dir).join("telemetry")).expect("the conflict is removed");
+
+    let (result, stopped) = roll_back(data_dir).await;
+    assert!(matches!(result, Ok(RollBack::Finished)), "{result:?}");
+    assert!(stopped.is_none());
+    backups
+        .ensure_restore_complete()
+        .expect("the roll-back finished");
+    let identity = backups
+        .identity()
+        .await
+        .expect("the database reads")
+        .expect("it has a schema");
+    assert_eq!(identity.schema_version, SCHEMA_VERSION - 1);
+}
+
+/// A roll-back interrupted while it moved the state aside is finished by the
+/// next one: the rest of the state moves aside and the backup into place.
+#[tokio::test]
+async fn a_roll_back_interrupted_moving_the_state_is_finished() {
+    let (data_dir, backup, _) = migrated_by_a_newer_daemon().await;
+    let data_dir = data_dir.path();
+    let backups = Backups::new(data_dir);
+    let manifest = Backups::manifest(&backup).expect("the manifest reads");
+    let staging = backups
+        .mark(
+            backups
+                .copy_verified(&backup, &manifest)
+                .await
+                .expect("the backup verifies"),
+        )
+        .expect("the restore starts");
+    let aside = data_dir.join(RolledBack::name(staging.at_ms));
+    fs::create_dir(&aside).expect("the rolled-back directory is made");
+    fs::rename(data_dir.join("ingress"), aside.join("ingress")).expect("part of the state moves");
+
+    let (result, _) = roll_back(data_dir).await;
+    assert!(matches!(result, Ok(RollBack::Finished)), "{result:?}");
+    assert!(names(&aside).contains(&DATABASE.to_owned()));
+    assert!(names(&aside).contains(&"ingress".to_owned()));
+    let identity = backups
+        .identity()
+        .await
+        .expect("the database reads")
+        .expect("it has a schema");
+    assert_eq!(identity.schema_version, SCHEMA_VERSION - 1);
 }
 
 /// A roll-back keeps the newest rolled-back directories, its own included,
@@ -693,4 +748,27 @@ async fn a_roll_back_keeps_the_newest_rolled_back_directories() {
     ];
     kept.sort_unstable();
     assert_eq!(rolled_back, kept);
+}
+
+/// A restore into a data directory holding an unfinished one says so, rather
+/// than that the directory isn't empty.
+#[tokio::test]
+async fn restore_names_an_unfinished_restore() {
+    let (_source, backup, _) = backed_up().await;
+    let target = tempfile::tempdir().expect("a directory is created");
+    let data_dir = target.path().join("data");
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .recursive(true)
+        .create(data_dir.join(".publish-1"))
+        .expect("an unfinished restore is left");
+
+    let error = Backups::new(&data_dir)
+        .restore(&backup, false)
+        .await
+        .expect_err("the restore is refused");
+    assert!(
+        matches!(error.downcast_ref(), Some(Refusal::Unfinished(..))),
+        "{error:#}"
+    );
 }

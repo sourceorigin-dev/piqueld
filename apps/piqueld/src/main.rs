@@ -94,13 +94,13 @@ enum Command {
     /// a newer piqueld updated its database, then exit.
     ///
     /// Run it as the daemon's user while the daemon is stopped, such as
-    /// before each start. When this piqueld can open the database, or there
-    /// is none, it does nothing. Otherwise it stops this installation's
-    /// ingress containers, moves the data directory's state into a
-    /// `rolled-back-<time>` directory inside it, keeping `backups/` and caches, and
-    /// restores the newest backup there this piqueld can open, after the
-    /// checks `piqueld restore` runs. When no backup fits, or a check fails,
-    /// it fails before moving anything.
+    /// before each start. It finishes an interrupted restore, if any. When
+    /// this piqueld can open the database, or there is none, it does nothing.
+    /// Otherwise it stops this installation's ingress containers, moves the
+    /// state into a `rolled-back-<time>` directory in the data directory, and
+    /// restores the newest backup in `backups/` this piqueld can open, after
+    /// the checks `piqueld restore` runs. When no backup fits, or a check
+    /// fails, it fails before moving anything.
     RollBack,
 }
 
@@ -174,6 +174,9 @@ async fn main() -> Result<()> {
             match rolled_back {
                 RollBack::Unneeded => {
                     println!("nothing to roll back in {}", data_dir.display());
+                }
+                RollBack::Finished => {
+                    println!("finished the interrupted restore in {}", data_dir.display());
                 }
                 RollBack::Restored {
                     backup,
