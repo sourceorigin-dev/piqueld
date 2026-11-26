@@ -1337,7 +1337,8 @@ deployment blocked by a conflict rolls out again once the conflict is
 resolved; if one of its jobs that stops services already succeeded, the
 services it stopped stay stopped until then, since they would run against migrated data. The application
 stays degraded, and failed jobs are not retried automatically; deploy again
-after fixing the cause. Each job succeeds at most once per deployment: a
+after fixing the cause. Each job succeeds at most once per deployment, except after a
+[roll-back of piqueld itself](../operations/backups.md#what-a-roll-back-undoes): a
 retried deployment skips jobs that already succeeded, and after a daemon
 restart, or when Docker could not report a job's status, a still-running job is
 resumed rather than started again. Its timeout counts from when it started, so

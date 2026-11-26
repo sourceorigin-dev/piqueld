@@ -217,6 +217,34 @@ the three newest of these directories, deleting older ones when it rolls back
 again. A directory you name `rolled-back-<anything>` yourself stays until you
 delete it.
 
+### What a roll-back undoes
+
+Restoring a backup returns piqueld's records to when the backup was taken,
+just before the upgrade. Rolled back within minutes of an upgrade, that is
+next to nothing. Rolled back later, it is everything since:
+
+- **Records:** applications, environments, deployments, accounts, API
+  tokens, sessions, secret values and notification destinations go back to
+  the backup. A token or session revoked since works again, and a secret set
+  since has its earlier value.
+- **Deployments:** each environment returns to the deployment the backup
+  records. A deployment in progress during the upgrade carries on, and its
+  [jobs](../reference/manifest.md#jobs) may run a second time if the newer
+  version had already run them: write jobs that can, as migration tools
+  that record what they applied do.
+- **Applications created since:** piqueld no longer knows them. Their
+  services keep running without routes, and their volumes keep their data.
+  List the services that remain with
+  `sudo docker service ls --filter label=io.piqueld.instance=$instance`, using
+  the instance ID from [stopping ingress](#roll-back-by-hand); remove the ones
+  piqueld doesn't list once you no longer need their data.
+- **DNS records:** ones piqueld created since for new routes stay, pointing at
+  this host.
+- **Tailnet nodes:** a node that logged in again since needs to log in again,
+  which it does by itself with an auth key.
+
+Your applications' data in Docker volumes is never deleted by a roll-back.
+
 ### Roll back on every start
 
 A host can run `piqueld roll-back` each time the daemon starts, so that going
