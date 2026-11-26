@@ -1,7 +1,6 @@
 //! Detached volumes, which deleted environments leave, on the daemon status
 //! page: what each held and where it came from, with a button to delete it.
 use super::observability::{Outcome, Refresh};
-use super::runtime::volume_size;
 use super::ui::{empty, loaded, notice, when};
 use super::{UserError, access::can, confirm};
 use leptos::prelude::*;
@@ -10,17 +9,6 @@ use piqueld_client::{
     access::{GlobalPermission, Permission},
     volumes::VolumeView,
 };
-
-/// Where a detached volume was bound when its environment was deleted.
-fn detached_from(volume: &VolumeView) -> String {
-    volume.detached_from.as_ref().map_or_else(
-        || "Unknown environment".to_owned(),
-        |from| match &from.name {
-            Some(name) => format!("{} / {} as {name}", from.application, from.environment),
-            None => format!("{} / {}", from.application, from.environment),
-        },
-    )
-}
 
 /// The detached volumes, with a Delete button for accounts with
 /// `system:operate`. Attaching one is a CLI command, since it names the
@@ -40,8 +28,8 @@ pub(super) fn DetachedVolumes(refresh: Refresh) -> impl IntoView {
                 <td>
                     <code>{id.clone()}</code>
                 </td>
-                <td>{detached_from(&volume)}</td>
-                <td class="num">{volume_size(&volume)}</td>
+                <td>{volume.whereabouts()}</td>
+                <td class="num">{volume.size()}</td>
                 <td class="muted">{when(volume.created_at_ms)}</td>
                 <td>
                     <Show when={move || operate.get()}>
@@ -81,7 +69,7 @@ pub(super) fn DetachedVolumes(refresh: Refresh) -> impl IntoView {
                 <div>
                     <h3 id="detached-volumes-heading">"Detached volumes"</h3>
                     <p>
-                        "Volumes of deleted environments, kept with their data. Attach one to an environment with "
+                        "Volumes no environment binds, such as those of deleted environments, kept with their data. Attach one to an environment with "
                         <code>"piquelctl volume attach"</code>
                         ", or delete it to free its space."
                     </p>
@@ -100,7 +88,7 @@ pub(super) fn DetachedVolumes(refresh: Refresh) -> impl IntoView {
                             <thead>
                                 <tr>
                                     <th>"Volume"</th>
-                                    <th>"Detached from"</th>
+                                    <th>"Came from"</th>
                                     <th class="num">"Size"</th>
                                     <th>"Created"</th>
                                     <th></th>

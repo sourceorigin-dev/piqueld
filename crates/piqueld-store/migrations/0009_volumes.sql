@@ -50,16 +50,19 @@ CREATE TEMP TABLE adopted_volumes (
     docker_name TEXT NOT NULL,
     created_at_ms INTEGER NOT NULL
 );
-INSERT INTO adopted_volumes
-SELECT o.environment_id, json_extract(v.value, '$.logical_name'),
-    json_extract(v.value, '$.name'), o.created_at_ms
-FROM operations o, json_each(o.target_json, '$.volumes') v
-WHERE o.target_json IS NOT NULL;
+-- Current targets first, then operations' newest first, so a name binds to
+-- the volume its environment mounts now.
 INSERT INTO adopted_volumes
 SELECT e.id, json_extract(v.value, '$.logical_name'),
     json_extract(v.value, '$.name'), e.created_at_ms
 FROM environments e, json_each(e.resolved_json, '$.volumes') v
 WHERE e.resolved_json IS NOT NULL;
+INSERT INTO adopted_volumes
+SELECT o.environment_id, json_extract(v.value, '$.logical_name'),
+    json_extract(v.value, '$.name'), o.created_at_ms
+FROM operations o, json_each(o.target_json, '$.volumes') v
+WHERE o.target_json IS NOT NULL
+ORDER BY o.created_at_ms DESC, o.id DESC;
 INSERT INTO adopted_volumes
 SELECT environment_id, NULL, name, created_at_ms FROM preview_volumes;
 
@@ -70,9 +73,10 @@ FROM adopted_volumes
 GROUP BY docker_name;
 
 INSERT INTO volume_bindings(environment_id, name, volume_id)
-SELECT DISTINCT a.environment_id, a.name, v.id
+SELECT a.environment_id, a.name, v.id
 FROM adopted_volumes a JOIN volumes v ON v.docker_name = a.docker_name
 WHERE a.name IS NOT NULL
+ORDER BY a.rowid
 ON CONFLICT DO NOTHING;
 
 UPDATE volumes SET

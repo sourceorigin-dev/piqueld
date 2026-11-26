@@ -10,6 +10,8 @@ pub enum DockerTimeout {
     Request,
     /// Image pulls, which may transfer large layers on a cold cache.
     ImageResolution,
+    /// Measuring volume sizes, which walks every volume's files.
+    Measurement,
 }
 
 impl DockerTimeout {
@@ -18,7 +20,7 @@ impl DockerTimeout {
     pub const fn duration(self) -> Duration {
         match self {
             Self::Request => Duration::from_secs(30),
-            Self::ImageResolution => Duration::from_mins(10),
+            Self::ImageResolution | Self::Measurement => Duration::from_mins(10),
         }
     }
 

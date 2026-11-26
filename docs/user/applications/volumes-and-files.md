@@ -122,8 +122,8 @@ previews are:
 ## See an environment's volumes
 
 Each volume has an ID, a Docker name, a size and a state: `attached` while an
-environment binds a name to it, `detached` after its environment is deleted.
-piqueld measures each volume's size every 15 minutes.
+environment binds a name to it, `detached` otherwise, such as after its
+environment is deleted. piqueld measures each volume's size every 15 minutes.
 
 - **In the dashboard,** the environment's **Overview** lists them under
   **Volumes**, with the name each is bound to and its size.
@@ -146,9 +146,9 @@ the `system:read` [permission](../accounts/permissions.md#grants).
 ## Attach a detached volume
 
 A detached volume can serve another environment, such as one you recreated
-after deleting it. Attaching it binds one of the environment's volume names to
-it. The environment mounts it where its manifest mounts that name, from its
-next deployment.
+after deleting it. Attaching it binds one of the volume names the
+environment's manifest declares to it. The environment mounts it where its
+manifest mounts that name, from its next deployment.
 
 Attaching needs `apps:write` on the application and `system:operate`, since
 the volume may hold another application's data. The dashboard can't attach a
@@ -173,10 +173,11 @@ volume; use `piquelctl`.
 3. Deploy the environment, with `piquelctl env deploy notes staging`, so its
    services mount the volume.
 
-A name the environment already binds can't take another volume, even one
-that holds nothing: attaching to it fails with `volume_name_bound`. Attach the
-volume to an environment before its first deployment that declares the name,
-or under another name. Previews delete their volumes, so they take none.
+The first deployment that declares a name binds it to a new volume, and a
+name the environment already binds can't take another one: attaching to it
+fails with `volume_name_bound`. So attach the volume after declaring the name,
+and before deploying it. A name the manifest doesn't declare fails with
+`volume_name_undeclared`. Previews delete their volumes, so they take none.
 
 ## Delete a detached volume
 
@@ -315,6 +316,10 @@ $ piquelctl app exec notes web -- ls -l /etc/nginx/conf.d/default.conf
   Docker, labelled as its own, after its environment had been deleted, before
   piqueld tracked volumes. Its Docker name starts with `piqueld-` and the
   environment's ID.
+- **A detached volume comes from an environment that still exists.** The
+  environment's manifest dropped that volume name before piqueld tracked
+  volumes. Declare the name again, and the environment's next deployment
+  binds it to that volume, with its data.
 - **A deleted volume is listed again.** Docker couldn't remove it, for example
   because a container you started yourself mounts it. piqueld lists it again as
   detached at its next measurement; delete it again once nothing uses it.

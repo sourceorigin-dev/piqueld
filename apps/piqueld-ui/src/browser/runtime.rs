@@ -9,7 +9,7 @@ use crate::state::ApplicationHealth;
 use leptos::prelude::*;
 use piqueld_client::{
     Client, DiagnosticView, EnvironmentDetailView, ObservedApplicationView, ObservedServiceView,
-    RouteUrl, UrlState, links::ImportState, observability::Bytes, volumes::VolumeView,
+    RouteUrl, UrlState, links::ImportState, volumes::VolumeView,
 };
 
 /// Live runtime detail for an environment page's Overview tab.
@@ -276,18 +276,11 @@ fn volume_row(volume: &VolumeView) -> AnyView {
             <td>
                 <code>{volume.docker_name.to_string()}</code>
             </td>
-            <td class="num">{volume_size(volume)}</td>
+            <td class="num">{volume.size()}</td>
             <td class="muted">{volume.measured_at_ms.map_or_else(|| "Not yet".into_any(), when)}</td>
         </tr>
     }
     .into_any()
-}
-
-/// A volume's measured size, or a dash before its first measurement.
-pub(super) fn volume_size(volume: &VolumeView) -> String {
-    volume
-        .size_bytes
-        .map_or_else(|| "–".to_owned(), |bytes| Bytes(bytes).to_string())
 }
 
 /// The routes of the current runtime target, or why there are none.

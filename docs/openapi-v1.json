@@ -537,6 +537,7 @@
           "volume_name_bound",
           "volume_attached",
           "volume_preview",
+          "volume_name_undeclared",
           "hostname_conflict",
           "field_resource_not_found",
           "field_resource_exists",
@@ -32770,7 +32771,7 @@
     },
     "/api/v1/environments/{id}/volumes/{name}": {
       "put": {
-        "description": "The environment mounts it from its next deployment. Needs `apps:write` on\nthe environment and `system:operate`, since the volume may hold another\napplication's data. A name the environment already binds fails with 409\n`volume_name_bound`, an attached volume with `volume_attached`, and a\npreview with `volume_preview`.",
+        "description": "The environment mounts it from its next deployment. Needs `apps:write` on\nthe environment and `system:operate`, since the volume may hold another\napplication's data. A name the environment's manifest doesn't declare\nfails with 409 `volume_name_undeclared`, a name it already binds with\n`volume_name_bound`, an attached volume with `volume_attached`, and a\npreview with `volume_preview`.",
         "operationId": "attachVolume",
         "parameters": [
           {

@@ -11,15 +11,24 @@ async fn notes(store: &Store) -> (EnvironmentId, EnvironmentId) {
         .save_template(template.to_manifest().validate_template().unwrap(), false)
         .await;
     let application = ApplicationId::parse(saved.application_id.as_str()).unwrap();
+    let production = store.production(&application).await;
+    (
+        production.clone(),
+        create(store, &production, "staging").await,
+    )
+}
+
+/// Adds the environment `name`, never deployed, to `sibling`'s application.
+async fn create(store: &Store, sibling: &EnvironmentId, name: &str) -> EnvironmentId {
     let create = Mutation::CreateEnvironment {
-        application: application.clone(),
-        name: EnvironmentName::parse("staging").unwrap(),
+        application: store.get(sibling).await.unwrap().environment.application_id,
+        name: EnvironmentName::parse(name).unwrap(),
         source: None,
     };
-    let Ok(MutationResponse::Environment(staging)) = store.force(create).await else {
-        panic!("staging created")
+    let Ok(MutationResponse::Environment(created)) = store.force(create).await else {
+        panic!("{name} created")
     };
-    (store.production(&application).await, staging.id)
+    created.id
 }
 
 /// Deploys `environment` and saves its prepared target, returning the
@@ -116,14 +125,25 @@ async fn deleting_an_environment_detaches_its_volumes_for_another_to_attach() {
             .await,
         Err(StoreError::Volume(VolumeError::NameBound { .. }))
     ));
-    let other = VolumeName::parse("restored").unwrap();
+    let qa = create(&store, &production, "qa").await;
+    let undeclared = VolumeName::parse("restored").unwrap();
+    assert!(matches!(
+        store
+            .attach_volume(Actor::Daemon, &qa, &undeclared, &volume.id)
+            .await,
+        Err(StoreError::Volume(VolumeError::NameUndeclared { .. }))
+    ));
     let attached = store
-        .attach_volume(Actor::Daemon, &production, &other, &volume.id)
+        .attach_volume(Actor::Daemon, &qa, &data(), &volume.id)
         .await
         .unwrap();
-    assert_eq!(attached.binding.unwrap().name, other);
+    assert_eq!(attached.binding.unwrap().environment_id, qa);
     assert_eq!(attached.detached_from, None);
     assert_eq!(store.volumes(true).await.unwrap(), []);
+    assert_eq!(
+        deploy(&store, &qa).await.volumes[0].name,
+        volume.docker_name
+    );
 }
 
 #[tokio::test]
@@ -179,8 +199,17 @@ async fn a_survey_adopts_unknown_volumes_records_sizes_and_forgets_gone_detached
         owner: production.clone(),
         size_bytes: Some(4096),
     };
+    let listed_at = now_ms();
     store
-        .record_volume_survey(&[measured, orphan.clone()])
+        .record_volume_survey(&[measured.clone(), orphan.clone()], listed_at)
+        .await
+        .unwrap();
+    let unmeasured = ManagedVolume {
+        size_bytes: None,
+        ..measured
+    };
+    store
+        .record_volume_survey(&[unmeasured, orphan.clone()], listed_at)
         .await
         .unwrap();
 
@@ -198,6 +227,59 @@ async fn a_survey_adopts_unknown_volumes_records_sizes_and_forgets_gone_detached
         (removed.docker_name, removed.owner),
         (orphan.name, orphan.owner)
     );
+}
+
+#[tokio::test]
+async fn a_survey_keeps_detached_volumes_recorded_after_its_listing() {
+    let (_temp, store) = Store::temporary().await;
+    let (production, staging) = notes(&store).await;
+    let listed_at = now_ms();
+    deploy(&store, &production).await;
+    deploy(&store, &staging).await;
+    delete(&store, &staging).await;
+    store.record_volume_survey(&[], listed_at).await.unwrap();
+    assert_eq!(store.volumes(true).await.unwrap().len(), 1);
+    store.record_volume_survey(&[], now_ms()).await.unwrap();
+    assert_eq!(store.volumes(true).await.unwrap(), []);
+    assert_eq!(
+        store.environment_volumes(&production).await.unwrap().len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn deleting_a_preview_keeps_a_volume_attached_elsewhere() {
+    let (_temp, store) = Store::temporary().await;
+    let (production, preview) = notes(&store).await;
+    deploy(&store, &preview).await;
+    let [leftover] = store
+        .environment_volumes(&preview)
+        .await
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let deletion = store.request_delete(&preview).await.unwrap();
+    store.mark_running(&deletion.id).await;
+    sqlx::query("UPDATE environments SET kind='preview',branch='feat' WHERE id=?1")
+        .bind(preview.as_str())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM volume_bindings WHERE environment_id=?1")
+        .bind(preview.as_str())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+    let qa = create(&store, &production, "qa").await;
+    store
+        .attach_volume(Actor::Daemon, &qa, &data(), &leftover.id)
+        .await
+        .unwrap();
+
+    assert_eq!(store.preview_volumes(&preview).await.unwrap(), []);
+    store.finish_delete_operation(&deletion).await.unwrap();
+    let kept = store.volume(&leftover.id).await.unwrap();
+    assert_eq!(kept.binding.unwrap().environment_id, qa);
 }
 
 #[tokio::test]

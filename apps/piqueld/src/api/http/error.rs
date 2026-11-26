@@ -316,6 +316,10 @@ impl ApiError {
                 (ApiErrorCode::VolumeAttached, json!({"volume": volume}))
             }
             VolumeError::Preview => (ApiErrorCode::VolumePreview, Value::Null),
+            VolumeError::NameUndeclared { environment, name } => (
+                ApiErrorCode::VolumeNameUndeclared,
+                json!({"environment": environment, "name": name}),
+            ),
         };
         Self::new(StatusCode::CONFLICT, code, error.to_string()).details(details)
     }

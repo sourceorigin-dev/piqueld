@@ -9,9 +9,9 @@ use utoipa::ToSchema;
 #[cfg(doc)]
 use super::TELEMETRY_TARGET;
 use super::{
-    APPLICATION_LABEL, DesiredFile, DesiredMount, DesiredNetwork, DesiredService, INSTANCE_LABEL,
-    InstanceId, LINK_LABEL, MANAGED_LABEL, OwnershipState, ResolvedApplication, SERVICE_LABEL,
-    SecretFile, TelemetryMount,
+    DesiredFile, DesiredMount, DesiredNetwork, DesiredService, INSTANCE_LABEL, InstanceId,
+    LINK_LABEL, Ownership, OwnershipState, ResolvedApplication, SERVICE_LABEL, SecretFile,
+    TelemetryMount,
 };
 use crate::manifest::{
     RolloutPolicy, ServiceSecurity, ValidatedHealthCheck, ValidatedResourceLimits,
@@ -322,29 +322,27 @@ pub struct ManagedVolume {
     pub name: DockerVolumeName,
     /// The environment its labels name, which created it.
     pub owner: EnvironmentId,
-    /// The disk space it uses, if Docker measured it.
+    /// The disk space it uses, if Docker measured it this time.
     pub size_bytes: Option<u64>,
 }
 
 impl ManagedVolume {
-    /// The volume named `name` with `labels`, if `instance` manages it: its
-    /// labels mark it managed by `instance` and name a valid environment.
+    /// The volume named `name` with `labels`, unmeasured, if `instance`
+    /// manages it: its ownership labels are valid, as every resource piqueld
+    /// manages has them, and name `instance`.
     #[must_use]
     pub fn of(
         name: &str,
         labels: &BTreeMap<String, String>,
         instance: &InstanceId,
-        size_bytes: Option<u64>,
     ) -> Option<Self> {
-        let label = |key: &str| labels.get(key).map(String::as_str);
-        if label(MANAGED_LABEL) != Some("true") || label(INSTANCE_LABEL) != Some(instance.as_str())
-        {
+        if labels.get(INSTANCE_LABEL).map(String::as_str) != Some(instance.as_str()) {
             return None;
         }
         Some(Self {
             name: DockerVolumeName::parse(name).ok()?,
-            owner: EnvironmentId::parse(label(APPLICATION_LABEL)?).ok()?,
-            size_bytes,
+            owner: Ownership::labelled_environment(labels)?,
+            size_bytes: None,
         })
     }
 }

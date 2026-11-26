@@ -27,9 +27,9 @@ use piqueld_core::manifest::{
 };
 use piqueld_core::resource::{
     APPLICATION_LABEL, Convergence, DesiredNetwork, DesiredService, DesiredVolume,
-    INGRESS_PROXIES_ENV, INSTANCE_LABEL, MANAGED_LABEL, NetworkAttachment, ObservedMount,
-    ObservedNetwork, ObservedService, ObservedTask, ObservedVolume, SERVICE_LABEL, TaskDiagnostic,
-    TaskState, image_repository,
+    INGRESS_PROXIES_ENV, INSTANCE_LABEL, MANAGED_LABEL, ManagedVolume, NetworkAttachment,
+    ObservedMount, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume, SERVICE_LABEL,
+    TaskDiagnostic, TaskState, image_repository,
 };
 use piqueld_core::wait;
 use piqueld_core::{
@@ -497,13 +497,13 @@ pub trait DockerApi: Send + Sync + 'static {
     /// labels that no service mounts, now or in the previous spec a rollback
     /// restores. Docker refuses to remove configs in use.
     async fn prune_files(&self, ownership: &BTreeMap<String, String>) -> Result<(), DockerError>;
-    /// Lists the volumes `instance` manages, with the environment that
-    /// created each and its size where Docker measures it. Measuring walks
-    /// every volume's files, so it is slow on large volumes.
-    async fn volumes(
-        &self,
-        instance: &InstanceId,
-    ) -> Result<Vec<piqueld_core::resource::ManagedVolume>, DockerError>;
+    /// Lists the volumes `instance` manages, by their labels, with the
+    /// environment that created each, unmeasured.
+    async fn volumes(&self, instance: &InstanceId) -> Result<Vec<ManagedVolume>, DockerError>;
+    /// The disk space each local volume uses, by Docker name, where Docker
+    /// measures it. It walks every volume's files, so it is slow on large
+    /// volumes.
+    async fn volume_sizes(&self) -> Result<BTreeMap<String, u64>, DockerError>;
     /// Removes a managed volume and its data after rechecking its ownership.
     /// A missing volume counts as removed. Deleting a preview removes its
     /// volumes; an environment's are detached, and removed only when one

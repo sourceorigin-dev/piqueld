@@ -41,7 +41,7 @@ impl Client {
     /// Attaches a detached volume to an environment under `name`.
     ///
     /// # Errors
-    /// Returns [`ClientError`], including `volume_name_bound`,
+    /// Returns [`ClientError`], including `volume_name_undeclared`, `volume_name_bound`,
     /// `volume_attached` and `volume_preview` refusals.
     pub async fn attach_volume(
         &self,

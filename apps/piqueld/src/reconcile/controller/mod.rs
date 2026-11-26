@@ -600,6 +600,7 @@ impl<D: DockerApi> Controller<D> {
             })?;
         self.check_current(operation).await?;
         self.docker.ensure_swarm(false).await?;
+        self.survey_volumes(false).await?;
         self.store
             .save_prepared(operation, &prepared)
             .await

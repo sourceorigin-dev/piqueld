@@ -4,7 +4,7 @@ use super::{
     BTreeMap, BTreeSet, BollardDocker, BollardResult, DesiredNetwork, DesiredService,
     DesiredVolume, DockerApi, DockerError, DockerNetworkName, DockerTimeout, EnvironmentId,
     HashMap, InspectNetworkOptions, InspectServiceOptions, Ipam, ListNetworksOptionsBuilder,
-    ListServicesOptionsBuilder, ListTasksOptionsBuilder, ListVolumesOptionsBuilder,
+    ListServicesOptionsBuilder, ListTasksOptionsBuilder, ListVolumesOptionsBuilder, ManagedVolume,
     NetworkCreateRequest, OBSERVATION_INSPECT_CONCURRENCY, ObservedApplication, ObservedNetwork,
     ObservedService, ObservedVolume, ResourceKind, StreamExt, SwarmInitRequest, SwarmState,
     TryStreamExt, VolumeCreateOptions, async_trait, identity::Filters, resolve_image_digest,
@@ -1154,37 +1154,66 @@ impl DockerApi for BollardDocker {
             .await
     }
 
+    async fn volumes(
+        &self,
+        instance: &piqueld_core::InstanceId,
+    ) -> Result<Vec<ManagedVolume>, DockerError> {
+        DockerTimeout::Request
+            .run("list managed volumes", async {
+                let listed = self
+                    .client()?
+                    .list_volumes(Some(
+                        ListVolumesOptionsBuilder::default()
+                            .filters(&Self::managed_filter())
+                            .build(),
+                    ))
+                    .await
+                    .or_request("list managed volumes")?
+                    .volumes
+                    .ok_or(DockerError::Request("list managed volumes"))?;
+                Ok(listed
+                    .into_iter()
+                    .filter_map(|volume| {
+                        let labels = volume.labels.into_iter().collect();
+                        ManagedVolume::of(&volume.name, &labels, instance)
+                    })
+                    .collect())
+            })
+            .await
+    }
+
+    async fn volume_sizes(&self) -> Result<BTreeMap<String, u64>, DockerError> {
+        let timeout = DockerTimeout::Measurement;
+        timeout
+            .run("measure volumes", async {
+                let usage = self
+                    .client()?
+                    .clone()
+                    .with_timeout(timeout.duration())
+                    .df(Some(
+                        bollard::query_parameters::DataUsageOptionsBuilder::new()
+                            ._type(vec!["volume".to_owned()])
+                            .build(),
+                    ))
+                    .await
+                    .or_request("measure volumes")?;
+                Ok(usage
+                    .volumes
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|volume| {
+                        let size = u64::try_from(volume.usage_data?.size).ok()?;
+                        Some((volume.name, size))
+                    })
+                    .collect())
+            })
+            .await
+    }
+
     /// Removes the volume by name after rechecking its ownership. Volume
     /// names are unique and cannot be reused while it exists, so the check
     /// and removal target the same volume. A volume still in use fails, and
     /// a missing one counts as removed.
-    async fn volumes(
-        &self,
-        instance: &piqueld_core::InstanceId,
-    ) -> Result<Vec<piqueld_core::resource::ManagedVolume>, DockerError> {
-        let usage = self
-            .client()?
-            .df(Some(
-                bollard::query_parameters::DataUsageOptionsBuilder::new()
-                    ._type(vec!["volume".to_owned()])
-                    .build(),
-            ))
-            .await
-            .or_request("measure volumes")?;
-        Ok(usage
-            .volumes
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|volume| {
-                let size = volume
-                    .usage_data
-                    .and_then(|usage| u64::try_from(usage.size).ok());
-                let labels = volume.labels.into_iter().collect();
-                piqueld_core::resource::ManagedVolume::of(&volume.name, &labels, instance, size)
-            })
-            .collect())
-    }
-
     async fn remove_volume(
         &self,
         name: &str,

@@ -4098,7 +4098,7 @@ Arguments:
 
 Options:
 
-- `--detached`: Only list detached volumes, which deleted environments left.
+- `--detached`: Only list detached volumes, which no environment binds, such as those of deleted environments.
 
 ## `piquelctl volume show`
 
@@ -4118,7 +4118,7 @@ Arguments:
 
 Attach a detached volume to an environment under a volume name.
 
-The environment mounts it where its manifest mounts NAME, from its next deployment. NAME must not be bound yet, and previews delete their volumes, so they take none. Needs `apps:write` on the application and `system:operate`.
+The environment mounts it where its manifest mounts NAME, from its next deployment. The environment's manifest must declare NAME, and NAME must not be bound yet: attach the volume before the first deployment that declares it. Previews delete their volumes, so they take none. Needs `apps:write` on the application and `system:operate`.
 
 ```text
 piquelctl volume attach [OPTIONS] <APPLICATION> <ENVIRONMENT> <NAME> <VOLUME>

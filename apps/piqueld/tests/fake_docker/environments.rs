@@ -569,3 +569,63 @@ async fn stopped_environments_run_no_replicas_until_started_or_deployed() {
             .stopped()
     );
 }
+
+#[tokio::test]
+async fn a_deleted_environments_volume_attached_elsewhere_mounts_with_its_labels() {
+    use piqueld::api::{Mutation, MutationResponse};
+    use piqueld_core::EnvironmentName;
+    let fixture = Box::pin(EnvironmentHarness::new()).await;
+    let harness = &fixture.harness;
+    let store = &harness.store;
+    let name = harness.application.spec().volumes[0].name.clone();
+    let [old] = store
+        .environment_volumes(&fixture.staging)
+        .await
+        .unwrap()
+        .try_into()
+        .unwrap();
+    fixture.delete_staging().await;
+    let MutationResponse::Environment(qa) = Box::pin(fixture.applications.accept(
+        Daemon,
+        Mutation::CreateEnvironment {
+            application: harness.application.id().clone(),
+            name: EnvironmentName::parse("qa").unwrap(),
+            source: None,
+        },
+        None,
+        true,
+        None,
+    ))
+    .await
+    .unwrap() else {
+        panic!("created qa")
+    };
+    store
+        .attach_volume(Daemon, &qa.id, &name, &old.id)
+        .await
+        .unwrap();
+
+    fixture.applications.deploy(&qa.id, None).await.unwrap();
+    harness.scan().await;
+    let operation = store
+        .latest_operation_for_environment(&qa.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(operation.state, OperationState::Succeeded);
+    let observed = harness.docker.observe(&qa.id).await.unwrap();
+    assert!(
+        observed
+            .other_volumes
+            .iter()
+            .any(|volume| volume.name == old.docker_name.as_str()),
+        "the volume keeps staging's labels"
+    );
+    assert_eq!(
+        observed.services[0].mounts[0].volume_name,
+        old.docker_name.as_str()
+    );
+
+    harness.controller.survey_volumes(true).await.unwrap();
+    assert_eq!(store.volume(&old.id).await.unwrap().size_bytes, Some(0));
+}

@@ -10595,7 +10595,8 @@ impl Client {
 
     The environment mounts it from its next deployment. Needs `apps:write` on
     the environment and `system:operate`, since the volume may hold another
-    application's data. A name the environment already binds fails with 409
+    application's data. A name the environment's manifest doesn't declare
+    fails with 409 `volume_name_undeclared`, a name it already binds with
     `volume_name_bound`, an attached volume with `volume_attached`, and a
     preview with `volume_preview`.
 

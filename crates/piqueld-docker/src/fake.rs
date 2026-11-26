@@ -10,7 +10,7 @@ use super::{
 use async_trait::async_trait;
 use futures_util::StreamExt as _;
 use piqueld_core::resource::{
-    APPLICATION_LABEL, Convergence, DesiredService, INSTANCE_LABEL, MANAGED_LABEL,
+    APPLICATION_LABEL, Convergence, DesiredService, INSTANCE_LABEL, MANAGED_LABEL, ManagedVolume,
     ObservedApplication, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume,
     RuntimeMessage, SERVICE_LABEL, SPEC_HASH_LABEL, TaskState, image_repository,
 };
@@ -1285,10 +1285,7 @@ impl DockerApi for FakeDocker {
         Ok(())
     }
 
-    async fn volumes(
-        &self,
-        instance: &InstanceId,
-    ) -> Result<Vec<piqueld_core::resource::ManagedVolume>, DockerError> {
+    async fn volumes(&self, instance: &InstanceId) -> Result<Vec<ManagedVolume>, DockerError> {
         let _probe = self.observations.enter().await;
         Ok(self
             .observed
@@ -1296,14 +1293,20 @@ impl DockerApi for FakeDocker {
             .await
             .volumes
             .iter()
-            .filter_map(|volume| {
-                piqueld_core::resource::ManagedVolume::of(
-                    &volume.name,
-                    &volume.labels,
-                    instance,
-                    Some(0),
-                )
-            })
+            .filter_map(|volume| ManagedVolume::of(&volume.name, &volume.labels, instance))
+            .collect())
+    }
+
+    /// Every volume uses no space.
+    async fn volume_sizes(&self) -> Result<BTreeMap<String, u64>, DockerError> {
+        let _probe = self.observations.enter().await;
+        Ok(self
+            .observed
+            .lock()
+            .await
+            .volumes
+            .iter()
+            .map(|volume| (volume.name.clone(), 0))
             .collect())
     }
 

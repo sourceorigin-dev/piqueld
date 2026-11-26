@@ -811,8 +811,9 @@ impl Plan {
 
     /// Adds `EnsureVolume` for missing volumes and diagnostics for unowned or
     /// misconfigured ones. Returns whether every desired volume already exists
-    /// intact. Volume labels are only checked for ownership, by the
-    /// environment that created the volume, not drift.
+    /// intact. Volume labels are only checked for ownership, not drift: by
+    /// the environment the desired labels name, which come from the volume's
+    /// record and may be another environment, the one that created it.
     fn ensure_volumes(
         &mut self,
         desired: &ResolvedApplication,

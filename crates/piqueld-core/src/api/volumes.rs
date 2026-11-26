@@ -24,8 +24,9 @@ crate::names::string_enum! {
     pub enum VolumeState {
         /// An environment binds one of its manifest volume names to it.
         Attached => "attached",
-        /// No environment binds it: its environment was deleted. It keeps its
-        /// data until it is attached again or deleted.
+        /// No environment binds it: its environment was deleted, or the
+        /// daemon found it in Docker bound to no name. It keeps its data
+        /// until it is attached again or deleted.
         Detached => "detached",
     }
 }
@@ -61,6 +62,43 @@ pub struct VolumeView {
     pub measured_at_ms: Option<i64>,
     /// When the daemon created or adopted it, in Unix milliseconds.
     pub created_at_ms: i64,
+}
+
+impl VolumeView {
+    /// Where it is bound, or where it came from while detached:
+    /// `shop/production as data`, `from shop/staging as data`, or `from an
+    /// unknown environment`.
+    #[must_use]
+    pub fn whereabouts(&self) -> String {
+        if let Some(binding) = &self.binding {
+            return format!(
+                "{}/{} as {}",
+                binding.application, binding.environment, binding.name
+            );
+        }
+        match &self.detached_from {
+            Some(DetachedFrom {
+                application,
+                environment,
+                name: Some(name),
+            }) => format!("from {application}/{environment} as {name}"),
+            Some(DetachedFrom {
+                application,
+                environment,
+                name: None,
+            }) => format!("from {application}/{environment}"),
+            None => "from an unknown environment".to_owned(),
+        }
+    }
+
+    /// Its measured size, such as `48.2 MB`, or `-` before it is measured.
+    #[must_use]
+    pub fn size(&self) -> String {
+        self.size_bytes.map_or_else(
+            || "-".to_owned(),
+            |bytes| crate::observability::Bytes(bytes).to_string(),
+        )
+    }
 }
 
 /// The environment and manifest volume name an attached volume is bound to.

@@ -6,16 +6,16 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 /// Time between volume surveys. Measuring walks every volume's files, so it
-/// runs rarely; the first survey runs at startup.
+/// runs rarely.
 const SURVEY_PERIOD: Duration = Duration::from_mins(15);
 
 impl<D: DockerApi> Controller<D> {
-    /// Surveys volumes every [`SURVEY_PERIOD`] until cancelled. Failures are
-    /// reported as daemon diagnostics.
+    /// Surveys volumes, measuring them, every [`SURVEY_PERIOD`] until
+    /// cancelled. Failures are reported as daemon diagnostics.
     pub async fn run_volume_survey(&self, cancellation: CancellationToken) {
         let mut ticks = Ticker::new(SURVEY_PERIOD);
         while ticks.tick(&cancellation).await {
-            if let Err(error) = self.survey_volumes().await {
+            if let Err(error) = self.survey_volumes(true).await {
                 tracing::warn!(%error, "volume survey failed");
                 self.store
                     .report_diagnostic(&error.diagnostic(), None)
@@ -24,13 +24,27 @@ impl<D: DockerApi> Controller<D> {
         }
     }
 
-    /// Lists every volume the instance manages, with its size, and records
-    /// them (see `Store::record_volume_survey`).
+    /// Lists every volume the instance manages and records them (see
+    /// `Store::record_volume_survey`), with their sizes when `measure`. A
+    /// failed measurement keeps the sizes recorded before. Each deployment
+    /// surveys, unmeasured, before saving its target, so a name binds to
+    /// the old volume the survey adopts rather than a new one.
     ///
     /// # Errors
-    /// Returns Docker or storage errors.
-    pub async fn survey_volumes(&self) -> Result<(), OperationError> {
-        let volumes = self.docker.volumes(self.store.instance_id()).await?;
-        Ok(self.store.record_volume_survey(&volumes).await?)
+    /// Returns Docker errors listing volumes, or storage errors.
+    pub async fn survey_volumes(&self, measure: bool) -> Result<(), OperationError> {
+        let listed_at = piqueld_store::now_ms();
+        let mut volumes = self.docker.volumes(self.store.instance_id()).await?;
+        if measure {
+            match self.docker.volume_sizes().await {
+                Ok(sizes) => {
+                    for volume in &mut volumes {
+                        volume.size_bytes = sizes.get(volume.name.as_str()).copied();
+                    }
+                }
+                Err(error) => tracing::warn!(%error, "measuring volumes failed; sizes kept"),
+            }
+        }
+        Ok(self.store.record_volume_survey(&volumes, listed_at).await?)
     }
 }

@@ -208,8 +208,10 @@ networks are absent. Failed deletion attempts record diagnostics and follow the
 same retry policy. Deletion removes the environment's Swarm secrets. Its volumes
 are detached, except a preview's, which deletion removes and waits for. The
 volume survey (`Controller::run_volume_survey`) lists every volume the
-instance manages every 15 minutes, adopting those the store has no record of
-as detached and recording sizes.
+instance manages by its labels every 15 minutes, and before each deployment
+saves its target, adopting those the store has no record of as detached; the
+periodic passes also measure sizes with Docker's `df`, which may fail without
+failing adoption.
 
 Operation state describes progress toward intent. Runtime health is recorded
 separately, so a failed replacement can coexist with healthy existing services.

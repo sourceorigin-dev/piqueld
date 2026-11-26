@@ -9,7 +9,7 @@ use crate::{
 use clap::Subcommand;
 use piqueld_client::{
     Client,
-    observability::{Bytes, Timestamp},
+    observability::Timestamp,
     volumes::{AttachVolumeRequest, VolumeId, VolumeView},
 };
 
@@ -27,7 +27,8 @@ pub(crate) enum VolumeCommand {
         /// Environment name or stable ID.
         #[arg(requires = "application")]
         environment: Option<String>,
-        /// Only list detached volumes, which deleted environments left.
+        /// Only list detached volumes, which no environment binds, such as
+        /// those of deleted environments.
         #[arg(long, conflicts_with = "application")]
         detached: bool,
     },
@@ -42,8 +43,9 @@ pub(crate) enum VolumeCommand {
     /// Attach a detached volume to an environment under a volume name.
     ///
     /// The environment mounts it where its manifest mounts NAME, from its next
-    /// deployment. NAME must not be bound yet, and previews delete their
-    /// volumes, so they take none. Needs `apps:write` on the application and
+    /// deployment. The environment's manifest must declare NAME, and NAME
+    /// must not be bound yet: attach the volume before the first deployment
+    /// that declares it. Previews delete their volumes, so they take none. Needs `apps:write` on the application and
     /// `system:operate`.
     Attach {
         /// Application name or stable ID.
@@ -130,30 +132,6 @@ impl VolumeCommand {
     }
 }
 
-/// Where a volume is bound, or was when it was detached.
-fn whereabouts(volume: &VolumeView) -> String {
-    if let Some(binding) = &volume.binding {
-        return format!(
-            "{}/{} as {}",
-            binding.application, binding.environment, binding.name
-        );
-    }
-    match &volume.detached_from {
-        Some(from) => match &from.name {
-            Some(name) => format!("from {}/{} as {name}", from.application, from.environment),
-            None => format!("from {}/{}", from.application, from.environment),
-        },
-        None => "from an unknown environment".to_owned(),
-    }
-}
-
-/// Its measured size, or `-` before it is measured.
-fn size(volume: &VolumeView) -> String {
-    volume
-        .size_bytes
-        .map_or_else(|| "-".to_owned(), |bytes| Bytes(bytes).to_string())
-}
-
 /// Volumes, one per line; JSON is the volumes.
 struct Volumes(Vec<VolumeView>);
 report!(Volumes as [VolumeView] = 0, self, out, {
@@ -165,8 +143,8 @@ report!(Volumes as [VolumeView] = 0, self, out, {
             "{}  {}  {}  {}",
             volume.id,
             volume.state,
-            size(volume),
-            whereabouts(volume)
+            volume.size(),
+            volume.whereabouts()
         ))?;
     }
     Ok(())
@@ -177,8 +155,8 @@ report!(VolumeView, self, out, {
     out.label("Docker name", self.docker_name.as_str())?;
     out.label("Pool", self.pool)?;
     out.label("State", self.state)?;
-    out.label("Bound", whereabouts(self))?;
-    out.label("Size", size(self))?;
+    out.label("Bound", self.whereabouts())?;
+    out.label("Size", self.size())?;
     if let Some(measured) = self.measured_at_ms {
         out.label("Measured", Timestamp(measured))?;
     }
