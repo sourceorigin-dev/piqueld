@@ -1,4 +1,4 @@
-import { test, expect, apply, call, card, confirmNext, webManifest, applicationTab, environmentTab } from '../fixtures.js';
+import { test, expect, apply, call, card, cancelDialog, confirmDialog, webManifest, applicationTab, environmentTab } from '../fixtures.js';
 import type { Page, Request } from '@playwright/test';
 
 /** Whether `request` is a `method` request for exactly `path`. */
@@ -37,8 +37,8 @@ test('replacing a stored value keeps an access list changed elsewhere, and acces
   const writes: string[] = [];
   const record = (request: Request) => { if (sent(request, 'PUT', path)) writes.push(request.url()); };
   page.on('request', record);
-  page.once('dialog', dialog => dialog.dismiss());
   await save.click();
+  await cancelDialog(page);
   await expect(value).toHaveValue('second');
   page.off('request', record);
   expect(writes).toEqual([]);
@@ -46,9 +46,9 @@ test('replacing a stored value keeps an access list changed elsewhere, and acces
   // Every environment may mount it since the list was loaded; the form
   // didn't change access, so the replacement keeps that.
   await call(page, 'PUT', `${path}/access`, { environments: 'all', previews: false });
-  confirmNext(page, 'Replace api-token?');
   const replaced = page.waitForRequest(request => sent(request, 'PUT', path));
   await save.click();
+  await confirmDialog(page, 'Replace api-token?');
   expect(new URL((await replaced).url()).searchParams.has('environments')).toBe(false);
   await expect(value).toHaveValue('');
   await expect(row).toContainText('every environment');
@@ -68,8 +68,8 @@ test('replacing a stored value keeps an access list changed elsewhere, and acces
 
   // Once deleted, the name no longer loads its access: a new secret of that
   // name starts from the default.
-  confirmNext(page, 'Delete api-token from every environment');
   await row.getByRole('button', { name: 'Delete', exact: true }).click();
+  await confirmDialog(page, 'Delete api-token from every environment');
   await expect(store.getByText('Secret deleted.', { exact: true })).toBeVisible();
   await expect(row).toHaveCount(0);
   await expect(every).toBeChecked();
@@ -86,9 +86,9 @@ test('saving a value that changes access sends the access the form loaded', asyn
   // meanwhile isn't overwritten.
   await store.getByLabel('Every environment, including ones created later', { exact: true }).check();
   await store.getByLabel('Value', { exact: true }).fill('second');
-  confirmNext(page, 'Replace api-token?');
   const upload = page.waitForRequest(request => sent(request, 'PUT', path));
   await store.getByRole('button', { name: 'Save secret', exact: true }).click();
+  await confirmDialog(page, 'Replace api-token?');
   const query = new URL((await upload).url()).searchParams;
   expect(query.get('environments')).toBe('all');
   expect(query.get('expected_environments')).toBe(env);
@@ -107,9 +107,9 @@ test('a refused secret write clears the value and waits for a refresh', async ({
   await row.getByRole('button', { name: 'Edit', exact: true }).click();
   const value = store.getByLabel('Value', { exact: true });
   await value.fill('third');
-  confirmNext(page, 'Replace api-token?');
   const refused = page.waitForResponse(response => sent(response.request(), 'PUT', path));
   await store.getByRole('button', { name: 'Save secret', exact: true }).click();
+  await confirmDialog(page, 'Replace api-token?');
   expect((await refused).status()).toBe(409);
   await expect(store.getByText('Refresh before another secret change. Any submitted value has been cleared.', { exact: false })).toBeVisible();
   await expect(value).toHaveValue('');
@@ -147,15 +147,15 @@ test.describe('with deployments', () => {
     const row = generated.getByRole('row').filter({ hasText: 'session-key' });
     await expect(row.getByRole('cell').nth(1)).toHaveText('1');
 
-    confirmNext(page, 'Generate a new value for session-key?');
     await row.getByRole('button', { name: 'Regenerate', exact: true }).click();
+    await confirmDialog(page, 'Generate a new value for session-key?');
     await expect(page.getByText('New value generated. Deploy to use it.', { exact: true })).toBeVisible();
     await expect(row.getByRole('cell').nth(1)).toHaveText('2');
 
     // The running deployment still mounts it.
-    confirmNext(page, 'Delete the generated value of session-key');
     const refused = page.waitForResponse(response => sent(response.request(), 'DELETE', `environments/${env}/secrets/session-key`));
     await row.getByRole('button', { name: 'Delete', exact: true }).click();
+    await confirmDialog(page, 'Delete the generated value of session-key');
     expect((await refused).status()).toBe(409);
     await expect(page.getByText('Refresh, then retry if cleanup is pending.', { exact: false })).toBeVisible();
     await expect(row.getByRole('button', { name: 'Regenerate', exact: true })).toBeDisabled();

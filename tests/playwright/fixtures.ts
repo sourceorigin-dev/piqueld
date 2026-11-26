@@ -242,7 +242,24 @@ export async function serveDeployments(page: Page, environment: string, pages: (
   });
 }
 
-/** Accepts the next confirmation, once its message contains `text` when given. */
+/** Confirms in the open confirmation dialog, once its message contains
+ * `text` when given. */
+export async function confirmDialog(page: Page, text?: string) {
+  const dialog = page.getByRole('alertdialog');
+  if (text !== undefined) await expect(dialog).toContainText(text);
+  await dialog.locator('.form-actions').getByRole('button').last().click();
+  await expect(dialog).toBeHidden();
+}
+
+/** Cancels the open confirmation dialog. */
+export async function cancelDialog(page: Page) {
+  const dialog = page.getByRole('alertdialog');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toBeHidden();
+}
+
+/** Accepts the next native confirmation, which only leaving unsaved edits
+ * asks, once its message contains `text` when given. */
 export function confirmNext(page: Page, text?: string) {
   page.once('dialog', async dialog => {
     if (text !== undefined) expect(dialog.message()).toContain(text);

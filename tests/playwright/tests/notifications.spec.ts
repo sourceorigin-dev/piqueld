@@ -1,4 +1,4 @@
-import { test, expect, auth, confirmNext, register, type Managed } from '../fixtures.js';
+import { test, expect, auth, confirmDialog, register, type Managed } from '../fixtures.js';
 import type { Route } from '@playwright/test';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -56,8 +56,8 @@ test('destinations are added, refused with a reason in their dialog, tested, edi
     await expect(page.getByText('Saved ops.')).toBeVisible();
     await expect(row).toContainText('previews');
 
-    confirmNext(page);
     await row.getByRole('button', { name: 'Delete', exact: true }).click();
+    await confirmDialog(page);
     await expect(page.getByText('No destinations. Nothing is notified.')).toBeVisible();
   } finally {
     receiver.close();

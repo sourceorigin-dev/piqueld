@@ -202,23 +202,21 @@ fn Destinations(
                                 on:click={
                                     let name = remove.clone();
                                     move |_| {
-                                        if !confirm(
-                                            &format!(
-                                                "Delete {name}? Its pending deliveries are cancelled.",
-                                            ),
-                                        ) {
-                                            return;
-                                        }
-                                        let name = name.clone();
-                                        outcome.run(
-                                            async move {
-                                                Client::browser()
-                                                    .delete_notification_destination(&name)
-                                                    .await
-                                            },
-                                            |()| "Destination deleted.".into(),
-                                            refresh,
+                                        let message = format!(
+                                            "Delete {name}? Its pending deliveries are cancelled.",
                                         );
+                                        let name = name.clone();
+                                        confirm("Delete destination", message, move || {
+                                            outcome.run(
+                                                async move {
+                                                    Client::browser()
+                                                        .delete_notification_destination(&name)
+                                                        .await
+                                                },
+                                                |()| "Destination deleted.".into(),
+                                                refresh,
+                                            );
+                                        });
                                     }
                                 }
                             >

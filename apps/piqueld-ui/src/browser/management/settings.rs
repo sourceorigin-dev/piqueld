@@ -3,7 +3,7 @@ use super::super::ui::{
     FormModal, Icon, Modal, Tone, add_button, copy_button, empty, icon, notice, one_time_secret,
     remove_button, row_detail, text_field, text_input, when,
 };
-use super::super::{UserError, confirm};
+use super::super::{UserError, confirm, confirm_if};
 use super::{Draft, RowDialog, editor};
 use crate::editor::{Choice, FileForm, HealthKind, Section, ServiceForm, SourceKind};
 use leptos::prelude::*;
@@ -335,19 +335,19 @@ fn WebhookSettings() -> impl IntoView {
             .and_then(|webhook| webhook.secret_created_at_ms)
     };
     let generate = move |_| {
-        if created().is_some()
-            && !confirm(
-                "Rotate the webhook secret? The current secret stops verifying deliveries at once, until GitHub is updated with the new one.",
-            )
-        {
-            return;
-        }
         let application = context.id();
-        context.mutate_once(
-            async move |client| client.generate_webhook_secret(&application).await,
-            move |secret| {
-                generated.set(Some(secret.secret));
-                data.refetch();
+        confirm_if(
+            created().is_some(),
+            "Rotate secret",
+            "Rotate the webhook secret? The current secret stops verifying deliveries at once, until GitHub is updated with the new one.",
+            move || {
+                context.mutate_once(
+                    async move |client| client.generate_webhook_secret(&application).await,
+                    move |secret| {
+                        generated.set(Some(secret.secret));
+                        data.refetch();
+                    },
+                );
             },
         );
     };
@@ -508,10 +508,13 @@ pub(super) fn VolumeSettings() -> impl IntoView {
         dialog.save(ApplicationEdit::Volumes(volumes));
     };
     let remove = move |index: usize| {
-        if !confirm("Remove this volume from the saved configuration? Its Docker data is kept.") {
-            return;
-        }
-        save(RowDialog::without(volume_names(&context.manifest()), index));
+        confirm(
+            "Remove volume",
+            "Remove this volume from the saved configuration? Its Docker data is kept.",
+            move || {
+                save(RowDialog::without(volume_names(&context.manifest()), index));
+            },
+        );
     };
     view! {
         <section class="card">

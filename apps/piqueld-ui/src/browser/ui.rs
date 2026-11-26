@@ -646,6 +646,10 @@ pub(super) fn Modal(
     /// Whether to show the dialog wider.
     #[prop(optional)]
     wide: bool,
+    /// Makes it an `alertdialog`, described by the element with this ID: a
+    /// question that interrupts what the user was doing.
+    #[prop(optional)]
+    alert: Option<&'static str>,
     /// The dialog's content.
     children: Children,
 ) -> impl IntoView {
@@ -686,7 +690,9 @@ pub(super) fn Modal(
             class="modal"
             class:modal-wide={wide}
             node_ref={dialog}
+            role={alert.map(|_| "alertdialog")}
             aria-labelledby={labelled_by}
+            aria-describedby={alert}
             on:cancel={move |event: web_sys::Event| {
                 event.prevent_default();
                 close();
@@ -706,6 +712,106 @@ pub(super) fn Modal(
             </header>
             <div class="modal-body">{children()}</div>
         </dialog>
+    }
+}
+
+/// The question [`ConfirmationDialog`] shows: the action, which titles it and
+/// names its button, why it needs confirming, and what runs once confirmed.
+#[derive(Clone, Copy)]
+struct Confirmation {
+    opened: RwSignal<bool>,
+    action: RwSignal<&'static str>,
+    message: RwSignal<String>,
+    then: StoredValue<Option<Box<dyn FnOnce()>>, LocalStorage>,
+}
+
+thread_local! {
+    /// The mounted [`ConfirmationDialog`], which [`confirm`] asks. Event
+    /// handlers run outside any reactive owner, so they can't read it from
+    /// context.
+    static CONFIRMATION: std::cell::Cell<Option<Confirmation>> = const { std::cell::Cell::new(None) };
+}
+
+/// Asks the user, in the [`ConfirmationDialog`], whether to `action`, such
+/// as "Delete preview", explaining what happens in `message`. Runs `then`
+/// once they confirm, in the caller's reactive owner so it reads the same
+/// context, and nothing when they cancel.
+pub(super) fn confirm(
+    action: &'static str,
+    message: impl Into<String>,
+    then: impl FnOnce() + 'static,
+) {
+    let Some(confirmation) = CONFIRMATION.get() else {
+        leptos::logging::error!("No confirmation dialog is mounted to ask: {action}");
+        return;
+    };
+    confirmation.action.set(action);
+    confirmation.message.set(message.into());
+    let owner = Owner::current();
+    confirmation
+        .then
+        .set_value(Some(Box::new(move || match owner {
+            Some(owner) => owner.with(then),
+            None => then(),
+        })));
+    confirmation.opened.set(true);
+}
+
+/// [`confirm`] when `ask`, else runs `then` at once.
+pub(super) fn confirm_if(
+    ask: bool,
+    action: &'static str,
+    message: impl Into<String>,
+    then: impl FnOnce() + 'static,
+) {
+    if ask {
+        confirm(action, message, then);
+    } else {
+        then();
+    }
+}
+
+/// The dashboard's one confirmation dialog, which [`confirm`] opens. Mount
+/// it once. Its confirm button is never focused first, so Enter alone
+/// doesn't confirm.
+#[component]
+pub(super) fn ConfirmationDialog() -> impl IntoView {
+    const MESSAGE: &str = "confirmation-message";
+    let confirmation = Confirmation {
+        opened: RwSignal::new(false),
+        action: RwSignal::new(""),
+        message: RwSignal::new(String::new()),
+        then: StoredValue::new_local(None),
+    };
+    CONFIRMATION.set(Some(confirmation));
+    on_cleanup(|| CONFIRMATION.set(None));
+    let cancel = move || {
+        confirmation.opened.set(false);
+        confirmation.then.set_value(None);
+    };
+    let accept = move || {
+        confirmation.opened.set(false);
+        if let Some(then) = confirmation.then.try_update_value(Option::take).flatten() {
+            then();
+        }
+    };
+    view! {
+        <Modal
+            title={confirmation.action}
+            opened={confirmation.opened}
+            on_close={Callback::new(move |()| cancel())}
+            alert={MESSAGE}
+        >
+            <p id={MESSAGE}>{move || confirmation.message.get()}</p>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" on:click={move |_| cancel()}>
+                    "Cancel"
+                </button>
+                <button type="button" class="btn btn-danger" on:click={move |_| accept()}>
+                    {move || confirmation.action.get()}
+                </button>
+            </div>
+        </Modal>
     }
 }
 

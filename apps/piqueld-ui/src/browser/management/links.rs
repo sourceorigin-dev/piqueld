@@ -20,15 +20,16 @@ fn ExportSettings() -> impl IntoView {
         dialog.save(ApplicationEdit::Exports(exports));
     };
     let remove = move |index: usize| {
-        if !confirm(
+        confirm(
+            "Stop exporting",
             "Stop exporting this service? Importing applications lose it at their next deployment.",
-        ) {
-            return;
-        }
-        save(RowDialog::without(
-            ExportDraft::rows(&context.manifest()),
-            index,
-        ));
+            move || {
+                save(RowDialog::without(
+                    ExportDraft::rows(&context.manifest()),
+                    index,
+                ));
+            },
+        );
     };
     view! {
         <section class="card">
@@ -133,13 +134,16 @@ fn ImportSettings() -> impl IntoView {
         dialog.save(ApplicationEdit::Imports(imports));
     };
     let remove = move |index: usize| {
-        if !confirm("Stop importing this service? Services lose it at the next deployment.") {
-            return;
-        }
-        save(RowDialog::without(
-            ImportDraft::rows(&context.manifest()),
-            index,
-        ));
+        confirm(
+            "Stop importing",
+            "Stop importing this service? Services lose it at the next deployment.",
+            move || {
+                save(RowDialog::without(
+                    ImportDraft::rows(&context.manifest()),
+                    index,
+                ));
+            },
+        );
     };
     view! {
         <section class="card">

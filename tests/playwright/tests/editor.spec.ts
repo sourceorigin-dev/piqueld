@@ -1,5 +1,5 @@
 import {
-  test, expect, apply, auth, call, card, confirmNext, deploymentRows, deploymentTab, head, openDeployment, proof, webManifest,
+  test, expect, apply, auth, call, card, cancelDialog, confirmDialog, confirmNext, deploymentRows, deploymentTab, head, openDeployment, proof, webManifest,
   applicationTab, environmentTab, serviceTab, title, type Ceremony, type Managed,
 } from '../fixtures.js';
 import type { Page } from '@playwright/test';
@@ -161,8 +161,8 @@ test('saves volumes and routes, previews the plan, and records a deployment', as
   await renameDialog.getByRole('button', { name: 'Save volume', exact: true }).click();
   await expect(renameDialog).toBeHidden();
   await expect(volume).toContainText('uploads');
-  confirmNext(page, 'Remove this volume');
   await volume.getByRole('button', { name: 'Remove', exact: true }).click();
+  await confirmDialog(page, 'Remove this volume');
   await expect(volume).toHaveCount(0);
   await page.getByRole('button', { name: 'Add volume', exact: true }).click();
   await volumeDialog.getByLabel('Volume name', { exact: true }).fill('data');
@@ -315,8 +315,8 @@ test('adds, edits, reorders, and removes jobs in a dialog', async ({ page, accou
   // A command element holding a space is quoted, since elements are never split.
   await expect(jobs.nth(1)).toContainText("on web, up to 300s: 'seed everything'");
 
-  confirmNext(page, 'Remove this job');
   await jobs.nth(1).getByRole('button', { name: 'Remove', exact: true }).click();
+  await confirmDialog(page, 'Remove this job');
   await expect(jobs).toHaveCount(1);
   await page.reload();
   await applicationTab(page, 'Jobs').click();
@@ -446,13 +446,13 @@ test('creating rejects an invalid name, and deleting needs confirmation', async 
   const id = page.url().split('/').pop()!;
 
   const remove = page.getByRole('button', { name: 'Delete application', exact: true });
-  page.once('dialog', dialog => dialog.dismiss());
   await remove.click();
+  await cancelDialog(page);
   await expect(remove).toBeEnabled();
   // Its environments are named, and confirmed with the request.
-  confirmNext(page, 'all its environments (production)');
   const deleted = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().includes(`/applications/${id}?`));
   await remove.click();
+  await confirmDialog(page, 'all its environments (production)');
   expect((await deleted).status()).toBe(202);
   await expect(page).toHaveURL(/\/dashboard\/applications$/);
   expect(await call(page, 'GET', `applications/${id}`)).toMatchObject({ delete_intent: true });
@@ -464,11 +464,11 @@ test('removes a service from its page, whose address then reports it gone', asyn
   const { app } = await apply(page, webManifest('services', { services: [{ name: 'web', source: image }, { name: 'worker', source: image }] }));
   await page.goto(`/dashboard/applications/${app}/services/web`);
   const remove = page.getByRole('button', { name: 'Remove service', exact: true });
-  page.once('dialog', dialog => dialog.dismiss());
   await remove.click();
+  await cancelDialog(page);
   await expect(title(page)).toHaveText('web');
-  confirmNext(page);
   await remove.click();
+  await confirmDialog(page);
   await expect(page).toHaveURL(url => url.pathname.endsWith(`/applications/${app}`) && url.searchParams.get('tab') === 'services');
   await expect(page.locator('a.list-row')).toHaveText([/^worker/]);
   await page.goBack();
@@ -514,8 +514,8 @@ test('saves exports and imports from the Links tab, each card on its own', async
   await editing.getByRole('button', { name: 'Save export', exact: true }).click();
   await expect(editing).toBeHidden();
   await expect(exported).toContainText('to notes, and their previews');
-  confirmNext(page);
   await imported.getByRole('button', { name: 'Remove', exact: true }).click();
+  await confirmDialog(page);
   await expect(imported).toHaveCount(0);
   const { application: edited } = await call(page, 'GET', `applications/${id}`);
   expect(edited.spec.exports).toEqual([{ service: 'web', applications: ['notes'], previews: true }]);
