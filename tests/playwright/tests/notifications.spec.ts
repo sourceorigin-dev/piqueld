@@ -57,7 +57,7 @@ test('destinations are added, refused with a reason in their dialog, tested, edi
     await expect(row).toContainText('previews');
 
     await row.getByRole('button', { name: 'Delete', exact: true }).click();
-    await confirmDialog(page);
+    await confirmDialog(page, 'Delete destination');
     await expect(page.getByText('No destinations. Nothing is notified.')).toBeVisible();
   } finally {
     receiver.close();

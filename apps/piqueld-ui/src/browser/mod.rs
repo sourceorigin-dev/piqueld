@@ -382,6 +382,7 @@ pub(super) fn mount() {
 fn App() -> impl IntoView {
     logs::LogPreferences::provide();
     management::HistoryGuard::install();
+    ui::Confirmation::provide();
     view! {
         <ui::ConfirmationDialog />
         <Router>

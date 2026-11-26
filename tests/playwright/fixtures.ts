@@ -242,12 +242,12 @@ export async function serveDeployments(page: Page, environment: string, pages: (
   });
 }
 
-/** Confirms in the open confirmation dialog, once its message contains
- * `text` when given. */
-export async function confirmDialog(page: Page, text?: string) {
-  const dialog = page.getByRole('alertdialog');
+/** Confirms `action`, such as `Delete preview`, in the open confirmation
+ * dialog, once its message contains `text` when given. */
+export async function confirmDialog(page: Page, action: string, text?: string) {
+  const dialog = page.getByRole('alertdialog', { name: action, exact: true });
   if (text !== undefined) await expect(dialog).toContainText(text);
-  await dialog.locator('.form-actions').getByRole('button').last().click();
+  await dialog.getByRole('button', { name: action, exact: true }).click();
   await expect(dialog).toBeHidden();
 }
 

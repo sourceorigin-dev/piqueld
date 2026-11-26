@@ -48,7 +48,7 @@ test('an earlier deployment is restored from the deployment history', async ({ p
   await page.goBack();
   await openDeployment(page, rows.nth(0));
   await restoreButton.click();
-  await confirmDialog(page);
+  await confirmDialog(page, 'Restore deployment');
   await expect(page).toHaveURL(`/dashboard/applications/${app}/environments/${env}/deployments/operation-0123456789abcdf1`);
   expect(restored).toEqual({ deployment: earlier });
 

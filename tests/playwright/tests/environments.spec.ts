@@ -82,7 +82,7 @@ test('the dashboard creates, renames and deletes only the chosen environment', a
   await expect(remove).toBeEnabled();
   const deleted = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().includes(`/environments/${qa}?`));
   await remove.click();
-  await confirmDialog(page, 'The application and other environments remain. Docker volume data will be retained.');
+  await confirmDialog(page, 'Delete environment', 'The application and other environments remain. Docker volume data will be retained.');
   expect((await deleted).status()).toBe(202);
   await expect(applicationTab(page, 'Environments')).toHaveAttribute('aria-selected', 'true');
   const row = page.getByRole('listitem').filter({ hasText: 'preview' });
@@ -187,7 +187,7 @@ test('a service receives telemetry once its environment is granted it', async ({
   const grant = page.getByRole('button', { name: 'Grant telemetry', exact: true });
   const granted = page.waitForResponse(response => response.request().method() === 'PUT' && response.url().includes(`/environments/${env}/telemetry`));
   await grant.click();
-  await confirmDialog(page, 'every application');
+  await confirmDialog(page, 'Grant telemetry', 'every application');
   expect((await granted).status()).toBe(200);
   await expect(page.getByRole('button', { name: 'Revoke telemetry', exact: true })).toBeEnabled();
   const environment = await call(page, 'GET', `environments/${env}`) as { telemetry: boolean };
@@ -204,7 +204,7 @@ test('a deployed environment stops and starts from its page', async ({ page, acc
 
   const stopped = page.waitForResponse(response => response.request().method() === 'POST' && response.url().includes(`/environments/${env}/stop`));
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
-  await confirmDialog(page, 'routes are withdrawn');
+  await confirmDialog(page, 'Stop environment', 'routes are withdrawn');
   expect((await stopped).status()).toBe(202);
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeEnabled();
   expect((await call(page, 'GET', `environments/${env}`)).run_state).toBe('stopped');

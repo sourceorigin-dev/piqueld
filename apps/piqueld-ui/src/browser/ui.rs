@@ -717,44 +717,82 @@ pub(super) fn Modal(
 
 /// The question [`ConfirmationDialog`] shows: the action, which titles it and
 /// names its button, why it needs confirming, and what runs once confirmed.
+/// [`Confirmation::provide`] makes it the context [`confirm`] asks through.
 #[derive(Clone, Copy)]
-struct Confirmation {
+pub(super) struct Confirmation {
     opened: RwSignal<bool>,
     action: RwSignal<&'static str>,
     message: RwSignal<String>,
     then: StoredValue<Option<Box<dyn FnOnce()>>, LocalStorage>,
+    /// Counts questions, so cleaning up the owner of an earlier one leaves
+    /// a newer one open.
+    asked: StoredValue<u64>,
 }
 
-thread_local! {
-    /// The mounted [`ConfirmationDialog`], which [`confirm`] asks. Event
-    /// handlers run outside any reactive owner, so they can't read it from
-    /// context.
-    static CONFIRMATION: std::cell::Cell<Option<Confirmation>> = const { std::cell::Cell::new(None) };
+impl Confirmation {
+    /// Provides the dashboard's confirmation as context; mount one
+    /// [`ConfirmationDialog`] under it.
+    pub(super) fn provide() {
+        provide_context(Self {
+            opened: RwSignal::new(false),
+            action: RwSignal::new(""),
+            message: RwSignal::new(String::new()),
+            then: StoredValue::new_local(None),
+            asked: StoredValue::new(0),
+        });
+    }
+
+    /// Opens the dialog asking whether to `action`. `then` runs in the
+    /// asking owner, so it reads the same context. Once that owner is
+    /// cleaned up, such as when its page unmounts, the question is dropped.
+    fn ask(self, action: &'static str, message: String, then: impl FnOnce() + 'static) {
+        self.asked.update_value(|asked| *asked += 1);
+        let ticket = self.asked.get_value();
+        let owner = Owner::current();
+        if let Some(owner) = &owner {
+            owner.with(|| on_cleanup(move || self.cancel_if(ticket)));
+        }
+        self.action.set(action);
+        self.message.set(message);
+        self.then.set_value(Some(Box::new(move || match owner {
+            Some(owner) => owner.with(then),
+            None => then(),
+        })));
+        self.opened.set(true);
+    }
+
+    /// Closes the dialog without running the pending action.
+    fn cancel(self) {
+        self.opened.set(false);
+        self.then.set_value(None);
+    }
+
+    /// [`Self::cancel`], unless a question newer than `ticket` was asked.
+    fn cancel_if(self, ticket: u64) {
+        if self.asked.try_get_value() == Some(ticket) {
+            self.cancel();
+        }
+    }
+
+    /// Closes the dialog and runs the pending action.
+    fn accept(self) {
+        self.opened.set(false);
+        if let Some(then) = self.then.try_update_value(Option::take).flatten() {
+            then();
+        }
+    }
 }
 
 /// Asks the user, in the [`ConfirmationDialog`], whether to `action`, such
 /// as "Delete preview", explaining what happens in `message`. Runs `then`
-/// once they confirm, in the caller's reactive owner so it reads the same
-/// context, and nothing when they cancel.
+/// once they confirm, and nothing when they cancel or the asking page goes
+/// away.
 pub(super) fn confirm(
     action: &'static str,
     message: impl Into<String>,
     then: impl FnOnce() + 'static,
 ) {
-    let Some(confirmation) = CONFIRMATION.get() else {
-        leptos::logging::error!("No confirmation dialog is mounted to ask: {action}");
-        return;
-    };
-    confirmation.action.set(action);
-    confirmation.message.set(message.into());
-    let owner = Owner::current();
-    confirmation
-        .then
-        .set_value(Some(Box::new(move || match owner {
-            Some(owner) => owner.with(then),
-            None => then(),
-        })));
-    confirmation.opened.set(true);
+    expect_context::<Confirmation>().ask(action, message.into(), then);
 }
 
 /// [`confirm`] when `ask`, else runs `then` at once.
@@ -772,42 +810,29 @@ pub(super) fn confirm_if(
 }
 
 /// The dashboard's one confirmation dialog, which [`confirm`] opens. Mount
-/// it once. Its confirm button is never focused first, so Enter alone
-/// doesn't confirm.
+/// it once, under [`Confirmation::provide`]. Its confirm button is never
+/// focused first, so Enter alone doesn't confirm.
 #[component]
 pub(super) fn ConfirmationDialog() -> impl IntoView {
     const MESSAGE: &str = "confirmation-message";
-    let confirmation = Confirmation {
-        opened: RwSignal::new(false),
-        action: RwSignal::new(""),
-        message: RwSignal::new(String::new()),
-        then: StoredValue::new_local(None),
-    };
-    CONFIRMATION.set(Some(confirmation));
-    on_cleanup(|| CONFIRMATION.set(None));
-    let cancel = move || {
-        confirmation.opened.set(false);
-        confirmation.then.set_value(None);
-    };
-    let accept = move || {
-        confirmation.opened.set(false);
-        if let Some(then) = confirmation.then.try_update_value(Option::take).flatten() {
-            then();
-        }
-    };
+    let confirmation = expect_context::<Confirmation>();
     view! {
         <Modal
             title={confirmation.action}
             opened={confirmation.opened}
-            on_close={Callback::new(move |()| cancel())}
+            on_close={Callback::new(move |()| confirmation.cancel())}
             alert={MESSAGE}
         >
             <p id={MESSAGE}>{move || confirmation.message.get()}</p>
             <div class="form-actions">
-                <button type="button" class="btn btn-ghost" on:click={move |_| cancel()}>
+                <button type="button" class="btn btn-ghost" on:click={move |_| confirmation.cancel()}>
                     "Cancel"
                 </button>
-                <button type="button" class="btn btn-danger" on:click={move |_| accept()}>
+                <button
+                    type="button"
+                    class="btn btn-danger"
+                    on:click={move |_| confirmation.accept()}
+                >
                     {move || confirmation.action.get()}
                 </button>
             </div>

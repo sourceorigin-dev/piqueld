@@ -136,7 +136,7 @@ test('a repository-backed application is edited like any other, and resets to it
   await expect(page.locator('.diff-row', { hasText: 'volumes.cache' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Reset to repository', exact: true }).click();
-  await confirmDialog(page, 'Discard every edit');
+  await confirmDialog(page, 'Reset to repository', 'Discard every edit');
   await expect(page.getByText("Reset to the repository's manifest.", { exact: true })).toBeVisible();
   await expect(edits).toHaveCount(0);
   await expect(volumes).toHaveCount(0);
@@ -266,7 +266,7 @@ test('a preview created from the dashboard opens on its own page, also from its 
   await expect(page.getByText('feat/login', { exact: true })).toBeVisible();
   const deleted = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().endsWith(`/previews/${preview}`));
   await page.getByRole('button', { name: 'Delete preview', exact: true }).click();
-  await confirmDialog(page);
+  await confirmDialog(page, 'Delete preview');
   expect((await deleted).status()).toBe(202);
   await expect(page).toHaveURL(`/dashboard/applications/${app}?tab=previews`);
 });
@@ -287,7 +287,7 @@ test('Prune gone submits the previews whose branch is gone', async ({ page, acco
 
   await page.goto(`/dashboard/applications/${app}?tab=previews`);
   await page.getByRole('button', { name: 'Prune gone', exact: true }).click();
-  await confirmDialog(page);
+  await confirmDialog(page, 'Delete previews');
   expect((await pruned).postDataJSON()).toEqual({ previews: [preview] });
 });
 
@@ -376,7 +376,7 @@ test('an application deploys on push by polling or webhook, and an environment o
   const held = new Promise<void>(resolve => { release = resolve; });
   await page.route(`**/applications/${app}/webhook/secret`, async route => { await held; await route.continue(); });
   await webhook.getByRole('button', { name: 'Rotate secret', exact: true }).click();
-  await confirmDialog(page);
+  await confirmDialog(page, 'Rotate secret');
   await applicationTab(page, 'Overview').click();
   const reloaded = page.waitForResponse(response => response.request().method() === 'GET' && response.url().endsWith(`/applications/${app}/webhook`));
   release();
