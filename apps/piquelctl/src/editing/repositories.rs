@@ -7,13 +7,16 @@ use piqueld_client::{
     Client, GitRepository, RepositoryManifest, edit::ApplicationEdit, sync::RepositorySync,
 };
 
+/// An application's repository connection, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct RepositoryTarget {
     /// Application name or stable ID.
     app: String,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
+/// `piquelctl app repository` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum RepositoryCommand {
     /// Connect the application to a manifest file in a Git repository.
@@ -25,6 +28,7 @@ pub(crate) enum RepositoryCommand {
     /// still edit the application: deployments of the connection's branch
     /// deploy your edits until a push changes the manifest file.
     Connect {
+        /// The application to connect.
         #[command(flatten)]
         target: RepositoryTarget,
         /// Git clone URL, or a path on the daemon's host.
@@ -38,6 +42,7 @@ pub(crate) enum RepositoryCommand {
         /// Pin this full commit hash instead of following the branch.
         #[arg(long)]
         commit: Option<String>,
+        /// Whether the connection deploys pushes.
         #[command(flatten)]
         sync: ConnectSync,
     },
@@ -59,8 +64,10 @@ pub(crate) enum RepositoryCommand {
     /// with `env sync` and follows an unpinned branch, redeploys when its
     /// branch moves past the head of its last deployment.
     Sync {
+        /// The application to change.
         #[command(flatten)]
         target: RepositoryTarget,
+        /// How pushes are detected.
         #[command(flatten)]
         sync: SyncSetting,
     },
@@ -72,11 +79,13 @@ pub(crate) enum RepositoryCommand {
     Reset(RepositoryTarget),
     /// Show the GitHub webhook that reports pushes, or generate its secret.
     Webhook {
+        /// The webhook operation to run.
         #[command(subcommand)]
         command: WebhookCommand,
     },
 }
 
+/// Flags that choose how `connect` detects pushes.
 #[derive(Debug, Args)]
 struct ConnectSyncFlags {
     /// Whether to deploy pushes, as `app repository sync` sets it.
@@ -98,6 +107,7 @@ pub(crate) struct ConnectSync(RepositorySync);
 crate::cli::parsed_args!(ConnectSync, ConnectSyncFlags, |flags: ConnectSyncFlags| {
     flags.mode.with_interval(flags.interval).map(ConnectSync)
 });
+/// Flags that choose how `sync` detects pushes.
 #[derive(Debug, Args)]
 struct SyncFlags {
     /// How to detect pushes.
@@ -115,6 +125,7 @@ crate::cli::parsed_args!(SyncSetting, SyncFlags, |flags: SyncFlags| {
     flags.mode.with_interval(flags.interval).map(SyncSetting)
 });
 
+/// `piquelctl app repository webhook` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum WebhookCommand {
     /// Show the payload URL to configure in GitHub, and when the secret was

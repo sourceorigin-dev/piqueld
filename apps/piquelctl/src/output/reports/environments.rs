@@ -19,6 +19,7 @@ use std::io;
 /// One environment with its status, as listed by `env list` and inside `app list`.
 #[derive(Serialize)]
 pub(crate) struct EnvironmentRow {
+    /// The environment.
     pub(crate) environment: EnvironmentView,
     /// `None` when the status request failed (rendered as `unavailable`).
     pub(crate) status: Option<EnvironmentStatusView>,
@@ -221,8 +222,10 @@ report!(PreviewView, self, out, {
 /// how the deployment ended and its URLs.
 #[derive(Serialize)]
 pub(crate) struct CreatedPreviewReport<'a> {
+    /// The preview the daemon created.
     #[serde(flatten)]
     pub(crate) created: &'a CreatedPreview,
+    /// The preview's deployment.
     #[serde(flatten)]
     pub(crate) deployed: Deployed,
 }
@@ -280,6 +283,7 @@ report!(Vec<DeletedPreview> as [DeletedPreview], self, out, {
 /// its runtime state.
 #[derive(Serialize)]
 pub(crate) struct EnvironmentShowReport<'a> {
+    /// The environment's intent, manifest and runtime state.
     #[serde(flatten)]
     pub(crate) detail: &'a EnvironmentDetailView,
     /// The application's stored secrets, to show where mounted secrets come from.
@@ -447,17 +451,25 @@ named!(Page<DeploymentView>, page, names, out, {
 /// came from, and, once waited for, its outcome.
 #[derive(Serialize)]
 pub(crate) struct PromotionReport<'a> {
+    /// The application the environment belongs to.
     application_id: &'a ApplicationId,
+    /// The environment that was promoted into.
     environment_id: &'a str,
     /// Also the operation's ID.
     deployment_id: &'a str,
+    /// The operation that carries out the promotion.
     operation_id: &'a str,
+    /// The release the deployment pinned.
     release_id: &'a ReleaseId,
+    /// Where the release came from.
     origin: &'a DeploymentOrigin,
+    /// How the operation ended, once waited for.
     #[serde(skip_serializing_if = "Option::is_none")]
     outcome: Option<OperationState>,
+    /// The finished operation, once waited for.
     #[serde(skip_serializing_if = "Option::is_none")]
     operation: Option<&'a Operation>,
+    /// Environment names, for human output.
     #[serde(skip)]
     names: Names<'a>,
 }

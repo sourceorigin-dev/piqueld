@@ -41,6 +41,7 @@ pub(crate) struct Worktree {
 
 /// A snapshot commit, written into its own temporary directory.
 pub(crate) struct Snapshot<'a> {
+    /// The worktree the snapshot was taken from.
     worktree: &'a Worktree,
     /// Holds the snapshot's index, objects, bare repository, and bundles.
     directory: tempfile::TempDir,
@@ -63,6 +64,7 @@ pub(crate) enum History {
 
 /// A bundle of a snapshot, ready to upload.
 pub(crate) struct Bundle {
+    /// Where the bundle file is.
     pub(crate) path: PathBuf,
     /// Its size in bytes.
     pub(crate) length: u64,

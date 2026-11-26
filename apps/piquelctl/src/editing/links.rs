@@ -5,17 +5,21 @@ use crate::{commands::resolve_application, error::Result, output::Console};
 use clap::{Args, Subcommand};
 use piqueld_client::{Client, Export, Import, Template, edit::ApplicationEdit};
 
+/// A service an application exports, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct ExportTarget {
     /// Application name or stable ID.
     app: String,
     /// Service of the application to export.
     service: String,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
+/// Arguments of `app export set`: the service, and who may import it.
 #[derive(Debug, Args)]
 pub(crate) struct SetExportArgs {
+    /// The service to export.
     #[command(flatten)]
     target: ExportTarget,
     /// Applications whose environments may import the service. Separate
@@ -27,6 +31,7 @@ pub(crate) struct SetExportArgs {
     #[arg(long)]
     previews: bool,
 }
+/// `piquelctl app export` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum ExportCommand {
     /// List the services the application exports, as saved.
@@ -42,6 +47,7 @@ pub(crate) enum ExportCommand {
     /// Stop exporting a service.
     Remove(ExportTarget),
 }
+/// A service an application imports, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct ImportTarget {
     /// Application name or stable ID.
@@ -50,11 +56,15 @@ pub(crate) struct ImportTarget {
     application: String,
     /// Exported service of that application.
     service: String,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
+/// Arguments of `app import add`: the service to import, and the environment it
+/// reaches.
 #[derive(Debug, Args)]
 pub(crate) struct AddImportArgs {
+    /// The service to import.
     #[command(flatten)]
     target: ImportTarget,
     /// Environment of the exporting application to reach, such as `staging`
@@ -63,6 +73,7 @@ pub(crate) struct AddImportArgs {
     #[arg(long, value_name = "ENV")]
     environment: Option<Template>,
 }
+/// `piquelctl app import` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum ImportCommand {
     /// List the services the application imports, as saved.

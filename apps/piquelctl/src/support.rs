@@ -93,6 +93,7 @@ pub(crate) struct Waiting;
 static LAST_FAILURE: Mutex<Option<String>> = Mutex::new(None);
 
 impl Waiting {
+    /// Marks the command as waiting, clearing the last recorded failure.
     pub(crate) fn start() -> Self {
         *LAST_FAILURE.lock() = None;
         WAITING.store(WAITS.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);

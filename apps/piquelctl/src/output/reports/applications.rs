@@ -16,7 +16,9 @@ use std::io;
 /// the service mounting it.
 #[derive(Serialize)]
 pub(crate) struct ServiceRow<T> {
+    /// The name of the service mounting the item.
     pub(crate) service: String,
+    /// The file or secret mount.
     #[serde(flatten)]
     pub(crate) item: T,
 }
@@ -75,7 +77,9 @@ report!(Vec<Import> as [Import], self, out, {
 /// One deployed route of `route list`, with its environment's name.
 #[derive(Serialize)]
 pub(crate) struct RouteRow {
+    /// The name of the route's environment.
     pub(crate) environment: String,
+    /// The route and its state.
     #[serde(flatten)]
     pub(crate) route: RouteStatus,
 }
@@ -116,7 +120,9 @@ report!(Vec<RouteRow> as [RouteRow], self, out, {
 /// One `app list` row.
 #[derive(Serialize)]
 pub(crate) struct ApplicationRow {
+    /// The application.
     pub(crate) application: ApplicationSummary,
+    /// The application's environments, with their status.
     pub(crate) environments: Vec<EnvironmentRow>,
 }
 
@@ -145,7 +151,9 @@ report!(Page<ApplicationRow>, self, out, {
 /// per-service sources.
 #[derive(Serialize)]
 pub(crate) struct ShowReport<'a> {
+    /// The application's saved configuration.
     pub(crate) application: &'a ApplicationView,
+    /// The application's environments, with their status.
     pub(crate) environments: &'a [EnvironmentRow],
 }
 report!(ShowReport<'_>, self, out, {
@@ -273,6 +281,7 @@ report!(once WebhookSecret, self, out, {
 /// Local `app validate` success; JSON carries the manifest's application name.
 #[derive(Serialize)]
 pub(crate) struct ValidManifestReport {
+    /// The manifest's application name.
     pub(crate) application: String,
 }
 report!(ValidManifestReport, self, out, {

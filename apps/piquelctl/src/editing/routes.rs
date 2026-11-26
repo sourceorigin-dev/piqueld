@@ -11,6 +11,7 @@ use piqueld_client::{
     Client, Redirect, RedirectStatus, Route, Template, Visibility, edit::ApplicationEdit,
 };
 
+/// A route of an application, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct RouteTarget {
     /// Application name or stable ID.
@@ -19,11 +20,15 @@ pub(crate) struct RouteTarget {
     /// `*.example.com`. It may reference variables, such as
     /// `${{ vars.domain }}`.
     hostname: String,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
+/// Arguments of `app route add`: the route, the service serving it, and its
+/// visibility.
 #[derive(Debug, Args)]
 pub(crate) struct AddRouteArgs {
+    /// The route to add.
     #[command(flatten)]
     target: RouteTarget,
     /// Service that serves the route.
@@ -40,8 +45,10 @@ pub(crate) struct AddRouteArgs {
     #[arg(long)]
     name: Option<String>,
 }
+/// Arguments of `app route redirect`: the route, and where it redirects to.
 #[derive(Debug, Args)]
 pub(crate) struct RedirectRouteArgs {
+    /// The route to add.
     #[command(flatten)]
     target: RouteTarget,
     /// Destination: an absolute `http` or `https` URL, without query or
@@ -65,22 +72,27 @@ pub(crate) struct RedirectRouteArgs {
     #[arg(long)]
     name: Option<String>,
 }
+/// Arguments of `app route name`: the route, and its new name.
 #[derive(Debug, Args)]
 pub(crate) struct RouteNameArgs {
+    /// The route to name.
     #[command(flatten)]
     target: RouteTarget,
     /// New route name, unique within the application. Omit it to remove the
     /// name.
     name: Option<String>,
 }
+/// Arguments of `app route visibility`: the route, and who may connect.
 #[derive(Debug, Args)]
 pub(crate) struct RouteVisibilityArgs {
+    /// The route to change.
     #[command(flatten)]
     target: RouteTarget,
     /// `public` serves everyone, `private` only devices on the tailnet.
     #[arg(value_parser = visibility())]
     visibility: Visibility,
 }
+/// `piquelctl app route` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum RouteCommand {
     /// List the application's deployed routes in every environment.

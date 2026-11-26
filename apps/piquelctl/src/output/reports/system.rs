@@ -16,8 +16,12 @@ use std::time::Duration;
 /// Daemon status; JSON is the daemon's status, human output adds the transport
 /// used and, when readiness answered, each ingress listener.
 pub(crate) struct StatusReport<'a> {
+    /// The daemon's status.
     pub(crate) status: &'a SystemStatus,
+    /// The endpoint the CLI connected through, such as `Unix socket
+    /// /run/piqueld/piqueld.sock`.
     pub(crate) transport: &'a str,
+    /// The ingress listeners, when readiness answered.
     pub(crate) ingress: Option<&'a IngressStatus>,
 }
 report!(StatusReport<'_> as SystemStatus = status, self, out, {
@@ -398,7 +402,9 @@ pub(crate) struct Connection {
 /// ```
 #[derive(Serialize)]
 pub(crate) struct DoctorReport<'a> {
+    /// How the CLI connected.
     pub(crate) connection: &'a Connection,
+    /// The daemon's check results, when it answered.
     pub(crate) checks: Option<&'a [SystemCheck]>,
 }
 report!(DoctorReport<'_>, self, out, {
@@ -432,6 +438,7 @@ report!(DoctorReport<'_>, self, out, {
 /// Effective connection profiles, as a `NAME  ENDPOINT` table marking the default.
 #[derive(Serialize)]
 pub(crate) struct ProfilesReport<'a> {
+    /// The profiles to list.
     pub(crate) profiles: Vec<ProfileSummary<'a>>,
 }
 report!(ProfilesReport<'_>, self, out, {

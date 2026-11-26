@@ -25,7 +25,9 @@ report!(Vec<SecretMetadata> as [SecretMetadata], self, out, {
 
 /// Stored secrets with their access, naming environments.
 pub(crate) struct StoredSecretsReport<'a> {
+    /// The stored secrets to print.
     pub(crate) secrets: &'a [StoredSecret],
+    /// The environments, to name those that may mount each secret.
     pub(crate) environments: &'a [EnvironmentView],
 }
 report!(StoredSecretsReport<'_> as [StoredSecret] = secrets, self, out, {
@@ -53,7 +55,9 @@ report!(StoredSecretsReport<'_> as [StoredSecret] = secrets, self, out, {
 
 /// One stored secret after a change, naming the environments that may mount it.
 pub(crate) struct StoredSecretReport<'a> {
+    /// The secret that changed.
     pub(crate) secret: &'a StoredSecret,
+    /// The environments, to name those that may mount the secret.
     pub(crate) environments: &'a [EnvironmentView],
 }
 report!(StoredSecretReport<'_> as StoredSecret = secret, self, out, {

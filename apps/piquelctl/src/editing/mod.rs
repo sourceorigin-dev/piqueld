@@ -20,8 +20,11 @@ use piqueld_client::{
 /// How an application follows pushes, before `--interval` applies to `poll`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum SyncMode {
+    /// Never deploy on pushes.
     Off,
+    /// List the branches on a schedule.
     Poll,
+    /// List the branches when the host reports a push.
     Webhook,
 }
 
@@ -123,8 +126,11 @@ impl<T> Declarations<T> for Vec<T> {
     }
 }
 
+/// How an application edit is checked against the generation, confirmed, saved
+/// and deployed.
 #[derive(Debug, Args)]
 pub(crate) struct EditFlags {
+    /// Whether to also deploy, and whether to wait for the result.
     #[command(flatten)]
     deployment: DeploymentArgs,
     /// Save only if the application's saved generation is still `GENERATION`.

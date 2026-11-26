@@ -28,6 +28,7 @@ use std::{
 };
 pub(crate) use timeline::TimelineProgress;
 
+/// A boxed output stream.
 type Writer = Box<dyn Write + Send>;
 /// Stderr shared between the console and progress tasks.
 type SharedWriter = Arc<Mutex<Writer>>;
@@ -39,6 +40,7 @@ pub(crate) trait Report {
     /// Whether it carries a secret the daemon shows only once, such as a new
     /// token, which `--quiet` must not hide.
     const ONE_TIME: bool = false;
+    /// The value `--json` writes.
     fn json(&self) -> &Self::Json;
     /// Human rendering on stdout; values must go through the escaping writer.
     fn render_human(&self, output: &mut HumanWriter<'_>) -> io::Result<()>;
@@ -46,6 +48,7 @@ pub(crate) trait Report {
 
 /// Stderr events that can carry context without changing stdout's schema.
 pub(crate) trait DiagnosticReport {
+    /// Writes the escaped human rendering of the result to `output`.
     fn render(&self, output: &mut HumanWriter<'_>) -> io::Result<()>;
     /// The event written instead with `--json`.
     fn event(&self) -> Event<'_>;
@@ -57,21 +60,35 @@ pub(crate) trait DiagnosticReport {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Event<'a> {
     /// Routine context; hidden in quiet mode.
-    Info { message: String },
+    Info {
+        /// The message to show.
+        message: String,
+    },
     /// A degraded, incomplete, or surprising result.
-    Warning { message: String },
+    Warning {
+        /// What is degraded, incomplete or surprising.
+        message: String,
+    },
     /// An interactive question, answered on stdin.
-    Prompt { message: String },
+    Prompt {
+        /// The question to ask.
+        message: String,
+    },
     /// A task's progress; `outcome` is set once it finished.
     Progress {
+        /// The task's label.
         task: &'a str,
+        /// The task's current message.
         message: &'a str,
+        /// How the task ended, once it has.
         #[serde(skip_serializing_if = "Option::is_none")]
         outcome: Option<&'static str>,
     },
     /// A step of an operation `task` follows, each time it starts or changes.
     Step {
+        /// The label of the task following the operation.
         task: &'a str,
+        /// The step that started or changed.
         #[serde(flatten)]
         step: &'a piqueld_client::timeline::Step,
     },
@@ -89,7 +106,9 @@ impl Event<'_> {
 
 /// Destination for results, chosen once from `--json` and `--quiet`.
 enum ResultChannel {
+    /// Results go to this stream as human text.
     Human(Writer),
+    /// Results go to this stream as JSON.
     Json(Writer),
     /// `--quiet`: only one-time secrets are rendered, as human results.
     Quiet(Writer),
@@ -97,7 +116,9 @@ enum ResultChannel {
 
 /// Owns output policy. Only progress handles may be cloned across tasks.
 pub(crate) struct Console {
+    /// Where results are written.
     result: ResultChannel,
+    /// Where events and progress are written.
     stderr: SharedWriter,
     /// Whether stderr events are written as JSON lines.
     json: bool,
@@ -105,6 +126,7 @@ pub(crate) struct Console {
     info: bool,
     /// Whether confirmations fail instead of prompting (`--noninteractive`).
     noninteractive: bool,
+    /// Renders running tasks on stderr.
     progress: ProgressOutput,
 }
 
@@ -325,10 +347,12 @@ impl Console {
 /// Explicit human styling and escaping. Dynamic values cannot emit controls;
 /// only `log_text` preserves newline/tab. No rendered command output is retained.
 pub(crate) struct HumanWriter<'a> {
+    /// The stream to write to.
     writer: &'a mut dyn Write,
 }
 
 impl<'a> HumanWriter<'a> {
+    /// Wraps `writer`.
     pub(crate) fn new(writer: &'a mut dyn Write) -> Self {
         Self { writer }
     }
@@ -344,6 +368,7 @@ impl<'a> HumanWriter<'a> {
         writeln!(self.writer)
     }
 
+    /// Writes an empty line.
     pub(crate) fn blank(&mut self) -> io::Result<()> {
         writeln!(self.writer)
     }
