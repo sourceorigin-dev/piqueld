@@ -129,6 +129,11 @@ in
       default = true;
       description = "Validate the generated configuration with `piqueld check-config` while building the system. Disable it when the package cannot run on the build machine, such as when cross-compiling.";
     };
+    rollBack = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Before each start, run `piqueld roll-back` as the service user: when a newer piqueld has updated the database, it restores the newest backup this package can open, moving the state it replaces into `dataDir`'s `rolled-back-<time>` directory, so the daemon starts after a system rollback. Restoring undoes every change made since the backup. It only covers rolling back to a generation that enables it too.";
+    };
     settings = lib.mkOption {
       type = lib.types.submodule {
         options = {
@@ -522,6 +527,9 @@ in
       ++ lib.optional cfg.settings.tailscale.enabled config.services.tailscale.package;
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/piqueld --config ${configuration}";
+        # As the service user, not root (`+`): the data directory must
+        # belong to whoever runs it, and so must the files it restores.
+        ExecStartPre = lib.mkIf cfg.rollBack "${cfg.package}/bin/piqueld --config ${configuration} roll-back";
         LoadCredential =
           map (credential: "${credential.name}:${credential.file}") settingCredentials
           ++ lib.concatLists (

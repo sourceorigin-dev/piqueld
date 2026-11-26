@@ -22,12 +22,13 @@ use piqueld_config::{
     AcmeConfig, DnsConfig, PrivateIngressConfig, TunnelConfig, TunnelCredentials,
 };
 use piqueld_core::{
-    EnvironmentId,
+    EnvironmentId, InstanceId,
     api::{
         DnsRecordState, DnsRecords, IngressStatus, PrivateIngressStatus, PublicIngressStatus,
         RouteStatus,
     },
     manifest::{Hostname, RouteHostname, ValidatedRoute, Visibility},
+    resource::{INGRESS_LABEL, INSTANCE_LABEL},
 };
 use piqueld_store::{Store, ingress::RoutingTable, now_ms};
 use std::{
@@ -250,6 +251,35 @@ impl Ingress {
         .with_public_addresses(&config.ingress.public_addresses)
         .with_webhooks(config.ingress.webhook_hostname.clone())
         .with_traffic(config.ingress.traffic))
+    }
+
+    /// Stops the running ingress containers of `instance`, on the engine at
+    /// `socket`, all at once, and returns how many it stopped. For
+    /// `piqueld roll-back`, while the daemon is stopped on a database too new
+    /// to open, so no journal records it. The daemon starts them again.
+    ///
+    /// # Errors
+    /// Returns the failed Docker request.
+    pub async fn stop_offline(socket: &Path, instance: &InstanceId) -> Result<usize> {
+        let docker = piqueld_docker::Infrastructure::connect(socket)
+            .context("Docker socket is not UTF-8")?;
+        let running = docker
+            .running_containers(vec![
+                format!("{INGRESS_LABEL}=true"),
+                format!("{INSTANCE_LABEL}={instance}"),
+            ])
+            .await
+            .context("list the running ingress containers")?;
+        let changes = piqueld_docker::InfrastructureChanges::connect(socket)
+            .context("Docker socket is not UTF-8")?;
+        futures_util::future::try_join_all(running.iter().map(async |id| {
+            changes
+                .stop_container(id, gateway::STOP_SECONDS)
+                .await
+                .with_context(|| format!("stop the ingress container {id}"))
+        }))
+        .await?;
+        Ok(running.len())
     }
 
     /// Counts the requests each route serves when `traffic` is set.

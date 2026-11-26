@@ -20,11 +20,14 @@ pub struct Sockets {
 }
 
 impl Sockets {
+    /// The data directory's entry holding every receiver's directory.
+    pub const DIRECTORY: &str = "telemetry";
+
     /// The receivers' directories under the daemon's private `data_dir`.
     #[must_use]
     pub fn new(data_dir: &Path) -> Self {
         Self {
-            root: data_dir.join("telemetry"),
+            root: data_dir.join(Self::DIRECTORY),
         }
     }
 
