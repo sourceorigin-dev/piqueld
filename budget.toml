@@ -5,7 +5,7 @@
 piquelctl = 27
 piqueld = 71
 piqueld-build = 1
-piqueld-client = 18
+piqueld-client = 19
 piqueld-config = 6
 piqueld-core = 25
 piqueld-docker = 10

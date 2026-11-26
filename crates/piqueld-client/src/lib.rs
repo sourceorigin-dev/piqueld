@@ -61,6 +61,13 @@ mod editing;
     clippy::unwrap_used,
     reason = "Progenitor writes the generated client with `pub` items and unwraps its HTTP client's build"
 )]
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::missing_docs_in_private_items,
+        reason = "Progenitor writes no docs on private items; clippy checks them outside test builds only"
+    )
+)]
 mod generated;
 mod secrets;
 mod sse;

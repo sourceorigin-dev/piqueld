@@ -153,6 +153,9 @@ unreachable = "warn"
 let_underscore_must_use = "warn"
 map_err_ignore = "warn"
 assertions_on_result_states = "warn"
+redundant_test_prefix = "warn"
+# Every item, private ones too, says what it holds or does.
+missing_docs_in_private_items = "warn"
 dbg_macro = "warn"
 # Library crates return text or log; binaries, examples and tests print.
 print_stdout = "warn"
