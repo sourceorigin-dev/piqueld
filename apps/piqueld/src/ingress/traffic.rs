@@ -17,6 +17,7 @@
 //! request is kept: visitors are told apart by a hash of their address and
 //! user agent, keyed by a random key replaced every UTC day.
 use piqueld_core::EnvironmentId;
+use piqueld_core::wait;
 use piqueld_store::Store;
 use piqueld_store::traffic::{DAY_MS, HOUR_MS, HourCounts, RankKind, TrafficRoute, TrafficTally};
 use serde::Deserialize;
@@ -111,7 +112,7 @@ impl Traffic {
                     }
                     Err(error) => {
                         tracing::warn!(?error, "could not accept the gateway's access log");
-                        tokio::time::sleep(ACCEPT_RETRY).await;
+                        wait::pause(ACCEPT_RETRY).await;
                     }
                 }
             }

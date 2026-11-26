@@ -17,6 +17,7 @@ use super::{
 use anyhow::{Context, Result, ensure};
 use piqueld_config::directories::PrivateFile;
 use piqueld_core::Phase;
+use piqueld_core::wait;
 use piqueld_core::{
     DockerNetworkName,
     manifest::ValidatedRoute,
@@ -879,13 +880,13 @@ impl Ingress {
                     error
                 }
             })?;
-        tokio::time::timeout(STARTUP_TIMEOUT, async {
-            loop {
-                match self.caddy.get("/config/").await {
-                    Ok(_) => return,
-                    Err(error) => tracing::debug!(?error, "waiting for Caddy administration"),
+        wait::poll_until(STARTUP_TIMEOUT, STARTUP_POLL, || async {
+            match self.caddy.get("/config/").await {
+                Ok(_) => Some(()),
+                Err(error) => {
+                    tracing::debug!(?error, "waiting for Caddy administration");
+                    None
                 }
-                tokio::time::sleep(STARTUP_POLL).await;
             }
         })
         .await

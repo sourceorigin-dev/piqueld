@@ -12,6 +12,7 @@ use piqueld::tailnet::Node;
 use piqueld::tailnet::TailnetLookup;
 use piqueld::telemetry::{Sockets, Telemetry};
 use piqueld_config::{ConfigError, DaemonConfig};
+use piqueld_core::wait;
 use std::{net::SocketAddr, os::unix::fs::OpenOptionsExt, path::PathBuf, sync::Arc};
 use tokio::net::{TcpListener, UnixListener};
 use tokio_util::sync::CancellationToken;
@@ -472,7 +473,7 @@ where
         tokio::pin!(serve);
         let grace = async {
             cancellation.cancelled().await;
-            tokio::time::sleep(SHUTDOWN_GRACE).await;
+            wait::pause(SHUTDOWN_GRACE).await;
         };
         tokio::pin!(grace);
         let served = tokio::select! {

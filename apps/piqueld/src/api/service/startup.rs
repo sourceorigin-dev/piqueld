@@ -6,6 +6,7 @@ use anyhow::Context;
 use piqueld_config::DaemonConfig;
 use piqueld_core::Phase;
 use piqueld_core::manifest::Hostname;
+use piqueld_core::wait;
 use piqueld_docker::{BollardDocker, DockerApi};
 use piqueld_store::{Store, StoreError};
 use std::{sync::Arc, time::Duration};
@@ -179,7 +180,7 @@ impl ApplicationService {
             );
             tokio::select! {
                 () = cancellation.cancelled() => break OperationError::Cancelled,
-                () = tokio::time::sleep(delay) => {}
+                () = wait::pause(delay) => {}
             }
             delay = delay.saturating_mul(2).min(MAX_SWARM_RETRY_DELAY);
         };

@@ -12,6 +12,7 @@ use super::{
 use crate::build::BuildLog;
 use piqueld_core::Phase;
 use piqueld_core::timeline::{PlanCoverage, StepKey};
+use piqueld_core::wait;
 use piqueld_core::{
     DesiredJobRun, ResolvedApplication,
     api::{BuildState, DeploymentOrigin, LogStream},
@@ -365,7 +366,7 @@ impl<D: DockerApi> Controller<D> {
             self.check_current(operation).await?;
             let status = tokio::select! {
                 () = cancellation.cancelled() => return Err(OperationError::Cancelled),
-                () = tokio::time::sleep_until(deadline) => {
+                () = wait::pause(deadline) => {
                     return failure.map_or(Ok(JobStatus::Running { deadline: None }), |error| Err(OperationError::from(error)));
                 }
                 status = self.docker.job_status(job) => status,

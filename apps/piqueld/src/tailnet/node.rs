@@ -12,6 +12,7 @@ use axum::serve::{ListenerExt, TapIo};
 use piqueld_config::DaemonConfig;
 use piqueld_config::tailscale::PortUse;
 use piqueld_core::api::TailnetStatus;
+use piqueld_core::wait;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::Path,
@@ -222,7 +223,7 @@ impl Node {
                 "tailscaled did not open {} within {STARTUP_TIMEOUT:?}",
                 socket.display()
             );
-            tokio::time::sleep(STARTUP_POLL).await;
+            wait::pause(STARTUP_POLL).await;
         }
         Ok(daemon)
     }

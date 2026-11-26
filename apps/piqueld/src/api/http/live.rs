@@ -7,6 +7,7 @@ use axum::response::{
 };
 use futures_util::Stream;
 use piqueld_core::api::StreamMessage;
+use piqueld_core::wait;
 use std::{convert::Infallible, time::Duration};
 use tokio::{sync::watch, time::Instant};
 
@@ -93,7 +94,7 @@ impl Pace {
         if !behind {
             lease.wait(self.written.changed()).await;
         }
-        tokio::time::sleep_until(self.read_at + PACE).await;
+        wait::pause(self.read_at + PACE).await;
         self.read_at = Instant::now();
     }
 }
