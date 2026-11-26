@@ -27,6 +27,7 @@ use piqueld_core::manifest::ValidatedHealthCheck;
 use piqueld_core::resource::{
     DesiredNetwork, DesiredService, DesiredVolume, ObservedService, ResolvedSource,
 };
+use piqueld_core::wait;
 use piqueld_core::{ApplicationId, EnvironmentId, InstanceId};
 use piqueld_docker::{BollardDocker, DockerApi, DockerError, JobRuns, JobStatus};
 use poll::eventually;
@@ -174,11 +175,11 @@ impl IsolatedDocker {
                     let _ = self.docker.remove_network(name, &ownership).await;
                     // wall-clock: Docker lets the network go on its own and
                     // signals nothing; plan again from what it then reports.
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    wait::pause(Duration::from_millis(250)).await;
                 }
                 // wall-clock: the action waits on Docker, which converges on
                 // its own and signals nothing; plan again from what it reports.
-                _ => tokio::time::sleep(Duration::from_millis(250)).await,
+                _ => wait::pause(Duration::from_millis(250)).await,
             }
         }
     }
@@ -594,7 +595,7 @@ impl SwarmScenario {
         let disconnect = async {
             // wall-clock: the write blocks inside Docker's exec stream, which
             // signals nothing; give it time to fill the pipe.
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            wait::pause(Duration::from_secs(2)).await;
             stop.cancel();
         };
         let (stopped, ()) = tokio::time::timeout(
@@ -1574,7 +1575,7 @@ async fn links_reach_only_the_imported_service_until_removed() {
     {
         // wall-clock: Docker reports the exporter's old tasks as attached a
         // while longer, and signals nothing when it lets them go.
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        wait::pause(Duration::from_millis(500)).await;
         engine.converge(&reconcile(&importer), &[]).await;
     }
     let observed = engine

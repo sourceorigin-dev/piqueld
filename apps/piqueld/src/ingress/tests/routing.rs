@@ -2,6 +2,7 @@
 //! backend cutovers, forwarded addresses, traffic counts, and disabling and
 //! re-enabling ingress.
 use super::*;
+use piqueld_core::wait;
 
 impl Scenario {
     async fn assert_public_routing(&self) {
@@ -99,7 +100,7 @@ impl Scenario {
                     requests += 1;
                     // wall-clock: paces requests through the real gateway while the
                     // deployment runs, to catch any reload that drops one.
-                    tokio::time::sleep(Duration::from_millis(25)).await;
+                    wait::pause(Duration::from_millis(25)).await;
                 }
                 requests
             }
@@ -215,7 +216,7 @@ impl Scenario {
                 }
                 // wall-clock: Caddy, a real process, comes back on its own after the
                 // restart and signals nothing; ask again until it answers.
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                wait::pause(Duration::from_millis(100)).await;
             }
         })
         .await
@@ -250,7 +251,7 @@ impl Scenario {
                 );
                 // wall-clock: Swarm starts the replacement's container on its own; look
                 // again while checking traffic stays on the first backend.
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                wait::pause(Duration::from_millis(100)).await;
             }
         })
         .await
@@ -273,7 +274,7 @@ impl Scenario {
             );
             // wall-clock: the unhealthy replacement gets real time to take
             // over in Swarm, which it must not; nothing signals that it never will.
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            wait::pause(Duration::from_secs(1)).await;
         }
         let health = self
             .gateway
@@ -352,7 +353,7 @@ impl Scenario {
                     );
                     // wall-clock: paces requests through the real gateway while the
                     // deployment runs, to catch any reload that drops one.
-                    tokio::time::sleep(Duration::from_millis(25)).await;
+                    wait::pause(Duration::from_millis(25)).await;
                 }
             }
         );
@@ -484,7 +485,7 @@ impl Scenario {
             .expect("the request is sent");
         // wall-clock: Caddy writes access log lines on its own schedule and
         // signals nothing; give it time before the counter stops.
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        wait::pause(Duration::from_secs(1)).await;
         self.counting.cancel();
         let counter = self
             .counter
@@ -594,7 +595,7 @@ impl Scenario {
                 }
                 // wall-clock: Swarm recreates the endpoints on its own and signals
                 // nothing; synchronize and ask again until the backend answers.
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                wait::pause(Duration::from_millis(100)).await;
             }
         })
         .await

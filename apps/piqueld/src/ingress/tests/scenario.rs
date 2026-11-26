@@ -1,6 +1,7 @@
 //! A gateway in the isolated Docker harness, with one application deployed,
 //! which the `ingress_caddy` tests take through their steps.
 use super::*;
+use piqueld_core::wait;
 
 /// The gateway's internal CA, below the scenario's data directory.
 pub(super) const ROOT_CERTIFICATE: &str = "ingress/data/caddy/pki/authorities/local/root.crt";
@@ -248,7 +249,7 @@ impl Scenario {
                 );
                 // wall-clock: Caddy, a real process, issues the certificate on
                 // its own and signals nothing; ask again until it serves it.
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                wait::pause(Duration::from_millis(100)).await;
             }
         })
         .await

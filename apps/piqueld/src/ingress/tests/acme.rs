@@ -2,6 +2,7 @@
 //! certificates so renewal is exercised without public DNS or CA rate limits.
 use super::scenario::{Scenario, peer_certificate};
 use hyper::Method;
+use piqueld_core::wait;
 use serde_json::json;
 use std::time::Duration;
 
@@ -58,7 +59,7 @@ impl Scenario {
             {
                 // wall-clock: Caddy, a real process, writes the certificate on its
                 // own and signals nothing; look again until the file exists.
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                wait::pause(Duration::from_millis(50)).await;
             }
         })
         .await
@@ -114,7 +115,7 @@ impl Scenario {
                     }
                     // wall-clock: the ACME challenge runs between Caddy and Pebble, real
                     // processes that signal nothing; ask again until it is served.
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    wait::pause(Duration::from_millis(250)).await;
                 }
             })
             .await
@@ -126,7 +127,7 @@ impl Scenario {
                     }
                     // wall-clock: Caddy renews on its own one-second ticker and signals
                     // nothing; ask again until the renewed certificate is served.
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    wait::pause(Duration::from_secs(1)).await;
                 }
             })
             .await
