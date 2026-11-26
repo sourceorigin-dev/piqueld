@@ -95,8 +95,9 @@ pub(super) async fn environment(
 /// The environment mounts it from its next deployment. Needs `apps:write` on
 /// the environment and `system:operate`, since the volume may hold another
 /// application's data. For an environment deploying the saved manifest, a
-/// name that manifest doesn't declare fails with 409 `volume_name_undeclared`, a name it already binds
-/// with `volume_name_bound`, an attached volume with `volume_attached`, and a
+/// name that manifest doesn't declare fails with 409
+/// `volume_name_undeclared`. A name the environment already binds fails with
+/// `volume_name_bound`, an attached volume with `volume_attached`, and a
 /// preview, or a live preview's volume, with `volume_preview`.
 #[utoipa::path(put,path="/api/v1/environments/{id}/volumes/{name}",operation_id="attachVolume",
     params(("id"=String,Path),("name"=String,Path)),

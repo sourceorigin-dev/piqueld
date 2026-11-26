@@ -32771,7 +32771,7 @@
     },
     "/api/v1/environments/{id}/volumes/{name}": {
       "put": {
-        "description": "The environment mounts it from its next deployment. Needs `apps:write` on\nthe environment and `system:operate`, since the volume may hold another\napplication's data. For an environment deploying the saved manifest, a\nname that manifest doesn't declare fails with 409 `volume_name_undeclared`, a name it already binds\nwith `volume_name_bound`, an attached volume with `volume_attached`, and a\npreview, or a live preview's volume, with `volume_preview`.",
+        "description": "The environment mounts it from its next deployment. Needs `apps:write` on\nthe environment and `system:operate`, since the volume may hold another\napplication's data. For an environment deploying the saved manifest, a\nname that manifest doesn't declare fails with 409\n`volume_name_undeclared`. A name the environment already binds fails with\n`volume_name_bound`, an attached volume with `volume_attached`, and a\npreview, or a live preview's volume, with `volume_preview`.",
         "operationId": "attachVolume",
         "parameters": [
           {

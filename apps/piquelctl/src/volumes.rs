@@ -44,8 +44,8 @@ pub(crate) enum VolumeCommand {
     ///
     /// The environment mounts it where its manifest mounts NAME, from its next
     /// deployment. NAME must not be bound yet: attach the volume before the
-    /// first deployment that declares it. Without a manifest repository, the
-    /// saved manifest must declare NAME. Previews delete their volumes, so
+    /// first deployment that declares it. An environment that deploys the
+    /// saved manifest needs it to declare NAME. Previews delete their volumes, so
     /// they neither take nor give one. Needs `apps:write` on the application and
     /// `system:operate`.
     Attach {

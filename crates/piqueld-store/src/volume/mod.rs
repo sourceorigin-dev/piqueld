@@ -154,14 +154,16 @@ impl Store {
         if target.delete_intent() {
             return Err(StoreError::Busy);
         }
-        let declared = target.environment.source != EnvironmentSource::Saved
-            || target
+        let declared = match target.environment.source {
+            EnvironmentSource::Saved => target
                 .application
                 .application
                 .spec()
                 .volumes
                 .iter()
-                .any(|volume| volume.name == name.as_str());
+                .any(|volume| volume.name == name.as_str()),
+            EnvironmentSource::Branch(_) | EnvironmentSource::Promoted(_) => true,
+        };
         if !declared {
             return Err(VolumeError::NameUndeclared {
                 environment: target.environment.name.clone(),

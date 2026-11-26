@@ -284,30 +284,46 @@ async fn a_live_previews_volume_stays_its_own_until_it_is_deleted() {
     ));
 }
 
+/// Environments that follow a branch or receive promotions bind every name
+/// their manifest declares when they deploy it, so they take any unbound
+/// name, even with a manifest of their own that doesn't declare it.
 #[tokio::test]
-async fn an_environment_following_a_branch_takes_any_unbound_name() {
+async fn branch_and_promoted_environments_take_any_unbound_name() {
     let (_temp, store) = Store::temporary().await;
     let (production, staging) = notes(&store).await;
-    deploy(&store, &staging).await;
-    let [volume] = store
-        .environment_volumes(&staging)
-        .await
-        .unwrap()
-        .try_into()
-        .unwrap();
-    delete(&store, &staging).await;
+    let mut detached = Vec::new();
+    for name in ["old-a", "old-b"] {
+        let environment = create(&store, &production, name).await;
+        deploy(&store, &environment).await;
+        let [volume] = store
+            .environment_volumes(&environment)
+            .await
+            .unwrap()
+            .try_into()
+            .unwrap();
+        delete(&store, &environment).await;
+        detached.push(volume.id);
+    }
     let tracking = create(&store, &production, "tracking").await;
-    sqlx::query("UPDATE environments SET branch='main' WHERE id=?1")
-        .bind(tracking.as_str())
+    for (environment, source) in [(&tracking, "branch='main'"), (&staging, "promoted_from=?2")] {
+        sqlx::query(&format!(
+            "UPDATE environments SET {source},manifest_json=(SELECT desired_json FROM applications WHERE id=environments.application_id) WHERE id=?1"
+        ))
+        .bind(environment.as_str())
+        .bind(production.as_str())
         .execute(&store.pool)
         .await
         .unwrap();
+    }
     let undeclared = VolumeName::parse("restored").unwrap();
-    let attached = store
-        .attach_volume(Actor::Daemon, &tracking, &undeclared, &volume.id)
-        .await
-        .unwrap();
-    assert_eq!(attached.binding.unwrap().name, undeclared);
+    for (environment, volume) in [&tracking, &staging].into_iter().zip(&detached) {
+        assert!(store.get(environment).await.unwrap().manifest().is_some());
+        let attached = store
+            .attach_volume(Actor::Daemon, environment, &undeclared, volume)
+            .await
+            .unwrap();
+        assert_eq!(attached.binding.unwrap().name, undeclared);
+    }
 }
 
 #[tokio::test]
