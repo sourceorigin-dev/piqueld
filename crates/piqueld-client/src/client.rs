@@ -71,7 +71,7 @@ impl Client {
     /// or [`ClientError::Configuration`] if the HTTP client cannot initialize.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn tcp(base_url: &str) -> Result<Self, ClientError> {
-        let url = Self::origin(base_url)?;
+        let url = Self::parse_origin(base_url)?;
         Self::native(
             base_url.trim_end_matches('/'),
             |builder| match Self::pinned_loopback(&url) {
@@ -81,12 +81,18 @@ impl Client {
         )
     }
 
-    /// Parses `base_url` as an HTTP or HTTPS origin, without a path, query or
-    /// credentials, as [`Self::tcp`] requires, without building a client.
+    /// Checks that `base_url` is an HTTP or HTTPS origin, without a path,
+    /// query or credentials, as [`Self::tcp`] requires, without building a
+    /// client.
     ///
     /// # Errors
     /// Returns [`ClientError::Endpoint`] when it is not one.
-    pub fn origin(base_url: &str) -> Result<url::Url, ClientError> {
+    pub fn check_origin(base_url: &str) -> Result<(), ClientError> {
+        Self::parse_origin(base_url).map(|_| ())
+    }
+
+    /// Parses `base_url` as [`Self::check_origin`] checks it.
+    fn parse_origin(base_url: &str) -> Result<url::Url, ClientError> {
         let url = url::Url::parse(base_url).map_err(|error| {
             ClientError::invalid_request(format!("base URL is not a valid URL: {error}"))
         })?;

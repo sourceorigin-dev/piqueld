@@ -874,7 +874,7 @@ impl clap::builder::TypedValueParser for OriginParser {
             clap::Error::raw(clap::error::ErrorKind::ValueValidation, message).with_cmd(command)
         };
         let value = value.to_str().ok_or_else(|| refuse(&"it is not UTF-8"))?;
-        piqueld_client::Client::origin(value).map_err(|error| refuse(&error))?;
+        piqueld_client::Client::check_origin(value).map_err(|error| refuse(&error))?;
         Ok(value.to_owned())
     }
 }
