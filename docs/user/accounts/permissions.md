@@ -118,12 +118,13 @@ These permissions always apply to the whole installation.
 | Permission | Allows |
 | --- | --- |
 | `apps:create` | Creating applications; see [who may create applications](#who-may-create-applications) |
-| `system:read` | Reading the daemon's configuration, installation checks, resources, history and diagnostics, notification destinations and deliveries, and DNS providers and certificates |
+| `system:read` | Reading the daemon's configuration, installation checks, resources, history and diagnostics, notification destinations and deliveries, backup repositories, and DNS providers and certificates |
 | `system:operate` | Recovering from a [lost secret key](../reference/configuration.md#recovering-from-a-lost-key), retrying notification deliveries, and checking DNS providers |
 | `accounts:manage` | Managing other accounts and invitations; see [who may manage accounts](#who-may-manage-accounts) |
 | `audit:read` | Reading every account's [audit trail](../operations/audit.md), and verifying its integrity. Everyone reads their own |
 | `telemetry:grant` | Granting and revoking an environment's [telemetry](#telemetry) |
 | `notifications:manage` | Creating, changing, testing and deleting [notification destinations](../operations/notifications.md). A destination can select any application, so this reveals every application's notifications |
+| `backups:manage` | Creating, checking and removing [backup repositories](../operations/backup-repositories.md). Creating one shows its recovery key, which opens every backup in it, so granting this permission needs a recent passkey sign-in |
 
 Every signed-in account may read the daemon's status and readiness, and the
 [OpenAPI document](../../openapi-v1.json), which names what each operation

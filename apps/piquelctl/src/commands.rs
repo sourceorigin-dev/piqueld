@@ -55,6 +55,7 @@ pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Re
         )),
         Command::Secrets { action } => action.run(client, console).await,
         Command::Notification { command } => command.run(client, console).await,
+        Command::Backup { command } => command.run(client, console).await,
         Command::Status => status(cli, client, console).await,
         Command::Resources => console.emit(&client.daemon_stats().await?),
         Command::Settings => console.emit(&client.system_configuration().await?),

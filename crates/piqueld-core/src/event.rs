@@ -205,6 +205,8 @@ string_enum! {
         SecretKeyRecovered => "secret_key_recovered",
         /// A notification destination was created, changed or deleted.
         NotificationDestinationChanged => "notification_destination_changed",
+        /// A backup repository was created or removed.
+        BackupRepositoryChanged => "backup_repository_changed",
     }
 }
 

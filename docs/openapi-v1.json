@@ -493,6 +493,7 @@
           "environment_id_invalid",
           "preview_slot_invalid",
           "destination_name_invalid",
+          "backup_repository_name_invalid",
           "revision_invalid",
           "source_invalid",
           "release_invalid",
@@ -561,6 +562,9 @@
           "destination_url_invalid",
           "destination_application_unknown",
           "delivery_not_retryable",
+          "backup_repository_exists",
+          "backup_repository_not_empty",
+          "backup_repository_unavailable",
           "configuration_unavailable",
           "server_busy",
           "builder_not_configured",
@@ -1380,6 +1384,53 @@
           "public_url"
         ],
         "type": "object"
+      },
+      "BackupRepository": {
+        "description": "A backup repository. Its keys are never returned.",
+        "properties": {
+          "created_at_ms": {
+            "description": "Creation timestamp.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_check": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RepositoryCheck"
+                  }
+                ],
+                "description": "The latest check, absent until one runs."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          },
+          "location": {
+            "$ref": "#/components/schemas/RepositoryLocation",
+            "description": "Where it is."
+          },
+          "name": {
+            "$ref": "#/components/schemas/BackupRepositoryName",
+            "description": "Unique name."
+          }
+        },
+        "required": [
+          "name",
+          "location",
+          "created_at_ms"
+        ],
+        "type": "object"
+      },
+      "BackupRepositoryName": {
+        "description": "Unique name of a backup repository, such as `offsite`.",
+        "type": "string"
       },
       "BoolValue": {
         "additionalProperties": false,
@@ -4080,6 +4131,58 @@
         ],
         "type": "object"
       },
+      "Envelope_BackupRepository": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "description": "A backup repository. Its keys are never returned.",
+            "properties": {
+              "created_at_ms": {
+                "description": "Creation timestamp.",
+                "format": "int64",
+                "type": "integer"
+              },
+              "last_check": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/RepositoryCheck"
+                      }
+                    ],
+                    "description": "The latest check, absent until one runs."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              },
+              "location": {
+                "$ref": "#/components/schemas/RepositoryLocation",
+                "description": "Where it is."
+              },
+              "name": {
+                "$ref": "#/components/schemas/BackupRepositoryName",
+                "description": "Unique name."
+              }
+            },
+            "required": [
+              "name",
+              "location",
+              "created_at_ms"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "Envelope_BuildLogPage": {
         "description": "Successful API response envelope.",
         "properties": {
@@ -6504,6 +6607,33 @@
         ],
         "type": "object"
       },
+      "Envelope_RecoveryKit": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "description": "A new repository and its recovery key, which is shown only in this\nresponse. With the repository's location, the key opens it from any host,\nwith piqueld or with `restic`, so keep both somewhere other than the host.",
+            "properties": {
+              "recovery_key": {
+                "description": "The recovery key: a restic password for the repository.",
+                "type": "string"
+              },
+              "repository": {
+                "$ref": "#/components/schemas/BackupRepository",
+                "description": "The repository."
+              }
+            },
+            "required": [
+              "repository",
+              "recovery_key"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "Envelope_SavedApplication": {
         "description": "Successful API response envelope.",
         "properties": {
@@ -6563,6 +6693,11 @@
               },
               "affected_secrets": {
                 "description": "Logical secrets, stored and generated, whose values were discarded.",
+                "format": "int64",
+                "type": "integer"
+              },
+              "deleted_backup_repositories": {
+                "description": "Backup repositories removed, since their keys were encrypted. Their\nbackups stay where they are, and their recovery keys still open them.",
                 "format": "int64",
                 "type": "integer"
               },
@@ -6909,6 +7044,61 @@
               "referrers"
             ],
             "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "Envelope_Vec_BackupRepository": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "items": {
+              "description": "A backup repository. Its keys are never returned.",
+              "properties": {
+                "created_at_ms": {
+                  "description": "Creation timestamp.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "last_check": {
+                  "oneOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/RepositoryCheck"
+                        }
+                      ],
+                      "description": "The latest check, absent until one runs."
+                    },
+                    {
+                      "enum": [
+                        null
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  ]
+                },
+                "location": {
+                  "$ref": "#/components/schemas/RepositoryLocation",
+                  "description": "Where it is."
+                },
+                "name": {
+                  "$ref": "#/components/schemas/BackupRepositoryName",
+                  "description": "Unique name."
+                }
+              },
+              "required": [
+                "name",
+                "location",
+                "created_at_ms"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -10279,7 +10469,8 @@
           "accounts:manage",
           "audit:read",
           "telemetry:grant",
-          "notifications:manage"
+          "notifications:manage",
+          "backups:manage"
         ],
         "type": "string"
       },
@@ -10992,6 +11183,24 @@
         ],
         "type": "object"
       },
+      "RecoveryKit": {
+        "description": "A new repository and its recovery key, which is shown only in this\nresponse. With the repository's location, the key opens it from any host,\nwith piqueld or with `restic`, so keep both somewhere other than the host.",
+        "properties": {
+          "recovery_key": {
+            "description": "The recovery key: a restic password for the repository.",
+            "type": "string"
+          },
+          "repository": {
+            "$ref": "#/components/schemas/BackupRepository",
+            "description": "The repository."
+          }
+        },
+        "required": [
+          "repository",
+          "recovery_key"
+        ],
+        "type": "object"
+      },
       "Redirect": {
         "additionalProperties": false,
         "description": "A redirect the gateway answers with.",
@@ -11334,6 +11543,25 @@
         ],
         "type": "object"
       },
+      "RepositoryCheck": {
+        "description": "The latest check of a repository's structure.",
+        "properties": {
+          "checked_at_ms": {
+            "description": "When it finished, in Unix milliseconds.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "problem": {
+            "description": "What it found wrong, or why the repository couldn't be opened;\nabsent when it passed.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "checked_at_ms"
+        ],
+        "type": "object"
+      },
       "RepositoryDigest": {
         "description": "A repository reference pinned to an explicit SHA-256 digest.\n\nThe schema accepts the same registry, repository, and optional tag forms\nas [`ImageReference`], but requires a trailing SHA-256 digest containing\nexactly 64 lowercase hexadecimal digits.",
         "pattern": "^(?=.{1,512}$)(?=.{1,255}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$)(?:(?:(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+)(?::0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$",
@@ -11345,6 +11573,31 @@
         },
         "description": "The content of each repository file an application's services mount,\nkeyed by path from the repository root, as read at the commit its manifest\nwas fetched from. A deployment captures them once, with its manifest, so\nretries, restarts, and promotions mount exactly the same bytes.",
         "type": "object"
+      },
+      "RepositoryLocation": {
+        "description": "Where a repository is, by kind.",
+        "oneOf": [
+          {
+            "description": "A directory on the daemon's host, writable by the daemon's user. It\nguards against a broken database or a bad upgrade, not a lost host.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "local"
+                ],
+                "type": "string"
+              },
+              "path": {
+                "$ref": "#/components/schemas/RepositoryPath",
+                "description": "The directory. Creating a repository needs it missing or empty."
+              }
+            },
+            "required": [
+              "path",
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "RepositoryManifest": {
         "additionalProperties": false,
@@ -11373,6 +11626,24 @@
         "required": [
           "repository",
           "path"
+        ],
+        "type": "object"
+      },
+      "RepositoryPath": {
+        "description": "A directory on the daemon's host: absolute and normalized, with no\n`.`, `..` or empty component, so it names one directory one way.",
+        "type": "string"
+      },
+      "RepositoryRequest": {
+        "additionalProperties": false,
+        "description": "Creates a backup repository.",
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/RepositoryLocation",
+            "description": "Where to create it."
+          }
+        },
+        "required": [
+          "location"
         ],
         "type": "object"
       },
@@ -12282,6 +12553,11 @@
             "format": "int64",
             "type": "integer"
           },
+          "deleted_backup_repositories": {
+            "description": "Backup repositories removed, since their keys were encrypted. Their\nbackups stay where they are, and their recovery keys still open them.",
+            "format": "int64",
+            "type": "integer"
+          },
           "deleted_destinations": {
             "description": "Notification destinations deleted, since their URLs were encrypted.",
             "format": "int64",
@@ -12473,7 +12749,8 @@
           "create_invitation",
           "create_enrollment",
           "set_grants",
-          "recover_secret_key"
+          "recover_secret_key",
+          "create_backup_repository"
         ],
         "type": "string"
       },
@@ -29126,6 +29403,284 @@
         "security": [],
         "summary": "Gets authentication status.",
         "x-piqueld-access": "public"
+      }
+    },
+    "/api/v1/backup/repositories": {
+      "get": {
+        "description": "Needs `system:read` or `backups:manage`. Keys are never returned.",
+        "operationId": "backupRepositories",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Vec_BackupRepository"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Lists backup repositories by name.",
+        "x-piqueld-access": "authenticated"
+      }
+    },
+    "/api/v1/backup/repositories/{name}": {
+      "delete": {
+        "description": "Its backups stay where they are, and its recovery key still opens them.",
+        "operationId": "deleteBackupRepository",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_bool"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Removes a backup repository from piqueld.",
+        "x-piqueld-access": "backups:manage"
+      },
+      "post": {
+        "description": "Creates it at its location, which must be missing or empty, with two keys:\none piqueld keeps, encrypted with the secret master key, and a recovery\nkey returned only in this response. Needs a recent passkey sign-in. A taken\nname or location fails with 409 `backup_repository_exists`, a directory\nholding files with 409 `backup_repository_not_empty`, and one piqueld\ncan't write with 503 `backup_repository_unavailable`.",
+        "operationId": "createBackupRepository",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepositoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RecoveryKit"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`reauthentication_required`: the action needs a passkey sign-in within the last 2 minutes. When `details.step_up` is true, confirm with a passkey (`authReauthenticateStart`) and send the request again, except a refused registration finish, which consumed its ceremony: start again from `authRegistrationStart`. API tokens never can. Also returned when the TCP authority or browser origin is not trusted"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request body stopped arriving"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Creates a backup repository.",
+        "x-piqueld-access": "backups:manage"
+      }
+    },
+    "/api/v1/backup/repositories/{name}/check": {
+      "post": {
+        "description": "Opens it with piqueld's key and checks that its index, packs and\nsnapshots agree, without reading their data, then records the result. A\nrepository that can't be opened fails the check.",
+        "operationId": "checkBackupRepository",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_BackupRepository"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Checks a backup repository's structure.",
+        "x-piqueld-access": "backups:manage"
       }
     },
     "/api/v1/builds": {

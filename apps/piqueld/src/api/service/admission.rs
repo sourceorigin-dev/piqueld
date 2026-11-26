@@ -21,6 +21,9 @@ pub enum Expensive {
     LogStream,
     /// Installation checks, which probe the network and Docker.
     Checks,
+    /// Creating or checking a backup repository, one at a time, so two
+    /// creations never race on one directory.
+    Backups,
 }
 impl Expensive {
     /// How many of this kind may run at once.
@@ -32,6 +35,7 @@ impl Expensive {
             Self::EventStream => 128,
             Self::LogStream => 16,
             Self::Checks => 2,
+            Self::Backups => 1,
         }
     }
 
@@ -49,6 +53,7 @@ pub(super) struct Admission {
     event_streams: Arc<Semaphore>,
     log_streams: Arc<Semaphore>,
     checks: Arc<Semaphore>,
+    backups: Arc<Semaphore>,
 }
 
 impl Default for Admission {
@@ -60,6 +65,7 @@ impl Default for Admission {
             event_streams: Expensive::EventStream.budget(),
             log_streams: Expensive::LogStream.budget(),
             checks: Expensive::Checks.budget(),
+            backups: Expensive::Backups.budget(),
         }
     }
 }
@@ -74,6 +80,7 @@ impl Admission {
             Expensive::EventStream => &self.event_streams,
             Expensive::LogStream => &self.log_streams,
             Expensive::Checks => &self.checks,
+            Expensive::Backups => &self.backups,
         }
     }
 }

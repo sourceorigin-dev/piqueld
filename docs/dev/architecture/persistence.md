@@ -4,7 +4,10 @@ SQLx's SQLite driver owns persistence (see [ADR 0001](adr/0001-sqlx-sqlite.md)).
 The database at `<server.data_dir>/piqueld.db` contains application manifests,
 environments with their resolved targets and status, deployments, releases,
 operation and build history, accounts and their grants, encrypted secrets, the
-audit trail, and the control-plane instance identity. The store, the
+keys of backup repositories, the audit trail, and the control-plane instance
+identity. Backup repositories themselves live outside it: the daemon's
+`backup` module creates and checks them in restic's format through
+`rustic_core`, on a blocking thread. The store, the
 `piqueld-store` crate, reads and writes these records; it does not resolve
 images or plan runtime changes. The
 daemon prepares its private data directory before opening SQLite, and the store

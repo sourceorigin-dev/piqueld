@@ -23,7 +23,7 @@ const BACKGROUND: [(&str, &str); 12] = [
 /// Write routes outside the typed application edits whose changes append
 /// their record in the transaction committing them: acceptance, secrets,
 /// notifications, webhooks, accounts and sign-ins.
-const COMMITTED: [(&str, &str); 41] = [
+const COMMITTED: [(&str, &str); 44] = [
     ("POST", "/api/v1/applications"),
     ("POST", "/api/v1/applications/apply"),
     ("DELETE", "/api/v1/applications/{id}"),
@@ -58,6 +58,9 @@ const COMMITTED: [(&str, &str); 41] = [
     ("POST", "/api/v1/notifications/deliveries/{id}/retry"),
     ("PUT", "/api/v1/notifications/destinations/{name}"),
     ("DELETE", "/api/v1/notifications/destinations/{name}"),
+    ("POST", "/api/v1/backup/repositories/{name}"),
+    ("DELETE", "/api/v1/backup/repositories/{name}"),
+    ("POST", "/api/v1/backup/repositories/{name}/check"),
     ("POST", "/api/v1/system/secrets/recover-key"),
     ("POST", "/api/v1/auth/manage"),
     ("POST", "/api/v1/auth/logout"),

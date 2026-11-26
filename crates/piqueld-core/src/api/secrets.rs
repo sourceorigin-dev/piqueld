@@ -271,4 +271,8 @@ pub struct SecretKeyRecovery {
     /// Notification destinations deleted, since their URLs were encrypted.
     #[serde(default)]
     pub deleted_destinations: i64,
+    /// Backup repositories removed, since their keys were encrypted. Their
+    /// backups stay where they are, and their recovery keys still open them.
+    #[serde(default)]
+    pub deleted_backup_repositories: i64,
 }

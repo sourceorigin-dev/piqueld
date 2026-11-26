@@ -865,3 +865,33 @@ async fn a_report_of_a_roll_back_that_never_began_is_dropped() {
             .expect("the events count");
     assert_eq!(reported, 0);
 }
+
+/// A local repository at `path`.
+fn repository_at(path: &Path) -> piqueld_core::backup::RepositoryLocation {
+    let path = path.to_str().expect("the temporary path is UTF-8");
+    piqueld_core::backup::RepositoryLocation::Local {
+        path: piqueld_core::backup::RepositoryPath::parse(path).expect("the path is valid"),
+    }
+}
+
+/// A new repository opens with both of its keys and passes its check, and
+/// neither a used directory nor a wrong key gets in.
+#[test]
+fn repositories_open_with_either_key_and_refuse_used_directories() {
+    let temp = tempfile::tempdir().expect("a temporary directory is created");
+    let location = repository_at(&temp.path().join("repository"));
+    let daemon = RepositoryAccess::generate_key().expect("a key is generated");
+    let recovery = RepositoryAccess::generate_key().expect("a key is generated");
+    assert_ne!(daemon, recovery);
+    RepositoryAccess::new(&location, &daemon)
+        .create(&recovery)
+        .expect("the repository is created");
+    for key in [&daemon, &recovery] {
+        let check = RepositoryAccess::new(&location, key).check();
+        assert_eq!(check.expect("the repository opens"), None);
+    }
+    let wrong = RepositoryAccess::new(&location, "wrong").check();
+    assert!(matches!(wrong, Err(EngineError::Repository(_))));
+    let again = RepositoryAccess::new(&location, &daemon).create(&recovery);
+    assert!(matches!(again, Err(EngineError::NotEmpty(_))));
+}

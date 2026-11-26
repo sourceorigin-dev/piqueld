@@ -6,6 +6,9 @@ use piqueld_core::InstanceId;
 use sqlx::{Connection as _, SqliteConnection, sqlite::SqliteConnectOptions};
 use std::path::Path;
 
+mod repositories;
+pub use repositories::RepositoryError;
+
 /// One database file opened read-only, without creating, migrating or
 /// changing its journal mode.
 pub struct DatabaseFile(SqliteConnection);

@@ -598,7 +598,10 @@ which `piquelctl` asks you to confirm in a browser and API tokens never have.
 Run it as the host operator, with `sudo` on the host, to skip both.
 Names, generations, file references and deployment history remain; discarded
 versions are marked unavailable. [Notification destinations](../operations/notifications.md),
-whose URLs are encrypted with the same key, are deleted; create them again. Docker secrets and running services are left in
+whose URLs are encrypted with the same key, are deleted; create them again.
+[Backup repositories](../operations/backup-repositories.md), whose keys are too, are
+removed from piqueld; their backups remain, and their recovery keys still open them.
+Docker secrets and running services are left in
 place. An unusable key file is renamed to `secrets.key.retired-<ms>` rather than
 deleted, since it may match another database backup.
 

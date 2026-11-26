@@ -7,6 +7,7 @@ pub mod access;
 pub mod api;
 pub mod audit;
 pub mod auth;
+pub mod backup;
 pub mod build_machine;
 mod changes;
 mod docker_names;

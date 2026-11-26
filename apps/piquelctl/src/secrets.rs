@@ -359,7 +359,7 @@ impl KeyAction {
     /// Discards every stored secret value after printing the scope and confirming.
     pub(crate) async fn run(&self, client: &Client, console: &mut Console) -> Result<()> {
         let Self::RecoverKey { yes } = self;
-        let message = "Discard stored and generated secret values for ALL applications and environments, and repository webhook secrets, and delete every notification destination? Running services keep their Docker secrets. Afterwards, set the secrets again and deploy, rotate repository webhook secrets with `app repository webhook rotate`, and add destinations again with `notification set`.";
+        let message = "Discard stored and generated secret values for ALL applications and environments, and repository webhook secrets, delete every notification destination, and remove every backup repository from piqueld, keeping their backups? Running services keep their Docker secrets. Afterwards, set the secrets again and deploy, rotate repository webhook secrets with `app repository webhook rotate`, add destinations again with `notification set`, and create backup repositories again.";
         console.warning(message)?;
         console.confirm(*yes, message).await?;
         let action = SensitiveAction::RecoverSecretKey;

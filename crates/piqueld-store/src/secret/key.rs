@@ -202,7 +202,8 @@ impl Store {
             r#"SELECT 'environment' AS "kind!: String",environment_id AS "owner!",name AS "name!",generation AS "generation!",nonce AS "nonce!",ciphertext AS "ciphertext!" FROM secret_versions WHERE available=1
             UNION ALL SELECT 'application',application_id,name,generation,nonce,ciphertext FROM application_secret_versions WHERE available=1
             UNION ALL SELECT 'webhook',application_id,'webhook',1,nonce,ciphertext FROM webhook_secrets
-            UNION ALL SELECT 'destination',id,'url',1,nonce,ciphertext FROM notification_destinations"#
+            UNION ALL SELECT 'destination',id,'url',1,nonce,ciphertext FROM notification_destinations
+            UNION ALL SELECT 'repository',id,'key',1,nonce,ciphertext FROM backup_repositories"#
         )
         .fetch(&mut **tx);
         let mut probed = Ciphertext::None;
@@ -221,6 +222,7 @@ impl Store {
                     decrypt(SecretOwner::Environment(&id)).is_ok()
                 }
                 "destination" => decrypt(SecretOwner::NotificationDestination(&row.owner)).is_ok(),
+                "repository" => decrypt(SecretOwner::BackupRepository(&row.owner)).is_ok(),
                 kind => {
                     let id = ApplicationId::parse(row.owner).map_err(StoreError::corrupt)?;
                     let owner = if kind == "webhook" {
@@ -346,13 +348,18 @@ impl Store {
             .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
+        let repositories = sqlx::query!("DELETE FROM backup_repositories")
+            .execute(&mut *tx)
+            .await
+            .map_err(StoreError::database)?
+            .rows_affected();
         sqlx::query!("DELETE FROM secret_key_verification")
             .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         let discarded = usage.versions + stored.versions;
         let counts = format!(
-            "{discarded} values across {} environments and {} applications, {webhooks} webhook secrets, and {destinations} notification destinations",
+            "{discarded} values across {} environments and {} applications, {webhooks} webhook secrets, {destinations} notification destinations, and {repositories} backup repositories",
             usage.environments, stored.applications
         );
         let message = format!("Recovered the secret master key; discarded {counts}");
@@ -369,6 +376,8 @@ impl Store {
             affected_secrets: usage.secrets + stored.secrets,
             discarded_versions: discarded,
             deleted_destinations: destinations,
+            deleted_backup_repositories: i64::try_from(repositories)
+                .map_err(StoreError::corrupt)?,
         })
     }
 }

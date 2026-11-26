@@ -1,6 +1,6 @@
 //! `/notifications` page: destinations, what each receives, and the delivery
 //! history.
-use super::observability::{Refresh, older_page};
+use super::observability::{Outcome, Refresh, older_page};
 use super::ui::{
     Icon, Modal, PageHeader, Tone, badge, checkbox, empty, icon, loaded, member_checkbox, notice,
     text_field, when,
@@ -10,7 +10,7 @@ use crate::overview::{DestinationDraft, Receives};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use piqueld_client::{
-    ApplicationId, Client, ClientError, DEFAULT_PAGE_SIZE,
+    ApplicationId, Client, DEFAULT_PAGE_SIZE,
     access::{GlobalPermission, Permission},
     observability::{
         DeliveryState, DestinationKind, NotificationCategory, NotificationDelivery,
@@ -49,49 +49,13 @@ pub(super) fn NotificationsPage() -> impl IntoView {
     }
 }
 
-/// Outcome of the last destination action: an error or a success notice.
-#[derive(Clone, Copy)]
-struct Outcome {
-    busy: RwSignal<bool>,
-    message: RwSignal<Option<(Tone, String)>>,
-}
-
-impl Outcome {
-    /// Runs `request` unless another is running, then shows `success` or
-    /// its error and runs `refresh`.
-    fn run<T: 'static>(
-        self,
-        request: impl Future<Output = Result<T, ClientError>> + 'static,
-        success: impl FnOnce(T) -> String + 'static,
-        refresh: Refresh,
-    ) {
-        if self.busy.get_untracked() {
-            return;
-        }
-        self.busy.set(true);
-        self.message.set(None);
-        spawn_local(async move {
-            let message = match request.await {
-                Ok(value) => (Tone::Ok, success(value)),
-                Err(error) => (Tone::Bad, error.user_message()),
-            };
-            self.message.set(Some(message));
-            self.busy.set(false);
-            refresh.request();
-        });
-    }
-}
-
 /// The destinations, with buttons to test, edit and delete them for
 /// accounts with `notifications:manage`.
 #[component]
 fn Destinations(refresh: Refresh) -> impl IntoView {
     let manage = can(Permission::Global(GlobalPermission::NotificationsManage));
     let applications = dashboard_context().signals.applications;
-    let outcome = Outcome {
-        busy: RwSignal::new(false),
-        message: RwSignal::new(None),
-    };
+    let outcome = Outcome::new();
     let form = DestinationForm::new();
     let opened = RwSignal::new(false);
     let data = LocalResource::new(move || {
@@ -117,6 +81,7 @@ fn Destinations(refresh: Refresh) -> impl IntoView {
                     Client::browser()
                         .put_notification_destination(&name, &request)
                         .await
+                        .user_error()
                 },
                 |destination| format!("Saved {}.", destination.name),
                 refresh,
@@ -167,6 +132,7 @@ fn Destinations(refresh: Refresh) -> impl IntoView {
                                                 Client::browser()
                                                     .test_notification_destination(&name)
                                                     .await
+                                                    .user_error()
                                             },
                                             |test| match test.error {
                                                 None => "The test notification was acknowledged.".into(),
@@ -210,6 +176,7 @@ fn Destinations(refresh: Refresh) -> impl IntoView {
                                                 Client::browser()
                                                     .delete_notification_destination(&name)
                                                     .await
+                                                    .user_error()
                                             },
                                             |()| "Destination deleted.".into(),
                                             refresh,

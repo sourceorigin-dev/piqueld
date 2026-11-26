@@ -19,13 +19,17 @@ Retries use the captured deployment, not subsequent configuration edits.
 
 The piqueld logo links to the home page. The sidebar groups Overview,
 Applications, and Builds; the Observe section (Events, Errors, Analytics,
-Notifications); and the System section (Daemon status, Host settings, Accounts,
-Audit). Notifications, Daemon status and Host settings need `system:read`;
+Notifications); and the System section (Daemon status, Host settings, Backups,
+Accounts, Audit). Notifications, Daemon status and Host settings need `system:read`;
+Backups needs `system:read` or `backups:manage`;
 retrying a failed notification delivery needs `system:operate`.
 Notifications lists [destinations](operations/notifications.md) and
 deliveries. With `notifications:manage` it adds, edits, tests and deletes
 destinations: their kind, URL (write-only), categories with an optional message
 each, applications and previews.
+Backups lists [backup repositories](operations/backup-repositories.md) and their
+latest check. With `backups:manage` it creates them, showing a new
+repository's recovery key until you select **Done**, and checks and removes them.
 Its footer shows daemon connectivity and the signed-in account with a sign-out
 button. On a narrow screen, such as a phone, the sidebar is a bar at the top
 whose **Menu** button opens the navigation and the footer. The home page and Applications show the five most recent deployments

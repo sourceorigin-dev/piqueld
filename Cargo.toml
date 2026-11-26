@@ -121,6 +121,11 @@ wasm-bindgen-futures  = "=0.4.76"
 wasm-bindgen-test     = "=0.3.76"
 web-sys               = "=0.3.103"
 
+# Backups in restic's repository format. Only the local backend of rustic_backend:
+# its REST and OpenDAL backends bring a second HTTP and crypto stack.
+rustic_core = "0.14.0"
+rustic_backend = { version = "0.8.0", default-features = false }
+
 # Dashboard exec terminal: VT parsing and screen state, and shell-style command splitting.
 shlex = "2.0.1"
 vt100 = "0.16.2"
@@ -171,6 +176,14 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Opening a backup repository derives its key with scrypt, which takes
+# seconds per key unoptimized.
+[profile.dev.package.scrypt]
+opt-level = 3
+
+[profile.dev.package.salsa20]
+opt-level = 3
 
 [profile.release]
 lto = "thin"
