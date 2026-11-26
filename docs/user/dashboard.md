@@ -4,7 +4,7 @@ The Leptos dashboard manages application configuration through forms. Create an
 empty application in a modal, add services in a modal and declare named volumes, and edit images, Git builds
 (including Docker build arguments and targets), replicas, environment variables, commands, arguments, mounts, read-only files, health checks, startup
 dependencies, rollout order and monitor window, and resource limits. Each settings group has its own **Save changes** button, and lists edited row by row
-(routes, links, jobs and named volumes) save from the dialog of the row. Saving updates
+(routes, links, jobs and named volumes) save each change at once: a row's dialog, its **Remove**, or moving a job. Saving updates
 the database without changing running containers.
 
 **Preview** opens a dialog with the planned changes, the variable values it

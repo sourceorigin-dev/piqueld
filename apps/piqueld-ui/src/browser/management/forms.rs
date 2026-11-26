@@ -1,7 +1,7 @@
 //! Form state shared by the editor's settings: a group's unsaved draft, the
 //! dialog editing one row of a list, and a list's rows edited in place.
 use super::editor;
-use crate::browser::ui::{Icon, icon, limited_add_button, text_field};
+use crate::browser::ui::{Icon, icon, limited_add_button, row_actions, text_field};
 use leptos::prelude::*;
 use piqueld_client::{ApplicationManifest, access::AppPermission, edit::ApplicationEdit};
 
@@ -171,7 +171,8 @@ impl Draft<String> {
 /// at `index`, as `draft`. Submitting saves the whole list at once, so the
 /// list needs no unsaved state of its own. While open, the dialog is in the
 /// editor's dirty set, so the saved rows its index points into are not
-/// replaced under it.
+/// replaced under it. Closing it clears the error of a refused save, whose
+/// draft it drops.
 pub(super) struct RowDialog<T: Send + Sync + 'static> {
     pub(super) opened: RwSignal<bool>,
     pub(super) draft: RwSignal<T>,
@@ -189,8 +190,16 @@ impl<T: Send + Sync + 'static> Copy for RowDialog<T> {}
 impl<T: Clone + Default + Send + Sync + 'static> RowDialog<T> {
     /// The dialog of the list `key`, which names it in the dirty set.
     pub(super) fn new(key: &'static str) -> Self {
+        let context = editor();
         let opened = RwSignal::new(false);
-        editor().guard(format!("{key}-dialog"), move || opened.get());
+        context.guard(format!("{key}-dialog"), move || opened.get());
+        Effect::new(move |was_open: Option<bool>| {
+            let open = opened.get();
+            if was_open == Some(true) && !open {
+                context.set_error(None);
+            }
+            open
+        });
         Self {
             opened,
             draft: RwSignal::new(T::default()),
@@ -240,8 +249,20 @@ impl<T: Clone + Default + Send + Sync + 'static> RowDialog<T> {
         rows
     }
 
+    /// The buttons of the row at `index`: **Edit**, opening the dialog on
+    /// `row`, and **Remove**, running `remove`. Both are off while saves are
+    /// blocked, when a save in flight may be about to move the rows.
+    pub(super) fn row_actions(self, index: usize, row: T, remove: impl Fn() + 'static) -> AnyView {
+        let context = editor();
+        row_actions(
+            move || context.blocked(),
+            move || self.edit(index, row.clone()),
+            remove,
+        )
+    }
+
     /// `rows` without the one at `index`, for the list's Remove buttons.
-    pub(super) fn without(self, mut rows: Vec<T>, index: usize) -> Vec<T> {
+    pub(super) fn without(mut rows: Vec<T>, index: usize) -> Vec<T> {
         if index < rows.len() {
             rows.remove(index);
         }

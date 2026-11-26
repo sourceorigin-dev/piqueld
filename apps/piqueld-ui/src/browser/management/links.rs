@@ -2,7 +2,7 @@
 //! services of other applications it reaches. Each is a row, added and
 //! edited in a dialog; saving replaces the whole list.
 use super::super::confirm;
-use super::super::ui::{FormModal, empty, row_actions, text_input};
+use super::super::ui::{FormModal, empty, text_input};
 use super::{RowDialog, editor};
 use crate::application::{ExportDraft, ImportDraft};
 use leptos::prelude::*;
@@ -25,7 +25,10 @@ fn ExportSettings() -> impl IntoView {
         ) {
             return;
         }
-        save(dialog.without(ExportDraft::rows(&context.manifest()), index));
+        save(RowDialog::without(
+            ExportDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <section class="card">
@@ -67,10 +70,7 @@ fn ExportSettings() -> impl IntoView {
                                             <code>{row.service.clone()}</code>
                                             <small>{reach}</small>
                                         </span>
-                                        {row_actions(
-                                            move || dialog.edit(index, edited.clone()),
-                                            move || remove(index),
-                                        )}
+                                        {dialog.row_actions(index, edited, move || remove(index))}
                                     </li>
                                 }
                             })
@@ -136,7 +136,10 @@ fn ImportSettings() -> impl IntoView {
         if !confirm("Stop importing this service? Services lose it at the next deployment.") {
             return;
         }
-        save(dialog.without(ImportDraft::rows(&context.manifest()), index));
+        save(RowDialog::without(
+            ImportDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <section class="card">
@@ -176,10 +179,7 @@ fn ImportSettings() -> impl IntoView {
                                             </code>
                                             <small>{environment}</small>
                                         </span>
-                                        {row_actions(
-                                            move || dialog.edit(index, edited.clone()),
-                                            move || remove(index),
-                                        )}
+                                        {dialog.row_actions(index, edited, move || remove(index))}
                                     </li>
                                 }
                             })

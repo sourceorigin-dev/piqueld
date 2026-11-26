@@ -1,7 +1,7 @@
 //! Saved configuration forms and service editors.
 use super::super::ui::{
     FormModal, Icon, Modal, Tone, add_button, copy_button, empty, icon, notice, one_time_secret,
-    remove_button, row_actions, text_field, text_input, when,
+    remove_button, row_detail, text_field, text_input, when,
 };
 use super::super::{UserError, confirm};
 use super::{Draft, RowDialog, editor};
@@ -511,7 +511,7 @@ pub(super) fn VolumeSettings() -> impl IntoView {
         if !confirm("Remove this volume from the saved configuration? Its Docker data is kept.") {
             return;
         }
-        save(dialog.without(volume_names(&context.manifest()), index));
+        save(RowDialog::without(volume_names(&context.manifest()), index));
     };
     view! {
         <section class="card">
@@ -541,12 +541,9 @@ pub(super) fn VolumeSettings() -> impl IntoView {
                                     <li class="list-row">
                                         <span class="title">
                                             <code>{name.clone()}</code>
-                                            <small>{mounted_by(&manifest, &name)}</small>
+                                            {row_detail(mounted_by(&manifest, &name))}
                                         </span>
-                                        {row_actions(
-                                            move || dialog.edit(index, edited.clone()),
-                                            move || remove(index),
-                                        )}
+                                        {dialog.row_actions(index, edited, move || remove(index))}
                                     </li>
                                 }
                             })

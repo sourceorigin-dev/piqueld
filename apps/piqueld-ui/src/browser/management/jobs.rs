@@ -1,7 +1,7 @@
 //! One-shot jobs, which run in list order before each rollout. Each is a
 //! row, added and edited in a dialog; saving replaces the whole list.
 use super::super::confirm;
-use super::super::ui::{FormModal, add_button, empty, remove_button, row_actions};
+use super::super::ui::{FormModal, add_button, empty, remove_button, row_detail};
 use super::{RowDialog, editor};
 use crate::editor::ServiceForm;
 use leptos::prelude::*;
@@ -296,9 +296,8 @@ impl PairRows {
 
 /// Jobs of the saved configuration, in the order they run: each a row saying
 /// what it runs and what it adds to its service's container, moved up or
-/// down, and added and edited in a dialog. A row cuts a long line short, so
-/// its title holds it whole. Every change validates the timeouts and saves
-/// the whole list at once.
+/// down, and added and edited in a dialog. Every change validates the list
+/// and saves it whole.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn JobSettings() -> impl IntoView {
@@ -313,7 +312,10 @@ pub(super) fn JobSettings() -> impl IntoView {
         if !confirm("Remove this job from the saved configuration? Later deployments skip it.") {
             return;
         }
-        save(dialog.without(JobDraft::rows(&context.manifest()), index));
+        save(RowDialog::without(
+            JobDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     let swap = move |first: usize| {
         let mut rows = JobDraft::rows(&context.manifest());
@@ -347,16 +349,12 @@ pub(super) fn JobSettings() -> impl IntoView {
                             .enumerate()
                             .map(|(index, row)| {
                                 let edited = row.clone();
-                                let line = |text: String| {
-                                    let whole = text.clone();
-                                    view! { <small title={whole}>{text}</small> }
-                                };
                                 view! {
                                     <li class="list-row">
                                         <span class="title">
                                             <code>{row.name.clone()}</code>
-                                            {line(row.summary())}
-                                            {row.additions().map(line)}
+                                            {row_detail(row.summary())}
+                                            {row.additions().map(row_detail)}
                                         </span>
                                         {(row.volume_access == JobVolumeAccess::Exclusive)
                                             .then(|| view! { <span class="tag">"exclusive volumes"</span> })}
@@ -381,10 +379,7 @@ pub(super) fn JobSettings() -> impl IntoView {
                                                 "Move down"
                                             </button>
                                         </span>
-                                        {row_actions(
-                                            move || dialog.edit(index, edited.clone()),
-                                            move || remove(index),
-                                        )}
+                                        {dialog.row_actions(index, edited, move || remove(index))}
                                     </li>
                                 }
                             })

@@ -277,9 +277,22 @@ test('adds, edits, reorders, and removes jobs in a dialog', async ({ page, accou
   await expect(adding).toBeHidden();
   await expect(jobs).toHaveCount(2);
 
-  // Moving a job saves the new order at once.
+  // Moving a job saves the new order at once. Until it is saved the rows may
+  // be about to change places, so their Edit and Remove wait.
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const saving = (url: URL) => url.pathname.startsWith('/api/v1/applications/');
+  await page.route(saving, async route => {
+    if (route.request().method() !== 'GET') await held;
+    await route.continue();
+  });
   await jobs.nth(1).getByRole('button', { name: 'Move up', exact: true }).click();
+  await expect(jobs.nth(0).getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
+  await expect(jobs.nth(0).getByRole('button', { name: 'Remove', exact: true })).toBeDisabled();
+  release();
   await expect(jobs.nth(0)).toContainText('on web, up to 60s: migrate --all');
+  await expect(jobs.nth(0).getByRole('button', { name: 'Edit', exact: true })).toBeEnabled();
+  await page.unroute(saving);
   await expect(jobs.nth(0).getByRole('button', { name: 'Move up', exact: true })).toBeDisabled();
   await expect(jobs.nth(1).getByRole('button', { name: 'Move down', exact: true })).toBeDisabled();
   await page.reload();

@@ -244,8 +244,9 @@ its volumes. So by default, the job mounts its service's volumes read-only.
 
 A migration that has to write a volume needs exclusive access, such as for a
 service `app` that keeps an SQLite database in a volume. In the dashboard,
-pick **Exclusive** under the job's **Volume access**. With `piquelctl`, add
-`--volume-access exclusive` to `job set`. In the manifest:
+select **Edit** on the job, pick **Exclusive** under **Volume access**, and
+select **Save job**. With `piquelctl`, add `--volume-access exclusive` to
+`job set`. In the manifest:
 
 ```toml
 [[spec.jobs]]

@@ -2010,6 +2010,7 @@ fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
                     view! {
                         <span class="title">{icon(Icon::Key)} " " {saved.get_value()}</span>
                         {row_actions(
+                            || false,
                             move || {
                                 label.set(saved.get_value());
                                 editing.set(true);

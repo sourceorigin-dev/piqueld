@@ -2,7 +2,7 @@
 //! the state of its deployments, and where each deployed route stands with
 //! DNS and HTTPS.
 use super::super::confirm;
-use super::super::ui::{FormModal, Tone, badge, empty, notice, route_name, row_actions};
+use super::super::ui::{FormModal, Tone, badge, empty, notice, route_name};
 use super::{RowDialog, editor};
 use leptos::prelude::*;
 use piqueld_client::{
@@ -203,7 +203,10 @@ pub(super) fn RouteSettings() -> impl IntoView {
         ) {
             return;
         }
-        save(dialog.without(RouteDraft::rows(&context.manifest()), index));
+        save(RowDialog::without(
+            RouteDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <div class="stack">
@@ -215,7 +218,7 @@ pub(super) fn RouteSettings() -> impl IntoView {
                             "Hostnames that reach a service of this application, or redirect elsewhere. A public route is reachable from the internet; a private one, the default, only from the tailnet. Save a route, then deploy to serve it."
                         </p>
                     </div>
-                {dialog.add_button("Add route", || false)}
+                    {dialog.add_button("Add route", || false)}
                 </header>
                 <div class="stack-sm">
                     {move || {
@@ -279,10 +282,7 @@ pub(super) fn RouteSettings() -> impl IntoView {
                                                     .map(|name| view! { <span class="tag">{name}</span> })}
                                                 {badge(Tone::Neutral, route.visibility.to_string())}
                                                 <span class="route-states">{states}</span>
-                                                {row_actions(
-                                                    move || dialog.edit(index, edited.clone()),
-                                                    move || remove(index),
-                                                )}
+                                                {dialog.row_actions(index, edited, move || remove(index))}
                                             </li>
                                         }
                                     })
