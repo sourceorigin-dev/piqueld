@@ -604,7 +604,7 @@ mod tests {
             ("ORIGIN".to_owned(), "https://a=b c".to_owned()),
             ("EMPTY".to_owned(), String::new()),
         ]);
-        let owner = InstanceId::parse("instance-1").unwrap();
+        let owner = InstanceId::parse("instance-1").expect("the instance id parses");
         let build = ImageBuild {
             owner: &owner,
             dockerfile: PathBuf::from("Dockerfile"),
@@ -632,7 +632,7 @@ mod tests {
 
     #[test]
     fn builds_are_tagged_by_owner_and_id() {
-        let owner = InstanceId::parse("instance-1").unwrap();
+        let owner = InstanceId::parse("instance-1").expect("the instance id parses");
         let build = ImageBuild {
             owner: &owner,
             dockerfile: PathBuf::from("Dockerfile"),
@@ -642,7 +642,8 @@ mod tests {
             priority: BuildPriority::Environment,
         };
         let hex = "c".repeat(64);
-        let id = piqueld_core::Sha256Digest::parse(format!("sha256:{hex}")).unwrap();
+        let id =
+            piqueld_core::Sha256Digest::parse(format!("sha256:{hex}")).expect("the digest parses");
         assert_eq!(build.tag(&id), ("piqueld-build/instance-1".into(), hex));
     }
 
@@ -650,17 +651,19 @@ mod tests {
     fn images_are_retained_by_id_or_repository_digest() {
         let hex = "c".repeat(64);
         let image = LocalImage {
-            id: piqueld_core::Sha256Digest::parse(format!("sha256:{hex}")).unwrap(),
+            id: piqueld_core::Sha256Digest::parse(format!("sha256:{hex}"))
+                .expect("the digest parses"),
             repo_digests: vec![
                 piqueld_core::RepositoryDigest::parse(format!("example.com/web@sha256:{hex}"))
-                    .unwrap(),
+                    .expect("the image parses"),
             ],
             labels: BTreeMap::new(),
             size: 0,
             used: false,
         };
-        let retained =
-            |value: String| BTreeSet::from([piqueld_core::ImmutableImage::parse(value).unwrap()]);
+        let retained = |value: String| {
+            BTreeSet::from([piqueld_core::ImmutableImage::parse(value).expect("the image parses")])
+        };
         assert!(image.retained_by(&retained(format!("sha256:{hex}"))));
         assert!(image.retained_by(&retained(format!("example.com/web@sha256:{hex}"))));
         assert!(!image.retained_by(&retained(format!("example.com/api@sha256:{hex}"))));

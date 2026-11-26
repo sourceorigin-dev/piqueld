@@ -57,7 +57,12 @@ fn secret_set_guards_the_access_it_replaces() {
     });
     let stored = secret.clone();
     let server = start_server(false, 3, move |request| {
-        match request.path.split('?').next().unwrap() {
+        match request
+            .path
+            .split('?')
+            .next()
+            .expect("the iterator yields an item")
+        {
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
             "/api/v1/applications/app-notes-01/secrets" => Reply::json(json!([secret.clone()])),
             "/api/v1/applications/app-notes-01/secrets/database-password" => {
@@ -105,7 +110,12 @@ fn secret_values_from_stdin_drop_one_trailing_newline() {
         let refusal =
             json!({"code": "conflict", "message": "stop here", "request_id": "request-01"});
         let server = start_server(false, usize::MAX, move |request| {
-            match request.path.split('?').next().unwrap() {
+            match request
+                .path
+                .split('?')
+                .next()
+                .expect("the iterator yields an item")
+            {
                 "/api/v1/applications/app-notes-01" => {
                     Reply::json(app_view("app-notes-01", "notes"))
                 }
@@ -159,7 +169,12 @@ fn secret_access_changes_send_the_listed_access_as_expected() {
         "request_id": "request-01"
     });
     let server = start_server(false, 3, move |request| {
-        match request.path.split('?').next().unwrap() {
+        match request
+            .path
+            .split('?')
+            .next()
+            .expect("the iterator yields an item")
+        {
             "/api/v1/applications/app-notes-01" => Reply::json(app_view("app-notes-01", "notes")),
             "/api/v1/applications/app-notes-01/secrets" => Reply::json(json!([secret])),
             "/api/v1/applications/app-notes-01/secrets/database-password/access" => {
@@ -182,7 +197,7 @@ fn secret_access_changes_send_the_listed_access_as_expected() {
     assert_eq!(output.status.code(), Some(3), "{output:?}");
     let requests = server.finish();
     assert_eq!(requests[2].method, "PUT");
-    let body: Value = serde_json::from_slice(&requests[2].body).unwrap();
+    let body: Value = serde_json::from_slice(&requests[2].body).expect("the json decodes");
     assert_eq!(
         body,
         json!({"environments": "all", "previews": true, "expected": listed})

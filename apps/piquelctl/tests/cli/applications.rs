@@ -271,7 +271,7 @@ fn human_plan_lists_environment_changes() {
 
 #[test]
 fn blocked_plan_emits_json_then_fails_and_quiet_keeps_the_reason() {
-    let directory = tempdir().unwrap();
+    let directory = tempdir().expect("the temp dir is created");
     let manifest = write_manifest(&directory);
     for json in [false, true] {
         let server = start_server(false, 1, |_| {
@@ -288,7 +288,7 @@ fn blocked_plan_emits_json_then_fails_and_quiet_keeps_the_reason() {
                 "app",
                 "plan",
                 "--file",
-                manifest.to_str().unwrap(),
+                manifest.to_str().expect("the path is utf-8"),
             ],
             "2s",
             json,
@@ -300,7 +300,7 @@ fn blocked_plan_emits_json_then_fails_and_quiet_keeps_the_reason() {
             String::from_utf8_lossy(&output.stderr)
         );
         if json {
-            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let value: Value = serde_json::from_slice(&output.stdout).expect("the json decodes");
             assert_eq!(value["plan"]["diagnostics"][0]["blocking"], true);
         } else {
             assert_eq!(output.stdout, b"");
@@ -429,14 +429,14 @@ fn validate_checks_manifests_without_a_daemon_or_profiles() {
     assert!(
         error["message"]
             .as_str()
-            .unwrap()
+            .expect("the value is a string")
             .contains("failed validation with 2 error(s)")
     );
     let paths: Vec<_> = error["details"]["errors"]
         .as_array()
-        .unwrap()
+        .expect("the value is an array")
         .iter()
-        .map(|error| error["path"].as_str().unwrap())
+        .map(|error| error["path"].as_str().expect("the value is a string"))
         .collect();
     assert_eq!(paths, ["api_version", "spec.services[0].name"]);
 }
@@ -520,7 +520,7 @@ fn names_are_looked_up_by_the_daemon_and_checked() {
 
 #[test]
 fn apply_defaults_to_saving_without_preview_or_operation_polling() {
-    let directory = tempdir().unwrap();
+    let directory = tempdir().expect("the temp dir is created");
     let manifest = write_manifest(&directory);
     let server = start_server(false, 2, |request| match request.path.as_str() {
         "/api/v1/applications?name=notes" => {
@@ -544,7 +544,7 @@ fn apply_defaults_to_saving_without_preview_or_operation_polling() {
             "app",
             "apply",
             "--file",
-            manifest.to_str().unwrap(),
+            manifest.to_str().expect("the path is utf-8"),
             "--yes",
         ],
     );
@@ -556,7 +556,7 @@ fn apply_defaults_to_saving_without_preview_or_operation_polling() {
 
 #[test]
 fn apply_protects_the_inspected_identity_and_revision_with_confirmation_skipped() {
-    let directory = tempdir().unwrap();
+    let directory = tempdir().expect("the temp dir is created");
     let manifest = write_manifest(&directory);
     let server = start_server(false, usize::MAX, move |request| {
         if request.path == "/api/v1/applications?name=notes" {
@@ -590,7 +590,7 @@ fn apply_protects_the_inspected_identity_and_revision_with_confirmation_skipped(
             "apply",
             "--deploy",
             "--file",
-            manifest.to_str().unwrap(),
+            manifest.to_str().expect("the path is utf-8"),
             "--yes",
         ],
     );
@@ -627,7 +627,7 @@ fn rename_uses_the_inspected_revision_and_preserves_identity() {
 #[test]
 fn force_does_not_skip_confirmation_and_explicit_force_is_sent_to_the_endpoint() {
     for yes in [false, true] {
-        let directory = tempdir().unwrap();
+        let directory = tempdir().expect("the temp dir is created");
         let manifest = write_manifest(&directory);
         let mut mutations = 0;
         let server = start_server(false, if yes { 3 } else { 1 }, move |request| {
@@ -652,7 +652,7 @@ fn force_does_not_skip_confirmation_and_explicit_force_is_sent_to_the_endpoint()
             "apply",
             "--deploy",
             "--file",
-            manifest.to_str().unwrap(),
+            manifest.to_str().expect("the path is utf-8"),
             "--force",
             "--no-wait",
         ];
@@ -677,7 +677,7 @@ fn force_does_not_skip_confirmation_and_explicit_force_is_sent_to_the_endpoint()
 
 #[test]
 fn apply_returns_superseded_success_without_following_the_replacement() {
-    let directory = tempdir().unwrap();
+    let directory = tempdir().expect("the temp dir is created");
     let manifest = write_manifest(&directory);
     let server = start_server(false, 3, |request| match request.path.as_str() {
         "/api/v1/applications?name=notes" => Reply::json(page(Vec::new(), None)),
@@ -694,7 +694,7 @@ fn apply_returns_superseded_success_without_following_the_replacement() {
             "apply",
             "--deploy",
             "--file",
-            manifest.to_str().unwrap(),
+            manifest.to_str().expect("the path is utf-8"),
             "--yes",
         ],
     );

@@ -546,7 +546,7 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "phase": phase, "resource": "web", "state": state,
         }))
-        .unwrap()
+        .expect("the json decodes")
     }
 
     /// The header a terminal draws at 11 s, and the final line's time, for
@@ -578,7 +578,7 @@ mod tests {
             "steps": [step],
             "cursor": 0,
         }))
-        .unwrap();
+        .expect("the json decodes");
         let view = View {
             label: "op".into(),
             timeline: Some(timeline),
@@ -586,8 +586,13 @@ mod tests {
             color: false,
         };
         let mut drawn = String::new();
-        view.draw(&mut drawn, 11_000, 0).unwrap();
-        let header = drawn.lines().next().unwrap().to_owned();
+        view.draw(&mut drawn, 11_000, 0)
+            .expect("the output is written");
+        let header = drawn
+            .lines()
+            .next()
+            .expect("the iterator yields an item")
+            .to_owned();
         (header, view.total(11_000))
     }
 

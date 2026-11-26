@@ -628,7 +628,7 @@ fn assert_saves(
         assert_eq!(request.method, method);
         assert_eq!(request.path, path);
         assert_eq!(
-            serde_json::from_slice::<Value>(&request.body).unwrap(),
+            serde_json::from_slice::<Value>(&request.body).expect("the json decodes"),
             expected
         );
         assert!(request.headers.contains_key("idempotency-key"));

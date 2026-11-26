@@ -38,13 +38,13 @@ fn the_probe_config_must_match_the_health_check() {
         ..probe.clone()
     };
     let mut writable = probe.clone();
-    writable.file.as_mut().unwrap().mode = Some(0o777);
+    writable.file.as_mut().expect("the field is set").mode = Some(0o777);
 
     let file = TaskSpecContainerSpecConfigs {
         config_name: Some("piqueld-app-file-0000".into()),
         file: Some(TaskSpecContainerSpecFile1 {
             name: Some("/etc/app.conf".into()),
-            ..probe.file.clone().unwrap()
+            ..probe.file.clone().expect("the probe has a file")
         }),
         ..probe.clone()
     };

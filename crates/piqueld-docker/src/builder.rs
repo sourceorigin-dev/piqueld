@@ -214,12 +214,13 @@ mod tests {
     fn builder(daemon: std::net::SocketAddr) -> RemoteBuilder {
         RemoteBuilder {
             config: PathBuf::from("/var/lib/piqueld/buildx"),
-            endpoint: BuilderEndpoint::try_from(format!("tcp://{daemon}")).unwrap(),
+            endpoint: BuilderEndpoint::try_from(format!("tcp://{daemon}"))
+                .expect("the builder endpoint parses"),
             registry: crate::BuildRegistry::new(
                 BuildRepository::try_from("registry.example.ts.net:5000/piqueld".to_owned())
-                    .unwrap(),
+                    .expect("the builder repository parses"),
             )
-            .unwrap(),
+            .expect("the build registry builds"),
             unavailable: WhenUnavailable::Fail,
             last_check: parking_lot::Mutex::default(),
         }
@@ -228,7 +229,8 @@ mod tests {
     #[test]
     fn builds_run_on_the_builder_for_the_engines_platform_and_push_under_their_tag() {
         assert_eq!(
-            builder("127.0.0.1:1234".parse().unwrap()).options("linux/arm64", "instance-1.0a"),
+            builder("127.0.0.1:1234".parse().expect("the address parses"))
+                .options("linux/arm64", "instance-1.0a"),
             [
                 "--builder=piqueld",
                 "--platform=linux/arm64",
@@ -239,23 +241,37 @@ mod tests {
 
     #[tokio::test]
     async fn a_build_machine_is_reachable_once_its_daemon_accepts_connections() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let reachable = builder(listener.local_addr().unwrap());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the listener binds");
+        let reachable = builder(listener.local_addr().expect("the listener has an address"));
         assert_eq!(reachable.status().last_check, None);
-        reachable.probe().await.unwrap();
-        assert!(reachable.status().last_check.unwrap().reachable);
+        reachable.probe().await.expect("the probe runs");
+        assert!(
+            reachable
+                .status()
+                .last_check
+                .expect("the probe recorded a check")
+                .reachable
+        );
         let closed = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
-            .unwrap()
+            .expect("the listener binds")
             .local_addr()
-            .unwrap();
+            .expect("the listener has an address");
         let unreachable = builder(closed);
-        let error = unreachable.probe().await.unwrap_err();
+        let error = unreachable
+            .probe()
+            .await
+            .expect_err("the unreachable builder fails its probe");
         assert_eq!(
             error.to_string(),
             format!("the build machine's BuildKit daemon at {closed} is unreachable")
         );
-        let check = unreachable.status().last_check.unwrap();
+        let check = unreachable
+            .status()
+            .last_check
+            .expect("the probe recorded a check");
         assert!(!check.reachable);
         assert_eq!(check.message, Some(error.source.to_string()));
     }

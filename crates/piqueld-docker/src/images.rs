@@ -135,7 +135,7 @@ mod tests {
 
     fn digests(image: ImageSummary) -> Vec<String> {
         LocalImage::listed(image, false)
-            .unwrap()
+            .expect("the images are listed")
             .repo_digests
             .iter()
             .map(|digest| digest.as_str().to_owned())

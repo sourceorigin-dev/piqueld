@@ -13,9 +13,12 @@ fn sh(directory: &Path, script: &str) -> String {
         .env("GIT_AUTHOR_DATE", "@946684800 +0000")
         .env("GIT_COMMITTER_DATE", "@946684800 +0000")
         .output()
-        .unwrap();
+        .expect("the command runs");
     assert!(output.status.success(), "{output:?}");
-    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    String::from_utf8(output.stdout)
+        .expect("the bytes are utf-8")
+        .trim()
+        .to_owned()
 }
 
 /// Every file of the worktree and its Git directory, with its hash: a
@@ -57,23 +60,39 @@ fn fixture(root: &Path) -> PathBuf {
 /// clock's, so a later snapshot matches too.
 #[tokio::test]
 async fn snapshots_of_an_unchanged_worktree_are_the_same_commit() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let work = fixture(root.path());
-    let worktree = Worktree::at(&work).await.unwrap();
-    let first = worktree.snapshot("feat/x", None).await.unwrap();
-    let second = worktree.snapshot("feat/x", None).await.unwrap().commit;
+    let worktree = Worktree::at(&work).await.expect("the worktree opens");
+    let first = worktree
+        .snapshot("feat/x", None)
+        .await
+        .expect("the snapshot is taken");
+    let second = worktree
+        .snapshot("feat/x", None)
+        .await
+        .expect("the snapshot is taken")
+        .commit;
     assert_eq!(first.commit, second);
     let show = ["show", "-s", "--format=%at %ct", &first.commit];
     let dates = Git::run(&mut first.staged(&show), "read the dates").await;
-    assert_eq!(dates.unwrap(), "946684800 946684800");
+    assert_eq!(
+        dates.expect("the commit dates are read"),
+        "946684800 946684800"
+    );
 }
 
 #[tokio::test]
 async fn files_not_in_head_that_likely_hold_credentials_are_found() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let work = fixture(root.path());
-    let worktree = Worktree::at(&work).await.unwrap();
-    assert_eq!(worktree.secret_files().await.unwrap(), Vec::<String>::new());
+    let worktree = Worktree::at(&work).await.expect("the worktree opens");
+    assert_eq!(
+        worktree
+            .secret_files()
+            .await
+            .expect("the secret files list"),
+        Vec::<String>::new()
+    );
     sh(
         &work,
         "mkdir -p deploy && echo x > .env.local && git add .env.local \
@@ -83,7 +102,10 @@ async fn files_not_in_head_that_likely_hold_credentials_are_found() {
          && echo y > keys.txt && echo y > credentials.go && echo y > .env.example",
     );
     assert_eq!(
-        worktree.secret_files().await.unwrap(),
+        worktree
+            .secret_files()
+            .await
+            .expect("the secret files list"),
         [
             ".env.local",
             ".git-credentials",
@@ -96,14 +118,30 @@ async fn files_not_in_head_that_likely_hold_credentials_are_found() {
 
 #[tokio::test]
 async fn snapshots_include_untracked_files_and_leave_the_repository_untouched() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let work = fixture(root.path());
     let before = state(&work);
-    let worktree = Worktree::at(&work).await.unwrap();
-    assert_eq!(worktree.branch().await.unwrap().as_deref(), Some("feat/x"));
-    let snapshot = worktree.snapshot("feat/x", None).await.unwrap();
-    let thin = snapshot.bundle(History::Thin).await.unwrap();
-    let complete = snapshot.bundle(History::Full).await.unwrap();
+    let worktree = Worktree::at(&work).await.expect("the worktree opens");
+    assert_eq!(
+        worktree
+            .branch()
+            .await
+            .expect("the branch is read")
+            .as_deref(),
+        Some("feat/x")
+    );
+    let snapshot = worktree
+        .snapshot("feat/x", None)
+        .await
+        .expect("the snapshot is taken");
+    let thin = snapshot
+        .bundle(History::Thin)
+        .await
+        .expect("the bundle is built");
+    let complete = snapshot
+        .bundle(History::Full)
+        .await
+        .expect("the bundle is built");
     assert_eq!(state(&work), before);
     let snapshot_git = format!(
         "git --git-dir={}",
@@ -163,7 +201,7 @@ async fn snapshots_include_untracked_files_and_leave_the_repository_untouched() 
 /// content does not count against the daemon's limits.
 #[tokio::test]
 async fn tracked_ignored_files_are_sent_as_committed() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let work = fixture(root.path());
     sh(
         &work,
@@ -171,14 +209,20 @@ async fn tracked_ignored_files_are_sent_as_committed() {
          git commit -qm magic && printf ':(exclude)x\n' >> .gitignore
          head -c 1048576 /dev/zero > ':(exclude)x' && git rm -q --cached .env && rm .env",
     );
-    let worktree = Worktree::at(&work).await.unwrap();
+    let worktree = Worktree::at(&work).await.expect("the worktree opens");
     let limits = SnapshotLimits {
         max_upload_bytes: 1 << 20,
         max_tree_bytes: 1 << 16,
         max_files: 100,
     };
-    let snapshot = worktree.snapshot("feat/x", Some(&limits)).await.unwrap();
-    snapshot.bundle(History::Thin).await.unwrap();
+    let snapshot = worktree
+        .snapshot("feat/x", Some(&limits))
+        .await
+        .expect("the snapshot is taken");
+    snapshot
+        .bundle(History::Thin)
+        .await
+        .expect("the bundle is built");
     let local = sh(&work, "git hash-object -- ':(exclude)x'");
     let object = snapshot.objects().join(&local[..2]).join(&local[2..]);
     assert!(!object.exists());
@@ -199,18 +243,26 @@ async fn tracked_ignored_files_are_sent_as_committed() {
 /// when asked for.
 #[tokio::test]
 async fn worktrees_without_remotes_need_the_whole_history_asked_for() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     sh(
         root.path(),
         "git init -q -b main work && cd work && echo a > a && git add . && git commit -qm a",
     );
-    let worktree = Worktree::at(&root.path().join("work")).await.unwrap();
-    let snapshot = worktree.snapshot("main", None).await.unwrap();
+    let worktree = Worktree::at(&root.path().join("work"))
+        .await
+        .expect("the worktree opens");
+    let snapshot = worktree
+        .snapshot("main", None)
+        .await
+        .expect("the snapshot is taken");
     let Err(error) = snapshot.bundle(History::Thin).await else {
         panic!("the whole history must be asked for");
     };
     assert!(error.to_string().contains("--full-history"), "{error}");
-    let bundle = snapshot.bundle(History::Full).await.unwrap();
+    let bundle = snapshot
+        .bundle(History::Full)
+        .await
+        .expect("the bundle is built");
     assert_eq!(bundle.snapshot.base, None);
     assert_eq!(bundle.commits, 1);
 }
@@ -219,10 +271,10 @@ async fn worktrees_without_remotes_need_the_whole_history_asked_for() {
 /// written, naming the largest; so is a bundle over its upload limit.
 #[tokio::test]
 async fn snapshots_over_the_daemon_limits_are_refused_early() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let work = fixture(root.path());
     sh(&work, "head -c 4096 /dev/zero > large.bin");
-    let worktree = Worktree::at(&work).await.unwrap();
+    let worktree = Worktree::at(&work).await.expect("the worktree opens");
     let before = state(&work);
     let limits = SnapshotLimits {
         max_upload_bytes: 1 << 20,
@@ -245,8 +297,14 @@ async fn snapshots_over_the_daemon_limits_are_refused_early() {
         max_tree_bytes: 1 << 20,
         ..limits
     };
-    let snapshot = worktree.snapshot("feat/x", Some(&roomy)).await.unwrap();
-    let bundle = snapshot.bundle(History::Thin).await.unwrap();
+    let snapshot = worktree
+        .snapshot("feat/x", Some(&roomy))
+        .await
+        .expect("the snapshot is taken");
+    let bundle = snapshot
+        .bundle(History::Thin)
+        .await
+        .expect("the bundle is built");
     bundle
         .check_size(Some(&roomy))
         .expect("`check_size` should succeed");
@@ -261,14 +319,14 @@ async fn snapshots_over_the_daemon_limits_are_refused_early() {
 /// repositories are refused rather than half-supported.
 #[tokio::test]
 async fn detached_heads_have_no_branch_and_nested_repositories_are_refused() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let work = fixture(root.path());
     sh(
         &work,
         "git switch -q --detach && git init -q nested && cd nested && echo n > n && git add . && git commit -qm n",
     );
-    let worktree = Worktree::at(&work).await.unwrap();
-    assert_eq!(worktree.branch().await.unwrap(), None);
+    let worktree = Worktree::at(&work).await.expect("the worktree opens");
+    assert_eq!(worktree.branch().await.expect("the branch is read"), None);
     let Err(error) = worktree.snapshot("feat/x", None).await else {
         panic!("nested repositories must be refused");
     };
@@ -281,13 +339,13 @@ async fn detached_heads_have_no_branch_and_nested_repositories_are_refused() {
 /// written; a filter attribute without a configured driver is harmless.
 #[tokio::test]
 async fn filtered_files_partial_clones_and_sha256_repositories_are_refused() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("the temp dir is created");
     let work = fixture(root.path());
     sh(
         &work,
         "echo '*.bin filter=cache' > .gitattributes && echo data > big.bin",
     );
-    let worktree = Worktree::at(&work).await.unwrap();
+    let worktree = Worktree::at(&work).await.expect("the worktree opens");
     worktree
         .snapshot("feat/x", None)
         .await
@@ -315,7 +373,9 @@ async fn filtered_files_partial_clones_and_sha256_repositories_are_refused() {
         root.path(),
         "git -C remote config uploadpack.allowFilter true && git clone -q --filter=blob:none \"file://$PWD/remote\" partial",
     );
-    let worktree = Worktree::at(&root.path().join("partial")).await.unwrap();
+    let worktree = Worktree::at(&root.path().join("partial"))
+        .await
+        .expect("the worktree opens");
     let Err(error) = worktree.snapshot("main", None).await else {
         panic!("partial clones must be refused");
     };
@@ -325,7 +385,9 @@ async fn filtered_files_partial_clones_and_sha256_repositories_are_refused() {
         root.path(),
         "git init -q --object-format=sha256 -b main sha256 && cd sha256 && echo a > a && git add . && git commit -qm a",
     );
-    let worktree = Worktree::at(&root.path().join("sha256")).await.unwrap();
+    let worktree = Worktree::at(&root.path().join("sha256"))
+        .await
+        .expect("the worktree opens");
     let Err(error) = worktree.snapshot("main", None).await else {
         panic!("SHA-256 repositories must be refused");
     };

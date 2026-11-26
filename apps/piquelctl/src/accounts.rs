@@ -1115,8 +1115,20 @@ mod tests {
             invitations: Vec::new(),
             operator_sessions: Vec::new(),
         };
-        assert_eq!(find(&directory, "user-1").unwrap().user.username, "Bob");
-        assert_eq!(find(&directory, "bob").unwrap().user.id, "user-1");
+        assert_eq!(
+            find(&directory, "user-1")
+                .expect("the account is found")
+                .user
+                .username,
+            "Bob"
+        );
+        assert_eq!(
+            find(&directory, "bob")
+                .expect("the account is found")
+                .user
+                .id,
+            "user-1"
+        );
     }
 
     /// `--app` alone selects nothing, so it is refused instead of silently
@@ -1146,7 +1158,7 @@ mod tests {
             "--user",
             "bob",
         ];
-        let cli = crate::cli::Cli::try_parse_from(arguments).unwrap();
+        let cli = crate::cli::Cli::try_parse_from(arguments).expect("the arguments parse");
         let crate::cli::Command::Audit(audit) = cli.command else {
             panic!("audit command");
         };

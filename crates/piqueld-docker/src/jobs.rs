@@ -577,26 +577,31 @@ mod tests {
             ..Default::default()
         };
         let spec = BollardDocker::job_spec(service);
-        let mode = spec.mode.unwrap();
+        let mode = spec.mode.expect("the job has a mode");
         assert!(mode.replicated.is_none());
-        let job = mode.replicated_job.unwrap();
+        let job = mode.replicated_job.expect("the job is replicated");
         assert_eq!(
             (job.max_concurrent, job.total_completions),
             (Some(1), Some(1))
         );
         assert!(spec.update_config.is_none());
-        let task = spec.task_template.unwrap();
+        let task = spec.task_template.expect("the job has a task template");
         assert_eq!(
-            task.restart_policy.unwrap().condition,
+            task.restart_policy
+                .expect("the task has a restart policy")
+                .condition,
             Some(TaskSpecRestartPolicyConditionEnum::NONE)
         );
-        let container = task.container_spec.unwrap();
+        let container = task.container_spec.expect("the task has a container spec");
         assert_eq!(
-            container.health_check.unwrap().test,
+            container
+                .health_check
+                .expect("the container has a health check")
+                .test,
             Some(vec!["NONE".into()])
         );
         assert_eq!(container.labels, Some(labels));
-        let network = &task.networks.unwrap()[0];
+        let network = &task.networks.expect("the task has networks")[0];
         assert_eq!(network.target.as_deref(), Some("app-notes"));
         assert_eq!(network.aliases, None);
     }

@@ -46,7 +46,7 @@ fn notification_urls_over_8_kib_are_refused() {
         assert!(
             support::json_error(&output)["message"]
                 .as_str()
-                .unwrap()
+                .expect("the value is a string")
                 .contains("at most 8192 bytes")
         );
         let _ = server.finish();
@@ -96,7 +96,7 @@ fn notification_deliveries_page_and_retry_refusals() {
     );
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
+        String::from_utf8(output.stdout).expect("the bytes are utf-8"),
         "delivery-02  ops  deployment_failures  notes / production  failed  1 attempt  updated 1970-01-01 00:00:02Z  HTTP 404\n\
          delivery-01  ops  deployment_failures  notes / production  pending  2 attempts  next attempt 1970-01-01 00:00:03Z\n\
          Next cursor: v1:delivery-01\n"
@@ -104,7 +104,7 @@ fn notification_deliveries_page_and_retry_refusals() {
     let output = run_human(&server, &["notification", "retry", "delivery-02"]);
     server.finish();
     assert_eq!(output.status.code(), Some(3));
-    let stderr = String::from_utf8(output.stderr).unwrap();
+    let stderr = String::from_utf8(output.stderr).expect("the bytes are utf-8");
     assert!(
         stderr.contains("the alert's incident has closed"),
         "{stderr}"

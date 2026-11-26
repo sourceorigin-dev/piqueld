@@ -306,21 +306,32 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn observation_budget_includes_waiting_for_a_permit() {
         use std::error::Error;
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let socket = directory.path().join("docker.sock");
-        let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let _listener = tokio::net::UnixListener::bind(&socket).expect("the listener binds");
         let docker = LimitedDocker::new(
-            Arc::new(super::super::BollardDocker::connect(&socket).unwrap()),
+            Arc::new(
+                super::super::BollardDocker::connect(&socket).expect("the docker client connects"),
+            ),
             NonZeroU8::MIN,
         );
-        let permits = docker.observations.acquire_many(8).await.unwrap();
+        let permits = docker
+            .observations
+            .acquire_many(8)
+            .await
+            .expect("the permits are acquired");
         let started = tokio::time::Instant::now();
         let error = docker
-            .observe(&EnvironmentId::parse("app-queued").unwrap())
+            .observe(&EnvironmentId::parse("app-queued").expect("the environment id parses"))
             .await
-            .unwrap_err();
+            .expect_err("the queued observation times out");
         assert_eq!(started.elapsed(), DockerTimeout::Request.duration());
-        assert!(error.source().unwrap().is::<tokio::time::error::Elapsed>());
+        assert!(
+            error
+                .source()
+                .expect("the error has a source")
+                .is::<tokio::time::error::Elapsed>()
+        );
         drop(permits);
         assert_eq!(docker.observations.available_permits(), 8);
     }

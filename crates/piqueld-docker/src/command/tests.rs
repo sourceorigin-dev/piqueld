@@ -4,7 +4,7 @@ use super::*;
 /// Failures report only the end of each stream, read to completion.
 #[tokio::test]
 async fn drains_both_streams_and_preserves_non_utf8_failures() {
-    let error = LoggedCommand::run_recorded(Command::new("sh").args(["-c", "head -c 131072 /dev/zero; head -c 131072 /dev/zero >&2; printf '\\377stdout tail'; printf '\\377stderr tail' >&2; exit 7"]), "fixture", None).await.unwrap_err().to_string();
+    let error = LoggedCommand::run_recorded(Command::new("sh").args(["-c", "head -c 131072 /dev/zero; head -c 131072 /dev/zero >&2; printf '\\377stdout tail'; printf '\\377stderr tail' >&2; exit 7"]), "fixture", None).await.expect_err("the command fails").to_string();
     assert!(error.contains("exit status: 7"), "{error}");
     assert!(error.contains("�stdout tail"));
     assert!(error.contains("�stderr tail"));
@@ -14,7 +14,7 @@ async fn drains_both_streams_and_preserves_non_utf8_failures() {
 #[tokio::test]
 async fn cancellation_kills_descendants_in_the_command_group() {
     for ending in ["wait", "exit 0"] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let pidfile = directory.path().join("descendant.pid");
         rustix::fs::mknodat(
             rustix::fs::CWD,
@@ -23,12 +23,17 @@ async fn cancellation_kills_descendants_in_the_command_group() {
             rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
             0,
         )
-        .unwrap();
+        .expect("the fifo is created");
         let path = pidfile.clone();
         let script = format!(r#"sh -c 'echo $$ > "$1"; exec sleep 60' child "$1" & {ending}"#);
         let command = tokio::spawn(async move {
             LoggedCommand::run_recorded(
-                Command::new("sh").args(["-c", &script, "parent", path.to_str().unwrap()]),
+                Command::new("sh").args([
+                    "-c",
+                    &script,
+                    "parent",
+                    path.to_str().expect("the path is utf-8"),
+                ]),
                 "cancellation fixture",
                 None,
             )
@@ -39,12 +44,19 @@ async fn cancellation_kills_descendants_in_the_command_group() {
             tokio::fs::read_to_string(&pidfile),
         )
         .await
-        .unwrap()
-        .unwrap();
-        let pid = rustix::process::Pid::from_raw(pid.trim().parse().unwrap()).unwrap();
-        let pidfd = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()).unwrap();
+        .expect("the pid is written in time")
+        .expect("the pid file is read");
+        let pid = rustix::process::Pid::from_raw(pid.trim().parse().expect("the pid parses"))
+            .expect("the pid is not zero");
+        let pidfd = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty())
+            .expect("the process is running");
         command.abort();
-        assert!(command.await.unwrap_err().is_cancelled());
+        assert!(
+            command
+                .await
+                .expect_err("the aborted task is cancelled")
+                .is_cancelled()
+        );
         let exited = tokio::task::spawn_blocking(move || {
             let mut fds = [rustix::event::PollFd::new(
                 &pidfd,
@@ -57,7 +69,10 @@ async fn cancellation_kills_descendants_in_the_command_group() {
             rustix::event::poll(&mut fds, Some(&limit))
         });
         assert_eq!(
-            exited.await.unwrap().unwrap(),
+            exited
+                .await
+                .expect("the poll task finishes")
+                .expect("the poll succeeds"),
             1,
             "cancelled command descendant stopped"
         );
@@ -91,7 +106,7 @@ async fn output_is_appended_in_batches() {
         Some(&log),
     )
     .await
-    .unwrap();
+    .expect("the command runs");
     let appends = log.0.into_inner();
     assert_eq!(appends.iter().map(Vec::len).sum::<usize>(), 1024 * 1024);
     assert!(appends.len() <= 17, "{} appends", appends.len());
@@ -105,15 +120,15 @@ async fn quiet_output_is_appended_after_the_delay() {
     let (mut writer, reader) = tokio::io::duplex(64);
     tokio::io::AsyncWriteExt::write_all(&mut writer, "ok€".as_bytes())
         .await
-        .unwrap();
+        .expect("the response is written");
     let read =
         LoggedCommand::tail_recorded(reader, Some(&log), piqueld_core::api::LogStream::Stdout);
     tokio::pin!(read);
     tokio::time::timeout(Batch::DELAY * 2, &mut read)
         .await
-        .unwrap_err();
+        .expect_err("the command times out");
     assert_eq!(*log.0.lock(), ["ok€".as_bytes()]);
     drop(writer);
-    read.await.unwrap();
+    read.await.expect("the reader task finishes");
     assert_eq!(log.0.lock().len(), 1);
 }
