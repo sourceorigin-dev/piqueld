@@ -46,7 +46,8 @@ pub struct LogFollower {
 
 impl ApplicationService {
     /// Follows environment `id`'s output written after `after`, in Unix
-    /// nanoseconds, or from now; at most a day back. `service` and `stream`
+    /// nanoseconds, or from now; at most a day back, and never later than now,
+    /// so a client clock running ahead skips nothing. `service` and `stream`
     /// narrow it as they do a snapshot. Starts are watched before the
     /// containers are listed, so none starts unseen.
     /// # Errors
@@ -61,7 +62,7 @@ impl ApplicationService {
         Self::check_log_service(service)?;
         self.store.get(id).await?;
         let now = now_ns();
-        let after = after.unwrap_or(now).max(now - MAX_REPLAY_NS);
+        let after = after.unwrap_or(now).clamp(now - MAX_REPLAY_NS, now);
         let mut follower = LogFollower {
             starts: self
                 .runtime

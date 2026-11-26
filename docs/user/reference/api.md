@@ -709,7 +709,8 @@ have no available history. No output is stored by piqueld.
 through server-sent events, with the same `service` and `stream` filters. Each
 line is a `log` message whose data is a log record and whose ID is the newest
 timestamp sent so far. It starts with output written after `after`, an RFC 3339
-timestamp at most a day back, or from when it opens; a `Last-Event-ID` header
+timestamp at most a day back, or from when it opens without one or with a
+later one; a `Last-Event-ID` header
 takes the place of `after`, so a reconnecting client resumes after the newest
 line it received. Each container's lines arrive in order, but lines of several
 containers interleave as they arrive. A resume never repeats a line, but skips
