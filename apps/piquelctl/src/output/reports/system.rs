@@ -204,6 +204,28 @@ report!(UpdateStatus, self, out, {
     if !self.checks {
         out.label("Checks", "off: updates.check in the daemon configuration")?;
     }
+    if let Some(previous) = &self.previous {
+        out.label("Previous build", previous)?;
+    }
+    if let Some(run) = &self.run {
+        let version = run
+            .version
+            .as_deref()
+            .unwrap_or("the channel's newest build");
+        let when = run.finished_at_ms.unwrap_or(run.started_at_ms);
+        out.label(
+            "Last update",
+            format_args!(
+                "{} to {version}: {} at {}",
+                run.action,
+                run.state,
+                Timestamp(when)
+            ),
+        )?;
+        if let Some(message) = &run.message {
+            out.label("Update message", message)?;
+        }
+    }
     Ok(())
 });
 

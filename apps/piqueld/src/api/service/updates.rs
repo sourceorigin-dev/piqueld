@@ -5,10 +5,12 @@
 use super::{ApplicationError, ApplicationService, Author};
 use anyhow::Context;
 use piqueld_config::UpdatesConfig;
-use piqueld_core::api::{InstallMethod, UpdateStatus};
+use piqueld_core::api::{
+    InstallMethod, UpdateAction, UpdateRequest, UpdateRun, UpdateRunState, UpdateStatus,
+};
 use piqueld_core::version::{Channel, Feed, Version};
 use piqueld_store::now_ms;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -20,6 +22,14 @@ const CHECK_INTERVAL: Duration = Duration::from_hours(6);
 /// the network is up; it doubles with each failure in a row, up to
 /// [`CHECK_INTERVAL`].
 const RETRY_INTERVAL: Duration = Duration::from_mins(10);
+/// Time after which a run the updater hasn't finished no longer blocks
+/// another, such as one whose request it never took.
+const RUN_TIMEOUT: Duration = Duration::from_mins(30);
+/// The updater's path unit, which takes the daemon's requests, as the
+/// install script and the updater install it.
+const UPDATE_PATH_UNIT: &str = "/etc/systemd/system/piqueld-update.path";
+/// The runtime directory whose request the path unit watches.
+const UPDATE_RUNTIME_DIR: &str = "/run/piqueld";
 /// Time a check may take, redirects included.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -36,6 +46,18 @@ pub(super) struct Updates {
     /// Counts channel changes, so a check that started before one doesn't
     /// replace the check of the new channel.
     changes: AtomicU64,
+    /// Where the updater takes requests and records its runs; absent without
+    /// a configuration, as in tests.
+    directories: Option<Directories>,
+}
+
+/// The daemon's directories the updater shares (see `crate::updater`).
+#[derive(Clone)]
+struct Directories {
+    /// The data directory, holding the updater's latest run.
+    data: PathBuf,
+    /// The runtime directory, where the daemon writes its requests.
+    runtime: PathBuf,
 }
 
 /// What the last check of a channel found.
@@ -67,18 +89,58 @@ impl Updates {
             install: Self::install_method(),
             last: Mutex::default(),
             changes: AtomicU64::new(0),
+            directories: None,
         })
     }
 
-    /// Checks as `config` says, with the same client.
-    pub(super) fn configured(&self, config: UpdatesConfig) -> Self {
+    /// Checks as `config` says, with the same client, and shares its
+    /// directories with the updater.
+    pub(super) fn configured(&self, config: &piqueld_config::DaemonConfig) -> Self {
         Self {
-            config,
+            config: config.updates.clone(),
             client: self.client.clone(),
             install: self.install,
             last: Mutex::default(),
             changes: AtomicU64::new(0),
+            directories: Some(Directories {
+                data: config.server.data_dir.clone(),
+                runtime: config.server.runtime_dir.clone(),
+            }),
         }
+    }
+
+    /// The updater's latest run, from [`crate::updater::RUN_FILE`]. One the
+    /// updater never finished, such as on a reboot, has failed after
+    /// [`RUN_TIMEOUT`].
+    fn run(&self) -> Option<UpdateRun> {
+        let path = self
+            .directories
+            .as_ref()?
+            .data
+            .join(crate::updater::RUN_FILE);
+        let bytes = std::fs::read(&path).ok()?;
+        let mut run: UpdateRun = serde_json::from_slice(&bytes)
+            .inspect_err(
+                |error| tracing::warn!(%error, path = %path.display(), "unreadable update run"),
+            )
+            .ok()?;
+        let timeout = i64::try_from(RUN_TIMEOUT.as_millis()).unwrap_or(i64::MAX);
+        if run.in_progress() && now_ms() - run.started_at_ms > timeout {
+            run.state = UpdateRunState::Failed.into();
+            run.message = Some(
+                "the updater didn't finish within 30 minutes; see: journalctl -u piqueld-update"
+                    .into(),
+            );
+        }
+        Some(run)
+    }
+
+    /// The build `piqueld update rollback` returns to, on a host the install
+    /// script set up.
+    fn previous(&self) -> Option<String> {
+        (self.install == InstallMethod::Script)
+            .then(|| crate::updater::Layout::script().linked("previous"))
+            .flatten()
     }
 
     /// How this binary was installed, from where it runs: the Nix store, a
@@ -173,6 +235,8 @@ impl ApplicationService {
             latest: last.latest,
             checked_at_ms: last.checked_at_ms,
             error: last.error,
+            previous: self.updates.previous(),
+            run: self.updates.run(),
         })
     }
 
@@ -240,6 +304,125 @@ impl ApplicationService {
         self.updates.changes.fetch_add(1, Ordering::SeqCst);
         self.store.set_update_channel(author, channel).await?;
         self.check_for_updates().await
+    }
+
+    /// Asks the updater, which runs as root, to install the channel's newer
+    /// build, or roll back to the previous one, then restart piqueld; the
+    /// status's `run` follows it. The path unit watches only
+    /// [`UPDATE_RUNTIME_DIR`]'s request, and the updater refuses an older
+    /// number, which a later commit can have, as a release after a nightly.
+    /// # Errors
+    /// Returns [`ApplicationError::UpdateUnavailable`] when this host can't
+    /// update from piqueld, or has no build to go to,
+    /// [`ApplicationError::UpdateRunning`] while a run hasn't finished, and
+    /// storage or file errors.
+    pub async fn request_update(
+        &self,
+        action: UpdateAction,
+    ) -> Result<UpdateStatus, ApplicationError> {
+        let status = self.update_status().await?;
+        let unavailable = |why: String| Err(ApplicationError::UpdateUnavailable(why));
+        let Some(directories) = &self.updates.directories else {
+            return unavailable("this daemon runs without a configuration".into());
+        };
+        if self.updates.install != InstallMethod::Script {
+            let how = status
+                .how_to_update()
+                .unwrap_or_else(|| "Update it the way you installed it.".into());
+            return unavailable(format!(
+                "piqueld updates itself only where the install script set it up; {how}"
+            ));
+        }
+        if !Path::new(UPDATE_PATH_UNIT).exists() {
+            return unavailable(
+                "this host lacks the units that apply updates: run the install script again, or update on the host with sudo piqueld update".into(),
+            );
+        }
+        if directories.runtime != Path::new(UPDATE_RUNTIME_DIR) {
+            return unavailable(format!(
+                "the update units take requests in {UPDATE_RUNTIME_DIR}, but server.runtime_dir is {}; update on the host with sudo piqueld update",
+                directories.runtime.display()
+            ));
+        }
+        if status.run.as_ref().is_some_and(UpdateRun::in_progress) {
+            return Err(ApplicationError::UpdateRunning);
+        }
+        let version = match action {
+            UpdateAction::Update => match status.latest.as_ref().filter(|_| status.available) {
+                Some(latest)
+                    if !Version::numbered(&latest.version.number)
+                        .is_newer_than(&Version::numbered(&status.current.number)) =>
+                {
+                    let hint = if latest.version.number == status.current.number {
+                        String::new()
+                    } else {
+                        format!(
+                            ": install it on the host with sudo piqueld update --version {}",
+                            latest.version.number
+                        )
+                    };
+                    return unavailable(format!(
+                        "piqueld {} isn't a newer version than {}{hint}",
+                        latest.version.number, status.current.number
+                    ));
+                }
+                Some(latest) => latest.version.number.clone(),
+                None => {
+                    return unavailable(format!(
+                        "the {} channel has no newer build than {}",
+                        status.channel, status.current.number
+                    ));
+                }
+            },
+            UpdateAction::Rollback => match &status.previous {
+                Some(previous) => previous.clone(),
+                None => return unavailable("there is no previous build to roll back to".into()),
+            },
+        };
+        let mut run = UpdateRun {
+            action: action.into(),
+            version: Some(version.clone()),
+            state: UpdateRunState::Requested.into(),
+            message: None,
+            started_at_ms: now_ms(),
+            finished_at_ms: None,
+        };
+        let request = match action {
+            UpdateAction::Update => UpdateRequest::Update { version },
+            UpdateAction::Rollback => UpdateRequest::Rollback,
+        };
+        let run_file = directories.data.join(crate::updater::RUN_FILE);
+        Self::write_atomically(&run_file, &run)?;
+        let requested = Self::write_atomically(
+            &directories.runtime.join(crate::updater::REQUEST_FILE),
+            &request,
+        );
+        if let Err(error) = requested {
+            run.state = UpdateRunState::Failed.into();
+            run.finished_at_ms = Some(now_ms());
+            run.message = Some("the daemon couldn't ask the updater; see its log".into());
+            Self::write_atomically(&run_file, &run)?;
+            return Err(error);
+        }
+        self.update_status().await
+    }
+
+    /// Replaces `path` with `value` as JSON, so a reader never sees half of
+    /// it.
+    fn write_atomically(
+        path: &Path,
+        value: &impl serde::Serialize,
+    ) -> Result<(), ApplicationError> {
+        let staged = path.with_extension("new");
+        serde_json::to_vec(value)
+            .map_err(anyhow::Error::from)
+            .and_then(|bytes| {
+                std::fs::write(&staged, bytes)?;
+                std::fs::rename(&staged, path)?;
+                Ok(())
+            })
+            .with_context(|| format!("write {}", path.display()))
+            .map_err(ApplicationError::UpdateFile)
     }
 
     /// Checks the channel at once, then every [`CHECK_INTERVAL`], or sooner
@@ -350,5 +533,37 @@ mod tests {
             .await
             .expect("the update is recorded");
         assert!(!again, "both checks recorded the update once");
+    }
+
+    /// Only a host the install script set up updates from piqueld; another
+    /// is told how to update instead, and no request is written.
+    #[tokio::test]
+    async fn hosts_the_script_didnt_set_up_are_told_how_to_update() {
+        let temp = tempfile::tempdir().expect("a temporary directory");
+        let store = Arc::new(
+            Store::open_unsynced(temp.path().join("db"))
+                .await
+                .expect("the store opens"),
+        );
+        let mut config = piqueld_config::DaemonConfig::default();
+        config.server.runtime_dir = temp.path().join("run");
+        std::fs::create_dir(&config.server.runtime_dir).expect("the runtime directory is created");
+        let service = ApplicationService::unconnected(store, temp.path())
+            .await
+            .with_configuration(&config);
+
+        let refused = service.request_update(UpdateAction::Update).await;
+
+        assert!(
+            matches!(&refused, Err(ApplicationError::UpdateUnavailable(why)) if why.contains("install script")),
+            "{refused:?}"
+        );
+        assert!(
+            !config
+                .server
+                .runtime_dir
+                .join(crate::updater::REQUEST_FILE)
+                .exists()
+        );
     }
 }

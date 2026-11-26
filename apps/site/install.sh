@@ -147,8 +147,8 @@ plan() {
         say "  - Write the configuration to $config, which serves"
         say "    the dashboard at http://localhost:7845 of this host."
     fi
-    say "  - Install the piqueld service as $unit,"
-    say "    then enable and (re)start it."
+    say "  - Install the piqueld service as $unit, and the units that"
+    say "    apply the updates you ask for, then enable and (re)start them."
     [ -z "$sudo" ] || say "Each step that needs root runs with sudo, and prints its command first."
     say
     if ! confirm "Continue?"; then
@@ -269,7 +269,8 @@ main() {
     # Readable by the service's user whatever root's umask.
     as_root install -d -m 0755 "$builds" "$builds/$version"
     as_root install -m 0755 "$files/piqueld" "$files/piquelctl" "$builds/$version/"
-    as_root install -m 0644 "$files/piqueld.service" "$files/LICENSE" "$builds/$version/"
+    as_root install -m 0644 "$files/piqueld.service" "$files/piqueld-update.path" \
+        "$files/piqueld-update.service" "$files/LICENSE" "$builds/$version/"
     # The build this replaces, which `piqueld update rollback` returns to:
     # the current one, or the binaries older versions of this script copied
     # to $prefix, kept as a build of their version.
@@ -299,8 +300,12 @@ main() {
         as_root install -D -m 0640 -g piqueld "$work/config.toml" "$config"
     fi
     as_root install -m 0644 "$builds/current/piqueld.service" "$unit"
+    # Runs the updates the dashboard and `piquelctl update apply` ask for.
+    as_root install -m 0644 "$builds/current/piqueld-update.path" \
+        "$builds/current/piqueld-update.service" "${unit%/*}/"
     as_root systemctl daemon-reload
     as_root systemctl enable --quiet piqueld
+    as_root systemctl enable --quiet --now piqueld-update.path
     as_root systemctl restart piqueld
     [ "$join" = 0 ] || as_root usermod --append --groups piqueld "$user"
     wait_for_daemon

@@ -13,6 +13,7 @@ use piqueld::tailnet::TailnetLookup;
 use piqueld::telemetry::{Sockets, Telemetry};
 use piqueld::updater::{Layout, Updater};
 use piqueld_config::{ConfigError, DaemonConfig};
+use piqueld_core::api::UpdateAction;
 use piqueld_core::wait;
 use std::{net::SocketAddr, os::unix::fs::OpenOptionsExt, path::PathBuf, sync::Arc};
 use tokio::net::{TcpListener, UnixListener};
@@ -116,7 +117,7 @@ enum Command {
     Update {
         /// What to do instead of installing a build.
         #[command(subcommand)]
-        action: Option<UpdateAction>,
+        action: Option<UpdateCommand>,
         /// Install this published version, such as 0.3.0 or
         /// 0.4.0-nightly.20261125, instead.
         #[arg(long, value_name = "VERSION")]
@@ -126,12 +127,16 @@ enum Command {
         /// access.
         #[arg(long, value_name = "DIR")]
         from: Option<PathBuf>,
+        /// Run the update or rollback the daemon asked for in this request
+        /// file, as the `piqueld-update` service does.
+        #[arg(long, value_name = "PATH", hide = true, conflicts_with_all = ["version", "from"])]
+        request: Option<PathBuf>,
     },
 }
 
 /// What `piqueld update` does other than install a build.
 #[derive(Debug, clap::Subcommand)]
-enum UpdateAction {
+enum UpdateCommand {
     /// Go back to the build the last update replaced, and restart the
     /// service on it.
     ///
@@ -141,14 +146,17 @@ enum UpdateAction {
 }
 
 impl Args {
-    /// Runs `piqueld update`, reporting each step on stdout: `action`, or
-    /// else installs `version`, read from `from` when given, or the newest
-    /// build of the daemon's channel.
+    /// Runs `piqueld update`, reporting each step on stdout: the update or
+    /// rollback `request` asks for, `action`, or else installs `version`,
+    /// read from `from` when given, or the newest build of the daemon's
+    /// channel. It takes the request first, so a failure after doesn't leave
+    /// it for the path unit to start the updater again.
     async fn update(
         &self,
-        action: Option<&UpdateAction>,
+        action: Option<&UpdateCommand>,
         version: Option<&str>,
         from: Option<&std::path::Path>,
+        request: Option<&std::path::Path>,
     ) -> Result<()> {
         tracing_subscriber::fmt()
             .without_time()
@@ -161,13 +169,14 @@ impl Args {
             .config
             .clone()
             .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH));
+        let request = request.map(Updater::take_request).transpose()?;
         let updater = Updater::new(Layout::script(), config)?;
-        match action {
-            Some(UpdateAction::Rollback) => updater.rollback().await,
-            None => {
-                let build = updater.target(version, from).await?;
-                updater.update(&build).await
+        match (action, request) {
+            (_, Some(request)) => updater.requested(request).await,
+            (Some(UpdateCommand::Rollback), None) => {
+                updater.run(UpdateAction::Rollback, None, None).await
             }
+            (None, None) => updater.run(UpdateAction::Update, version, from).await,
         }
     }
 
@@ -261,9 +270,15 @@ async fn main() -> Result<()> {
             action,
             version,
             from,
+            request,
         }) => {
-            args.update(action.as_ref(), version.as_deref(), from.as_deref())
-                .await
+            args.update(
+                action.as_ref(),
+                version.as_deref(),
+                from.as_deref(),
+                request.as_deref(),
+            )
+            .await
         }
         None => {
             let config = load_config(args.config.as_deref())?;

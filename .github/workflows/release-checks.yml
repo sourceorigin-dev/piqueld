@@ -140,9 +140,9 @@ jobs:
       - run: sudo piquelctl status
       # sg runs it with the piqueld group the script added.
       - run: sg piqueld -c 'piquelctl setup-link'
-      # `piqueld update` from a directory, as offline: to a second build (the
-      # same binaries under another version), back with `rollback`, then to a
-      # build that passes check-config but doesn't start, which it undoes.
+      # `piqueld update` from a directory, as offline: to a second build, back
+      # with a rollback piquelctl asks the daemon for, which the update units
+      # run, then to a build that passes check-config but doesn't start.
       - name: Update, roll back, and recover from a build that doesn't start
         run: |
           archive=$(basename target/dist/piqueld-*-x86_64-linux.tar.gz)
@@ -158,7 +158,7 @@ jobs:
           sudo piqueld update --version "$version-next" --from "$PWD/next"
           test "$(current)" = "$version-next"
           sudo piquelctl status
-          sudo piqueld update rollback
+          sudo piquelctl update rollback
           test "$(current)" = "$version"
           sudo piquelctl status
           mkdir -p broken/files

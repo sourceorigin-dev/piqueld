@@ -80,6 +80,15 @@ pub enum ApplicationError {
     /// The daemon configuration sets the release channel.
     #[error("updates.channel in the daemon configuration sets the release channel")]
     UpdateChannelConfigured,
+    /// This host can't update from piqueld, or has no build to go to.
+    #[error("{0}")]
+    UpdateUnavailable(String),
+    /// An update or rollback hasn't finished.
+    #[error("an update or rollback is running")]
+    UpdateRunning,
+    /// The updater's request or run file couldn't be written.
+    #[error("couldn't ask the updater")]
+    UpdateFile(#[source] anyhow::Error),
 }
 
 pub use piqueld_store::{
@@ -340,7 +349,7 @@ impl ApplicationService {
             view: config.view(),
             checks: checks::CheckSettings::from(config),
         }));
-        self.updates = Arc::new(self.updates.configured(config.updates.clone()));
+        self.updates = Arc::new(self.updates.configured(config));
         self
     }
 

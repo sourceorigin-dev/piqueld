@@ -49,6 +49,87 @@ pub struct UpdateStatus {
     /// Why the last check failed; absent when it succeeded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The build `piqueld update rollback` returns to, on a host the install
+    /// script set up; absent elsewhere, and before an update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous: Option<String>,
+    /// The latest update or rollback on this host, as the updater records
+    /// it; absent before one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<UpdateRun>,
+}
+
+string_enum! {
+    #[serde]
+    /// What a run of the updater does.
+    pub enum UpdateAction {
+        /// Installs a newer build, then restarts piqueld on it.
+        Update => "update",
+        /// Returns to the build the last update replaced.
+        Rollback => "rollback",
+    }
+}
+compared_as_string!(UpdateAction);
+
+string_enum! {
+    #[serde]
+    /// Where a run of the updater is.
+    pub enum UpdateRunState {
+        /// The daemon asked for it, and the updater hasn't started yet.
+        Requested => "requested",
+        /// The updater is installing the build or restarting piqueld.
+        Running => "running",
+        /// piqueld runs on the build.
+        Succeeded => "succeeded",
+        /// The run failed; its message says why, and what runs now.
+        Failed => "failed",
+    }
+}
+compared_as_string!(UpdateRunState);
+
+/// One run of the updater: an update or a rollback.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct UpdateRun {
+    /// The [`UpdateAction`].
+    pub action: String,
+    /// The build it installs, or returns to; absent while the updater
+    /// resolves it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// The [`UpdateRunState`].
+    pub state: String,
+    /// What happened, such as why it failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// When it was requested or started, in Unix milliseconds.
+    pub started_at_ms: i64,
+    /// When it finished, in Unix milliseconds; absent while it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at_ms: Option<i64>,
+}
+
+impl UpdateRun {
+    /// Whether it hasn't finished: requested or running.
+    #[must_use]
+    pub fn in_progress(&self) -> bool {
+        self.state == UpdateRunState::Requested || self.state == UpdateRunState::Running
+    }
+}
+
+/// What the daemon asks the updater to do, through the request file the
+/// `piqueld-update.path` unit watches. An update names the version, which
+/// the updater downloads from its release itself, so the daemon chooses
+/// neither the archive nor its checksum.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum UpdateRequest {
+    /// Install this published version, newer than the running one.
+    Update {
+        /// Its version.
+        version: String,
+    },
+    /// Return to the build the last update replaced.
+    Rollback,
 }
 
 impl UpdateStatus {
@@ -66,7 +147,7 @@ impl UpdateStatus {
                 self.channel
             ),
             InstallMethod::Script => {
-                "Install it on the host, which restarts piqueld: sudo piqueld update".to_owned()
+                "Install it with piquelctl update apply or the dashboard, or on the host: sudo piqueld update".to_owned()
             }
             InstallMethod::Other => {
                 format!("Install piqueld {number} the way you installed this build.")

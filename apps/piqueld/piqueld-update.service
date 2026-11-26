@@ -1,0 +1,11 @@
+# Runs the update or rollback the daemon asked for, as root, when
+# piqueld-update.path sees its request: `piqueld update --request` installs
+# the build, restarts piqueld on it, and records its progress in the data
+# directory, which the daemon reports. See docs/user/operations/updates.md.
+
+[Unit]
+Description=Apply a piqueld update requested through its API
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/piqueld update --request /run/piqueld/update-request

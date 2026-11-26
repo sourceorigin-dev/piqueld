@@ -5,8 +5,9 @@ never updates itself: you choose when to install the update.
 
 ## Before you start
 
-Reading the update status needs `system:read`. Checking now and choosing a
-channel need `system:operate`; see [permissions](../accounts/permissions.md).
+Reading the update status needs `system:read`. Checking now, choosing a
+channel, and installing an update or going back need `system:operate`; see
+[permissions](../accounts/permissions.md).
 
 ## Choose a channel
 
@@ -62,7 +63,7 @@ piquelctl update check
 piqueld 0.2.0 follows the stable channel
 Update available: 0.3.0
 Release notes: https://github.com/sourceorigin-dev/piqueld/releases/tag/v0.3.0
-To update: Install it on the host, which restarts piqueld: sudo piqueld update
+To update: Install it with piquelctl update apply or the dashboard, or on the host: sudo piqueld update
 Last checked: 2026-11-25 09:12:44Z
 ```
 
@@ -74,17 +75,24 @@ Read the release notes first: before 1.0, a minor version such as 0.3.0 may
 need changes to your configuration. Then install it the way you installed
 piqueld, as the panel and `piquelctl` say:
 
-- With the install script, run on the host:
+- With the install script, select **Update** next to the newest build in
+  the **Updates** panel, or run:
 
   ```console
-  sudo piqueld update
+  piquelctl update apply
   ```
 
-  It downloads the newest build of your channel, checks it against its
-  checksum and checks your configuration with it. Then it restarts piqueld on
-  it, and waits until the daemon answers. If the daemon doesn't start, it
-  goes back to the version you ran, unless the new one already updated the
-  database; see [troubleshooting](#troubleshooting). Add `--version` to
+  The host's updater downloads the newest build of your channel, checks it
+  against its checksum and checks your configuration with it. Then it
+  restarts piqueld on it, and waits until the daemon answers. If the daemon
+  doesn't start, it goes back to the version you ran, unless the new one
+  already updated the database; see [troubleshooting](#troubleshooting). The
+  panel's **Last update** row, and `piquelctl`, which waits for it, say how
+  it went.
+
+  The updater downloads the build from its GitHub release. On the host,
+  `sudo piqueld update` does the same, and also reads the archive a mirror
+  at `updates.feed_url` names. Add `--version` to
   install another published version, such as `--version 0.3.0`, and `--from`
   to install from a directory holding a release's archive and `SHA256SUMS`,
   such as on a host without internet access.
@@ -101,12 +109,15 @@ The daemon backs up its data before its first start on a new version; see
 
 ## Go back to the previous version
 
-With the install script, `piqueld update` keeps the version it replaced. Go
-back to it, and restart piqueld on it:
+With the install script, an update keeps the version it replaced, which the
+**Updates** panel shows as **Previous build**. Go back to it, and restart
+piqueld on it, with its **Roll back** button, or:
 
 ```console
-sudo piqueld update rollback
+piquelctl update rollback
 ```
+
+On the host, `sudo piqueld update rollback` does the same.
 
 It refuses when the version you run took the newest backup before updating
 the database, which older versions can't read. Then go forward instead with
@@ -122,7 +133,13 @@ which undoes every change since. On NixOS, roll back the system:
   piqueld reads the channel's feed from GitHub, at
   [`updates.feed_url`](../reference/configuration-settings.md); allow the host
   to reach `github.com` over HTTPS, or point it at a mirror.
-- **`piqueld update` says the new version didn't start after updating the
+- **The dashboard says piqueld updates itself only where the install script
+  set it up.** Install the update the way you installed piqueld, as the
+  panel says.
+- **The dashboard says this host lacks the units that apply updates.** It was
+  installed before piqueld could update itself: run the install script again
+  once, which installs them.
+- **The update says the new version didn't start after updating the
   database.** It leaves that version installed, as the previous one can't
   read the database. Read why it didn't start with `journalctl -u piqueld`,
   then fix the cause, or [restore the backup](backups.md#roll-back) it names

@@ -124,6 +124,8 @@ when the complete normalized manifest is needed.
 | POST | `/api/v1/system/dns/refresh` | Check DNS provider credentials and zones now (`system:operate`); returns `DnsStatus`, empty without `system:read` |
 | GET | `/api/v1/system/updates` | The [release channel](../operations/updates.md) the daemon follows, its newest build as of the last check, and whether it is newer than the daemon (`system:read`) |
 | POST | `/api/v1/system/updates/check` | Check the release channel now (`system:operate`); a feed it can't read is the status's `error` |
+| POST | `/api/v1/system/updates/apply` | Install the channel's newer build through the host's updater, which restarts the daemon (`system:operate`); the status's `run` follows it. 409 `update_unavailable` where the install script didn't set piqueld up or without a newer build, `update_running` while a run hasn't finished |
+| POST | `/api/v1/system/updates/rollback` | Return to the previous build the same way (`system:operate`); 409 `update_unavailable` without one |
 | PUT | `/api/v1/system/updates/channel` | Follow another release channel, `{"channel":"nightly"}`, then check it (`system:operate`); 409 `update_channel_configured` while `updates.channel` in the daemon configuration sets it |
 | POST | `/api/v1/system/builder/check` | Check that the [build machine](configuration.md#build-machine)'s BuildKit daemon answers now (`system:operate`); returns that `BuilderCheck`, which names no address and becomes the status's latest check, or 404 `builder_not_configured` without a build machine |
 | GET | `/api/v1/openapi.json` | Generated API schema |

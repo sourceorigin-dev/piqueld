@@ -34,7 +34,8 @@ deployment in its environment's history.
 Daemon status also runs the [installation checks](reference/cli.md#installation-checks)
 when it opens and on demand, showing each with its next step. Its **Updates**
 panel shows the [release channel](operations/updates.md) the daemon follows
-and its newest build, and the sidebar links to it while an update is out.
+and its newest build, installs it or returns to the previous build, and
+follows each update; the sidebar links to it while an update is out.
 Applications also has a clickable directory with each application's health (its
 least healthy environment) and last deployment time.
 

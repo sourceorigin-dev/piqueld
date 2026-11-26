@@ -32,7 +32,7 @@ struct Archive {
     /// `piqueld-0.1.0-x86_64-linux`.
     name: String,
     /// Each file to archive: its path in the workspace and its name in the archive.
-    files: [(PathBuf, &'static str); 4],
+    files: [(PathBuf, &'static str); 6],
 }
 
 impl Archive {
@@ -47,6 +47,14 @@ impl Archive {
                 (binaries.join("piqueld"), "piqueld"),
                 (binaries.join("piquelctl"), "piquelctl"),
                 (root.join("apps/piqueld/piqueld.service"), "piqueld.service"),
+                (
+                    root.join("apps/piqueld/piqueld-update.path"),
+                    "piqueld-update.path",
+                ),
+                (
+                    root.join("apps/piqueld/piqueld-update.service"),
+                    "piqueld-update.service",
+                ),
                 (root.join("LICENSE"), "LICENSE"),
             ],
         }
