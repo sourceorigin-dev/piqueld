@@ -9,8 +9,11 @@ use std::marker::PhantomData;
 /// One of the daemon's live streams: its `name` messages, each decoded as a
 /// `T`, such as an operation's timeline or a line of output.
 pub struct LiveStream<T> {
+    /// The server-sent events being read.
     messages: Messages,
+    /// The name of the messages to decode; other messages are skipped.
     name: StreamMessage,
+    /// Ties the stream to the type its messages decode to.
     decoded: PhantomData<fn() -> T>,
 }
 
@@ -80,6 +83,7 @@ pub(crate) enum Received {
 /// `\r\n`; fields other than `event` and `data` are skipped, and a message
 /// may not exceed the response body limit.
 pub(crate) struct Messages {
+    /// The response body.
     body: ByteStream,
     /// Bytes received, not yet read as lines.
     buffer: Vec<u8>,
@@ -90,6 +94,7 @@ pub(crate) struct Messages {
 }
 
 impl Messages {
+    /// Reads the events of `body`.
     pub(crate) fn new(body: ByteStream) -> Self {
         Self {
             body,

@@ -55,6 +55,7 @@ pub mod system;
 mod builds;
 mod client;
 mod editing;
+/// The endpoint bindings Progenitor generates from the daemon's API description.
 #[expect(
     unreachable_pub,
     clippy::unwrap_used,

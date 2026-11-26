@@ -42,14 +42,18 @@ struct LogWindow {
 
 /// The newest output of one task's container, within its byte budget.
 struct TaskLog {
+    /// The retained records with the bytes each accounts for, oldest first.
     records: VecDeque<(LogRecord, usize)>,
+    /// The bytes `records` account for.
     bytes: usize,
+    /// The most bytes `records` may account for.
     budget: usize,
     /// Whether output was dropped: past the budget, or a container vanished.
     truncated: bool,
 }
 
 impl TaskLog {
+    /// An empty log that keeps up to `budget` bytes.
     fn new(budget: usize) -> Self {
         Self {
             records: VecDeque::new(),

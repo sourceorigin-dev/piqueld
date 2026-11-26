@@ -90,6 +90,7 @@ impl Discovery {
 
 /// Configured providers with their discovered zones.
 pub struct Dns {
+    /// The configured providers.
     providers: Vec<DnsProviderConfig>,
     /// Shared client for provider APIs; never follows redirects or proxies.
     http: reqwest::Client,

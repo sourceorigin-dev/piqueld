@@ -51,6 +51,7 @@ pub enum LocalApiError {
 
 /// Client for one `tailscaled`'s `LocalAPI`. Constructing it performs no I/O.
 pub struct LocalApi {
+    /// The client of `LocalAPI`'s Unix socket.
     http: UnixHttp,
 }
 
@@ -136,12 +137,15 @@ pub struct Status {
     /// Interactive login URL while the node needs login.
     #[serde(rename = "AuthURL", default)]
     pub auth_url: String,
+    /// This node, once `tailscaled` reports it.
     #[serde(rename = "Self")]
     node: Option<NodeStatus>,
 }
 
+/// This node, as `tailscaled` reports it.
 #[derive(Debug, Deserialize)]
 struct NodeStatus {
+    /// Its fully qualified DNS name.
     #[serde(rename = "DNSName")]
     dns_name: String,
     /// `null` until the node has logged in.
@@ -176,12 +180,15 @@ impl Status {
 /// The fields piqueld reads from a `whois` answer.
 #[derive(Deserialize)]
 struct WhoIs {
+    /// The peer's node.
     #[serde(rename = "Node")]
     node: WhoIsNode,
+    /// The peer's user, if it has a profile.
     #[serde(rename = "UserProfile")]
     user: Option<WhoIsUser>,
 }
 
+/// A peer's node, as a `whois` answer describes it.
 #[derive(Deserialize)]
 struct WhoIsNode {
     /// Fully qualified name, e.g. `laptop.tail1234.ts.net.`.
@@ -192,8 +199,10 @@ struct WhoIsNode {
     tags: Option<Vec<String>>,
 }
 
+/// A peer's user, as a `whois` answer describes it.
 #[derive(Deserialize)]
 struct WhoIsUser {
+    /// The user's login name.
     #[serde(rename = "LoginName")]
     login: String,
 }
@@ -217,10 +226,12 @@ impl WhoIs {
 /// The node's TCP ports in its Serve configuration, by number.
 #[derive(Default, Deserialize)]
 pub struct ServeConfig {
+    /// The Serve handler of each TCP port.
     #[serde(rename = "TCP", default)]
     tcp: BTreeMap<u16, PortHandler>,
 }
 
+/// What serves one TCP port.
 #[derive(Deserialize)]
 struct PortHandler {
     /// `<host>:<port>` a TCP forward sends connections to.
@@ -259,8 +270,11 @@ impl ServeConfig {
 /// a temporary directory, for tests. It stops when dropped.
 #[cfg(any(test, feature = "testing"))]
 pub struct FakeLocalApi {
+    /// The socket it serves on.
     socket: PathBuf,
+    /// The temporary directory holding the socket; deleted when dropped.
     _directory: tempfile::TempDir,
+    /// The serving tasks, stopped when dropped.
     _server: tokio::task::JoinSet<()>,
 }
 

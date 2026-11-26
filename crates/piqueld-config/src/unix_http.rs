@@ -106,7 +106,9 @@ impl UnixHttpError {
 /// Client for one local HTTP API, identified by its Unix socket path.
 /// Opens a fresh connection for each request; constructing it performs no I/O.
 pub struct UnixHttp {
+    /// The API's Unix socket.
     socket: PathBuf,
+    /// How long a request may take.
     timeout: Duration,
     /// `Host` header of every request.
     host: &'static str,

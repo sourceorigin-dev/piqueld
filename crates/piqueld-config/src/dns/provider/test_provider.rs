@@ -12,7 +12,9 @@ use std::{collections::BTreeMap, sync::Arc};
 /// Records by ID, as fully qualified name and data.
 #[derive(Default)]
 struct State {
+    /// The records by ID.
     records: BTreeMap<u64, (String, Record)>,
+    /// The last ID given to a record.
     next: u64,
     /// The real provider whose behaviour it mimics.
     mimics: Mimics,
@@ -48,7 +50,9 @@ pub enum Outage {
 /// An in-memory provider serving fixed zones.
 #[derive(Clone, Debug)]
 pub struct TestProvider {
+    /// The zones it serves.
     zones: Vec<Hostname>,
+    /// The records and outages, shared by clones.
     state: Arc<Mutex<State>>,
 }
 
@@ -83,6 +87,7 @@ impl TestProvider {
         }
     }
 
+    /// Locks the state; fails while an outage covers every call.
     fn state(&self) -> Result<MutexGuard<'_, State>, ApiError> {
         let state = self.state.lock();
         if state.outage == Some(Outage::All) {
@@ -180,11 +185,13 @@ impl TestProvider {
         Ok(RecordId(id.to_string()))
     }
 
+    /// Lists its zones; fails during an outage.
     fn zone_list(&self) -> Result<Vec<Zone>, ApiError> {
         let _state = self.state()?;
         Ok(self.zones.iter().cloned().map(Zone::named).collect())
     }
 
+    /// Removes the record `id`; fails during an outage or a delete outage.
     fn remove(&self, id: &RecordId) -> Result<(), ApiError> {
         let mut state = self.state()?;
         if state.outage == Some(Outage::Delete) {

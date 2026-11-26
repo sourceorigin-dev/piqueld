@@ -41,6 +41,7 @@ impl Resolution {
         parse()
     }
 
+    /// The mode in effect on this thread.
     fn current() -> Self {
         RESOLUTION.get()
     }
@@ -51,6 +52,7 @@ impl Resolution {
 pub struct Credential {
     /// `None` only for a file left unread by a [`Resolution::Structural`] check.
     value: Option<String>,
+    /// The file the value is read from, if it comes from one.
     file: Option<CredentialFile>,
 }
 

@@ -41,6 +41,7 @@ impl From<&EnvironmentKind> for BuildPriority {
 pub(crate) struct BuildQueue {
     /// How many builds may run at once.
     slots: NonZeroU8,
+    /// The builds waiting and running.
     state: Mutex<Waiting>,
 }
 
@@ -50,7 +51,9 @@ struct Waiting {
     /// How many builds have a turn. It only drops below the queue's slots
     /// while no build waits.
     running: u8,
+    /// The waiting environment builds, in order.
     environments: VecDeque<oneshot::Sender<()>>,
+    /// The waiting preview builds, in order.
     previews: VecDeque<oneshot::Sender<()>>,
     /// Environment builds that went ahead of waiting preview builds since a
     /// preview build last had the turn.
@@ -143,7 +146,9 @@ impl Drop for Turn<'_> {
 /// A build waiting for its turn. Dropped while waiting, it leaves the queue
 /// and passes on a turn it was handed meanwhile.
 struct Wait<'a> {
+    /// The queue it waits in.
     queue: &'a BuildQueue,
+    /// Resolves when the build's turn comes.
     receiver: oneshot::Receiver<()>,
     /// Whether the build took its turn.
     woken: bool,

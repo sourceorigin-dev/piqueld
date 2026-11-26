@@ -15,6 +15,7 @@ use tokio_tungstenite::{
     },
 };
 
+/// The WebSocket an exec session runs over.
 type Socket = WebSocketStream<reqwest::Upgraded>;
 
 /// Receiving half: binary message payloads.
@@ -77,6 +78,7 @@ impl Reader {
 }
 
 impl Writer {
+    /// Sends `data` as one binary message.
     pub(super) async fn send(&mut self, data: &[u8]) -> Result<(), ClientError> {
         self.0
             .send(Message::binary(data.to_vec()))

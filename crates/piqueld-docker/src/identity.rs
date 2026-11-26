@@ -1,3 +1,5 @@
+//! The labels and names that mark a Docker resource as piqueld's, and the filters
+//! and checks that find and verify them.
 use super::{
     APPLICATION_LABEL, BTreeMap, BollardDocker, BollardResult, CreateImageOptionsBuilder, Docker,
     DockerError, EnvironmentId, HashMap, INSTANCE_LABEL, ImageSource, MANAGED_LABEL, ResourceKind,

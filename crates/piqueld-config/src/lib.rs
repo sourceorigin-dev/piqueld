@@ -383,6 +383,7 @@ impl Default for TailscaleConfig {
 }
 
 impl TailscaleConfig {
+    /// Checks the node name, and the socket and auth key settings against each other.
     fn validate(&self) -> Result<(), ConfigError> {
         dns_label("tailscale.hostname", &self.hostname)?;
         if let Some(socket) = &self.socket {

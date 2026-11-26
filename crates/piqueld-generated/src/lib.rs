@@ -131,6 +131,7 @@ impl std::fmt::Display for SyncReport {
 /// A generated Markdown page for the documentation book, written top to
 /// bottom.
 pub struct Page {
+    /// The Markdown written so far.
     text: String,
     /// Whether the page ends with a list item, which the next one continues.
     in_list: bool,

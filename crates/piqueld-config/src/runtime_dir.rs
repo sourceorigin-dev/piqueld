@@ -84,7 +84,9 @@ pub enum BindError {
 /// cooperating daemons, not other processes running as the same user or root.
 #[derive(Debug)]
 pub struct RuntimeDir {
+    /// The directory's path.
     path: PathBuf,
+    /// Holds the directory's lock until it is dropped.
     _lock: DirectoryLock,
 }
 

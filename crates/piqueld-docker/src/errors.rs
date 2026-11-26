@@ -1,3 +1,4 @@
+//! The Docker boundary's errors, and the diagnostic codes they report.
 use piqueld_core::observability::DiagnosticCode;
 
 #[derive(Debug, thiserror::Error)]

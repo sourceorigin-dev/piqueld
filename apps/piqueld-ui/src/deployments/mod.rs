@@ -120,6 +120,7 @@ impl DeploymentList for Vec<DeploymentSummary> {
 /// first, and the cursor of the next older page.
 #[derive(Clone, Debug, Default)]
 pub struct Attempts {
+    /// The attempts loaded so far.
     items: Vec<Operation>,
     /// Cursor of the next older page, if any.
     pub cursor: Option<String>,
@@ -149,6 +150,7 @@ impl Attempts {
 /// deployment, or an earlier `release`.
 #[derive(Clone, Debug)]
 pub struct Promotion {
+    /// The release to deploy; the source's current deployment when `None`.
     release: Option<String>,
 }
 
