@@ -530,6 +530,9 @@ in
         # As the service user, not root (`+`): the data directory must
         # belong to whoever runs it, and so must the files it restores.
         ExecStartPre = lib.mkIf cfg.rollBack "${cfg.package}/bin/piqueld --config ${configuration} roll-back";
+        # The unit is Type=simple, so the start timeout only covers
+        # ExecStartPre: room for copying and checking a large database.
+        TimeoutStartSec = lib.mkIf cfg.rollBack "15min";
         LoadCredential =
           map (credential: "${credential.name}:${credential.file}") settingCredentials
           ++ lib.concatLists (
