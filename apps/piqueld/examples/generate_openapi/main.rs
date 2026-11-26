@@ -32,6 +32,7 @@ use std::{
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Config {
+    /// Schemas to replace with existing types.
     replacements: Vec<Replacement>,
 }
 

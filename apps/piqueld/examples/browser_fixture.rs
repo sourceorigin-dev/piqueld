@@ -34,6 +34,8 @@ use piqueld_docker::{DockerError, Exec, ExecIo, fake::FakeDocker};
 use piqueld_store::{Store, StoredEnvironment};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
+/// A runtime boundary that answers every request with an empty result, for dashboard tests that
+/// need no engine.
 struct Runtime;
 #[async_trait]
 impl RuntimeBoundary for Runtime {
@@ -154,6 +156,8 @@ enum Backend {
 }
 
 impl Backend {
+    /// Chooses the backend from `PIQUELD_PLAYWRIGHT_FAKE_DOCKER`: the fake Docker engine when it is
+    /// `1` or `true`, else the stub.
     fn from_env() -> Self {
         match std::env::var("PIQUELD_PLAYWRIGHT_FAKE_DOCKER").as_deref() {
             Ok("1" | "true") => Self::FakeDocker,

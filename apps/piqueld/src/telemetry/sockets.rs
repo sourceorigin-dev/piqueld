@@ -16,6 +16,7 @@ pub(super) const SOCKET: &str = "otlp.sock";
 /// Where every receiver's directory lives.
 #[derive(Clone, Debug)]
 pub struct Sockets {
+    /// Directory every receiver's directory is in.
     root: PathBuf,
 }
 
@@ -137,6 +138,7 @@ impl Sockets {
         Self::remove_directory(&self.environment(id));
     }
 
+    /// Removes `directory` and everything in it, logging a failure other than its absence.
     fn remove_directory(directory: &Path) {
         match std::fs::remove_dir_all(directory) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => {

@@ -1,3 +1,5 @@
+//! Runs an operation to a durable outcome: executing its plan, publishing
+//! routes and cleaning up.
 use super::{
     ApplicationState, BlockedPlan, CancellationToken, Controller, DockerApi, Operation,
     OperationError, OperationKind, OperationState, Plan, PlanRequest, StoreError,

@@ -29,6 +29,7 @@ const SHUTDOWN_DEADLINE: std::time::Duration = std::time::Duration::from_mins(1)
 /// Time queued telemetry gets to reach its collectors on exit.
 const TELEMETRY_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// The daemon's command line.
 #[derive(Debug, Parser)]
 #[command(
     name = "piqueld",
@@ -329,6 +330,8 @@ struct Listeners {
 }
 
 impl Listeners {
+    /// Binds the TCP listeners from `config`, the API socket in `runtime_dir` and the dashboard
+    /// socket.
     async fn bind(
         config: &DaemonConfig,
         runtime_dir: &piqueld_config::runtime_dir::RuntimeDir,

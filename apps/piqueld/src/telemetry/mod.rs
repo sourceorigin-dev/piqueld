@@ -66,8 +66,11 @@ pub struct Telemetry(Option<Arc<Hub>>);
 
 /// Providers and destinations of enabled telemetry.
 struct Hub {
+    /// Every destination to export to.
     destinations: Arc<Destinations>,
+    /// Exports spans.
     tracer: SdkTracerProvider,
+    /// Exports logs.
     logger: SdkLoggerProvider,
     /// Whether container output and resource usage are exported too.
     containers: bool,
@@ -82,8 +85,11 @@ struct Hub {
 
 /// What exists once the installation's ID is known.
 struct Started {
+    /// Resource describing the installation.
     resource: Resource,
+    /// Exports metrics.
     meter: SdkMeterProvider,
+    /// Instruments that record deployments, builds and requests.
     instruments: metrics::Instruments,
 }
 
@@ -105,6 +111,7 @@ impl Hub {
 }
 
 impl Destinations {
+    /// Calls `visit` with every destination.
     fn each(&self, mut visit: impl FnMut(&Arc<Destination>)) {
         for destination in self.0.read().iter() {
             visit(destination);

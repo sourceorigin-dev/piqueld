@@ -60,6 +60,7 @@ struct Health {
 }
 
 impl Health {
+    /// Counts `count` records as dropped.
     fn drop_records(&self, count: u64) {
         self.dropped.fetch_add(count, Ordering::Relaxed);
     }
@@ -105,12 +106,14 @@ impl Health {
 /// A bounded queue of one signal. Pushing never waits: a full queue drops the
 /// record and counts it.
 struct Queue<T> {
+    /// Sends records to the worker.
     sender: mpsc::Sender<T>,
     /// Taken by the worker when it starts.
     receiver: Mutex<Option<mpsc::Receiver<T>>>,
 }
 
 impl<T> Queue<T> {
+    /// Creates a queue holding up to `capacity` records.
     fn new(capacity: usize) -> Self {
         let (sender, receiver) = mpsc::channel(capacity);
         Self {
@@ -119,6 +122,7 @@ impl<T> Queue<T> {
         }
     }
 
+    /// Takes the receiver for the worker; `None` once taken.
     fn take(&self) -> Option<mpsc::Receiver<T>> {
         self.receiver.lock().take()
     }
@@ -127,18 +131,24 @@ impl<T> Queue<T> {
 /// One collector receiving every signal over a lazily connected gRPC channel.
 /// Each signal has its own queue, so a burst of logs cannot crowd out spans.
 pub(super) struct Destination {
+    /// The collector's endpoint.
     endpoint: OtlpEndpoint,
     /// The environment whose receiving service this is; `None` for the
     /// configured endpoint.
     receiver: Option<EnvironmentId>,
     /// Shown by its source only.
     headers_source: Option<Credential>,
+    /// Headers sent with every request.
     headers: Headers,
+    /// Connection to the collector.
     channel: Channel,
+    /// Queue of spans.
     spans: Queue<SpanData>,
+    /// Queue of logs.
     logs: Queue<LogItem>,
     /// Whole metric collections; each counts as one record.
     metrics: Queue<ExportMetricsServiceRequest>,
+    /// Outcome of the destination's recent exports.
     health: Health,
     /// Cancelled to send what is queued and stop.
     closing: tokio_util::sync::CancellationToken,
@@ -229,14 +239,17 @@ impl Destination {
         self.health.drop_records(count);
     }
 
+    /// Queues `span` for export, dropping it if the queue is full.
     pub(super) fn push_span(&self, span: SpanData) {
         self.push(&self.spans, span);
     }
 
+    /// Queues `log` for export; `false` if the queue was full and it was dropped.
     pub(super) fn push_log(&self, log: LogItem) -> bool {
         self.push(&self.logs, log)
     }
 
+    /// Queues `metrics` for export, dropping them if the queue is full.
     pub(super) fn push_metrics(&self, metrics: ExportMetricsServiceRequest) {
         self.push(&self.metrics, metrics);
     }

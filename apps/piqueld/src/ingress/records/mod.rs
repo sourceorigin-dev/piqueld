@@ -78,8 +78,11 @@ enum Plan {
     Manual,
     /// piqueld manages them in `zone` of provider `provider`.
     Managed {
+        /// Index of the DNS provider that manages the records.
         provider: usize,
+        /// Zone holding the records.
         zone: Zone,
+        /// The records piqueld keeps for the hostname.
         desired: Desired,
     },
 }
@@ -87,12 +90,14 @@ enum Plan {
 /// The DNS state of one route hostname, as route status reports it.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct RouteDns {
+    /// Whether the records are in place, pending or conflicting.
     pub(super) state: DnsRecordState,
     /// Safe diagnostic while records are pending or conflict.
     pub(super) message: Option<String>,
 }
 
 impl RouteDns {
+    /// Creates the DNS status `state`, with its optional diagnostic `message`.
     fn new(state: DnsRecordState, message: impl Into<Option<String>>) -> Self {
         Self {
             state,
@@ -174,7 +179,9 @@ impl Schedule {
 struct Changes {
     /// Records replaced in place by one of the same type.
     update: Vec<(RecordId, Record)>,
+    /// Records to remove, by ID.
     delete: Vec<RecordId>,
+    /// Records to add.
     create: Vec<Record>,
 }
 
@@ -211,6 +218,7 @@ impl Changes {
         changes
     }
 
+    /// Whether no change is needed.
     fn is_empty(&self) -> bool {
         self.update.is_empty() && self.delete.is_empty() && self.create.is_empty()
     }
@@ -622,9 +630,13 @@ enum Written {
 
 /// Where one hostname's records live.
 struct Site<'a> {
+    /// DNS provider that holds the zone.
     provider: &'a DnsProvider,
+    /// HTTP client its API requests go through.
     http: &'a reqwest::Client,
+    /// Zone holding the records.
     zone: &'a Zone,
+    /// Route hostname whose records are managed.
     hostname: &'a RouteHostname,
 }
 

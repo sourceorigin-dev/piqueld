@@ -47,7 +47,9 @@ pub(crate) struct EventContext<'a> {
 
 /// Turns journal events into telemetry, in journal order.
 pub(crate) struct Journal {
+    /// Where the events are exported.
     telemetry: Telemetry,
+    /// Emits the events as OpenTelemetry logs.
     logger: opentelemetry_sdk::logs::SdkLogger,
     /// Start times of attempts still running, by operation and attempt.
     open: HashMap<(String, u64), i64>,

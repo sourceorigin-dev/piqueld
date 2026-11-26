@@ -3,13 +3,16 @@
 /// How long to wait after each failure: `first_ms`, doubling up to `max_ms`.
 #[derive(Clone, Copy)]
 pub(super) struct BackoffPolicy {
+    /// Delay after the first failure, in milliseconds.
     pub(super) first_ms: i64,
+    /// Longest delay, in milliseconds.
     pub(super) max_ms: i64,
 }
 
 /// Consecutive failures of a retried task, and when it may run again.
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Backoff {
+    /// Consecutive failures so far.
     failures: u32,
     /// No attempt is made before this time.
     retry_at_ms: i64,

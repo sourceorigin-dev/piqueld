@@ -76,8 +76,11 @@ const BOTS: &[&str] = &[
 /// The daemon's end of the access log socket, and what it counted since the
 /// last flush.
 pub struct Traffic {
+    /// Socket Caddy writes its access log to.
     listener: UnixListener,
+    /// Database the counts are written to.
     store: Arc<Store>,
+    /// What was counted since the last flush.
     counter: Arc<parking_lot::Mutex<Counter>>,
 }
 
@@ -179,6 +182,7 @@ impl Traffic {
 /// What was counted since the last flush, and the visitors seen today.
 #[derive(Default)]
 struct Counter {
+    /// What was counted since the last flush.
     tally: TrafficTally,
     /// The UTC day start, in Unix ms, that `keys` and `visitors` cover.
     day: i64,
@@ -242,16 +246,22 @@ impl Counter {
 struct AccessLine {
     /// When the request finished, in Unix ns.
     ts: i64,
+    /// The request that was logged.
     request: LoggedRequest,
     /// Time to answer, in ns.
     duration: i64,
     /// Response body bytes.
     size: i64,
+    /// HTTP status of the response.
     status: u16,
+    /// Response headers.
     #[serde(default)]
     resp_headers: Headers,
+    /// Environment the gateway routed the request to, if known.
     piqueld_environment: Option<String>,
+    /// Service the gateway routed the request to, if known.
     piqueld_service: Option<String>,
+    /// Route hostname that matched, if any.
     piqueld_hostname: Option<String>,
 }
 
@@ -261,10 +271,13 @@ struct LoggedRequest {
     /// The client's address: the peer's, the tailnet client's from the apps
     /// node's PROXY header, or `Cf-Connecting-IP` through the tunnel.
     client_ip: String,
+    /// HTTP method.
     method: String,
+    /// Host the client requested.
     host: String,
     /// Path and query.
     uri: String,
+    /// Request headers.
     #[serde(default)]
     headers: Headers,
 }

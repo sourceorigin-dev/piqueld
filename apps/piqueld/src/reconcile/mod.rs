@@ -35,11 +35,13 @@ pub struct Controller<D> {
     mutations: Arc<tokio::sync::Mutex<()>>,
     /// Deadline for resolving images, building sources, and fetching manifests.
     prepare_timeout: Duration,
+    /// Database holding intent, operations and the journal.
     store: Arc<Store>,
     /// The Git checkouts and local snapshots deployments build from.
     sources: Arc<crate::git::Sources>,
     /// Managed ingress; without it, routes are staged and acknowledged directly.
     ingress: Option<Arc<crate::ingress::Ingress>>,
+    /// Delays between retries of failed operations.
     retry: RetryPolicy,
     /// Image cleanup, and the lock operations hold against it.
     images: images::ImageRetention,
@@ -247,9 +249,13 @@ impl<D: DockerApi> Controller<D> {
 /// message says which service failed and why.
 #[derive(Clone, Copy)]
 enum BlockedPlan<'a> {
+    /// A service name collides with one this installation does not own.
     OwnershipConflict,
+    /// A service's configuration changed in a way Docker cannot update in place.
     ImmutableConfiguration,
+    /// A service update failed; the diagnostic says which and why.
     ServiceUpdateFailed(&'a PlanDiagnostic),
+    /// A blocking diagnostic with no recognized code.
     Unclassified,
 }
 

@@ -240,7 +240,9 @@ type Repository = tokio::sync::Mutex<Option<Listed>>;
 /// A read of [`Listings`], which removes its repository's entry when it
 /// is the last to finish, or is cancelled.
 struct Reader<'a> {
+    /// The listings the read belongs to.
     listings: &'a Listings,
+    /// URL of the repository read.
     url: &'a str,
     /// Taken only when dropped.
     repository: Option<Arc<Repository>>,

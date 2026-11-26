@@ -41,9 +41,11 @@ impl DockerChanges {
 
 /// An open journal action for one daemon-owned gateway change.
 pub(super) struct Journaled<'a> {
+    /// Database the journal action is recorded in.
     store: &'a piqueld_store::Store,
     /// The ingress's Docker changes, made only through [`Self::change`].
     docker: &'a InfrastructureChanges,
+    /// The journal action the change belongs to.
     action: JournalAction,
     /// Classification of a failed outcome.
     code: DiagnosticCode,
@@ -168,6 +170,7 @@ impl super::Ingress {
 
 /// Client for Caddy's admin API, on its Unix socket, in JSON.
 pub(super) struct CaddyApi {
+    /// Connection to the Unix socket.
     http: UnixHttp,
 }
 
