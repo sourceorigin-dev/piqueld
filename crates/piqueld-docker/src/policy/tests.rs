@@ -27,10 +27,9 @@ fn desired(mounts: Vec<DesiredMount>) -> DesiredService {
         source: ResolvedSource::Image {
             requested: piqueld_core::ImageReference::parse("ghcr.io/example/notes:1.4.0")
                 .expect("the image reference parses"),
-            digest_reference: piqueld_core::RepositoryDigest::parse(image.clone())
+            digest_reference: piqueld_core::RepositoryDigest::parse(image)
                 .expect("the repository digest parses"),
         },
-        image: piqueld_core::ImmutableImage::parse(image).expect("the image parses"),
         replicas: 2,
         environment: BTreeMap::from([("NOTES_PORT".into(), "8080".into())]),
         command: vec!["/bin/notes".into()],

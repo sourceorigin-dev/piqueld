@@ -535,7 +535,7 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
         .expect("the item exists");
     assert!(
         app.resolved.expect("the resolved is present").services[0]
-            .image
+            .image()
             .as_str()
             .ends_with(&"a".repeat(64))
     );
@@ -551,7 +551,12 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
         .expect("the item exists")
         .resolved
         .expect("the resolved is present");
-    assert!(before.services[0].image.as_str().ends_with(&"b".repeat(64)));
+    assert!(
+        before.services[0]
+            .image()
+            .as_str()
+            .ends_with(&"b".repeat(64))
+    );
     let renamed = applications
         .accept(
             Daemon,
@@ -1079,7 +1084,7 @@ async fn restoring_a_deployment_runs_its_image_again_without_jobs() {
     let environment = first.environment_id.clone();
     let image = async || {
         harness.target(&environment).await.services[0]
-            .image
+            .image()
             .to_string()
     };
     let original = image().await;

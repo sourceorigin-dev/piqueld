@@ -185,7 +185,7 @@ impl<D: DockerApi> Controller<D> {
             Err(_) => BuildState::Interrupted,
         };
         let finished = attempt
-            .finish(state, Some(job.container.image.as_str()))
+            .finish(state, Some(job.container.image().as_str()))
             .await;
         let stop =
             !self.resumable(operation, &result).await && (finished.is_ok() || result.is_err());

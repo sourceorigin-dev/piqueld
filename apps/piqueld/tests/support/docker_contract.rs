@@ -171,8 +171,6 @@ impl Environment {
             .expect("the docker service name parses"),
             source: ResolvedSource::parse_image(IMAGE, self.image.clone())
                 .expect("the image source parses"),
-            image: piqueld_core::ImmutableImage::parse(self.image.clone())
-                .expect("the immutable image parses"),
             replicas: 1,
             environment: BTreeMap::new(),
             command: vec!["/bin/sh".into()],

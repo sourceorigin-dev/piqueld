@@ -165,7 +165,7 @@ impl Names<'_> {
                         ..
                     } => format!(
                         "{image_id} (built from {} at {commit})",
-                        repository(requested)
+                        requested.repository
                     ),
                 },
             )?;
@@ -534,14 +534,6 @@ impl HumanWriter<'_> {
             self.line(format_args!("  {reference} = {value}"))?;
         }
         Ok(())
-    }
-}
-
-/// The repository a Git source builds from.
-fn repository(source: &piqueld_client::ValidatedSource) -> String {
-    match source {
-        piqueld_client::ValidatedSource::Git { repository, .. } => repository.to_string(),
-        piqueld_client::ValidatedSource::Image { image } => image.to_string(),
     }
 }
 

@@ -5,7 +5,7 @@ use piqueld_core::resource::{
     ObservedApplication, ResolutionRequirement, ResolutionSet, ResolvedSource, TaskState,
     compile_application, preview_resolution,
 };
-use piqueld_core::{Plan, image_repository};
+use piqueld_core::{DesiredService, Plan, image_repository};
 
 use super::{application, digest, environment, instance, resolutions};
 
@@ -19,12 +19,35 @@ fn image_resolution_is_the_only_pending_compilation_input() {
     let desired = compile_application(&app, &environment(), instance(), &resolutions())
         .expect("the application compiles");
     assert_eq!(
-        desired.services[0].image.as_str(),
+        desired.services[0].image().as_str(),
         format!("ghcr.io/example/notes@sha256:{}", "a".repeat(64))
     );
     assert_eq!(
         preview_resolution(&app, &resolutions()),
         [] as [ResolutionRequirement; 0]
+    );
+}
+
+/// A service is stored and sent with its image, which reading checks against
+/// its source.
+#[test]
+fn a_stored_service_image_must_be_its_sources() {
+    let desired = compile_application(&application(), &environment(), instance(), &resolutions())
+        .expect("the application compiles");
+    let service = &desired.services[0];
+    let mut stored = serde_json::to_value(service).expect("the service serializes");
+    assert_eq!(stored["image"], service.image().as_str());
+    assert_eq!(
+        &serde_json::from_value::<DesiredService>(stored.clone()).expect("the service decodes"),
+        service
+    );
+    stored["image"] = format!("ghcr.io/example/notes@sha256:{}", "b".repeat(64)).into();
+    let error = serde_json::from_value::<DesiredService>(stored)
+        .expect_err("an image its source doesn't resolve to is rejected");
+    assert!(
+        error
+            .to_string()
+            .contains("the image its source resolves to")
     );
 }
 

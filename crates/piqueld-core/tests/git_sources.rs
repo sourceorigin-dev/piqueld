@@ -73,7 +73,11 @@ fn git_resolution_retains_commit_and_local_image_and_rejects_mismatched_inputs()
     resolutions.sources.insert(
         piqueld_core::ServiceName::parse("web").expect("the service name is valid"),
         ResolvedSource::Git {
-            requested: app.spec().services[0].source.clone(),
+            requested: app.spec().services[0]
+                .source
+                .clone()
+                .try_into()
+                .expect("the service builds from a Git repository"),
             commit: piqueld_core::GitCommit::parse("b".repeat(40)).expect("the commit is valid"),
             image_id: image_id.clone().into(),
         },
@@ -82,7 +86,7 @@ fn git_resolution_retains_commit_and_local_image_and_rejects_mismatched_inputs()
     let environment = EnvironmentId::parse("example-id").expect("the environment id is valid");
     let resolved = compile_application(&app, &environment, instance.clone(), &resolutions)
         .expect("the application compiles");
-    assert_eq!(resolved.services[0].image.as_str(), image_id.as_str());
+    assert_eq!(resolved.services[0].image().as_str(), image_id.as_str());
     assert_eq!(resolved.reusable_resolutions(&app), resolutions);
     let mut changed = app.to_manifest();
     let piqueld_core::manifest::Source::Git {
@@ -198,7 +202,11 @@ fn docker_build_arguments_and_target_validate_and_are_part_of_source_identity() 
         sources: [(
             piqueld_core::ServiceName::parse("web").expect("the service name is valid"),
             ResolvedSource::Git {
-                requested: app.spec().services[0].source.clone(),
+                requested: app.spec().services[0]
+                    .source
+                    .clone()
+                    .try_into()
+                    .expect("the service builds from a Git repository"),
                 commit: piqueld_core::GitCommit::parse("b".repeat(40))
                     .expect("the commit is valid"),
                 image_id: Sha256Digest::parse(format!("sha256:{}", "a".repeat(64)))

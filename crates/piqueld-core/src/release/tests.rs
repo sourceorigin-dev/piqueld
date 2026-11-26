@@ -73,7 +73,11 @@ fn staging_release(template: ApplicationTemplate) -> Release {
         sources: BTreeMap::from([(
             web.name.clone(),
             ResolvedSource::Git {
-                requested: web.source.clone(),
+                requested: web
+                    .source
+                    .clone()
+                    .try_into()
+                    .expect("the service builds from a Git repository"),
                 commit: GitCommit::parse(COMMIT).expect("the commit is valid"),
                 image_id: Sha256Digest::parse(format!("sha256:{}", "a".repeat(64)))
                     .expect("the sha256 digest is valid")
@@ -202,5 +206,17 @@ fn refuses_an_environment_that_renders_a_build_argument_differently() {
             ApiErrorCode::ReleaseIncompatible.as_str(),
             "web.source.build.args.VITE_ORIGIN"
         )]
+    );
+}
+
+/// Releases are found by their content hash, so a change to how a Git source
+/// serializes would record every unchanged release again.
+#[test]
+fn a_git_release_keeps_the_content_hash_it_was_recorded_with() {
+    assert_eq!(
+        staging_release(template("https://example.com"))
+            .content_hash()
+            .as_str(),
+        "sha256:059075f9616ac5c9a04b1d796be732b10bb86edeb2e6cbd30166fff53e32ce96"
     );
 }

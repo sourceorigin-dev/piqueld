@@ -66,11 +66,11 @@ pub use planner::{
 pub use release::{BuildFingerprint, BuildInputs, Release};
 pub use resource::{
     CompileError, Convergence, DesiredFile, DesiredJob, DesiredJobRun, DesiredMount,
-    DesiredNetwork, DesiredService, DesiredVolume, InstanceId, ObservedApplication,
-    ObservedService, Ownership, OwnershipState, ResolutionRequirement, ResolutionSet,
-    ResolvedApplication, ResolvedSource, RuntimeMessage, Sha256Digest, Sha256DigestError,
-    TaskState, compile_application, compile_release, image_repository, preview_resolution,
-    valid_logical_name,
+    DesiredNetwork, DesiredService, DesiredVolume, GitSource, InstanceId, NotGitSource,
+    ObservedApplication, ObservedService, Ownership, OwnershipState, ResolutionRequirement,
+    ResolutionSet, ResolvedApplication, ResolvedSource, RuntimeMessage, Sha256Digest,
+    Sha256DigestError, TaskState, compile_application, compile_release, image_repository,
+    preview_resolution, valid_logical_name,
 };
 pub use retention::{
     BuildHistoryConfig, ImagesConfig, LocalImages, ReleaseAvailability, RetentionConfig,

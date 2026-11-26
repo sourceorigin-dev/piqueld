@@ -617,9 +617,7 @@ impl SwarmScenario {
             .await
             .expect("resolve image succeeds");
         http_service.source =
-            ResolvedSource::parse_image(reference, image.clone()).expect("the image source parses");
-        http_service.image =
-            piqueld_core::ImmutableImage::parse(image).expect("the immutable image parses");
+            ResolvedSource::parse_image(reference, image).expect("the image source parses");
         http_service.command = Vec::new();
         http_service.arguments = vec!["--port".into(), "8080".into()];
         http_service.healthcheck = Some(ValidatedHealthCheck::Http {
@@ -1386,7 +1384,7 @@ async fn git_build_runs_as_a_local_swarm_image() {
         .await
         .expect("remove service succeeds");
 
-    let id = piqueld_core::Sha256Digest::parse(target.services[0].image.as_str())
+    let id = piqueld_core::Sha256Digest::parse(target.services[0].image().as_str())
         .expect("the sha256 digest parses");
     let built = || async {
         docker

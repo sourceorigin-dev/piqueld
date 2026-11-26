@@ -512,7 +512,7 @@ pub fn observed_service(desired: &DesiredService) -> ObservedService {
             .map(piqueld_core::resource::ObservedFile::from)
             .collect(),
         name: desired.name.to_string(),
-        image: desired.image.to_string(),
+        image: desired.image().to_string(),
         replicas: desired.replicas,
         environment: desired.environment.clone(),
         command: desired.command.clone(),

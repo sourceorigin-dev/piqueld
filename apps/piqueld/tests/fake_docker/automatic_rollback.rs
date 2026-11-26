@@ -93,7 +93,7 @@ async fn a_failed_rollout_restores_the_last_successful_deployment() {
         .fail_convergence
         .store(false, Ordering::SeqCst);
     harness.finish(&rollback).await;
-    let image = |target: &ResolvedApplication| target.services[0].image.to_string();
+    let image = |target: &ResolvedApplication| target.services[0].image().to_string();
     assert_eq!(
         image(&harness.target(environment).await),
         image(

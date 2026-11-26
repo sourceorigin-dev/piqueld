@@ -11,9 +11,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::components::A;
 use piqueld_client::sync::short_commit;
-use piqueld_client::{
-    Client, ReleaseAvailability, ReleaseView, ResolvedSource, ServiceImage, ValidatedSource,
-};
+use piqueld_client::{Client, ReleaseAvailability, ReleaseView, ResolvedSource, ServiceImage};
 
 /// Pages one load fetches at most while looking for the `?release=` one, so a
 /// missing or very old release doesn't read the whole history.
@@ -288,11 +286,8 @@ fn release_services(release: &ReleaseView) -> AnyView {
             let provenance = match source {
                 ResolvedSource::Image { requested, .. } => format!("Pulled {requested}"),
                 ResolvedSource::Git {
-                    requested: ValidatedSource::Git { repository, .. },
-                    commit,
-                    ..
-                } => format!("Built from {repository} at {commit}"),
-                ResolvedSource::Git { commit, .. } => format!("Built at {commit}"),
+                    requested, commit, ..
+                } => format!("Built from {} at {commit}", requested.repository),
             };
             view! {
                 <div class="snapshot-service">
