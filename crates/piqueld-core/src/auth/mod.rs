@@ -174,7 +174,8 @@ pub struct RegistrationStart {
     /// Invitation, enrollment, or initial setup secret; absent when a signed-in
     /// account adds a passkey to itself.
     pub invitation: Option<String>,
-    /// The signed-in caller's own account, when adding a passkey to itself.
+    /// The signed-in caller's own account, when adding a passkey to itself;
+    /// a request with both this and `invitation` is rejected.
     pub user_id: Option<String>,
     /// New account name; ignored for enrollment.
     pub username: String,

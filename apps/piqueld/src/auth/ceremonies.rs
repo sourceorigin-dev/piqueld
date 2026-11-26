@@ -111,36 +111,49 @@ impl Auth {
         caller: Option<&Identity>,
     ) -> Result<Ceremony> {
         Self::validate_passkey_name(&input.passkey_name)?;
-        let (user, invitation) = if let Some(id) = input.user_id {
-            let caller = caller.ok_or(AuthError::Unauthorized)?;
-            if caller.scoped {
-                return Err(Denied::Scoped.into());
+        let (user, invitation) = match (input.user_id, input.invitation) {
+            (Some(_), Some(_)) => {
+                return Err(AuthError::Invalid(
+                    "registration takes either a link or a signed-in account, not both",
+                ));
             }
-            let own = caller.user().filter(|user| user.id == id).ok_or(AuthError::Invalid(
-                "passkeys can only be added to your own account; create an enrollment link for others",
-            ))?;
-            caller.require_fresh()?;
-            (own.clone(), None)
-        } else {
-            let secret = input.invitation.ok_or(AuthError::Invalid(
-                "registration needs an invitation, setup, or enrollment link, or a signed-in account",
-            ))?;
-            let user = match self.invitation(&secret).await? {
-                None => return Err(AuthError::Invalid(STALE_LINK)),
-                Some(Invitation::Enrollment(user)) => user,
-                Some(Invitation::Account) => {
-                    Self::validate_profile(&input.username, &input.display_name)?;
-                    if self.0.store.username_taken(&input.username).await? {
-                        return Err(piqueld_store::StoreError::AlreadyExists.into());
-                    }
-                    User {
-                        id: Self::id(),
-                        username: input.username,
-                        display_name: input.display_name,
-                    }
+            (None, None) => {
+                return Err(AuthError::Invalid(
+                    "registration needs an invitation, setup, or enrollment link, or a signed-in account",
+                ));
+            }
+            (Some(id), None) => {
+                let caller = caller.ok_or(AuthError::Unauthorized)?;
+                if caller.scoped {
+                    return Err(Denied::Scoped.into());
                 }
-            };
-            (user, Some(Self::hash(&secret)))
+                let own = caller
+                    .user()
+                    .filter(|user| user.id == id)
+                    .ok_or(AuthError::Invalid(
+                        "passkeys can only be added to your own account; create an enrollment link for others",
+                    ))?;
+                caller.require_fresh()?;
+                (own.clone(), None)
+            }
+            (None, Some(secret)) => {
+                let user = match self.invitation(&secret).await? {
+                    None => return Err(AuthError::Invalid(STALE_LINK)),
+                    Some(Invitation::Enrollment(user)) => user,
+                    Some(Invitation::Account) => {
+                        Self::validate_profile(&input.username, &input.display_name)?;
+                        if self.0.store.username_taken(&input.username).await? {
+                            return Err(piqueld_store::StoreError::AlreadyExists.into());
+                        }
+                        User {
+                            id: Self::id(),
+                            username: input.username,
+                            display_name: input.display_name,
+                        }
+                    }
+                };
+                (user, Some(Self::hash(&secret)))
+            }
         };
         let excluded = self
             .0
