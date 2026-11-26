@@ -90,6 +90,9 @@ struct EditorContext {
     notice: RwSignal<String>,
     /// The page's tabs; `tabs.selected` is the shown one.
     tabs: TabSet,
+    /// Whether the Create environment dialog, on the application's Overview
+    /// tab, is open.
+    creating_environment: RwSignal<bool>,
 }
 
 impl EditorContext {
@@ -972,6 +975,7 @@ fn ApplicationEditor(initial: ApplicationView, page: Page) -> impl IntoView {
             page.tabs_label(),
             RwSignal::new(query.with_untracked(|query| page.initial_tab(|key| query.get(key)))),
         ),
+        creating_environment: RwSignal::new(false),
         page: StoredValue::new(page.clone()),
     };
     provide_context(context);

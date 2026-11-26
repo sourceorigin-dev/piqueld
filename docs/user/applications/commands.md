@@ -22,7 +22,7 @@ user, with its environment variables, secrets, volumes and network.
 ### In the dashboard
 
 1. Open the environment, such as **production** on the `notes` application's
-   **Environments** tab, then its **Terminal** tab.
+   **Overview** tab, then its **Terminal** tab.
 2. Choose `db` as the **Service**, and fill in **Command** with
    `psql -U notes`. It is `/bin/sh` unless you change it.
 3. Select **Run**.
@@ -91,7 +91,7 @@ piquelctl app exec notes web -it -- sh
 ## Run a command in a preview
 
 In the dashboard, open the [preview](previews.md) from the application's
-**Previews** tab, and use its **Terminal** tab.
+**Overview** tab, under **Previews**, and use its **Terminal** tab.
 
 With `piquelctl`, `preview exec` runs a command in a preview. Name the
 preview by its branch, its slug or its ID, and add `--slot` for a preview with

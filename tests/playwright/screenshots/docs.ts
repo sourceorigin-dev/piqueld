@@ -2,7 +2,7 @@
 // a page, or state, a guide shows; `shoot` then saves it into docs/images,
 // and `shootForSite` a part of it into apps/site.
 import type { Locator, Page, Route } from '@playwright/test';
-import { test as base, expect, accountRows, adminToken, confirmPasskey, fillRegistration, applicationTab, card, rewrite, title, chooseGrants, done, Process, type Cli } from '../fixtures.js';
+import { test as base, expect, accountRows, adminToken, confirmPasskey, fillRegistration, applicationTab, environmentTab, card, rewrite, title, chooseGrants, done, Process, type Cli } from '../fixtures.js';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -527,15 +527,16 @@ export async function environment(page: Page, app: string, name: string) {
 
 /** Environment `name` of application `app`, reached as a reader would. */
 async function openEnvironment(page: Page, app: string, name: string) {
-  await application(page, app, 'Environments');
+  await application(page, app, 'Overview');
   await page.getByRole('main').getByRole('link').filter({ hasText: name }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(name);
 }
 
 /** The card granting environment `name` of application `app` the daemon's
- * telemetry, on the environment's Overview. */
+ * telemetry, on the environment's Settings tab. */
 export async function telemetryGrant(page: Page, app: string, name: string): Promise<Locator> {
   await openEnvironment(page, app, name);
+  await environmentTab(page, 'Settings').click();
   const card = page.locator('section.card').filter({ has: page.getByRole('button', { name: 'Grant telemetry', exact: true }) });
   await expect(card).toContainText('not granted');
   return card;
@@ -558,19 +559,19 @@ export async function invite(page: Page, preset: string, applications: string[] 
   return done(page);
 }
 
-/** The Routes tab of application `app`, once its saved routes and the
+/** The Networking tab of application `app`, once its saved routes and the
  * ingress status are loaded. */
 export async function routes(page: Page, app: string) {
-  await application(page, app, 'Routes');
+  await application(page, app, 'Networking');
   await expect(card(page, 'Routes').getByRole('listitem').first()).toBeVisible();
   // The notice that the fixture's gateway is off shows once readiness loaded.
   await expect(card(page, 'Routes').getByRole('status')).toContainText('Ingress is disabled');
 }
 
-/** The Source tab of application `app`, once its GitHub webhook card is
+/** The Settings tab of application `app`, once its GitHub webhook card is
  * loaded. */
 export async function source(page: Page, app: string) {
-  await application(page, app, 'Source');
+  await application(page, app, 'Settings');
   await expect(card(page, 'GitHub webhook').getByText('Payload URL', { exact: true })).toBeVisible();
 }
 

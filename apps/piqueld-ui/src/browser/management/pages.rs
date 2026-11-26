@@ -21,8 +21,8 @@ use leptos_router::hooks::use_navigate;
 use piqueld_client::access::AppPermission;
 use piqueld_client::paths;
 
-/// The application page: shared configuration, its environments, and history
-/// across all of them.
+/// The application page: its environments and previews, shared
+/// configuration, and history across all of them.
 #[component]
 pub(super) fn ApplicationSections() -> impl IntoView {
     let context = editor();
@@ -67,37 +67,28 @@ pub(super) fn ApplicationSections() -> impl IntoView {
             .panel(
                 "Overview",
                 view! {
-                    <div class="stack">
+                    <div class="stack-lg">
+                        <environments::EnvironmentList />
+                        <Show when={move || tabs.selected.get() == "Overview"}>
+                            <previews::PreviewList />
+                        </Show>
                         <ApplicationOverview />
-                        <DeleteApplication />
                     </div>
                 },
             )}
-        {tabs.panel("Environments", view! { <environments::EnvironmentList /> })}
-        {tabs
-            .panel(
-                "Previews",
-                view! {
-                    <Show when={move || tabs.selected.get() == "Previews"}>
-                        <previews::PreviewList />
-                    </Show>
-                },
-            )}
-        <ApplicationSettings />
+        <ConfigurationTabs />
         {tabs
             .panel(
                 "Releases",
                 view! {
                     <Show when={move || tabs.selected.get() == "Releases"}>
+                        <div class="section-header">
+                            <h2>"Releases"</h2>
+                        </div>
                         <releases::ReleaseHistory application={context.id()} />
-                    </Show>
-                },
-            )}
-        {tabs
-            .panel(
-                "Builds",
-                view! {
-                    <Show when={move || tabs.selected.get() == "Builds"}>
+                        <div class="section-header">
+                            <h2>"Builds"</h2>
+                        </div>
                         <builds::BuildHistory
                             application={context.id()}
                             allowed={Callback::new(move |
@@ -157,8 +148,6 @@ fn ApplicationOverview() -> impl IntoView {
                                         },
                                     )}
                                 </dd>
-                                <dt>"Environments"</dt>
-                                <dd>{saved.environment_names().join(", ")}</dd>
                                 <dt>"Created"</dt>
                                 <dd>{timestamp(saved.created_at_ms)}</dd>
                                 <dt>"Updated"</dt>
@@ -279,63 +268,103 @@ fn RepositoryEdits() -> impl IntoView {
     }
 }
 
-/// Source, services, routes, volumes, jobs and secrets tabs. A
+/// Stacked forms of the saved configuration, read-only without `apps:write`.
+#[component]
+fn ConfigurationForms(children: Children) -> impl IntoView {
+    let context = editor();
+    view! {
+        <fieldset disabled={move || !context.can(AppPermission::Write)}>
+            <div class="stack">{children()}</div>
+        </fieldset>
+    }
+}
+
+/// The Services, Networking, Configuration and Settings tabs. A
 /// repository-backed application's edits are listed above them. Their forms
 /// are read-only without `apps:write`; the secret store needs `secrets:write`
-/// instead.
+/// instead, and the repository connection and deletion check their own
+/// permissions.
 #[component]
-fn ApplicationSettings() -> impl IntoView {
+fn ConfigurationTabs() -> impl IntoView {
     let context = editor();
     let tabs = context.tabs;
-    let forms = view! {
-        {tabs
-            .panel(
-                "Services",
-                view! {
-                    <div class="section-header">
-                        <div>
-                            <h2>"Services"</h2>
-                            <p>
-                                "Each service runs one image as a replicated Swarm service on the application network."
-                            </p>
-                        </div>
-                        <NewService />
-                    </div>
-                    <services::ServiceList />
-                },
-            )}
-        {tabs.panel("Variables", view! { <variables::VariableSettings /> })}
-        {tabs.panel("Routes", view! { <routes::RouteSettings /> })}
-        {tabs.panel("Volumes", view! { <VolumeSettings /> })}
-        {tabs.panel("Jobs", view! { <jobs::JobSettings /> })}
-        {tabs.panel("Links", view! { <links::LinkSettings /> })}
-        {tabs.panel("Secrets", view! { <SecretFileSettings /> })}
-    };
     view! {
         <div hidden={move || {
             !matches!(
                 tabs.selected.get(),
-                "Source" | "Services" | "Variables" | "Routes" | "Volumes" | "Jobs" | "Links"
-                | "Secrets"
+                "Services" | "Networking" | "Configuration" | "Settings"
             )
         }}>
             <div class="stack">
                 {move || context.read_only_notice()} <RepositoryEdits />
-                {tabs.panel("Source", view! { <RepositorySettings /> })}
-                <div hidden={move || tabs.selected.get() != "Secrets"}>
-                    <StoredSecrets />
-                </div>
-                <fieldset disabled={move || !context.can(AppPermission::Write)}>{forms}</fieldset>
+                {tabs
+                    .panel(
+                        "Services",
+                        view! {
+                            <ConfigurationForms>
+                                <div>
+                                    <div class="section-header">
+                                        <div>
+                                            <h2>"Services"</h2>
+                                            <p>
+                                                "Each service runs one image as a replicated Swarm service on the application network."
+                                            </p>
+                                        </div>
+                                        <NewService />
+                                    </div>
+                                    <services::ServiceList />
+                                </div>
+                                <jobs::JobSettings />
+                                <VolumeSettings />
+                            </ConfigurationForms>
+                        },
+                    )}
+                {tabs
+                    .panel(
+                        "Networking",
+                        view! {
+                            <ConfigurationForms>
+                                <routes::RouteSettings />
+                                <links::LinkSettings />
+                            </ConfigurationForms>
+                        },
+                    )}
+                {tabs
+                    .panel(
+                        "Configuration",
+                        view! {
+                            <div class="stack">
+                                <ConfigurationForms>
+                                    <variables::VariableSettings />
+                                </ConfigurationForms>
+                                <StoredSecrets />
+                                <ConfigurationForms>
+                                    <SecretFileSettings />
+                                </ConfigurationForms>
+                            </div>
+                        },
+                    )}
+                {tabs
+                    .panel(
+                        "Settings",
+                        view! {
+                            <div class="stack">
+                                <RepositorySettings />
+                                <DeleteApplication />
+                            </div>
+                        },
+                    )}
             </div>
         </div>
     }
 }
 
-/// One environment or preview: its runtime, deployments, secrets, logs, and
-/// history. While a deployment runs, its Overview and Deployments tabs show
-/// its progress (see `timeline::RunningDeployment`). An environment's
-/// overview renames and deletes it; a preview's shows its branch and
-/// deletes it.
+/// One environment or preview: its runtime, deployments, logs, history, and
+/// settings. While a deployment runs, its Overview and Deployments tabs show
+/// its progress (see `timeline::RunningDeployment`). A preview's overview
+/// shows its branch. Settings holds the variables and secrets, then an
+/// environment's own settings, which rename and delete it, or a preview's
+/// deletion.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn EnvironmentPage() -> impl IntoView {
@@ -351,7 +380,7 @@ pub(super) fn EnvironmentPage() -> impl IntoView {
     } else {
         ("environments", "environment")
     };
-    let app_href = move || format!("/dashboard/applications/{}?tab={list}", context.id());
+    let app_href = move || format!("/dashboard/applications/{}", context.id());
     if context.selected_environment().is_none() {
         return view! {
             <div class="stack-sm">
@@ -414,14 +443,10 @@ pub(super) fn EnvironmentPage() -> impl IntoView {
                         <timeline::RunningProgress />
                         {preview.then(|| view! { <previews::PreviewSettings /> })}
                         <RuntimeOverview />
-                        <variables::EnvironmentVariables />
-                        {(!preview).then(|| view! { <environments::EnvironmentSettings /> })}
-                        {preview.then(|| view! { <previews::DeletePreview /> })}
                     </div>
                 },
             )}
         {tabs.panel("Deployments", view! { <DeploymentHistory /> })}
-        {tabs.panel("Secrets", view! { <EnvironmentSecrets /> })}
         {tabs
             .panel(
                 "Logs",
@@ -448,6 +473,18 @@ pub(super) fn EnvironmentPage() -> impl IntoView {
                     <Show when={move || tabs.selected.get() == "Events"}>
                         <observability::EventHistory environment={id.clone()} />
                     </Show>
+                },
+            )}
+        {tabs
+            .panel(
+                "Settings",
+                view! {
+                    <div class="stack">
+                        <variables::EnvironmentVariables />
+                        <EnvironmentSecrets />
+                        {(!preview).then(|| view! { <environments::EnvironmentSettings /> })}
+                        {preview.then(|| view! { <previews::DeletePreview /> })}
+                    </div>
                 },
             )}
     }

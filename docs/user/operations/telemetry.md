@@ -103,8 +103,8 @@ any port.
 1. Mark the collector's service as the one that
    [receives telemetry](../reference/manifest-settings.md#specservicesreceives_telemetry).
    An application can have one, with one replica. In the dashboard, tick
-   **Receive telemetry** on the service's **Telemetry** tab, and select
-   **Save changes**. With `piquelctl`, run
+   **Receive telemetry** under **Telemetry** on the service's **Security**
+   tab, and select **Save changes**. With `piquelctl`, run
    `piquelctl app service telemetry <app> collector on`. In the manifest:
 
    ```toml
@@ -139,7 +139,7 @@ any port.
 
    Mount it as a file at the path your collector reads, such as
    `/etc/otelcol-contrib/config.yaml` for the OpenTelemetry Collector's
-   contrib image: on the service's **Files** tab, with
+   contrib image: under **Files** on the service's **Configuration** tab, with
    [`piquelctl app file add`](../reference/cli-commands.md#piquelctl-app-file-add),
    or as a [file](../reference/manifest.md#files) in the manifest.
 
@@ -155,7 +155,7 @@ any port.
    has it, and it can be granted on its own; no preset includes it.
 
    In the dashboard, select **Grant telemetry** on the environment's
-   **Overview**:
+   **Settings** tab:
 
    ![The Telemetry card of the collector's production environment: not granted, with a Grant telemetry button](../../images/operations/telemetry-grant.png)
 
@@ -172,7 +172,8 @@ any port.
    ```
 
 piqueld mounts the socket's directory into the service and starts exporting.
-The environment's **Overview** and `piquelctl env show <app> production` show
+The **Telemetry** card on the environment's **Settings** tab and
+`piquelctl env show <app> production` show
 whether the daemon is connected. **Revoke telemetry**, or
 `piquelctl env telemetry <app> production off`, stops it at once, and removes
 the mount within seconds, which restarts the service.

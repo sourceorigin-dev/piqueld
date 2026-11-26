@@ -32,13 +32,13 @@ once both have deployed it.
 1. Create `auth`, with a service `api` that runs `traefik/whoami` and has an
    HTTP health check on port 80 and path `/health`, as in
    [deploying your first application](../getting-started/first-app.md#in-the-dashboard).
-2. On the **Links** tab of `auth`, under **Exports**, select **Add export**,
+2. On the **Networking** tab of `auth`, under **Exports**, select **Add export**,
    pick the **Service**, and enter the **Applications**, separated by commas.
    Select **Add export** in the dialog, then **Deploy to production**.
 
-   ![The Links tab of auth: under Exports, api is exported to notes; there are no imports](../../images/applications/links-tab.png)
+   ![The Links section of auth's Networking tab: under Exports, api is exported to notes; there are no imports](../../images/applications/links-tab.png)
 
-3. On the **Links** tab of `notes`, under **Imports**, select **Add import**,
+3. On the **Networking** tab of `notes`, under **Imports**, select **Add import**,
    and enter the **Application** and the **Service**. Leave **Environment**
    empty. Select **Add import** in the dialog, then **Deploy to production**.
 

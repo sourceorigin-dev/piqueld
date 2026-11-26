@@ -31,11 +31,11 @@ once it answers on port 80. Create it in any of these three ways.
 
    ![The "Add service" dialog, with the service name web and the container image nginx:alpine](../../images/getting-started/add-service.png)
 
-3. Select `web` in the list, then its **Health check** tab. Set **Check type**
-   to **HTTP**, **Port** to `80` and **Path** to `/`, and select **Save
-   changes**.
+3. Select `web` in the list, then its **Rollout** tab. Under **Health check**,
+   set **Check type** to **HTTP**, **Port** to `80` and **Path** to `/`, and
+   select **Save changes**.
 
-   ![The Health check tab of web: Check type is HTTP, on port 80 and path /](../../images/getting-started/health-check.png)
+   ![The Health check card on the Rollout tab of web: Check type is HTTP, on port 80 and path /](../../images/getting-started/health-check.png)
 
 4. Saving changes the application's configuration, but not what runs. Go
    back to the application's page, through **hello** above the service's
@@ -104,7 +104,7 @@ deployments**.
 ![The dashboard's Overview: one healthy application, System status showing the database, Docker Engine and Swarm manager ready, and hello's deployment succeeded](../../images/getting-started/overview.png)
 
 Open **Applications**, then **hello**, then **production** on its
-**Environments** tab. **Observed services** lists `web` with one healthy
+**Overview** tab. **Observed services** lists `web` with one healthy
 replica.
 
 ![The production environment of hello: its state is Ready, and web is Converged with 1 of 1 replicas healthy](../../images/getting-started/environment.png)
@@ -131,9 +131,10 @@ to `/`.
 
 To run two replicas of `web`:
 
-- **In the dashboard,** set **Replicas** to `2` on the service's **Source &
-  scaling** tab, and select **Save changes**. Go back to the application
-  through the **hello** breadcrumb, then select **Deploy to production**.
+- **In the dashboard,** set **Replicas** to `2` under **Source & scaling**, on
+  the service's **Image & process** tab, and select **Save changes**. Go back
+  to the application through the **hello** breadcrumb, then select **Deploy to
+  production**.
 - **With `piquelctl`,** run
   `piquelctl app service replicas hello web 2 --deploy`.
 - **From the manifest,** add `replicas = 2` to the existing
@@ -151,7 +152,8 @@ To run two replicas of `web`:
 When you're done, delete the application. This removes its containers and
 history, and deletes its previews with their volumes. Its environments' named
 volumes are kept, so that their data isn't lost by accident. In the
-dashboard, select **Delete application** on the application's **Overview**.
+dashboard, select **Delete application** on the application's **Settings**
+tab.
 Or run:
 
 ```console

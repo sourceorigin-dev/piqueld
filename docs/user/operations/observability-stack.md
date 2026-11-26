@@ -55,7 +55,8 @@ its hostname, stay until you apply the file again.
 
 3. Set your hostname in place of `grafana.example.com`, the manifest's
    placeholder. In the dashboard, change the **Default** of `grafana_hostname`
-   on the application's **Variables** tab, and select **Save changes**. Or
+   under **Variables** on the application's **Configuration** tab, and select
+   **Save changes**. Or
    run:
 
    ```console
@@ -63,7 +64,7 @@ its hostname, stay until you apply the file again.
    ```
 
 4. Grant the application's `production` environment the daemon's telemetry:
-   select **Grant telemetry** on its **Overview**, or run:
+   select **Grant telemetry** on its **Settings** tab, or run:
 
    ```console
    piquelctl env telemetry observability production on
@@ -115,9 +116,10 @@ The **Telemetry export** card on the dashboard's **Daemon status** page, and
 Other applications can send their own telemetry to the collector. Export it to
 them, here `my-app`:
 
-- in the dashboard, select **Add export** on the `observability`
-  application's **Links** tab, choose the `collector` service, list `my-app`
-  under **Applications**, select **Add export**, and deploy;
+- in the dashboard, select **Add export** under **Links** on the
+  `observability` application's **Networking** tab, choose the `collector`
+  service, list `my-app` under **Applications**, select **Add export**, and
+  deploy;
 - with `piquelctl`:
 
   ```console
@@ -132,8 +134,8 @@ them, here `my-app`:
 Then, in each of them, import the collector, and point its OpenTelemetry SDK
 at it with `OTEL_EXPORTER_OTLP_ENDPOINT=http://collector.observability:4317`
 and `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`. In the dashboard, add the import on
-the application's **Links** tab, and the variables on the service's
-**Environment** tab. With `piquelctl`, use
+the application's **Networking** tab, under **Links**, and the variables under
+**Environment** on the service's **Configuration** tab. With `piquelctl`, use
 [`app import add`](../reference/cli-commands.md#piquelctl-app-import-add) and
 [`app service env set`](../reference/cli-commands.md#piquelctl-app-service-env-set).
 In the manifest:
@@ -187,7 +189,7 @@ between restarts, so the password stays the generated one. Add a volume at
 ## Troubleshooting
 
 - **The deployment fails because the collector can't start.** The environment
-  isn't granted telemetry yet. Select **Grant telemetry** on its **Overview**,
+  isn't granted telemetry yet. Select **Grant telemetry** on its **Settings** tab,
   or run `piquelctl env telemetry observability production on`, then deploy
   again.
 - **Grafana's address doesn't open.** Check its DNS records, and that you're on

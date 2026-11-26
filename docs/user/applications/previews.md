@@ -55,8 +55,8 @@ one to try a change before it reaches staging, then delete it.
    branch.
 
 3. Create the branch's preview. In the dashboard, open the application's
-   **Previews** tab and select **New preview**. Fill in **Branch** with
-   `feat/login`, then select **Create preview**.
+   **Overview** tab and select **New preview**, under **Previews**. Fill in
+   **Branch** with `feat/login`, then select **Create preview**.
 
    ![The "Create preview" dialog, with the branch feat/login and an empty Slot (optional) field](../../images/applications/preview-create.png)
 
@@ -73,7 +73,7 @@ The preview deploys the manifest from `feat/login`, and builds the branch's
 `repository = "self"` services. It has its own deployments, secrets, volumes
 and routes, and never shows up among the application's environments.
 
-![The Previews tab of blog: three previews, two of branch feat/login, one of them running a local snapshot, and one of feat/search, whose branch is gone. Each has a Delete button, and the tab has Refresh, Prune gone and New preview buttons](../../images/applications/previews.png)
+![The Previews section of blog's Overview tab: three previews, two of branch feat/login, one of them running a local snapshot, and one of feat/search, whose branch is gone. Each has a Delete button, and the section has Refresh, Prune gone and New preview buttons](../../images/applications/previews.png)
 
 Its name, `blog-feat-login-09b526`, is its slug: the application and the
 branch, with a short hash. Its URL is `ready` once its route serves requests.
@@ -157,9 +157,9 @@ Address it with its slug, or with its branch and `--slot`, such as
 
 ## Find a preview's address and logs
 
-In the dashboard, select the preview on the **Previews** tab: its
-**Overview** lists its URLs, and its **Logs** tab its services' output. With
-`piquelctl`:
+In the dashboard, select the preview under **Previews**, on the application's
+**Overview** tab: its own **Overview** lists its URLs, and its **Logs** tab
+its services' output. With `piquelctl`:
 
 ```console
 piquelctl preview url blog feat/login
@@ -177,8 +177,8 @@ Each preview generates its own values for the secrets the manifest
 generates. A secret you stored with `piquelctl app secret` is only given to
 previews when its access allows them. Someone with `secrets:write` on the
 application allows them: in the dashboard, select **Edit** on the secret's
-row of the application's **Secrets** tab, check **Previews**, and select
-**Save access only**. With `piquelctl`:
+row under **Secret store**, on the application's **Configuration** tab, check
+**Previews**, and select **Save access only**. With `piquelctl`:
 
 ```console
 piquelctl app secret blog access stripe-test --previews
@@ -186,8 +186,8 @@ piquelctl app secret blog access stripe-test --previews
 
 ## Check that it works
 
-The application's **Previews** tab lists its previews, with their branch
-state. With `piquelctl`:
+The **Previews** section of the application's **Overview** tab lists its
+previews, with their branch state. With `piquelctl`:
 
 ```console
 $ piquelctl preview list blog
@@ -213,7 +213,8 @@ replace that comparison. It doesn't say whether that deployment succeeded: the
 
 Deleting a preview removes its services, secrets, deployment history and
 volumes. Its volumes' data is deleted with them. In the dashboard, select
-**Delete** on its row of the **Previews** tab. With `piquelctl`:
+**Delete** on its row under **Previews**, on the application's **Overview**
+tab. With `piquelctl`:
 
 ```console
 $ piquelctl preview delete blog feat/login --slot agent-2
@@ -225,8 +226,8 @@ The command asks you to confirm first; in a script, add `--yes`.
 piqueld never deletes a preview on its own, even once its branch is gone.
 When you delete a branch, such as `feat/search` once you merged it, its
 preview's branch state becomes `gone`. To delete every preview whose branch
-was deleted from the repository, select **Prune gone** on the **Previews**
-tab, or run:
+was deleted from the repository, select **Prune gone** under **Previews**, on
+the application's **Overview** tab, or run:
 
 ```console
 $ piquelctl preview prune blog --branch-gone

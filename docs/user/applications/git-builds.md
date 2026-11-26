@@ -36,17 +36,19 @@ healthy once it answers on `/`, on port 3000.
 1. Create the application `welcome`, and add a service named `web` to it, as
    in [deploying your first application](../getting-started/first-app.md#in-the-dashboard).
    Its image doesn't matter: the next step replaces it.
-2. Open `web` on the application's **Services** tab. On its **Source &
-   scaling** tab, set **Source** to **Git repository with Dockerfile**.
+2. Open `web` on the application's **Services** tab. On its **Image &
+   process** tab, under **Source & scaling**, set **Source** to **Git
+   repository with Dockerfile**.
 3. Fill in **Repository** with
    `https://github.com/docker/welcome-to-docker.git`, **Branch** with `main`,
    and **Dockerfile path** with `Dockerfile`, then select **Save changes**.
    **Commit (optional)** pins a commit.
 
-   ![The Source & scaling tab of the web service: Source is "Git repository with Dockerfile", Repository is https://github.com/docker/welcome-to-docker.git, Branch is main, Commit (optional) is empty, and Dockerfile path is Dockerfile](../../images/applications/service-git-source.png)
+   ![The Source & scaling card of the web service: Source is "Git repository with Dockerfile", Repository is https://github.com/docker/welcome-to-docker.git, Branch is main, Commit (optional) is empty, and Dockerfile path is Dockerfile](../../images/applications/service-git-source.png)
 
-4. On its **Health check** tab, set **Check type** to **HTTP**, **Port** to
-   `3000` and **Path** to `/`, then select **Save changes**.
+4. On its **Rollout** tab, under **Health check**, set **Check type** to
+   **HTTP**, **Port** to `3000` and **Path** to `/`, then select **Save
+   changes**.
 5. On the application's page, select **Deploy to production**.
 
 ### With piquelctl
@@ -182,7 +184,8 @@ A Dockerfile can read build arguments with `ARG`, and a multi-stage one can
 build a stage other than the last. For a Dockerfile with an `ARG VERSION` and
 a `runtime` stage:
 
-- **In the dashboard,** on the service's **Source & scaling** tab, select
+- **In the dashboard,** under **Source & scaling** on the service's **Image &
+  process** tab, select
   **Add build argument** under **Build arguments (not secret)**, and fill in
   **Build target (optional)**.
 - **With `piquelctl`,** pass them to `source git`, which replaces the whole
@@ -288,10 +291,10 @@ of its own. Each environment builds the branch it follows.
 
 piqueld records every build, whether it succeeds or fails. In the dashboard,
 **Builds** in the sidebar lists the builds of every application, and an
-application's **Builds** tab lists its own. Select a build to see the commit
-it built, the image it produced, and its output.
+application's **Releases** tab lists its own under **Builds**. Select a build
+to see the commit it built, the image it produced, and its output.
 
-![The Builds tab of welcome, with build #1 of its web service expanded: it succeeded in 51.3 seconds, and lists the repository https://github.com/docker/welcome-to-docker.git (main), the Dockerfile, the commit it resolved, and the image it produced](../../images/applications/build-output.png)
+![The builds of welcome, on its Releases tab, with build #1 of its web service expanded: it succeeded in 51.3 seconds, and lists the repository https://github.com/docker/welcome-to-docker.git (main), the Dockerfile, the commit it resolved, and the image it produced](../../images/applications/build-output.png)
 
 With `piquelctl`, `app show` lists each service's source:
 

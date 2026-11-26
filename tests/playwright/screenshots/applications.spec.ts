@@ -38,13 +38,13 @@ test('shipping applications', async ({ page, daemon, cli, passkeys, gitHost }) =
   const welcome = await gitHost.create('https://github.com/docker/welcome-to-docker.git');
   await welcome.push('main', { Dockerfile: 'FROM node:22-alpine\nWORKDIR /app\nCOPY . .\nCMD ["serve", "-s", "build"]\n' });
   await piquelctl.apply(await manifest(`${guides}/git-builds.md`));
-  await service(page, 'welcome', 'web', 'Source & scaling');
+  await service(page, 'welcome', 'web', 'Image & process');
   await shoot(page, 'applications/service-git-source', page.getByLabel('Dockerfile path', { exact: true }));
   await lasting(page, 51_300, 144);
   // Its output names the checkout's random directory: show it where a host
   // keeps it.
   await output(page, 1, text => text.replace(/\/\S+\/checkouts\/checkout-\w+/, '/var/lib/piqueld/checkouts/checkout-k3Zq8P'));
-  await application(page, 'welcome', 'Builds');
+  await application(page, 'welcome', 'Releases');
   await page.getByRole('button', { name: /Build #1/ }).click();
   await shoot(page, 'applications/build-output', page.getByText('Retained output', { exact: true }));
 
@@ -55,7 +55,7 @@ test('shipping applications', async ({ page, daemon, cli, passkeys, gitHost }) =
   const pushed = `${guides}/deploy-on-push.md`;
   await blog.push('main', { ...site, 'infra/piqueld.toml': await manifest(pushed, 'Keep the manifest in the repository') });
   await createApplication(page, 'blog');
-  await applicationTab(page, 'Source').click();
+  await applicationTab(page, 'Settings').click();
   await page.getByLabel('Load configuration from Git on deploy', { exact: true }).check();
   await page.getByLabel('Repository', { exact: true }).fill('https://github.com/example/blog.git');
   await page.getByLabel('Branch', { exact: true }).fill('main');
@@ -63,16 +63,17 @@ test('shipping applications', async ({ page, daemon, cli, passkeys, gitHost }) =
   await shoot(page, 'applications/repository-connect', card(page, 'Repository manifest'));
   await saveChanges(page);
   await piquelctl.run(['app', 'deploy', 'blog', '--yes']);
-  await application(page, 'blog', 'Source');
+  await application(page, 'blog', 'Settings');
   await page.getByRole('combobox', { name: 'Deploy on push', exact: true }).selectOption('poll');
   await page.getByLabel('Poll interval (seconds)', { exact: true }).fill('120');
   await saveChanges(page);
   await environment(page, 'blog', 'production');
+  await environmentTab(page, 'Settings').click();
   await shoot(page, 'applications/environment-sync', card(page, 'Source'));
   await piquelctl.run(['app', 'repository', 'sync', 'blog', 'webhook', '--yes']);
   await piquelctl.run(['env', 'sync', 'blog', 'production', 'on']);
   await piquelctl.run(['app', 'repository', 'webhook', 'rotate', 'blog', '--yes']);
-  await application(page, 'blog', 'Source');
+  await application(page, 'blog', 'Settings');
   await shoot(page, 'applications/repository-webhook', card(page, 'GitHub webhook'));
 
   // Environments: blog again, connected with piquelctl, building on staging
@@ -86,8 +87,9 @@ test('shipping applications', async ({ page, daemon, cli, passkeys, gitHost }) =
   await piquelctl.run(['env', 'deploy', 'blog', 'staging', '--yes']);
   await piquelctl.run(['env', 'promote', 'blog', 'production', '--yes']);
   await environment(page, 'blog', 'production');
+  await environmentTab(page, 'Settings').click();
   await shoot(page, 'applications/environment-source', card(page, 'Source'));
-  await application(page, 'blog', 'Environments');
+  await application(page, 'blog', 'Overview');
   const environments = page.getByRole('list', { name: 'Environments' });
   await shoot(page, 'applications/environments', environments);
   await shootForSite(page, environments);
@@ -97,7 +99,7 @@ test('shipping applications', async ({ page, daemon, cli, passkeys, gitHost }) =
   const previewed = `${staged}\n${await manifest(`${guides}/previews.md`, 'Preview a branch')}`;
   await blog.push('feat/login', { 'infra/piqueld.toml': previewed, 'login.html': '<h1>Sign in</h1>\n' }, 'main');
   await blog.push('feat/search', { 'search.html': '<h1>Search</h1>\n' }, 'feat/login');
-  await application(page, 'blog', 'Previews');
+  await application(page, 'blog', 'Overview');
   await page.getByRole('button', { name: 'New preview', exact: true }).click();
   const create = page.getByRole('dialog', { name: 'Create preview' });
   await create.getByLabel('Branch', { exact: true }).fill('feat/login');
@@ -111,7 +113,7 @@ test('shipping applications', async ({ page, daemon, cli, passkeys, gitHost }) =
   await blog.write({ 'index.html': '<h1>Blog</h1>\n<a href="/draft.html">Draft</a>\n', 'draft.html': '<h1>Draft</h1>\n' });
   await piquelctl.run(['preview', 'deploy', 'blog', '--local'], blog.directory);
   await blog.git('push', 'origin', '--delete', 'feat/search');
-  await application(page, 'blog', 'Previews');
+  await application(page, 'blog', 'Overview');
   const previews = page.getByRole('list', { name: 'Previews' });
   await expect(previews.getByRole('listitem')).toHaveCount(3);
   await expect(previews).toContainText(/gone/i);
@@ -134,7 +136,7 @@ test('configuring applications', async ({ page, daemon, cli, passkeys }) => {
   // Configuring services.
   let notes = await manifest(`${guides}/services.md`);
   await piquelctl.apply(notes);
-  await service(page, 'notes', 'web', 'Health check');
+  await service(page, 'notes', 'web', 'Rollout');
   await shoot(page, 'applications/service-health-check', page.getByLabel('Retries', { exact: true }));
 
   // Secrets and variables: smtp-password, stored and mounted in web.
@@ -149,11 +151,11 @@ name = "smtp-password"
 target = "/run/secrets/smtp-password"
 `);
   await piquelctl.apply(notes);
-  await application(page, 'notes', 'Secrets');
-  await shoot(page, 'applications/application-secrets');
+  await application(page, 'notes', 'Configuration');
+  await shoot(page, 'applications/application-secrets', card(page, 'Secret store'), card(page, 'Secret store'));
   await environment(page, 'notes', 'production');
-  await environmentTab(page, 'Secrets').click();
-  await shoot(page, 'applications/environment-secrets');
+  await environmentTab(page, 'Settings').click();
+  await shoot(page, 'applications/environment-secrets', card(page, 'Secret store'), card(page, 'Mounted secrets'));
 
   // Volumes and files: db keeps its data in a volume, and web mounts its
   // configuration.
@@ -176,8 +178,8 @@ server {
 """
 `) + '\n[[spec.volumes]]\nname = "data"\n';
   await piquelctl.apply(notes);
-  await service(page, 'notes', 'db', 'Volume mounts');
-  await shoot(page, 'applications/volume-mounts');
+  await service(page, 'notes', 'db', 'Configuration');
+  await shoot(page, 'applications/volume-mounts', card(page, 'Volume mounts'), card(page, 'Volume mounts'));
 
   // Running jobs: reader migrates its database before each rollout.
   const jobs = `${guides}/jobs.md`;
@@ -188,11 +190,11 @@ server {
   await piquelctl.run(['app', 'secret', 'reader', 'set', 'database-url', '--file', await piquelctl.write('database-url', `postgres://reader:${password}@db:5432/reader?sslmode=disable`), '--yes']);
   reader += `\n${await manifest(jobs, 'Set it up', 1)}`;
   await piquelctl.apply(reader);
-  await application(page, 'reader', 'Jobs');
+  await application(page, 'reader', 'Services');
   await shoot(page, 'applications/jobs-tab', card(page, 'Jobs'));
   await lasting(page, 1_100);
   await output(page, 1);
-  await application(page, 'reader', 'Builds');
+  await application(page, 'reader', 'Releases');
   await page.getByRole('button', { name: /Job migrate #1/ }).click();
   await shoot(page, 'applications/job-run', page.getByText('Retained output', { exact: true }));
 
@@ -200,8 +202,8 @@ server {
   await piquelctl.apply(await manifest(`${guides}/links.md`, 'Set it up'));
   notes += `\n${await manifest(`${guides}/links.md`, 'Set it up', 1)}`;
   await piquelctl.apply(notes);
-  await application(page, 'auth', 'Links');
-  await shoot(page, 'applications/links-tab');
+  await application(page, 'auth', 'Networking');
+  await shoot(page, 'applications/links-tab', card(page, 'Imports'), page.getByRole('heading', { name: 'Links', exact: true }));
   await environment(page, 'notes', 'production');
   await shoot(page, 'applications/environment-links', card(page, 'Links'));
 
@@ -242,6 +244,7 @@ test('restoring a deployment', async ({ page, daemon, cli, passkeys }) => {
   await expect(page.getByRole('complementary', { name: 'Live events' }).getByRole('listitem').first()).toBeVisible();
   await shoot(page, 'applications/restore', page.getByRole('region', { name: 'Deployment progress' }));
   await environment(page, 'hello', 'production');
+  await environmentTab(page, 'Settings').click();
   const rollback = page.locator('section.card', { has: page.getByRole('heading', { name: 'Rollback' }) });
   await rollback.getByLabel('When a rollout fails').selectOption('automatic');
   await shoot(page, 'applications/rollback', rollback, rollback);

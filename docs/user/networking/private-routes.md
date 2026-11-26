@@ -104,8 +104,8 @@ so you can give it its own tags and access rules.
 7. Add a route, as in [Add a route](routes.md#add-a-route), but leave it
    private, then deploy:
 
-   - In the dashboard's **Routes** tab, **Visibility** is **Private** unless
-     you change it.
+   - Under **Routes** on the dashboard's **Networking** tab, **Visibility** is
+     **Private** unless you change it.
    - With `piquelctl`, `app route add` makes private routes by default:
 
      ```console
@@ -128,7 +128,7 @@ addresses.
 
 ## Check that it works
 
-In the dashboard, the application's **Routes** tab lists the route in
+In the dashboard, the application's **Networking** tab lists the route in
 **Where routes are served**. With `piquelctl`:
 
 ```console
@@ -153,11 +153,11 @@ HTTPS connects with the wildcard's certificate and also gets a 404.
 An environment can cap the visibility of its routes. To keep `staging` off the
 internet, whatever its routes say:
 
-- **In the dashboard**, open the environment's **Overview**. In its
+- **In the dashboard**, open the environment's **Settings** tab. In its
   **Visibility** card, set **Route visibility** to **Private: every route is
   tailnet-only**, then select **Save visibility**.
 
-  ![The Overview of the production environment of hello. At the bottom, its Visibility card has Route visibility set to Private: every route is tailnet-only, above the Save visibility button](../../images/networking/environment-visibility.png)
+  ![The Settings tab of the production environment of hello. Its Visibility card has Route visibility set to Private: every route is tailnet-only, above the Save visibility button](../../images/networking/environment-visibility.png)
 
 - **With `piquelctl`**, use
   [`env visibility`](../reference/cli-commands.md#piquelctl-env-visibility):
@@ -223,7 +223,8 @@ change. Other responses already in progress, such as server-sent events or
 long downloads, continue until they end. To revoke their access at once, have
 your application end those connections itself.
 
-In the dashboard, select **Edit** on the route on the **Routes** tab, change
+In the dashboard, select **Edit** on the route under **Routes**, on the
+application's **Networking** tab, change
 its **Visibility**, select **Save route**, then **Deploy to \<environment>**.
 
 With `piquelctl`, change it with

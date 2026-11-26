@@ -38,21 +38,22 @@ least healthy environment) and last deployment time.
 
 An application's page holds its shared configuration and history across all
 of its environments. Saving changes future deployments of every environment;
-running deployments keep their captured configuration. The **Environments** tab
-lists the environments with their health and latest deployment, deploys any one
+running deployments keep their captured configuration. Its first tab,
+**Overview**, lists the environments under **Environments** with their health and latest deployment, deploys any one
 of them, and creates new ones, including for an application with no
 environments. Clicking anywhere on an environment's row opens its own page,
 `/dashboard/applications/<app>/environments/<environment>`, with a breadcrumb
-back to the application. Its Overview shows the runtime status, the environment's
-source, and renames or deletes the environment; its other tabs are Deployments,
-Secrets, Logs, [Traffic](operations/traffic.md), Terminal, and Events. The environment's Secrets tab lists each secret the
+back to the application. Its Overview shows the runtime status; its other tabs
+are Deployments, Logs, [Traffic](operations/traffic.md), Terminal, Events, and
+Settings, which holds the environment's variables, secrets and source, and
+renames or deletes the environment. The **Mounted secrets** card on its Settings tab lists each secret the
 manifest it deploys mounts and where the value comes from: generated for the
 environment, the application's secret store (with its version), missing from the
 store, which would fail the next deploy with `secret_missing`, not allowed by the
 secret's access list, which would fail it with `secret_access_denied`, or discarded by key recovery, which fails it with
 `secret_unavailable` until the value is replaced. A promoted environment not
 promoted into yet lists what the release its source runs mounts. Below it, the
-application's secret store works as in the application's Secrets tab, limited to the
+application's secret store works as on the application's Configuration tab, limited to the
 secrets this environment may mount or mounts; a new secret saved there may be mounted by
 this environment only, unless its access is changed. Then the environment's generated values
 can be regenerated for the next deployment, or deleted so a later deployment
@@ -86,11 +87,13 @@ page stops the output, but the command may keep running in the task, as when
 `piquelctl` ends early. History records the command's start and exit, never the
 command.
 
-The **Previews** tab lists the application's
+The **Previews** section of the application's **Overview**, below its
+environments, lists the application's
 [previews](reference/manifest.md#previews), never shown among its
-environments: each preview's branch, slug, slot, branch state (exists, moved
-or gone, with shortened commits; local while it runs a local snapshot, with
-the branch head or "never pushed"; or unknown with the repository error), and
+environments. Its list has a dashed outline and each row leads with a branch
+icon, to tell previews from environments. Each row shows the preview's branch,
+slug, slot, branch state (exists, moved or gone, with shortened commits; local
+while it runs a local snapshot, with the branch head or "never pushed"; or unknown with the repository error), and
 status (or **Deleting**) with its status message on hover. A **Bounded**
 badge marks a preview whose deployment runs a service with the
 [`[previews]`](reference/configuration.md#previews) default limits or fewer replicas than
@@ -101,7 +104,8 @@ each load runs `git ls-remote` on the manifest repository. **New preview** asks
 for a branch and an optional slot, which tells apart several previews of one
 branch (one per agent, say), then opens the preview's deployments; for a
 preview of that branch and slot that already exists, it opens it without
-redeploying. It is disabled until a manifest repository is connected in Source.
+redeploying. It is disabled until a manifest repository is connected on the
+**Settings** tab.
 **Delete** confirms, then deletes the preview with every volume it created and
 their data. **Prune gone** confirms, then deletes every preview whose branch
 was gone when the list loaded; the daemon checks each branch again, keeps any
@@ -112,7 +116,8 @@ page don't block them.
 Each row opens the preview's page, which has an environment page's tabs.
 Its Overview shows the preview's branch, slot, slug, and ID, with its branch
 state, what it deploys and its bounds read on load and on **Refresh**, then its
-runtime and URLs, its variables rendered for previews, and a card to delete it.
+runtime and URLs. Its Settings tab shows its variables rendered for previews,
+its secrets, and a card to delete it.
 **Deploys** is the head of its branch, or, after `piquelctl preview deploy
 --local`, the local snapshot's commit and the base it was uploaded against,
 with what **Redeploy branch head** does then. **Redeploy branch head** always
@@ -124,7 +129,8 @@ snapshot's origin as "Local snapshot \<commit> on \<base>".
 **Preview** and **Deploy to \<environment>** on an environment page target that
 environment. On the application page they target its only environment; with
 several, **Deploy** opens a list of every environment, each with its own **Deploy** or
-**Promote from \<source>** button. On an environment's own page the button is just **Deploy**. Deployment actions
+**Promote from \<source>** button; with none, **Deploy** opens the **Create
+environment** dialog. On an environment's own page the button is just **Deploy**. Deployment actions
 are disabled for deleting environments. Preview plans the manifest the
 environment deploys: the saved one for an environment following the branch
 `spec.manifest` names, once the application has read a manifest from it (it is
@@ -191,20 +197,19 @@ is listed the same way, its origin reading "Rolled back from deployment
 \<failed> to deployment \<restored>".
 
 Values that differ between environments come from manifest variables. The
-Variables tab edits them: one row per variable, with its default, one column
+**Variables** card, first on the application's **Configuration** tab, edits them: one row per variable, with its default, one column
 per environment, including environments the manifest configures before they
 exist, and a Previews column for `[spec.previews.variables]`. An environment's
 or the previews' value overrides the default, and an empty cell has no
 value, so a variable may have only per-environment values. Fields that accept variables, such as replicas
 or health check settings, take `${{ vars.<name> }}` in place of a literal. An
-environment's Overview lists the value of each variable there, marking variables
+environment's Settings tab lists the value of each variable there, marking variables
 without one. Environments that render the same hostname conflict; the error
 names the environment already reserving it.
 
-Applications have one main tab row: Overview (the default), Environments,
-Previews, Services, Source, Variables, Routes, Volumes, Jobs, Links, Secrets, Releases, Builds,
-and Events. Every page keeps its shown tab in its address, as `?tab=events`
-for example, so reloading the page or sharing its link opens the same tab. The Releases tab lists the application's immutable releases, newest
+Applications have one main tab row: Overview (the default), Services,
+Networking, Configuration, Releases, Events, and Settings. Every page keeps its shown tab in its address, as `?tab=events`
+for example, so reloading the page or sharing its link opens the same tab. The Releases tab lists the application's immutable releases under **Releases**, newest
 first: each successful preparation of an environment's deployment (never a preview's) records one,
 environments that prepared the same content share it, and deleting an environment keeps
 them. Expanding a release shows the commit its manifest was read from, its
@@ -215,10 +220,11 @@ when deployed, or were removed, so it can't be deployed again. **Deployed to**
 lists every environment it was promoted into, deployed again by release ID, or
 restored in, with that deployment. **Deploy to \<environment>**, offered for each promoted
 environment, plans deploying the release there with that environment's current
-secrets, like `piquelctl env promote --release`, and deploys it once confirmed. The Jobs
-tab lists the one-shot jobs that run before each rollout, in the order they
-run, and adds, edits, reorders, and removes them. A job's fields, with one row
-per command element, are in its dialog; each change saves the job list at once.
+secrets, like `piquelctl env promote --release`, and deploys it once confirmed. The **Jobs**
+card, below the service list on the **Services** tab, lists the one-shot jobs
+that run before each rollout, in the order they run, and adds, edits,
+reorders, and removes them. A job's fields, with one row per command element,
+are in its dialog; each change saves the job list at once.
 Jobs inherit the referenced service's startup dependencies, which start or
 update and become healthy first. Other services wait for all jobs to succeed;
 if a job fails, its dependencies return to the running deployment. A job's
@@ -226,19 +232,20 @@ volume access is read-only by default; exclusive access stops the services
 using its writable volumes until the rollout. **Stop service first** stops
 the job's own service before it runs, until the rollout. Each job also lists the
 environment variables and secret files only its container gets, added to its
-service's. The Volumes tab lists the named volumes with the services mounting
-each, and adds, renames, and removes them in a dialog too. The Links tab edits the
+service's. The **Named volumes** card below it lists the named volumes with
+the services mounting each, and adds, renames, and removes them in a dialog
+too. The **Links** section of the **Networking** tab, below the routes, edits the
 application's [links](reference/manifest.md#links): the services it exports
 and the applications that may import them (and whether their previews may),
 and the services of other applications it imports, with an optional
-environment; exports and imports each save their own list. The Routes tab
-edits hostnames, each with an optional [name](reference/manifest.md#routes)
+environment; exports and imports each save their own list. The **Routes** card,
+first on the Networking tab, edits hostnames, each with an optional [name](reference/manifest.md#routes)
 and pointing at a service port or a redirect with a public or
 private visibility, and shows each deployed route's name, effective visibility, the DNS
 records its hostname needs, whether piqueld
 [manages them](networking/dns-records.md) (`manual`, `managed`, `pending` or
 `dns_conflict`), HTTPS readiness and diagnostics in every environment and preview.
-Each environment's Overview sets its visibility ceiling, and its **Rollback**
+Each environment's Settings tab sets its visibility ceiling, and its **Rollback**
 card chooses what happens when a rollout fails: **Automatic** restores the last
 successful deployment, **Manual** leaves the environment degraded, and
 **Default** is automatic for promoted environments and manual for the others
@@ -250,21 +257,23 @@ and memory limits of their deployed replicas. It also shows which DNS providers 
 route records and, on one row, the state of their certificates, the Cloudflare Tunnel's ID and connection state in tunnel mode, and the private listener
 with the apps tailnet node's name and addresses. With `system:operate`,
 **Check DNS providers** checks their credentials now. Saving routes updates only the route field;
-Deploy activates the change. Services lists saved services, with their observed
-health merged in when the application has one environment. The Secrets tab
+Deploy activates the change. The Services tab lists saved services, with their observed
+health merged in when the application has one environment, then the
+**Jobs** and **Named volumes** cards. Below **Variables**, the Configuration tab
 holds the application's secret store, the secrets piqueld generates (each a
 random value or an RSA key; changing or removing one keeps values already
-generated), and each service's secret file references. The Overview tab shows the application's identity, configuration
-revision, and environments, and the delete action. Builds and Events cover every
+generated), and each service's secret file references. The Overview tab ends with the application's identity and configuration
+revision, and the Settings tab holds its repository connection and the delete
+action. Builds, below the releases on the Releases tab, and Events cover every
 environment, each linking to its environment, and include application-wide
 events such as edits and renames; a deleted environment's events remain until
 the application is deleted. Events has an **Errors only** filter. An environment's Overview shows the runtime status, the latest operation,
 a URLs card, a Links card when it imports services or others import its
-services, a Telemetry card when it is granted the daemon's
+services, observed services, and reconciliation diagnostics. Its Settings tab
+has a Telemetry card when it is granted the daemon's
 [telemetry](operations/telemetry.md#receive-telemetry-in-an-application) or
 deploys a service receiving it (whether it is granted, which service receives
-it, and whether the daemon is connected), observed services, and
-reconciliation diagnostics. The Links card
+it, and whether the daemon is connected). The Overview's **Links** card
 lists each import as connected or waiting, with why, and the environments of
 readable applications importing its services; a preview's Overview shows it
 too. The URLs card
@@ -272,9 +281,10 @@ lists the URL of each route the current deployment renders, with its name,
 visibility, destination and state: **ready**, or **pending** with what it waits
 for (ingress, HTTPS, DNS records, or a healthy service), as the daemon reports
 it in [URL readiness](reference/api.md#url-readiness). Each service row opens a service page with a
-breadcrumb back to the application and tabs for source and scaling,
-environment, command and arguments, volume mounts, files, health checks,
-startup dependencies, rollout, telemetry, resource limits, and logs. Files lists each
+breadcrumb back to the application and five tabs: **Image & process** (source
+and scaling, command and arguments, resource limits), **Configuration**
+(environment, files, volume mounts), **Rollout** (health check, startup
+dependencies, rollout), **Security** (security, telemetry), and **Logs**. Files lists each
 read-only file's container path, mode, and inline content; files a
 repository-backed manifest reads show their repository path. Startup dependencies list the
 application's other services as checkboxes. Rollout selects an order (derived
@@ -351,7 +361,7 @@ tailnet user or tag; see [tailnet-bound tokens](accounts/cli-and-tokens.md#bind-
 integrity** checks the trail's [hash chain](operations/audit.md#check-that-nobody-changed-it). Log display preferences persist in browser
 local storage.
 
-The application's **Secrets** tab lists the secret store's names, versions and
+The **Secret store** card, on the application's **Configuration** tab, lists the secret store's names, versions and
 who may mount each one, by environment name. It creates or replaces write-only
 text values, edits access (every environment, including ones created later, or
 the checked environments, plus whether previews may mount it, which "every
@@ -404,7 +414,7 @@ are being edited.
 Each environment of a repository-backed application follows its own branch.
 **New environment** asks for the branch (by default the one `spec.manifest`
 names) and an optional commit, the Environments list shows each environment's
-branch, and the **Source** card on an environment's Overview changes it; nothing
+branch, and the **Source** card on an environment's Settings tab changes it; nothing
 is redeployed until its next deployment. The environment's Variables card and
 Logs service filter read the manifest last fetched from its branch; the
 Variables card says when it has fetched nothing yet.
@@ -447,16 +457,16 @@ must set `ingress.webhook_hostname`), the content type and event, and whether a
 secret exists. **Generate secret** creates one and shows it once, with a
 **Copy** button, as the payload URL has (browsers offer no clipboard on plain
 HTTP origins, so there the text is only selectable), until **Done** or leaving
-the Source tab;
+the Settings tab;
 **Rotate secret** confirms first, since the previous secret stops verifying at
 once. Neither is retried automatically when its outcome is unknown, as a retry
-would rotate the secret again. On an environment's Overview, the **Source** card says
+would rotate the secret again. On an environment's Settings tab, the **Source** card says
 whether pushes deploy it (following, off, pinned, not opted in, stopped, or
 waiting for a deployment, with the reason) and the branch head of its last
 deployment ("Not pushed" when a local snapshot was deployed before its branch
 existed); **Deploy on push** opts it in without a saved revision, and
 **Stop deploying on push** opts it out. A
-preview's page shows the same, without the opt-out. An environment's Overview
+preview's Overview shows the same, without the opt-out. An environment's Settings tab
 has a **Telemetry** card: whether it is granted the daemon's telemetry, which
 deployed service receives it and whether the daemon exports to it. **Grant
 telemetry** confirms, then grants the environment telemetry, and **Revoke
@@ -494,8 +504,8 @@ why the last cleanup couldn't delete them all, if it couldn't. Green and red lab
 each result in text, and one refresh updates the complete dashboard status.
 These diagnostics never disable configuration controls.
 
-Build history is available from the main navigation and each application's Builds
-tab. Compact attempt rows expand to show source, revision, Docker build settings,
+Build history is available from the main navigation and under **Builds** on
+each application's Releases tab. Compact attempt rows expand to show source, revision, Docker build settings,
 operation timing, commit, image, where it was built, and retained output size. A
 build that reused the image of an earlier build is tagged **Reused**, and names
 that build. With `system:read`, a host with a [build

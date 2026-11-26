@@ -203,7 +203,7 @@ It deploys to the preview of the current branch, creating it if needed. Add
 `--slot <name>` to give each agent working on one branch a preview of its
 own. To preview a pushed branch instead, run
 `piquelctl preview create piqueld-dev --branch <branch>`, or select
-**New preview** on the application's **Previews** tab in the dashboard.
+**New preview** on the application's **Overview** tab in the dashboard.
 
 Then list the preview's URLs:
 

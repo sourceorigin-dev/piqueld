@@ -83,12 +83,13 @@ manifest. To connect an application you already run, skip creating it.
    name** with `blog`, and select **Create application**. The application
    opens, without services.
 
-2. On its **Source** tab, check **Load configuration from Git on deploy**.
+2. On its **Settings** tab, under **Repository manifest**, check **Load
+   configuration from Git on deploy**.
    Fill in **Repository** with your repository's URL, **Branch** with `main`,
    and **Manifest path** with `infra/piqueld.toml`, then select **Save
    changes**.
 
-   ![The Source tab of blog: Load configuration from Git on deploy is checked, Repository is https://github.com/example/blog.git, Branch is main, Manifest path is infra/piqueld.toml, and Deploy on push is Off](../../images/applications/repository-connect.png)
+   ![The Settings tab of blog: Load configuration from Git on deploy is checked, Repository is https://github.com/example/blog.git, Branch is main, Manifest path is infra/piqueld.toml, and Deploy on push is Off](../../images/applications/repository-connect.png)
 
 3. Select **Deploy to production**, at the top of the page.
 
@@ -127,7 +128,7 @@ each environment. To deploy another branch to a staging environment, see
 [environments](environments.md#add-an-environment).
 
 To stop reading the manifest from Git, uncheck **Load configuration from Git
-on deploy** on the **Source** tab and select **Save changes**, or run
+on deploy** on the **Settings** tab and select **Save changes**, or run
 `piquelctl app repository disconnect blog`. The application keeps its current
 manifest. Its services with `repository = "self"` build from the repository's
 URL and branch instead.
@@ -135,16 +136,16 @@ URL and branch instead.
 ## Edit a repository-backed application
 
 You can still edit the application. For example, to run two replicas of
-`web`, set **Replicas** to `2` on the service's **Source & scaling** tab and
-select **Save changes**, or run:
+`web`, set **Replicas** to `2` under **Source & scaling**, on the service's
+**Image & process** tab, and select **Save changes**, or run:
 
 ```console
 piquelctl app service replicas blog web 2
 ```
 
-A notice at the top of each of the application's settings tabs, such as
-**Services** and **Variables**, then lists how the application differs from
-the repository. So does `piquelctl app show`:
+A notice at the top of the application's **Services**, **Networking**,
+**Configuration** and **Settings** tabs then lists how the application differs
+from the repository. So does `piquelctl app show`:
 
 ```text
 Edited since read from the repository (reset with `app repository reset`):
@@ -196,14 +197,15 @@ instead.
 
 ### In the dashboard
 
-1. On the application's **Source** tab, set **Deploy on push** to **Poll:
+1. On the application's **Settings** tab, set **Deploy on push** to **Poll:
    check the branches on an interval**, fill in **Poll interval (seconds)**
    with `120`, and select **Save changes**.
 
-2. Open the environment, such as **production** on the **Environments** tab.
-   On its **Overview**, select **Deploy on push** on its **Source** card.
+2. Open the environment, such as **production** on the application's
+   **Overview** tab. On its **Settings** tab, select **Deploy on push** on its
+   **Source** card.
 
-   ![The Overview of blog's production environment. Its Source card, at the bottom, builds the manifest on branch main, and Deploy on push says Not Opted In, above a Deploy on push button](../../images/applications/environment-sync.png)
+   ![The Settings tab of blog's production environment. Its Source card builds the manifest on branch main, and Deploy on push says Not Opted In, above a Deploy on push button](../../images/applications/environment-sync.png)
 
    **Stop deploying on push** opts it out again.
 
@@ -258,18 +260,18 @@ dashboard or with `piquelctl`. Then add the webhook in GitHub.
 
 ### In the dashboard
 
-1. On the application's **Source** tab, set **Deploy on push** to **Webhook:
+1. On the application's **Settings** tab, set **Deploy on push** to **Webhook:
    when GitHub reports a push**, and select **Save changes**. A **GitHub
    webhook** card then lists the settings for GitHub.
 
-2. Opt the environment in on its **Overview**, if you haven't yet, as in
+2. Opt the environment in on its **Settings** tab, if you haven't yet, as in
    [deploying every push](#in-the-dashboard-1).
 
 3. On the **GitHub webhook** card, select **Generate secret**. The card shows
    the secret once, with a **Copy** button, until you select **Done** or
-   leave the **Source** tab.
+   leave the **Settings** tab.
 
-   ![The Source tab of blog: its manifest is read from infra/piqueld.toml in https://github.com/example/blog.git, Deploy on push is set to Webhook, and the GitHub webhook card shows the payload URL, the content type application/json, the push event, and a secret generated just now](../../images/applications/repository-webhook.png)
+   ![The Settings tab of blog: its manifest is read from infra/piqueld.toml in https://github.com/example/blog.git, Deploy on push is set to Webhook, and the GitHub webhook card shows the payload URL, the content type application/json, the push event, and a secret generated just now](../../images/applications/repository-webhook.png)
 
 ### With piquelctl
 
@@ -331,7 +333,7 @@ It asks you to confirm every time; in a script, add `--yes`.
 Push a commit to `main`, then open the environment. Its **Source** card says
 **following** under **Deploy on push**, and **Last synced** is the commit its
 last deployment found on `main`. **Last sync check**, on the application's
-**Source** tab, says when piqueld last listed the repository's branches, or
+**Settings** tab, says when piqueld last listed the repository's branches, or
 why it couldn't.
 
 With `piquelctl`:
@@ -386,12 +388,12 @@ shows each delivery and piqueld's response: `204` when it was accepted.
   payload URL into GitHub again.
 - **The deployment fails with `manifest_not_found`.** There is no file at the
   manifest's path on that commit. Correct **Manifest path** on the
-  **Source** tab, or run
+  **Settings** tab, or run
   `piquelctl app repository path blog infra/piqueld.toml`.
 - **A deployment warns about `manifest_connection_ignored`.** The file's own
   `[spec.manifest]` names another repository or path. piqueld ignores it and
   keeps the application's connection. Change the connection on the
-  **Source** tab, or with `piquelctl app repository url` or
+  **Settings** tab, or with `piquelctl app repository url` or
   `piquelctl app repository path`.
 - **Your edits are gone.** A push changed the manifest file, and its
   deployment replaced them. Make the change in the repository instead.

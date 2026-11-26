@@ -85,7 +85,7 @@ is supported; `PIQUELD_PLAYWRIGHT_BIN_DIR` can override the directory containing
 - Per-environment branches, one-time branch or commit deployments, deployment
   on push, previews created and pruned from the dashboard, the local snapshot
   a preview runs and redeploying its branch head, promotion plans, and the
-  Secrets tabs of environments and previews.
+  secrets on the Settings tabs of environments and previews.
 - Stored secret replacement that keeps an access list changed elsewhere,
   access-only saves, deletion, and refused writes that wait for a refresh;
   regenerating a deployed environment's generated secret, and a refused

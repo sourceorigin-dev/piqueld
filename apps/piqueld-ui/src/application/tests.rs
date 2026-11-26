@@ -169,7 +169,7 @@ fn query_parameters_open_only_tabs_the_page_has() {
     };
     let environment = Page::Environment("env".into());
     assert_eq!(environment.initial_tab(query(&[("tab", "logs")])), "Logs");
-    assert_eq!(slug("Command & arguments"), "command-arguments");
+    assert_eq!(slug("Image & process"), "image-process");
     assert_eq!(
         environment.initial_tab(query(&[("release", "r1")])),
         "Overview"
@@ -179,7 +179,7 @@ fn query_parameters_open_only_tabs_the_page_has() {
         "Overview"
     );
     assert_eq!(
-        Page::Application.initial_tab(query(&[("release", "r1"), ("tab", "jobs")])),
+        Page::Application.initial_tab(query(&[("release", "r1"), ("tab", "settings")])),
         "Releases"
     );
     let deployment = Page::Deployment {

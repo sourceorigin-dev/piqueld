@@ -148,9 +148,11 @@ fn bounds(bounds: Vec<DiagnosticView>) -> AnyView {
         .into_any()
 }
 
-/// The application's previews with their status and branch state, read when
-/// the tab opens and on refresh. "Prune gone" deletes those whose branch is
-/// gone, with `previews:delete`.
+/// The application's previews with their status and branch state, below its
+/// environments on the Overview tab, read when the tab opens and on refresh.
+/// Each read lists the manifest repository's branches, so the list loads on
+/// its own, after the page. "Prune gone" deletes those whose branch is gone,
+/// with `previews:delete`.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn PreviewList() -> impl IntoView {
@@ -201,7 +203,7 @@ pub(super) fn PreviewList() -> impl IntoView {
         if context.repository_backed() {
             "No previews yet. Create one to deploy a branch."
         } else {
-            "No previews. Previews deploy branches of the application's manifest repository: connect one in Source first."
+            "No previews. Previews deploy branches of the application's manifest repository: connect one on the Settings tab first."
         }
     };
     view! {
@@ -239,7 +241,7 @@ pub(super) fn PreviewList() -> impl IntoView {
                         return empty(none());
                     }
                     view! {
-                        <ul class="list" aria-label="Previews">
+                        <ul class="list list-previews" aria-label="Previews">
                             {previews
                                 .into_iter()
                                 .map(|view| {
@@ -372,7 +374,10 @@ fn PreviewRow(
     view! {
         <li class="list-row list-row-link">
             <span class="title">
-                <A href={context.preview_href(view.preview.id.as_str())}>{branch}</A>
+                <A href={context.preview_href(view.preview.id.as_str())}>
+                    {icon(Icon::GitBranch)}
+                    {branch}
+                </A>
                 <small>{subtitle}</small>
             </span>
             <span class="meta">{branch_detail}</span>
@@ -548,7 +553,8 @@ pub(super) fn PreviewSettings() -> impl IntoView {
 }
 
 /// Danger-zone card of a preview's page: deletes it with every volume it
-/// created, then returns to the previews. Hidden without `previews:delete`.
+/// created, then returns to the application's overview. Hidden without
+/// `previews:delete`.
 #[component]
 pub(super) fn DeletePreview() -> impl IntoView {
     let context = editor();
@@ -563,7 +569,7 @@ pub(super) fn DeletePreview() -> impl IntoView {
             return;
         };
         let navigate = navigate.clone();
-        let href = format!("/dashboard/applications/{}?tab=previews", context.id());
+        let href = format!("/dashboard/applications/{}", context.id());
         context.delete_preview(&preview, move || {
             navigate(&href, NavigateOptions::default());
         });

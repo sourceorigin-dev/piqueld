@@ -53,7 +53,7 @@ pub(super) fn PromotionPlan(plan: PlanView) -> impl IntoView {
                         })
                         .collect_view()}
                     <p class="hint">
-                        "Resolve each secret problem in the Secrets tab before promoting."
+                        "Resolve each secret problem on the environment's Settings tab before promoting."
                     </p>
                 </div>
             }

@@ -265,7 +265,7 @@ So granting it can't depend on that application's own permissions: it needs
 `telemetry:grant` and reading the application.
 
 On the dashboard, select **Grant telemetry** on the environment's
-**Overview** tab. With `piquelctl`:
+**Settings** tab. With `piquelctl`:
 
 ```console
 piquelctl env telemetry blog production on

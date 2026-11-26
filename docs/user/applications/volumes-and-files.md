@@ -30,14 +30,14 @@ content. Each environment gets its own volume: environments never share data.
 
 ### In the dashboard
 
-1. On the application's **Volumes** tab, select **Add volume** under **Named
+1. On the application's **Services** tab, select **Add volume** under **Named
    volumes**. In the dialog, enter `data` and select **Add volume**, which
    saves it.
-2. On `db`'s **Volume mounts** tab, select **Add mount**, enter `data` under
-   **Volume** and `/var/lib/postgresql/data` as the **Container path**, then
-   select **Save changes**.
+2. On `db`'s **Configuration** tab, under **Volume mounts**, select **Add
+   mount**, enter `data` under **Volume** and `/var/lib/postgresql/data` as
+   the **Container path**, then select **Save changes**.
 
-   ![The db service's Volume mounts tab: the data volume mounted at /var/lib/postgresql/data, with Read only unchecked](../../images/applications/volume-mounts.png)
+   ![The db service's Volume mounts card: the data volume mounted at /var/lib/postgresql/data, with Read only unchecked](../../images/applications/volume-mounts.png)
 
 3. Select **Deploy to production**.
 
@@ -162,9 +162,9 @@ volumes, so back them up separately.
 piqueld can mount a configuration file you write, such as nginx's
 `/etc/nginx/conf.d/default.conf`, into a service:
 
-- **In the dashboard,** use the service's **Files** tab: select **Add file**,
-  then enter the **Container path** and the **Content**, and select **Save
-  changes**.
+- **In the dashboard,** use **Files** on the service's **Configuration** tab:
+  select **Add file**, then enter the **Container path** and the **Content**,
+  and select **Save changes**.
 - **With `piquelctl`,** read the content from a file on your machine:
 
   ```console
@@ -206,7 +206,8 @@ repository; see [files](../reference/manifest.md#files).
 
 ## Check that it works
 
-The service's **Files** tab lists its files, and `piquelctl app file list notes`
+**Files**, on the service's **Configuration** tab, lists its files, and
+`piquelctl app file list notes`
 lists the application's:
 
 ```text

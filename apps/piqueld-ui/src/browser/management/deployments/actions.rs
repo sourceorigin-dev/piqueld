@@ -17,10 +17,11 @@ use piqueld_client::{
 /// "Preview" and "Deploy" buttons for the editor's target environment.
 /// Preview plans the manifest that environment deploys; Deploy starts a
 /// deployment of the saved generation. Without a single target, Deploy lists
-/// the environments to choose from; a promoted target offers Promote from its
-/// source instead, and Promote into its dependents comes first. A branch
-/// target also offers Deploy revision (see `DeployRevision`). Preview needs
-/// `apps:write`, the others `apps:deploy`.
+/// the environments to choose from, or with no environment opens the Create
+/// environment dialog on the Overview tab; a promoted target offers Promote
+/// from its source instead, and Promote into its dependents comes first. A
+/// branch target also offers Deploy revision (see `DeployRevision`). Preview
+/// and creating an environment need `apps:write`, the others `apps:deploy`.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
@@ -120,8 +121,12 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
                                     type="button"
                                     class="btn btn-primary"
                                     title="Create an environment to deploy"
-                                    hidden={move || !context.can(AppPermission::Deploy)}
-                                    on:click={move |_| context.tabs.selected.set("Environments")}
+                                    hidden={move || !context.can(AppPermission::Write)}
+                                    disabled={move || context.action_blocked()}
+                                    on:click={move |_| {
+                                        context.tabs.selected.set("Overview");
+                                        context.creating_environment.set(true);
+                                    }}
                                 >
                                     {icon(Icon::Rocket)}
                                     "Deploy"

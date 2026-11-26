@@ -260,7 +260,7 @@ pub(super) fn sync_badge(state: SyncState) -> (AnyView, &'static str) {
         SyncState::Following => (Tone::Ok, "Pushes to its branch deploy it."),
         SyncState::Off => (
             Tone::Neutral,
-            "Its application does not deploy on push; turn it on in the application's Source tab.",
+            "Its application does not deploy on push; enable it on the application's Settings tab.",
         ),
         SyncState::Pinned => (
             Tone::Neutral,
@@ -378,14 +378,23 @@ fn PromotionSource(
 /// "New environment" button and dialog; opens the created environment. It
 /// builds its own source, choosing the branch to follow for a
 /// repository-backed application, or is promoted from another environment.
-/// The button is shown with `apps:write`.
+/// The button is shown with `apps:write`. The header's Deploy button opens
+/// the dialog too while the application has no environment. Each opening,
+/// from either button, starts from an empty form.
 #[component]
 fn NewEnvironment() -> impl IntoView {
     let context = editor();
-    let opened = RwSignal::new(false);
+    let opened = context.creating_environment;
     let name = RwSignal::new(String::new());
     let branch = RwSignal::new(context.default_branch());
     let promote_from = RwSignal::new(String::new());
+    Effect::new(move |_| {
+        if opened.get() {
+            name.set(String::new());
+            branch.set(untrack(move || context.default_branch()));
+            promote_from.set(String::new());
+        }
+    });
     let builds = move || promote_from.with(String::is_empty);
     let sources = Signal::derive(move || context.promotion_sources(""));
     let navigate = use_navigate();
@@ -429,12 +438,7 @@ fn NewEnvironment() -> impl IntoView {
             class="btn btn-primary"
             hidden={move || !context.can(AppPermission::Write)}
             disabled={move || context.action_blocked()}
-            on:click={move |_| {
-                name.set(String::new());
-                branch.set(context.default_branch());
-                promote_from.set(String::new());
-                opened.set(true);
-            }}
+            on:click={move |_| opened.set(true)}
         >
             {icon(Icon::Plus)}
             "New environment"
@@ -978,7 +982,7 @@ fn EnvironmentRollback() -> impl IntoView {
 }
 
 /// Source, visibility, rollback, rename and deletion of the environment page's
-/// environment. Deletion returns to the application's environments once
+/// environment. Deletion returns to the application's overview once
 /// accepted. Renaming needs `apps:write`, deleting `apps:delete`, and
 /// retrying a deletion, which reconciles, `apps:deploy`.
 #[component]
@@ -1026,7 +1030,7 @@ pub(super) fn EnvironmentSettings() -> impl IntoView {
             return;
         }
         let navigate = navigate.clone();
-        let href = format!("/dashboard/applications/{}?tab=environments", context.id());
+        let href = format!("/dashboard/applications/{}", context.id());
         context.change_environment(EnvironmentEdit::Delete(id.get_value()), move |_| {
             navigate(&href, NavigateOptions::default());
         });

@@ -561,7 +561,7 @@ as it does with the [ingress gateway](ingress.md).
    piquelctl env telemetry observability production on
    ```
 
-   The environment's Overview has a Grant telemetry button. Previews
+   The environment's Settings tab has a Grant telemetry button. Previews
    are never granted; promoted environments can be, as the grant belongs to the
    environment, not to its releases.
 
@@ -621,7 +621,7 @@ listens while the old one still runs, the daemon exports to the new socket
 within seconds of the deployment, and the old directory is removed with the
 old service.
 
-`env show` and the environment Overview show whether the environment is
+`env show` and the environment's Settings tab show whether the environment is
 granted, which service receives it, and whether the daemon is connected.
 
 The receiving application sees the telemetry of **every** application: their

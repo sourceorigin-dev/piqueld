@@ -181,7 +181,7 @@ test('a dashboard refresh keeps an environment row\'s promotion preview open', a
   });
   await page.clock.install();
   await page.goto(`/dashboard/applications/${app}`);
-  await applicationTab(page, 'Environments').click();
+  await applicationTab(page, 'Overview').click();
   await page.getByRole('list', { name: 'Environments' }).getByRole('button', { name: 'Promote from staging', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Promotion preview' });
   await expect(dialog).toBeVisible();
@@ -203,7 +203,7 @@ test('refreshing releases updates the shown cards', async ({ page, account }) =>
   });
   await page.goto(`/dashboard/applications/${app}`);
   await applicationTab(page, 'Releases').click();
-  const card = page.locator('article.expander');
+  const card = page.getByRole('region', { name: 'Releases' }).locator('article.expander');
   await page.getByRole('button', { name: /^rel-0123456789abcdef0123456789abcdef/ }).click();
   await expect(card).toContainText('Images present');
   await expect(card).not.toContainText('Deployed to');
@@ -217,7 +217,7 @@ test('refreshing releases updates the shown cards', async ({ page, account }) =>
     environment_id: production, deployment_id: 'operation-0123456789abcdf0',
     origin: { type: 'release' }, created_at_ms: Date.now(),
   }] as typeof shown.promotions;
-  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await page.getByRole('region', { name: 'Releases' }).getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(card).toContainText('Images removed');
   await expect(card).toContainText("Missing for web; the release can't be deployed again.");
   await expect(card.getByRole('link', { name: 'production', exact: true })).toBeVisible();
@@ -250,7 +250,7 @@ test('a ?release= link pages back a few pages at a time, then says the release i
 test('an environment builds its own source or receives promoted releases, as one choice', async ({ page, account }) => {
   void account;
   const { app, production } = await createUndeclaredPromotion(page);
-  await page.goto(`/dashboard/applications/${app}/environments/${production}`);
+  await page.goto(`/dashboard/applications/${app}/environments/${production}?tab=settings`);
   const source = card(page, 'Source');
   await expect(source).toContainText('Receives releases promoted from staging');
   const save = source.getByRole('button', { name: 'Save source', exact: true });
@@ -278,7 +278,7 @@ test('an untouched Source card follows a source changed elsewhere', async ({ pag
   void account;
   const { app, production } = await createUndeclaredPromotion(page);
   await page.clock.install();
-  await page.goto(`/dashboard/applications/${app}/environments/${production}`);
+  await page.goto(`/dashboard/applications/${app}/environments/${production}?tab=settings`);
   const source = card(page, 'Source');
   const deploys = source.getByRole('combobox', { name: 'Deploys', exact: true });
   await expect(deploys).not.toHaveValue('');
@@ -295,7 +295,7 @@ test('a promoted environment\'s visibility keeps unsaved edits and shows what wa
   void account;
   const { app, production } = await createUndeclaredPromotion(page);
   await page.clock.install();
-  await page.goto(`/dashboard/applications/${app}/environments/${production}`);
+  await page.goto(`/dashboard/applications/${app}/environments/${production}?tab=settings`);
   const visibility = card(page, 'Visibility');
   const select = visibility.getByRole('combobox', { name: 'Route visibility', exact: true });
   const save = visibility.getByRole('button', { name: 'Save visibility', exact: true });
@@ -318,7 +318,7 @@ test('a promoted environment\'s visibility keeps unsaved edits and shows what wa
 test('a promoted environment rolls back automatically by default, and saves another choice', async ({ page, account }) => {
   void account;
   const { app, production } = await createUndeclaredPromotion(page);
-  await page.goto(`/dashboard/applications/${app}/environments/${production}`);
+  await page.goto(`/dashboard/applications/${app}/environments/${production}?tab=settings`);
   const rollback = card(page, 'Rollback');
   const select = rollback.getByRole('combobox', { name: 'When a rollout fails', exact: true });
   const save = rollback.getByRole('button', { name: 'Save rollback', exact: true });
@@ -349,7 +349,7 @@ test('a promoted environment rolls back automatically by default, and saves anot
 test('the manifest owns the environments it declares, and reports the ones it drops', async ({ page, account }) => {
   void account;
   const { app, production } = await createPromotion(page);
-  await page.goto(`/dashboard/applications/${app}/environments/${production}`);
+  await page.goto(`/dashboard/applications/${app}/environments/${production}?tab=settings`);
   const source = card(page, 'Source');
   await expect(source).toContainText('Receives releases promoted from staging');
   await expect(source).toContainText('[spec.environments.production]');
@@ -366,14 +366,14 @@ test('the manifest owns the environments it declares, and reports the ones it dr
   await call(page, 'POST', 'applications/apply', {
     manifest: productionOnly, expected_generation: generation, expected_application_id: app,
   });
-  await page.goto(`/dashboard/applications/${app}?tab=environments`);
+  await page.goto(`/dashboard/applications/${app}`);
   const drift = page.getByRole('region', { name: 'Differences from the manifest' });
   await expect(drift.getByRole('listitem')).toHaveCount(1);
   await expect(drift).toContainText('staging');
   await expect(drift).toContainText('Not declared');
 });
 
-test('an environment\'s Secrets tab edits the stored secrets it may mount', async ({ page, account }) => {
+test('an environment\'s Settings tab edits the stored secrets it may mount', async ({ page, account }) => {
   void account;
   const { app, production, staging } = await createPromotion(page);
   // Production's own key, which staging may not mount and doesn't, and one every environment may mount.
@@ -381,7 +381,7 @@ test('an environment\'s Secrets tab edits the stored secrets it may mount', asyn
   await call(page, 'PUT', `applications/${app}/secrets/shared?environments=all`, 'shared', { 'X-Expected-Generation': '0' });
 
   await page.goto(`/dashboard/applications/${app}/environments/${staging}`);
-  await environmentTab(page, 'Secrets').click();
+  await environmentTab(page, 'Settings').click();
   const mounted = card(page, 'Mounted secrets');
   await expect(mounted.getByRole('row').filter({ hasText: 'staging-api-key' })).toContainText('not set');
   const store = card(page, 'Secret store');
@@ -400,16 +400,16 @@ test('an environment\'s Secrets tab edits the stored secrets it may mount', asyn
 
   // Before its first promotion, a promoted environment has nothing to mount yet.
   await page.goto(`/dashboard/applications/${app}/environments/${production}`);
-  await environmentTab(page, 'Secrets').click();
+  await environmentTab(page, 'Settings').click();
   await expect(page.getByText('Its source has no release to promote yet.', { exact: true })).toBeVisible();
 });
 
-test('a preview\'s Secrets tab gives new stored secrets to previews', async ({ page, account }) => {
+test('a preview\'s Settings tab gives new stored secrets to previews', async ({ page, account }) => {
   void account;
   const { app } = await apply(page, { ...manifest, metadata: { name: 'notes' }, spec: { ...manifest.spec, manifest: repositoryManifest } });
   const preview = (await call(page, 'POST', `applications/${app}/previews`, { branch: 'feat/login' })).preview.id as string;
   await page.goto(`/dashboard/applications/${app}/environments/${preview}`);
-  await environmentTab(page, 'Secrets').click();
+  await environmentTab(page, 'Settings').click();
   const store = card(page, 'Secret store');
   const request = page.waitForRequest(request => request.method() === 'PUT' && request.url().includes(`/applications/${app}/secrets/preview-key`));
   await store.getByLabel('Secret name', { exact: true }).fill('preview-key');
