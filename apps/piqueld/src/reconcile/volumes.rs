@@ -11,11 +11,16 @@ const SURVEY_PERIOD: Duration = Duration::from_mins(15);
 
 impl<D: DockerApi> Controller<D> {
     /// Surveys volumes, measuring them, every [`SURVEY_PERIOD`] until
-    /// cancelled. Failures are reported as daemon diagnostics.
+    /// cancelled, which also stops a survey in progress. Failures are
+    /// reported as daemon diagnostics.
     pub async fn run_volume_survey(&self, cancellation: CancellationToken) {
         let mut ticks = Ticker::new(SURVEY_PERIOD);
         while ticks.tick(&cancellation).await {
-            if let Err(error) = self.survey_volumes(true).await {
+            let surveyed = tokio::select! {
+                () = cancellation.cancelled() => return,
+                surveyed = self.survey_volumes(true) => surveyed,
+            };
+            if let Err(error) = surveyed {
                 tracing::warn!(%error, "volume survey failed");
                 self.store
                     .report_diagnostic(&error.diagnostic(), None)

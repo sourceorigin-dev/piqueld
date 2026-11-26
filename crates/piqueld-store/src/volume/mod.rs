@@ -228,8 +228,9 @@ impl Store {
 
     /// Forgets the detached volume `id` for `author`, who needs
     /// `system:operate`, returning what removing it from Docker needs. Its
-    /// record goes first, so nothing can attach it while Docker removes it;
-    /// if removal fails, the next survey adopts it again.
+    /// record goes first, so it can't be attached through this record; a
+    /// survey listing it before Docker removes it adopts it again, under a
+    /// new ID, until the next survey forgets it.
     ///
     /// # Errors
     /// Returns `Attached` for an attached volume, `Denied`, `NotFound`, or a
