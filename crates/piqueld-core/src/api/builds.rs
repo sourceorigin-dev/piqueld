@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::LogStream;
+use crate::EnvironmentId;
 use crate::names::string_enum;
 
 /// Durable source-preparation attempt or one-shot job run, independent of the executor.
@@ -12,7 +13,7 @@ pub struct BuildRecord {
     /// Monotonic build identifier.
     pub id: i64,
     /// Owning environment ID.
-    pub environment_id: crate::EnvironmentId,
+    pub environment_id: EnvironmentId,
     /// Source operation ID, retained even after operation pruning.
     pub operation_id: String,
     /// Logical service name; for job runs, the service whose container the job reuses.
