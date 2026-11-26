@@ -171,8 +171,8 @@ impl Draft<String> {
 /// at `index`, as `draft`. Submitting saves the whole list at once, so the
 /// list needs no unsaved state of its own. While open, the dialog is in the
 /// editor's dirty set, so the saved rows its index points into are not
-/// replaced under it. Closing it clears the error of a refused save, whose
-/// draft it drops.
+/// replaced under it. Closing it after a refused save keeps the editor's
+/// error, with its Reload button, on the page.
 pub(super) struct RowDialog<T: Send + Sync + 'static> {
     pub(super) opened: RwSignal<bool>,
     pub(super) draft: RwSignal<T>,
@@ -190,16 +190,8 @@ impl<T: Send + Sync + 'static> Copy for RowDialog<T> {}
 impl<T: Clone + Default + Send + Sync + 'static> RowDialog<T> {
     /// The dialog of the list `key`, which names it in the dirty set.
     pub(super) fn new(key: &'static str) -> Self {
-        let context = editor();
         let opened = RwSignal::new(false);
-        context.guard(format!("{key}-dialog"), move || opened.get());
-        Effect::new(move |was_open: Option<bool>| {
-            let open = opened.get();
-            if was_open == Some(true) && !open {
-                context.set_error(None);
-            }
-            open
-        });
+        editor().guard(format!("{key}-dialog"), move || opened.get());
         Self {
             opened,
             draft: RwSignal::new(T::default()),

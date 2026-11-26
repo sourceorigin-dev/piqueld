@@ -203,7 +203,8 @@ path the service mounts something at, fails validation.
 A job that runs longer than its timeout is stopped, and the deployment fails.
 The timeout is 300 seconds by default, and at most 86,400 (a day).
 
-- **In the dashboard,** it's **Timeout (seconds)** in the job's dialog.
+- **In the dashboard,** select **Edit** on the job, set **Timeout
+  (seconds)**, and select **Save job**.
 - **With `piquelctl`,** add `--timeout-seconds` to `job set`, which also
   takes the job's service and command:
 
