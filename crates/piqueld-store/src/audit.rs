@@ -316,23 +316,41 @@ impl Appended<'_> {
 /// Raw `audit_events` row.
 #[derive(sqlx::FromRow)]
 struct AuditRow {
+    /// Record ID.
     id: i64,
+    /// When the request was made, in Unix milliseconds.
     created_at_ms: i64,
+    /// Action performed.
     action: String,
+    /// Whether the request was allowed, as stored text.
     outcome: String,
+    /// HTTP response status.
     status: i64,
+    /// Account that made the request.
     user_id: Option<String>,
+    /// That account's name.
     username: Option<String>,
+    /// Credential that authenticated the request.
     credential_id: Option<String>,
+    /// Kind of that credential.
     credential_kind: Option<String>,
+    /// Whether that credential was limited to its own grants.
     scoped: Option<bool>,
+    /// Network address the daemon saw.
     peer: Option<String>,
+    /// ID of the request.
     request_id: Option<String>,
+    /// Application the request addressed.
     application_id: Option<String>,
+    /// Environment the request addressed.
     environment_id: Option<String>,
+    /// Permission a refused request lacked.
     permission: Option<String>,
+    /// Hash chaining this row to its predecessor; `NULL` before it is linked.
     link: Option<String>,
+    /// Tailnet identity of the caller.
     tailnet: Option<String>,
+    /// UID of the host operator, when it made the request.
     operator_uid: Option<i64>,
 }
 
@@ -415,6 +433,7 @@ impl AuditRow {
         Ok(format!("{:x}", Sha256::digest(bytes)))
     }
 
+    /// Converts the row into an audit event, reporting invalid values as corruption.
     fn into_event(self) -> Result<AuditEvent, StoreError> {
         Ok(AuditEvent {
             id: self.id,

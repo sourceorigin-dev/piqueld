@@ -98,8 +98,11 @@ impl DestinationRow {
 
 /// A destination row just saved.
 struct SavedDestination {
+    /// Destination ID.
     id: String,
+    /// When it was created, in Unix milliseconds.
     created_at_ms: i64,
+    /// When it last changed, in Unix milliseconds.
     updated_at_ms: i64,
     /// Whether it is a new receiver: new, or with a new URL or kind. Its
     /// earlier deliveries are detached, and nothing before is sent to it.

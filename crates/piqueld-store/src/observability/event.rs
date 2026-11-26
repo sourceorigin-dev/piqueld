@@ -560,29 +560,53 @@ impl Store {
 /// Raw `events` row, decoded into an `Event` by `into_event`.
 #[derive(sqlx::FromRow)]
 struct EventRow {
+    /// Event ID.
     id: i64,
+    /// ID of the owning application.
     application_id: Option<String>,
+    /// ID of the owning environment.
     environment_id: Option<String>,
+    /// ID of the operation it belongs to.
     operation_id: Option<String>,
+    /// Application generation it belongs to.
     generation: Option<i64>,
+    /// Operation attempt it belongs to.
     attempt: Option<i64>,
+    /// Event kind, as stored text.
     kind: String,
+    /// Event message.
     message: Option<String>,
+    /// Diagnostic code, for failures.
     error_code: Option<String>,
+    /// Phase it belongs to, as stored text.
     phase: Option<String>,
+    /// Resource it concerns.
     resource: Option<String>,
+    /// When it happened, in Unix milliseconds.
     created_at_ms: i64,
+    /// Retention scope, as stored text.
     scope: String,
+    /// ID of the journal action, for action events.
     action_id: Option<String>,
+    /// Retry number, for retries.
     retry: Option<i64>,
+    /// Delay before the retry, in milliseconds.
     retry_delay_ms: Option<i64>,
+    /// How long it took, in milliseconds.
     duration_ms: Option<i64>,
+    /// ID of the request that caused it.
     request_id: Option<String>,
+    /// Diagnostic, in JSON.
     diagnostic_json: Option<String>,
+    /// Event detail, in JSON.
     detail_json: Option<String>,
+    /// Account that caused it.
     actor_user_id: Option<String>,
+    /// Credential that caused it.
     actor_credential_id: Option<String>,
+    /// Host operator UID that caused it.
     actor_operator_uid: Option<i64>,
+    /// Daemon component that caused it.
     actor_system: Option<String>,
 }
 

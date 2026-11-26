@@ -105,7 +105,9 @@ impl<'a> SecretOwner<'a> {
 pub(crate) struct SecretCipher(XChaCha20Poly1305);
 /// A stored secret value: a random 24-byte nonce and its authenticated ciphertext.
 pub(crate) struct Envelope {
+    /// Random 24-byte nonce.
     pub(crate) nonce: Vec<u8>,
+    /// Authenticated ciphertext.
     pub(crate) ciphertext: Vec<u8>,
 }
 impl SecretCipher {

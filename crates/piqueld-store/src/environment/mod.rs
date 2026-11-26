@@ -23,7 +23,10 @@ pub(super) enum SourceWrite {
     /// It already deployed from there.
     Unchanged,
     /// It changed, while a deployment of it was in progress or not.
-    Changed { deploying: bool },
+    Changed {
+        /// Whether a deployment of it was in progress.
+        deploying: bool,
+    },
 }
 
 impl Store {
