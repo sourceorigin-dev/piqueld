@@ -1,5 +1,6 @@
 //! Container output for one application or one of its services, followed
 //! live.
+use super::super::format::now_ms;
 use super::super::logs::{LogKind, LogViewer, StreamFilter};
 use super::super::stream::EventStream;
 use super::super::ui::{Icon, Tone, badge, icon, notice};
@@ -17,6 +18,12 @@ const MAX_LINES: usize = 1000;
 /// How often lines that arrived are drawn, so a chatty service redraws the
 /// list a few times a second rather than every frame.
 const FLUSH: std::time::Duration = std::time::Duration::from_millis(250);
+/// How far back the card's snapshot reads, in seconds.
+const SNAPSHOT_SECONDS: u32 = 3600;
+/// [`SNAPSHOT_SECONDS`] in nanoseconds, the unit of a stream's `after`.
+const SNAPSHOT_NANOS: i64 = 3600 * 1_000_000_000;
+/// Nanoseconds in a millisecond.
+const NANOS_PER_MILLI: i64 = 1_000_000;
 
 /// Where the card's live output stands.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -83,7 +90,7 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
         });
     };
     let stream_url = paths::stream_environment_logs(&id);
-    let open = move |after: Option<String>| {
+    let open = move |after: String| {
         let filters = [
             (
                 "service",
@@ -93,7 +100,7 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
                 "stream",
                 stream.get_untracked().map(|s| s.as_str().to_owned()),
             ),
-            ("after", after),
+            ("after", Some(after)),
         ];
         let query = filters
             .into_iter()
@@ -107,10 +114,21 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
         };
         let opened = EventStream::open(
             &url,
-            &[StreamMessage::Log, StreamMessage::AccessEnded],
+            &[
+                StreamMessage::Log,
+                StreamMessage::AccessEnded,
+                StreamMessage::StreamError,
+            ],
             move |name, data| {
-                if name == StreamMessage::AccessEnded {
-                    error.set(Some("You can no longer read these logs.".into()));
+                let ended = match name {
+                    StreamMessage::AccessEnded => Some("You can no longer read these logs."),
+                    StreamMessage::StreamError => Some(
+                        "The daemon can no longer read this output from Docker. Resume to follow it again.",
+                    ),
+                    _ => None,
+                };
+                if let Some(message) = ended {
+                    error.set(Some(message.into()));
                     follow.set(Follow::Stopped);
                     live.set_value(None);
                     return;
@@ -156,6 +174,12 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
         let current = generation.get_untracked();
         follow.set(Follow::Connecting);
         let filter = (service.get_untracked(), stream.get_untracked());
+        let window_start = piqueld_client::LogTime(
+            now_ms()
+                .saturating_mul(NANOS_PER_MILLI)
+                .saturating_sub(SNAPSHOT_NANOS),
+        )
+        .to_string();
         let (alive, id, open) = (alive.clone(), id.clone(), open.clone());
         spawn_local(async move {
             let result = Client::browser()
@@ -163,7 +187,7 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
                     &id,
                     (!filter.0.is_empty()).then_some(filter.0.as_str()),
                     200,
-                    3600,
+                    SNAPSHOT_SECONDS,
                     filter.1,
                 )
                 .await;
@@ -172,7 +196,10 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
             }
             match result {
                 Ok(logs) => {
-                    let after = logs.items.last().map(|newest| newest.timestamp.clone());
+                    let after = logs
+                        .items
+                        .last()
+                        .map_or(window_start, |newest| newest.timestamp.clone());
                     truncated.set(logs.truncated);
                     pending.set_value(VecDeque::new());
                     records.set(logs.items.into());
@@ -209,6 +236,7 @@ pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -
             start.with_value(|start| start());
         } else {
             live.set_value(None);
+            flush();
             follow.set(Follow::Paused);
         }
     };

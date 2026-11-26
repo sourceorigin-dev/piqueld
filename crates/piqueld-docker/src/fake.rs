@@ -956,6 +956,7 @@ impl DockerApi for FakeDocker {
                     for task in &mut service.tasks {
                         task.state = TaskState::Running;
                         task.healthy = Some(true);
+                        self.started(&task.id);
                     }
                     self.rollout.lock().await.push(format!("converged {name}"));
                 }

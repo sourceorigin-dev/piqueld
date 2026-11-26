@@ -1159,8 +1159,8 @@ const LOG_STREAM_IDLE: std::time::Duration = std::time::Duration::from_secs(45);
 /// it. With `--follow`, then emits each line written after it, one report
 /// each (one JSON object per line with `--json`), until interrupted or the
 /// daemon ends the stream. Following resumes after the snapshot's newest
-/// line, or the start of its window, so no line written meanwhile is missed,
-/// and `--timeout` doesn't count it.
+/// line, or the start of its window, taken before the snapshot is read, so
+/// no line written meanwhile is missed; `--timeout` doesn't count it.
 pub(crate) async fn logs(
     console: &mut Console,
     client: &Client,
@@ -1169,6 +1169,13 @@ pub(crate) async fn logs(
 ) -> Result<()> {
     let id = environment.id.as_str();
     let service = window.service.as_deref();
+    let since = std::time::Duration::from_secs(window.since_seconds.into());
+    let window_start = std::time::SystemTime::now()
+        .checked_sub(since)
+        .and_then(|start| start.duration_since(std::time::UNIX_EPOCH).ok())
+        .unwrap_or_default();
+    let window_start =
+        LogTime(i64::try_from(window_start.as_nanos()).unwrap_or(i64::MAX)).to_string();
     let logs = client
         .environment_logs(id, service, window.tail, window.since_seconds)
         .await?;
@@ -1183,17 +1190,10 @@ pub(crate) async fn logs(
     if !window.follow {
         return Ok(());
     }
-    let after = logs.items.last().map_or_else(
-        || {
-            let since = std::time::Duration::from_secs(window.since_seconds.into());
-            let start = std::time::SystemTime::now()
-                .checked_sub(since)
-                .and_then(|start| start.duration_since(std::time::UNIX_EPOCH).ok())
-                .unwrap_or_default();
-            LogTime(i64::try_from(start.as_nanos()).unwrap_or(i64::MAX)).to_string()
-        },
-        |newest| newest.timestamp.clone(),
-    );
+    let after = logs
+        .items
+        .last()
+        .map_or(window_start, |newest| newest.timestamp.clone());
     let stream = client
         .environment_logs_stream(id, service, None, Some(&after))
         .await?;
