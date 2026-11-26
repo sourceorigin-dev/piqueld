@@ -67,9 +67,10 @@ directory. Set `services.piqueld.rollBack = true;` to run
 user before each start: after a system rollback to a generation that also
 sets it, it restores the newest backup that generation's piqueld can open,
 and moves the state it replaces into `dataDir`'s `rolled-back-<time>`
-directory. It does nothing while piqueld can open the database. Without it,
-roll back by hand with `piqueld restore`, as the `piqueld` user, with
-`--data-dir`, which doesn't read the configuration.
+directory. It does nothing while piqueld can open the database. With it, the
+unit's start timeout is 15 minutes, room to copy and check a large database.
+Without it, roll back by hand with `piqueld restore`, as the `piqueld` user,
+with `--data-dir`, which doesn't read the configuration.
 The module puts the daemon's package, with `piqueld`, on the system `PATH`.
 `runtimeDir` defaults to `/run/piqueld`, prepared by systemd with mode `0750`.
 The socket is `/run/piqueld/piqueld.sock`, owned by `piqueld:piqueld` with mode
