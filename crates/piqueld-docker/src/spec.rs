@@ -1,3 +1,4 @@
+//! Builds the Swarm service specification of a desired service.
 use super::{
     BollardDocker, DesiredService, DockerError, HealthCheck, HealthConfig, INGRESS_PROXIES_ENV,
     Limit, Mount, MountTypeEnum, NANO_CPUS_PER_MILLICORE, NANOSECONDS_PER_SECOND,

@@ -181,6 +181,7 @@ pub struct Gate {
 }
 
 impl Gate {
+    /// Signals `entered`, then waits until `release` is notified.
     async fn pass(&self) {
         self.entered.notify_one();
         self.release.notified().await;
@@ -190,6 +191,7 @@ impl Gate {
 /// Counts the concurrent and total calls of one kind of Docker request.
 #[derive(Default)]
 pub struct Probe {
+    /// How many calls run now.
     active: AtomicUsize,
     /// The most calls that ran at once.
     pub maximum: AtomicUsize,
@@ -210,6 +212,7 @@ impl Drop for ProbeGuard<'_> {
 }
 
 impl Probe {
+    /// Counts a call, which stays active until the returned guard is dropped.
     async fn enter(&self) -> ProbeGuard<'_> {
         let guard = ProbeGuard(self);
         self.total.add();
@@ -244,6 +247,7 @@ impl Default for Counter {
 }
 
 impl Counter {
+    /// Counts one more call.
     fn add(&self) {
         self.0.send_modify(|count| *count += 1);
     }
@@ -276,10 +280,12 @@ pub struct RegistryState {
     pub digests: BTreeMap<String, String>,
     /// References the registry doesn't have; every other one exists.
     pub missing: BTreeSet<String>,
+    /// How many more pulls of an unpinned tag flip its digest.
     flips_remaining: usize,
 }
 
 impl RegistryState {
+    /// The digest tags point at unless set otherwise.
     fn base_digest() -> String {
         "a".repeat(64)
     }
@@ -290,6 +296,7 @@ impl RegistryState {
         "b".repeat(64)
     }
 
+    /// The digest `reference` points at: its own when pinned, else the one set for it, else the base digest.
     fn digest(&self, reference: &str) -> String {
         match reference.split_once("@sha256:") {
             Some((_, pinned)) => pinned.to_owned(),
@@ -301,6 +308,7 @@ impl RegistryState {
         }
     }
 
+    /// Counts a pull of `reference`; while flips remain, an unpinned tag's digest flips.
     fn pull(&mut self, reference: &str) {
         *self.pulls.entry(reference.to_owned()).or_insert(0) += 1;
         if self.flips_remaining > 0 && !reference.contains('@') {
@@ -319,6 +327,7 @@ impl RegistryState {
 /// as the real engine does: by the repository's short name on Docker Hub
 /// (`nginx@sha256:…`, `user/app@sha256:…`), by its full name elsewhere.
 struct RegistryView {
+    /// The registry it reports on.
     registry: Arc<Mutex<RegistryState>>,
 }
 
@@ -422,6 +431,7 @@ impl FakeDocker {
         })
     }
 
+    /// Whether `observed` carries every ownership label `expected` has, and a valid spec hash when `expected` names an application.
     fn ownership_matches(
         observed: &BTreeMap<String, String>,
         expected: &BTreeMap<String, String>,

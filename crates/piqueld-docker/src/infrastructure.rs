@@ -63,6 +63,7 @@ impl std::fmt::Display for EngineVersion {
 /// Reads of the engine, for the containers, networks and images piqueld runs
 /// itself. Connecting performs no I/O.
 pub struct Infrastructure {
+    /// The engine connection.
     docker: BollardDocker,
 }
 

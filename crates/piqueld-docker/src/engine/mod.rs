@@ -1,3 +1,5 @@
+//! Raw Docker Engine API requests over the engine's Unix socket, for what Bollard
+//! cannot express, and the errors they return.
 use super::{
     Arc, BollardDocker, BollardResult, Docker, DockerError, ListNodesOptions, Path, ResourceKind,
     ServiceSpec,
@@ -32,7 +34,9 @@ pub(super) enum WireError {
     Response {
         /// The request's path, which names resources by ID or name only.
         path: String,
+        /// The response's HTTP status.
         status: StatusCode,
+        /// The response's raw body.
         body: Vec<u8>,
     },
 }
@@ -43,8 +47,11 @@ pub(super) enum WireError {
 /// length-bounded message. Diagnostics record only its status; logs show
 /// the whole response.
 pub struct ErrorResponse {
+    /// The request's path.
     path: String,
+    /// The response's HTTP status.
     status: StatusCode,
+    /// Docker's message, without control characters and bounded in length.
     message: String,
 }
 

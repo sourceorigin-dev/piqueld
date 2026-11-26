@@ -1,3 +1,5 @@
+//! Observes and changes the Swarm's networks, volumes, services and images that
+//! piqueld manages: the engine side of `DockerApi`.
 use super::{
     BTreeMap, BTreeSet, BollardDocker, BollardResult, DesiredNetwork, DesiredService,
     DesiredVolume, DockerApi, DockerError, DockerNetworkName, DockerTimeout, EnvironmentId,
@@ -54,6 +56,7 @@ enum BuildError {
 
 /// An application's observed networks, with what service observation needs.
 struct NetworkSnapshot {
+    /// The application's networks.
     observed: Vec<ObservedNetwork>,
     /// Link networks other environments own for links to this one.
     linked: Vec<ObservedNetwork>,

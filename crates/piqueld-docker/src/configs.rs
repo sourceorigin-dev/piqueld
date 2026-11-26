@@ -12,8 +12,10 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct Config {
+    /// The config's ID.
     #[serde(rename = "ID")]
     id: String,
+    /// Its labels and content.
     spec: ConfigSpec,
 }
 
@@ -21,8 +23,10 @@ struct Config {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct ConfigSpec {
+    /// Its labels.
     #[serde(default)]
     labels: Option<BTreeMap<String, String>>,
+    /// Its base64 content.
     #[serde(default)]
     data: String,
     /// Swarm renders templated configs, so their bytes are not the content.
@@ -35,8 +39,10 @@ struct ConfigSpec {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub(super) struct ListedConfig {
+    /// The config's ID.
     #[serde(rename = "ID")]
     id: String,
+    /// Its name and labels.
     spec: ListedConfigSpec,
 }
 
@@ -44,7 +50,9 @@ pub(super) struct ListedConfig {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct ListedConfigSpec {
+    /// Its name.
     name: String,
+    /// Its labels.
     #[serde(default)]
     labels: Option<BTreeMap<String, String>>,
 }
@@ -66,8 +74,10 @@ impl ListedConfig {
 #[derive(Default, serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub(super) struct ServiceConfigs {
+    /// The service's current spec.
     #[serde(default)]
     spec: Option<SpecConfigs>,
+    /// The service's spec before its last update.
     #[serde(default)]
     previous_spec: Option<SpecConfigs>,
 }
@@ -76,6 +86,7 @@ pub(super) struct ServiceConfigs {
 #[derive(Default, serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct SpecConfigs {
+    /// The spec of the tasks it runs.
     #[serde(default)]
     task_template: Option<TaskConfigs>,
 }
@@ -84,6 +95,7 @@ struct SpecConfigs {
 #[derive(Default, serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct TaskConfigs {
+    /// The spec of each task's container.
     #[serde(default)]
     container_spec: Option<ContainerConfigs>,
 }
@@ -92,6 +104,7 @@ struct TaskConfigs {
 #[derive(Default, serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct ContainerConfigs {
+    /// The configs the container mounts.
     #[serde(default)]
     configs: Option<Vec<ConfigReference>>,
 }
@@ -99,6 +112,7 @@ struct ContainerConfigs {
 /// One config reference's ID.
 #[derive(Default, serde::Deserialize)]
 struct ConfigReference {
+    /// The referenced config's ID.
     #[serde(rename = "ConfigID", default)]
     config_id: Option<String>,
 }
@@ -125,6 +139,7 @@ pub(super) enum ConfigKind {
 }
 
 impl ConfigKind {
+    /// What errors call publishing a config of this kind.
     const fn publish(self) -> &'static str {
         match self {
             Self::HealthProbe => "publish the HTTP health probe",
@@ -132,6 +147,7 @@ impl ConfigKind {
         }
     }
 
+    /// What errors call inspecting a config of this kind.
     const fn inspect(self) -> &'static str {
         match self {
             Self::HealthProbe => "inspect the HTTP health probe",
@@ -139,6 +155,7 @@ impl ConfigKind {
         }
     }
 
+    /// What errors call listing configs of this kind.
     const fn list(self) -> &'static str {
         match self {
             Self::HealthProbe => "list HTTP health probes",
@@ -146,6 +163,7 @@ impl ConfigKind {
         }
     }
 
+    /// What errors call removing a config of this kind.
     const fn remove(self) -> &'static str {
         match self {
             Self::HealthProbe => "remove an old HTTP health probe",

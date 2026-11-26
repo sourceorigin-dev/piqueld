@@ -138,7 +138,9 @@ pub struct CommandFailure {
     pub operation: &'static str,
     /// How the command exited.
     pub status: std::process::ExitStatus,
+    /// The tail of what it printed on stdout.
     stdout: String,
+    /// The tail of what it printed on stderr.
     stderr: String,
 }
 
@@ -292,8 +294,11 @@ impl LoggedCommand {
 /// batches takes a durable log's writer once per batch instead of once per
 /// read, while output still shows within [`Batch::DELAY`].
 struct Batch<'a> {
+    /// The log the output is appended to.
     log: &'a dyn OutputLog,
+    /// The stream the output came from.
     stream: piqueld_core::api::LogStream,
+    /// The bytes read, not yet appended.
     pending: Vec<u8>,
     /// When pending output is appended even if no more arrives.
     due: Option<tokio::time::Instant>,
@@ -305,6 +310,7 @@ impl<'a> Batch<'a> {
     /// How long output may wait for more before it is appended.
     const DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
+    /// An empty batch of `stream` output for `log`.
     fn new(log: &'a dyn OutputLog, stream: piqueld_core::api::LogStream) -> Self {
         Self {
             log,

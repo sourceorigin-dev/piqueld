@@ -47,6 +47,7 @@ impl Default for ClientState {
 /// Configured asynchronous API client.
 #[derive(Clone, Debug)]
 pub struct Client {
+    /// The generated client every request goes through.
     pub(crate) generated: generated::Client,
 }
 

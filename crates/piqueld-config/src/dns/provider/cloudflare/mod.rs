@@ -21,6 +21,7 @@ const MAX_PAGES: u32 = 100;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(try_from = "RawCloudflare")]
 pub struct Cloudflare {
+    /// The token that authorizes API calls.
     api_token: Credential,
     /// API base URL; tests point it at recorded responses.
     api: String,
@@ -50,21 +51,27 @@ impl TryFrom<RawCloudflare> for Cloudflare {
 /// Response envelope shared by every endpoint.
 #[derive(Deserialize)]
 struct Envelope<T> {
+    /// The endpoint's payload.
     result: T,
+    /// Pagination of a list endpoint.
     result_info: Option<ResultInfo>,
 }
 
 /// Pagination of list endpoints.
 #[derive(Deserialize)]
 struct ResultInfo {
+    /// The page returned, from 1.
     page: u32,
+    /// How many pages there are.
     total_pages: u32,
 }
 
 /// An object identified by `id`, such as a zone or a record.
 #[derive(Deserialize)]
 struct Object {
+    /// The object's ID.
     id: String,
+    /// The object's name; empty when the endpoint reports none.
     #[serde(default)]
     name: String,
 }
@@ -72,10 +79,14 @@ struct Object {
 /// A DNS record as listed.
 #[derive(Deserialize)]
 struct ListedRecord {
+    /// The record's ID.
     id: String,
+    /// The record type, such as `TXT`.
     #[serde(rename = "type")]
     kind: String,
+    /// The record's value.
     content: String,
+    /// Whether Cloudflare proxies the record; false when not reported.
     #[serde(default)]
     proxied: bool,
 }

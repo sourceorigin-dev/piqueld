@@ -1,3 +1,4 @@
+//! The runtime policy an observed service spec must meet to count as piqueld's own.
 use super::{
     BTreeSet, BollardDocker, HealthConfig, HealthProbe, INSTANCE_LABEL, MountTypeEnum,
     NANO_CPUS_PER_MILLICORE, RESTART_DELAY, SERVICE_LABEL, ServiceSpec,

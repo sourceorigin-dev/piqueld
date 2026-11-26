@@ -1,3 +1,4 @@
+//! Turns Swarm tasks and containers into the backend-neutral observation.
 use super::policy::ServiceRuntimePolicy;
 use super::spec::ALL_CAPABILITIES;
 use super::{
@@ -539,6 +540,7 @@ impl BollardDocker {
 struct SwarmTime<'a> {
     /// Up to the second, `2026-11-10T16:11:28`, which compares as text.
     seconds: &'a str,
+    /// The fraction of a second, in nanoseconds.
     nanoseconds: u32,
 }
 

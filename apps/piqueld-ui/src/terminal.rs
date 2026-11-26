@@ -170,6 +170,7 @@ impl vt100::Callbacks for Replies {
 
 /// The screen of one exec session.
 pub struct Terminal {
+    /// The terminal emulator that holds the screen.
     parser: vt100::Parser<Replies>,
     /// Output comes from a pseudo-terminal, which already ends lines with CRLF.
     tty: bool,
@@ -394,8 +395,11 @@ fn classes(cell: &vt100::Cell, cursor: bool) -> String {
 /// background, or one of the 16 named colors, which follow the theme.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Paint {
+    /// The terminal's default foreground.
     Foreground,
+    /// The terminal's default background.
     Background,
+    /// One of the 16 named colors, by its index.
     Named(u8),
 }
 

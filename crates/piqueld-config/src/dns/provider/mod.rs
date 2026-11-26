@@ -277,9 +277,13 @@ pub struct RecordId(pub String);
 #[derive(Debug, Error)]
 #[error("{provider} {operation}{}", zone.as_ref().map_or_default(|zone| format!(" in zone {zone}")))]
 pub struct DnsError {
+    /// The provider's name.
     provider: &'static str,
+    /// What the call did.
     operation: &'static str,
+    /// The zone the call concerned, if any.
     zone: Option<Hostname>,
+    /// The API's failure.
     #[source]
     source: ApiError,
 }

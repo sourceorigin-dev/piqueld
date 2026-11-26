@@ -79,6 +79,7 @@ pub struct Ovh {
     pub consumer_key: Credential,
     /// API base URL; tests point it at recorded responses.
     api: String,
+    /// The API's clock, shared by clones.
     clock: Clock,
 }
 
@@ -134,11 +135,15 @@ impl TryFrom<RawOvh> for Ovh {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OvhRecord {
+    /// The record's ID.
     id: u64,
+    /// The record type, such as `TXT`.
     #[serde(default)]
     field_type: String,
+    /// The record's name relative to its zone.
     #[serde(default)]
     sub_domain: String,
+    /// The record's value.
     #[serde(default)]
     target: String,
 }

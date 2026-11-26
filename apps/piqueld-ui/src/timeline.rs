@@ -48,8 +48,11 @@ pub fn percent(position: u32) -> String {
 /// Times are in milliseconds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Axis {
+    /// When the axis starts: the operation's start, in milliseconds.
     origin: i64,
+    /// How long the axis is, in milliseconds.
     length: i64,
+    /// The spacing between ticks, in milliseconds.
     tick: i64,
 }
 
