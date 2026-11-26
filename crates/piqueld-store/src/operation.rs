@@ -539,7 +539,10 @@ mod tests {
     /// Saves and deploys the empty application `name`, returning its operation.
     async fn deployed(store: &Store, name: &str) -> Operation {
         let saved = store.save_template(template(name, "[spec]"), true).await;
-        store.operation(&saved.operation_id.unwrap()).await.unwrap()
+        store
+            .operation(&saved.operation_id.expect("operation id is present"))
+            .await
+            .expect("operation succeeds")
     }
 
     #[tokio::test]
@@ -550,11 +553,17 @@ mod tests {
         store
             .force(Mutation::deploy(alpha.environment_id.clone()))
             .await
-            .unwrap();
-        let latest = store.latest_operations().await.unwrap();
+            .expect("force succeeds");
+        let latest = store
+            .latest_operations()
+            .await
+            .expect("latest operations succeeds");
         assert_eq!(latest.len(), 2);
         for id in [&alpha.environment_id, &beta.environment_id] {
-            let expected = store.latest_operation_for_environment(id).await.unwrap();
+            let expected = store
+                .latest_operation_for_environment(id)
+                .await
+                .expect("latest operation for environment succeeds");
             assert_eq!(
                 Some(&latest[id].id),
                 expected.map(|operation| operation.id).as_ref()
@@ -569,7 +578,10 @@ mod tests {
     async fn operations_stay_ordered_when_the_clock_goes_back() {
         let (_directory, store) = Store::temporary().await;
         let first = deployed(&store, "alpha").await;
-        let (_writer, mut tx) = store.begin_immediate().await.unwrap();
+        let (_writer, mut tx) = store
+            .begin_immediate()
+            .await
+            .expect("begin immediate succeeds");
         let second = Store::start_operation(
             &mut tx,
             &first.environment_id,
@@ -577,17 +589,21 @@ mod tests {
             first.created_at_ms - 60_000,
         )
         .await
-        .unwrap();
-        tx.commit().await.unwrap();
+        .expect("start operation succeeds");
+        tx.commit().await.expect("commit succeeds");
         assert!(second.created_at_ms > first.created_at_ms);
         let latest = store
             .latest_operation_for_environment(&first.environment_id)
             .await
-            .unwrap()
-            .unwrap();
+            .expect("latest operation for environment returns a value")
+            .expect("the value is present");
         assert_eq!(latest.id, second.id);
         assert_eq!(
-            store.operation(&first.id).await.unwrap().state,
+            store
+                .operation(&first.id)
+                .await
+                .expect("operation succeeds")
+                .state,
             OperationState::Superseded
         );
     }

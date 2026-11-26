@@ -11,7 +11,7 @@ async fn application(store: &Store, name: &str) -> ApplicationId {
         "[spec.manifest]\npath='app.toml'\n[spec.manifest.repository]\nurl='https://example.com/{name}.git'\nbranch='main'"
     );
     let saved = store.save_template(template(name, &spec), false).await;
-    ApplicationId::parse(saved.application_id).unwrap()
+    ApplicationId::parse(saved.application_id).expect("the application id parses")
 }
 
 /// Creates environment `name` of `application`, promoted from `source` when given.
@@ -23,7 +23,7 @@ async fn create(
 ) -> Result<EnvironmentId, StoreError> {
     let create = Mutation::CreateEnvironment {
         application: application.clone(),
-        name: EnvironmentName::parse(name).unwrap(),
+        name: EnvironmentName::parse(name).expect("the environment name parses"),
         source: source.map(|source| SourceChoice::PromoteFrom(source.clone())),
     };
     match store.accept(Daemon, create, None, true, None).await? {
@@ -64,18 +64,20 @@ async fn sources_are_other_live_environments_without_cycles() {
     let (_directory, store) = Store::temporary().await;
     let notes = application(&store, "notes").await;
     let production = store.production(&notes).await;
-    let staging = create(&store, &notes, "staging", None).await.unwrap();
+    let staging = create(&store, &notes, "staging", None)
+        .await
+        .expect("create succeeds");
     let canary = create(&store, &notes, "canary", Some(&staging))
         .await
-        .unwrap();
+        .expect("create succeeds");
     set_source(&store, &production, Some(&canary))
         .await
-        .unwrap();
+        .expect("set source succeeds");
     assert_eq!(
         store
             .get(&production)
             .await
-            .unwrap()
+            .expect("the environment exists")
             .environment
             .source
             .promoted_from(),
@@ -93,18 +95,18 @@ async fn sources_are_other_live_environments_without_cycles() {
 
     let preview = Mutation::Preview(PreviewMutation::Create {
         application: notes.clone(),
-        branch: GitBranch::parse("feat/login").unwrap(),
+        branch: GitBranch::parse("feat/login").expect("the git branch parses"),
         slot: None,
     });
     let (MutationResponse::Preview(preview), _) = store
         .accept(Daemon, preview, None, false, None)
         .await
-        .unwrap()
+        .expect("accept succeeds")
     else {
         panic!("preview")
     };
     let other = store.production(&application(&store, "shop").await).await;
-    let unknown = EnvironmentId::parse("env-unknown-0001").unwrap();
+    let unknown = EnvironmentId::parse("env-unknown-0001").expect("the environment id parses");
     for source in [&preview.preview.id, &other, &unknown] {
         assert!(matches!(
             set_source(&store, &production, Some(source)).await,
@@ -117,19 +119,24 @@ async fn sources_are_other_live_environments_without_cycles() {
         ));
     }
     assert_eq!(
-        store.get(&staging).await.unwrap().environment.source,
+        store
+            .get(&staging)
+            .await
+            .expect("the environment exists")
+            .environment
+            .source,
         EnvironmentSource::select(
             store
                 .application(&notes)
                 .await
-                .unwrap()
+                .expect("application succeeds")
                 .application
                 .spec()
                 .manifest
                 .as_ref(),
             None
         )
-        .unwrap()
+        .expect("select succeeds")
     );
 }
 
@@ -141,10 +148,12 @@ async fn a_promoted_environment_never_builds_until_it_tracks_again() {
     let (_directory, store) = Store::temporary().await;
     let notes = application(&store, "notes").await;
     let production = store.production(&notes).await;
-    let staging = create(&store, &notes, "staging", None).await.unwrap();
+    let staging = create(&store, &notes, "staging", None)
+        .await
+        .expect("create succeeds");
     set_source(&store, &production, Some(&staging))
         .await
-        .unwrap();
+        .expect("set source succeeds");
 
     for deploy in [
         store
@@ -161,7 +170,7 @@ async fn a_promoted_environment_never_builds_until_it_tracks_again() {
         store
             .force(Mutation::SetBranch {
                 id: production.clone(),
-                branch: TrackedBranch::new("release".into(), None).unwrap(),
+                branch: TrackedBranch::new("release".into(), None).expect("the value is valid"),
             })
             .await
             .map(|_| ()),
@@ -176,14 +185,24 @@ async fn a_promoted_environment_never_builds_until_it_tracks_again() {
         store
             .latest_operation_for_environment(&production)
             .await
-            .unwrap()
+            .expect("latest operation for environment succeeds")
             .is_none()
     );
 
-    set_source(&store, &production, None).await.unwrap();
-    let tracking = store.get(&production).await.unwrap().environment.source;
+    set_source(&store, &production, None)
+        .await
+        .expect("set source succeeds");
+    let tracking = store
+        .get(&production)
+        .await
+        .expect("the environment exists")
+        .environment
+        .source;
     assert_eq!(tracking.branch().map(TrackedBranch::branch), Some("main"));
-    store.force(Mutation::deploy(production)).await.unwrap();
+    store
+        .force(Mutation::deploy(production))
+        .await
+        .expect("force succeeds");
 }
 
 /// Deleting an environment others promote from is refused, naming them,
@@ -192,11 +211,15 @@ async fn a_promoted_environment_never_builds_until_it_tracks_again() {
 async fn deleting_a_promotion_source_needs_its_dependents_gone() {
     let (_directory, store) = Store::temporary().await;
     let notes = application(&store, "notes").await;
-    let staging = create(&store, &notes, "staging", None).await.unwrap();
+    let staging = create(&store, &notes, "staging", None)
+        .await
+        .expect("create succeeds");
     let canary = create(&store, &notes, "canary", Some(&staging))
         .await
-        .unwrap();
-    let qa = create(&store, &notes, "qa", Some(&staging)).await.unwrap();
+        .expect("create succeeds");
+    let qa = create(&store, &notes, "qa", Some(&staging))
+        .await
+        .expect("create succeeds");
     let delete = |id: &EnvironmentId| Mutation::Delete { id: id.clone() };
 
     match store.force(delete(&staging)).await {
@@ -209,18 +232,22 @@ async fn deleting_a_promotion_source_needs_its_dependents_gone() {
         ),
         other => panic!("refusal expected, got {other:?}"),
     }
-    store.force(delete(&canary)).await.unwrap();
-    set_source(&store, &qa, None).await.unwrap();
-    store.force(delete(&staging)).await.unwrap();
+    store.force(delete(&canary)).await.expect("force succeeds");
+    set_source(&store, &qa, None)
+        .await
+        .expect("set source succeeds");
+    store.force(delete(&staging)).await.expect("force succeeds");
 
-    let chained = create(&store, &notes, "review", Some(&qa)).await.unwrap();
+    let chained = create(&store, &notes, "review", Some(&qa))
+        .await
+        .expect("create succeeds");
     let (MutationResponse::Deleted(deleted), _) = store
         .accept(
             Daemon,
             Mutation::DeleteApplication {
                 id: notes,
                 environments: ["canary", "production", "qa", "review", "staging"]
-                    .map(|name| EnvironmentName::parse(name).unwrap())
+                    .map(|name| EnvironmentName::parse(name).expect("the environment name parses"))
                     .into(),
             },
             None,
@@ -228,7 +255,7 @@ async fn deleting_a_promotion_source_needs_its_dependents_gone() {
             None,
         )
         .await
-        .unwrap()
+        .expect("accept succeeds")
     else {
         panic!("deleted")
     };

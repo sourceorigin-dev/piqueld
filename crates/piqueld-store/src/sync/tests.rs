@@ -15,8 +15,12 @@ async fn notes(store: &Store) -> EnvironmentId {
         "[spec.manifest]\npath='app.toml'\nsync={mode='poll'}\n[spec.manifest.repository]\nurl='https://example.com/notes.git'\nbranch='main'\n",
     );
     let saved = store.save_template(template, false).await;
-    let application = ApplicationId::parse(saved.application_id).unwrap();
-    let id = store.environments(&application).await.unwrap()[0]
+    let application =
+        ApplicationId::parse(saved.application_id).expect("the application id parses");
+    let id = store
+        .environments(&application)
+        .await
+        .expect("environments succeeds")[0]
         .id
         .clone();
     let opt_in = Mutation::SetSync {
@@ -26,7 +30,7 @@ async fn notes(store: &Store) -> EnvironmentId {
     store
         .accept(Actor::Daemon, opt_in, None, false, None)
         .await
-        .unwrap();
+        .expect("accept succeeds");
     id
 }
 
@@ -38,7 +42,12 @@ async fn sync(store: &Store, id: &EnvironmentId, head: &str) -> SyncOutcome {
 /// Submits sync's mutation for `head` at `main` of `repository`, listed
 /// since the current head of its last deployment.
 async fn listed(store: &Store, id: &EnvironmentId, repository: &str, head: &str) -> SyncOutcome {
-    let since = store.get(id).await.unwrap().environment.synced;
+    let since = store
+        .get(id)
+        .await
+        .expect("the environment exists")
+        .environment
+        .synced;
     submit(store, id, repository, head, since).await
 }
 
@@ -54,7 +63,7 @@ async fn submit(
     let mutation = Mutation::Sync(ListedHead {
         id: id.clone(),
         repository: repository.into(),
-        branch: piqueld_core::GitBranch::parse("main").unwrap(),
+        branch: piqueld_core::GitBranch::parse("main").expect("the git branch parses"),
         head: head.into(),
         since,
     });
@@ -62,7 +71,7 @@ async fn submit(
     match store
         .accept(actor, mutation, None, false, None)
         .await
-        .unwrap()
+        .expect("accept succeeds")
     {
         (MutationResponse::Synced(outcome), _) => outcome,
         _ => panic!("synced"),
@@ -74,7 +83,7 @@ async fn operations(store: &Store, id: &EnvironmentId) -> i64 {
         .bind(id.as_str())
         .fetch_one(&store.pool)
         .await
-        .unwrap()
+        .expect("fetch one succeeds")
 }
 
 #[tokio::test]
@@ -86,9 +95,22 @@ async fn a_moved_head_deploys_once_by_its_actor_and_pushes_coalesce_while_deploy
     let SyncOutcome::Deployed(deployed) = sync(&store, &id, B).await else {
         panic!("deployed")
     };
-    let operation = store.operation(&deployed.operation_id).await.unwrap();
-    let input = store.deployment_input(&operation).await.unwrap().unwrap();
-    let fetched = input.template.spec().manifest.clone().unwrap().repository;
+    let operation = store
+        .operation(&deployed.operation_id)
+        .await
+        .expect("operation succeeds");
+    let input = store
+        .deployment_input(&operation)
+        .await
+        .expect("deployment input returns a value")
+        .expect("the value is present");
+    let fetched = input
+        .template
+        .spec()
+        .manifest
+        .clone()
+        .expect("the value is present")
+        .repository;
     assert_eq!(
         (fetched.branch.as_str(), fetched.commit.as_deref()),
         ("main", Some(B))
@@ -98,7 +120,7 @@ async fn a_moved_head_deploys_once_by_its_actor_and_pushes_coalesce_while_deploy
             .bind(&deployed.operation_id)
             .fetch_all(&store.pool)
             .await
-            .unwrap();
+            .expect("fetch all succeeds");
     assert!(actors.iter().any(|(kind, _)| kind == "branch_synced"));
     assert!(
         actors
@@ -111,16 +133,16 @@ async fn a_moved_head_deploys_once_by_its_actor_and_pushes_coalesce_while_deploy
             .bind(&deployed.operation_id)
             .fetch_one(&store.pool)
             .await
-            .unwrap();
+            .expect("fetch one succeeds");
     assert_eq!(attributed.as_deref(), Some("sync:poll"));
     assert_eq!(
         store
             .get(&id)
             .await
-            .unwrap()
+            .expect("the environment exists")
             .environment
             .synced
-            .unwrap()
+            .expect("synced is present")
             .commit,
         Some(B.into())
     );
@@ -133,12 +155,16 @@ async fn a_moved_head_deploys_once_by_its_actor_and_pushes_coalesce_while_deploy
         .bind(&deployed.operation_id)
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     let SyncOutcome::Deployed(retrying) = sync(&store, &id, C).await else {
         panic!("deployed")
     };
     assert_eq!(
-        store.operation(&deployed.operation_id).await.unwrap().state,
+        store
+            .operation(&deployed.operation_id)
+            .await
+            .expect("operation succeeds")
+            .state,
         piqueld_core::OperationState::Superseded
     );
 
@@ -146,13 +172,17 @@ async fn a_moved_head_deploys_once_by_its_actor_and_pushes_coalesce_while_deploy
         .bind(&retrying.operation_id)
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     assert!(matches!(
         sync(&store, &id, A).await,
         SyncOutcome::Deployed(_)
     ));
     assert_eq!(
-        store.operation(&retrying.operation_id).await.unwrap().state,
+        store
+            .operation(&retrying.operation_id)
+            .await
+            .expect("operation succeeds")
+            .state,
         piqueld_core::OperationState::Superseded
     );
 }
@@ -163,7 +193,12 @@ async fn a_rollback_after_a_manual_deployment_deploys_the_branch_head_again() {
     let id = notes(&store).await;
     store.deployed_at(&id, A).await;
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
-    let before = store.get(&id).await.unwrap().environment.synced;
+    let before = store
+        .get(&id)
+        .await
+        .expect("the environment exists")
+        .environment
+        .synced;
     store.deployed_at(&id, A).await;
     let stale = submit(&store, &id, "https://example.com/notes.git", B, before).await;
     assert!(matches!(stale, SyncOutcome::Busy));
@@ -177,10 +212,10 @@ async fn a_rollback_after_a_manual_deployment_deploys_the_branch_head_again() {
         .bind(id.as_str())
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
     let deploy = Mutation::deploy(id.clone());
-    store.force(deploy).await.unwrap();
+    store.force(deploy).await.expect("force succeeds");
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Busy));
 }
 
@@ -190,15 +225,23 @@ async fn nothing_follows_before_its_first_deployment_nor_while_pinned_or_opted_o
     let id = notes(&store).await;
 
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
-    assert_eq!(store.get(&id).await.unwrap().environment.synced, None);
+    assert_eq!(
+        store
+            .get(&id)
+            .await
+            .expect("the environment exists")
+            .environment
+            .synced,
+        None
+    );
     let deploy = Mutation::deploy(id.clone());
-    store.force(deploy).await.unwrap();
+    store.force(deploy).await.expect("force succeeds");
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Busy));
     sqlx::query("UPDATE operations SET state='failed',finished_at_ms=1,error_code='manifest_invalid',error_message='invalid' WHERE environment_id=?1")
         .bind(id.as_str())
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     assert!(matches!(sync(&store, &id, A).await, SyncOutcome::Current));
     store.deployed_at(&id, B).await;
     assert!(matches!(sync(&store, &id, B).await, SyncOutcome::Current));
@@ -213,7 +256,7 @@ async fn nothing_follows_before_its_first_deployment_nor_while_pinned_or_opted_o
     store
         .accept(Actor::Daemon, opt_out, None, false, None)
         .await
-        .unwrap();
+        .expect("accept succeeds");
     assert!(matches!(sync(&store, &id, C).await, SyncOutcome::Current));
     let opt_in = Mutation::SetSync {
         id: id.clone(),
@@ -222,18 +265,19 @@ async fn nothing_follows_before_its_first_deployment_nor_while_pinned_or_opted_o
     store
         .accept(Actor::Daemon, opt_in, None, false, None)
         .await
-        .unwrap();
+        .expect("accept succeeds");
     let pin = Mutation::SetBranch {
         id: id.clone(),
-        branch: piqueld_core::TrackedBranch::new("main".into(), Some(B.into())).unwrap(),
+        branch: piqueld_core::TrackedBranch::new("main".into(), Some(B.into()))
+            .expect("the value is valid"),
     };
-    store.force(pin).await.unwrap();
+    store.force(pin).await.expect("force succeeds");
     assert!(matches!(sync(&store, &id, C).await, SyncOutcome::Current));
     let unpin = Mutation::SetBranch {
         id: id.clone(),
-        branch: piqueld_core::TrackedBranch::new("main".into(), None).unwrap(),
+        branch: piqueld_core::TrackedBranch::new("main".into(), None).expect("the value is valid"),
     };
-    store.force(unpin).await.unwrap();
+    store.force(unpin).await.expect("force succeeds");
     assert!(matches!(sync(&store, &id, C).await, SyncOutcome::Current));
     assert_eq!(operations(&store, &id).await, 2);
 }
@@ -244,14 +288,19 @@ async fn only_turning_sync_on_or_opting_in_needs_the_permission_to_deploy() {
     use piqueld_core::edit::ApplicationEdit;
     let (_temp, store) = Store::temporary().await;
     let id = notes(&store).await;
-    let application = store.get(&id).await.unwrap().environment.application_id;
+    let application = store
+        .get(&id)
+        .await
+        .expect("the environment exists")
+        .environment
+        .application_id;
     let mut grants = piqueld_core::access::Grants::default();
     grants
         .grant(
             Permission::App(AppPermission::Write),
             &Scope::one(application.clone()),
         )
-        .unwrap();
+        .expect("grant succeeds");
     let alice = store.seed_caller("alice", &grants).await;
     let edit = |edit| Mutation::Edit {
         id: application.clone(),
@@ -275,12 +324,13 @@ async fn only_turning_sync_on_or_opting_in_needs_the_permission_to_deploy() {
     refused(store.accept(alice, opt_in(), None, false, None).await);
     let create = Mutation::CreateEnvironment {
         application: application.clone(),
-        name: piqueld_core::EnvironmentName::parse("staging").unwrap(),
+        name: piqueld_core::EnvironmentName::parse("staging").expect("the environment name parses"),
         source: None,
     };
     let branch = Mutation::SetBranch {
         id: id.clone(),
-        branch: piqueld_core::TrackedBranch::new("release".into(), None).unwrap(),
+        branch: piqueld_core::TrackedBranch::new("release".into(), None)
+            .expect("the value is valid"),
     };
     let url = edit(ApplicationEdit::RepositoryUrl(
         "https://example.com/fork.git".into(),
@@ -294,10 +344,13 @@ async fn only_turning_sync_on_or_opting_in_needs_the_permission_to_deploy() {
         store
             .accept(alice, mutation, None, true, None)
             .await
-            .unwrap();
+            .expect("accept succeeds");
     }
     let off = edit(ApplicationEdit::RepositorySync(RepositorySync::Off));
-    store.accept(alice, off, None, true, None).await.unwrap();
+    store
+        .accept(alice, off, None, true, None)
+        .await
+        .expect("accept succeeds");
     refused(
         store
             .accept(
@@ -312,7 +365,7 @@ async fn only_turning_sync_on_or_opting_in_needs_the_permission_to_deploy() {
     store
         .accept(alice, opt_in(), None, false, None)
         .await
-        .unwrap();
+        .expect("accept succeeds");
 }
 
 #[tokio::test]
@@ -329,11 +382,14 @@ async fn a_deployment_records_its_head_only_while_it_follows_that_branch_and_rep
         let store = &store;
         let id = id.clone();
         async move {
-            let (_writer, mut tx) = store.begin_immediate().await.unwrap();
+            let (_writer, mut tx) = store
+                .begin_immediate()
+                .await
+                .expect("begin immediate succeeds");
             Store::record_branch_head_on(&mut tx, &id, &head, 1)
                 .await
-                .unwrap();
-            tx.commit().await.unwrap();
+                .expect("record branch head on succeeds");
+            tx.commit().await.expect("commit succeeds");
         }
     };
     record("https://example.com/notes.git", "release").await;
@@ -342,10 +398,10 @@ async fn a_deployment_records_its_head_only_while_it_follows_that_branch_and_rep
         store
             .get(&id)
             .await
-            .unwrap()
+            .expect("the environment exists")
             .environment
             .synced
-            .unwrap()
+            .expect("synced is present")
             .commit,
         Some(A.into())
     );
@@ -354,10 +410,10 @@ async fn a_deployment_records_its_head_only_while_it_follows_that_branch_and_rep
         store
             .get(&id)
             .await
-            .unwrap()
+            .expect("the environment exists")
             .environment
             .synced
-            .unwrap()
+            .expect("synced is present")
             .commit,
         Some(C.into())
     );
@@ -365,17 +421,25 @@ async fn a_deployment_records_its_head_only_while_it_follows_that_branch_and_rep
     let (MutationResponse::Operation(queued), _) = store
         .accept(Actor::Daemon, deploy, None, true, None)
         .await
-        .unwrap()
+        .expect("accept succeeds")
     else {
         panic!("operation")
     };
     let release = Mutation::SetBranch {
         id: id.clone(),
-        branch: piqueld_core::TrackedBranch::new("release".into(), None).unwrap(),
+        branch: piqueld_core::TrackedBranch::new("release".into(), None)
+            .expect("the value is valid"),
     };
-    store.force(release).await.unwrap();
-    let queued = store.operation(&queued.operation_id).await.unwrap();
-    let input = store.deployment_input(&queued).await.unwrap().unwrap();
+    store.force(release).await.expect("force succeeds");
+    let queued = store
+        .operation(&queued.operation_id)
+        .await
+        .expect("operation succeeds");
+    let input = store
+        .deployment_input(&queued)
+        .await
+        .expect("deployment input returns a value")
+        .expect("the value is present");
     assert_eq!(input.tracked_branch.as_deref(), Some("main"));
 }
 
@@ -389,8 +453,8 @@ async fn snapshot_deployed(
 ) -> EnvironmentId {
     let mutation = Mutation::Preview(crate::PreviewMutation::Local {
         application: application.clone(),
-        branch: piqueld_core::GitBranch::parse("main").unwrap(),
-        slot: Some(piqueld_core::PreviewSlot::parse("agent").unwrap()),
+        branch: piqueld_core::GitBranch::parse("main").expect("the git branch parses"),
+        slot: Some(piqueld_core::PreviewSlot::parse("agent").expect("the preview slot parses")),
         repository: "https://example.com/notes.git".into(),
         snapshot: piqueld_core::api::LocalSnapshot {
             commit: C.into(),
@@ -400,12 +464,15 @@ async fn snapshot_deployed(
     let (MutationResponse::Preview(created), _) = store
         .accept(Actor::Daemon, mutation, None, false, None)
         .await
-        .unwrap()
+        .expect("accept succeeds")
     else {
         panic!("preview")
     };
     let (id, operation) = (created.preview.id, created.operation.operation_id);
-    let (_writer, mut tx) = store.begin_immediate().await.unwrap();
+    let (_writer, mut tx) = store
+        .begin_immediate()
+        .await
+        .expect("begin immediate succeeds");
     sqlx::query(
         "UPDATE deployment_inputs SET fetched=1,repository_commit=?1 WHERE operation_id=?2",
     )
@@ -413,12 +480,12 @@ async fn snapshot_deployed(
     .bind(&operation)
     .execute(&mut *tx)
     .await
-    .unwrap();
+    .expect("execute succeeds");
     sqlx::query("UPDATE operations SET state='succeeded',finished_at_ms=1 WHERE id=?1")
         .bind(&operation)
         .execute(&mut *tx)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     let head = BranchHead {
         url: "https://example.com/notes.git".into(),
         branch: "main".into(),
@@ -426,8 +493,8 @@ async fn snapshot_deployed(
     };
     Store::record_branch_head_on(&mut tx, &id, &head, 1)
         .await
-        .unwrap();
-    tx.commit().await.unwrap();
+        .expect("record branch head on succeeds");
+    tx.commit().await.expect("commit succeeds");
     id
 }
 
@@ -441,7 +508,7 @@ async fn local_snapshots_stay_until_their_branch_moves_or_is_first_pushed() {
     let application = store
         .get(&environment)
         .await
-        .unwrap()
+        .expect("the environment exists")
         .environment
         .application_id;
 
@@ -458,26 +525,33 @@ async fn local_snapshots_stay_until_their_branch_moves_or_is_first_pushed() {
         store
             .preview_origins(&preview)
             .await
-            .unwrap()
+            .expect("preview origins succeeds")
             .latest
-            .unwrap(),
+            .expect("latest is present"),
         piqueld_core::api::DeploymentOrigin::Build
     );
     sqlx::query("UPDATE operations SET state='succeeded',finished_at_ms=1 WHERE id=?1")
         .bind(&pushed.operation_id)
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
 
     let preview = snapshot_deployed(&store, &application, None).await;
-    let synced = store.get(&preview).await.unwrap().environment;
-    assert_eq!(synced.synced.as_ref().unwrap().commit, None);
+    let synced = store
+        .get(&preview)
+        .await
+        .expect("the environment exists")
+        .environment;
+    assert_eq!(
+        synced.synced.as_ref().expect("the value is present").commit,
+        None
+    );
     assert_eq!(
         synced.sync_state(
             store
                 .application(&application)
                 .await
-                .unwrap()
+                .expect("application succeeds")
                 .application
                 .spec()
                 .manifest
@@ -493,10 +567,10 @@ async fn local_snapshots_stay_until_their_branch_moves_or_is_first_pushed() {
         store
             .get(&preview)
             .await
-            .unwrap()
+            .expect("the environment exists")
             .environment
             .synced
-            .unwrap()
+            .expect("synced is present")
             .commit
             .as_deref(),
         Some(B)

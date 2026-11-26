@@ -20,7 +20,7 @@ fn pulled(byte: char) -> ResolvedSource {
             byte.to_string().repeat(64)
         ),
     )
-    .unwrap()
+    .expect("parse image succeeds")
 }
 
 /// `application` compiled for `environment`, with `web` pulled as `web`.
@@ -33,30 +33,37 @@ fn target(
     compile_application(
         application,
         environment,
-        InstanceId::parse(instance).unwrap(),
+        InstanceId::parse(instance).expect("the instance id parses"),
         &ResolutionSet {
-            sources: BTreeMap::from([(ServiceName::parse("web").unwrap(), web)]),
+            sources: BTreeMap::from([(
+                ServiceName::parse("web").expect("the service name parses"),
+                web,
+            )]),
             secret_names: BTreeMap::new(),
         },
     )
-    .unwrap()
+    .expect("compile application succeeds")
 }
 
 /// Saves `notes` with a `staging` environment next to `production`.
 async fn save_with_staging(store: &Store) -> (ApplicationId, EnvironmentId, EnvironmentId) {
     let template = ApplicationTemplate::from(&prebuilt("app-notes-test"));
-    let template = template.to_manifest().validate_template().unwrap();
+    let template = template
+        .to_manifest()
+        .validate_template()
+        .expect("validate template succeeds");
     let saved = store.save_template(template, false).await;
-    let application = ApplicationId::parse(saved.application_id.as_str()).unwrap();
+    let application =
+        ApplicationId::parse(saved.application_id.as_str()).expect("the application id parses");
     let create = Mutation::CreateEnvironment {
         application: application.clone(),
-        name: EnvironmentName::parse("staging").unwrap(),
+        name: EnvironmentName::parse("staging").expect("the environment name parses"),
         source: None,
     };
     let (MutationResponse::Environment(staging), _) = store
         .accept(Daemon, create, None, true, None)
         .await
-        .unwrap()
+        .expect("accept succeeds")
     else {
         panic!("environment")
     };
@@ -67,21 +74,27 @@ async fn save_with_staging(store: &Store) -> (ApplicationId, EnvironmentId, Envi
 /// Deploys `environment` and prepares it with `web` pulled as `web`,
 /// returning the deployment's ID.
 async fn prepare(store: &Store, environment: &EnvironmentId, web: ResolvedSource) -> String {
-    let operation = store.request_deploy(environment, None).await.unwrap();
+    let operation = store
+        .request_deploy(environment, None)
+        .await
+        .expect("request deploy succeeds");
     store.mark_running(&operation.id).await;
     let rendering = store
         .deployment_snapshot(&operation.id)
         .await
-        .unwrap()
+        .expect("deployment snapshot succeeds")
         .rendering
-        .unwrap();
+        .expect("rendering is present");
     let target = target(
         &rendering.application,
         environment,
         store.instance_id().as_str(),
         web,
     );
-    store.save_prepared(&operation, &target).await.unwrap();
+    store
+        .save_prepared(&operation, &target)
+        .await
+        .expect("save prepared succeeds");
     operation.id
 }
 
@@ -93,7 +106,7 @@ async fn deployment_releases(
     store
         .deployments(environment, None, 10)
         .await
-        .unwrap()
+        .expect("deployments succeeds")
         .items
         .into_iter()
         .map(|deployment| (deployment.operation.id, deployment.release))
@@ -108,11 +121,15 @@ async fn identical_preparations_share_a_release_that_outlives_its_environment() 
     let shared = prepare(&store, &staging, pulled('a')).await;
     let updated = prepare(&store, &production, pulled('b')).await;
 
-    let releases = store.releases(&application, None, 10).await.unwrap().items;
+    let releases = store
+        .releases(&application, None, 10)
+        .await
+        .expect("releases succeeds")
+        .items;
     let [newer, older] = releases.as_slice() else {
         panic!("two releases, got {releases:?}")
     };
-    let web = ServiceName::parse("web").unwrap();
+    let web = ServiceName::parse("web").expect("the service name parses");
     assert_eq!(older.release.sources()[&web], pulled('a'));
     assert_eq!(newer.release.sources()[&web], pulled('b'));
     assert_eq!(older.release.commit(), None);
@@ -129,14 +146,24 @@ async fn identical_preparations_share_a_release_that_outlives_its_environment() 
         Some(&older.id)
     );
 
-    let deletion = store.request_delete(&staging).await.unwrap();
+    let deletion = store
+        .request_delete(&staging)
+        .await
+        .expect("request delete succeeds");
     store.mark_running(&deletion.id).await;
-    store.finish_delete_operation(&deletion).await.unwrap();
+    store
+        .finish_delete_operation(&deletion)
+        .await
+        .expect("finish delete operation succeeds");
     assert!(matches!(
         store.get(&staging).await,
         Err(StoreError::NotFound)
     ));
-    let remaining = store.releases(&application, None, 10).await.unwrap().items;
+    let remaining = store
+        .releases(&application, None, 10)
+        .await
+        .expect("releases succeeds")
+        .items;
     assert_eq!(
         remaining
             .iter()

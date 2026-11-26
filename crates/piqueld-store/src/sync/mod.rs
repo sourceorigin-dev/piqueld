@@ -516,15 +516,22 @@ impl Store {
     ///
     /// # Panics
     /// If the store fails.
+    #[expect(
+        clippy::expect_used,
+        reason = "A test fixture fails the test by panicking."
+    )]
     pub async fn deployed_at(&self, id: &EnvironmentId, commit: &str) -> super::Operation {
-        let (writer, mut tx) = self.begin_immediate().await.unwrap();
+        let (writer, mut tx) = self
+            .begin_immediate()
+            .await
+            .expect("begin immediate succeeds");
         let current = Self::environment_on(&mut tx, id.as_str())
             .await
-            .unwrap()
-            .unwrap();
+            .expect("environment on returns a value")
+            .expect("the value is present");
         let operation = Self::deploy_revision_on(&mut tx, &current, None)
             .await
-            .unwrap();
+            .expect("deploy revision on succeeds");
         sqlx::query(
             "UPDATE deployment_inputs SET fetched=1,repository_commit=?1 WHERE operation_id=?2",
         )
@@ -532,25 +539,28 @@ impl Store {
         .bind(&operation.id)
         .execute(&mut *tx)
         .await
-        .unwrap();
+        .expect("execute succeeds");
         sqlx::query("UPDATE operations SET state='succeeded',finished_at_ms=1 WHERE id=?1")
             .bind(&operation.id)
             .execute(&mut *tx)
             .await
-            .unwrap();
-        tx.commit().await.unwrap();
+            .expect("execute succeeds");
+        tx.commit().await.expect("commit succeeds");
         drop(writer);
-        if let Some(repository) = current.tracking().unwrap().repository() {
+        if let Some(repository) = current.tracking().expect("tracking succeeds").repository() {
             let head = BranchHead {
                 url: repository.repository.url,
                 branch: repository.repository.branch,
                 commit: Some(commit.into()),
             };
-            let (_writer, mut tx) = self.begin_immediate().await.unwrap();
+            let (_writer, mut tx) = self
+                .begin_immediate()
+                .await
+                .expect("begin immediate succeeds");
             Self::record_branch_head_on(&mut tx, id, &head, now_ms())
                 .await
-                .unwrap();
-            tx.commit().await.unwrap();
+                .expect("record branch head on succeeds");
+            tx.commit().await.expect("commit succeeds");
         }
         operation
     }

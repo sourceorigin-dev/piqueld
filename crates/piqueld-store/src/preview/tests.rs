@@ -26,20 +26,22 @@ fn template(saved: bool) -> ValidatedTemplate {
     let mut manifest = parse_template_toml(&format!(
         "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='notes'\n{connection}[[spec.services]]\nname='web'\n[spec.services.source]\ntype='image'\nimage='nginx:alpine'"
     ))
-    .unwrap()
-    .normalize(ApplicationId::parse("app-pending-01").unwrap())
+    .expect("parse template toml succeeds")
+    .normalize(ApplicationId::parse("app-pending-01").expect("the application id parses"))
     .to_manifest();
     manifest.spec.services[0].secrets = vec![SecretMount {
         name: "stripe".into(),
         target: "/run/secrets/stripe".into(),
     }];
-    manifest.validate_template().unwrap()
+    manifest
+        .validate_template()
+        .expect("validate template succeeds")
 }
 
 /// Saves `template(saved)` and returns its ID.
 async fn save(store: &Store, saved: bool) -> ApplicationId {
     let saved = store.save_template(template(saved), false).await;
-    ApplicationId::parse(saved.application_id).unwrap()
+    ApplicationId::parse(saved.application_id).expect("the application id parses")
 }
 
 /// Accepts `mutation`, which creates or deploys a preview, without a
@@ -63,8 +65,8 @@ async fn create(
 ) -> Result<CreatedPreview, StoreError> {
     let mutation = PreviewMutation::Create {
         application: application.clone(),
-        branch: GitBranch::parse(branch).unwrap(),
-        slot: slot.map(|slot| PreviewSlot::parse(slot).unwrap()),
+        branch: GitBranch::parse(branch).expect("the git branch parses"),
+        slot: slot.map(|slot| PreviewSlot::parse(slot).expect("the preview slot parses")),
     };
     preview(store, mutation).await
 }
@@ -78,28 +80,49 @@ async fn creating_a_preview_is_idempotent_on_branch_and_slot_and_leaves_the_revi
         create(&store, &application, "feat/login", None),
         create(&store, &application, "feat/login", None),
     );
-    let (first, second) = (first.unwrap(), second.unwrap());
+    let (first, second) = (
+        first.expect("the first item exists"),
+        second.expect("the second item exists"),
+    );
     assert_eq!(first.preview.id, second.preview.id);
     assert_eq!(first.operation.operation_id, second.operation.operation_id);
     assert_ne!(first.created, second.created);
     let again = create(&store, &application, "feat/login", None)
         .await
-        .unwrap();
+        .expect("create succeeds");
     assert!(!again.created);
     assert_eq!(again.operation.operation_id, first.operation.operation_id);
 
     let slotted = create(&store, &application, "feat/login", Some("agent-2"))
         .await
-        .unwrap();
+        .expect("create succeeds");
     assert!(slotted.created);
     assert_ne!(slotted.preview.id, first.preview.id);
     assert_ne!(slotted.preview.name, first.preview.name);
 
-    assert_eq!(store.application(&application).await.unwrap().generation, 1);
-    assert_eq!(store.previews(&application).await.unwrap().len(), 2);
+    assert_eq!(
+        store
+            .application(&application)
+            .await
+            .expect("application succeeds")
+            .generation,
+        1
+    );
+    assert_eq!(
+        store
+            .previews(&application)
+            .await
+            .expect("previews succeeds")
+            .len(),
+        2
+    );
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The scenario reads as one story, and its expect messages wrapped it past the limit."
+)]
 async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count() {
     let (_temp, store) = Store::temporary().await;
     let store = store.with_previews(PreviewLimits {
@@ -134,7 +157,12 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
             (
                 counted.id.clone(),
                 counted.preview.slug.to_string(),
-                counted.last_deployment.as_ref().unwrap().id.clone(),
+                counted
+                    .last_deployment
+                    .as_ref()
+                    .expect("the value is present")
+                    .id
+                    .clone(),
             )
         })
         .collect::<Vec<_>>();
@@ -152,10 +180,16 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
     expected.sort();
     assert_eq!(listed, expected);
 
-    let slot = created[0].preview.preview().unwrap().slot.clone().unwrap();
+    let slot = created[0]
+        .preview
+        .preview()
+        .expect("preview succeeds")
+        .slot
+        .clone()
+        .expect("the value is present");
     let again = create(&store, &application, "feat/login", Some(slot.as_str()))
         .await
-        .unwrap();
+        .expect("create succeeds");
     assert!(!again.created);
 
     let lowered = store.clone().with_previews(PreviewLimits {
@@ -165,14 +199,17 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
     assert!(
         !create(&lowered, &application, "feat/login", Some(slot.as_str()))
             .await
-            .unwrap()
+            .expect("create succeeds")
             .created
     );
     assert!(matches!(
         create(&lowered, &application, "feat/other", None).await,
         Err(StoreError::PreviewLimitReached(reached)) if reached.limit == PreviewLimit::Total
     ));
-    let usage = lowered.preview_usage(&Scope::All).await.unwrap();
+    let usage = lowered
+        .preview_usage(&Scope::All)
+        .await
+        .expect("preview usage succeeds");
     assert_eq!((usage.total, usage.limits.max_total), (2, 1));
     assert_eq!(usage.applications[0].previews, 2);
 
@@ -187,7 +224,7 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
             None,
         )
         .await
-        .unwrap();
+        .expect("accept succeeds");
     let Err(StoreError::PreviewLimitReached(reached)) =
         create(&store, &application, "feat/other", None).await
     else {
@@ -209,10 +246,13 @@ async fn previews_need_a_repository_and_environment_changes_never_reach_them() {
     let application = save(&store, false).await;
     let preview = create(&store, &application, "feat/login", None)
         .await
-        .unwrap()
+        .expect("create succeeds")
         .preview;
     let production = store.production(&application).await;
-    let environments = store.environments(&application).await.unwrap();
+    let environments = store
+        .environments(&application)
+        .await
+        .expect("environments succeeds");
     assert_eq!(environments.len(), 1);
     assert_eq!(environments[0].id, production);
 
@@ -227,11 +267,11 @@ async fn previews_need_a_repository_and_environment_changes_never_reach_them() {
         },
         Mutation::RenameEnvironment {
             id: preview.id.clone(),
-            name: EnvironmentName::parse("renamed").unwrap(),
+            name: EnvironmentName::parse("renamed").expect("the environment name parses"),
         },
         Mutation::SetBranch {
             id: preview.id.clone(),
-            branch: TrackedBranch::new("main".into(), None).unwrap(),
+            branch: TrackedBranch::new("main".into(), None).expect("the value is valid"),
         },
         Mutation::Preview(PreviewMutation::Deploy {
             id: production.clone(),
@@ -277,21 +317,24 @@ async fn previews_mount_shared_secrets_only_when_their_access_allows_previews() 
     let application = save(&store, false).await;
     let preview = create(&store, &application, "feat/login", None)
         .await
-        .unwrap()
+        .expect("create succeeds")
         .preview;
-    let stored = store.get(&preview.id).await.unwrap();
+    let stored = store
+        .get(&preview.id)
+        .await
+        .expect("the environment exists");
     let rendered = stored
         .render(
             &template(false).normalize(application.clone()),
             "operation-1",
         )
-        .unwrap()
+        .expect("render succeeds")
         .application;
 
     store
         .put_stored_secret(Daemon, &application, "stripe", 0, b"key".to_vec(), None)
         .await
-        .unwrap();
+        .expect("put stored secret succeeds");
     assert!(matches!(
         store.check_secret_access(&preview, &rendered).await,
         Err(StoreError::SecretAccessDenied { secret, .. }) if secret == "stripe"
@@ -311,11 +354,11 @@ async fn previews_mount_shared_secrets_only_when_their_access_allows_previews() 
     store
         .set_secret_access(Daemon, &application, "stripe", &previews, None)
         .await
-        .unwrap();
+        .expect("set secret access succeeds");
     store
         .check_secret_access(&preview, &rendered)
         .await
-        .unwrap();
+        .expect("check secret access succeeds");
 }
 
 #[tokio::test]
@@ -324,7 +367,7 @@ async fn pruning_keeps_a_preview_once_the_repository_changed() {
     let application = save(&store, false).await;
     let preview = create(&store, &application, "feat/login", None)
         .await
-        .unwrap()
+        .expect("create succeeds")
         .preview;
     let prune = |repository: &str| {
         Mutation::Preview(PreviewMutation::Prune {
@@ -344,12 +387,24 @@ async fn pruning_keeps_a_preview_once_the_repository_changed() {
             .await,
         Err(StoreError::IdentityConflict)
     ));
-    assert!(!store.get(&preview.id).await.unwrap().delete_intent());
+    assert!(
+        !store
+            .get(&preview.id)
+            .await
+            .expect("the environment exists")
+            .delete_intent()
+    );
     store
         .accept(Daemon, prune(NOTES), None, false, None)
         .await
-        .unwrap();
-    assert!(store.get(&preview.id).await.unwrap().delete_intent());
+        .expect("accept succeeds");
+    assert!(
+        store
+            .get(&preview.id)
+            .await
+            .expect("the environment exists")
+            .delete_intent()
+    );
 }
 
 /// Deploys a local snapshot of `branch` and `slot`, received for `repository`.
@@ -361,8 +416,8 @@ async fn local(
 ) -> Result<CreatedPreview, StoreError> {
     let mutation = PreviewMutation::Local {
         application: application.clone(),
-        branch: GitBranch::parse(branch).unwrap(),
-        slot: slot.map(|slot| PreviewSlot::parse(slot).unwrap()),
+        branch: GitBranch::parse(branch).expect("the git branch parses"),
+        slot: slot.map(|slot| PreviewSlot::parse(slot).expect("the preview slot parses")),
         repository: repository.into(),
         snapshot: piqueld_core::api::LocalSnapshot {
             commit: commit.into(),
@@ -384,7 +439,7 @@ async fn local_preview() -> (tempfile::TempDir, Store, ApplicationId, CreatedPre
         (NOTES, &"1".repeat(40)),
     )
     .await
-    .unwrap();
+    .expect("local succeeds");
     (temp, store, application, created)
 }
 
@@ -402,11 +457,11 @@ async fn local_snapshots_create_previews_within_limits_and_record_their_provenan
     let (first, second) = ("1".repeat(40), "2".repeat(40));
     let created = local(&store, &application, ("feat/x", None), (NOTES, &first))
         .await
-        .unwrap();
+        .expect("local succeeds");
     assert!(created.created);
     let again = local(&store, &application, ("feat/x", None), (NOTES, &second))
         .await
-        .unwrap();
+        .expect("local succeeds");
     assert_eq!(
         (again.created, &again.preview.id),
         (false, &created.preview.id)
@@ -415,7 +470,7 @@ async fn local_snapshots_create_previews_within_limits_and_record_their_provenan
     let history = store
         .deployments(&created.preview.id, None, 3)
         .await
-        .unwrap();
+        .expect("deployments succeeds");
     let origins = history
         .items
         .iter()
@@ -466,7 +521,7 @@ async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
         .bind(operation)
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     };
     let accept = async |mutation| store.accept(Daemon, mutation, None, true, None).await;
     let prune = || {
@@ -479,11 +534,17 @@ async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
         accept(prune()).await,
         Err(StoreError::IdentityConflict)
     ));
-    assert!(!store.get(&preview.id).await.unwrap().delete_intent());
+    assert!(
+        !store
+            .get(&preview.id)
+            .await
+            .expect("the environment exists")
+            .delete_intent()
+    );
 
     let promoted = Mutation::CreateEnvironment {
         application: application.clone(),
-        name: EnvironmentName::parse("production-2").unwrap(),
+        name: EnvironmentName::parse("production-2").expect("the environment name parses"),
         source: Some(SourceChoice::PromoteFrom(preview.id.clone())),
     };
     assert!(matches!(
@@ -497,22 +558,30 @@ async fn local_snapshot_previews_are_not_pruned_nor_promotion_sources() {
             id: preview.id.clone(),
         })
     };
-    accept(redeploy()).await.unwrap();
+    accept(redeploy()).await.expect("accept succeeds");
     sqlx::query("UPDATE operations SET state='failed',finished_at_ms=1 WHERE environment_id=?1 AND promoted=0")
         .bind(preview.id.as_str())
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     assert!(matches!(
         accept(prune()).await,
         Err(StoreError::IdentityConflict)
     ));
-    let MutationResponse::Operation(replaced) = accept(redeploy()).await.unwrap().0 else {
+    let MutationResponse::Operation(replaced) =
+        accept(redeploy()).await.expect("accept succeeds").0
+    else {
         panic!("operation")
     };
     prepared(&replaced.operation_id).await;
-    accept(prune()).await.unwrap();
-    assert!(store.get(&preview.id).await.unwrap().delete_intent());
+    accept(prune()).await.expect("accept succeeds");
+    assert!(
+        store
+            .get(&preview.id)
+            .await
+            .expect("the environment exists")
+            .delete_intent()
+    );
 }
 
 /// A restore of a local snapshot runs that snapshot, so its preview still
@@ -530,7 +599,7 @@ async fn restored_local_snapshots_are_still_local() {
         let (MutationResponse::Operation(accepted), _) = store
             .accept(Daemon, deploy, None, false, None)
             .await
-            .unwrap()
+            .expect("accept succeeds")
         else {
             panic!("operation")
         };
@@ -539,10 +608,13 @@ async fn restored_local_snapshots_are_still_local() {
             .bind(&accepted.operation_id)
             .execute(&store.pool)
             .await
-            .unwrap();
+            .expect("execute succeeds");
         restored = accepted.operation_id;
     }
-    let origins = store.preview_origins(&preview).await.unwrap();
+    let origins = store
+        .preview_origins(&preview)
+        .await
+        .expect("preview origins succeeds");
     assert!(origins.local());
     assert!(matches!(
         origins.latest,
@@ -574,7 +646,7 @@ async fn repeated_preview_requests_change_and_record_nothing() {
     };
     let create = || PreviewMutation::Create {
         application: application.clone(),
-        branch: GitBranch::parse("feat/login").unwrap(),
+        branch: GitBranch::parse("feat/login").expect("the git branch parses"),
         slot: None,
     };
     let (Ok(MutationResponse::Preview(created)), true) = accept(create()).await else {

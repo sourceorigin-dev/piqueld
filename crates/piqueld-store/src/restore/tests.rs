@@ -31,7 +31,10 @@ fn notes() -> NormalizedApplication {
             encoding: SecretEncoding::Hex,
         },
     });
-    manifest.validate().unwrap().normalize(app.id().clone())
+    manifest
+        .validate()
+        .expect("validate succeeds")
+        .normalize(app.id().clone())
 }
 
 /// Saves `app` and stores `stripe` for every environment, returning its
@@ -40,11 +43,11 @@ async fn save(store: &Store, app: &NormalizedApplication) -> EnvironmentId {
     store
         .save_application(&ApplicationTemplate::from(app), None, None)
         .await
-        .unwrap();
+        .expect("save application succeeds");
     store
         .put_stored_secret(Daemon, app.id(), "stripe", 0, b"key".to_vec(), None)
         .await
-        .unwrap();
+        .expect("put stored secret succeeds");
     store.production(app.id()).await
 }
 
@@ -57,22 +60,39 @@ async fn deploy(
     succeed: bool,
 ) -> Operation {
     let environment = store.production(app.id()).await;
-    let operation = store.request_deploy(&environment, None).await.unwrap();
+    let operation = store
+        .request_deploy(&environment, None)
+        .await
+        .expect("request deploy succeeds");
     store.mark_running(&operation.id).await;
     let digest = format!(
         "ghcr.io/example/notes@sha256:{}",
         byte.to_string().repeat(64)
     );
-    let web = ResolvedSource::parse_image("ghcr.io/example/notes:1.4.0", digest).unwrap();
+    let web = ResolvedSource::parse_image("ghcr.io/example/notes:1.4.0", digest)
+        .expect("parse image succeeds");
     let resolutions = ResolutionSet {
-        sources: BTreeMap::from([(ServiceName::parse("web").unwrap(), web)]),
-        secret_names: store.pin_secrets(&operation, app).await.unwrap(),
+        sources: BTreeMap::from([(
+            ServiceName::parse("web").expect("the service name parses"),
+            web,
+        )]),
+        secret_names: store
+            .pin_secrets(&operation, app)
+            .await
+            .expect("pin secrets succeeds"),
     };
     let instance = store.instance_id().clone();
-    let target = compile_application(app, &environment, instance, &resolutions).unwrap();
-    store.save_prepared(&operation, &target).await.unwrap();
+    let target = compile_application(app, &environment, instance, &resolutions)
+        .expect("compile application succeeds");
+    store
+        .save_prepared(&operation, &target)
+        .await
+        .expect("save prepared succeeds");
     if succeed {
-        store.publish_prepared(&operation).await.unwrap();
+        store
+            .publish_prepared(&operation)
+            .await
+            .expect("publish prepared succeeds");
         store
             .transition_operation(
                 &operation.id,
@@ -81,7 +101,7 @@ async fn deploy(
                 None,
             )
             .await
-            .unwrap();
+            .expect("transition operation succeeds");
     }
     operation
 }
@@ -105,9 +125,10 @@ async fn accept(store: &Store, restore: Restore) -> Result<Operation, StoreError
         .accept(Daemon, Mutation::Restore(restore), None, false, None)
         .await?
     {
-        (MutationResponse::Operation(accepted), true) => {
-            Ok(store.operation(&accepted.operation_id).await.unwrap())
-        }
+        (MutationResponse::Operation(accepted), true) => Ok(store
+            .operation(&accepted.operation_id)
+            .await
+            .expect("operation succeeds")),
         other => panic!("accepted operation expected, got {other:?}"),
     }
 }
@@ -124,11 +145,19 @@ async fn restores_exactly_what_the_deployment_ran() {
     store
         .regenerate_secret(Daemon, &environment, "token", 1)
         .await
-        .unwrap();
+        .expect("regenerate secret succeeds");
     let second = deploy(&store, &app, 'b', true).await;
     let (first_target, second_target) = (
-        store.prepared_target(&first.id).await.unwrap().unwrap(),
-        store.prepared_target(&second.id).await.unwrap().unwrap(),
+        store
+            .prepared_target(&first.id)
+            .await
+            .expect("prepared target returns a value")
+            .expect("the value is present"),
+        store
+            .prepared_target(&second.id)
+            .await
+            .expect("prepared target returns a value")
+            .expect("the value is present"),
     );
     assert_ne!(first_target.secret_names, second_target.secret_names);
 
@@ -140,11 +169,16 @@ async fn restores_exactly_what_the_deployment_ran() {
             .bind(&first.id)
             .execute(&store.pool)
             .await
-            .unwrap();
+            .expect("execute succeeds");
     }
-    let restored = restore(&store, &environment, &first.id).await.unwrap();
+    let restored = restore(&store, &environment, &first.id)
+        .await
+        .expect("restore succeeds");
     assert_eq!(
-        store.prepared_target(&restored.id).await.unwrap(),
+        store
+            .prepared_target(&restored.id)
+            .await
+            .expect("prepared target succeeds"),
         Some(first_target)
     );
     let input = async |id: &str| -> (String, Option<String>, i64) {
@@ -152,10 +186,13 @@ async fn restores_exactly_what_the_deployment_ran() {
             .bind(id)
             .fetch_one(&store.pool)
             .await
-            .unwrap()
+            .expect("fetch one succeeds")
     };
     assert_eq!(input(&restored.id).await, input(&first.id).await);
-    let history = store.deployments(&environment, None, 3).await.unwrap();
+    let history = store
+        .deployments(&environment, None, 3)
+        .await
+        .expect("deployments succeeds");
     let [restored_view, _, first_view] = history.items.as_slice() else {
         panic!("three deployments expected, got {history:?}")
     };
@@ -182,7 +219,11 @@ async fn restores_exactly_what_the_deployment_ran() {
     assert_eq!(restored_view.release, first_view.release);
     assert!(restored_view.release.is_some());
     assert_eq!(
-        store.status(&environment).await.unwrap().state,
+        store
+            .status(&environment)
+            .await
+            .expect("status succeeds")
+            .state,
         ApplicationState::Pending
     );
 }
@@ -192,8 +233,10 @@ async fn restores_exactly_what_the_deployment_ran() {
 /// than it pinned.
 #[tokio::test]
 async fn refuses_what_cannot_run_again() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
+    let temp = tempfile::tempdir().expect("tempdir succeeds");
+    let store = Store::open_unsynced(temp.path().join("db"))
+        .await
+        .expect("open unsynced succeeds");
     let app = notes();
     let environment = save(&store, &app).await;
     let succeeded = deploy(&store, &app, 'a', true).await;
@@ -203,7 +246,7 @@ async fn refuses_what_cannot_run_again() {
         Err(StoreError::Restore(RestoreError::NotRestorable { deployment, .. }))
             if deployment == failed.id
     ));
-    let unknown = EnvironmentId::parse("env-unknown-0001").unwrap();
+    let unknown = EnvironmentId::parse("env-unknown-0001").expect("the environment id parses");
     assert!(matches!(
         restore(&store, &unknown, &succeeded.id).await,
         Err(StoreError::NotFound)
@@ -217,8 +260,11 @@ async fn refuses_what_cannot_run_again() {
         Err(StoreError::NotFound)
     ));
 
-    std::fs::write(temp.path().join("secrets.key"), [42; 32]).unwrap();
-    store.recover_secret_key(Daemon).await.unwrap();
+    std::fs::write(temp.path().join("secrets.key"), [42; 32]).expect("write succeeds");
+    store
+        .recover_secret_key(Daemon)
+        .await
+        .expect("recover secret key succeeds");
     assert!(matches!(
         restore(&store, &environment, &succeeded.id).await,
         Err(StoreError::Restore(RestoreError::SecretsGone { secrets, .. }))
@@ -228,8 +274,8 @@ async fn refuses_what_cannot_run_again() {
         store
             .latest_operation_for_environment(&environment)
             .await
-            .unwrap()
-            .unwrap()
+            .expect("latest operation for environment returns a value")
+            .expect("the value is present")
             .id,
         failed.id
     );
@@ -251,7 +297,7 @@ async fn narrowed_secret_access_applies_to_restores() {
     store
         .set_secret_access(Daemon, app.id(), "stripe", &none, None)
         .await
-        .unwrap();
+        .expect("set secret access succeeds");
     assert!(matches!(
         restore(&store, &environment, &first.id).await,
         Err(StoreError::SecretAccessDenied { secret, .. }) if secret == "stripe"
@@ -264,7 +310,7 @@ async fn narrowed_secret_access_applies_to_restores() {
 async fn restored_links_stay_bound_to_their_applications() {
     let (_temp, store) = Store::temporary().await;
     let saved = store.save_template(template("shop", "[spec]"), false).await;
-    let shop = ApplicationId::parse(saved.application_id).unwrap();
+    let shop = ApplicationId::parse(saved.application_id).expect("the application id parses");
     let app = notes();
     let mut manifest = app.to_manifest();
     manifest.spec.exports.push(Export {
@@ -272,18 +318,27 @@ async fn restored_links_stay_bound_to_their_applications() {
         applications: vec!["shop".into()],
         previews: false,
     });
-    let exporting = manifest.validate().unwrap().normalize(app.id().clone());
+    let exporting = manifest
+        .validate()
+        .expect("validate succeeds")
+        .normalize(app.id().clone());
     let environment = save(&store, &exporting).await;
     let first = deploy(&store, &exporting, 'a', true).await;
     deploy(&store, &app, 'b', true).await;
     store
         .force(crate::testing::rename_application(&shop, "market"))
         .await
-        .unwrap();
+        .expect("force succeeds");
     store.save_template(template("shop", "[spec]"), false).await;
 
-    let restored = restore(&store, &environment, &first.id).await.unwrap();
-    let target = store.prepared_target(&restored.id).await.unwrap().unwrap();
+    let restored = restore(&store, &environment, &first.id)
+        .await
+        .expect("restore succeeds");
+    let target = store
+        .prepared_target(&restored.id)
+        .await
+        .expect("prepared target returns a value")
+        .expect("the value is present");
     assert_eq!(target.bindings.into_values().collect::<Vec<_>>(), [shop]);
 }
 
@@ -298,21 +353,38 @@ async fn rolls_back_to_the_newest_successful_deployment() {
     deploy(&store, &app, 'a', true).await;
     let newest = deploy(&store, &app, 'b', true).await;
     let failing = deploy(&store, &app, 'c', false).await;
-    let (deployment, target) = store.rollback_target(&failing).await.unwrap().unwrap();
+    let (deployment, target) = store
+        .rollback_target(&failing)
+        .await
+        .expect("rollback target returns a value")
+        .expect("the value is present");
     assert_eq!(deployment, newest.id);
     assert_eq!(
         target,
-        store.prepared_target(&newest.id).await.unwrap().unwrap()
+        store
+            .prepared_target(&newest.id)
+            .await
+            .expect("prepared target returns a value")
+            .expect("the value is present")
     );
     let error = ("service_update_failed", "service update paused");
-    let rollback = store.roll_back(&failing, error, &deployment).await.unwrap();
-    let failed = store.operation(&failing.id).await.unwrap();
+    let rollback = store
+        .roll_back(&failing, error, &deployment)
+        .await
+        .expect("roll back succeeds");
+    let failed = store
+        .operation(&failing.id)
+        .await
+        .expect("operation succeeds");
     assert_eq!(
         (failed.state, failed.error_code.as_deref()),
         (OperationState::Failed, Some("service_update_failed"))
     );
     assert_eq!(
-        store.deployment_origin(&rollback.id).await.unwrap(),
+        store
+            .deployment_origin(&rollback.id)
+            .await
+            .expect("deployment origin succeeds"),
         DeploymentOrigin::Restore {
             deployment: newest.id.clone(),
             rolled_back: Some(failing.id.clone()),
@@ -325,7 +397,7 @@ async fn rolls_back_to_the_newest_successful_deployment() {
     let latest = store
         .latest_operation_for_environment(&environment)
         .await
-        .unwrap()
-        .unwrap();
+        .expect("latest operation for environment returns a value")
+        .expect("the value is present");
     assert_eq!(latest.id, rollback.id);
 }
