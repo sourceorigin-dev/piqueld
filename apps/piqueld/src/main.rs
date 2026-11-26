@@ -34,7 +34,7 @@ const TELEMETRY_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 #[derive(Debug, Parser)]
 #[command(
     name = "piqueld",
-    version,
+    version = piqueld_core::version::NUMBER,
     about = "Run the piqueld single-node Docker control plane"
 )]
 struct Args {

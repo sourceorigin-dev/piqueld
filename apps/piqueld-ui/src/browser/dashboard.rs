@@ -210,13 +210,25 @@ pub(super) fn OverviewPage() -> impl IntoView {
                 {metric(
                     "Daemon",
                     move || {
-                        signals
-                            .system
-                            .get()
-                            .map_or_else(|| "—".into(), |system| system.daemon_version)
+                        signals.system.get().map_or_else(
+                            || view! { "—" }.into_any(),
+                            |system| match system.daemon_version.split_once('-') {
+                                Some((number, pre)) => view! {
+                                    {number.to_owned()}
+                                    <span class="metric-suffix">{format!("-{pre}")}</span>
+                                }
+                                .into_any(),
+                                None => view! { {system.daemon_version} }.into_any(),
+                            },
+                        )
                     },
                     Some(move || {
-                        signals.system.get().map(|system| format!("API {}", system.api_version))
+                        signals.system.get().map(|system| {
+                            match system.version.as_ref().and_then(|version| version.short_commit()) {
+                                Some(commit) => format!("API {}, commit {commit}", system.api_version),
+                                None => format!("API {}", system.api_version),
+                            }
+                        })
                     }),
                 )}
             </div>

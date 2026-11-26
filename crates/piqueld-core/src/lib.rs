@@ -31,6 +31,7 @@ pub mod tailnet;
 pub mod timeline;
 mod toml_diagnostic;
 mod urls;
+pub mod version;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod wait;
 

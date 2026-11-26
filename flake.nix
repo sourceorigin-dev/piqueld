@@ -199,6 +199,16 @@
                     + lib.optionalString withUi " --features embedded-ui";
                   CARGO_BUILD_TARGET = pkgs.stdenv.hostPlatform.rust.rustcTarget;
                 }
+                # The commit the binaries report, and when it was made
+                # (piqueld_core::version), which tell an installation whether
+                # its channel has a newer build. A dirty tree has no revision,
+                # so it gets neither. Only the packages get them, so the
+                # dependency builds stay cached, but each commit rebuilds the
+                # packages.
+                // lib.optionalAttrs (self ? rev) {
+                  PIQUELD_BUILD_COMMIT = self.rev;
+                  PIQUELD_BUILD_COMMIT_TIME = toString self.lastModified;
+                }
                 // lib.optionalAttrs withUi { PIQUELD_DASHBOARD_WASM = "${dashboard}/piqueld-ui.wasm"; };
             in
             craneLib.buildPackage (

@@ -84,6 +84,8 @@ pub use piqueld_core::links;
 pub use piqueld_core::tailnet;
 /// Operation timelines: each operation's steps, done and left.
 pub use piqueld_core::timeline;
+/// piqueld versions and the channels they're published on.
+pub use piqueld_core::version;
 
 pub use applications::{
     AcceptedOperation, ApplicationSummary, ApplicationView, ApplyApplicationRequest, ApplyOptions,
@@ -219,10 +221,4 @@ pub enum ClientError {
         #[source]
         source: std::string::FromUtf8Error,
     },
-}
-
-/// Returns the client crate version embedded at build time.
-#[must_use]
-pub const fn version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
 }

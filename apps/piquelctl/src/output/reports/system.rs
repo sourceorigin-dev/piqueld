@@ -30,6 +30,18 @@ report!(StatusReport<'_> as SystemStatus = status, self, out, {
         "daemon {} (version {}, API {}, instance {})",
         s.status, s.daemon_version, s.api_version, s.instance_id
     ))?;
+    if let Some(version) = &s.version
+        && let Some(commit) = version.short_commit()
+    {
+        let committed = version
+            .committed_at_ms
+            .map_or_default(|at| format!(" of {}", Timestamp(at)));
+        let channel = version
+            .channel
+            .as_ref()
+            .map_or_default(|channel| format!(", {channel} channel"));
+        out.label("Built from", format_args!("commit {commit}{committed}{channel}"))?;
+    }
     out.label("Transport", self.transport)?;
     if let Some(builder) = &s.builder {
         builder.render_human(out)?;

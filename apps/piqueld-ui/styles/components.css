@@ -751,6 +751,17 @@
         color: var(--muted);
     }
 
+    /* A version's pre-release, such as a nightly's `-nightly.20261125`, on
+       its own smaller line, so the number stays whole. */
+    .metric-suffix {
+        display: block;
+        margin-top: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0;
+        color: var(--muted);
+    }
+
     a.metric:hover {
         border-color: var(--line-strong);
     }

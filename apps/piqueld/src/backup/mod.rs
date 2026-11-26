@@ -211,7 +211,7 @@ impl Backups {
         let manifest = Manifest {
             format: FORMAT,
             schema_version: identity.schema_version,
-            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
+            daemon_version: piqueld_core::version::NUMBER.to_owned(),
             instance_id: identity.instance_id.as_str().to_owned(),
             created_at_ms: piqueld_store::now_ms(),
         };

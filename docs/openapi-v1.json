@@ -6717,7 +6717,7 @@
                 ]
               },
               "daemon_version": {
-                "description": "Version of the running daemon binary.",
+                "description": "Version of the running daemon binary; [`Self::version`] also says\nwhat it was built from.",
                 "type": "string"
               },
               "dns": {
@@ -6781,6 +6781,25 @@
               "telemetry": {
                 "$ref": "#/components/schemas/TelemetryStatus",
                 "description": "Export of the daemon's own telemetry over OTLP."
+              },
+              "version": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Version"
+                      }
+                    ],
+                    "description": "The running daemon's version, with the commit and channel it was\nbuilt from; absent from older daemons."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
               }
             },
             "required": [
@@ -13222,7 +13241,7 @@
             ]
           },
           "daemon_version": {
-            "description": "Version of the running daemon binary.",
+            "description": "Version of the running daemon binary; [`Self::version`] also says\nwhat it was built from.",
             "type": "string"
           },
           "dns": {
@@ -13286,6 +13305,25 @@
           "telemetry": {
             "$ref": "#/components/schemas/TelemetryStatus",
             "description": "Export of the daemon's own telemetry over OTLP."
+          },
+          "version": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Version"
+                  }
+                ],
+                "description": "The running daemon's version, with the commit and channel it was\nbuilt from; absent from older daemons."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
           }
         },
         "required": [
@@ -14863,6 +14901,35 @@
         },
         "required": [
           "value"
+        ],
+        "type": "object"
+      },
+      "Version": {
+        "description": "A piqueld binary's version, and what it was built from when a release\nbuild stamped it.",
+        "properties": {
+          "channel": {
+            "description": "The channel it was published on, `stable` or `nightly`; absent from\nbuilds that weren't published on one, such as Nix packages. A string,\nnot a [`Channel`], so a client still reads one a newer daemon adds.",
+            "nullable": true,
+            "type": "string"
+          },
+          "commit": {
+            "description": "The Git commit it was built from; absent from builds that weren't\nstamped.",
+            "nullable": true,
+            "type": "string"
+          },
+          "committed_at_ms": {
+            "description": "When that commit was made, in Unix milliseconds.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "number": {
+            "description": "Its version, such as `0.3.0`, or `0.4.0-nightly.20261125` for a\nnightly.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number"
         ],
         "type": "object"
       },

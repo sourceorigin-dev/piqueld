@@ -27,7 +27,8 @@ impl ApplicationService {
         SystemStatus {
             status: "running".into(),
             api_version: "v1".into(),
-            daemon_version: env!("CARGO_PKG_VERSION").into(),
+            daemon_version: piqueld_core::version::NUMBER.into(),
+            version: Some(piqueld_core::version::Version::current()),
             instance_id: self.store.instance_id().to_string(),
             tailscale: self
                 .tailnet

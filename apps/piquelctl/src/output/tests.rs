@@ -563,6 +563,34 @@ fn status_and_dns_refresh_list_images_dns_providers_certificate_failures_and_pre
     }
 }
 
+/// A release build's status names the commit it was built from.
+#[test]
+fn status_names_the_commit_a_release_build_was_made_from() {
+    let status = piqueld_client::SystemStatus {
+        version: Some(piqueld_client::version::Version {
+            number: "0.1.0".into(),
+            commit: Some("0123456789abcdef".into()),
+            committed_at_ms: Some(1000),
+            channel: Some(piqueld_client::version::Channel::Stable.into()),
+        }),
+        ..piqueld_client::SystemStatus::default()
+    };
+    let stdout = Capture::default();
+    stdout
+        .human_console()
+        .emit(&reports::StatusReport {
+            status: &status,
+            transport: "unix",
+            ingress: None,
+        })
+        .expect("the output is written");
+    let text = stdout.text();
+    assert!(
+        text.contains("Built from: commit 0123456789ab of 1970-01-01 00:00:01Z, stable channel"),
+        "{text}"
+    );
+}
+
 /// Each destination shows its state, and its headers only by their file;
 /// a receiver is named by its environment.
 #[test]

@@ -388,10 +388,12 @@ path.
 sudo piquelctl status
 ```
 
-It starts with the daemon's version and how `piquelctl` reached it:
+It starts with the daemon's version, the commit a release build was made
+from, and how `piquelctl` reached it:
 
 ```text
 daemon running (version 0.1.0, API v1, instance instance-01a16b10b8307c61b5ac3d27d4bf7937)
+Built from: commit 0d5c2a1e94b7 of 2026-11-20 14:02:11Z, stable channel
 Transport: Unix socket /run/piqueld/piqueld.sock
 ```
 

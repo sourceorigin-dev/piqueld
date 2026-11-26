@@ -51,6 +51,8 @@ jobs:
           shared-key: dist
           save-if: false
       - run: cargo xtask dist
+        env:
+          PIQUELD_BUILD_CHANNEL: stable
       # Records that this workflow built the archive and its checksums from
       # the tagged commit, for `gh attestation verify`.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
