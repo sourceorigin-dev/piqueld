@@ -18,7 +18,9 @@ use utoipa::ToSchema;
 /// reference variables are validated once rendered for an environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedTemplate {
+    /// Application name, labels and other metadata.
     metadata: ValidatedMetadata,
+    /// The specification, with variable references left unrendered.
     spec: ApplicationSpec,
 }
 
@@ -54,6 +56,7 @@ pub struct Rendering {
 }
 
 impl ValidatedTemplate {
+    /// Pairs validated metadata with its specification.
     pub(super) const fn new(metadata: ValidatedMetadata, spec: ApplicationSpec) -> Self {
         Self { metadata, spec }
     }

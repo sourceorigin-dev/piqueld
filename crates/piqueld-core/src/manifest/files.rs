@@ -48,11 +48,15 @@ pub enum FileSource {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ServiceFileFields {
+    /// Absolute path of the file in the container.
     target: String,
+    /// Path of a file in the application's repository holding the content.
     #[serde(default)]
     path: Option<String>,
+    /// Literal content, when the manifest spells it inline.
     #[serde(default)]
     content: Option<String>,
+    /// Octal permissions; the default when absent.
     #[serde(default)]
     mode: FileMode,
 }

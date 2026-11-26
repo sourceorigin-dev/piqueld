@@ -98,7 +98,9 @@ const SPEC_HASH_VERSION: &str = "piqueld-spec-hash/v2";
 /// Validated domain application before canonical collection ordering.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedApplication {
+    /// Application name, labels and other metadata.
     metadata: ValidatedMetadata,
+    /// Services, routes, jobs and the rest of the validated specification.
     spec: ValidatedSpec,
 }
 

@@ -11,18 +11,26 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Most routes a manifest may declare; checked before any per-item validation.
 const MAX_ROUTES: usize = 64;
+/// Most services an application may declare.
 const MAX_SERVICES: usize = 64;
+/// Most volumes an application may declare.
 const MAX_VOLUMES: usize = 64;
+/// Most entries one variable map (environment or build arguments) may hold.
 const MAX_VARIABLE_ENTRIES: usize = 256;
 /// Variable keys and build targets share the common 255-byte identifier bound so one entry
 /// cannot dominate a manifest, a container environment list, or a build command.
 const MAX_IDENTIFIER_BYTES: usize = 255;
+/// Longest value of a variable map entry, in bytes.
 const MAX_VARIABLE_VALUE_BYTES: usize = 65_536;
+/// Most elements of a command, entrypoint or argument list.
 const MAX_PROCESS_ELEMENTS: usize = 128;
+/// Longest single element of such a list, in bytes.
 const MAX_PROCESS_ELEMENT_BYTES: usize = 4_096;
+/// Most CPU a service may limit itself to, in millicores.
 pub(super) const MAX_CPU_MILLIS: u32 = 1_048_576;
 /// Accepted replica counts of a service.
 pub(super) const REPLICAS: std::ops::RangeInclusive<u16> = 1..=100;
+/// Most generated secrets an application may declare.
 const MAX_GENERATED_SECRETS: usize = 64;
 /// Accepted raw byte counts for random generated secrets, before encoding.
 const RANDOM_SECRET_BYTES: std::ops::RangeInclusive<u16> = 16..=512;
@@ -749,9 +757,13 @@ struct VariableMap {
     field: &'static str,
     /// Name piqueld sets itself for ingress, which users cannot declare.
     reserved: Option<&'static str>,
+    /// Code reported for an invalid entry name.
     name_invalid: ApiErrorCode,
+    /// Code reported for an invalid entry value.
     value_invalid: ApiErrorCode,
+    /// Code reported when there are too many entries.
     count_excessive: ApiErrorCode,
+    /// Code reported when a value is too long.
     value_excessive: ApiErrorCode,
 }
 

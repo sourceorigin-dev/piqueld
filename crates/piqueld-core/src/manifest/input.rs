@@ -1095,10 +1095,12 @@ pub struct Redirect {
     pub preserve_path: bool,
 }
 
+/// Default `status` of a redirect: a permanent redirect.
 fn default_redirect_status() -> u16 {
     super::RedirectStatus::PermanentRedirect.into()
 }
 
+/// Default `preserve_path` of a redirect: the path and query are kept.
 fn default_preserve_path() -> bool {
     true
 }

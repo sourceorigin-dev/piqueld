@@ -918,6 +918,7 @@ impl PlanCoverage {
 /// dashboard's progress show it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Progress {
+    /// Kind of operation it tracks.
     kind: OperationKind,
     /// Where the operation stands.
     pub state: OperationState,

@@ -355,8 +355,11 @@ pub enum RouteTarget {
 /// that mix or omit destinations, which an untagged enum would silently accept.
 #[derive(Deserialize)]
 struct RouteTargetFields {
+    /// Service a route sends requests to.
     service: Option<ServiceName>,
+    /// Port on that service; the service's only port when absent.
     port: Option<NonZeroU16>,
+    /// Redirect a route answers with instead of a service.
     redirect: Option<ValidatedRedirect>,
 }
 

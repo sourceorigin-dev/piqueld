@@ -469,7 +469,9 @@ impl DesiredJob {
 /// restarted operation find and resume its own run instead of starting over.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesiredJobRun {
+    /// The job to run.
     job: DesiredJob,
+    /// Operation the run belongs to, as its label.
     operation: String,
 }
 

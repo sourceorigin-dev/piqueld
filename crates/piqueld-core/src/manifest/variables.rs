@@ -17,8 +17,11 @@ use std::{
 };
 use utoipa::ToSchema;
 
+/// Opens a variable reference in a manifest string.
 const OPEN: &str = "${{";
+/// Writes a literal [`OPEN`]; it renders as `${{`.
 const ESCAPED_OPEN: &str = "$${{";
+/// Closes a variable reference.
 const CLOSE: &str = "}}";
 /// Most text one rendering may produce, twice the largest manifest request.
 /// A value can repeat a large variable many times, so expansion is bounded
@@ -549,6 +552,7 @@ pub(super) trait Expected: DeserializeOwned + Serialize {
     const EXPECTED: &'static str;
 }
 
+/// Implements [`Expected`] for each `type => description` pair.
 macro_rules! expected {
     ($($type:ty => $expected:literal),* $(,)?) => {
         $(impl Expected for $type {
@@ -956,7 +960,9 @@ impl ApplicationSpec {
 
 /// The values one rendering resolves references to.
 struct Scope<'a> {
+    /// Context the references resolve against.
     context: &'a RenderContext,
+    /// Value each reference resolves to.
     values: BTreeMap<Reference, VariableValue>,
     /// Bytes rendered so far, bounded by [`MAX_RENDERED_BYTES`].
     rendered: std::cell::Cell<usize>,
