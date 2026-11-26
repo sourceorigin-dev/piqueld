@@ -1,6 +1,9 @@
 //! Nested Cargo builds, for the build scripts of piqueld's crates that embed
 //! an artifact compiled for another target: the daemon's dashboard (wasm32)
-//! and the Docker crate's health probe (musl).
+//! and the Docker crate's health probe (musl). Also the store's [`migrations`]
+//! checks.
+
+pub mod migrations;
 
 use std::{
     env,

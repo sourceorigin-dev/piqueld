@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use piqueld_build::migrations::{self, Migration};
 use sqlx::{
     Connection,
     sqlite::{SqliteConnectOptions, SqliteConnection},
@@ -24,10 +25,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     embed_migrations(&manifest_dir)
 }
 
+/// The first migration whose tables must all be `STRICT`; earlier ones
+/// predate the rule.
+const FIRST_STRICT: u64 = 9;
+
 /// Embeds the crate's migrations and builds the `SQLx` check database.
 ///
 /// 1. Collect `migrations/*.sql` in name order and require contiguous
-///    numeric prefixes starting at 1 (`0001_init.sql`, `0002_…`).
+///    numeric prefixes starting at 1 (`0001_init.sql`, `0002_…`), the
+///    tables created from [`FIRST_STRICT`] on to be `STRICT`, and each to
+///    match its checksum in [`migrations::LOCK`].
 /// 2. Write `OUT_DIR/migrations.rs`, an `include_str!` slice of the files.
 /// 3. Recreate `OUT_DIR/sqlx-build.db`, apply every migration, and point
 ///    `DATABASE_URL` at it so `SQLx` macros check against the real schema.
@@ -51,7 +58,8 @@ fn embed_migrations(manifest_dir: &Path) -> Result<(), Box<dyn Error>> {
         .collect::<Result<Vec<_>, io::Error>>()?;
 
     let mut expected_version = 0_u64;
-    for (path, _) in &migrations {
+    let mut checked = Vec::with_capacity(migrations.len());
+    for (path, sql) in &migrations {
         let file_name = Path::new(path)
             .file_name()
             .and_then(|name| name.to_str())
@@ -71,7 +79,16 @@ fn embed_migrations(manifest_dir: &Path) -> Result<(), Box<dyn Error>> {
             ))
             .into());
         }
+        checked.push(Migration {
+            version,
+            name: file_name,
+            sql,
+        });
     }
+    let lock = manifest_dir.join(migrations::LOCK);
+    println!("cargo:rerun-if-changed={}", lock.display());
+    Migration::check_strict(&checked, FIRST_STRICT)?;
+    Migration::check_lock(&checked, &fs::read_to_string(&lock)?)?;
 
     let out_dir = out_dir()?;
     let mut embedded_migrations = String::from("&[\n");

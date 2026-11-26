@@ -70,8 +70,8 @@ commits, and secret encryption. It reads its retention settings as
 `piqueld-core`'s `RetentionConfig`, `BuildHistoryConfig` and `ImagesConfig`.
 `piqueld-config` uses the same types for those tables of the configuration
 file, so the store doesn't depend on it. Its build script checks the `sqlx::query!`
-macros against its migrations, and shares `piqueld-build`'s `utf8` with the
-daemon's. Its `testing` feature adds
+macros against its migrations, and the migrations with `piqueld-build`'s
+`migrations` checks, and shares its `utf8` with the daemon's. Its `testing` feature adds
 `Store::open_unsynced` and fixtures the daemon's tests share; the daemon's
 `fake-docker` feature enables it.
 

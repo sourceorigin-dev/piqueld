@@ -357,7 +357,7 @@ impl Store {
         );
         let message = format!("Recovered the secret master key; discarded {counts}");
         let recovered = crate::SecurityEvent::SecretKeyRecovered;
-        Self::security_event_on(&mut tx, recovered, &message, by).await?;
+        Self::security_event_on(&mut tx, recovered, None, &message, by).await?;
         let change = format!("secret key recovery discarded {counts}");
         author
             .commit_recorded(tx, 200, Some(&change), (None, None))
