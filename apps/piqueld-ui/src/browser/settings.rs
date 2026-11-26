@@ -371,7 +371,7 @@ impl Field {
             let deletes = match setting.prunes {
                 _ if !setting.keeps_less(value) => return true,
                 Some(Pruning::Images) => {
-                    "That keeps fewer images: the next cleanup deletes the rest for good, and a deployment without its images can't be restored."
+                    "That keeps fewer images, and fewer deployments in history: the next cleanup deletes the rest, from a build registry for good."
                 }
                 _ => "That keeps less history: piqueld deletes the rest for good.",
             };

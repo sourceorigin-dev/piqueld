@@ -599,9 +599,9 @@ pub struct Store {
     pool: SqlitePool,
     /// Stable installation identity, generated when the database is first created.
     instance_id: piqueld_core::InstanceId,
-    /// The daemon settings: those set through the API, those `config.toml`
-    /// pins, and the effective settings, which every reader reads where it
-    /// applies them (see [`Store::settings`]).
+    /// The daemon settings: those set through the API, what the
+    /// installation offers them, and the effective settings, which every
+    /// reader reads where it applies them (see [`Store::settings`]).
     settings: tokio::sync::watch::Sender<SettingsState>,
 
     /// Secret master key file, stored next to the database as `secrets.key`.

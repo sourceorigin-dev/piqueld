@@ -69,7 +69,7 @@ start with a letter and end with a letter or digit."#,
     pub(crate) const CONFIG: Self = Self {
         path: "docs/user/reference/configuration-settings.md",
         source: "the configuration types in `crates/piqueld-config`",
-        title: "Daemon configuration settings",
+        title: "Configuration file settings",
         intro: "\
 This page lists every setting of the daemon's configuration file,
 `/etc/piqueld/config.toml`, with its type and default. It is generated from

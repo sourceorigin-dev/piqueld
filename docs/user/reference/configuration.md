@@ -7,7 +7,7 @@ explicit file is selected with:
 piqueld --config /path/to/config.toml
 ```
 
-[Daemon configuration settings](configuration-settings.md) lists every
+[Configuration file settings](configuration-settings.md) lists every
 setting with its type and default.
 
 Daemon settings, the installation's policy, such as how long history is kept

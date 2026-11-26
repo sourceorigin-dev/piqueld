@@ -140,26 +140,20 @@ services.piqueld.settings.tailscale = {
 [the tailnet node](configuration.md#tailnet-node) for details.
 
 `settings` declares typed options for `server.listen_mode`, `server.port`,
-`server.allowed_hosts`, `auth.public_url`, `auth.max_token_days`, `tailscale.enabled`,
+`server.allowed_hosts`, `auth.public_url`, `tailscale.enabled`,
 `tailscale.hostname`, `tailscale.auth_key_file`, `tailscale.https_port`,
-`tailscale.socket`, `docker.socket`,
-`docker.auto_initialize_swarm`, `build.parallel`, `build.builder`,
-`build.repository` (set both, or neither), `build.unavailable`, `ingress.enabled`, `ingress.public_addresses`,
-`ingress.acme.directory`,
+`tailscale.socket`, `docker.socket`, `docker.auto_initialize_swarm`,
+`build.parallel`, `build.builder`, `build.repository` (set both, or neither),
+`ingress.enabled`, `ingress.public_addresses`, `ingress.acme.directory`,
 `ingress.acme.email`, `ingress.private.enabled`, `ingress.private.hostname`,
-`ingress.private.auth_key_file` (passed as a systemd credential, like the other
-`_file` settings), `ingress.private.dashboard_hostname`, `ingress.tunnel.enabled`, `ingress.tunnel.credentials_file`
-(also a systemd credential, required while the tunnel is enabled),
-`ingress.webhook_hostname`, `ingress.traffic`, `dns.providers`, all three `reconciliation`
-intervals/timeouts, the `retention` periods, both `build_history` limits,
-the five [`previews`](configuration.md#previews) limits,
-[`snapshots.max_upload_bytes`](configuration.md#local-snapshots),
-[`checkouts.max_bytes`](configuration.md#git-checkouts), the three `images` settings,
-`telemetry.endpoint`, `telemetry.headers_file` (a systemd credential),
-and `telemetry.containers`, with the daemon's defaults, except the daemon
-settings, which default to `null` (see above). Reconciliation
-values must be 1–86400 seconds; retention values are nonnegative days, or a
-count for `retention.deployments_per_environment`, with zero disabling pruning. Unknown settings are rejected.
+`ingress.private.auth_key_file` (passed as a systemd credential, like the
+other `_file` settings), `ingress.private.dashboard_hostname`,
+`ingress.tunnel.enabled`, `ingress.tunnel.credentials_file` (also a systemd
+credential, required while the tunnel is enabled), `ingress.webhook_hostname`,
+`dns.providers`, [`checkouts.max_bytes`](configuration.md#git-checkouts),
+`telemetry.endpoint`, `telemetry.headers_file` (a systemd credential), and
+`telemetry.containers`, with the daemon's defaults. Unknown settings are
+rejected, and [daemon settings](daemon-settings.md) fail the build, as above.
 
 [Notification destinations](../operations/notifications.md) are managed with
 `piquelctl notification` or the dashboard, not the module; the former

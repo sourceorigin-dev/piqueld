@@ -92,9 +92,9 @@ set` doesn't ask.
 Lowering how many deployments keep their images, under **Images**, removes
 images too, at the next cleanup: from this host, and with a build machine,
 from its registry for good. A deployment whose images are gone can't be
-restored from this host, or, once the registry has deleted them, at all, and
-history keeps fewer deployments. The dashboard asks you to confirm this
-change too.
+restored from this host, or, once the registry has deleted them, at all.
+Lowering `images.keep_deployments` also lets history keep fewer
+deployments. The dashboard asks you to confirm these changes too.
 
 Every change is recorded in the [audit trail](audit.md), with the old and the
 new value.
