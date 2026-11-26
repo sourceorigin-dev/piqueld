@@ -81,7 +81,9 @@ Then keep the dashboard on localhost, or
 
 ### Update piqueld
 
-Run the script again. It shows the version you have and the one it installs,
+piqueld tells you when an update is out, and the version to install; see
+[updating piqueld](../operations/updates.md). Run the script again, with
+`PIQUELD_VERSION` set to that version when you follow the nightly channel. It shows the version you have and the one it installs,
 then installs the latest release, or `PIQUELD_VERSION`, over the current one,
 and restarts the daemon. It keeps your configuration and
 the data in `/var/lib/piqueld`.

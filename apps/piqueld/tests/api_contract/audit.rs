@@ -5,7 +5,7 @@ use super::*;
 /// Write routes that change no persistent state, such as a plan, a test
 /// send or an in-memory sign-in step, so they are recorded in the
 /// background.
-const BACKGROUND: [(&str, &str); 12] = [
+const BACKGROUND: [(&str, &str); 13] = [
     ("POST", "/api/v1/applications/plan"),
     ("POST", "/api/v1/environments/{id}/promote/plan"),
     ("POST", "/api/v1/auth/device/start"),
@@ -18,12 +18,13 @@ const BACKGROUND: [(&str, &str); 12] = [
     ("POST", "/api/v1/notifications/destinations/{name}/test"),
     ("POST", "/api/v1/system/builder/check"),
     ("POST", "/api/v1/system/dns/refresh"),
+    ("POST", "/api/v1/system/updates/check"),
 ];
 
 /// Write routes outside the typed application edits whose changes append
 /// their record in the transaction committing them: acceptance, secrets,
 /// notifications, webhooks, accounts and sign-ins.
-const COMMITTED: [(&str, &str); 41] = [
+const COMMITTED: [(&str, &str); 42] = [
     ("POST", "/api/v1/applications"),
     ("POST", "/api/v1/applications/apply"),
     ("DELETE", "/api/v1/applications/{id}"),
@@ -58,6 +59,7 @@ const COMMITTED: [(&str, &str); 41] = [
     ("POST", "/api/v1/notifications/deliveries/{id}/retry"),
     ("PUT", "/api/v1/notifications/destinations/{name}"),
     ("DELETE", "/api/v1/notifications/destinations/{name}"),
+    ("PUT", "/api/v1/system/updates/channel"),
     ("POST", "/api/v1/system/secrets/recover-key"),
     ("POST", "/api/v1/auth/manage"),
     ("POST", "/api/v1/auth/logout"),

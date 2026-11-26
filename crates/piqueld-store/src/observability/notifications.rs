@@ -181,7 +181,8 @@ impl Store {
             NotificationCategory::Security
             | NotificationCategory::DaemonStarted
             | NotificationCategory::DaemonRolledBack
-            | NotificationCategory::DeploymentSucceeded => {}
+            | NotificationCategory::DeploymentSucceeded
+            | NotificationCategory::UpdateAvailable => {}
             _ => {
                 let open = sqlx::query_scalar!(
                     "SELECT COUNT(*) FROM notification_conditions WHERE event_id=?1",
@@ -324,13 +325,14 @@ impl Store {
             let security = NotificationCategory::Security;
             return Self::enqueue(tx, event.id, security).await;
         }
-        if known == Some(EventKind::DaemonStarted) {
-            let started = NotificationCategory::DaemonStarted;
-            return Self::enqueue(tx, event.id, started).await;
-        }
-        if known == Some(EventKind::DaemonRolledBack) {
-            let rolled_back = NotificationCategory::DaemonRolledBack;
-            return Self::enqueue(tx, event.id, rolled_back).await;
+        let occurrence = match known {
+            Some(EventKind::DaemonStarted) => Some(NotificationCategory::DaemonStarted),
+            Some(EventKind::DaemonRolledBack) => Some(NotificationCategory::DaemonRolledBack),
+            Some(EventKind::UpdateAvailable) => Some(NotificationCategory::UpdateAvailable),
+            _ => None,
+        };
+        if let Some(category) = occurrence {
+            return Self::enqueue(tx, event.id, category).await;
         }
         let category = match (known, event.scope, event.error_code.as_deref()) {
             (

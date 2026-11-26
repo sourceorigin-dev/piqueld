@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 string_enum! {
+    #[serde]
     /// A stream of piqueld versions an installation can follow.
     pub enum Channel {
         /// The versions a maintainer releases.
@@ -50,6 +51,19 @@ compared_as_string!(Channel);
 /// The repository whose GitHub releases hold every published build, and the
 /// `channels` release with each channel's [`Feed`].
 pub const REPOSITORY_URL: &str = "https://github.com/sourceorigin-dev/piqueld";
+
+impl std::str::FromStr for Channel {
+    type Err = UnknownChannel;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Self::parse(name).ok_or_else(|| UnknownChannel(name.to_owned()))
+    }
+}
+
+/// A name that isn't a [`Channel`]'s.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("{0} isn't a channel: stable or nightly")]
+pub struct UnknownChannel(pub String);
 
 impl Channel {
     /// The file its feed is published as, such as `nightly.json`.
@@ -113,6 +127,34 @@ impl Version {
         }
     }
 
+    /// Whether `self` is a newer build than `other`: made from a later
+    /// commit, or, when either doesn't know its commit's time, a higher
+    /// version.
+    #[must_use]
+    pub fn is_newer_than(&self, other: &Self) -> bool {
+        match (self.committed_at_ms, other.committed_at_ms) {
+            (Some(this), Some(other)) => this > other,
+            _ => match (Self::order(&self.number), Self::order(&other.number)) {
+                (Some(this), Some(other)) => this > other,
+                _ => false,
+            },
+        }
+    }
+
+    /// How `number`, `major.minor.patch` with an optional `-pre-release`,
+    /// sorts: by its numbers, then a release after its pre-releases, which
+    /// sort by name, as dated nightlies do.
+    fn order(number: &str) -> Option<(u64, u64, u64, bool, &str)> {
+        let (release, pre) = number.split_once('-').unwrap_or((number, ""));
+        let mut parts = release.splitn(3, '.').map(str::parse);
+        let (Some(Ok(major)), Some(Ok(minor)), Some(Ok(patch))) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            return None;
+        };
+        Some((major, minor, patch, pre.is_empty(), pre))
+    }
+
     /// The commit, shortened for display as [`crate::sync::short_commit`]
     /// shortens environments' commits.
     #[must_use]
@@ -168,6 +210,25 @@ const fn parse_channel(text: &str) -> Option<Channel> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Without a commit time, only a higher version is newer.
+    #[test]
+    fn a_later_commit_is_newer_whatever_the_version() {
+        let build = |number: &str, committed_at_ms| Version {
+            number: number.into(),
+            commit: None,
+            committed_at_ms,
+            channel: None,
+        };
+        let nightly = build("0.3.0-nightly.20261125", Some(2));
+        let stable = build("0.2.1", Some(3));
+        assert!(stable.is_newer_than(&nightly));
+        assert!(!nightly.is_newer_than(&stable));
+        assert!(build("0.2.1", None).is_newer_than(&build("0.2.0", None)));
+        assert!(!build("0.2.0", None).is_newer_than(&build("0.2.0", Some(1))));
+        assert!(!build("0.3.0", Some(1)).is_newer_than(&build("0.4.0-dev", None)));
+        assert!(build("0.3.0", None).is_newer_than(&build("0.3.0-nightly.20261125", None)));
+    }
 
     #[test]
     fn stamps_parse_as_release_builds_write_them() {

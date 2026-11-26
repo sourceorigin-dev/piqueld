@@ -389,6 +389,10 @@ public_url = "http://{name}.localhost:{port}"
 # /var/run/docker.sock to use the host engine instead.
 socket = {socket}
 auto_initialize_swarm = true
+
+[updates]
+# A development build isn't published on a channel.
+check = false
 "#
             ),
         )

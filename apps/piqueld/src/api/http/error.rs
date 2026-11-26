@@ -675,6 +675,11 @@ impl From<ApplicationError> for ApiError {
                 ApiErrorCode::ServerBusy,
                 "Too many requests like this one are running; try again shortly",
             ),
+            ApplicationError::UpdateChannelConfigured => Self::new(
+                StatusCode::CONFLICT,
+                ApiErrorCode::UpdateChannelConfigured,
+                "updates.channel in the daemon configuration sets the release channel; change it there",
+            ),
         }
     }
 }

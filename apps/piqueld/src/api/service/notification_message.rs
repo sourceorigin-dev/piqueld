@@ -53,6 +53,7 @@ impl Notification<'_> {
             Some(NotificationCategory::Security) => ("🔐", "Security event", BLURPLE),
             Some(NotificationCategory::DaemonStarted) => ("🔄", "Daemon started", BLUE),
             Some(NotificationCategory::DaemonRolledBack) => ("⏪", "Daemon rolled back", AMBER),
+            Some(NotificationCategory::UpdateAvailable) => ("⬆️", "Update available", BLUE),
             None => ("🔔", "Test notification", BLURPLE),
         };
         Heading {
@@ -144,10 +145,13 @@ impl Notification<'_> {
         })
     }
 
-    /// The dashboard page showing more: the diagnostic, else the environment
-    /// or preview, else the application.
+    /// The dashboard page showing more: the updates panel for an update, the
+    /// diagnostic, else the environment or preview, else the application.
     fn link(&self) -> Option<String> {
         let event = self.event;
+        if self.category == Some(NotificationCategory::UpdateAvailable) {
+            return Some("/dashboard/system#updates".to_owned());
+        }
         if let Some(diagnostic) = &event.diagnostic {
             return Some(format!("/dashboard/errors/{}", diagnostic.id));
         }

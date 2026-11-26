@@ -112,6 +112,12 @@ Type: table. Optional.
 
 Export of the daemon's traces, metrics and logs over OTLP.
 
+### `updates`
+
+Type: table. Optional.
+
+Checks for newer piqueld builds on a release channel.
+
 ## `[auth]` table
 
 The website's origin and API token lifetimes.
@@ -593,6 +599,28 @@ The OTLP/gRPC collector receiving every signal: `https://host[:port]`, `http://h
 Type: [credential file](#credential-file). Optional.
 
 gRPC metadata sent with every export, such as a collector token, one `name: value` per line. Requires `endpoint`.
+
+## `[updates]` table
+
+Checks for newer piqueld builds on a release channel. piqueld only checks and notifies: it never updates itself.
+
+### `updates.channel`
+
+Type: `"stable"` or `"nightly"`. Optional.
+
+The channel to follow, `stable` or `nightly`. Unset, choose it with `piquelctl update channel` or on the dashboard; it starts as the channel this build was published on, or `stable`.
+
+### `updates.check`
+
+Type: boolean. Default: `true`.
+
+Check the channel for a newer build every six hours, and notify the `update_available` notification category when one appears.
+
+### `updates.feed_url`
+
+Type: string. Default: `"https://github.com/sourceorigin-dev/piqueld/releases/download/channels"`.
+
+The HTTP(S) URL of the directory holding the channels' feeds, `stable.json` and `nightly.json`, such as a mirror's.
 
 ## Value types
 

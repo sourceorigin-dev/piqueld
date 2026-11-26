@@ -166,3 +166,10 @@ max_bytes = 4294967296
 [telemetry]
 # endpoint = "unix:///run/otel/otlp.sock" # or "https://otel.example.com:4317"
 # headers_file = "otlp-headers"           # `name: value` lines, e.g. a token
+
+# Checks the release channel for a newer piqueld every six hours; never
+# updates by itself.
+[updates]
+check = true
+# channel = "nightly"  # unset: choose it with `piquelctl update channel`
+feed_url = "https://github.com/sourceorigin-dev/piqueld/releases/download/channels"

@@ -12040,6 +12040,153 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
+    /*Get update status
+
+    Sends a `GET` request to `/api/v1/system/updates`
+
+    */
+    pub async fn update_status<'a>(
+        &'a self,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::api::UpdateStatus>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!("{}/api/v1/system/updates", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .get(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "update_status",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Follow another release channel
+
+    409 `update_channel_configured` when `updates.channel` in the daemon
+    configuration sets the channel.
+
+    Sends a `PUT` request to `/api/v1/system/updates/channel`
+
+    */
+    pub async fn set_update_channel<'a>(
+        &'a self,
+        body: &'a piqueld_core::api::UpdateChannelRequest,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::api::UpdateStatus>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!("{}/api/v1/system/updates/channel", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .put(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .json(&body)
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "set_update_channel",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            400u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            408u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            409u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            415u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Check for updates now
+
+    The first time it finds one, it notifies `update_available`. A feed it
+    can't read is the status's `error`, not a failed request. piqueld never
+    installs an update.
+
+    Sends a `POST` request to `/api/v1/system/updates/check`
+
+    */
+    pub async fn check_for_updates<'a>(
+        &'a self,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::api::UpdateStatus>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!("{}/api/v1/system/updates/check", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "check_for_updates",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
 }
 /// Items consumers will typically use such as the Client.
 pub mod prelude {

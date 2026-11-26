@@ -53,6 +53,7 @@ mod stopped;
 mod sync;
 mod telemetry;
 mod timeline;
+mod updates;
 pub use sync::{BranchHead, SyncApplication};
 
 use piqueld_core::{

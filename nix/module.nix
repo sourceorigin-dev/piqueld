@@ -428,6 +428,27 @@ in
             default = 4294967296;
             description = "Most bytes all Git checkouts, history and working tree, may take at once; a checkout waits for room, and a larger one, or a local snapshot that would be, is refused.";
           };
+          updates.check = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Check the release channel for a newer build every six hours, and notify `update_available` when one appears. piqueld never updates itself: update the flake input, then rebuild.";
+          };
+          updates.channel = lib.mkOption {
+            type = lib.types.nullOr (
+              lib.types.enum [
+                "stable"
+                "nightly"
+              ]
+            );
+            default = "stable";
+            example = "nightly";
+            description = "Release channel to check, matching the flake input's tag (`github:sourceorigin-dev/piqueld/stable` or `/nightly`), which decides the builds this host gets. Null lets operators choose it with `piquelctl update channel` or the dashboard.";
+          };
+          updates.feed_url = lib.mkOption {
+            type = lib.types.strMatching "https?://.+";
+            default = "https://github.com/sourceorigin-dev/piqueld/releases/download/channels";
+            description = "Directory holding the channels' feeds, `stable.json` and `nightly.json`, such as a mirror's.";
+          };
           telemetry.endpoint = lib.mkOption {
             type = lib.types.nullOr (lib.types.strMatching "(https?://|unix:///).+");
             default = null;

@@ -116,6 +116,14 @@
       },
       "type": "object"
     },
+    "Channel": {
+      "description": "A stream of piqueld versions an installation can follow.",
+      "enum": [
+        "stable",
+        "nightly"
+      ],
+      "type": "string"
+    },
     "CheckoutsConfig": {
       "additionalProperties": false,
       "description": "The Git checkouts deployments read manifests from and build sources in,\nunder `<data_dir>/checkouts`.",
@@ -707,6 +715,35 @@
       },
       "type": "object"
     },
+    "UpdatesConfig": {
+      "additionalProperties": false,
+      "description": "Checks for newer piqueld builds on a release channel. piqueld only\nchecks and notifies: it never updates itself.",
+      "properties": {
+        "channel": {
+          "default": null,
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/Channel",
+              "description": "The channel to follow, `stable` or `nightly`. Unset, choose it with\n`piquelctl update channel` or on the dashboard; it starts as the\nchannel this build was published on, or `stable`."
+            }
+          ]
+        },
+        "check": {
+          "default": true,
+          "description": "Check the channel for a newer build every six hours, and notify the\n`update_available` notification category when one appears.",
+          "type": "boolean"
+        },
+        "feed_url": {
+          "default": "https://github.com/sourceorigin-dev/piqueld/releases/download/channels",
+          "description": "The HTTP(S) URL of the directory holding the channels' feeds,\n`stable.json` and `nightly.json`, such as a mirror's.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "WhenUnavailable": {
       "description": "What a build does while its build machine can't be reached.",
       "enum": [
@@ -777,6 +814,10 @@
     "telemetry": {
       "$ref": "#/definitions/TelemetryConfig",
       "description": "Export of the daemon's traces, metrics and logs over OTLP."
+    },
+    "updates": {
+      "$ref": "#/definitions/UpdatesConfig",
+      "description": "Checks for newer piqueld builds on a release channel."
     }
   },
   "title": "piqueld daemon configuration",

@@ -116,8 +116,9 @@ impl ApplicationService {
                 );
                 result
             };
-            let (result, (), (), (), (), (), _) = tokio::join!(
+            let (result, (), (), (), (), (), (), _) = tokio::join!(
                 runtime,
+                background.watch_updates(cancellation.child_token()),
                 background
                     .observe_notifications(scan_interval.as_secs(), cancellation.child_token()),
                 background.deliver_notifications(cancellation.child_token()),

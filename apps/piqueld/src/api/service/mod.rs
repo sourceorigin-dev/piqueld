@@ -16,6 +16,7 @@ mod startup;
 mod sync;
 mod system;
 mod telemetry;
+mod updates;
 mod views;
 mod webhooks;
 
@@ -76,6 +77,9 @@ pub enum ApplicationError {
     /// As much of this kind of expensive work already runs as it may.
     #[error("too much {0:?} work is running")]
     Busy(Expensive),
+    /// The daemon configuration sets the release channel.
+    #[error("updates.channel in the daemon configuration sets the release channel")]
+    UpdateChannelConfigured,
 }
 
 pub use piqueld_store::{
@@ -137,6 +141,8 @@ pub struct ApplicationService {
     notifier: notification_worker::Notifier,
     /// The website's origin, `auth.public_url`, which notifications link to.
     public_url: String,
+    /// Checks for newer builds on the release channel.
+    updates: Arc<updates::Updates>,
 }
 
 /// Effective host settings, as attached by
@@ -208,6 +214,7 @@ impl ApplicationService {
             notifier: notification_worker::Notifier::new()
                 .context("initialize the notification webhook client")?,
             public_url: String::new(),
+            updates: Arc::new(updates::Updates::new()?),
         })
     }
 
@@ -326,13 +333,14 @@ impl ApplicationService {
     }
 
     /// Attaches the effective host configuration for read-only API
-    /// inspection and installation checks.
+    /// inspection, installation checks and update checks.
     #[must_use]
     pub fn with_configuration(mut self, config: &piqueld_config::DaemonConfig) -> Self {
         self.configuration = Some(Arc::new(Configuration {
             view: config.view(),
             checks: checks::CheckSettings::from(config),
         }));
+        self.updates = Arc::new(self.updates.configured(config.updates.clone()));
         self
     }
 
