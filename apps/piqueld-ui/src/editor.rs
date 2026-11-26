@@ -3,7 +3,7 @@
 //! Fields that accept `${{ }}` references keep them as text: typed fields
 //! parse either a literal or a reference when saved.
 use piqueld_client::{
-    Build, FileMode, FileSource, GitRepository, HealthCheck, ManifestRepository, Mount,
+    Build, FileMode, FileSource, GitRepository, HealthCheck, ManifestRepository, Mount, REPLICAS,
     ResourceLimits, Rollout, Service, ServiceFile, ServiceSecurity, Source, SourceRepository,
     Template, Typed,
 };
@@ -588,9 +588,21 @@ impl ServiceForm {
         match section {
             Section::General => {
                 service.source = self.source()?;
-                service.replicas = self.replicas.parse().map_err(
-                    |_| "Replicas must be an integer between 0 and 65535 or a ${{ }} reference.",
-                )?;
+                let invalid = || {
+                    format!(
+                        "Replicas must be an integer between {} and {} or a ${{{{ }}}} reference.",
+                        REPLICAS.start(),
+                        REPLICAS.end()
+                    )
+                };
+                let replicas: Typed<u16> = self.replicas.parse().map_err(|_| invalid())?;
+                if replicas
+                    .literal()
+                    .is_some_and(|count| !REPLICAS.contains(count))
+                {
+                    return Err(invalid());
+                }
+                service.replicas = replicas;
             }
             Section::Environment => {
                 service.environment = Self::unique_keys("Environment", &self.environment)?;
@@ -769,6 +781,23 @@ mod tests {
         ));
         draft.build_args = vec![("A".into(), "1".into()), ("A".into(), "2".into())];
         assert!(draft.patch(Section::General, &mut saved).is_err());
+    }
+    #[test]
+    fn invalid_replicas_name_the_range_the_daemon_accepts() {
+        let mut saved = service();
+        let mut draft = ServiceForm::from(&saved);
+        for replicas in ["many", "0", "101"] {
+            draft.replicas = replicas.into();
+            assert_eq!(
+                draft.patch(Section::General, &mut saved),
+                Err("Replicas must be an integer between 1 and 100 or a ${{ }} reference.".into()),
+                "{replicas}"
+            );
+        }
+        draft.replicas = "100".into();
+        draft
+            .patch(Section::General, &mut saved)
+            .expect("100 replicas are accepted");
     }
     #[test]
     fn invalid_text_and_duplicate_keys_are_not_silently_discarded() {

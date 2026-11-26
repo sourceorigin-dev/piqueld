@@ -6601,7 +6601,7 @@
                 "type": "boolean"
               },
               "generation": {
-                "description": "Current version, used for optimistic writes.",
+                "description": "Current version, used for optimistic writes: a signed 64-bit integer,\nunlike the unsigned application and operation generations.",
                 "format": "int64",
                 "type": "integer"
               },
@@ -7078,7 +7078,7 @@
                   "type": "boolean"
                 },
                 "generation": {
-                  "description": "Current version, used for optimistic writes.",
+                  "description": "Current version, used for optimistic writes: a signed 64-bit integer,\nunlike the unsigned application and operation generations.",
                   "format": "int64",
                   "type": "integer"
                 },
@@ -12308,7 +12308,7 @@
             "type": "boolean"
           },
           "generation": {
-            "description": "Current version, used for optimistic writes.",
+            "description": "Current version, used for optimistic writes: a signed 64-bit integer,\nunlike the unsigned application and operation generations.",
             "format": "int64",
             "type": "integer"
           },

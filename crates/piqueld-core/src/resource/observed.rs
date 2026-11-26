@@ -591,6 +591,6 @@ pub(crate) fn owned_label_subset(
         .all(|(key, value)| observed.get(key) == Some(value))
         && observed
             .iter()
-            .filter(|(key, _)| key.starts_with("io.piqueld."))
+            .filter(|(key, _)| key.starts_with(super::LABEL_PREFIX))
             .all(|(key, value)| desired.get(key) == Some(value))
 }

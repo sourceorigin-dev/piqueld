@@ -1,4 +1,5 @@
 //! The traffic of an environment's routes, which the gateway counts.
+use super::DAY_MS;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -42,7 +43,6 @@ impl TrafficReport {
     /// back every day of a 30-day window counts 30 times there, once here.
     #[must_use]
     pub fn daily_visitors(&self) -> i64 {
-        const DAY_MS: i64 = 86_400_000;
         let first = self
             .series
             .iter()

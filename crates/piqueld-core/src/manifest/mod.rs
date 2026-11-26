@@ -73,7 +73,7 @@ pub use security::{ContainerUser, ServiceSecurity};
 pub use template::{ApplicationTemplate, Rendering, ValidatedTemplate};
 pub(crate) use validation::valid_git_branch;
 pub use validation::{
-    ValidationError, ValidationErrors, parse_json, parse_template_toml, parse_toml,
+    REPLICAS, ValidationError, ValidationErrors, parse_json, parse_template_toml, parse_toml,
     safe_decode_path, valid_git_commit, valid_repository_path,
 };
 pub(crate) use validation::{registry_component, valid_image_reference};

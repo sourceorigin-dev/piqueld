@@ -15,7 +15,7 @@ use sqlx::{Sqlite, Transaction};
 /// before it notifies.
 const FAILURE_THRESHOLD_MS: i64 = 120_000;
 /// How long a delivery is retried automatically.
-const RETRY_WINDOW_MS: i64 = 86_400_000;
+const RETRY_WINDOW_MS: i64 = piqueld_core::observability::DAY_MS;
 
 /// Why a delivery that exists cannot be retried by hand.
 #[derive(Debug, thiserror::Error)]

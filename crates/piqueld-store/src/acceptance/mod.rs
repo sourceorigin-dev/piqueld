@@ -13,6 +13,9 @@ use piqueld_core::{ApplicationId, EnvironmentId, EnvironmentName, EventDetail};
 use sha2::{Digest, Sha256};
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
+/// How long a request receipt answers a retry of its request ID.
+const RECEIPT_TTL_MS: i64 = piqueld_core::observability::DAY_MS;
+
 /// A save as fingerprinted: its mutation without the inspected application
 /// ID, in `Mutation::Save`'s serialized form.
 #[derive(serde::Serialize)]
@@ -142,7 +145,7 @@ impl Store {
         if let Some(request_id) = request_id {
             let response_json =
                 serde_json::to_string(&accepted.response).map_err(StoreError::corrupt)?;
-            let expires = now.saturating_add(86_400_000);
+            let expires = now.saturating_add(RECEIPT_TTL_MS);
             sqlx::query!("INSERT INTO request_receipts(request_id,fingerprint,response_json,expires_at_ms,user_id) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(request_id) DO UPDATE SET fingerprint=excluded.fingerprint,response_json=excluded.response_json,expires_at_ms=excluded.expires_at_ms,user_id=excluded.user_id",request_id,fingerprint,response_json,expires,owner)
                 .execute(&mut *tx).await.map_err(StoreError::database)?;
         }

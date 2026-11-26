@@ -16,8 +16,7 @@ const TRAFFIC_RANK_LIMIT: i64 = 100;
 const REPORT_RANKS: i64 = 20;
 /// An hour, in ms.
 pub const HOUR_MS: i64 = 3_600_000;
-/// A day, in ms.
-pub const DAY_MS: i64 = 86_400_000;
+pub use piqueld_core::observability::DAY_MS;
 /// The longest window a report covers: hourly points up to two days, daily
 /// ones beyond.
 const HOURLY_UNTIL_MS: i64 = 2 * DAY_MS;

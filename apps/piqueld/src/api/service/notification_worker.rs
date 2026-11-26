@@ -1,6 +1,7 @@
 //! Background observation and webhook delivery, and test notifications.
 //! Neither executes infrastructure mutations.
 use super::{ApplicationError, ApplicationService, notification_message::Notification};
+use crate::ingress::UNAVAILABLE_GAP_MS;
 use crate::ticker::Ticker;
 use piqueld_core::{
     Event,
@@ -126,12 +127,24 @@ impl ApplicationService {
                 let ready = |status| matches!(status, piqueld_core::api::DependencyStatus::Ready);
                 let docker_ready = ready(readiness.docker);
                 self.store
-                    .observe_condition("docker_unavailable", None, !docker_ready, now, 45_000)
+                    .observe_condition(
+                        "docker_unavailable",
+                        None,
+                        !docker_ready,
+                        now,
+                        UNAVAILABLE_GAP_MS,
+                    )
                     .await?;
                 if docker_ready {
                     let failed = !ready(readiness.swarm);
                     self.store
-                        .observe_condition("swarm_manager_unavailable", None, failed, now, 45_000)
+                        .observe_condition(
+                            "swarm_manager_unavailable",
+                            None,
+                            failed,
+                            now,
+                            UNAVAILABLE_GAP_MS,
+                        )
                         .await?;
                 }
                 self.store

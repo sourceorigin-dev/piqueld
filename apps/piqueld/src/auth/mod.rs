@@ -95,7 +95,7 @@ pub(crate) enum AuthCookie {
 
 impl AuthCookie {
     /// The name before the origin's prefix and port.
-    const fn base_name(self) -> &'static str {
+    pub(crate) const fn base_name(self) -> &'static str {
         match self {
             Self::Session => "piqueld_session",
             Self::Ceremony => "piqueld_ceremony",

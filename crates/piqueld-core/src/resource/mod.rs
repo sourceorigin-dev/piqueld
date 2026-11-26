@@ -21,6 +21,8 @@ pub use resolution::*;
 use crate::manifest::{registry_component, valid_image_reference};
 use crate::names::validated_string;
 
+/// The prefix of every label piqueld sets.
+pub const LABEL_PREFIX: &str = "io.piqueld.";
 /// Label marking a resource as managed by piqueld.
 pub const MANAGED_LABEL: &str = "io.piqueld.managed";
 /// Label carrying the control-plane instance identity.
