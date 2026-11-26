@@ -204,7 +204,10 @@ async fn rename_is_conditioned_idle_only_and_replayable_without_deployment() {
     assert_eq!(api_error(error).code, "application_busy");
     api.finish_operation(
         &accepted.operation_id,
-        Some(("image_resolution_rejected", "image unavailable")),
+        Some(piqueld_store::OperationFailure::new(
+            piqueld_core::observability::DiagnosticCode::ImageResolutionRejected,
+            "image unavailable",
+        )),
     )
     .await;
     let renamed = keyed

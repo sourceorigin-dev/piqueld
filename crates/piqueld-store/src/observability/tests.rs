@@ -5,7 +5,7 @@ use crate::{Mutation, MutationResponse};
 use piqueld_core::Phase;
 use piqueld_core::observability::{
     ApplicationSelection, DeliveryState, DestinationKind, DestinationName, DestinationRequest,
-    DestinationSettings, Diagnostic, EventFilter, EventScope, NotificationCategory,
+    DestinationSettings, Diagnostic, DiagnosticCode, EventFilter, EventScope, NotificationCategory,
 };
 use piqueld_core::wait;
 
@@ -92,12 +92,12 @@ async fn interrupted_actions_and_diagnostics_survive_restart_and_scope_controls_
     );
     let diagnostic = Diagnostic::new(
         new_id("diagnostic"),
-        piqueld_core::observability::DiagnosticCode::DockerUnavailable,
+        DiagnosticCode::DockerUnavailable,
         "Docker became unreachable".into(),
     );
     let failure = Diagnostic::new(
         new_id("diagnostic"),
-        piqueld_core::observability::DiagnosticCode::ServiceUpdateFailed,
+        DiagnosticCode::ServiceUpdateFailed,
         "Service failed".into(),
     );
     for diagnostic in [&diagnostic, &failure] {
@@ -314,7 +314,7 @@ async fn failed_daemon_delivery(store: &Store) -> String {
     notify(store).await;
     let diagnostic = Diagnostic::new(
         new_id("diagnostic"),
-        piqueld_core::observability::DiagnosticCode::InternalError,
+        DiagnosticCode::InternalError,
         "Daemon failure".into(),
     );
     store
@@ -379,8 +379,8 @@ async fn an_undeliverable_delivery_does_not_block_the_next() {
     let (_temp, store) = Store::temporary().await;
     notify(&store).await;
     for code in [
-        piqueld_core::observability::DiagnosticCode::InternalError,
-        piqueld_core::observability::DiagnosticCode::DnsRecordsFailed,
+        DiagnosticCode::InternalError,
+        DiagnosticCode::DnsRecordsFailed,
     ] {
         let diagnostic = Diagnostic::new(new_id("diagnostic"), code, "Daemon failure".into());
         store
@@ -469,7 +469,10 @@ async fn fail(store: &Store, op: &Operation) {
             &op.id,
             OperationState::Running,
             OperationState::Failed,
-            Some(("service_update_failed", "Update paused")),
+            Some(&OperationFailure::new(
+                DiagnosticCode::ServiceUpdateFailed,
+                "Update paused",
+            )),
         )
         .await
         .expect("the store can transition operation");
@@ -1099,13 +1102,16 @@ async fn recovery_waits_for_all_pending_failure_categories_at_the_same_destinati
     let (_temp, store) = Store::temporary().await;
     notify(&store).await;
     let op = application(&store).await;
-    for code in ["git_build_failed", "service_update_failed"] {
+    for code in [
+        DiagnosticCode::GitBuildFailed,
+        DiagnosticCode::ServiceUpdateFailed,
+    ] {
         store
             .transition_operation(
                 &op.id,
                 OperationState::Running,
                 OperationState::Failed,
-                Some((code, "Attempt failed")),
+                Some(&OperationFailure::new(code, "Attempt failed")),
             )
             .await
             .expect("the store can transition operation");
@@ -2006,7 +2012,10 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
             &operation.id,
             OperationState::Running,
             OperationState::Failed,
-            Some(("ownership_conflict", "a volume is not ours")),
+            Some(&OperationFailure::new(
+                DiagnosticCode::OwnershipConflict,
+                "a volume is not ours",
+            )),
         )
         .await
         .expect("the store can transition operation");

@@ -1,6 +1,8 @@
 use super::*;
+use crate::OperationFailure;
 use crate::OperationState;
 use piqueld_core::manifest::ApplicationTemplate;
+use piqueld_core::observability::DiagnosticCode;
 
 #[tokio::test]
 async fn terminal_job_failure_keeps_cleanup_atomic_and_retained() {
@@ -19,6 +21,7 @@ async fn terminal_job_failure_keeps_cleanup_atomic_and_retained() {
         .await
         .expect("save application succeeds");
     store.mark_running(&operation.id).await;
+    let timeout = OperationFailure::new(DiagnosticCode::JobTimeout, "migration timed out");
 
     sqlx::query("CREATE TRIGGER reject_cleanup BEFORE INSERT ON job_cleanup BEGIN SELECT RAISE(FAIL,'cleanup storage unavailable'); END")
         .execute(&store.pool).await.expect("execute succeeds");
@@ -28,7 +31,7 @@ async fn terminal_job_failure_keeps_cleanup_atomic_and_retained() {
                 &operation.id,
                 OperationState::Running,
                 OperationState::Failed,
-                Some(("job_timeout", "migration timed out"))
+                Some(&timeout)
             )
             .await
             .is_err()
@@ -50,7 +53,7 @@ async fn terminal_job_failure_keeps_cleanup_atomic_and_retained() {
             &operation.id,
             OperationState::Running,
             OperationState::Failed,
-            Some(("job_timeout", "migration timed out")),
+            Some(&timeout),
         )
         .await
         .expect("transition operation succeeds");

@@ -112,10 +112,9 @@ impl<D: DockerApi> Controller<D> {
         })
         .flatten()
         .map_err(RollbackError::Images)?;
-        let message = error.message();
         Ok(self
             .store
-            .roll_back(operation, (error.code(), &message), &deployment)
+            .roll_back(operation, &error.failure(), &deployment)
             .await?)
     }
 }

@@ -3,6 +3,7 @@
 use piqueld_config::unix_http::UnixHttpError;
 use piqueld_core::observability::{DeploymentFailure, DiagnosticCode};
 use piqueld_docker::command::CommandError;
+use piqueld_store::OperationFailure;
 
 /// A fresh, time-ordered ID for a recorded diagnostic, e.g.
 /// `diagnostic-0190c4f6a3e27b8a9d1e4f6a3e27b8a9`.
@@ -160,6 +161,15 @@ impl OperationError {
     #[must_use]
     pub fn code(&self) -> &'static str {
         self.diagnostic_code().as_str()
+    }
+
+    /// Returns the failure an operation that failed with this error records.
+    #[must_use]
+    pub fn failure(&self) -> OperationFailure {
+        OperationFailure {
+            code: self.diagnostic_code(),
+            message: self.message(),
+        }
     }
 
     /// Returns the typed classification used by diagnostic policy.

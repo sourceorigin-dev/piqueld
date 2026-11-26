@@ -38,7 +38,7 @@ pub use secret::{SecretDeletion, SecretPrecondition};
 mod operation;
 mod preview;
 mod promotion;
-pub use operation::JournalPosition;
+pub use operation::{JournalPosition, OperationFailure};
 pub use preview::PreviewOrigins;
 pub use promotion::{Promotion, PromotionCandidate, PromotionError};
 pub use repository::DeploymentInput;
