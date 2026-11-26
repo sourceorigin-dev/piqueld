@@ -218,6 +218,18 @@ test('a repository-backed application page reloads what environments fetch', asy
     data.repository = { ...structuredClone(data.application), spec: { ...structuredClone(data.application.spec), volumes: [{ name: 'cache' }] } };
     data.updated_at_ms += 1_000;
   });
+  // An open row dialog edits the saved rows by position, so the view is not
+  // reloaded under it.
+  await page.getByRole('button', { name: 'Add volume', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add volume' });
+  await expect(dialog).toBeVisible();
+  for (let poll = 0; poll < 2; poll += 1) {
+    const listed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/applications');
+    await page.clock.runFor(16_000);
+    await listed;
+  }
+  await expect(edits).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close dialog' }).click();
   await page.clock.runFor(16_000);
   // The view is reloaded: the saved manifest now differs from the repository's.
   await expect(edits).toBeVisible();

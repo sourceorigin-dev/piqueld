@@ -502,18 +502,16 @@ fn mounted_by(manifest: &ApplicationManifest, name: &str) -> String {
 #[component]
 pub(super) fn VolumeSettings() -> impl IntoView {
     let context = editor();
-    let dialog = RowDialog::<String>::new();
+    let dialog = RowDialog::<String>::new("volumes");
     let save = move |names: Vec<String>| {
         let volumes = names.into_iter().map(|name| Volume { name }).collect();
-        context.save(ApplicationEdit::Volumes(volumes), move |_| {
-            dialog.opened.set(false);
-        });
+        dialog.save(ApplicationEdit::Volumes(volumes));
     };
     let remove = move |index: usize| {
         if !confirm("Remove this volume from the saved configuration? Its Docker data is kept.") {
             return;
         }
-        save(RowDialog::without(volume_names(&context.manifest()), index));
+        save(dialog.without(volume_names(&context.manifest()), index));
     };
     view! {
         <section class="card">
@@ -524,15 +522,7 @@ pub(super) fn VolumeSettings() -> impl IntoView {
                         "Volumes persist across deployments. Mount them from a service’s Volume mounts tab. Removing a volume here keeps its Docker data."
                     </p>
                 </div>
-                <button
-                    type="button"
-                    class="btn btn-sm"
-                    disabled={move || context.blocked()}
-                    on:click={move |_| dialog.add()}
-                >
-                    {icon(Icon::Plus)}
-                    "Add volume"
-                </button>
+                {dialog.add_button("Add volume", || false)}
             </header>
             {move || {
                 let manifest = context.manifest();

@@ -153,11 +153,21 @@ test('saves volumes and routes, previews the plan, and records a deployment', as
   const volume = page.getByRole('list', { name: 'Named volumes' }).getByRole('listitem');
   await expect(volume).toContainText('data');
   await expect(volume).toContainText('not mounted');
-  // Renaming starts from the saved name.
+  // Renaming starts from the saved name, and removing confirms first.
   await volume.getByRole('button', { name: 'Edit', exact: true }).click();
   const renameDialog = page.getByRole('dialog', { name: 'Edit volume' });
   await expect(renameDialog.getByLabel('Volume name', { exact: true })).toHaveValue('data');
-  await renameDialog.getByRole('button', { name: 'Close dialog' }).click();
+  await renameDialog.getByLabel('Volume name', { exact: true }).fill('uploads');
+  await renameDialog.getByRole('button', { name: 'Save volume', exact: true }).click();
+  await expect(renameDialog).toBeHidden();
+  await expect(volume).toContainText('uploads');
+  confirmNext(page, 'Remove this volume');
+  await volume.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(volume).toHaveCount(0);
+  await page.getByRole('button', { name: 'Add volume', exact: true }).click();
+  await volumeDialog.getByLabel('Volume name', { exact: true }).fill('data');
+  await volumeDialog.getByRole('button', { name: 'Add volume', exact: true }).click();
+  await expect(volumeDialog).toBeHidden();
   await applicationTab(page, 'Routes').click();
   await page.getByRole('button', { name: 'Add route', exact: true }).click();
   const routeDialog = page.getByRole('dialog', { name: 'Add route' });
@@ -252,9 +262,9 @@ test('adds, edits, reorders, and removes jobs in a dialog', async ({ page, accou
   await adding.getByLabel('Container path', { exact: true }).fill('/run/secrets/seed');
   await adding.getByRole('button', { name: 'Add job', exact: true }).click();
   await expect(adding).toBeHidden();
-  // A job's fields are in its dialog: its row only says what it runs.
+  // A job's fields are in its dialog: its row says what it runs and adds.
   await expect(jobs).toContainText(['on web, up to 300s: seed']);
-  await expect(page.getByLabel('Command element', { exact: true })).toBeHidden();
+  await expect(jobs).toContainText(['adds SEED_PASSWORD_FILE=/run/secrets/seed, secret seed-password at /run/secrets/seed']);
 
   // A refused job keeps the dialog open with the reason.
   await add('migrate', ['migrate', '--all']);
@@ -286,7 +296,11 @@ test('adds, edits, reorders, and removes jobs in a dialog', async ({ page, accou
   await expect(editing.getByLabel('Timeout (seconds)', { exact: true })).toHaveValue('300');
   await expect(editing.getByLabel('Key', { exact: true })).toHaveValue('SEED_PASSWORD_FILE');
   await expect(editing.getByLabel('Container path', { exact: true })).toHaveValue('/run/secrets/seed');
-  await editing.getByRole('button', { name: 'Close dialog' }).click();
+  await editing.getByLabel('Command element', { exact: true }).fill('seed everything');
+  await editing.getByRole('button', { name: 'Save job', exact: true }).click();
+  await expect(editing).toBeHidden();
+  // A command element holding a space is quoted, since elements are never split.
+  await expect(jobs.nth(1)).toContainText("on web, up to 300s: 'seed everything'");
 
   confirmNext(page, 'Remove this job');
   await jobs.nth(1).getByRole('button', { name: 'Remove', exact: true }).click();
@@ -503,6 +517,7 @@ test('reloading after a change made elsewhere keeps unsaved edits and shows the 
   await applicationTab(page, 'Variables').click();
   await page.getByRole('button', { name: 'Add variable', exact: true }).click();
   await page.getByLabel('Variable name', { exact: true }).fill('kept');
+  await page.getByLabel('Default value', { exact: true }).fill('value');
   await call(page, 'PUT', `applications/${id}/name?force=true`, { value: 'renamed-elsewhere' });
   // The next dashboard refresh reports it.
   await page.clock.runFor(16_000);

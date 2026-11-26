@@ -1,7 +1,7 @@
 //! One-shot jobs, which run in list order before each rollout. Each is a
 //! row, added and edited in a dialog; saving replaces the whole list.
 use super::super::confirm;
-use super::super::ui::{FormModal, Icon, add_button, empty, icon, remove_button, row_actions};
+use super::super::ui::{FormModal, add_button, empty, remove_button, row_actions};
 use super::{RowDialog, editor};
 use crate::editor::ServiceForm;
 use leptos::prelude::*;
@@ -46,14 +46,37 @@ impl JobDraft {
     }
 
     /// What the job runs, as its row says it: its service, timeout and
-    /// command.
+    /// command. An empty command element, or one holding spaces, is quoted,
+    /// since elements are never split.
     fn summary(&self) -> String {
-        format!(
-            "on {}, up to {}s: {}",
-            self.service,
-            self.timeout,
-            self.command.join(" ")
-        )
+        let command = self
+            .command
+            .iter()
+            .map(|element| {
+                if element.is_empty() || element.contains(char::is_whitespace) {
+                    format!("'{element}'")
+                } else {
+                    element.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("on {}, up to {}s: {command}", self.service, self.timeout)
+    }
+
+    /// What the job adds to its service's container, as its row says it:
+    /// its environment variables and secret files, or nothing.
+    fn additions(&self) -> Option<String> {
+        let environment = self
+            .environment
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"));
+        let secrets = self
+            .secrets
+            .iter()
+            .map(|(name, target)| format!("secret {name} at {target}"));
+        let additions = environment.chain(secrets).collect::<Vec<_>>();
+        (!additions.is_empty()).then(|| format!("adds {}", additions.join(", ")))
     }
 
     /// The job input, or a message when an environment key repeats or the
@@ -272,28 +295,25 @@ impl PairRows {
 }
 
 /// Jobs of the saved configuration, in the order they run: each a row saying
-/// what it runs, moved up or down, and added and edited in a dialog. Every
-/// change validates the timeouts and saves the whole list at once.
+/// what it runs and what it adds to its service's container, moved up or
+/// down, and added and edited in a dialog. A row cuts a long line short, so
+/// its title holds it whole. Every change validates the timeouts and saves
+/// the whole list at once.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn JobSettings() -> impl IntoView {
     let context = editor();
-    let dialog = RowDialog::<JobDraft>::new();
+    let dialog = RowDialog::<JobDraft>::new("jobs");
     let job = dialog.draft;
     let save = move |rows: Vec<JobDraft>| match rows.into_iter().map(JobDraft::job).collect() {
-        Ok(jobs) => context.save(ApplicationEdit::Jobs(jobs), move |_| {
-            dialog.opened.set(false);
-        }),
+        Ok(jobs) => dialog.save(ApplicationEdit::Jobs(jobs)),
         Err(message) => context.set_error(Some(message)),
     };
     let remove = move |index: usize| {
         if !confirm("Remove this job from the saved configuration? Later deployments skip it.") {
             return;
         }
-        save(RowDialog::without(
-            JobDraft::rows(&context.manifest()),
-            index,
-        ));
+        save(dialog.without(JobDraft::rows(&context.manifest()), index));
     };
     let swap = move |first: usize| {
         let mut rows = JobDraft::rows(&context.manifest());
@@ -309,18 +329,10 @@ pub(super) fn JobSettings() -> impl IntoView {
                 <div>
                     <h3>"Jobs"</h3>
                     <p>
-                        "Each deployment runs these commands to completion, in order, after preparing images. A job reuses its service's image, environment, secrets, and volume mounts, and waits for that service's startup dependencies to be healthy. Environment variables and secrets added here reach only the job's container, never the service's replicas, and can't replace ones the service sets. Dependencies start or update first; other services roll out only after all jobs succeed. A failed job stops the deployment and dependencies return to the running deployment. Volumes are read-only unless the job has exclusive access, which stops every service using its writable volumes until the rollout. A job can also stop its own service, so its previous version never runs against what the job changes. Each command element is one row; no shell parsing is applied."
+                        "Each deployment runs these commands to completion, in order, after preparing images. A job reuses its service's image, environment, secrets, and volume mounts, and waits for that service's startup dependencies to be healthy. Environment variables and secrets added here reach only the job's container, never the service's replicas, and can't replace ones the service sets. Dependencies start or update first; other services roll out only after all jobs succeed. A failed job stops the deployment and dependencies return to the running deployment. Volumes are read-only unless the job has exclusive access, which stops every service using its writable volumes until the rollout. A job can also stop its own service, so its previous version never runs against what the job changes."
                     </p>
                 </div>
-                <button
-                    type="button"
-                    class="btn btn-sm"
-                    disabled={move || context.blocked() || full()}
-                    on:click={move |_| dialog.add()}
-                >
-                    {icon(Icon::Plus)}
-                    "Add job"
-                </button>
+                {dialog.add_button("Add job", full)}
             </header>
             {move || {
                 let rows = JobDraft::rows(&context.manifest());
@@ -335,11 +347,16 @@ pub(super) fn JobSettings() -> impl IntoView {
                             .enumerate()
                             .map(|(index, row)| {
                                 let edited = row.clone();
+                                let line = |text: String| {
+                                    let whole = text.clone();
+                                    view! { <small title={whole}>{text}</small> }
+                                };
                                 view! {
                                     <li class="list-row">
                                         <span class="title">
                                             <code>{row.name.clone()}</code>
-                                            <small>{row.summary()}</small>
+                                            {line(row.summary())}
+                                            {row.additions().map(line)}
                                         </span>
                                         {(row.volume_access == JobVolumeAccess::Exclusive)
                                             .then(|| view! { <span class="tag">"exclusive volumes"</span> })}
@@ -449,6 +466,7 @@ pub(super) fn JobSettings() -> impl IntoView {
                     />
                     <span>"Stop service first"</span>
                 </label>
+                <p class="hint">"Each command element is one row; no shell parsing is applied."</p>
                 {command_rows(job)}
                 {PairRows::ENVIRONMENT.view(job)}
                 {PairRows::SECRETS.view(job)}

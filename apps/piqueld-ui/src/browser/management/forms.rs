@@ -1,7 +1,7 @@
 //! Form state shared by the editor's settings: a group's unsaved draft, the
 //! dialog editing one row of a list, and a list's rows edited in place.
 use super::editor;
-use crate::browser::ui::{Icon, icon, text_field};
+use crate::browser::ui::{Icon, icon, limited_add_button, text_field};
 use leptos::prelude::*;
 use piqueld_client::{ApplicationManifest, access::AppPermission, edit::ApplicationEdit};
 
@@ -169,7 +169,9 @@ impl Draft<String> {
 
 /// The dialog of a list edited row by row: it adds a row, or edits the one
 /// at `index`, as `draft`. Submitting saves the whole list at once, so the
-/// list needs no unsaved state of its own.
+/// list needs no unsaved state of its own. While open, the dialog is in the
+/// editor's dirty set, so the saved rows its index points into are not
+/// replaced under it.
 pub(super) struct RowDialog<T: Send + Sync + 'static> {
     pub(super) opened: RwSignal<bool>,
     pub(super) draft: RwSignal<T>,
@@ -185,12 +187,30 @@ impl<T: Send + Sync + 'static> Clone for RowDialog<T> {
 impl<T: Send + Sync + 'static> Copy for RowDialog<T> {}
 
 impl<T: Clone + Default + Send + Sync + 'static> RowDialog<T> {
-    pub(super) fn new() -> Self {
+    /// The dialog of the list `key`, which names it in the dirty set.
+    pub(super) fn new(key: &'static str) -> Self {
+        let opened = RwSignal::new(false);
+        editor().guard(format!("{key}-dialog"), move || opened.get());
         Self {
-            opened: RwSignal::new(false),
+            opened,
             draft: RwSignal::new(T::default()),
             index: RwSignal::new(None),
         }
+    }
+
+    /// The card's button labelled `label`, opening the dialog on a blank
+    /// row. It is disabled while saves are blocked or the list is `full`.
+    pub(super) fn add_button(
+        self,
+        label: &'static str,
+        full: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> AnyView {
+        let context = editor();
+        limited_add_button(
+            label,
+            move || context.blocked() || full(),
+            move || self.add(),
+        )
     }
 
     /// Opens the dialog on a blank row.
@@ -220,12 +240,18 @@ impl<T: Clone + Default + Send + Sync + 'static> RowDialog<T> {
         rows
     }
 
-    /// `rows` without the one at `index`.
-    pub(super) fn without(mut rows: Vec<T>, index: usize) -> Vec<T> {
+    /// `rows` without the one at `index`, for the list's Remove buttons.
+    pub(super) fn without(self, mut rows: Vec<T>, index: usize) -> Vec<T> {
         if index < rows.len() {
             rows.remove(index);
         }
         rows
+    }
+
+    /// Saves `edit`, the whole list, and closes the dialog once saved. A
+    /// refused save leaves it open, showing the editor's error.
+    pub(super) fn save(self, edit: ApplicationEdit) {
+        editor().save(edit, move |_| self.opened.set(false));
     }
 
     /// `add` while the dialog adds a row, `edit` while it edits one.
