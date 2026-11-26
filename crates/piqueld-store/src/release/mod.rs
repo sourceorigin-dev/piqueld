@@ -7,7 +7,7 @@ use piqueld_core::{
     api::{Page, ReleasePromotion, ReleaseView},
     resource::ResolvedApplication,
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 
 /// `releases` row shared by the listing and single-release queries.
 struct ReleaseRow {
@@ -70,7 +70,7 @@ impl Store {
     /// pruning can keep the newest by it. Runs in the transaction that saves
     /// the prepared target.
     pub(super) async fn record_release_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         environment: &EnvironmentId,
         target: &ResolvedApplication,
@@ -84,7 +84,7 @@ impl Store {
             "SELECT d.template_json,i.repository_commit FROM deployments d LEFT JOIN deployment_inputs i ON i.operation_id=d.id WHERE d.id=?1",
             id
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?
         else {
@@ -109,7 +109,7 @@ impl Store {
             json,
             now
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         sqlx::query!(
@@ -118,7 +118,7 @@ impl Store {
             hash,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())

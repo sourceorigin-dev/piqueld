@@ -83,7 +83,7 @@ impl Store {
         .map_err(StoreError::database)?;
         for batch in candidates.chunks(PRUNE_BATCH) {
             let ids = serde_json::to_string(batch).map_err(StoreError::corrupt)?;
-            let (_writer, mut tx) = self.begin_immediate().await?;
+            let mut tx = self.begin_immediate().await?;
             let finished = sqlx::query_scalar!(
                 r#"DELETE FROM operations WHERE id IN (SELECT value FROM json_each(?1))
                     AND NOT EXISTS(SELECT 1 FROM job_cleanup j WHERE j.operation_id=operations.id)
@@ -105,7 +105,7 @@ impl Store {
             }
             tx.commit().await.map_err(StoreError::database)?;
         }
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         sqlx::query!("DELETE FROM builds WHERE log_expired=1 AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.id=builds.operation_id) AND id NOT IN (SELECT reused_build_id FROM builds WHERE reused_build_id IS NOT NULL)")
             .execute(&mut *tx)
             .await

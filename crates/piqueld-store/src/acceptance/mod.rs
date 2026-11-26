@@ -11,7 +11,7 @@ use piqueld_core::api::{
 };
 use piqueld_core::{ApplicationId, EnvironmentId, EnvironmentName, EventDetail};
 use sha2::{Digest, Sha256};
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 
 /// A save as fingerprinted: its mutation without the inspected application
 /// ID, in `Mutation::Save`'s serialized form.
@@ -82,7 +82,7 @@ impl Store {
     ) -> Result<(MutationResponse, bool), StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let now = now_ms();
         let first_event =
             sqlx::query_scalar!(r#"SELECT COALESCE(MAX(id),0)+1 AS "id!: i64" FROM events"#)
@@ -197,7 +197,7 @@ impl Store {
     /// `replay_on`). Replaying a save may also pass the check a creation
     /// passes, since it may have created that application.
     async fn check_request_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         actor: Actor<'_>,
         mutation: &Mutation,
         fingerprint: &str,
@@ -227,7 +227,7 @@ impl Store {
     /// events; operations it superseded or returned unchanged, e.g. by
     /// repeating a request, keep their actor.
     async fn attribute_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         by: super::Attribution<'_>,
         first_event: i64,
     ) -> Result<(), StoreError> {
@@ -243,7 +243,7 @@ impl Store {
             first_event,
             system
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         sqlx::query!(
@@ -254,7 +254,7 @@ impl Store {
             first_event,
             system
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())
@@ -269,7 +269,7 @@ impl Store {
     /// When `replaying`, a save naming an existing application also passes with
     /// the permissions that would create it, as that may be what it did.
     async fn authorize_mutation_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         grants: &Grants,
         mutation: &Mutation,
         replaying: bool,
@@ -409,7 +409,7 @@ impl Store {
     /// zero), then dispatches to the transactional handler.
     async fn execute_mutation(
         &self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         mutation: Mutation,
         expected: Option<u64>,
         now: i64,
@@ -506,7 +506,7 @@ impl Store {
     /// With `rebuild`, the deployment builds every Git source, even one whose
     /// image it could reuse.
     async fn deploy_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
         revision: Option<&piqueld_core::manifest::ManifestRevision>,
         rebuild: bool,
@@ -525,7 +525,7 @@ impl Store {
     /// precondition against its application.
     async fn promotion_on(
         &self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         mutation: PromotionMutation,
         expected: Option<u64>,
         now: i64,
@@ -560,7 +560,7 @@ impl Store {
     /// among previews, and never check or advance the application revision.
     async fn execute_preview_on(
         &self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         mutation: PreviewMutation,
         now: i64,
     ) -> Result<Accepted, StoreError> {
@@ -629,7 +629,7 @@ impl Store {
     /// if needed (see `create_preview_on`), and whether it was.
     async fn find_preview_on(
         &self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
         branch: &piqueld_core::GitBranch,
         slot: Option<&piqueld_core::PreviewSlot>,
@@ -664,7 +664,7 @@ impl Store {
 
     /// Requests a preview's deletion, or returns the one already pending.
     async fn delete_preview_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         preview: &super::StoredEnvironment,
     ) -> Result<Accepted, StoreError> {
         let (operation, requested) = Self::deletion_on(tx, &preview.environment).await?;
@@ -674,7 +674,7 @@ impl Store {
     /// Requests `environment`'s deletion (see `request_delete_on`), or
     /// returns the one already pending, and whether it requested one.
     async fn deletion_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &EnvironmentView,
     ) -> Result<(Operation, bool), StoreError> {
         match Self::pending_deletion_on(tx, environment).await? {
@@ -686,7 +686,7 @@ impl Store {
     /// The deletion already requested for `environment`, which a repeated
     /// request returns rather than requesting another.
     async fn pending_deletion_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &EnvironmentView,
     ) -> Result<Option<Operation>, StoreError> {
         Ok(Self::latest_operation_on(tx, &environment.id)
@@ -699,7 +699,7 @@ impl Store {
     /// Loads an application after checking the revision precondition, so a
     /// stale revision is reported as a conflict before absence.
     async fn checked_application_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &ApplicationId,
         expected: Option<u64>,
     ) -> Result<StoredApplication, StoreError> {
@@ -712,7 +712,7 @@ impl Store {
     /// its application's revision. Previews are `NotFound`: environment
     /// changes never act on them. Absence wins over a stale revision.
     pub(super) async fn checked_environment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
         expected: Option<u64>,
     ) -> Result<super::StoredEnvironment, StoreError> {
@@ -730,7 +730,7 @@ impl Store {
     /// whose resolved target was current stay current, except `stale`: a
     /// renamed environment whose configuration renders differently.
     pub(super) async fn bump_generation_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
         current: u64,
         stale: Option<&EnvironmentId>,
@@ -743,7 +743,7 @@ impl Store {
             generation,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let stale = stale.map(EnvironmentId::as_str);
@@ -754,7 +754,7 @@ impl Store {
             previous,
             stale
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())
@@ -772,7 +772,7 @@ impl Store {
 
     /// Responds with the current state of a created or renamed environment.
     pub(super) async fn environment_accepted(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: EnvironmentId,
     ) -> Result<Accepted, StoreError> {
         let environment = Self::existing_environment_on(tx, id.as_str()).await?;
@@ -786,7 +786,7 @@ impl Store {
 
     /// The IDs of an application's environments.
     async fn environment_ids_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
     ) -> Result<Vec<EnvironmentId>, StoreError> {
         Ok(Self::environments_on(tx, application.as_str())
@@ -798,12 +798,12 @@ impl Store {
 
     /// Fetches an environment's newest operation inside `tx`.
     pub(super) async fn latest_operation_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
     ) -> Result<Option<Operation>, StoreError> {
         let id = id.as_str();
         let latest = sqlx::query_scalar!(r#"SELECT id AS "id!" FROM operations WHERE environment_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1"#,id)
-            .fetch_optional(&mut **tx).await.map_err(StoreError::database)?;
+            .fetch_optional(&mut *tx).await.map_err(StoreError::database)?;
         match latest {
             Some(id) => Ok(Some(Self::operation_on(tx, &id).await?)),
             None => Ok(None),
@@ -817,7 +817,7 @@ impl Store {
     /// applications being deleted are `Busy`. Records an `application_edited` event naming the
     /// edited field and resource once, in the application's history.
     async fn accept_edit(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         current: StoredApplication,
         edit: piqueld_core::edit::ApplicationEdit,
         deploy: bool,
@@ -858,7 +858,7 @@ impl Store {
             })
             .map_err(StoreError::corrupt)?;
             let event_kind = EventKind::ApplicationEdited.as_str();
-            sqlx::query!("INSERT INTO events(application_id,generation,kind,message,detail_json,resource,created_at_ms) VALUES(?1,?2,?6,'Saved application configuration',?3,?4,?5)",app_id,generation,detail,resource,now,event_kind).execute(&mut **tx).await.map_err(StoreError::database)?;
+            sqlx::query!("INSERT INTO events(application_id,generation,kind,message,detail_json,resource,created_at_ms) VALUES(?1,?2,?6,'Saved application configuration',?3,?4,?5)",app_id,generation,detail,resource,now,event_kind).execute(&mut *tx).await.map_err(StoreError::database)?;
             (saved, true)
         };
         Self::deploy_saved(tx, &id, &mut saved, deploy).await?;
@@ -876,7 +876,7 @@ impl Store {
     /// environments, to every declared one that builds: promoted ones wait
     /// for a promotion. Records the operation IDs on `saved`.
     async fn deploy_saved(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &ApplicationId,
         saved: &mut SavedApplication,
         deploy: bool,
@@ -954,7 +954,7 @@ impl Store {
     /// Returns the application's revision, and whether it renamed. Never
     /// starts a deployment.
     async fn rename_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         current: StoredApplication,
         name: String,
         now: i64,
@@ -964,7 +964,7 @@ impl Store {
         }
         let id = current.application.id().as_str().to_owned();
         let busy = sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM environments e WHERE e.application_id=?1 AND (e.delete_intent=1 OR (SELECT state FROM operations o WHERE o.environment_id=e.id ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) IN ('requested','running')))",id)
-            .fetch_one(&mut **tx).await.map_err(StoreError::database)?;
+            .fetch_one(&mut *tx).await.map_err(StoreError::database)?;
         if current.delete_intent || busy != 0 {
             return Err(StoreError::Busy);
         }
@@ -990,9 +990,9 @@ impl Store {
         );
         let desired = serde_json::to_string(&application).map_err(StoreError::corrupt)?;
         sqlx::query!("UPDATE applications SET name=?1,desired_json=?2,generation=?3,updated_at_ms=?4 WHERE id=?5",name,desired,revision,now,id)
-            .execute(&mut **tx).await.map_err(StoreError::constraint)?;
+            .execute(&mut *tx).await.map_err(StoreError::constraint)?;
         sqlx::query!("UPDATE environments SET resolved_json=CASE WHEN resolved_json IS NULL THEN NULL ELSE json_set(resolved_json,'$.name',?1) END WHERE application_id=?2",name,id)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         for environment in Self::deployables_on(tx, &id).await? {
             let target = environment.target();
             if current
@@ -1001,14 +1001,14 @@ impl Store {
             {
                 let environment = environment.id.as_str();
                 sqlx::query!("UPDATE environments SET resolved_generation=?1 WHERE id=?2 AND resolved_generation=?3",revision,environment,previous)
-                    .execute(&mut **tx).await.map_err(StoreError::database)?;
+                    .execute(&mut *tx).await.map_err(StoreError::database)?;
             }
         }
         sqlx::query!("UPDATE operations SET target_json=json_set(target_json,'$.name',?1) WHERE target_json IS NOT NULL AND id IN (SELECT (SELECT o.id FROM operations o WHERE o.environment_id=e.id ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1) FROM environments e WHERE e.application_id=?2)",name,id)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         let message = format!("renamed {old_name} to {name}");
         let event_kind = EventKind::ApplicationRenamed.as_str();
-        sqlx::query!("INSERT INTO events(application_id,generation,kind,message,created_at_ms) VALUES(?1,?2,?5,?3,?4)",id,revision,message,now,event_kind).execute(&mut **tx).await.map_err(StoreError::database)?;
+        sqlx::query!("INSERT INTO events(application_id,generation,kind,message,created_at_ms) VALUES(?1,?2,?5,?3,?4)",id,revision,message,now,event_kind).execute(&mut *tx).await.map_err(StoreError::database)?;
         Ok((saved(id, generation), true))
     }
 
@@ -1017,7 +1017,7 @@ impl Store {
     /// previews need no confirmation. Those already being deleted keep their
     /// pending operation. An application without any is removed immediately.
     async fn delete_application_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         current: StoredApplication,
         mut confirmed: Vec<EnvironmentName>,
         now: i64,
@@ -1046,7 +1046,7 @@ impl Store {
                 now,
                 id
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }

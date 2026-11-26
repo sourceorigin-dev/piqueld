@@ -6,7 +6,7 @@ use piqueld_core::{
     },
     manifest::{ApplicationTemplate, Rendering, VariableValue},
 };
-use sqlx::{Sqlite, Transaction};
+use sqlx::SqliteConnection;
 use std::collections::BTreeMap;
 
 /// `deployments` row shared by the snapshot and history page queries.
@@ -53,7 +53,7 @@ impl SummaryRow {
     /// Decodes the row and reads its operation.
     async fn summary_on(
         self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         flags: &Flags,
     ) -> Result<DeploymentSummary, StoreError> {
         Ok(DeploymentSummary {
@@ -85,7 +85,7 @@ struct Flags {
 impl Flags {
     /// Reads `environment`'s flags.
     async fn read_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &EnvironmentId,
     ) -> Result<Self, StoreError> {
         let id = environment.as_str();
@@ -93,7 +93,7 @@ impl Flags {
             current: Store::current_deployment_on(tx, environment)
                 .await?
                 .map(|current| current.id),
-            successful: sqlx::query_scalar!("SELECT d.id FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND d.succeeded_at_ms IS NOT NULL ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1",id).fetch_optional(&mut **tx).await.map_err(StoreError::database)?.flatten(),
+            successful: sqlx::query_scalar!("SELECT d.id FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND d.succeeded_at_ms IS NOT NULL ORDER BY o.created_at_ms DESC,o.id DESC LIMIT 1",id).fetch_optional(&mut *tx).await.map_err(StoreError::database)?.flatten(),
         })
     }
 }
@@ -131,7 +131,7 @@ impl DeploymentRow {
     /// Decodes the row into the deployment's whole snapshot.
     async fn view_on(
         self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         flags: &Flags,
     ) -> Result<DeploymentView, StoreError> {
         let snapshot = self.snapshot()?;
@@ -181,7 +181,7 @@ impl Store {
     /// one by creation time. IDs only order pages of the deployment list,
     /// because they are monotonic only within one daemon process.
     pub(super) async fn current_deployment_on(
-        connection: &mut sqlx::SqliteConnection,
+        connection: &mut SqliteConnection,
         environment: &EnvironmentId,
     ) -> Result<Option<CurrentDeployment>, StoreError> {
         let id = environment.as_str();
@@ -227,7 +227,7 @@ impl Store {
     /// The manifest an application last read from its repository is kept
     /// while it stays repository-backed (see `Self::repository_manifest_on`).
     pub(super) async fn save_configuration_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         app: &ApplicationTemplate,
         expected: Option<u64>,
     ) -> Result<SavedApplication, StoreError> {
@@ -257,7 +257,7 @@ impl Store {
         let now = now_ms();
         let backed = app.spec().manifest.is_some();
         let changed = sqlx::query!("INSERT INTO applications(id,name,desired_json,generation,created_at_ms,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?5) ON CONFLICT(id) DO UPDATE SET desired_json=excluded.desired_json,repository_json=CASE WHEN ?6 THEN applications.repository_json END,generation=excluded.generation,updated_at_ms=excluded.updated_at_ms WHERE applications.delete_intent=0",id,name,json,generation,now,backed)
-            .execute(&mut **tx).await.map_err(StoreError::constraint)?.rows_affected();
+            .execute(&mut *tx).await.map_err(StoreError::constraint)?.rows_affected();
         if changed != 1 {
             return Err(StoreError::IllegalTransition);
         }
@@ -287,7 +287,7 @@ impl Store {
     /// The deployment row shares the operation's ID. A promoted environment
     /// fails with `environment_promoted`: it never builds.
     pub(super) async fn capture_deployment(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         environment: &EnvironmentId,
     ) -> Result<(), StoreError> {
@@ -304,7 +304,7 @@ impl Store {
         let (manifest, variables) = Self::snapshot_json(rendering.as_ref())?;
         let template = template.canonical_json().map_err(StoreError::corrupt)?;
         sqlx::query!("INSERT INTO deployments(id,environment_id,manifest_json,template_json,variables_json,generation,created_at_ms) SELECT id,environment_id,?2,?3,?4,generation,created_at_ms FROM operations WHERE id=?1",id,manifest,template,variables)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         Ok(())
     }
 
@@ -340,11 +340,11 @@ impl Store {
     /// Makes deployment `id` build every Git source, even one whose image
     /// it could reuse (see [`Self::reusable_builds`]).
     pub(super) async fn request_rebuild_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
     ) -> Result<(), StoreError> {
         sqlx::query!("UPDATE deployments SET rebuild=1 WHERE id=?1", id)
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         Ok(())
@@ -396,7 +396,7 @@ impl Store {
 
     /// Loads operation `id` and records its current attempt outcome.
     pub(super) async fn record_deployment_attempt(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
     ) -> Result<(), StoreError> {
         let op = Self::operation_on(tx, id).await?;
@@ -407,20 +407,20 @@ impl Store {
     /// history, and stamps the deployment's first success time when it succeeded.
     /// Operations without a deployment row (deletes) record nothing.
     pub(super) async fn save_deployment_attempt(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         op: &Operation,
     ) -> Result<(), StoreError> {
         let id = &op.id;
         let json = serde_json::to_string(op).map_err(StoreError::corrupt)?;
         let attempt = i64::try_from(op.attempt).map_err(StoreError::corrupt)?;
-        sqlx::query!("INSERT INTO deployment_attempts(deployment_id,attempt,outcome_json) SELECT id,?1,?2 FROM deployments WHERE id=?3 ON CONFLICT(deployment_id,attempt) DO UPDATE SET outcome_json=excluded.outcome_json",attempt,json,id).execute(&mut **tx).await.map_err(StoreError::database)?;
+        sqlx::query!("INSERT INTO deployment_attempts(deployment_id,attempt,outcome_json) SELECT id,?1,?2 FROM deployments WHERE id=?3 ON CONFLICT(deployment_id,attempt) DO UPDATE SET outcome_json=excluded.outcome_json",attempt,json,id).execute(&mut *tx).await.map_err(StoreError::database)?;
         if op.state == super::OperationState::Succeeded {
             sqlx::query!(
                 "UPDATE deployments SET succeeded_at_ms=COALESCE(succeeded_at_ms,?1) WHERE id=?2",
                 op.finished_at_ms,
                 id
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }

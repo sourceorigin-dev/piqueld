@@ -10,7 +10,7 @@ use piqueld_core::{
         DestinationSettings, NotificationCategory, NotificationDestination, NotificationMessage,
     },
 };
-use sqlx::{Sqlite, Transaction};
+use sqlx::SqliteConnection;
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
@@ -280,7 +280,7 @@ impl Store {
         let settings = request.settings;
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         actor.require_on(&mut tx, MANAGE, None).await?;
         if let ApplicationSelection::Only(applications) = &settings.applications {
             for application in applications {
@@ -324,7 +324,7 @@ impl Store {
     /// unless it is unchanged; a new destination needs one.
     async fn save_destination(
         &self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         name: &DestinationName,
         settings: &DestinationSettings,
         url: Option<&WebhookUrl>,
@@ -335,7 +335,7 @@ impl Store {
             FROM notification_destinations WHERE name=?1",
             name,
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let cipher = match url {
@@ -365,7 +365,7 @@ impl Store {
                 previews,
                 now,
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
             return Ok(SavedDestination {
@@ -408,7 +408,7 @@ impl Store {
             now,
             row.id,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(SavedDestination {
@@ -429,7 +429,7 @@ impl Store {
     /// outside the destination's new audience (see `save_rules`), and
     /// detaches every delivery from a replaced destination.
     async fn settle_deliveries(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         saved: &SavedDestination,
         settings: &DestinationSettings,
     ) -> Result<(), StoreError> {
@@ -441,7 +441,7 @@ impl Store {
             "SELECT category FROM notification_destination_categories WHERE destination_id=?1",
             id,
         )
-        .fetch_all(&mut **tx)
+        .fetch_all(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         for category in current {
@@ -457,7 +457,7 @@ impl Store {
                 "UPDATE notification_deliveries SET destination_id=NULL WHERE destination_id=?1",
                 id,
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }
@@ -469,7 +469,7 @@ impl Store {
     /// Added categories, and every category of a replaced or resumed
     /// destination, start after the latest event.
     async fn save_rules(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         saved: &SavedDestination,
         settings: &DestinationSettings,
     ) -> Result<(), StoreError> {
@@ -477,7 +477,7 @@ impl Store {
         let restart = saved.replaced || saved.resumed;
         let watermark =
             sqlx::query_scalar!("SELECT COALESCE(MAX(id),0) AS \"id!: i64\" FROM events")
-                .fetch_one(&mut **tx)
+                .fetch_one(&mut *tx)
                 .await
                 .map_err(StoreError::database)?;
         let categories = serde_json::to_string(&settings.categories.keys().collect::<Vec<_>>())
@@ -488,7 +488,7 @@ impl Store {
             id,
             categories,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         for (category, rule) in &settings.categories {
@@ -505,7 +505,7 @@ impl Store {
                 watermark,
                 restart,
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }
@@ -513,7 +513,7 @@ impl Store {
             "DELETE FROM notification_destination_applications WHERE destination_id=?1",
             id,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         if let ApplicationSelection::Only(applications) = &settings.applications {
@@ -524,7 +524,7 @@ impl Store {
                     id,
                     application,
                 )
-                .execute(&mut **tx)
+                .execute(&mut *tx)
                 .await
                 .map_err(StoreError::database)?;
             }
@@ -547,7 +547,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         actor.require_on(&mut tx, MANAGE, None).await?;
         let name_str = name.as_str();
         let id = sqlx::query_scalar!(
@@ -640,7 +640,7 @@ impl Store {
 
     /// Cancels the destination `id`'s pending deliveries that `cancel` selects.
     async fn cancel_deliveries(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         cancel: Cancel<'_>,
         now: i64,
@@ -662,7 +662,7 @@ impl Store {
             outside,
             super::DESTINATION_CHANGED,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())

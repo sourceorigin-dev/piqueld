@@ -118,7 +118,7 @@ impl Store {
     ) -> Result<SecretMetadata, StoreError> {
         let value = Zeroizing::new(value);
         let author = author.into();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let metadata = self
             .put_secret_on(&mut tx, author.actor, application, name, expected, &value)
             .await?;
@@ -133,7 +133,7 @@ impl Store {
     /// [`Self::put_secret`] in an existing write transaction.
     pub(super) async fn put_secret_on(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         actor: super::Actor<'_>,
         application: &EnvironmentId,
         name: &str,
@@ -151,7 +151,7 @@ impl Store {
             .await?;
         let existing = sqlx::query!(
             "SELECT generation,deletion_id FROM environment_secrets WHERE environment_id=?1 AND name=?2", id, name
-        ).fetch_optional(&mut **tx).await.map_err(StoreError::database)?;
+        ).fetch_optional(&mut *tx).await.map_err(StoreError::database)?;
         let generation = Self::next_secret_generation(
             existing.map(|row| (row.generation, row.deletion_id.is_some())),
             expected,
@@ -161,7 +161,7 @@ impl Store {
                 "SELECT COUNT(*) FROM environment_secrets WHERE environment_id=?1",
                 id
             )
-            .fetch_one(&mut **tx)
+            .fetch_one(&mut *tx)
             .await
             .map_err(StoreError::database)?;
             if count >= 100 {
@@ -169,7 +169,7 @@ impl Store {
             }
         }
         let usage = sqlx::query!("SELECT COUNT(*) AS versions, COALESCE(SUM(length(ciphertext)),0) AS bytes FROM secret_versions WHERE environment_id=?1 AND available=1",id)
-            .fetch_one(&mut **tx).await.map_err(StoreError::database)?;
+            .fetch_one(&mut *tx).await.map_err(StoreError::database)?;
         Self::check_secret_quota(usage.versions, usage.bytes, value.len())?;
         let cipher = self.verified_secret_cipher(tx).await?;
         let envelope = cipher
@@ -182,8 +182,8 @@ impl Store {
             .map_err(StoreError::SecretSource)?;
         let now = now_ms();
         let swarm_name = new_id("piqueld-secret");
-        sqlx::query!("INSERT INTO environment_secrets(environment_id,name,generation,updated_at_ms) VALUES(?1,?2,?3,?4) ON CONFLICT(environment_id,name) DO UPDATE SET generation=excluded.generation,updated_at_ms=excluded.updated_at_ms",id,name,generation,now).execute(&mut **tx).await.map_err(StoreError::database)?;
-        sqlx::query!("INSERT INTO secret_versions(environment_id,name,generation,swarm_name,nonce,ciphertext) VALUES(?1,?2,?3,?4,?5,?6)",id,name,generation,swarm_name,envelope.nonce,envelope.ciphertext).execute(&mut **tx).await.map_err(StoreError::database)?;
+        sqlx::query!("INSERT INTO environment_secrets(environment_id,name,generation,updated_at_ms) VALUES(?1,?2,?3,?4) ON CONFLICT(environment_id,name) DO UPDATE SET generation=excluded.generation,updated_at_ms=excluded.updated_at_ms",id,name,generation,now).execute(&mut *tx).await.map_err(StoreError::database)?;
+        sqlx::query!("INSERT INTO secret_versions(environment_id,name,generation,swarm_name,nonce,ciphertext) VALUES(?1,?2,?3,?4,?5,?6)",id,name,generation,swarm_name,envelope.nonce,envelope.ciphertext).execute(&mut *tx).await.map_err(StoreError::database)?;
         let (scope, by) = (SecretScope::Environment(application), actor.attribution());
         let message = format!("Stored secret version {generation}");
         Self::secret_event_on(tx, scope, (EventKind::SecretSaved, &message, name), by, now).await?;
@@ -365,7 +365,7 @@ impl Store {
         let generated = self
             .generated_secrets(&operation.environment_id, app)
             .await?;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let pins = self
             .pin_secrets_on(&mut tx, operation, app, &generated)
             .await?;
@@ -382,7 +382,7 @@ impl Store {
     /// discarded by key recovery.
     pub(super) async fn pin_secrets_on(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         operation: &Operation,
         app: &NormalizedApplication,
         generated: &[GeneratedSecret],
@@ -412,7 +412,7 @@ impl Store {
             "SELECT operation_id FROM deployment_secrets_prepared WHERE operation_id=?1",
             operation
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .is_some();
@@ -423,11 +423,11 @@ impl Store {
             let mut missing = Vec::new();
             for (name, source) in app.spec().mounted_secrets() {
                 let changed = match source {
-                    SecretSource::Generated => sqlx::query!("INSERT INTO deployment_secret_pins(operation_id,environment_id,name,generation) SELECT ?1,environment_id,name,generation FROM environment_secrets WHERE environment_id=?2 AND name=?3",operation,id,name).execute(&mut **tx).await,
+                    SecretSource::Generated => sqlx::query!("INSERT INTO deployment_secret_pins(operation_id,environment_id,name,generation) SELECT ?1,environment_id,name,generation FROM environment_secrets WHERE environment_id=?2 AND name=?3",operation,id,name).execute(&mut *tx).await,
                     SecretSource::Stored => {
                         let swarm_name = new_id("piqueld-secret");
-                        sqlx::query!("INSERT OR IGNORE INTO application_secret_copies(environment_id,application_id,name,generation,swarm_name) SELECT ?1,application_id,name,generation,?4 FROM application_secrets WHERE application_id=?2 AND name=?3",id,application,name,swarm_name).execute(&mut **tx).await.map_err(StoreError::database)?;
-                        sqlx::query!("INSERT INTO deployment_stored_secret_pins(operation_id,environment_id,name,generation) SELECT ?1,?2,name,generation FROM application_secrets WHERE application_id=?3 AND name=?4",operation,id,application,name).execute(&mut **tx).await
+                        sqlx::query!("INSERT OR IGNORE INTO application_secret_copies(environment_id,application_id,name,generation,swarm_name) SELECT ?1,application_id,name,generation,?4 FROM application_secrets WHERE application_id=?2 AND name=?3",id,application,name,swarm_name).execute(&mut *tx).await.map_err(StoreError::database)?;
+                        sqlx::query!("INSERT INTO deployment_stored_secret_pins(operation_id,environment_id,name,generation) SELECT ?1,?2,name,generation FROM application_secrets WHERE application_id=?3 AND name=?4",operation,id,application,name).execute(&mut *tx).await
                     }
                 }
                 .map_err(StoreError::database)?
@@ -445,7 +445,7 @@ impl Store {
                 "INSERT INTO deployment_secrets_prepared(operation_id) VALUES(?1)",
                 operation
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }
@@ -469,11 +469,11 @@ impl Store {
     /// The secret versions deployment `operation` pinned, by logical name:
     /// each one's Swarm secret name, and whether its value is still available.
     async fn pinned_secrets_on(
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         operation: &str,
     ) -> Result<BTreeMap<String, (String, bool)>, StoreError> {
         let rows=sqlx::query!(r#"SELECT p.name AS "name!",v.swarm_name AS "swarm_name!",v.available AS "available!" FROM deployment_secret_pins p JOIN secret_versions v USING(environment_id,name,generation) WHERE p.operation_id=?1
-            UNION ALL SELECT p.name,c.swarm_name,v.available FROM deployment_stored_secret_pins p JOIN application_secret_copies c USING(environment_id,name,generation) JOIN application_secret_versions v ON v.application_id=c.application_id AND v.name=c.name AND v.generation=c.generation WHERE p.operation_id=?1"#,operation).fetch_all(&mut **tx).await.map_err(StoreError::database)?;
+            UNION ALL SELECT p.name,c.swarm_name,v.available FROM deployment_stored_secret_pins p JOIN application_secret_copies c USING(environment_id,name,generation) JOIN application_secret_versions v ON v.application_id=c.application_id AND v.name=c.name AND v.generation=c.generation WHERE p.operation_id=?1"#,operation).fetch_all(&mut *tx).await.map_err(StoreError::database)?;
         Ok(rows
             .into_iter()
             .map(|r| (r.name, (r.swarm_name, r.available != 0)))
@@ -487,7 +487,7 @@ impl Store {
     /// deleted since or their values discarded by key recovery, and with
     /// `secret_deleting` while one is being deleted.
     pub(super) async fn restore_secret_pins_on(
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         operation: &Operation,
         restored: &str,
         names: &BTreeMap<String, String>,
@@ -500,14 +500,14 @@ impl Store {
         .await?;
         let id = operation.id.as_str();
         sqlx::query!("INSERT INTO deployment_secret_pins(operation_id,environment_id,name,generation) SELECT ?1,environment_id,name,generation FROM deployment_secret_pins WHERE operation_id=?2",id,restored)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!("INSERT INTO deployment_stored_secret_pins(operation_id,environment_id,name,generation) SELECT ?1,environment_id,name,generation FROM deployment_stored_secret_pins WHERE operation_id=?2",id,restored)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!(
             "INSERT INTO deployment_secrets_prepared(operation_id) VALUES(?1)",
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let pinned = Self::pinned_secrets_on(tx, id).await?;

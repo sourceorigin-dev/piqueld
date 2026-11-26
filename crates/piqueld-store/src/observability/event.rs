@@ -11,7 +11,7 @@ use piqueld_core::{
     sync::SystemActor,
     timeline::{PlanCoverage, StepKey},
 };
-use sqlx::{QueryBuilder, Sqlite, Transaction};
+use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
 
 impl Store {
     /// Records an event of `kind` copying the operation's current context
@@ -23,7 +23,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn operation_event(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         kind: EventKind,
         message: Option<&str>,
@@ -42,7 +42,7 @@ impl Store {
                 attempt,
                 code,
             )
-            .fetch_optional(&mut **tx)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(StoreError::database)?.flatten();
             Some(match prior {
@@ -82,7 +82,7 @@ impl Store {
             json,
             id,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())
@@ -351,7 +351,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn environment_event_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         kind: EventKind,
         message: &str,
@@ -365,7 +365,7 @@ impl Store {
             message,
             now
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())
@@ -415,7 +415,7 @@ impl Store {
     /// # Errors
     /// Returns storage errors.
     pub async fn record_daemon_started(&self, version: &str) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let kind = EventKind::DaemonStarted.as_str();
         let previous = sqlx::query_scalar!(
             "SELECT resource FROM events WHERE kind=?1 ORDER BY id DESC LIMIT 1",
@@ -513,7 +513,7 @@ impl Store {
     /// active actions. Advances `history_coverage` so streams resuming before the
     /// pruned point get `HistoryExpired`. Returns the number of deleted events.
     async fn prune_scope(&self, cutoff: i64, scope: EventScope) -> Result<u64, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let scope = scope.as_str();
         let removed = sqlx::query!(
             "DELETE

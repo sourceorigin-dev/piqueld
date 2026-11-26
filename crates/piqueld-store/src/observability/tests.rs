@@ -1672,7 +1672,7 @@ async fn audit_appends_commit_and_roll_back_with_their_transaction() {
     store.audit_days = 1;
     let now = now_ms();
     let append = async |peer: &str, at: i64, commit: bool| {
-        let (_writer, mut tx) = store
+        let mut tx = store
             .begin_immediate()
             .await
             .expect("the store can begin immediate");

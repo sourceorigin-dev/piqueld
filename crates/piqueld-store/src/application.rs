@@ -9,7 +9,7 @@ use piqueld_core::{
     EnvironmentId, EnvironmentName, EnvironmentSource,
     api::{ApplicationSummary, EnvironmentSummary, EnvironmentView, Page},
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 
 /// The `kind` column of `environments`.
 #[derive(Clone, Copy)]
@@ -47,12 +47,12 @@ impl Store {
     /// Reads an application's current generation (zero when absent) and
     /// checks it against the caller's optional precondition.
     pub(super) async fn generation_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         expected: Option<u64>,
     ) -> Result<i64, StoreError> {
         let actual = sqlx::query_scalar!("SELECT generation FROM applications WHERE id=?1", id)
-            .fetch_optional(&mut **tx)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(StoreError::database)?
             .unwrap_or(0);
@@ -77,7 +77,7 @@ impl Store {
         resolve: Option<&(dyn Fn(&EnvironmentId) -> ResolvedApplication + Sync)>,
         expected: Option<u64>,
     ) -> Result<Operation, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let saved = Self::save_configuration_on(&mut tx, app, expected).await?;
         let environment = Self::sole_environment_on(&mut tx, app.id()).await?;
         let now = now_ms();
@@ -240,7 +240,7 @@ impl Store {
 
     /// `environment` with its status and latest operation, in `tx`.
     async fn environment_summary_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: EnvironmentView,
     ) -> Result<EnvironmentSummary, StoreError> {
         let status = match Self::status_on(tx, &environment.id).await {
@@ -290,7 +290,7 @@ impl Store {
     /// Selects the environment runtime commands use when none is named: the
     /// application's only environment. Never picks one of several silently.
     pub(super) async fn sole_environment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
     ) -> Result<EnvironmentId, StoreError> {
         let mut environments = Self::environments_on(tx, application.as_str()).await?;
@@ -310,7 +310,7 @@ impl Store {
     /// Creates the application's first environment, named `production`, which
     /// follows the branch `spec.manifest` names.
     pub(super) async fn create_default_environment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationTemplate,
         now: i64,
     ) -> Result<EnvironmentId, StoreError> {
@@ -331,7 +331,7 @@ impl Store {
     /// forgets the heads sync followed from, so nothing follows the new
     /// repository before its next deployment.
     pub(super) async fn follow_connection_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationTemplate,
         previous_url: Option<&str>,
     ) -> Result<(), StoreError> {
@@ -346,7 +346,7 @@ impl Store {
                 "UPDATE environments SET synced_commit=NULL,synced_at_ms=NULL WHERE application_id=?1",
                 id
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }
@@ -360,7 +360,7 @@ impl Store {
                     commit,
                     id
                 )
-                .execute(&mut **tx)
+                .execute(&mut *tx)
                 .await
             }
             None => {
@@ -368,7 +368,7 @@ impl Store {
                     "UPDATE environments SET branch=NULL,pinned_commit=NULL,manifest_json=NULL WHERE application_id=?1 AND promoted_from IS NULL AND kind='environment'",
                     id
                 )
-                .execute(&mut **tx)
+                .execute(&mut *tx)
                 .await
             }
         }

@@ -15,7 +15,7 @@ use piqueld_core::{
     },
     sync::SyncCheck,
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 use zeroize::Zeroizing;
 
 /// The head of the branch an environment or preview tracks, as one of its
@@ -94,7 +94,7 @@ impl Store {
     /// 4. Otherwise deploys exactly `head` and records it: `Deployed`, waking the
     ///    controller.
     pub(super) async fn sync_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         listed: ListedHead,
         now: i64,
     ) -> Result<Accepted, StoreError> {
@@ -109,7 +109,7 @@ impl Store {
 
     /// What [`Self::sync_on`] does with `head`.
     async fn sync_outcome_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         listed: &ListedHead,
         now: i64,
     ) -> Result<SyncOutcome, StoreError> {
@@ -175,7 +175,7 @@ impl Store {
     /// captures its candidate manifest, which fetching replaces.
     /// `environment_promoted` for a promoted environment.
     pub(super) async fn deploy_revision_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
         revision: Option<&ManifestRevision>,
     ) -> Result<super::Operation, StoreError> {
@@ -189,7 +189,7 @@ impl Store {
     /// while it still follows that branch, unpinned, of that repository. A
     /// fetch from a branch or repository it left records nothing.
     pub(super) async fn record_branch_head_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
         head: &BranchHead,
         now: i64,
@@ -245,7 +245,7 @@ impl Store {
     /// Records `head` as the branch head of `id`'s last deployment, stored
     /// as an empty commit when the branch was absent.
     async fn record_synced_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
         head: Option<&str>,
         now: i64,
@@ -257,7 +257,7 @@ impl Store {
             now,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())
@@ -267,7 +267,7 @@ impl Store {
     /// `write_sync_on`) and responds with it, unless the saved manifest
     /// declares its source. Previews always sync: they are `NotFound`.
     pub(super) async fn set_sync_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: EnvironmentId,
         enabled: bool,
         now: i64,
@@ -290,7 +290,7 @@ impl Store {
     /// it deploys, so the application revision stays. Opting back in deploys
     /// the branch head at the next sync if it moved since the last deployment.
     pub(super) async fn write_sync_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &EnvironmentView,
         enabled: bool,
         now: i64,
@@ -305,7 +305,7 @@ impl Store {
             now,
             row
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let name = &environment.name;
@@ -382,7 +382,7 @@ impl Store {
     ) -> Result<(Zeroizing<String>, i64), StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         actor
             .require_on(
                 &mut tx,
@@ -521,7 +521,7 @@ impl Store {
         reason = "A test fixture fails the test by panicking."
     )]
     pub async fn deployed_at(&self, id: &EnvironmentId, commit: &str) -> super::Operation {
-        let (writer, mut tx) = self
+        let mut tx = self
             .begin_immediate()
             .await
             .expect("begin immediate succeeds");
@@ -546,14 +546,13 @@ impl Store {
             .await
             .expect("execute succeeds");
         tx.commit().await.expect("commit succeeds");
-        drop(writer);
         if let Some(repository) = current.tracking().expect("tracking succeeds").repository() {
             let head = BranchHead {
                 url: repository.repository.url,
                 branch: repository.repository.branch,
                 commit: Some(commit.into()),
             };
-            let (_writer, mut tx) = self
+            let mut tx = self
                 .begin_immediate()
                 .await
                 .expect("begin immediate succeeds");

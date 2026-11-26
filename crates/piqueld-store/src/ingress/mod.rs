@@ -6,7 +6,7 @@ use piqueld_core::{
     api::RouteStatus,
     manifest::{Hostname, RouteHostname, ValidatedRoute},
 };
-use sqlx::{Sqlite, SqliteConnection, SqliteExecutor, Transaction};
+use sqlx::{SqliteConnection, SqliteExecutor};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Routes the gateway serves, keyed by owning environment in a stable order.
@@ -63,7 +63,7 @@ impl Store {
     /// Write helpers must leave this to their transaction owner rather than checking
     /// intermediate state (a save can also replace the pending deployment).
     pub(super) async fn commit_environment_changes<'a>(
-        mut tx: Transaction<'_, Sqlite>,
+        mut tx: crate::WriteTransaction<'_>,
         environments: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), StoreError> {
         for id in environments {
@@ -84,7 +84,7 @@ impl Store {
         &self,
         hostnames: &[Hostname],
     ) -> Result<Vec<RouteHostname>, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         sqlx::query!("DELETE FROM installation_hostnames")
             .execute(&mut *tx)
             .await
@@ -310,7 +310,7 @@ impl Store {
         ready: bool,
         operation_id: Option<&str>,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let id = environment_id.as_str();
         if let Some(operation_id) = operation_id {
             let current = sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM operations WHERE id=?1 AND environment_id=?2 AND state='running' AND id=(SELECT id FROM operations WHERE environment_id=?2 ORDER BY created_at_ms DESC,id DESC LIMIT 1))",operation_id,id)
@@ -438,7 +438,7 @@ impl Store {
         if changed.is_empty() {
             return Ok(false);
         }
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         for (environment_id, routes) in &changed {
             let id = environment_id.as_str();
             let json = serde_json::to_string(routes).map_err(StoreError::corrupt)?;

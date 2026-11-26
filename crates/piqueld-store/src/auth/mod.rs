@@ -425,7 +425,7 @@ impl Store {
         expires_at: i64,
         operator: HostOperator,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         sqlx::query!(
             "INSERT INTO auth_recovery(singleton,secret_hash,expires_at) VALUES(1,?1,?2)
             ON CONFLICT(singleton) DO UPDATE SET secret_hash=excluded.secret_hash,expires_at=excluded.expires_at",
@@ -490,7 +490,7 @@ impl Store {
         expires_at: i64,
         operator: HostOperator,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         sqlx::query!(
             "INSERT INTO auth_operator_sessions(id,secret_hash,uid,expires_at) VALUES(?1,?2,?3,?4)",
             id,
@@ -539,7 +539,7 @@ impl Store {
         if !live {
             return Ok(None);
         }
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let now = now_secs();
         let row = sqlx::query!(
             r#"UPDATE auth_operator_sessions SET secret_hash=?2,redeemed=1,expires_at=?3
@@ -690,7 +690,7 @@ impl Store {
         owner: PasskeyOwner<'_>,
         passkey: NewPasskey<'_>,
     ) -> Result<bool, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let now = now_secs();
         let added = format!("passkey {:?} {:?}", passkey.id, passkey.name);
         match &owner {
@@ -872,7 +872,7 @@ impl Store {
         verify: impl FnOnce(&str) -> Result<String, E>,
         session: &NewCredential<'_>,
     ) -> Result<Option<User>, E> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let Some(user) = Self::verify_passkey_on(&mut tx, passkey_id, user_id, verify).await?
         else {
             return Ok(None);
@@ -907,7 +907,7 @@ impl Store {
     ) -> Result<bool, E> {
         let author = author.into();
         let caller = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let authority = caller.load(&mut tx).await?;
         if authority.proof.kind == CredentialKind::Token {
             return Err(StoreError::Denied(Denied::Reauthenticate(Reauthenticate::Token)).into());
@@ -1033,7 +1033,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub async fn touch_credential(&self, id: &str) -> Result<bool, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let now = now_secs();
         let idle = now - SESSION_IDLE_SECS;
         let rows = sqlx::query!(
@@ -1066,7 +1066,7 @@ impl Store {
     ) -> Result<Option<User>, StoreError> {
         let author = author.into();
         let approver = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let authority = match approver.load(&mut tx).await {
             Ok(authority) => authority,
             Err(StoreError::CredentialRevoked) => return Ok(None),
@@ -1118,7 +1118,7 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let author = author.into();
         let approver = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let authority = approver.load(&mut tx).await?;
         let approval = Proof {
             authenticated_at: Some(authenticated_at),
@@ -1175,7 +1175,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let owner = sqlx::query_scalar!("SELECT user_id FROM auth_credentials WHERE id=?1", id)
             .fetch_optional(&mut *tx)
             .await
@@ -1218,7 +1218,7 @@ impl Store {
         cascade: Cascade,
     ) -> Result<(), StoreError> {
         let author = author.into();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, author.actor, user_id).await?;
         let roots = AccountRoots::Credentials;
         let revoked = Self::revoke_account_on(&mut tx, user_id, roots, cascade).await?;
@@ -1350,7 +1350,7 @@ impl Store {
         display_name: &str,
     ) -> Result<(), StoreError> {
         let author = author.into();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, author.actor, id).await?;
         let current = sqlx::query!(
             "SELECT username,display_name FROM auth_users WHERE id=?1",
@@ -1389,7 +1389,7 @@ impl Store {
         cascade: Cascade,
     ) -> Result<(), StoreError> {
         let author = author.into();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::check_account_on(&mut tx, author.actor, id).await?;
         let username = Self::username_on(&mut tx, id).await?;
         let roots = AccountRoots::Everything;
@@ -1432,7 +1432,7 @@ impl Store {
         cascade: Cascade,
     ) -> Result<(), StoreError> {
         let author = author.into();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let owner = Self::check_passkey_owner_on(&mut tx, author.actor, id).await?;
         let revoked = Self::revoke_on(&mut tx, &[Issued::Passkey(id)], cascade).await?;
         let change = format!("passkey {id:?} of account {owner:?} removed {cascade}: {revoked}");
@@ -1450,7 +1450,7 @@ impl Store {
         name: &str,
     ) -> Result<(), StoreError> {
         let author = author.into();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let owner = Self::check_passkey_owner_on(&mut tx, author.actor, id).await?;
         let renamed = sqlx::query!(
             "UPDATE auth_passkeys SET name=?1 WHERE id=?2 AND name IS NOT ?1",
@@ -1483,7 +1483,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let author = author.into();
         let caller = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let authority = caller.load(&mut tx).await?;
         authority.require_unscoped()?;
         Self::may_invite(&authority.grants, grants)?;
@@ -1521,7 +1521,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let author = author.into();
         let caller = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let account = Actor::Account(caller);
         if let Some(authority) = Self::check_account_on(&mut tx, account, user_id).await? {
             authority.require_unscoped()?;
@@ -1575,7 +1575,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let target = sqlx::query_scalar!("SELECT user_id FROM auth_invitations WHERE id=?1", id)
             .fetch_optional(&mut *tx)
             .await
@@ -1618,7 +1618,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let author = author.into();
         let caller = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let authority = caller.load(&mut tx).await?;
         authority.may_hand_out(credential.grants)?;
         authority.require_fresh()?;
@@ -1655,7 +1655,7 @@ impl Store {
     pub async fn prune_auth(&self) -> Result<(), StoreError> {
         let now = now_secs();
         let idle = now - SESSION_IDLE_SECS;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let credentials = sqlx::query!(
             "DELETE FROM auth_credentials WHERE expires_at<=?1 OR (kind='browser' AND last_used_at<=?2)",
             now,
@@ -1701,7 +1701,7 @@ impl Store {
     /// # Panics
     /// If the store fails.
     pub async fn seed_auth_user(&self, user: &User, grants: &Grants) {
-        let (_writer, mut tx) = self
+        let mut tx = self
             .begin_immediate()
             .await
             .expect("begin immediate succeeds");
@@ -1728,7 +1728,7 @@ impl Store {
         user_id: &str,
         credential: &NewCredential<'_>,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         credential.insert(&mut tx, user_id, None).await?;
         tx.commit().await.map_err(StoreError::database)
     }

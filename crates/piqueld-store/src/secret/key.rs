@@ -3,6 +3,7 @@ use super::{Envelope, SecretCipher, SecretOwner, Store, StoreError};
 use crate::secrets::{KeyFailure, SecretError};
 use piqueld_core::EventKind;
 use piqueld_core::api::{CheckStatus, SecretKeyRecovery, SystemCheck, SystemCheckId};
+use sqlx::SqliteConnection;
 
 /// How a master key file relates to the database it should decrypt.
 pub(crate) enum KeyBinding {
@@ -96,10 +97,10 @@ impl Store {
     /// # Errors
     /// Returns a storage error when the database can't be read.
     pub(crate) async fn key_binding_on(
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         key: Option<&std::path::Path>,
     ) -> Result<Result<KeyBinding, SecretError>, StoreError> {
-        let verifier = Self::secret_key_verifier_on(&mut **tx).await?;
+        let verifier = Self::secret_key_verifier_on(&mut *tx).await?;
         let bound = verifier.is_some()
             || !matches!(Self::probe_ciphertext_on(tx, None).await?, Ciphertext::None);
         let Some(key) = key else {
@@ -133,9 +134,9 @@ impl Store {
     /// Returns a storage error.
     pub(crate) async fn verified_secret_cipher(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
     ) -> Result<SecretCipher, StoreError> {
-        let Some(verifier) = Self::secret_key_verifier_on(&mut **tx).await? else {
+        let Some(verifier) = Self::secret_key_verifier_on(&mut *tx).await? else {
             let encrypted = !matches!(Self::probe_ciphertext_on(tx, None).await?, Ciphertext::None);
             let cipher = SecretCipher::load(&self.secret_key_path, encrypted)
                 .map_err(StoreError::SecretSource)?;
@@ -162,7 +163,7 @@ impl Store {
                 envelope.nonce,
                 envelope.ciphertext
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
             return Ok(cipher);
@@ -193,7 +194,7 @@ impl Store {
     /// What `cipher`, or a key that can't be loaded (`None`), makes of the
     /// stored values and webhook secrets, stopping at the first it decrypts.
     async fn probe_ciphertext_on(
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         cipher: Option<&SecretCipher>,
     ) -> Result<Ciphertext, StoreError> {
         use futures_util::TryStreamExt;
@@ -204,7 +205,7 @@ impl Store {
             UNION ALL SELECT 'webhook',application_id,'webhook',1,nonce,ciphertext FROM webhook_secrets
             UNION ALL SELECT 'destination',id,'url',1,nonce,ciphertext FROM notification_destinations"#
         )
-        .fetch(&mut **tx);
+        .fetch(&mut *tx);
         let mut probed = Ciphertext::None;
         while let Some(row) = rows.try_next().await.map_err(StoreError::database)? {
             let Some(cipher) = cipher else {
@@ -255,7 +256,7 @@ impl Store {
     ) -> Result<SecretKeyRecovery, StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let operate = piqueld_core::access::Permission::Global(
             piqueld_core::access::GlobalPermission::SystemOperate,
         );
@@ -295,7 +296,7 @@ impl Store {
     /// recovery `author` requested, and moves the lost key aside once committed.
     async fn discard_secret_values(
         &self,
-        mut tx: sqlx::Transaction<'_, sqlx::Sqlite>,
+        mut tx: crate::WriteTransaction<'_>,
         author: crate::Author<'_>,
     ) -> Result<SecretKeyRecovery, StoreError> {
         let usage = sqlx::query!("SELECT COUNT(*) AS versions, COUNT(DISTINCT environment_id) AS environments, COUNT(DISTINCT environment_id||char(0)||name) AS secrets FROM secret_versions WHERE available=1")

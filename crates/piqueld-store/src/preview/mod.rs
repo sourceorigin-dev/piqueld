@@ -17,7 +17,7 @@ use piqueld_core::{
     },
     manifest::PreviewLimits,
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 
 impl Store {
     /// Applies the daemon's `[previews]` limits.
@@ -62,7 +62,7 @@ impl Store {
     /// fit `limits` (`PreviewLimitReached`); an existing one is returned
     /// whatever the counts.
     pub(super) async fn create_preview_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &StoredApplication,
         branch: &GitBranch,
         slot: Option<&PreviewSlot>,
@@ -93,7 +93,7 @@ impl Store {
             slot,
             now
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .rows_affected()
@@ -104,7 +104,7 @@ impl Store {
             branch,
             slot
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .map(|row| (row.id, row.delete_intent != 0))
@@ -132,7 +132,7 @@ impl Store {
     /// at a time, so concurrent creations count each other's previews.
     /// Counts already over a lowered limit only refuse new previews.
     async fn check_preview_limits_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &str,
         created: &str,
         limits: &PreviewLimits,
@@ -141,7 +141,7 @@ impl Store {
             r#"SELECT COUNT(*) AS "total!: i64",COALESCE(SUM(application_id=?1),0) AS "own!: i64" FROM environments WHERE kind='preview'"#,
             application
         )
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let (limit, max, scope) = if counts.own > i64::from(limits.max_per_application) {
@@ -160,7 +160,7 @@ impl Store {
             scope,
             created
         )
-        .fetch_all(&mut **tx)
+        .fetch_all(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .into_iter()
@@ -197,7 +197,7 @@ impl Store {
     /// Loads a preview for a change. Environments are `NotFound`, as previews
     /// are for environment changes.
     pub(super) async fn preview_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
     ) -> Result<StoredEnvironment, StoreError> {
         Self::environment_on(tx, id.as_str())
@@ -209,7 +209,7 @@ impl Store {
     /// Starts a deployment of the head of a preview's branch. Fails with
     /// `PreviewRequiresRepository` once its application was disconnected.
     pub(super) async fn deploy_preview_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         preview: &StoredEnvironment,
     ) -> Result<Operation, StoreError> {
         if preview.tracking()?.repository().is_none() {
@@ -222,7 +222,7 @@ impl Store {
     /// a preview's branch, as its origin: it reads its manifest and builds
     /// `"self"` sources from the snapshot instead of the branch head.
     pub(super) async fn deploy_snapshot_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         preview: &StoredEnvironment,
         snapshot: &LocalSnapshot,
     ) -> Result<Operation, StoreError> {
@@ -234,7 +234,7 @@ impl Store {
             origin,
             operation.id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(operation)
@@ -295,7 +295,7 @@ impl Store {
     /// Adds the Docker volumes of a preview's prepared target to its
     /// inventory, before any of them is created.
     pub(super) async fn record_preview_volumes_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         resolved: &ResolvedApplication,
     ) -> Result<(), StoreError> {
         let (id, now) = (resolved.id.as_str(), now_ms());
@@ -307,7 +307,7 @@ impl Store {
                 name,
                 now
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }

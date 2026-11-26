@@ -17,7 +17,7 @@ use piqueld_core::{
     NormalizedApplication, api::DeploymentOrigin, manifest::ApplicationTemplate,
     resource::ResolvedApplication,
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 
 /// Why a deployment can't be restored.
 #[derive(Debug, thiserror::Error)]
@@ -49,7 +49,7 @@ impl Store {
     /// only among its own kind, then restores the deployment (see
     /// `accept_restore_on`). Neither needs the application revision.
     pub(super) async fn restore_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         restore: Restore,
     ) -> Result<Accepted, StoreError> {
         let current = match &restore {
@@ -104,7 +104,7 @@ impl Store {
         error: (&str, &str),
         deployment: &str,
     ) -> Result<Operation, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::transition_operation_on(
             &mut tx,
             &operation.id,
@@ -151,7 +151,7 @@ impl Store {
         operation: &Operation,
         reason: &str,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::operation_event(
             &mut tx,
             &operation.id,
@@ -218,7 +218,7 @@ impl Store {
     /// restored one. Its images are then retention roots, so callers holding
     /// cleanup off may let go once this commits.
     pub(super) async fn accept_restore_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
         deployment: &str,
         rolled_back: Option<&str>,
@@ -241,7 +241,7 @@ impl Store {
             "SELECT manifest_json,template_json FROM deployments WHERE id=?1",
             deployment
         )
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let rendered: NormalizedApplication =
@@ -258,16 +258,16 @@ impl Store {
         })
         .map_err(StoreError::corrupt)?;
         sqlx::query!("INSERT INTO deployments(id,environment_id,manifest_json,template_json,variables_json,warnings_json,generation,created_at_ms,release_id,origin_json) SELECT o.id,o.environment_id,d.manifest_json,d.template_json,d.variables_json,d.warnings_json,o.generation,o.created_at_ms,d.release_id,?3 FROM operations o JOIN deployments d ON d.id=?2 WHERE o.id=?1",operation.id,deployment,origin)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!("INSERT INTO deployment_inputs(operation_id,application_json,repository_commit,fetched,tracked_branch) SELECT ?1,application_json,repository_commit,fetched,tracked_branch FROM deployment_inputs WHERE operation_id=?2",operation.id,deployment)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         let target = serde_json::to_string(&target).map_err(StoreError::corrupt)?;
         sqlx::query!(
             "UPDATE operations SET target_json=?1 WHERE id=?2",
             target,
             operation.id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let template = serde_json::from_str::<ApplicationTemplate>(&row.template_json)
@@ -283,7 +283,7 @@ impl Store {
             now,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Self::operation_event(tx, &operation.id, EventKind::TargetResolved, None, now).await?;

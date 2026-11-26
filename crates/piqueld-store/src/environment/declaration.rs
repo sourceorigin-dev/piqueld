@@ -10,7 +10,7 @@ use piqueld_core::{
     ApplicationId, EnvironmentId, EnvironmentName, EnvironmentSource, PromotedFrom,
     api::EnvironmentView,
 };
-use sqlx::{Sqlite, Transaction};
+use sqlx::SqliteConnection;
 use std::collections::BTreeMap;
 
 impl Store {
@@ -71,7 +71,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn converge_environments_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
         declarations: &[Declaration],
         accepting: Option<&EnvironmentId>,
@@ -177,7 +177,7 @@ impl Store {
 
     /// Reads the live environment named `name`.
     async fn live_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         live: &BTreeMap<EnvironmentName, EnvironmentId>,
         name: &EnvironmentName,
     ) -> Result<crate::StoredEnvironment, StoreError> {
@@ -195,7 +195,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn declare_edited_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
         before: &ApplicationSpec,
         after: &mut ApplicationSpec,

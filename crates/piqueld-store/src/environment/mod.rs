@@ -15,7 +15,7 @@ use piqueld_core::{
     EnvironmentKind, EnvironmentName, EnvironmentSource, PromotedFrom, TrackedBranch,
     manifest::RenderTarget,
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 
 /// What [`Store::write_source_on`] did to an environment's source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,7 +34,7 @@ impl Store {
     /// `sync`, initially `not_deployed`, and records its creation. Returns
     /// `AlreadyExists` when the application already has one with `name`.
     pub(super) async fn insert_environment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
         (id, name): (&EnvironmentId, &EnvironmentName),
         source: &EnvironmentSource,
@@ -55,7 +55,7 @@ impl Store {
             sync,
             now
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::constraint)?;
         Self::write_status(tx, id, ApplicationState::NotDeployed, now).await?;
@@ -79,7 +79,7 @@ impl Store {
     /// default the one `spec.manifest` names, when the application is
     /// repository-backed. Applications being deleted are `Busy`.
     pub(super) async fn create_environment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &super::StoredApplication,
         name: &EnvironmentName,
         source: Option<SourceChoice>,
@@ -124,7 +124,7 @@ impl Store {
     /// It stays resolved unless its configuration renders the name, e.g.
     /// `${{ env.name }}`. Returns whether the name changed.
     pub(super) async fn rename_environment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
         name: &EnvironmentName,
         now: i64,
@@ -164,7 +164,7 @@ impl Store {
             now,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::constraint)?;
         let message = format!("renamed environment {old} to {name}");
@@ -185,7 +185,7 @@ impl Store {
     /// track one again goes through `set_promotion_on`. Returns whether its
     /// source changed.
     pub(super) async fn set_branch_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
         branch: TrackedBranch,
         now: i64,
@@ -206,7 +206,7 @@ impl Store {
     /// (see `set_source_on`), unless the saved manifest declares its source.
     /// Returns whether its source changed.
     pub(super) async fn set_promotion_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
         promote_from: Option<EnvironmentId>,
         now: i64,
@@ -239,7 +239,7 @@ impl Store {
     /// advancing the application revision when it changed, and returns
     /// whether it did.
     async fn set_source_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
         source: EnvironmentSource,
         now: i64,
@@ -269,7 +269,7 @@ impl Store {
     /// promoted, since that deployment may already be fetching or building,
     /// unless it is `accepting` its fetched manifest, past both.
     pub(super) async fn write_source_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
         source: EnvironmentSource,
         accepting: bool,
@@ -287,7 +287,7 @@ impl Store {
             "SELECT EXISTS(SELECT 1 FROM operations WHERE environment_id=?1 AND state IN ('requested','running'))",
             id
         )
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::database)?
             != 0;
@@ -303,7 +303,7 @@ impl Store {
             now,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let message = format!(
@@ -343,7 +343,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn request_delete_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
     ) -> Result<Operation, StoreError> {
         let environment_id = id.as_str();
@@ -353,7 +353,7 @@ impl Store {
             now,
             environment_id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .rows_affected();
@@ -370,7 +370,7 @@ impl Store {
     /// live environments promote from it, and while the saved manifest
     /// declares it, since converging would create it again, empty.
     pub(super) async fn delete_environment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
     ) -> Result<Operation, StoreError> {
         Self::check_undeclared(
@@ -393,7 +393,7 @@ impl Store {
     /// # Errors
     /// Returns storage, absence, or illegal transition errors.
     pub async fn request_delete(&self, id: &EnvironmentId) -> Result<Operation, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let environment = Self::existing_environment_on(&mut tx, id.as_str()).await?;
         let result = Self::delete_environment_on(&mut tx, &environment).await?;
         Self::commit_environment_changes(tx, [id.as_str()]).await?;
@@ -408,7 +408,7 @@ impl Store {
         id: &EnvironmentId,
         expected: Option<u64>,
     ) -> Result<Operation, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let environment = Self::existing_environment_on(&mut tx, id.as_str()).await?;
         Self::check_generation(expected, environment.application.generation)?;
         let result = Self::request_deploy_on(&mut tx, &environment).await?;
@@ -423,7 +423,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn request_deploy_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
     ) -> Result<Operation, StoreError> {
         if environment.delete_intent() {
@@ -492,7 +492,7 @@ impl Store {
         operation: &Operation,
         resolved: &ResolvedApplication,
     ) -> Result<ResolvedApplication, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let mut resolved = resolved.clone();
         Box::pin(Self::bind_links_on(&mut tx, &mut resolved)).await?;
         let resolved = &resolved;
@@ -534,7 +534,7 @@ impl Store {
     /// Returns a store error or `IllegalTransition` for obsolete work.
     pub async fn publish_prepared(&self, operation: &Operation) -> Result<(), StoreError> {
         let environment_id = operation.environment_id.as_str();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let changed=sqlx::query!("UPDATE environments SET resolved_json=(SELECT target_json FROM operations WHERE id=?1),resolved_generation=(SELECT generation FROM operations WHERE id=?1) WHERE id=?2 AND ?1=(SELECT latest.id FROM operations latest WHERE latest.environment_id=environments.id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1) AND EXISTS(SELECT 1 FROM operations WHERE id=?1 AND state='running' AND target_json IS NOT NULL)",operation.id,environment_id).execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
         if changed != 1 {
             return Err(StoreError::IllegalTransition);

@@ -142,7 +142,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error; nothing is added then.
     pub async fn record_traffic(&self, tally: &TrafficTally) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         for ((route, hour), counts) in &tally.hours {
             let environment = route.environment.as_str();
             sqlx::query!(
@@ -337,7 +337,7 @@ impl Store {
             return Ok(());
         }
         let cutoff = days_ago_ms(self.traffic_days);
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         sqlx::query!("DELETE FROM traffic_hours WHERE hour_ms<?1", cutoff)
             .execute(&mut *tx)
             .await

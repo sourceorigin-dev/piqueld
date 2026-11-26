@@ -8,7 +8,7 @@ use piqueld_core::{
     api::{BuildLogChunk, BuildLogPage, BuildRecord, BuildState, LogStream, Page},
     manifest::ValidatedSource as Source,
 };
-use sqlx::{QueryBuilder, Sqlite, Transaction};
+use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
 
 /// A succeeded build whose image another build may reuse; see
 /// [`Store::reusable_builds`].
@@ -189,7 +189,7 @@ impl Store {
         bytes: &[u8],
         stream: LogStream,
     ) -> Result<LogAppend, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let appended = self.append_build_log_on(&mut tx, id, bytes, stream).await?;
         tx.commit().await.map_err(StoreError::database)?;
         Ok(appended)
@@ -197,7 +197,7 @@ impl Store {
     /// [`Self::append_build_log`] in `tx`.
     async fn append_build_log_on(
         &self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: i64,
         bytes: &[u8],
         stream: LogStream,
@@ -208,7 +208,7 @@ impl Store {
             "SELECT log_bytes,log_expired,log_truncated,state FROM builds WHERE id=?1",
             id
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .ok_or(StoreError::NotFound)?;
@@ -240,7 +240,7 @@ impl Store {
                 stream,
                 timestamp
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
             offset += i64::try_from(chunk.len()).map_err(StoreError::invalid_input)?;
@@ -253,7 +253,7 @@ impl Store {
             truncated,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(if truncated {
@@ -308,7 +308,7 @@ impl Store {
         if outcome.state == BuildState::Running {
             return Err(StoreError::InvalidInput);
         }
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         for (stream, bytes) in &ending.output {
             if self
                 .append_build_log_on(&mut tx, id, bytes, *stream)
@@ -425,7 +425,7 @@ impl Store {
     /// Returns a storage error.
     pub async fn prune_build_logs(&self) -> Result<(), StoreError> {
         let cutoff = days_ago_ms(self.build_history.log_retention_days.into());
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         sqlx::query!("DELETE FROM build_log_chunks WHERE build_id IN (SELECT id FROM builds WHERE finished_at_ms<?1 AND log_expired=0)",cutoff).execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!(
             "UPDATE builds SET log_expired=1,log_bytes=0 WHERE finished_at_ms<?1 AND log_expired=0",

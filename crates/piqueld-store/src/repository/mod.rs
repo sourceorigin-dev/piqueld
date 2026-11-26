@@ -13,7 +13,7 @@ use piqueld_core::{
     api::{DeploymentOrigin, DiagnosticView},
     manifest::{ApplicationTemplate, Rendering, RepositoryManifest},
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 
 /// A deployment's candidate manifest and whether it is the fetched snapshot.
 pub struct DeploymentInput {
@@ -52,7 +52,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn insert_deployment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         operation: &Operation,
         application: &ApplicationTemplate,
     ) -> Result<(), StoreError> {
@@ -64,7 +64,7 @@ impl Store {
             json,
             environment
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())
@@ -133,7 +133,7 @@ impl Store {
         let generated = self
             .generated_secrets(&operation.environment_id, application)
             .await?;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let app_id = operation.environment_id.as_str();
         let changed = sqlx::query!("UPDATE deployment_inputs SET application_json=?1,repository_commit=?2,fetched_json=?5,fetched=1 WHERE operation_id=?3 AND fetched=0 AND operation_id=(SELECT id FROM operations WHERE environment_id=?4 ORDER BY created_at_ms DESC,id DESC LIMIT 1) AND EXISTS(SELECT 1 FROM operations WHERE id=?3 AND state='running')", json,commit,operation.id,app_id,fetched).execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
         if changed != 1 {
@@ -178,7 +178,7 @@ impl Store {
     /// holds a name the manifest declares. Called in the transaction that saves
     /// the prepared runtime target.
     pub(super) async fn accept_deployment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         operation: &Operation,
         fetching: &EnvironmentKind,
     ) -> Result<(), StoreError> {
@@ -186,7 +186,7 @@ impl Store {
             "SELECT application_json,repository_json,fetched_json FROM deployment_inputs WHERE operation_id=?1 AND fetched=1 AND repository_commit IS NOT NULL",
             operation.id
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let Some(row) = row else {
@@ -216,7 +216,7 @@ impl Store {
             now,
             environment
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .rows_affected();
@@ -261,7 +261,7 @@ impl Store {
     /// `operation` at the new one unless its environment's source changed. Returns
     /// the rows changed.
     async fn read_repository_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         operation: &Operation,
         stored: &super::StoredApplication,
         (deployed, (captured, fetched)): (ApplicationTemplate, (Option<String>, Option<String>)),
@@ -273,7 +273,7 @@ impl Store {
             .map(|read| read.spec_hash());
         let pushed = fetched.is_some() && fetched != captured && fetched != read;
         let saved = if pushed { &deployed } else { application };
-        let source = async |tx: &mut Transaction<'_, Sqlite>| {
+        let source = async |tx: &mut SqliteConnection| {
             Self::environment_on(tx, operation.environment_id.as_str())
                 .await
                 .map(|environment| environment.map(|environment| environment.environment.source))
@@ -304,7 +304,7 @@ impl Store {
                 operation.id,
                 previous
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }
@@ -319,7 +319,7 @@ impl Store {
             now,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .rows_affected())
