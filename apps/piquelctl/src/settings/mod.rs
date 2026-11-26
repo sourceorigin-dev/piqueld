@@ -8,6 +8,7 @@ use crate::{
 use clap::Subcommand;
 use piqueld_client::{Client, system::Setting};
 
+/// `piquelctl settings` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum SettingsCommand {
     /// List the host's settings, read-only, and every daemon setting with its

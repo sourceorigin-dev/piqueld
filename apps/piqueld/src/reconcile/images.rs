@@ -304,7 +304,7 @@ impl<D: DockerApi> Controller<D> {
             let next = last.map_or_else(tokio::time::Instant::now, |last| last + interval);
             tokio::select! {
                 () = cancellation.cancelled() => return,
-                () = tokio::time::sleep_until(next) => {}
+                () = piqueld_core::wait::pause(next) => {}
                 () = self.images.requested.notified() => {}
                 Ok(()) = settings.changed() => continue,
             }

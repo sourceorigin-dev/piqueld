@@ -383,6 +383,7 @@ pub(crate) enum Command {
     /// settings, such as its listeners, only change in the daemon's
     /// configuration file, with a restart. `settings` alone lists them all.
     Settings {
+        /// The settings operation to run; none lists them.
         #[command(subcommand)]
         command: Option<crate::settings::SettingsCommand>,
     },

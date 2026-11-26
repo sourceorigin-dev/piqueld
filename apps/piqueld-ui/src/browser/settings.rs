@@ -175,6 +175,7 @@ struct Field {
     /// Whether a number typed over the setting's value isn't saved, nor
     /// being saved.
     unsaved: Memo<bool>,
+    /// Whether a change is being sent.
     saving: RwSignal<bool>,
     /// What the last change did, such as `Saved` or `Reset, was 30`, and
     /// the value it left: the note says so while the setting keeps it.
