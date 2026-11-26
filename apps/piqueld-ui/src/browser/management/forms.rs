@@ -220,6 +220,14 @@ impl<T: Clone + Default + Send + Sync + 'static> RowDialog<T> {
         rows
     }
 
+    /// `rows` without the one at `index`.
+    pub(super) fn without(mut rows: Vec<T>, index: usize) -> Vec<T> {
+        if index < rows.len() {
+            rows.remove(index);
+        }
+        rows
+    }
+
     /// `add` while the dialog adds a row, `edit` while it edits one.
     pub(super) fn title(self, add: &'static str, edit: &'static str) -> Signal<&'static str> {
         let index = self.index;

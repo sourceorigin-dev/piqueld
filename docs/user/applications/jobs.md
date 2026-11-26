@@ -105,11 +105,11 @@ new version only ever runs on a migrated database.
    before the services roll out:
 
    - **In the dashboard,** open the application's **Jobs** tab and select
-     **Add job**. Enter the **Name**, pick the **Service**, and enter the
-     command, one **Command element** per row: **Add command element** adds a
-     row. Then select **Save changes**.
+     **Add job**. In the dialog, enter the **Name**, pick the **Service**, and
+     enter the command, one **Command element** per row: **Add command
+     element** adds a row. Then select **Add job**, which saves it.
 
-     ![The Jobs tab of reader: the job migrate runs miniflux -migrate in the web service's image, with a 300-second timeout and read-only volume access](../../images/applications/jobs-tab.png)
+     ![The Jobs tab of reader: one job, migrate, on web, up to 300 seconds, running miniflux -migrate](../../images/applications/jobs-tab.png)
 
    - **With `piquelctl`,** give the job's name, its service, and its command
      after `--`:
@@ -171,8 +171,9 @@ give it to its migration only.
 A job can't change what its service sets: a variable the service sets, or a
 path the service mounts something at, fails validation.
 
-- **In the dashboard,** the job's **Environment** and **Secrets** sections
-  list them: select **Add variable** or **Add secret file**.
+- **In the dashboard,** select **Edit** on the job. The **Environment** and
+  **Secrets** sections of its dialog list them: select **Add variable** or
+  **Add secret file**, then **Save job**.
 - **With `piquelctl`,** add `--env KEY=VALUE` and `--secret NAME=TARGET` to
   `job set`, once for each:
 
@@ -202,7 +203,7 @@ path the service mounts something at, fails validation.
 A job that runs longer than its timeout is stopped, and the deployment fails.
 The timeout is 300 seconds by default, and at most 86,400 (a day).
 
-- **In the dashboard,** it's the job's **Timeout (seconds)**.
+- **In the dashboard,** it's **Timeout (seconds)** in the job's dialog.
 - **With `piquelctl`,** add `--timeout-seconds` to `job set`, which also
   takes the job's service and command:
 
@@ -270,8 +271,8 @@ A migration that drops or renames something the previous version still uses
 would break that version while the job runs. To avoid it, stop the job's own
 service first:
 
-- **In the dashboard,** check **Stop service first** on the job, on the
-  **Jobs** tab, and select **Save changes**.
+- **In the dashboard,** select **Edit** on the job, on the **Jobs** tab,
+  check **Stop service first**, and select **Save job**.
 - **With `piquelctl`,** add `--stop-service on` to `job set`:
 
   ```console

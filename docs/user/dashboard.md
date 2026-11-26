@@ -215,8 +215,11 @@ lists every environment it was promoted into, deployed again by release ID, or
 restored in, with that deployment. **Deploy to \<environment>**, offered for each promoted
 environment, plans deploying the release there with that environment's current
 secrets, like `piquelctl env promote --release`, and deploys it once confirmed. The Jobs
-tab adds, edits, reorders, and removes the one-shot jobs that run before each
-rollout, with one row per command element; saving replaces only the job list.
+tab lists the one-shot jobs that run before each rollout, in the order they
+run, and adds, edits, reorders, and removes them. A job's fields, with one row
+per command element, are in its dialog; each change saves the job list at once.
+The Volumes tab lists the named volumes with the services mounting each, and
+adds, renames, and removes them in the same way.
 Jobs inherit the referenced service's startup dependencies, which start or
 update and become healthy first. Other services wait for all jobs to succeed;
 if a job fails, its dependencies return to the running deployment. A job's

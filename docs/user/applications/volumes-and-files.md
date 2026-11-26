@@ -31,7 +31,8 @@ content. Each environment gets its own volume: environments never share data.
 ### In the dashboard
 
 1. On the application's **Volumes** tab, select **Add volume** under **Named
-   volumes**, enter `data`, and select **Save changes**.
+   volumes**. In the dialog, enter `data` and select **Add volume**, which
+   saves it.
 2. On `db`'s **Volume mounts** tab, select **Add mount**, enter `data` under
    **Volume** and `/var/lib/postgresql/data` as the **Container path**, then
    select **Save changes**.

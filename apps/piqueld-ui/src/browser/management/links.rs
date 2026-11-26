@@ -27,11 +27,10 @@ fn ExportSettings() -> impl IntoView {
         ) {
             return;
         }
-        let mut rows = ExportDraft::rows(&context.manifest());
-        if index < rows.len() {
-            rows.remove(index);
-        }
-        save(rows);
+        save(RowDialog::without(
+            ExportDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <section class="card">
@@ -152,11 +151,10 @@ fn ImportSettings() -> impl IntoView {
         if !confirm("Stop importing this service? Services lose it at the next deployment.") {
             return;
         }
-        let mut rows = ImportDraft::rows(&context.manifest());
-        if index < rows.len() {
-            rows.remove(index);
-        }
-        save(rows);
+        save(RowDialog::without(
+            ImportDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <section class="card">

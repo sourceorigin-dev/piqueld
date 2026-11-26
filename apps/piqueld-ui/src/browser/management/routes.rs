@@ -207,11 +207,10 @@ pub(super) fn RouteSettings() -> impl IntoView {
         ) {
             return;
         }
-        let mut rows = RouteDraft::rows(&context.manifest());
-        if index < rows.len() {
-            rows.remove(index);
-        }
-        save(rows);
+        save(RowDialog::without(
+            RouteDraft::rows(&context.manifest()),
+            index,
+        ));
     };
     view! {
         <div class="stack">
