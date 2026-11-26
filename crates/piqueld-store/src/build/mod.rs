@@ -212,7 +212,10 @@ impl Store {
         .await
         .map_err(StoreError::database)?
         .ok_or(StoreError::NotFound)?;
-        if row.log_expired != 0 || row.log_truncated != 0 || row.state != "running" {
+        if row.log_expired != 0
+            || row.log_truncated != 0
+            || row.state != BuildState::Running.as_str()
+        {
             return Ok(LogAppend::Closed);
         }
         let remaining = i64::from(self.build_history.log_max_bytes)

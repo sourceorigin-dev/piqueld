@@ -1,11 +1,13 @@
 //! Fixtures shared by the store's tests.
 use super::{
-    Actor, ApplicationId, Caller, CredentialKind, MIGRATIONS, NewCredential, OperationState, Store,
-    StoreError,
+    Actor, ApplicationId, Caller, MIGRATIONS, NewCredential, OperationState, Store, StoreError,
 };
 use crate::{Mutation, MutationResponse};
 use piqueld_core::{
-    EnvironmentId, NormalizedApplication, access::Grants, api::SavedApplication, auth::User,
+    EnvironmentId, NormalizedApplication,
+    access::Grants,
+    api::SavedApplication,
+    auth::{CredentialKind, User},
     manifest::ValidatedTemplate,
 };
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};

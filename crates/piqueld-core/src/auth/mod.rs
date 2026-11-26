@@ -213,6 +213,19 @@ pub struct PasskeyView {
     pub name: String,
 }
 
+string_enum! {
+    /// Credential classes. Only browser sessions have an idle timeout.
+    pub enum CredentialKind {
+        /// Dashboard session cookie.
+        Browser => "browser",
+        /// Session approved for the command-line client.
+        Cli => "cli",
+        /// Named API token.
+        Token => "token",
+    }
+}
+compared_as_string!(CredentialKind);
+
 /// Revocable browser session, CLI session, or automation token metadata.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CredentialView {

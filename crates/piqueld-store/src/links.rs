@@ -1,5 +1,5 @@
 //! Private links between environments, resolved from their active targets.
-use super::{Store, StoreError};
+use super::{Store, StoreError, application::Kind};
 use piqueld_core::access::Scope;
 use piqueld_core::links::{Bindings, Link, LinkParty, LinkReport};
 use piqueld_core::manifest::{ValidatedExport, ValidatedImport};
@@ -39,7 +39,7 @@ impl Store {
                     application: ApplicationName::parse(row.application)
                         .map_err(StoreError::corrupt)?,
                     name: row.name,
-                    preview: row.kind == "preview",
+                    preview: row.kind == Kind::Preview.as_str(),
                     exports: decode(row.exports)?,
                     imports: decode(row.imports)?,
                     bindings: decode(row.bindings)?,

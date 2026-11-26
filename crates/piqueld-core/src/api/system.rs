@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::{DnsStatus, IngressStatus, PreviewUsage, TailnetStatus, TelemetryStatus};
+use crate::names::string_enum;
 
 /// Current control-plane status.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
@@ -285,29 +286,17 @@ impl SystemCheckId {
     }
 }
 
-/// A check's verdict. Only `fail` makes `piquelctl doctor` exit nonzero.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum CheckStatus {
-    /// As expected.
-    Pass,
-    /// Works, but likely not as intended.
-    Warn,
-    /// Broken; follow the next step.
-    Fail,
-    /// Not applicable to this configuration, or not available to check.
-    Skip,
-}
-
-impl CheckStatus {
-    /// Lowercase name, as serialized.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Pass => "pass",
-            Self::Warn => "warn",
-            Self::Fail => "fail",
-            Self::Skip => "skip",
-        }
+string_enum! {
+    #[serde]
+    /// A check's verdict. Only `fail` makes `piquelctl doctor` exit nonzero.
+    pub enum CheckStatus {
+        /// As expected.
+        Pass => "pass",
+        /// Works, but likely not as intended.
+        Warn => "warn",
+        /// Broken; follow the next step.
+        Fail => "fail",
+        /// Not applicable to this configuration, or not available to check.
+        Skip => "skip",
     }
 }

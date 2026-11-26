@@ -18,8 +18,8 @@ pub use lineage::Cascade;
 use lineage::{AccountRoots, Issued};
 use piqueld_core::access::{Denied, GlobalPermission, Grants, Permission, Reauthenticate};
 use piqueld_core::auth::{
-    Account, CredentialView, Directory, HostOperator, InvitationView, OperatorSessionView,
-    PasskeyView, User,
+    Account, CredentialKind, CredentialView, Directory, HostOperator, InvitationView,
+    OperatorSessionView, PasskeyView, User,
 };
 use piqueld_core::tailnet::TailnetBinding;
 use sqlx::SqliteConnection;
@@ -66,39 +66,6 @@ impl fmt::Display for Lockout {
 }
 
 impl std::error::Error for Lockout {}
-
-/// Credential classes. Only browser sessions have an idle timeout.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CredentialKind {
-    /// Dashboard session cookie.
-    Browser,
-    /// Session approved for the command-line client.
-    Cli,
-    /// Named API token.
-    Token,
-}
-
-impl CredentialKind {
-    /// Value stored in the `kind` column.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Browser => "browser",
-            Self::Cli => "cli",
-            Self::Token => "token",
-        }
-    }
-
-    /// Parses a stored kind, reporting unknown values as corruption.
-    pub(super) fn parse(value: &str) -> Result<Self, StoreError> {
-        match value {
-            "browser" => Ok(Self::Browser),
-            "cli" => Ok(Self::Cli),
-            "token" => Ok(Self::Token),
-            _ => Err(StoreError::Corrupt),
-        }
-    }
-}
 
 /// How recently a credential's holder proved itself with a passkey, which
 /// sensitive actions, like creating credentials, require (see
@@ -998,7 +965,7 @@ impl Store {
             return Ok(None);
         };
         let proof = Proof {
-            kind: CredentialKind::parse(&row.kind)?,
+            kind: CredentialKind::parse(&row.kind).ok_or(StoreError::Corrupt)?,
             authenticated_at: row.authenticated_at,
         };
         let authority = Authority::read(

@@ -3,6 +3,7 @@ use crate::testing::{credential, template, user};
 use crate::*;
 use crate::{Mutation, MutationResponse};
 use piqueld_core::Phase;
+use piqueld_core::auth::CredentialKind;
 use piqueld_core::observability::{
     ApplicationSelection, DeliveryState, DestinationKind, DestinationName, DestinationRequest,
     DestinationSettings, Diagnostic, EventFilter, EventScope, NotificationCategory,

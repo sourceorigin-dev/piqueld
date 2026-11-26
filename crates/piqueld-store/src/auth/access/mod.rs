@@ -268,7 +268,7 @@ impl Caller<'_> {
         .map_err(StoreError::database)?
         .ok_or(StoreError::CredentialRevoked)?;
         let proof = super::Proof {
-            kind: super::CredentialKind::parse(&row.kind)?,
+            kind: super::CredentialKind::parse(&row.kind).ok_or(StoreError::Corrupt)?,
             authenticated_at: row.authenticated_at,
         };
         Authority::read(db, row.user_id, self.credential_id, row.scoped, proof).await

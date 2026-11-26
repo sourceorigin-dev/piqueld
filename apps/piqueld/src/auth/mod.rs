@@ -11,8 +11,9 @@ pub(crate) use throttle::bucket as network;
 mod tests;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use piqueld_core::auth::CredentialKind;
 use piqueld_core::auth::{AuthStatus, SetupLink};
-use piqueld_store::{CredentialKind, NewCredential, now_secs};
+use piqueld_store::{NewCredential, now_secs};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 use tokio::sync::Mutex;

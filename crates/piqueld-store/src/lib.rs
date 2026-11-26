@@ -26,8 +26,8 @@ mod observability;
 pub use audit::{AuditOrigin, AuditPrincipal, AuditRequest, Author, NewAuditEvent, Recorded};
 pub use auth::access::{Actor, Attribution, Caller, EnvironmentOwner, Visibility};
 pub use auth::{
-    Cascade, CredentialKind, DirectoryView, Invitation, Lockout, NewCredential, NewInvitation,
-    NewPasskey, PasskeyOwner, Proof, SecurityEvent,
+    Cascade, DirectoryView, Invitation, Lockout, NewCredential, NewInvitation, NewPasskey,
+    PasskeyOwner, Proof, SecurityEvent,
 };
 pub use backup::{DatabaseCopy, DatabaseFile, DatabaseIdentity};
 pub use build::{BuildOutcome, LogAppend, LogEnding, ReusableBuild};
