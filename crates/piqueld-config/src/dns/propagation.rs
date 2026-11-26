@@ -12,6 +12,7 @@ use hickory_resolver::{
     proto::rr::{Name, RData},
 };
 use piqueld_core::manifest::Hostname;
+use piqueld_core::wait;
 use std::{
     collections::BTreeSet,
     net::{IpAddr, SocketAddr},
@@ -121,7 +122,7 @@ impl Dns {
                         tracing::debug!(%zone, name, error = format!("{error:#}"), "TXT propagation check failed");
                     }
                 }
-                tokio::time::sleep(Self::POLL_INTERVAL).await;
+                wait::pause(Self::POLL_INTERVAL).await;
             }
         })
         .await

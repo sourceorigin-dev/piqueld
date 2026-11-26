@@ -31,6 +31,7 @@ use piqueld_core::resource::{
     ObservedNetwork, ObservedService, ObservedTask, ObservedVolume, SERVICE_LABEL, TaskDiagnostic,
     TaskState, image_repository,
 };
+use piqueld_core::wait;
 use piqueld_core::{
     DockerNetworkName, EnvironmentId, InstanceId, ObservedApplication, ResourceKind,
     docker_resource_name, docker_resource_readable_prefix,
@@ -565,7 +566,7 @@ pub async fn resolve_image_digest(
                 return Err(DockerError::ImageResolution("find repository digest"));
             }
             if attempt + 1 < IMAGE_RESOLVE_ATTEMPTS {
-                tokio::time::sleep(IMAGE_RESOLVE_RETRY_DELAY).await;
+                wait::pause(IMAGE_RESOLVE_RETRY_DELAY).await;
             }
             continue;
         };

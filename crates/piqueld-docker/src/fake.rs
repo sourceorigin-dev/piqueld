@@ -14,6 +14,7 @@ use piqueld_core::resource::{
     ObservedApplication, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume,
     RuntimeMessage, SERVICE_LABEL, SPEC_HASH_LABEL, TaskState, image_repository,
 };
+use piqueld_core::wait;
 use piqueld_core::{EnvironmentId, InstanceId, Sha256Digest};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -691,7 +692,7 @@ impl DockerApi for FakeDocker {
         futures_util::stream::unfold(0_u64, move |request| {
             let line = format!("{id} served request {request}");
             async move {
-                tokio::time::sleep(LOG_INTERVAL).await;
+                wait::pause(LOG_INTERVAL).await;
                 let lines = super::LogLines {
                     stream: Some(piqueld_core::api::LogStream::Stdout),
                     lines: vec![(super::now_ns(), line)],
