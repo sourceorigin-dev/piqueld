@@ -68,7 +68,7 @@ use piqueld_core::{
 pub use piqueld_core::{ApplicationState, Operation, OperationKind, OperationState};
 use serde::de::{DeserializeOwned, value::StrDeserializer};
 use sqlx::{
-    Connection as _, Sqlite, SqlitePool, Transaction,
+    Connection as _, Sqlite, SqliteConnection, SqlitePool, Transaction,
     pool::PoolConnection,
     query::Query,
     sqlite::{
@@ -786,7 +786,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError::SchemaMismatch`] when the two disagree.
-    async fn schema_version_on(connection: &mut sqlx::SqliteConnection) -> Result<u64, StoreError> {
+    async fn schema_version_on(connection: &mut SqliteConnection) -> Result<u64, StoreError> {
         let version: i64 = sqlx::query_scalar!("PRAGMA user_version")
             .fetch_one(&mut *connection)
             .await
@@ -843,13 +843,10 @@ impl Store {
     }
 
     /// Sets `PRAGMA user_version` inside a migration transaction.
-    async fn set_user_version(
-        tx: &mut Transaction<'_, Sqlite>,
-        version: usize,
-    ) -> Result<(), StoreError> {
+    async fn set_user_version(tx: &mut SqliteConnection, version: usize) -> Result<(), StoreError> {
         let statement = format!("PRAGMA user_version = {version}");
         sqlx::query(&statement)
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map(|_| ())
             .map_err(StoreError::database)
@@ -861,21 +858,22 @@ impl Store {
         &self.instance_id
     }
 
-    /// Opens a write transaction, returning it with the writer-queue guard that
-    /// must be held until commit or rollback.
+    /// Opens a write transaction, holding this writer's turn in the queue
+    /// until it commits or rolls back.
     /// Writers queue asynchronously before acquiring `SQLite`'s single write lock.
     /// Competing `BEGIN` requests otherwise occupy pool workers and can starve a
     /// transaction under concurrent reconciliation.
-    async fn begin_immediate(
-        &self,
-    ) -> Result<(Writer<'_>, Transaction<'static, Sqlite>), StoreError> {
+    async fn begin_immediate(&self) -> Result<WriteTransaction<'_>, StoreError> {
         let writer = self.writers.lock().await;
         let tx = self
             .pool
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(StoreError::database)?;
-        Ok((writer, tx))
+        Ok(WriteTransaction {
+            tx,
+            _writer: writer,
+        })
     }
 
     /// Refreshes the query planner's statistics of tables whose size changed
@@ -925,6 +923,61 @@ impl Store {
     ) -> Result<SqliteQueryResult, sqlx::Error> {
         let _writer = self.writers.lock().await;
         query.execute(&self.pool).await
+    }
+}
+
+/// A write transaction from [`Store::begin_immediate`], holding its writer's
+/// turn in the queue. It derefs to its connection; dropping it uncommitted
+/// queues its rollback before the turn passes on.
+struct WriteTransaction<'a> {
+    /// The transaction, declared before `_writer` so it drops first.
+    tx: Transaction<'static, Sqlite>,
+    /// This writer's turn in the queue, given up when it drops.
+    _writer: Writer<'a>,
+}
+
+impl<'a> WriteTransaction<'a> {
+    /// Commits the transaction, then gives up the writer's turn.
+    async fn commit(self) -> Result<(), sqlx::Error> {
+        self.commit_holding().await.map(drop)
+    }
+
+    /// Commits the transaction, keeping the writer's turn until the returned
+    /// guard drops, for work after the commit that other writers must not
+    /// interleave with, such as moving the secret key aside.
+    async fn commit_holding(self) -> Result<Writer<'a>, sqlx::Error> {
+        let Self {
+            tx,
+            _writer: writer,
+        } = self;
+        tx.commit().await?;
+        Ok(writer)
+    }
+
+    /// Rolls the transaction back, keeping the writer's turn until the
+    /// returned guard drops.
+    #[cfg(test)]
+    async fn rollback(self) -> Result<Writer<'a>, sqlx::Error> {
+        let Self {
+            tx,
+            _writer: writer,
+        } = self;
+        tx.rollback().await?;
+        Ok(writer)
+    }
+}
+
+impl std::ops::Deref for WriteTransaction<'_> {
+    type Target = SqliteConnection;
+
+    fn deref(&self) -> &SqliteConnection {
+        &self.tx
+    }
+}
+
+impl std::ops::DerefMut for WriteTransaction<'_> {
+    fn deref_mut(&mut self) -> &mut SqliteConnection {
+        &mut self.tx
     }
 }
 
@@ -1475,7 +1528,7 @@ mod tests {
                 .expect("begin with succeeds"),
         );
         drop(connection);
-        let (_writer, tx) = store
+        let tx = store
             .begin_immediate()
             .await
             .expect("begin immediate succeeds");

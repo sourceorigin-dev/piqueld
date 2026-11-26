@@ -28,7 +28,7 @@ async fn browser_session() -> (tempfile::TempDir, Store) {
 async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation() {
     let (_dir, store) = browser_session().await;
 
-    let (writer, tx) = store
+    let tx = store
         .begin_immediate()
         .await
         .expect("begin immediate succeeds");
@@ -42,7 +42,7 @@ async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation
     tokio::time::timeout(Duration::from_millis(100), &mut refresh)
         .await
         .expect_err("`tokio::time::timeout` should be rejected");
-    tx.rollback().await.expect("rollback succeeds");
+    let writer = tx.rollback().await.expect("rollback succeeds");
     let mut connections = Vec::new();
     for _ in 0..8 {
         connections.push(
@@ -74,7 +74,7 @@ async fn credential_reads_skip_the_writer_queue_and_refreshes_respect_revocation
 async fn refreshes_waiting_for_writers_respect_idle_expiry() {
     let (_dir, store) = browser_session().await;
     store.age_auth_credentials(SESSION_IDLE_SECS - 1).await;
-    let (writer, tx) = store
+    let tx = store
         .begin_immediate()
         .await
         .expect("begin immediate succeeds");
@@ -85,8 +85,7 @@ async fn refreshes_waiting_for_writers_respect_idle_expiry() {
     store.writer_waiting().await;
     // wall-clock: refreshes judge expiry by the system clock, which paused
     wait::pause(Duration::from_secs(1)).await;
-    tx.rollback().await.expect("rollback succeeds");
-    drop(writer);
+    drop(tx.rollback().await.expect("rollback succeeds"));
     assert!(
         !refresh
             .await

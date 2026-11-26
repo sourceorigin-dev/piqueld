@@ -14,7 +14,7 @@ use piqueld_core::{
     compile_release,
     manifest::SecretSource,
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 
 /// Why a promotion, or making an environment promoted, is refused.
@@ -403,7 +403,7 @@ impl Store {
     /// succeeded one of that same source, and running the release itself
     /// needs no source. Builds and restores are never promoted.
     async fn check_origin_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         target: &StoredEnvironment,
         from: &PromotedFrom,
         promotion: &Promotion,
@@ -454,7 +454,7 @@ impl Store {
     /// roots, so callers holding cleanup off may let go once this commits.
     pub(super) async fn accept_promotion_on(
         &self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         target: &StoredEnvironment,
         promotion: &Promotion,
         instance: InstanceId,
@@ -507,13 +507,13 @@ impl Store {
             serde_json::to_string(&resolved).map_err(StoreError::corrupt)?,
         );
         sqlx::query!("INSERT INTO deployments(id,environment_id,manifest_json,template_json,variables_json,generation,created_at_ms,release_id,origin_json) SELECT id,environment_id,?2,?3,?4,generation,created_at_ms,?5,?6 FROM operations WHERE id=?1",operation.id,manifest,template,variables,release_id,origin)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!(
             "UPDATE operations SET target_json=?1 WHERE id=?2",
             target_json,
             operation.id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         let id = target.id().as_str();
@@ -525,7 +525,7 @@ impl Store {
             now,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Self::operation_event(tx, &operation.id, EventKind::TargetResolved, None, now).await?;

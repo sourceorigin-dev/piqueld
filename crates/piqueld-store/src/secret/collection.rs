@@ -63,7 +63,7 @@ impl Store {
             environment.as_str(),
             serde_json::to_string(swarm_names).map_err(StoreError::corrupt)?,
         );
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         sqlx::query!(
             "DELETE FROM secret_versions WHERE environment_id=?1 AND swarm_name IN (SELECT value FROM json_each(?2))",
             environment,

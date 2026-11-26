@@ -261,7 +261,7 @@ impl<'a, A> Author<'a, A> {
     /// Returns storage errors, which roll the change back too.
     pub(crate) async fn commit_recorded(
         self,
-        mut tx: sqlx::Transaction<'_, sqlx::Sqlite>,
+        mut tx: crate::WriteTransaction<'_>,
         status: u16,
         change: Option<&str>,
         target: (Option<&str>, Option<&str>),
@@ -278,7 +278,7 @@ impl<'a, A> Author<'a, A> {
     /// Returns storage errors, which roll the change back too.
     pub(crate) async fn commit_signed_in(
         self,
-        mut tx: sqlx::Transaction<'_, sqlx::Sqlite>,
+        mut tx: crate::WriteTransaction<'_>,
         who: AuditPrincipal<'_>,
         change: &str,
     ) -> Result<(), StoreError> {
@@ -306,7 +306,7 @@ impl Appended<'_> {
     }
 
     /// Commits `tx`, then notes the record.
-    async fn commit(self, tx: sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<(), StoreError> {
+    async fn commit(self, tx: crate::WriteTransaction<'_>) -> Result<(), StoreError> {
         tx.commit().await.map_err(StoreError::database)?;
         self.committed();
         Ok(())
@@ -477,7 +477,7 @@ impl Store {
         event: &NewAuditEvent,
         created_at_ms: i64,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::append_audit_on(&mut tx, event, created_at_ms).await?;
         tx.commit().await.map_err(StoreError::database)
     }
@@ -727,7 +727,7 @@ impl Store {
     /// prunes, those before the oldest one created at or after `cutoff`,
     /// returning whether it pruned any.
     async fn prune_audit_batch(&self, cutoff: i64) -> Result<bool, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let newest = sqlx::query_scalar!(
             r#"SELECT MAX(id) AS "id: i64" FROM (SELECT id FROM audit_events WHERE id < IFNULL((SELECT MIN(id) FROM audit_events WHERE created_at_ms >= ?1),id+1) ORDER BY id LIMIT ?2)"#,
             cutoff,

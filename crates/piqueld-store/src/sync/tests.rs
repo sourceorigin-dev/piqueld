@@ -382,7 +382,7 @@ async fn a_deployment_records_its_head_only_while_it_follows_that_branch_and_rep
         let store = &store;
         let id = id.clone();
         async move {
-            let (_writer, mut tx) = store
+            let mut tx = store
                 .begin_immediate()
                 .await
                 .expect("begin immediate succeeds");
@@ -469,7 +469,7 @@ async fn snapshot_deployed(
         panic!("preview")
     };
     let (id, operation) = (created.preview.id, created.operation.operation_id);
-    let (_writer, mut tx) = store
+    let mut tx = store
         .begin_immediate()
         .await
         .expect("begin immediate succeeds");

@@ -4,7 +4,7 @@ use super::{Store, StoreError, acceptance::Accepted};
 use piqueld_core::EventKind;
 use piqueld_core::api::DiagnosticView;
 use piqueld_core::{EnvironmentId, PlanDiagnostic, ResolvedApplication, ServiceName};
-use sqlx::{Sqlite, Transaction};
+use sqlx::SqliteConnection;
 
 impl Store {
     /// Whether environment `id` is granted telemetry and not being deleted.
@@ -79,7 +79,7 @@ impl Store {
     /// Previews are never granted it: they are `NotFound`. Nothing it
     /// deploys changes, so the application revision stays.
     pub(super) async fn set_telemetry_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: EnvironmentId,
         granted: bool,
         now: i64,
@@ -97,7 +97,7 @@ impl Store {
                 now,
                 row
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
             let name = &environment.environment.name;

@@ -4,7 +4,7 @@ use super::{
     ApplicationState, EnvironmentId, EnvironmentStatus, Store, StoreError, decode_name, now_ms,
 };
 use piqueld_core::EventKind;
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 
 impl Store {
     /// Reads the environment's last observed status.
@@ -54,7 +54,7 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let now = now_ms();
         let state = state.as_str();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let changed = sqlx::query!("UPDATE environment_status SET state=?1,message=?2,updated_at_ms=?3 WHERE (state!=?1 OR message IS NOT ?2) AND environment_id=(SELECT environment_id FROM operations WHERE id=?4) AND ?4=(SELECT latest.id FROM operations latest WHERE latest.environment_id=environment_status.environment_id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1)",state,message,now,operation_id)
             .execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
         if changed == 1 {
@@ -75,14 +75,14 @@ impl Store {
     /// Unconditionally upserts an environment's status within `tx`, clearing
     /// its message; callers are responsible for operation guards.
     pub(super) async fn write_status(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         state: ApplicationState,
         now: i64,
     ) -> Result<(), StoreError> {
         let state = state.as_str();
         sqlx::query!("INSERT INTO environment_status(environment_id,state,message,updated_at_ms) VALUES(?1,?2,NULL,?3) ON CONFLICT(environment_id) DO UPDATE SET state=excluded.state,message=excluded.message,updated_at_ms=excluded.updated_at_ms",id,state,now)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         Ok(())
     }
 
@@ -157,7 +157,7 @@ impl Store {
         }) {
             return Ok(());
         }
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let changed=sqlx::query!("UPDATE environment_status SET runtime_health=?1 WHERE runtime_health IS NOT ?1 AND environment_id=(SELECT environment_id FROM operations WHERE id=?2) AND ?2=(SELECT latest.id FROM operations latest WHERE latest.environment_id=environment_status.environment_id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1)",health,operation_id).execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
         sqlx::query!("UPDATE environment_status SET health_observed_at_ms=?1 WHERE environment_id=(SELECT environment_id FROM operations WHERE id=?2) AND ?2=(SELECT id FROM operations WHERE environment_id=environment_status.environment_id ORDER BY created_at_ms DESC,id DESC LIMIT 1)",now,operation_id).execute(&mut *tx).await.map_err(StoreError::database)?;
         if changed == 1 {

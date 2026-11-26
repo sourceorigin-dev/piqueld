@@ -9,7 +9,7 @@ use piqueld_core::{
         NotificationDelivery, NotificationSubject,
     },
 };
-use sqlx::{Sqlite, Transaction};
+use sqlx::SqliteConnection;
 
 /// How long a dependency or service failure must be observed continuously
 /// before it notifies.
@@ -123,7 +123,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let operate = piqueld_core::access::Permission::Global(
             piqueld_core::access::GlobalPermission::SystemOperate,
         );
@@ -246,7 +246,7 @@ impl Store {
         if events.items.is_empty() {
             return Ok(());
         }
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let current =
             sqlx::query_scalar!("SELECT event_id FROM notification_cursor WHERE singleton=1")
                 .fetch_one(&mut *tx)
@@ -291,7 +291,7 @@ impl Store {
     /// ```
     async fn process_notification_event(
         &self,
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         event: &Event,
     ) -> Result<(), StoreError> {
         let app = (event.scope == EventScope::Application)
@@ -312,7 +312,7 @@ impl Store {
             }
             let operation = event.operation_id.as_deref();
             let kind = sqlx::query_scalar!("SELECT kind FROM operations WHERE id=?1", operation)
-                .fetch_optional(&mut **tx)
+                .fetch_optional(&mut *tx)
                 .await
                 .map_err(StoreError::database)?;
             if app.is_some() && kind.is_some_and(|kind| kind != "delete") {
@@ -369,7 +369,7 @@ impl Store {
             "SELECT notified FROM notification_conditions WHERE key=?1",
             key,
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         if notified.is_none() {
@@ -383,7 +383,7 @@ impl Store {
                 event.id,
                 event.created_at_ms,
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
             Self::enqueue(tx, event.id, category).await?;
@@ -393,7 +393,7 @@ impl Store {
     /// Queues a delivery of `event` to every enabled destination in its
     /// `notification_audience` receiving `category` since before it.
     async fn enqueue(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         event: i64,
         category: NotificationCategory,
     ) -> Result<(), StoreError> {
@@ -407,7 +407,7 @@ impl Store {
             event,
             category,
         )
-        .fetch_all(&mut **tx)
+        .fetch_all(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         for destination in destinations {
@@ -421,7 +421,7 @@ impl Store {
     /// returns its ID, new or existing. The delivery keeps the current names
     /// of the event's application and environment as its subject.
     async fn enqueue_destination(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         event: i64,
         category: &str,
         destination: &str,
@@ -447,7 +447,7 @@ impl Store {
             category,
             now,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         sqlx::query_scalar!(
@@ -457,7 +457,7 @@ impl Store {
             name,
             category,
         )
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::database)
     }
@@ -467,7 +467,7 @@ impl Store {
     /// `notification_recovery_sources` so the recovery is sent only after the
     /// failure is acknowledged.
     async fn close_condition(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         key: &str,
         event: i64,
     ) -> Result<(), StoreError> {
@@ -475,7 +475,7 @@ impl Store {
             "SELECT notified,category,event_id FROM notification_conditions WHERE key=?1",
             key,
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         if let Some(condition) = condition.filter(|condition| condition.notified != 0) {
@@ -493,7 +493,7 @@ impl Store {
                 recovery,
                 event,
             )
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *tx)
             .await
             .map_err(StoreError::database)?;
             for failure in failures {
@@ -512,13 +512,13 @@ impl Store {
                     failure.id,
                     key,
                 )
-                .execute(&mut **tx)
+                .execute(&mut *tx)
                 .await
                 .map_err(StoreError::database)?;
             }
         }
         sqlx::query!("DELETE FROM notification_conditions WHERE key=?1", key,)
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         Ok(())
@@ -527,7 +527,7 @@ impl Store {
     /// Inserts a `dependency_health_changed` event (with a diagnostic when
     /// failing) and returns its row id. Daemon keys must be a `DiagnosticCode`.
     async fn record_health_transition(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         key: &str,
         application: Option<&str>,
         failed: bool,
@@ -546,7 +546,7 @@ impl Store {
                 JOIN applications a ON a.id=v.application_id WHERE v.id=?1",
                 id,
             )
-            .fetch_optional(&mut **tx)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(StoreError::database)?
             .or_else(|| Some(id.to_owned())),
@@ -596,7 +596,7 @@ impl Store {
             observed,
             event_kind,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .last_insert_rowid();
@@ -619,7 +619,7 @@ impl Store {
         observed: i64,
         max_gap_ms: i64,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         if let Some(application) = application {
             let exists = sqlx::query_scalar!(
                 "SELECT COUNT(*) FROM environments WHERE id=?1 AND delete_intent=0",
@@ -701,7 +701,7 @@ impl Store {
     /// window after an observation gap, and notifies once it has failed
     /// continuously for [`FAILURE_THRESHOLD_MS`].
     async fn notify_sustained_failure(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         condition_key: &str,
         category: NotificationCategory,
         gap: bool,
@@ -715,7 +715,7 @@ impl Store {
             observed,
             condition_key,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         if let Some(condition) = sqlx::query!(
@@ -723,7 +723,7 @@ impl Store {
             condition_key,
             FAILURE_THRESHOLD_MS,
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)? {
             Self::enqueue(tx, condition.event_id, category).await?;
@@ -731,7 +731,7 @@ impl Store {
                 "UPDATE notification_conditions SET notified=1 WHERE key=?1",
                 condition_key,
             )
-            .execute(&mut **tx)
+            .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         }
@@ -786,7 +786,7 @@ impl Store {
     pub async fn claim_delivery(
         &self,
     ) -> Result<Option<(NotificationDelivery, DestinationRow)>, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let now = now_ms();
         Self::settle_expired_deliveries(&mut tx, now).await?;
         let (row, category, destination) = loop {
@@ -889,7 +889,7 @@ impl Store {
     /// Steps 1 and 2 of `claim_delivery`: settles the pending deliveries that
     /// can no longer be sent at `now`.
     async fn settle_expired_deliveries(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         now: i64,
     ) -> Result<(), StoreError> {
         let expired = now.saturating_sub(RETRY_WINDOW_MS);
@@ -901,7 +901,7 @@ impl Store {
             now,
             expired,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         sqlx::query!(
@@ -915,7 +915,7 @@ impl Store {
             )",
             now,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         sqlx::query!(
@@ -927,7 +927,7 @@ impl Store {
             AND r.state='delivered')",
             now,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())
@@ -936,7 +936,7 @@ impl Store {
     /// Settles the pending delivery `id` as `state` with `error`, for
     /// `claim_delivery` to move past it.
     async fn settle_undeliverable(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         state: DeliveryState,
         error: &str,
@@ -950,7 +950,7 @@ impl Store {
             now,
             id,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())

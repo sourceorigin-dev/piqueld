@@ -40,7 +40,7 @@ async fn snapshots_hold_exactly_the_committed_state_of_a_live_database() {
         .execute(&store.pool)
         .await
         .expect("a write commits");
-    let (_writer, mut writer) = store.begin_immediate().await.expect("a writer begins");
+    let mut writer = store.begin_immediate().await.expect("a writer begins");
     sqlx::query("CREATE TABLE uncommitted(id INTEGER)")
         .execute(&mut *writer)
         .await
@@ -96,7 +96,7 @@ async fn verify_key_accepts_only_the_key_the_snapshot_was_bound_to() {
         .await
         .expect("no key is needed yet");
 
-    let (_writer, mut tx) = store.begin_immediate().await.expect("a writer begins");
+    let mut tx = store.begin_immediate().await.expect("a writer begins");
     store
         .verified_secret_cipher(&mut tx)
         .await

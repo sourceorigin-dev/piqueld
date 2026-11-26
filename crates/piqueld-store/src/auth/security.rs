@@ -242,7 +242,7 @@ impl Store {
         user_id: &str,
         address: &str,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let now = now_ms();
         let added = sqlx::query!(
             "INSERT OR IGNORE INTO auth_credential_addresses(credential_id,address,first_seen_ms)

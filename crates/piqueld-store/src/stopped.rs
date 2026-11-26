@@ -3,7 +3,7 @@
 use super::{Store, StoreError, acceptance::Accepted};
 use piqueld_core::EventKind;
 use piqueld_core::{EnvironmentId, Operation};
-use sqlx::{Sqlite, Transaction};
+use sqlx::SqliteConnection;
 
 impl Store {
     /// Whether environment `id` is stopped.
@@ -29,7 +29,7 @@ impl Store {
     /// are not retried: active-target repair scales their services down.
     /// `NotFound` before its first deployment, `Busy` while it is deleted.
     pub(super) async fn stop_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
         expected: Option<u64>,
         now: i64,
@@ -38,7 +38,7 @@ impl Store {
         let stopped = Self::mark_stopped_on(tx, id.as_str(), true, now).await?;
         let row = operation.id.as_str();
         let promoted = sqlx::query_scalar!("SELECT promoted FROM operations WHERE id=?1", row)
-            .fetch_one(&mut **tx)
+            .fetch_one(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         let (operation, retried) = if promoted != 0 {
@@ -54,7 +54,7 @@ impl Store {
     /// while still in progress. Responds with that operation; `NotFound`
     /// before its first deployment.
     pub(super) async fn start_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
         expected: Option<u64>,
         now: i64,
@@ -76,7 +76,7 @@ impl Store {
     /// The latest operation of environment `id`, which deploys it: `Busy`
     /// while it is deleted, `NotFound` before its first deployment.
     async fn latest_deployment_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &EnvironmentId,
         expected: Option<u64>,
     ) -> Result<Operation, StoreError> {
@@ -95,7 +95,7 @@ impl Store {
     /// `environment_stopped` or `environment_started` when that changes it,
     /// and returns whether it did.
     pub(super) async fn mark_stopped_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         id: &str,
         stopped: bool,
         now: i64,
@@ -107,7 +107,7 @@ impl Store {
             now,
             id
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .rows_affected();
@@ -115,7 +115,7 @@ impl Store {
             return Ok(false);
         }
         let name = sqlx::query_scalar!("SELECT name FROM environments WHERE id=?1", id)
-            .fetch_one(&mut **tx)
+            .fetch_one(&mut *tx)
             .await
             .map_err(StoreError::database)?;
         let (kind, message) = if stopped {

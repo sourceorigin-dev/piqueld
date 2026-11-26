@@ -2,7 +2,7 @@
 use super::{Attribution, EnvironmentId, Store, StoreError, new_id, now_ms};
 use piqueld_core::observability::{Diagnostic, DiagnosticCode, EventScope};
 use piqueld_core::{EventDetail, EventKind, Phase};
-use sqlx::{Sqlite, Transaction};
+use sqlx::SqliteConnection;
 
 /// Handle to one journaled runtime request, recorded in `active_actions` until
 /// finished. Lifecycle: `begin_action` (or `begin_daemon_action` or
@@ -108,7 +108,7 @@ impl Store {
         phase: Phase,
         resource: Option<&str>,
     ) -> Result<JournalAction, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let mut action = JournalAction {
             operation_id: operation.map(str::to_owned),
             ..JournalAction::daemon(phase, resource)
@@ -136,7 +136,7 @@ impl Store {
         phase: Phase,
         resource: Option<&str>,
     ) -> Result<JournalAction, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let mut action = JournalAction::daemon(phase, resource);
         Self::attribute_action_on(&mut tx, &mut action, requested_by).await?;
         Self::start_action_on(&mut tx, &action).await?;
@@ -155,7 +155,7 @@ impl Store {
         phase: Phase,
         resource: Option<&str>,
     ) -> Result<JournalAction, StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let action = JournalAction {
             environment_id: Some(environment.to_string()),
             actor_user_id: actor.user_id.map(str::to_owned),
@@ -171,7 +171,7 @@ impl Store {
     /// Snapshots `operation`'s current actor onto `action`, so restarting the
     /// operation later does not reattribute it.
     async fn attribute_action_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         action: &mut JournalAction,
         operation: Option<&str>,
     ) -> Result<(), StoreError> {
@@ -179,7 +179,7 @@ impl Store {
             "SELECT actor_user_id,actor_credential_id,actor_operator_uid,actor_system FROM operations WHERE id=?1",
             operation,
         )
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         if let Some(actor) = actor {
@@ -192,7 +192,7 @@ impl Store {
     }
     /// Inserts the `active_actions` row and its `action_started` event.
     async fn start_action_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         action: &JournalAction,
     ) -> Result<(), StoreError> {
         let phase = action.phase.as_str();
@@ -213,7 +213,7 @@ impl Store {
             action.actor_operator_uid,
             action.actor_system,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Self::action_event_on(tx, action, Step::Started).await
@@ -228,7 +228,7 @@ impl Store {
         action: &JournalAction,
         retry: u32,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let retry = i64::from(retry);
         let changed = sqlx::query!(
             "UPDATE active_actions SET retry=?1 WHERE id=?2",
@@ -257,7 +257,7 @@ impl Store {
         delay: std::time::Duration,
         diagnostic: &Diagnostic,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let message = format!(
             "{}; retry scheduled in {} ms",
             diagnostic.summary,
@@ -290,7 +290,7 @@ impl Store {
         action: &JournalAction,
         detail: &EventDetail,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::action_event_on(&mut tx, action, Step::Progressed(detail)).await?;
         tx.commit().await.map_err(StoreError::database)
     }
@@ -306,7 +306,7 @@ impl Store {
         action: &JournalAction,
         diagnostic: Option<Diagnostic>,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let active =
             sqlx::query_scalar!("SELECT COUNT(*) FROM active_actions WHERE id=?1", action.id,)
                 .fetch_one(&mut *tx)
@@ -341,7 +341,7 @@ impl Store {
     /// also record their duration. A retry's message overrides its
     /// diagnostic's summary.
     async fn action_event_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         action: &JournalAction,
         step: Step<'_>,
     ) -> Result<(), StoreError> {
@@ -415,7 +415,7 @@ impl Store {
             action.actor_system,
             detail,
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         Ok(())
@@ -427,7 +427,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error; reconciliation must not resume if it cannot record recovery.
     pub async fn interrupt_actions(&self, operation: Option<&str>) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let now = now_ms();
         let event_kind = EventKind::ActionOutcomeUnknown.as_str();
         sqlx::query!(

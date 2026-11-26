@@ -17,6 +17,7 @@ pub use notifications::RetryError;
 pub(crate) const DESTINATION_CHANGED: &str = "The destination was disabled, changed or deleted";
 use destinations::DestinationRow;
 use piqueld_core::EventKind;
+use sqlx::SqliteConnection;
 
 use super::{Store, StoreError, now_ms};
 use piqueld_core::observability::{ActionDuration, DaemonStats, DeploymentAnalytics, FailureCount};
@@ -271,7 +272,7 @@ impl Store {
     /// frequent error codes from events in the window. Failures are counted per
     /// diagnostic, so one diagnostic repeated across events counts once.
     async fn action_analytics(
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         application: Option<&str>,
         (applications, daemon): (Option<&str>, bool),
         result: &mut DeploymentAnalytics,
@@ -290,7 +291,7 @@ impl Store {
             daemon,
             event_kind,
         )
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         result.actions = sqlx::query!(
@@ -304,7 +305,7 @@ impl Store {
             applications,
             daemon,
         )
-        .fetch_all(&mut **tx)
+        .fetch_all(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .into_iter()
@@ -327,7 +328,7 @@ impl Store {
             applications,
             daemon,
         )
-        .fetch_all(&mut **tx)
+        .fetch_all(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .into_iter()

@@ -482,7 +482,7 @@ impl Store {
     /// Returns a storage error.
     pub(super) async fn commit_access_change(
         &self,
-        tx: sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: crate::WriteTransaction<'_>,
         author: impl Into<Author<'_>>,
         change: Option<&str>,
     ) -> Result<(), StoreError> {
@@ -512,7 +512,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let caller = Self::check_account_on(&mut tx, actor, user_id).await?;
         let current = Holder::User(user_id).grants(&mut tx).await?;
         if let Some(caller) = caller {

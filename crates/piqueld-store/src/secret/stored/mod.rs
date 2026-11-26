@@ -16,7 +16,7 @@ use piqueld_core::{
     },
     manifest::ApplicationTemplate,
 };
-use sqlx::{Sqlite, SqliteConnection, Transaction};
+use sqlx::SqliteConnection;
 use std::collections::{BTreeMap, BTreeSet};
 use zeroize::Zeroizing;
 
@@ -102,7 +102,7 @@ impl Store {
 
     /// Reads one stored secret on an existing transaction.
     async fn stored_secret_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
         name: &str,
     ) -> Result<StoredSecret, StoreError> {
@@ -140,7 +140,7 @@ impl Store {
         Self::check_secret_write(name, &value, expected)?;
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::require_secrets_write_on(&mut tx, actor, application).await?;
         let app = Self::application_on(&mut tx, application.as_str())
             .await?
@@ -252,7 +252,7 @@ impl Store {
     ) -> Result<StoredSecret, StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::require_secrets_write_on(&mut tx, actor, application).await?;
         let current = Self::stored_secret_on(&mut tx, application, name).await?;
         if current.metadata.deleting {
@@ -289,7 +289,7 @@ impl Store {
     /// Stores `access` for an existing secret and describes it. Listed
     /// environments must belong to the application (`InvalidInput`).
     async fn write_access_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         application: &ApplicationId,
         name: &str,
         access: &SecretAccess,
@@ -299,13 +299,13 @@ impl Store {
         let previews = i64::from(access.previews);
         let all = i64::from(access.environments == EnvironmentAccess::All);
         sqlx::query!("UPDATE application_secrets SET all_environments=?3,previews=?4 WHERE application_id=?1 AND name=?2",id,name,all,previews)
-            .execute(&mut **tx).await.map_err(StoreError::database)?;
+            .execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!(
             "DELETE FROM application_secret_access WHERE application_id=?1 AND name=?2",
             id,
             name
         )
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
         if let EnvironmentAccess::Only(allowed) = &access.environments {
@@ -315,7 +315,7 @@ impl Store {
                 }
                 let environment = environment.as_str();
                 sqlx::query!("INSERT INTO application_secret_access(application_id,name,environment_id) VALUES(?1,?2,?3)",id,name,environment)
-                    .execute(&mut **tx).await.map_err(StoreError::database)?;
+                    .execute(&mut *tx).await.map_err(StoreError::database)?;
             }
         }
         Ok(access.describe(&environments))
@@ -324,7 +324,7 @@ impl Store {
     /// Checks that `actor` holds `secrets:write` on `application`, inside the
     /// writing transaction so a concurrent demotion wins.
     async fn require_secrets_write_on(
-        tx: &mut Transaction<'_, Sqlite>,
+        tx: &mut SqliteConnection,
         actor: Actor<'_>,
         application: &ApplicationId,
     ) -> Result<(), StoreError> {
@@ -442,7 +442,7 @@ impl Store {
     ) -> Result<SecretDeletion, StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         Self::require_secrets_write_on(&mut tx, actor, application).await?;
         let id = application.as_str();
         let row = sqlx::query!("SELECT generation,deletion_id FROM application_secrets WHERE application_id=?1 AND name=?2",id,name)
@@ -514,7 +514,7 @@ impl Store {
         deletion_id: &str,
     ) -> Result<(), StoreError> {
         let author = author.into();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let id = application.as_str();
         sqlx::query!("DELETE FROM deployment_stored_secret_pins WHERE name=?2 AND environment_id IN (SELECT id FROM environments WHERE application_id=?1) AND EXISTS(SELECT 1 FROM application_secrets WHERE application_id=?1 AND name=?2 AND deletion_id=?3)",id,name,deletion_id)
             .execute(&mut *tx).await.map_err(StoreError::database)?;

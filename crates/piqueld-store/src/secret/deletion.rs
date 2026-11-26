@@ -2,6 +2,7 @@
 use super::{EnvironmentId, NormalizedApplication, SecretScope, SecretSource, Store, StoreError};
 use crate::StoredEnvironment;
 use piqueld_core::EventKind;
+use sqlx::SqliteConnection;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A reserved secret deletion: its token and, per environment, the Swarm
@@ -22,7 +23,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn check_secret_references(
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         mounted: &BTreeSet<&str>,
         scope: SecretScope<'_>,
     ) -> Result<(), StoreError> {
@@ -30,12 +31,12 @@ impl Store {
             SecretScope::Application(application) => {
                 let id = application.as_str();
                 sqlx::query_scalar!(r#"SELECT name AS "name!" FROM environment_secrets WHERE environment_id IN (SELECT id FROM environments WHERE application_id=?1) AND deletion_id IS NOT NULL UNION ALL SELECT name FROM application_secrets WHERE application_id=?1 AND deletion_id IS NOT NULL"#,id)
-                    .fetch_all(&mut **tx).await
+                    .fetch_all(&mut *tx).await
             }
             SecretScope::Environment(environment) => {
                 let id = environment.as_str();
                 sqlx::query_scalar!(r#"SELECT name AS "name!" FROM environment_secrets WHERE environment_id=?1 AND deletion_id IS NOT NULL UNION ALL SELECT name FROM application_secrets WHERE application_id=(SELECT application_id FROM environments WHERE id=?1) AND deletion_id IS NOT NULL"#,id)
-                    .fetch_all(&mut **tx).await
+                    .fetch_all(&mut *tx).await
             }
         }
         .map_err(StoreError::database)?;
@@ -50,7 +51,7 @@ impl Store {
     /// its latest deployment captured or pinned it, or its active runtime
     /// target uses one of the versions.
     pub(super) async fn secret_in_use_on(
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut SqliteConnection,
         environment: &StoredEnvironment,
         name: &str,
         source: SecretSource,
@@ -58,7 +59,7 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let id = environment.id().as_str();
         let captured = sqlx::query_scalar!("SELECT d.manifest_json FROM deployments d JOIN operations o ON o.id=d.id WHERE o.environment_id=?1 AND o.state!='superseded' AND o.id=(SELECT id FROM operations WHERE environment_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1)",id)
-            .fetch_optional(&mut **tx).await.map_err(StoreError::database)?;
+            .fetch_optional(&mut *tx).await.map_err(StoreError::database)?;
         let captured = captured
             .map(|json| serde_json::from_str::<Option<NormalizedApplication>>(&json))
             .transpose()
@@ -66,9 +67,9 @@ impl Store {
             .flatten();
         let pins = match source {
             SecretSource::Generated => sqlx::query_scalar!("SELECT COUNT(*) FROM deployment_secret_pins p JOIN operations o ON o.id=p.operation_id WHERE p.environment_id=?1 AND p.name=?2 AND o.state!='superseded' AND o.id=(SELECT id FROM operations WHERE environment_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1)",id,name)
-                .fetch_one(&mut **tx).await,
+                .fetch_one(&mut *tx).await,
             SecretSource::Stored => sqlx::query_scalar!("SELECT COUNT(*) FROM deployment_stored_secret_pins p JOIN operations o ON o.id=p.operation_id WHERE p.environment_id=?1 AND p.name=?2 AND o.state!='superseded' AND o.id=(SELECT id FROM operations WHERE environment_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1)",id,name)
-                .fetch_one(&mut **tx).await,
+                .fetch_one(&mut *tx).await,
         }
         .map_err(StoreError::database)?;
         let active = environment
@@ -106,7 +107,7 @@ impl Store {
     ) -> Result<SecretDeletion, StoreError> {
         let author = author.into();
         let actor = author.actor;
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let id = application.as_str();
         let app = Self::existing_environment_on(&mut tx, id).await?;
         actor
@@ -166,7 +167,7 @@ impl Store {
         deletion_id: &str,
     ) -> Result<(), StoreError> {
         let author = author.into();
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let id = application.as_str();
         sqlx::query!("DELETE FROM deployment_secret_pins WHERE environment_id=?1 AND name=?2 AND EXISTS(SELECT 1 FROM environment_secrets WHERE environment_id=?1 AND name=?2 AND deletion_id=?3)",id,name,deletion_id)
             .execute(&mut *tx).await.map_err(StoreError::database)?;
