@@ -31,6 +31,8 @@ pub mod tailnet;
 pub mod timeline;
 mod toml_diagnostic;
 mod urls;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod wait;
 
 pub use api::ApiErrorCode;
 pub use docker_names::{

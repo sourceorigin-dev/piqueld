@@ -21,8 +21,16 @@ thiserror.workspace = true
 toml.workspace = true
 utoipa.workspace = true
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# `wait`'s timers.
+tokio.workspace = true
+
 [dev-dependencies]
 proptest.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# `wait`'s tests run on a paused clock.
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

@@ -78,6 +78,10 @@ wrong there. Generated code is excepted once, by its generator: the OpenAPI
 generator writes the client's header, which excepts Progenitor's own
 `#[allow]`s.
 
+Waits go through `piqueld_core::wait`: `pause` for a delay, backoff, deadline or timer
+arm, and `poll_until` for a condition checked at an interval until a deadline.
+Clippy's `disallowed-methods` bans the raw sleeps everywhere else.
+
 ## Types
 
 Validate input once, where it becomes a value: `ApplicationId::parse`,
