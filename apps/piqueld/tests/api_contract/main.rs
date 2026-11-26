@@ -56,7 +56,11 @@ use tower::ServiceExt;
 struct FakeAuth;
 
 impl Authenticator for FakeAuth {
-    fn guard<S: Clone + Send + Sync + 'static>(self, router: axum::Router<S>) -> axum::Router<S> {
+    fn guard<S: Clone + Send + Sync + 'static>(
+        self,
+        router: axum::Router<S>,
+        _document: &utoipa::openapi::OpenApi,
+    ) -> axum::Router<S> {
         router.layer(axum::Extension(piqueld::auth::Identity {
             credential: piqueld::auth::Credential::Account {
                 user: piqueld_core::auth::User {

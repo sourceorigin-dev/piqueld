@@ -206,7 +206,8 @@ every listener including the Unix socket:
   one;
 - a cookie-authenticated mutation without an Origin;
 - a registration or login request without the configured Origin, unless it
-  sends none and carries a bearer credential that authenticates.
+  sends none and carries a bearer credential that authenticates. These routes
+  declare `SignInRule::Ceremony`, recorded as `x-piqueld-ceremony`.
 
 On TCP, including the tailnet node and the dashboard gateway, the browser
 policy in `api/http/browser.rs` runs first. It refuses, with 403
@@ -402,7 +403,9 @@ writer. Requests refused for their Host, Fetch Metadata, or Origin do not
 count. IPv6 peers are grouped by /64 prefix, IPv4-mapped addresses count as
 IPv4, and Unix socket callers share one peer bucket. Excess requests receive
 HTTP 429 `authentication_busy` and `Retry-After: 60`; ongoing ceremonies and
-authenticated API work are unaffected. There is no daemon-wide limit, so one
+authenticated API work are unaffected. Each limited route declares it where it
+is registered (`SignInRule::Throttled` in `api/http/auth.rs`), which the
+OpenAPI document records as `x-piqueld-throttled`. There is no daemon-wide limit, so one
 caller cannot block sign-in for everyone else. Client-supplied forwarded IP
 headers are deliberately ignored: callers behind the same external reverse
 proxy share its allowance. The daemon's own tailnet node and [dashboard

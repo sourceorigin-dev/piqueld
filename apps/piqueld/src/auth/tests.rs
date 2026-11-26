@@ -2038,7 +2038,8 @@ async fn middleware_authenticates_api_and_enforces_cookie_csrf() {
     let (_, token) = f
         .account("alice", CredentialKind::Token, None, &Grants::admin())
         .await;
-    let router = f.auth.clone().guard(
+    let router = guarded(
+        f.auth.clone(),
         Router::new()
             .route("/api/v1/private", get(signed_in).post(signed_in))
             .route("/health", get(|| async { "ok" })),
@@ -2121,6 +2122,15 @@ async fn middleware_authenticates_api_and_enforces_cookie_csrf() {
     }
 }
 
+/// Wraps `router` in `auth`'s middleware, with the sign-in rules the real
+/// API routes declare.
+fn guarded(auth: Auth, router: axum::Router) -> axum::Router {
+    auth.guard(
+        router,
+        &crate::api::http::documented_router().into_openapi(),
+    )
+}
+
 /// Stands in for route authorization (`access::enforce`): signed-in callers only.
 async fn signed_in(identity: Option<axum::Extension<Identity>>) -> http::StatusCode {
     if identity.is_some() {
@@ -2144,7 +2154,8 @@ async fn login_start_limits_share_listeners_ignore_forwarded_ips_and_leave_sessi
     let (_, token) = f
         .account("alice", CredentialKind::Token, None, &Grants::admin())
         .await;
-    let router = f.auth.clone().guard(
+    let router = guarded(
+        f.auth.clone(),
         Router::new()
             .route("/api/v1/auth/login/start", post(|| async { "ok" }))
             .route("/api/v1/auth/device/start", post(|| async { "ok" }))
@@ -2184,9 +2195,10 @@ async fn login_start_limits_share_listeners_ignore_forwarded_ips_and_leave_sessi
             assert_eq!(response.headers()["retry-after"], "60");
         }
     }
-    let other = f
-        .auth
-        .guard(Router::new().route("/api/v1/auth/device/start", post(|| async { "ok" })));
+    let other = guarded(
+        f.auth,
+        Router::new().route("/api/v1/auth/device/start", post(|| async { "ok" })),
+    );
     let request = Request::builder()
         .method("POST")
         .uri("/api/v1/auth/device/start")
@@ -2270,10 +2282,10 @@ async fn cross_site_starts_spend_no_sign_in_allowance() {
     let (_, token) = f
         .account("alice", CredentialKind::Token, None, &Grants::admin())
         .await;
-    let router = f
-        .auth
-        .clone()
-        .guard(Router::new().route("/api/v1/auth/login/start", post(|| async { "ok" })));
+    let router = guarded(
+        f.auth.clone(),
+        Router::new().route("/api/v1/auth/login/start", post(|| async { "ok" })),
+    );
     let start = |header: (&str, String)| {
         let request = Request::post("/api/v1/auth/login/start")
             .header(header.0, header.1)
@@ -2338,7 +2350,7 @@ async fn https_cookies_use_host_prefix_and_ignore_unprefixed_names() {
             .cookie_name(AuthCookie::Session),
         "__Host-piqueld_session_8443"
     );
-    let router = auth.guard(Router::new().route("/api/v1/private", get(signed_in)));
+    let router = guarded(auth, Router::new().route("/api/v1/private", get(signed_in)));
     for (cookie, expected) in [
         (format!("piqueld_session={token}"), StatusCode::UNAUTHORIZED),
         (format!("__Host-piqueld_session={token}"), StatusCode::OK),
