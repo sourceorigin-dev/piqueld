@@ -216,6 +216,7 @@ these checks run after a pull request merges instead of before:
 | --- | --- | --- |
 | Embedded daemon and CLI release builds | `nix build` | `nix packages` |
 | The piqueld and piquelctl modules, in a VM: the daemon checks whether to roll back, reaches Docker, serves the dashboard on localhost, and root runs `piquelctl status` over its socket; then a newer database rolls back as the unit starts, stopping only this installation's ingress containers, and one no backup fits stops the unit without changes | `nix build .#checks.x86_64-linux.piqueld` | `nix packages` |
+| The piqueld module's managed updates, in a VM: `piqueld update` installs a build the service then runs, and a rollback returns to the package | `nix build .#checks.x86_64-linux.piqueld-managed` | `nix packages` |
 | The build machine and build registry modules, in a VM: a rootless build pushed to the registry, an emulated arm64 build, and garbage collection | `nix build .#checks.x86_64-linux.piqueld-builder` | `nix packages` |
 | Every published crate packaged and built from its package | `publish --dry-run` | `package` |
 | The static release archive, installed and then updated by `install.sh` | `dist` | `install` |

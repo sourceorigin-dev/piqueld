@@ -136,17 +136,22 @@ impl Updates {
     }
 
     /// The build `piqueld update rollback` returns to, on a host the install
-    /// script set up.
+    /// script set up or with NixOS's managed updates.
     fn previous(&self) -> Option<String> {
         (self.install == InstallMethod::Script)
-            .then(|| crate::updater::Layout::script().linked("previous"))
+            .then(|| crate::updater::Layout::detect().linked("previous"))
             .flatten()
     }
 
     /// How this binary was installed, from where it runs: the Nix store, a
     /// build directory of the install script's (`crate::updater::Layout`),
     /// or a binary an older script copied to `/usr/local/bin`, or elsewhere.
+    /// NixOS's managed mode updates as the script's does, though its
+    /// module's package, in the Nix store, runs before the first update.
     fn install_method() -> InstallMethod {
+        if crate::updater::Layout::detect().is_managed() {
+            return InstallMethod::Script;
+        }
         match std::env::current_exe() {
             Ok(path) if path.starts_with("/nix/store") => InstallMethod::Nix,
             Ok(path)
@@ -330,7 +335,7 @@ impl ApplicationService {
                 .how_to_update()
                 .unwrap_or_else(|| "Update it the way you installed it.".into());
             return unavailable(format!(
-                "piqueld updates itself only where the install script set it up; {how}"
+                "piqueld updates itself only where the install script set it up, or with NixOS's managed updates; {how}"
             ));
         }
         if !Path::new(UPDATE_PATH_UNIT).exists() {

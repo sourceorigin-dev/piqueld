@@ -59,6 +59,9 @@
         piqueld = (pkgsFor "x86_64-linux").testers.runNixOSTest (
           import ./nix/tests/piqueld.nix { modules = [ self.nixosModules.default ]; }
         );
+        piqueld-managed = (pkgsFor "x86_64-linux").testers.runNixOSTest (
+          import ./nix/tests/managed.nix { modules = [ self.nixosModules.default ]; }
+        );
         piqueld-builder = (pkgsFor "x86_64-linux").testers.runNixOSTest (
           import ./nix/tests/builder.nix {
             modules = [

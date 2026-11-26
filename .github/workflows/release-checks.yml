@@ -89,6 +89,8 @@ jobs:
       # Boot VMs with the NixOS modules, through the runner's KVM.
       - name: Test the piqueld and piquelctl modules
         run: nix build -L .#checks.x86_64-linux.piqueld
+      - name: Test the managed updates of the piqueld module
+        run: nix build -L .#checks.x86_64-linux.piqueld-managed
       - name: Test the build machine and build registry modules
         run: nix build -L .#checks.x86_64-linux.piqueld-builder
 

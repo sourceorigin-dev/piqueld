@@ -7008,7 +7008,7 @@
                 ]
               },
               "previous": {
-                "description": "The build `piqueld update rollback` returns to, on a host the install\nscript set up; absent elsewhere, and before an update.",
+                "description": "The build `piqueld update rollback` returns to, on a host the install\nscript set up or with NixOS's managed updates, where it is `package`,\nthe module's package, after the first update; absent elsewhere, and\nbefore an update.",
                 "nullable": true,
                 "type": "string"
               },
@@ -14228,7 +14228,7 @@
             ]
           },
           "previous": {
-            "description": "The build `piqueld update rollback` returns to, on a host the install\nscript set up; absent elsewhere, and before an update.",
+            "description": "The build `piqueld update rollback` returns to, on a host the install\nscript set up or with NixOS's managed updates, where it is `package`,\nthe module's package, after the first update; absent elsewhere, and\nbefore an update.",
             "nullable": true,
             "type": "string"
           },

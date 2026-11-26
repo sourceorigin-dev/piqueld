@@ -91,6 +91,37 @@ let
       ++ map (credential: lib.setAttrByPath credential.setting credential.name) settingCredentials
     )
   );
+  # The builds `piqueld update` installs in the managed mode, with `current`
+  # and `previous` links, which the daemon and `piqueld update` find through
+  # PIQUELD_MANAGED_BUILDS (crate::updater::MANAGED_BUILDS).
+  builds = "/var/lib/piqueld-builds";
+  # Runs `binary` from the build piqueld's updater installed, or from the
+  # package before the first update, after a rollback past it, and while the
+  # installed build rejects this module's configuration, such as a setting
+  # newer than the build.
+  launch =
+    binary:
+    pkgs.writeShellScriptBin binary ''
+      export PIQUELD_MANAGED_BUILDS=${builds}
+      if [ -x ${builds}/current/${binary} ]; then
+        if ${builds}/current/piqueld check-config --config ${configuration} >/dev/null ${
+          # The daemon's journal says why; piquelctl stays quiet.
+          lib.optionalString (binary != "piqueld") "2>&1"
+        }; then
+          exec ${builds}/current/${binary} "$@"
+        fi
+        echo "piqueld: the installed build rejects this configuration; running the package instead" >&2
+      fi
+      exec ${cfg.package}/bin/${binary} "$@"
+    '';
+  launchers = pkgs.symlinkJoin {
+    name = "piqueld-launchers";
+    paths = [
+      (launch "piqueld")
+      (launch "piquelctl")
+    ];
+  };
+  daemon = if cfg.managedUpdates then "${launchers}/bin/piqueld" else "${cfg.package}/bin/piqueld";
   # `piqueld check-config` reads no credentials and touches nothing on the
   # host, so an invalid setting fails the system build instead of the service.
   configuration =
@@ -104,9 +135,11 @@ let
 in
 {
   imports = [
-    (lib.mkRemovedOptionModule [ "services" "piqueld" "notificationDestinationsFile" ]
-      "Notification destinations are managed with `piquelctl notification` or the dashboard."
-    )
+    (lib.mkRemovedOptionModule [
+      "services"
+      "piqueld"
+      "notificationDestinationsFile"
+    ] "Notification destinations are managed with `piquelctl notification` or the dashboard.")
   ];
   options.services.piqueld = {
     enable = lib.mkEnableOption "the single-node piqueld control plane";
@@ -124,6 +157,11 @@ in
       default = "/run/piqueld";
       description = "Runtime directory below /run containing piqueld.sock. Group members can connect; account authentication is still required.";
     };
+    managedUpdates = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Let piqueld install its own updates, from the dashboard or `piquelctl update apply`, without rebuilding the system: its updater keeps release builds in ${builds}, and the service runs the current one, or the package before the first update. The configuration still comes from this module, and the channel from `settings.updates.channel`. The running version then no longer follows the flake.";
+    };
     checkConfig = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -132,7 +170,7 @@ in
     rollBack = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Before each start, run `piqueld roll-back` as the service user: when a newer piqueld has updated the database, it restores the newest backup this package can open, moving the state it replaces into `dataDir`'s `rolled-back-<time>` directory, so the daemon starts after a system rollback. Restoring undoes every change made since the backup. It only covers rolling back to a generation that enables it too.";
+      description = "Before each start, run `piqueld roll-back` as the service user: when a newer piqueld has updated the database, it restores the newest backup the piqueld about to start can open (this package, or with `managedUpdates` the build it runs), moving the state it replaces into `dataDir`'s `rolled-back-<time>` directory, so the daemon starts after a system rollback. Restoring undoes every change made since the backup. It only covers rolling back to a generation that enables it too.";
     };
     settings = lib.mkOption {
       type = lib.types.submodule {
@@ -431,7 +469,7 @@ in
           updates.check = lib.mkOption {
             type = lib.types.bool;
             default = true;
-            description = "Check the release channel for a newer build every six hours, and notify `update_available` when one appears. piqueld never updates itself: update the flake input, then rebuild.";
+            description = "Check the release channel for a newer build every six hours, and notify `update_available` when one appears. Without managedUpdates, update the flake input, then rebuild.";
           };
           updates.channel = lib.mkOption {
             type = lib.types.nullOr (
@@ -478,6 +516,14 @@ in
         message = "services.piqueld.dataDir must not contain ':' or ','";
       }
       {
+        assertion = cfg.managedUpdates -> pkgs.stdenv.hostPlatform.system == "x86_64-linux";
+        message = "services.piqueld.managedUpdates installs release builds, which exist only for x86_64-linux";
+      }
+      {
+        assertion = cfg.managedUpdates -> cfg.runtimeDir == "/run/piqueld";
+        message = "services.piqueld.managedUpdates needs the default runtimeDir, /run/piqueld, where its updater takes requests";
+      }
+      {
         assertion = dedicatedBelow "/run/" cfg.runtimeDir;
         message = "services.piqueld.runtimeDir must be a dedicated directory below /run";
       }
@@ -512,8 +558,12 @@ in
         message = "services.piqueld.settings.dns.providers: cloudflare needs only api_token_file; ovh needs only endpoint, application_key_file, application_secret_file and consumer_key_file";
       }
     ];
-    # One-shot commands, such as `piqueld restore`, run outside the unit.
-    environment.systemPackages = [ cfg.package ];
+    # One-shot commands, such as `piqueld restore`, run outside the unit; in
+    # the managed mode, `piqueld` is the build that runs.
+    environment.systemPackages = [
+      cfg.package
+    ]
+    ++ lib.optional cfg.managedUpdates (lib.hiPrio launchers);
     users.groups.piqueld = { };
     # Declared here too, so the unit's group exists while a host runs its
     # Docker Engine some other way.
@@ -547,10 +597,12 @@ in
       # tailscaled's state, and identifies tailnet clients, through its socket.
       ++ lib.optional cfg.settings.tailscale.enabled config.services.tailscale.package;
       serviceConfig = {
-        ExecStart = "${cfg.package}/bin/piqueld --config ${configuration}";
+        ExecStart = "${daemon} --config ${configuration}";
         # As the service user, not root (`+`): the data directory must
-        # belong to whoever runs it, and so must the files it restores.
-        ExecStartPre = lib.mkIf cfg.rollBack "${cfg.package}/bin/piqueld --config ${configuration} roll-back";
+        # belong to whoever runs it, and so must the files it restores. The
+        # same piqueld as ExecStart, which managed updates choose, decides
+        # whether the database is too new for it.
+        ExecStartPre = lib.mkIf cfg.rollBack "${daemon} --config ${configuration} roll-back";
         # The unit is Type=simple, so the start timeout only covers
         # ExecStartPre: room for copying and checking a large database.
         TimeoutStartSec = lib.mkIf cfg.rollBack "15min";
@@ -585,6 +637,34 @@ in
           cfg.dataDir
           cfg.runtimeDir
         ];
+      };
+    };
+
+    # The managed mode's updater: the daemon, which can't change the host,
+    # asks for an update or rollback through a request file, and this path
+    # unit runs `piqueld update` as root; apps/piqueld/piqueld-update.* are
+    # these units for hosts without NixOS.
+    systemd.tmpfiles.rules = lib.mkIf cfg.managedUpdates [ "d ${builds} 0755 root root -" ];
+    # `piqueld update` on the host reads the configuration from here.
+    environment.etc."piqueld/config.toml" = lib.mkIf cfg.managedUpdates { source = configuration; };
+    systemd.paths.piqueld-update = lib.mkIf cfg.managedUpdates {
+      description = "Watch for piqueld update requests";
+      wantedBy = [ "multi-user.target" ];
+      pathConfig = {
+        PathExists = "${cfg.runtimeDir}/update-request";
+        Unit = "piqueld-update.service";
+      };
+    };
+    systemd.services.piqueld-update = lib.mkIf cfg.managedUpdates {
+      description = "Apply a piqueld update requested through its API";
+      path = [
+        pkgs.gnutar
+        pkgs.gzip
+        config.systemd.package
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${daemon} --config ${configuration} update --request ${cfg.runtimeDir}/update-request";
       };
     };
   };

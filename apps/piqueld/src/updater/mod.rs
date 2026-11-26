@@ -1,6 +1,7 @@
 //! `piqueld update`: installs a published build on a host the install script
-//! set up, and rolls it back, as root. It reports each step as a `tracing`
-//! event, and records each run in [`RUN_FILE`], which the daemon reports.
+//! set up, or with NixOS's managed updates ([`Layout::managed`]), and rolls
+//! it back, as root. It reports each step as a `tracing` event, and records
+//! each run in [`RUN_FILE`], which the daemon reports.
 //!
 //! Each build lives in its own directory, such as
 //! `/usr/local/lib/piqueld/0.3.0`. The `current` link names the one that
@@ -11,7 +12,7 @@
 use crate::backup::Backups;
 use anyhow::{Context, Result, bail, ensure};
 use piqueld_config::DaemonConfig;
-use piqueld_core::api::{UpdateAction, UpdateRequest, UpdateRun, UpdateRunState};
+use piqueld_core::api::{PACKAGE_BUILD, UpdateAction, UpdateRequest, UpdateRun, UpdateRunState};
 use piqueld_core::version::REPOSITORY_URL;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -45,11 +46,25 @@ const DAEMON_TIMEOUT: Duration = Duration::from_mins(1);
 /// Time a download may take.
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(10);
 
-/// Where builds, the links to them and the service's unit are.
+/// The variable that names the builds directory of NixOS's managed mode
+/// (`services.piqueld.managedUpdates`), which the module's launcher sets
+/// for the build it runs, or for its package before the first update.
+pub const MANAGED_BUILDS: &str = "PIQUELD_MANAGED_BUILDS";
+
+/// Where builds, the links to them and the service's units are.
 #[derive(Clone, Debug)]
 pub struct Layout {
     /// The directory holding each build, `current` and `previous`.
     builds: PathBuf,
+    /// What the install script's layout adds; absent in NixOS's managed
+    /// mode, whose module owns the units and binaries in the `PATH`.
+    host: Option<HostFiles>,
+}
+
+/// The binaries and units of a host the install script set up, which the
+/// updater keeps pointing at the current build.
+#[derive(Clone, Debug)]
+struct HostFiles {
     /// The directory linking `piqueld` and `piquelctl` to the current build.
     bin: PathBuf,
     /// The directory of systemd units, whose [`UNITS`] each build replaces.
@@ -63,9 +78,37 @@ impl Layout {
     pub fn script() -> Self {
         Self {
             builds: PathBuf::from("/usr/local/lib/piqueld"),
-            bin: PathBuf::from("/usr/local/bin"),
-            units: PathBuf::from("/etc/systemd/system"),
+            host: Some(HostFiles {
+                bin: PathBuf::from("/usr/local/bin"),
+                units: PathBuf::from("/etc/systemd/system"),
+            }),
         }
+    }
+
+    /// NixOS's managed mode's: builds in `builds`, the module's directory.
+    /// The module owns the units and binaries, and its package runs before
+    /// the first update.
+    #[must_use]
+    pub fn managed(builds: PathBuf) -> Self {
+        Self { builds, host: None }
+    }
+
+    /// This process's: the managed mode's when the module's launcher started
+    /// it and named its builds in [`MANAGED_BUILDS`], else the install
+    /// script's.
+    #[must_use]
+    pub fn detect() -> Self {
+        match std::env::var_os(MANAGED_BUILDS) {
+            Some(builds) => Self::managed(PathBuf::from(builds)),
+            None => Self::script(),
+        }
+    }
+
+    /// Whether the module of NixOS's managed mode owns this host's units and
+    /// binaries.
+    #[must_use]
+    pub fn is_managed(&self) -> bool {
+        self.host.is_none()
     }
 
     /// The directory of the build `version`.
@@ -107,11 +150,15 @@ impl Layout {
     }
 
     /// Links `piqueld` and `piquelctl` to the current build, replacing the
-    /// files an older install script copied there.
+    /// files an older install script copied there; the managed mode's
+    /// module provides its own.
     fn link_binaries(&self) -> Result<()> {
+        let Some(host) = &self.host else {
+            return Ok(());
+        };
         for binary in ["piqueld", "piquelctl"] {
-            let path = self.bin.join(binary);
-            let staged = self.bin.join(format!(".{binary}.new"));
+            let path = host.bin.join(binary);
+            let staged = host.bin.join(format!(".{binary}.new"));
             remove(&staged)?;
             std::os::unix::fs::symlink(self.builds.join("current").join(binary), &staged)
                 .with_context(|| format!("link {}", staged.display()))?;
@@ -124,9 +171,14 @@ impl Layout {
     /// it readable by the service's user whatever root's umask.
     fn lock(&self) -> Result<fs::File> {
         use std::os::unix::fs::PermissionsExt;
+        let remedy = if self.is_managed() {
+            "enable services.piqueld.managedUpdates and rebuild"
+        } else {
+            "piqueld update updates hosts the install script set up: run the script instead"
+        };
         ensure!(
             self.builds.is_dir(),
-            "piqueld update updates hosts the install script set up, and {} doesn't exist; run the script instead",
+            "{} doesn't exist; {remedy}",
             self.builds.display()
         );
         fs::set_permissions(&self.builds, fs::Permissions::from_mode(0o755))
@@ -139,15 +191,19 @@ impl Layout {
     }
 
     /// Installs the build `version`'s units that differ, reloads systemd if
-    /// one did, and enables the updater's path unit when the build has it.
+    /// one did, and enables the updater's path unit when the build has it;
+    /// the managed mode's module defines its own.
     fn install_units(&self, version: &str) -> Result<()> {
+        let Some(host) = &self.host else {
+            return Ok(());
+        };
         let mut changed = false;
         for name in UNITS {
             let unit = self.build(version).join(name);
             let Ok(wanted) = fs::read(&unit) else {
                 continue;
             };
-            let installed = self.units.join(name);
+            let installed = host.units.join(name);
             if fs::read(&installed).ok().as_deref() != Some(wanted.as_slice()) {
                 fs::write(&installed, wanted)
                     .with_context(|| format!("write {}", installed.display()))?;
@@ -470,10 +526,7 @@ impl Updater {
     /// Fails unless `version` is newer, by its number, than the build that
     /// runs.
     fn check_newer(&self, version: &str) -> Result<()> {
-        let Some(current) = self.layout.linked("current") else {
-            return Ok(());
-        };
-        let running = self.layout.reported_version(&current)?;
+        let running = self.running_version()?;
         ensure!(
             piqueld_core::version::Version::numbered(version)
                 .is_newer_than(&piqueld_core::version::Version::numbered(&running)),
@@ -556,21 +609,23 @@ impl Updater {
     }
 
     /// Installs `build`, then restarts the daemon on it, going back to the
-    /// previous build if it doesn't start.
+    /// previous build if it doesn't start. In the managed mode, the first
+    /// update has no current build: the module's package runs before it.
     ///
     /// # Errors
     /// Fails, changing nothing, when the build can't be fetched or rejects
     /// the configuration, and when the daemon doesn't start on it.
     async fn update(&self, build: &Build) -> Result<()> {
         let layout = &self.layout;
-        let Some(current) = layout.linked("current") else {
+        let current = layout.linked("current");
+        if current.is_none() && layout.host.is_some() {
             bail!(
                 "piqueld update updates hosts the install script set up, and {} names no build; run the script instead",
                 layout.builds.join("current").display()
             );
-        };
+        }
         ensure!(
-            current != build.version,
+            current.as_deref() != Some(build.version.as_str()),
             "piqueld {} is already installed",
             build.version
         );
@@ -579,11 +634,18 @@ impl Updater {
         tracing::info!("Starting piqueld {}", build.version);
         let started = self.switch(&build.version).await;
         if !started.healthy {
-            return self
-                .recover(&build.version, &current, started.since_ms)
-                .await;
+            return match &current {
+                Some(current) => {
+                    self.recover(&build.version, current, started.since_ms)
+                        .await
+                }
+                None => {
+                    self.back_to_package(&build.version, Some(started.since_ms))
+                        .await
+                }
+            };
         }
-        layout.link("previous", &current)?;
+        layout.link("previous", current.as_deref().unwrap_or(PACKAGE_BUILD))?;
         layout.prune()?;
         tracing::info!("piqueld {} is running", build.version);
         Ok(())
@@ -592,30 +654,30 @@ impl Updater {
     /// Goes back to the previous build, unless the current one updated the
     /// database since it was installed: it did if it took the newest
     /// pre-migration backup, and an older build can't read that database.
+    /// After the managed mode's first update, the previous build is the
+    /// module's package ([`PACKAGE_BUILD`]).
     ///
     /// # Errors
     /// Fails when there is no previous build, when the database was
     /// updated, and when the previous build doesn't start.
     async fn rollback(&self) -> Result<()> {
         let layout = &self.layout;
-        let (Some(current), Some(previous)) = (layout.linked("current"), layout.linked("previous"))
-        else {
+        let Some(current) = layout.linked("current") else {
             bail!("there is no previous build to roll back to");
         };
+        let Some(previous) = layout.linked("previous") else {
+            bail!("there is no previous build to roll back to");
+        };
+        if previous == PACKAGE_BUILD {
+            self.refuse_migrated(&current, "the module's package")?;
+            tracing::info!("Starting the module's package");
+            return self.back_to_package(&current, None).await;
+        }
         ensure!(
             current != previous,
             "piqueld {current} is both the current and the previous build: there is nothing to roll back to"
         );
-        let running = layout.reported_version(&current)?;
-        if let Some((backup, migrated_by)) =
-            Backups::new(&self.config.server.data_dir).latest_migration()?
-            && migrated_by == running
-        {
-            bail!(
-                "rollback only returns to builds older than piqueld {current}, which updated the database: to go to a newer build, run piqueld update --version <version>; to go back to piqueld {previous}, restore {}, which discards every change since, see https://docs.piqueld.dev/user/operations/backups.html#roll-back",
-                backup.display()
-            );
-        }
+        self.refuse_migrated(&current, &format!("piqueld {previous}"))?;
         self.check_config(&previous)?;
         tracing::info!("Starting piqueld {previous}");
         let started = self.switch(&previous).await;
@@ -624,6 +686,71 @@ impl Updater {
         }
         layout.link("previous", &current)?;
         tracing::info!("piqueld {previous} is running");
+        Ok(())
+    }
+
+    /// The version of the daemon that runs. In the managed mode, the
+    /// module's launcher starts the updater as it starts the daemon, from the
+    /// current build or the package, so it is this binary's.
+    fn running_version(&self) -> Result<String> {
+        match self.layout.linked("current") {
+            Some(current) if !self.layout.is_managed() => self.layout.reported_version(&current),
+            _ => Ok(piqueld_core::version::NUMBER.to_owned()),
+        }
+    }
+
+    /// Refuses a rollback from `current` to `target` when the daemon that
+    /// runs took the newest pre-migration backup: it updated the database,
+    /// which older builds can't read.
+    fn refuse_migrated(&self, current: &str, target: &str) -> Result<()> {
+        let running = self.running_version()?;
+        if let Some((backup, migrated_by)) =
+            Backups::new(&self.config.server.data_dir).latest_migration()?
+            && migrated_by == running
+        {
+            bail!(
+                "rollback only returns to builds older than piqueld {current}, which updated the database: to go to a newer build, run piqueld update --version <version>; to go back to {target}, restore {}, which discards every change since, see https://docs.piqueld.dev/user/operations/backups.html#roll-back",
+                backup.display()
+            );
+        }
+        Ok(())
+    }
+
+    /// Goes back from `from` to the managed mode module's package, by
+    /// removing `current`: a rollback, or after an update that didn't start
+    /// since `failed_since_ms`, unless that update changed the database.
+    /// Fails after an update, or when the package doesn't start either, when
+    /// a rollback goes back to `from`. Nothing comes before the package, so
+    /// a rollback to it removes `previous`.
+    async fn back_to_package(&self, from: &str, failed_since_ms: Option<i64>) -> Result<()> {
+        if let Some(since_ms) = failed_since_ms
+            && let Some(backup) = self.migrated_since(since_ms)?
+        {
+            bail!(
+                "piqueld {from} didn't start after updating the database, so the module's package can't run on it; see: journalctl -u piqueld. To go back, restore {}: https://docs.piqueld.dev/user/operations/backups.html#roll-back",
+                backup.display()
+            );
+        }
+        let current = self.layout.builds.join("current");
+        remove(&current)?;
+        let healthy = systemctl(&["restart", SERVICE]).is_ok() && self.answers().await;
+        if !healthy {
+            if failed_since_ms.is_none() && self.switch(from).await.healthy {
+                bail!(
+                    "the module's package didn't start, so piqueld {from} runs again; see: journalctl -u piqueld"
+                );
+            }
+            bail!("the module's package didn't start; see: journalctl -u piqueld");
+        }
+        if failed_since_ms.is_none() {
+            let previous = self.layout.builds.join("previous");
+            fs::remove_file(&previous).with_context(|| format!("delete {}", previous.display()))?;
+        }
+        ensure!(
+            failed_since_ms.is_none(),
+            "piqueld {from} didn't start, so the module's package runs again; see: journalctl -u piqueld"
+        );
+        tracing::info!("The module's package is running");
         Ok(())
     }
 
