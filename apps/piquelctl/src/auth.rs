@@ -67,19 +67,6 @@ impl Credentials {
         })?;
         Ok(directory.join("credentials.json"))
     }
-    /// Endpoint key that scopes saved logins to one daemon.
-    ///
-    /// ```text
-    /// --url https://ops.example/  →  https://ops.example
-    /// --socket /tmp/p.sock        →  unix:/tmp/p.sock
-    /// (neither)                   →  unix:/run/piqueld/piqueld.sock
-    /// ```
-    fn key(cli: &Cli) -> String {
-        match &cli.url {
-            Some(url) => url.trim_end_matches('/').to_owned(),
-            None => format!("unix:{}", cli.socket_path().to_string_lossy()),
-        }
-    }
     /// Reads the credentials file at its default location.
     fn read() -> Result<Self> {
         Self::read_at(&Self::path()?)
@@ -228,7 +215,7 @@ impl Credentials {
     /// may equal another account's ID. Returns `(id, account)`. An explicit
     /// `--account` with no match is an error rather than an anonymous request.
     fn selected<'a>(&'a self, cli: &Cli) -> Result<Option<(&'a str, &'a Account)>> {
-        let endpoint = self.endpoints.get(&Self::key(cli));
+        let endpoint = self.endpoints.get(&cli.endpoint().key());
         let account = endpoint.and_then(|endpoint| {
             let selected = cli.auth.account.as_deref().unwrap_or(&endpoint.selected);
             endpoint
@@ -257,7 +244,7 @@ impl Credentials {
         let Ok(path) = Self::path() else {
             return Ok(());
         };
-        let key = Self::key(cli);
+        let key = cli.endpoint().key();
         if Self::read_at(&path)?.login(&key, id).is_none() {
             return Ok(());
         }
@@ -465,7 +452,7 @@ pub(crate) async fn login(cli: &Cli, client: &Client, console: &mut Console) -> 
     Credentials::update_at(&Credentials::path()?, |credentials| {
         let endpoint = credentials
             .endpoints
-            .entry(Credentials::key(cli))
+            .entry(cli.endpoint().key())
             .or_default();
         endpoint.selected.clone_from(&user.id);
         endpoint.accounts.insert(
@@ -642,7 +629,7 @@ pub(crate) async fn logout(cli: &Cli, client: &Client, console: &mut Console) ->
     };
     if let Some((id, token)) = saved {
         Credentials::update_at(&Credentials::path()?, |credentials| {
-            credentials.remove(&Credentials::key(cli), &id, &token);
+            credentials.remove(&cli.endpoint().key(), &id, &token);
             Ok(())
         })?;
     }

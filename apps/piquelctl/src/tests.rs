@@ -84,7 +84,7 @@ fn parser_takes_env_secret_targets_positionally_and_short_yes() {
 }
 
 #[test]
-fn parser_rejects_conflicting_transports_and_invalid_timeout() {
+fn parser_rejects_conflicting_transports_and_invalid_urls_and_timeouts() {
     Cli::try_parse_from([
         "piquelctl",
         "--socket",
@@ -94,6 +94,8 @@ fn parser_rejects_conflicting_transports_and_invalid_timeout() {
         "status",
     ])
     .expect_err("`Cli::try_parse_from` should reject both --socket and --url");
+    Cli::try_parse_from(["piquelctl", "--url", "http://127.0.0.1:8080/api", "status"])
+        .expect_err("`Cli::try_parse_from` should reject a URL that isn't an origin");
     Cli::try_parse_from(["piquelctl", "--timeout", "zero", "status"])
         .expect_err("`Cli::try_parse_from` should be rejected");
     Cli::try_parse_from(["piquelctl", "--timeout", "0s", "status"])

@@ -13,10 +13,6 @@ use piqueld_core::auth::is_localhost;
 pub(crate) const MAX_RESPONSE_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// Default whole-request deadline, and the native connection deadline.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-/// Transport message used for timeouts; `ClientError::from_generated` matches on
-/// it to restore `TransportFailure::Timeout` after `decode_response` flattens
-/// body-read errors into `Error::Custom`.
-const TIMEOUT_MESSAGE: &str = "request timed out";
 
 /// Per-client request settings stored inside the generated client and applied to
 /// every outgoing request by `ClientState::prepare`.
@@ -75,6 +71,22 @@ impl Client {
     /// or [`ClientError::Configuration`] if the HTTP client cannot initialize.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn tcp(base_url: &str) -> Result<Self, ClientError> {
+        let url = Self::origin(base_url)?;
+        Self::native(
+            base_url.trim_end_matches('/'),
+            |builder| match Self::pinned_loopback(&url) {
+                Some((host, addresses)) => builder.resolve_to_addrs(host, &addresses),
+                None => builder,
+            },
+        )
+    }
+
+    /// Parses `base_url` as an HTTP or HTTPS origin, without a path, query or
+    /// credentials, as [`Self::tcp`] requires, without building a client.
+    ///
+    /// # Errors
+    /// Returns [`ClientError::Endpoint`] when it is not one.
+    pub fn origin(base_url: &str) -> Result<url::Url, ClientError> {
         let url = url::Url::parse(base_url).map_err(|error| {
             ClientError::invalid_request(format!("base URL is not a valid URL: {error}"))
         })?;
@@ -89,13 +101,7 @@ impl Client {
                 "base URL must be an HTTP or HTTPS origin",
             ));
         }
-        Self::native(
-            base_url.trim_end_matches('/'),
-            |builder| match Self::pinned_loopback(&url) {
-                Some((host, addresses)) => builder.resolve_to_addrs(host, &addresses),
-                None => builder,
-            },
-        )
+        Ok(url)
     }
 
     /// The loopback addresses that `url`'s host, `localhost` or a subdomain of
@@ -427,11 +433,11 @@ where
 {
     let status = response.status();
     let headers = response.headers().clone();
-    let full = collect_response(response)
+    let full = collect_stream(response.bytes_stream())
         .await
         .map_err(|error| match error {
-            ClientError::Transport { message, .. } => Error::Custom(message),
-            _ => Error::Custom(error.to_string()),
+            BodyError::Read(error) => Error::ResponseBodyError(error),
+            BodyError::TooLarge => Error::Custom(BodyError::TooLarge.to_string()),
         })?;
     let full = Bytes::from(full);
     let value = serde_json::from_slice(&full)
@@ -441,29 +447,49 @@ where
 
 /// Buffers a full response body, enforcing the size cap.
 async fn collect_response(response: reqwest::Response) -> Result<Vec<u8>, ClientError> {
-    collect_stream(response.bytes_stream()).await
+    Ok(collect_stream(response.bytes_stream()).await?)
 }
 
 /// Buffers a generated streaming (non-JSON) response body, enforcing the size cap.
 pub(crate) async fn collect_byte_stream(
     response: progenitor_client::ByteStream,
 ) -> Result<Vec<u8>, ClientError> {
-    collect_stream(response.into_inner()).await
+    Ok(collect_stream(response.into_inner()).await?)
 }
 
-/// Concatenates body chunks, failing with a transport error as soon as the total
-/// would exceed `MAX_RESPONSE_BODY_BYTES` rather than buffering unbounded output.
-async fn collect_stream<S>(mut stream: S) -> Result<Vec<u8>, ClientError>
+/// Why a response body could not be buffered.
+#[derive(Debug, thiserror::Error)]
+enum BodyError {
+    /// Reading it failed, such as on a timeout or a reset connection.
+    #[error(transparent)]
+    Read(reqwest::Error),
+    /// It exceeded [`MAX_RESPONSE_BODY_BYTES`].
+    #[error("response body exceeded the {MAX_RESPONSE_BODY_BYTES}-byte limit")]
+    TooLarge,
+}
+
+impl From<BodyError> for ClientError {
+    /// Classifies a read failure like any transport failure; an oversized
+    /// body is a failed exchange.
+    fn from(error: BodyError) -> Self {
+        match error {
+            BodyError::Read(error) => Self::transport(error),
+            BodyError::TooLarge => Self::exchange(BodyError::TooLarge.to_string()),
+        }
+    }
+}
+
+/// Concatenates body chunks, failing as soon as the total would exceed
+/// `MAX_RESPONSE_BODY_BYTES` rather than buffering unbounded output.
+async fn collect_stream<S>(mut stream: S) -> Result<Vec<u8>, BodyError>
 where
     S: futures_util::Stream<Item = reqwest::Result<Bytes>> + Unpin,
 {
     let mut buffer = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(ClientError::transport)?;
+        let chunk = chunk.map_err(BodyError::Read)?;
         if buffer.len().saturating_add(chunk.len()) > MAX_RESPONSE_BODY_BYTES {
-            return Err(ClientError::exchange(format!(
-                "response body exceeded the {MAX_RESPONSE_BODY_BYTES}-byte limit"
-            )));
+            return Err(BodyError::TooLarge);
         }
         buffer.extend_from_slice(&chunk);
     }
@@ -569,7 +595,7 @@ impl ClientError {
 
         if error.is_timeout() {
             return Self::Transport {
-                message: TIMEOUT_MESSAGE.to_owned(),
+                message: "request timed out".to_owned(),
                 kind: TransportFailure::Timeout,
             };
         }
@@ -645,10 +671,6 @@ impl ClientError {
                     Err(error) => error,
                 }
             }
-            Error::Custom(message) if message == TIMEOUT_MESSAGE => Self::Transport {
-                message,
-                kind: TransportFailure::Timeout,
-            },
             Error::Custom(message) => Self::exchange(message),
         }
     }
@@ -656,7 +678,7 @@ impl ClientError {
 
 #[cfg(all(test, target_arch = "wasm32"))]
 mod wasm_tests {
-    use super::{Client, ClientError, MAX_RESPONSE_BODY_BYTES, collect_stream};
+    use super::{BodyError, Client, ClientError, MAX_RESPONSE_BODY_BYTES, collect_stream};
     use bytes::Bytes;
     use futures_util::stream;
     use std::time::Duration;
@@ -672,7 +694,7 @@ mod wasm_tests {
         ]);
         assert!(matches!(
             collect_stream(chunks).await,
-            Err(ClientError::Transport { message, .. }) if message.contains("16")
+            Err(BodyError::TooLarge)
         ));
     }
 

@@ -452,7 +452,8 @@ mutually exclusive. The default socket is
 `/run/piqueld/piqueld.sock`.
 
 Remote IP addresses and DNS names are accepted. HTTPS is supported; embedded URL
-credentials, non-root paths, queries, and fragments are rejected. DNS resolution
+credentials, non-root paths, queries, and fragments are rejected, as a usage
+error (exit code 2) for `--url`, without repeating the value. DNS resolution
 and connection setup share the request timeout; redirects are not followed.
 Remote HTTP authentication, including `login`, requires `--allow-insecure-http`
 when using separate transport encryption such as Tailscale. The client does not

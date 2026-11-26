@@ -156,6 +156,7 @@ pub(crate) struct Cli {
         long,
         global = true,
         value_name = "URL",
+        value_parser = OriginParser,
         conflicts_with = "socket",
         help_heading = GLOBAL
     )]
@@ -239,16 +240,60 @@ impl Cli {
             .unwrap_or(Path::new(crate::support::DEFAULT_SOCKET))
     }
 
-    /// Human description of the configured endpoint.
+    /// Where to connect: the URL when one is set, else the socket.
+    pub(crate) fn endpoint(&self) -> Endpoint<'_> {
+        match &self.url {
+            Some(url) => Endpoint::Url(url),
+            None => Endpoint::Socket(self.socket_path()),
+        }
+    }
+}
+
+/// Where `piquelctl` connects, from [`Cli::endpoint`].
+#[derive(Clone, Copy)]
+pub(crate) enum Endpoint<'a> {
+    /// An HTTP or HTTPS origin.
+    Url(&'a str),
+    /// The daemon's Unix socket at this path.
+    Socket(&'a Path),
+}
+
+impl Endpoint<'_> {
+    /// Human description.
     ///
     /// ```text
     /// --url http://127.0.0.1:7845  →  TCP http://127.0.0.1:7845
     /// (no endpoint)                →  Unix socket /run/piqueld/piqueld.sock
     /// ```
-    pub(crate) fn transport(&self) -> String {
-        match &self.url {
-            Some(url) => format!("TCP {url}"),
-            None => format!("Unix socket {}", self.socket_path().to_string_lossy()),
+    pub(crate) fn describe(self) -> String {
+        match self {
+            Self::Url(url) => format!("TCP {url}"),
+            Self::Socket(path) => format!("Unix socket {}", path.to_string_lossy()),
+        }
+    }
+
+    /// Key that scopes saved logins to one daemon.
+    ///
+    /// ```text
+    /// --url https://ops.example/  →  https://ops.example
+    /// --socket /tmp/p.sock        →  unix:/tmp/p.sock
+    /// (neither)                   →  unix:/run/piqueld/piqueld.sock
+    /// ```
+    pub(crate) fn key(self) -> String {
+        match self {
+            Self::Url(url) => url.trim_end_matches('/').to_owned(),
+            Self::Socket(path) => format!("unix:{}", path.to_string_lossy()),
+        }
+    }
+
+    /// A client for it, without credentials or settings.
+    ///
+    /// # Errors
+    /// Fails on a URL that isn't an HTTP origin, or a client that can't build.
+    pub(crate) fn client(self) -> Result<piqueld_client::Client, piqueld_client::ClientError> {
+        match self {
+            Self::Url(url) => piqueld_client::Client::tcp(url),
+            Self::Socket(path) => piqueld_client::Client::unix(path),
         }
     }
 }
@@ -806,6 +851,32 @@ pub(crate) struct OperationArgs {
     /// Show the operation's current state instead of waiting for it to end.
     #[arg(long)]
     pub(crate) no_wait: bool,
+}
+
+/// Accepts an HTTP or HTTPS origin, such as `https://piqueld.example`, as
+/// `--url`. Unlike clap's own errors, its error leaves the value out: a URL
+/// may hold credentials.
+#[derive(Clone)]
+struct OriginParser;
+
+impl clap::builder::TypedValueParser for OriginParser {
+    type Value = String;
+
+    fn parse_ref(
+        &self,
+        command: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<String, clap::Error> {
+        let refuse = |problem: &dyn std::fmt::Display| {
+            let arg = arg.map_or_else(|| "--url".to_owned(), ToString::to_string);
+            let message = format!("invalid value for '{arg}': {problem}\n");
+            clap::Error::raw(clap::error::ErrorKind::ValueValidation, message).with_cmd(command)
+        };
+        let value = value.to_str().ok_or_else(|| refuse(&"it is not UTF-8"))?;
+        piqueld_client::Client::origin(value).map_err(|error| refuse(&error))?;
+        Ok(value.to_owned())
+    }
 }
 
 /// Accepts a request ID the daemon accepts: 1 to 128 ASCII letters, digits,

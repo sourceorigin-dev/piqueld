@@ -126,10 +126,7 @@ socket = "/tmp/dev.sock"
         ("PIQUELD_URL", "invalid"),
         ("PIQUELD_TIMEOUT", "invalid"),
     ];
-    let result = fixture.run(
-        &["--profile", "also-missing", "--url", "invalid", "profiles"],
-        &env,
-    );
+    let result = fixture.run(&["--profile", "also-missing", "profiles"], &env);
     assert!(
         result.status.success(),
         "{}",
@@ -454,10 +451,9 @@ fn invalid_configuration_reports_its_source_without_exposing_values() {
     );
     assert_eq!(output.status.code(), Some(2));
     let error = String::from_utf8_lossy(&output.stderr);
-    assert!(error.contains("Endpoint source: flag --url"), "{error}");
+    assert!(error.contains("invalid value for '--url <URL>'"), "{error}");
     assert!(!error.contains("private-token"));
     assert!(!error.contains("secret=value"));
-    assert!(!error.contains("Endpoint:"));
 
     for malformed in [
         "[profiles.testing]\nurl = \"http://user:private-token@localhost/\" broken",

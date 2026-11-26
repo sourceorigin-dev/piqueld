@@ -316,7 +316,7 @@ impl Profile {
             return Err("A connection profile must contain exactly one socket or URL".into());
         }
         if let Some(url) = &self.url {
-            piqueld_client::Client::tcp(url).map_err(|error| error.to_string())?;
+            piqueld_client::Client::origin(url).map_err(|error| error.to_string())?;
         }
         if let Some(timeout) = &self.timeout {
             parse_duration(timeout).map_err(|message| format!("invalid timeout: {message}"))?;

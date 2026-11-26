@@ -555,7 +555,7 @@ impl<'a> ErrorReport<'a> {
             ));
         } else {
             if !matches!(diagnostic, Diagnostic::Endpoint) {
-                facts.push(("  Endpoint", "endpoint", cli.transport()));
+                facts.push(("  Endpoint", "endpoint", cli.endpoint().describe()));
             }
             facts.push((
                 "  Endpoint source",

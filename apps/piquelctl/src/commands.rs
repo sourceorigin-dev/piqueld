@@ -230,10 +230,7 @@ async fn build_logs(
 /// `--request-id`, `PIQUELD_REQUEST_ID`, or a fresh one. Fails on invalid
 /// endpoint input or request ID before any request is sent.
 pub(crate) fn build_client(cli: &Cli) -> Result<Client> {
-    let client = match &cli.url {
-        Some(url) => Client::tcp(url)?,
-        None => Client::unix(cli.socket_path())?,
-    };
+    let client = cli.endpoint().client()?;
     let client = if cli.auth.allow_insecure_http {
         client.with_insecure_http()
     } else {
@@ -259,7 +256,7 @@ async fn status(cli: &Cli, client: &Client, console: &mut Console) -> Result<()>
     let readiness = client.system_readiness().await.ok();
     console.emit(&StatusReport {
         status: &status,
-        transport: &cli.transport(),
+        transport: &cli.endpoint().describe(),
         ingress: readiness.as_ref().map(|readiness| &readiness.ingress),
     })
 }
@@ -270,7 +267,7 @@ async fn status(cli: &Cli, client: &Client, console: &mut Console) -> Result<()>
 /// check fails.
 pub(crate) async fn doctor(cli: &Cli, client: &Client, console: &mut Console) -> Result<()> {
     let connection = Connection {
-        endpoint: cli.transport(),
+        endpoint: cli.endpoint().describe(),
         endpoint_source: cli.connection_sources.endpoint.to_string(),
         credential: crate::auth::Credentials::token(cli)?.1.to_string(),
     };
