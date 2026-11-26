@@ -16,6 +16,7 @@ use crate::process::{checked_stdout, exit_code};
 
 /// A release of the workspace version, from `HEAD`, by `cargo xtask release`.
 struct Release<'a> {
+    /// The workspace to release.
     workspace: &'a Workspace,
     /// The workspace version, such as `0.2.0`.
     version: String,
@@ -254,9 +255,12 @@ impl Drop for ShippedDashboard {
 /// The fields of Cargo's JSON messages this reads.
 #[derive(Deserialize)]
 struct Message {
+    /// What the message reports, such as `build-script-executed`.
     reason: String,
+    /// The package the message is about.
     #[serde(default)]
     package_id: String,
+    /// Where the build script wrote its output, in a `build-script-executed` message.
     out_dir: Option<PathBuf>,
 }
 

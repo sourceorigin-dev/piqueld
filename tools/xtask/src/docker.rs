@@ -75,6 +75,7 @@ impl Engine {
         Ok(Self(docker))
     }
 
+    /// The endpoint of the Docker CLI's current context; the default socket when there is no CLI.
     fn context_endpoint() -> Result<String> {
         let output = std::process::Command::new("docker")
             .args([
@@ -94,6 +95,7 @@ impl Engine {
         }
     }
 
+    /// The Docker-in-Docker image: `PIQUELD_DIND_IMAGE` if set, else the pinned one.
     pub(crate) fn dind_image() -> String {
         std::env::var("PIQUELD_DIND_IMAGE").unwrap_or_else(|_| DIND_IMAGE.to_owned())
     }
@@ -196,6 +198,7 @@ impl Engine {
         }
     }
 
+    /// Whether the container `container` is running; fails when it can't be inspected.
     pub(crate) async fn running(&self, container: &str) -> Result<bool> {
         let state = self
             .inspect_container(container, None::<InspectContainerOptions>)

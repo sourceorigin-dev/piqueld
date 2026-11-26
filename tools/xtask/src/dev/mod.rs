@@ -33,6 +33,7 @@ const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 /// How often `just dev wait` checks the instance.
 const WAIT_POLL: Duration = Duration::from_secs(2);
 
+/// The instance's configuration file, in the workspace root.
 const CONFIG_FILE: &str = "piqueld.local.toml";
 /// Held every user's runtime directories before [`Instance::runtime_root`];
 /// `just dev config --force` moves a configuration that still uses it.
@@ -55,9 +56,12 @@ const SOURCES: [&str; 8] = [
 ];
 /// Labels on each instance's engine, which let `prune` find what to delete.
 const WORKTREE_LABEL: &str = "io.piqueld.dev.worktree";
+/// The label on an engine's container naming its worktree.
 const DATA_LABEL: &str = "io.piqueld.dev.data";
+/// The label on an engine's container naming its runtime directory.
 const RUNTIME_LABEL: &str = "io.piqueld.dev.runtime";
 
+/// The `just dev` subcommands.
 #[derive(Subcommand)]
 pub(crate) enum Command {
     /// Watch the sources, rebuilding and restarting the daemon on every change.
@@ -91,12 +95,14 @@ pub(crate) enum Command {
     /// Run this worktree's piquelctl against the instance.
     #[command(disable_help_flag = true)]
     Ctl {
+        /// Arguments for `piquelctl`.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 }
 
 impl Command {
+    /// Runs the command for the worktree `workspace`, failing with the task's error.
     pub(crate) async fn run(self, workspace: Workspace) -> Result<ExitCode> {
         match self {
             Self::Config { force } => {
@@ -125,22 +131,31 @@ impl Command {
 /// Edits to the file are respected.
 #[derive(Deserialize)]
 struct Config {
+    /// The daemon's server settings.
     server: ServerConfig,
+    /// The Docker engine the daemon uses.
     #[serde(default)]
     docker: DockerConfig,
+    /// The tailnet settings, which are only read to notice an old configuration.
     #[serde(default)]
     tailscale: TailscaleConfig,
 }
 
+/// The `[server]` settings the tasks read.
 #[derive(Deserialize)]
 struct ServerConfig {
+    /// Where the daemon keeps its data.
     data_dir: PathBuf,
+    /// Where the instance keeps its sockets and logs.
     runtime_dir: PathBuf,
+    /// The port the daemon serves on, if the configuration sets one.
     port: Option<u16>,
 }
 
+/// The `[docker]` settings the tasks read.
 #[derive(Default, Deserialize)]
 struct DockerConfig {
+    /// The engine's socket, if the configuration names one.
     socket: Option<PathBuf>,
 }
 
@@ -148,10 +163,12 @@ struct DockerConfig {
 /// tailnet node.
 #[derive(Default, Deserialize)]
 struct TailscaleConfig {
+    /// The tailnet node's socket, if the configuration names one.
     socket: Option<PathBuf>,
 }
 
 impl Config {
+    /// Reads and parses the configuration at `path`.
     fn read(path: &Path) -> Result<Self> {
         let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
         toml::from_str(&text).with_context(|| format!("parse {}", path.display()))
@@ -162,13 +179,18 @@ impl Config {
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Phase {
+    /// The daemon is building.
     Building,
+    /// The build failed.
     Failed,
+    /// The daemon runs.
     Running,
+    /// The daemon exited.
     Exited,
 }
 
 impl Phase {
+    /// Its name, as `status` prints it.
     fn as_str(self) -> &'static str {
         match self {
             Self::Building => "building",
@@ -182,6 +204,7 @@ impl Phase {
 /// The supervisor's progress, in `state.json` for `wait` and `status`.
 #[derive(Serialize, Deserialize)]
 struct State {
+    /// How far the supervisor got.
     phase: Phase,
     /// When the build of the current sources began. Sources modified later
     /// are not built yet.
@@ -190,11 +213,14 @@ struct State {
 
 /// This worktree's instance, as configured by piqueld.local.toml.
 pub(crate) struct Instance {
+    /// The worktree the instance belongs to.
     workspace: Workspace,
+    /// The parsed configuration.
     config: Config,
 }
 
 impl Instance {
+    /// Loads the instance configured in `workspace`'s piqueld.local.toml; fails when it is missing.
     fn load(workspace: Workspace) -> Result<Self> {
         let path = workspace.root().join(CONFIG_FILE);
         if !path.exists() {
@@ -258,6 +284,7 @@ impl Instance {
             && Self::check_private(dir).is_ok()
     }
 
+    /// Like [`Self::load`], after writing piqueld.local.toml if it doesn't exist.
     fn load_or_configure(workspace: Workspace) -> Result<Self> {
         Self::configure(&workspace, false)?;
         Self::load(workspace)
@@ -435,14 +462,17 @@ auto_initialize_swarm = true
         Ok(file)
     }
 
+    /// The path of `name` in the runtime directory.
     fn file(&self, name: &str) -> PathBuf {
         self.config.server.runtime_dir.join(name)
     }
 
+    /// The daemon's socket.
     fn socket(&self) -> PathBuf {
         self.file("piqueld.sock")
     }
 
+    /// The instance's name, that of its runtime directory.
     fn name(&self) -> String {
         self.config
             .server
@@ -453,10 +483,12 @@ auto_initialize_swarm = true
             .into_owned()
     }
 
+    /// The name of the instance's engine container.
     fn container(&self) -> String {
         format!("piqueld-dev-{}", self.name())
     }
 
+    /// The socket of the instance's own engine.
     fn engine_socket(&self) -> PathBuf {
         self.file("docker/docker.sock")
     }
@@ -466,10 +498,12 @@ auto_initialize_swarm = true
         self.config.docker.socket.as_deref() == Some(&self.engine_socket())
     }
 
+    /// Whether the instance's own engine socket exists.
     fn engine_socket_exists(&self) -> bool {
         fs::metadata(self.engine_socket()).is_ok_and(|metadata| metadata.file_type().is_socket())
     }
 
+    /// Creates `path` and its parents, accessible only to the current user.
     fn create_private_dir(path: &Path) -> Result<()> {
         fs::DirBuilder::new()
             .recursive(true)
@@ -483,6 +517,7 @@ auto_initialize_swarm = true
         Supervisor::in_dir(&self.config.server.runtime_dir)
     }
 
+    /// The supervisor's recorded state, if it has recorded a readable one.
     fn state(&self) -> Option<State> {
         serde_json::from_slice(&fs::read(self.file("state.json")).ok()?).ok()
     }
@@ -565,6 +600,7 @@ auto_initialize_swarm = true
         bail!("not ready after {timeout} seconds; see `just dev status`")
     }
 
+    /// Prints the last `count` lines of the runtime file `name` to stderr, if it exists.
     fn print_tail(&self, name: &str, count: usize) {
         let Ok(text) = fs::read_to_string(self.file(name)) else {
             return;
@@ -575,6 +611,7 @@ auto_initialize_swarm = true
         }
     }
 
+    /// Prints the instance's name, state, URL and files.
     async fn status(&self) {
         let (phase, url) = if self.supervisor().running().is_some() {
             let phase = self
@@ -603,6 +640,7 @@ auto_initialize_swarm = true
         println!("logs      {}", self.file("daemon.log").display());
     }
 
+    /// Stops the instance and deletes its engine, data and runtime files.
     async fn clean(&self) -> Result<()> {
         let engine = Engine::host().await?;
         let container = self.container();

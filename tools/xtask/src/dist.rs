@@ -28,10 +28,12 @@ struct Archive {
     /// The archive's top-level directory, such as
     /// `piqueld-0.1.0-x86_64-linux`.
     name: String,
+    /// Each file to archive: its path in the workspace and its name in the archive.
     files: [(PathBuf, &'static str); 4],
 }
 
 impl Archive {
+    /// The archive of `version`, from the workspace's built binaries.
     fn new(workspace: &Workspace, version: &str) -> Self {
         let root = workspace.root();
         let binaries = root.join("target").join(TARGET).join("release");

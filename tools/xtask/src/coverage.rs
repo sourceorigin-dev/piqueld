@@ -63,30 +63,41 @@ pub(crate) fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
 /// `llvm-cov export --summary-only`, as `cargo llvm-cov report --json` prints it.
 #[derive(Deserialize)]
 struct Export {
+    /// The coverage data, one entry per export.
     data: Vec<Data>,
 }
 
+/// The coverage of one export.
 #[derive(Deserialize)]
 struct Data {
+    /// The source files measured.
     files: Vec<File>,
 }
 
+/// The coverage of one source file.
 #[derive(Deserialize)]
 struct File {
+    /// The file's path.
     filename: PathBuf,
+    /// The file's totals.
     summary: Summary,
 }
 
+/// The lines and functions a set of files has, and how many of them the tests ran.
 #[derive(Clone, Copy, Default, Deserialize)]
 struct Summary {
+    /// The lines of code.
     lines: Count,
+    /// The functions.
     functions: Count,
 }
 
 /// How many of `count` lines or functions the tests ran.
 #[derive(Clone, Copy, Default, Deserialize)]
 struct Count {
+    /// How many there are.
     count: u64,
+    /// How many the tests ran.
     covered: u64,
 }
 

@@ -30,18 +30,22 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use serde::de::DeserializeOwned;
 
+/// The command line: one task.
 #[derive(Parser)]
 #[command(about = "Development tasks for the piqueld workspace")]
 struct Cli {
+    /// The task to run.
     #[command(subcommand)]
     task: Task,
 }
 
+/// The tasks `cargo xtask` runs.
 #[derive(Subcommand)]
 enum Task {
     /// Manage this worktree's isolated development instance; runs it in the
     /// foreground without a command.
     Dev {
+        /// What to do with the instance.
         #[command(subcommand)]
         command: Option<dev::Command>,
     },
@@ -133,15 +137,18 @@ async fn main() -> Result<ExitCode> {
 
 /// The checkout `cargo xtask` runs in, which may be one of several worktrees.
 struct Workspace {
+    /// The workspace's root directory.
     root: PathBuf,
 }
 
 impl Workspace {
+    /// The checkout the current directory belongs to.
     fn current() -> Result<Self> {
         let root = Self::git(Path::new("."), &["rev-parse", "--show-toplevel"])?;
         Ok(Self { root: root.into() })
     }
 
+    /// The workspace's root directory.
     fn root(&self) -> &Path {
         &self.root
     }

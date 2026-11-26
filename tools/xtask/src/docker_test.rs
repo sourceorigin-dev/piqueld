@@ -141,6 +141,7 @@ fn dind(image: String, runtime: &Path, store: Store) -> ContainerCreateBody {
     body
 }
 
+/// Runs `suites`, in order, against the engine in `container` once it is ready, optionally only the `partition` shard of each. Returns the first failing suite's exit code, else success.
 async fn test(
     workspace: &Workspace,
     engine: &Engine,

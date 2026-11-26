@@ -49,6 +49,7 @@ pub(super) enum Holder {
 /// while it runs, so a file left behind by a crash never names an unrelated
 /// process that reuses its pid.
 pub(super) struct Supervisor {
+    /// The instance's dev.pid.
     pid_file: PathBuf,
 }
 
@@ -103,6 +104,7 @@ impl Supervisor {
         Some(record)
     }
 
+    /// The pid in `line`, if it holds one.
     fn pid(line: &[u8]) -> Option<Pid> {
         Pid::from_raw(std::str::from_utf8(line).ok()?.trim().parse().ok()?)
     }
@@ -181,8 +183,11 @@ impl Supervisor {
 
 /// What ended a wait on the build, the daemon, or a fix.
 enum Event {
+    /// The job exited with this status.
     Exited(std::process::ExitStatus),
+    /// A source changed.
     Changed,
+    /// A shutdown signal arrived.
     Shutdown,
 }
 
@@ -223,6 +228,7 @@ impl Instance {
             .inspect_err(|_| self.print_tail("dev.log", 40))
     }
 
+    /// Builds and runs the daemon, rebuilding when a source changes, until `shutdown`.
     async fn supervise(&self, shutdown: &mut Shutdown) -> Result<()> {
         loop {
             let started = SystemTime::now();
@@ -294,6 +300,7 @@ impl Instance {
         }
     }
 
+    /// Writes `phase` and `build_started` to `state.json`.
     fn record(&self, phase: Phase, build_started: SystemTime) -> Result<()> {
         let temporary = self.file("state.json.tmp");
         fs::write(
