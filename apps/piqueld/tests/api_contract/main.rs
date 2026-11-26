@@ -975,20 +975,20 @@ impl AcceptanceApi {
         router(self.state.clone(), FakeAuth)
     }
 
-    /// Runs operation `id` to success, or to failure with `error`.
-    async fn finish_operation(&self, id: &str, error: Option<(&str, &str)>) {
+    /// Runs operation `id` to success, or to `failure`.
+    async fn finish_operation(&self, id: &str, failure: Option<piqueld_store::OperationFailure>) {
         use piqueld_core::OperationState;
         self.store
             .transition_operation(id, OperationState::Requested, OperationState::Running, None)
             .await
             .expect("the operation transitions");
-        let state = if error.is_some() {
+        let state = if failure.is_some() {
             OperationState::Failed
         } else {
             OperationState::Succeeded
         };
         self.store
-            .transition_operation(id, OperationState::Running, state, error)
+            .transition_operation(id, OperationState::Running, state, failure.as_ref())
             .await
             .expect("the operation transitions");
     }

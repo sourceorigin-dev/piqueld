@@ -367,9 +367,12 @@ async fn rolls_back_to_the_newest_successful_deployment() {
             .expect("prepared target returns a value")
             .expect("the value is present")
     );
-    let error = ("service_update_failed", "service update paused");
+    let failure = OperationFailure::new(
+        piqueld_core::observability::DiagnosticCode::ServiceUpdateFailed,
+        "service update paused",
+    );
     let rollback = store
-        .roll_back(&failing, error, &deployment)
+        .roll_back(&failing, &failure, &deployment)
         .await
         .expect("roll back succeeds");
     let failed = store
@@ -391,7 +394,7 @@ async fn rolls_back_to_the_newest_successful_deployment() {
         }
     );
     assert!(matches!(
-        store.roll_back(&failing, error, &deployment).await,
+        store.roll_back(&failing, &failure, &deployment).await,
         Err(StoreError::IllegalTransition)
     ));
     let latest = store

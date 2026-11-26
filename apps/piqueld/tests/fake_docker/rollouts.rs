@@ -1,6 +1,8 @@
 //! Preparing and rolling out deployments: image resolution, generations, dependencies, recovery and swarm topology changes.
 
 use super::*;
+use piqueld_core::observability::DiagnosticCode;
+use piqueld_store::OperationFailure;
 
 /// An [`ImageSource`] whose references always have the same repo digests.
 struct FixedImageSource(Vec<String>);
@@ -274,7 +276,10 @@ async fn periodic_recovery_reuses_failed_prepared_target_and_records_health_chan
             &operation.id,
             OperationState::Running,
             OperationState::Failed,
-            Some(("docker_unavailable", "Docker is unavailable")),
+            Some(&OperationFailure::new(
+                DiagnosticCode::DockerUnavailable,
+                "Docker is unavailable",
+            )),
         )
         .await
         .expect("the operation transitions");

@@ -124,7 +124,7 @@ impl Store {
     }
 
     /// Records a transition only if this is still the latest operation.
-    /// `error` must be present exactly when moving to `Failed`. Entering
+    /// `failure` must be present exactly when moving to `Failed`. Entering
     /// `Running` counts a new attempt; failures and successes update
     /// `consecutive_failures`. Terminal states snapshot the deployment attempt,
     /// and every real state change appends its matching operation event.
@@ -136,10 +136,10 @@ impl Store {
         id: &str,
         from: OperationState,
         to: OperationState,
-        error: Option<(&str, &str)>,
+        failure: Option<&OperationFailure>,
     ) -> Result<(), StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        Self::transition_operation_on(&mut tx, id, from, to, error).await?;
+        Self::transition_operation_on(&mut tx, id, from, to, failure).await?;
         tx.commit().await.map_err(StoreError::database)
     }
 
@@ -149,14 +149,16 @@ impl Store {
         id: &str,
         from: OperationState,
         to: OperationState,
-        error: Option<(&str, &str)>,
+        failure: Option<&OperationFailure>,
     ) -> Result<(), StoreError> {
-        if !from.can_transition_to(to) || error.is_some() != (to == OperationState::Failed) {
+        if !from.can_transition_to(to) || failure.is_some() != (to == OperationState::Failed) {
             return Err(StoreError::IllegalTransition);
         }
         let now = now_ms();
         let finished = to.terminal().then_some(now);
-        let (code, message) = error.unzip();
+        let (code, message) = failure
+            .map(|failure| (failure.code.as_str(), failure.message.as_str()))
+            .unzip();
         let (from_state, to_state) = (from.as_str(), to.as_str());
         let changed = sqlx::query!(
             "UPDATE operations SET consecutive_failures=CASE WHEN ?1='failed' THEN consecutive_failures+1 WHEN ?1='succeeded' THEN 0 ELSE consecutive_failures END,attempt=attempt+CASE WHEN ?1='running' AND state!='running' THEN 1 ELSE 0 END,state=?1,error_code=?2,error_message=?3,updated_at_ms=?4,started_at_ms=CASE WHEN ?1='requested' THEN NULL WHEN ?1='running' THEN COALESCE(started_at_ms,?4) ELSE started_at_ms END,finished_at_ms=?5 WHERE id=?6 AND state=?7 AND id=(SELECT latest.id FROM operations latest WHERE latest.environment_id=operations.environment_id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1)",
@@ -165,9 +167,7 @@ impl Store {
         if changed != 1 {
             return Err(StoreError::IllegalTransition);
         }
-        if code
-            .and_then(DiagnosticCode::parse)
-            .and_then(DiagnosticCode::deployment_failure)
+        if failure.and_then(|failure| failure.code.deployment_failure())
             == Some(DeploymentFailure::Job)
         {
             Self::request_job_cleanup_on(tx, id).await?;
@@ -198,10 +198,10 @@ impl Store {
     pub async fn record_operation_error(
         &self,
         operation: &Operation,
-        code: &str,
-        message: &str,
+        failure: &OperationFailure,
     ) -> Result<(), StoreError> {
         let now = now_ms();
+        let (code, message) = (failure.code.as_str(), failure.message.as_str());
         let (_writer, mut tx) = self.begin_immediate().await?;
         let changed=sqlx::query!("UPDATE operations SET consecutive_failures=consecutive_failures+1,error_code=?1,error_message=?2,updated_at_ms=?3 WHERE id=?4 AND state='running'",code,message,now,operation.id)
             .execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
@@ -533,6 +533,28 @@ impl Store {
             Self::mark_stopped_on(tx, app_id, false, now).await?;
         }
         Self::operation_on(tx, &id).await
+    }
+}
+
+/// Why an operation failed, as stored on it: `code` as its `error_code` and
+/// `message` as its `error_message`.
+#[derive(Debug)]
+pub struct OperationFailure {
+    /// The failure's class, which also decides its follow-up, such as job
+    /// cleanup.
+    pub code: DiagnosticCode,
+    /// What went wrong, shown with the operation and on its event.
+    pub message: String,
+}
+
+impl OperationFailure {
+    /// A failure of class `code` that says `message`.
+    #[must_use]
+    pub fn new(code: DiagnosticCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 

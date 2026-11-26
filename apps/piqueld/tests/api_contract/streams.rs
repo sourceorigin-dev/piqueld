@@ -175,7 +175,10 @@ async fn event_stream_replays_after_cursor_and_rejects_pruned_history() {
     let app = api.deploy().await;
     api.finish_operation(
         &app.operation_id,
-        Some(("service_update_failed", "Update paused")),
+        Some(piqueld_store::OperationFailure::new(
+            piqueld_core::observability::DiagnosticCode::ServiceUpdateFailed,
+            "Update paused",
+        )),
     )
     .await;
     let events = api

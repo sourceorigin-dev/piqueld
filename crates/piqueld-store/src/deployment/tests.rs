@@ -1,6 +1,8 @@
 use super::*;
 use crate::Actor::Daemon;
+use crate::OperationFailure;
 use crate::{Mutation, MutationResponse};
+use piqueld_core::observability::DiagnosticCode;
 use piqueld_core::{ApplicationState, OperationState};
 
 fn empty() -> ApplicationTemplate {
@@ -276,7 +278,10 @@ async fn failure_survives_success_and_empty_target_has_no_resources() {
             &op.id,
             OperationState::Running,
             OperationState::Failed,
-            Some(("docker_unavailable", "Docker is unavailable")),
+            Some(&OperationFailure::new(
+                DiagnosticCode::DockerUnavailable,
+                "Docker is unavailable",
+            )),
         )
         .await
         .expect("transition operation succeeds");

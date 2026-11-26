@@ -12,7 +12,9 @@ mod sqlite;
 
 use piqueld_core::api::Page;
 use piqueld_core::manifest::ApplicationTemplate;
+use piqueld_core::observability::DiagnosticCode;
 use piqueld_core::{EnvironmentId, NormalizedApplication, Operation, OperationState};
+use piqueld_store::OperationFailure;
 use piqueld_store::{Store, StoreError};
 
 fn application() -> NormalizedApplication {
@@ -190,7 +192,10 @@ async fn replacement_cancels_previous_work_and_retry_reuses_the_failed_operation
             &replaced.id,
             OperationState::Running,
             OperationState::Failed,
-            Some(("docker_error", "unavailable")),
+            Some(&OperationFailure::new(
+                DiagnosticCode::DockerRequestFailed,
+                "unavailable",
+            )),
         )
         .await
         .expect("the operation transitions");

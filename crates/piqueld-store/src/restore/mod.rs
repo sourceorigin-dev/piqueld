@@ -11,7 +11,7 @@ use super::{
     ApplicationState, EnvironmentId, Operation, OperationKind, OperationState, Store, StoreError,
     StoredEnvironment, acceptance::Accepted, now_ms,
 };
-use crate::Restore;
+use crate::{OperationFailure, Restore};
 use piqueld_core::EventKind;
 use piqueld_core::{
     NormalizedApplication, api::DeploymentOrigin, manifest::ApplicationTemplate,
@@ -89,7 +89,7 @@ impl Store {
         Ok(Some((deployment, target)))
     }
 
-    /// Fails the running `operation`, whose rollout failed with `error`, and
+    /// Fails the running `operation`, whose rollout failed with `failure`, and
     /// rolls it back in the same transaction: accepts restoring
     /// `deployment`, recorded as a restore that rolled `operation` back, and
     /// records `rollback_requested` on `operation`. Returns the rollback.
@@ -101,7 +101,7 @@ impl Store {
     pub async fn roll_back(
         &self,
         operation: &Operation,
-        error: (&str, &str),
+        failure: &OperationFailure,
         deployment: &str,
     ) -> Result<Operation, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
@@ -110,7 +110,7 @@ impl Store {
             &operation.id,
             OperationState::Running,
             OperationState::Failed,
-            Some(error),
+            Some(failure),
         )
         .await?;
         let environment = Box::pin(Self::existing_environment_on(

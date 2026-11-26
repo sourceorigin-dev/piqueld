@@ -1,7 +1,9 @@
 use super::*;
 use crate::Actor::Daemon;
+use crate::OperationFailure;
 use crate::testing::template;
 use crate::{Mutation, MutationResponse};
+use piqueld_core::observability::DiagnosticCode;
 use piqueld_core::{ApplicationId, EnvironmentId, OperationState, ResolutionSet};
 
 #[tokio::test]
@@ -286,7 +288,10 @@ async fn fetched_manifests_keep_the_current_name() {
             &op.id,
             OperationState::Running,
             OperationState::Failed,
-            Some(("build_failed", "build failed")),
+            Some(&OperationFailure::new(
+                DiagnosticCode::GitBuildFailed,
+                "build failed",
+            )),
         )
         .await
         .expect("transition operation succeeds");

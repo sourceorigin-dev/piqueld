@@ -141,7 +141,7 @@ impl<D: DockerApi> Controller<D> {
             Err(error) if operation.kind == OperationKind::Delete => {
                 tracing::warn!(code = error.code(), error = ?error, "deletion will be retried");
                 self.store
-                    .record_operation_error(operation, error.code(), &error.message())
+                    .record_operation_error(operation, &error.failure())
                     .await
             }
             Err(error) => {
@@ -641,7 +641,7 @@ impl<D: DockerApi> Controller<D> {
                 &operation.id,
                 OperationState::Running,
                 OperationState::Failed,
-                Some((error.code(), &error.message())),
+                Some(&error.failure()),
             )
             .await
         {
