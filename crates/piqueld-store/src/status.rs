@@ -172,7 +172,7 @@ impl From<EnvironmentStatus> for piqueld_core::api::EnvironmentStatusView {
     /// Projects persisted environment status into its API view.
     fn from(status: EnvironmentStatus) -> Self {
         Self {
-            environment_id: status.environment_id.to_string(),
+            environment_id: status.environment_id,
             state: status.state,
             runtime_health: status.runtime_health,
             health_observed_at_ms: status.health_observed_at_ms,

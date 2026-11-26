@@ -190,7 +190,7 @@ pub(super) fn RouteSettings() -> impl IntoView {
                     .into_iter()
                     .filter_map(|route| {
                         saved
-                            .deployable(&route.environment_id)
+                            .deployable(route.environment_id.as_str())
                             .map(|environment| (environment.name.to_string(), route))
                     })
                     .collect::<Vec<_>>()

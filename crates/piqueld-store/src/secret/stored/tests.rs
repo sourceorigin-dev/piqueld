@@ -175,7 +175,7 @@ async fn environments_mount_the_stored_secret_their_variables_name_where_access_
     store
         .force(Mutation::Save {
             application: Box::new(shared),
-            expected_application_id: Some(application.to_string()),
+            expected_application_id: Some(application.clone()),
             deploy: false,
         })
         .await
@@ -371,7 +371,7 @@ async fn a_name_is_either_declared_and_generated_or_stored() {
                 Daemon,
                 Mutation::Save {
                     application: Box::new(declared),
-                    expected_application_id: Some(application.to_string()),
+                    expected_application_id: Some(application.clone()),
                     deploy: false,
                 },
                 None,

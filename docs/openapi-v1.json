@@ -5,8 +5,8 @@
         "description": "Operation accepted by a mutation endpoint.",
         "properties": {
           "environment_id": {
-            "description": "Environment the operation changes.",
-            "type": "string"
+            "$ref": "#/components/schemas/EnvironmentId",
+            "description": "Environment the operation changes."
           },
           "generation": {
             "description": "Accepted intent revision.",
@@ -1144,9 +1144,23 @@
         "description": "Desired application state to apply or preview.",
         "properties": {
           "expected_application_id": {
-            "description": "Required for non-forced updates by name; protects against name reuse.",
-            "nullable": true,
-            "type": "string"
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ApplicationId"
+                  }
+                ],
+                "description": "Required for non-forced updates by name; protects against name reuse."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
           },
           "expected_generation": {
             "description": "Required for apply unless forced; optional for preview. Zero requires an absent name.",
@@ -1663,8 +1677,8 @@
             "type": "string"
           },
           "environment_id": {
-            "description": "Owning environment ID.",
-            "type": "string"
+            "$ref": "#/components/schemas/EnvironmentId",
+            "description": "Owning environment ID."
           },
           "exit_code": {
             "description": "Job container exit code, when the job ran to completion.",
@@ -2397,8 +2411,8 @@
         "description": "Accepted application deletion: one delete operation per environment,\npreviews included.",
         "properties": {
           "application_id": {
-            "description": "Stable application identity.",
-            "type": "string"
+            "$ref": "#/components/schemas/ApplicationId",
+            "description": "Stable application identity."
           },
           "generation": {
             "description": "Revision after requesting deletion.",
@@ -3809,8 +3823,8 @@
             "description": "Operation accepted by a mutation endpoint.",
             "properties": {
               "environment_id": {
-                "description": "Environment the operation changes.",
-                "type": "string"
+                "$ref": "#/components/schemas/EnvironmentId",
+                "description": "Environment the operation changes."
               },
               "generation": {
                 "description": "Accepted intent revision.",
@@ -4335,8 +4349,8 @@
             "description": "Accepted application deletion: one delete operation per environment,\npreviews included.",
             "properties": {
               "application_id": {
-                "description": "Stable application identity.",
-                "type": "string"
+                "$ref": "#/components/schemas/ApplicationId",
+                "description": "Stable application identity."
               },
               "generation": {
                 "description": "Revision after requesting deletion.",
@@ -4806,8 +4820,8 @@
             "description": "Current environment reconciliation status.",
             "properties": {
               "environment_id": {
-                "description": "Stable environment identifier.",
-                "type": "string"
+                "$ref": "#/components/schemas/EnvironmentId",
+                "description": "Stable environment identifier."
               },
               "health_observed_at_ms": {
                 "description": "When `runtime_health` was last observed, in Unix milliseconds; it is\nrefreshed on every health scan, so an old value means it is stale.",
@@ -5619,8 +5633,8 @@
                       "type": "string"
                     },
                     "environment_id": {
-                      "description": "Owning environment ID.",
-                      "type": "string"
+                      "$ref": "#/components/schemas/EnvironmentId",
+                      "description": "Owning environment ID."
                     },
                     "exit_code": {
                       "description": "Job container exit code, when the job ran to completion.",
@@ -6511,8 +6525,8 @@
             "description": "Saved application configuration, optionally accompanied by a deployment.",
             "properties": {
               "application_id": {
-                "description": "Stable application identity.",
-                "type": "string"
+                "$ref": "#/components/schemas/ApplicationId",
+                "description": "Stable application identity."
               },
               "generation": {
                 "description": "Saved configuration revision.",
@@ -7748,8 +7762,8 @@
         "description": "Current environment reconciliation status.",
         "properties": {
           "environment_id": {
-            "description": "Stable environment identifier.",
-            "type": "string"
+            "$ref": "#/components/schemas/EnvironmentId",
+            "description": "Stable environment identifier."
           },
           "health_observed_at_ms": {
             "description": "When `runtime_health` was last observed, in Unix milliseconds; it is\nrefreshed on every health scan, so an old value means it is stale.",
@@ -11854,8 +11868,8 @@
                 "description": "Whether piqueld manages those records."
               },
               "environment_id": {
-                "description": "Owning environment identity.",
-                "type": "string"
+                "$ref": "#/components/schemas/EnvironmentId",
+                "description": "Owning environment identity."
               },
               "hostname": {
                 "description": "Exact public DNS hostname.",
@@ -12062,8 +12076,8 @@
         "description": "Saved application configuration, optionally accompanied by a deployment.",
         "properties": {
           "application_id": {
-            "description": "Stable application identity.",
-            "type": "string"
+            "$ref": "#/components/schemas/ApplicationId",
+            "description": "Stable application identity."
           },
           "generation": {
             "description": "Saved configuration revision.",

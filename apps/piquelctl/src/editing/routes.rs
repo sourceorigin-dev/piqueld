@@ -215,7 +215,7 @@ async fn list_routes(client: &Client, console: &mut Console, app: &str) -> Resul
         .routes
         .into_iter()
         .filter_map(|route| {
-            let environment = application.environment(&route.environment_id)?;
+            let environment = application.environment(route.environment_id.as_str())?;
             Some(RouteRow {
                 environment: environment.name.to_string(),
                 route,

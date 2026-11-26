@@ -9,7 +9,7 @@ use super::{EnvironmentSummary, EnvironmentView, ReleasePlan};
 use crate::manifest::{
     ApplicationManifest, ApplicationTemplate, RolloutOrder, RolloutOrderSource, VariableValue,
 };
-use crate::{ApplicationId, EnvironmentName, Operation, Plan};
+use crate::{ApplicationId, EnvironmentId, EnvironmentName, Operation, Plan};
 
 /// Metadata returned when listing applications.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -154,7 +154,7 @@ pub struct ApplyApplicationRequest {
     pub expected_generation: Option<u64>,
     /// Required for non-forced updates by name; protects against name reuse.
     #[serde(default)]
-    pub expected_application_id: Option<String>,
+    pub expected_application_id: Option<ApplicationId>,
 }
 
 /// Operation accepted by a mutation endpoint.
@@ -163,7 +163,7 @@ pub struct AcceptedOperation {
     /// Asynchronous operation identifier.
     pub operation_id: String,
     /// Environment the operation changes.
-    pub environment_id: String,
+    pub environment_id: EnvironmentId,
     /// Accepted intent revision.
     pub generation: u64,
 }
@@ -285,7 +285,7 @@ impl From<&Operation> for AcceptedOperation {
     fn from(operation: &Operation) -> Self {
         Self {
             operation_id: operation.id.clone(),
-            environment_id: operation.environment_id.to_string(),
+            environment_id: operation.environment_id.clone(),
             generation: operation.generation,
         }
     }
@@ -296,7 +296,7 @@ impl From<&Operation> for AcceptedOperation {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct DeletedApplication {
     /// Stable application identity.
-    pub application_id: String,
+    pub application_id: ApplicationId,
     /// Revision after requesting deletion.
     pub generation: u64,
     /// Deletion of each environment and preview; the application disappears
@@ -308,7 +308,7 @@ pub struct DeletedApplication {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct SavedApplication {
     /// Stable application identity.
-    pub application_id: String,
+    pub application_id: ApplicationId,
     /// Saved configuration revision.
     pub generation: u64,
     /// The first deployment operation, only when explicitly requested; see

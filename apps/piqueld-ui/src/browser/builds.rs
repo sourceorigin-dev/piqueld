@@ -255,7 +255,7 @@ fn BuildCard(
     let opened = RwSignal::new(false);
     let may = move |permission| {
         allowed.is_none_or(|allowed| {
-            allowed.run((permission, record.with(|b| b.environment_id.clone())))
+            allowed.run((permission, record.with(|b| b.environment_id.to_string())))
         })
     };
     view! {
@@ -289,7 +289,7 @@ fn BuildCard(
                     let duration = build_duration(&b);
                     let environment = dashboard_context()
                         .signals
-                        .environment_label(&b.environment_id);
+                        .environment_label(b.environment_id.as_str());
                     let operation_id = b.operation_id.clone();
                     view! {
                         <dl class="kv">

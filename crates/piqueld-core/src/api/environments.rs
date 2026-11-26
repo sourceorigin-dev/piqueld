@@ -184,7 +184,7 @@ pub struct EnvironmentBranchRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct EnvironmentStatusView {
     /// Stable environment identifier.
-    pub environment_id: String,
+    pub environment_id: EnvironmentId,
     /// Machine-readable lifecycle state.
     pub state: ApplicationState,
     /// Observed runtime health, independent of operation progress.

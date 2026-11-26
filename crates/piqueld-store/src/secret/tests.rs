@@ -60,7 +60,7 @@ async fn stored_token() -> (tempfile::TempDir, Store, NormalizedApplication, Ope
 async fn save(store: &Store, app: &NormalizedApplication, expected: u64) -> Result<(), StoreError> {
     let save = crate::Mutation::Save {
         application: Box::new(ApplicationTemplate::from(app)),
-        expected_application_id: Some(app.id().to_string()),
+        expected_application_id: Some(app.id().clone()),
         deploy: false,
     };
     store

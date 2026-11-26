@@ -69,7 +69,7 @@ impl TestApplications {
             .store
             .find_by_name(manifest.name().as_str())
             .await?
-            .map(|stored| stored.application.id().to_string());
+            .map(|stored| stored.application.id().clone());
         let mutation = Mutation::save(manifest, identity, deploy);
         let MutationResponse::Saved(saved) = self.accept(mutation, expected_generation).await?
         else {

@@ -1,6 +1,6 @@
 //! API records the overview's tests are built from.
 use super::{ApplicationRow, EnvironmentRow};
-use piqueld_client::{ApplicationState, EnvironmentStatusView};
+use piqueld_client::{ApplicationState, EnvironmentId, EnvironmentStatusView};
 use serde_json::json;
 
 /// An environment named `name`, `stopped` or running, with `status`, if one
@@ -13,7 +13,7 @@ pub(super) fn environment(
     let id = format!("{name}-environment");
     EnvironmentRow {
         status: status.map(|(state, message)| EnvironmentStatusView {
-            environment_id: id.clone(),
+            environment_id: EnvironmentId::parse(id.clone()).expect("the environment id parses"),
             state,
             runtime_health: None,
             health_observed_at_ms: None,

@@ -623,12 +623,7 @@ async fn failed_preparation_preserves_active_repair_and_save_does_not_retry() {
             Daemon,
             piqueld::api::Mutation::save(
                 input.validate_template().expect("the template validates"),
-                Some(
-                    harness
-                        .application_of(&first.environment_id)
-                        .await
-                        .to_string(),
-                ),
+                Some(harness.application_of(&first.environment_id).await),
                 false,
             ),
             Some(failed.generation),

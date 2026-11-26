@@ -96,6 +96,51 @@ image = "ghcr.io/example/notes:1"
     );
 }
 
+/// A malformed expected application ID is a bad request in either encoding,
+/// not an identity mismatch.
+#[tokio::test]
+async fn malformed_expected_application_ids_are_bad_requests() {
+    let temp = tempfile::tempdir().expect("temporary directory");
+    let server = Server::tcp(router(state(&temp).await, FakeAuth)).await;
+    let json = serde_json::json!({
+        "manifest": new_application().manifest,
+        "expected_generation": 1,
+        "expected_application_id": "App!",
+    });
+    let toml = r#"
+api_version = "piqueld.dev/v1alpha1"
+kind = "Application"
+[metadata]
+name = "notes"
+[[spec.services]]
+name = "web"
+[spec.services.source]
+type = "image"
+image = "ghcr.io/example/notes:1"
+"#;
+    for (headers, body, code) in [
+        (
+            vec![("content-type", "application/json")],
+            json.to_string().into_bytes(),
+            "json_malformed",
+        ),
+        (
+            vec![
+                ("content-type", "application/toml"),
+                ("x-expected-generation", "1"),
+                ("x-expected-application-id", "App!"),
+            ],
+            toml.as_bytes().to_vec(),
+            "application_id_invalid",
+        ),
+    ] {
+        let response = server
+            .send(Method::POST, "/api/v1/applications/apply", &headers, body)
+            .await;
+        response.assert_error(StatusCode::BAD_REQUEST, code);
+    }
+}
+
 #[tokio::test]
 async fn saved_configuration_preview_and_deployment_are_separate_even_offline() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
@@ -109,7 +154,7 @@ async fn saved_configuration_preview_and_deployment_are_separate_even_offline() 
         .await
         .expect("the application applies");
     assert!(saved.operation_id.is_none());
-    let production = production_through(&api.client, &saved.application_id).await;
+    let production = production_through(&api.client, saved.application_id.as_str()).await;
     let detail = api
         .client
         .environment_detail(&production)
@@ -202,7 +247,7 @@ async fn deploy_after_rename_captures_saved_name_and_spec() {
         value: "renamed".into(),
     };
     api.client
-        .set_application_name(&accepted.application_id, &name, &at_generation(1))
+        .set_application_name(accepted.application_id.as_str(), &name, &at_generation(1))
         .await
         .expect("the name is set");
     let mut edited = new_application();
@@ -336,7 +381,7 @@ async fn downloaded_manifest_round_trips_saved_configuration_without_docker() {
     );
     let downloaded: ApplicationManifest = toml::from_str(response.text()).expect("the toml parses");
     assert_eq!(downloaded, apply.manifest);
-    let production = production_through(&api.client, &saved.application_id).await;
+    let production = production_through(&api.client, saved.application_id.as_str()).await;
     assert!(
         api.client
             .deployments(&production, None, None)
@@ -464,7 +509,7 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
         .expect("the application deploys");
     assert_eq!(saved.operation_id, Some(replay.operation_id));
     assert_eq!(saved.generation, replay.generation);
-    let id = production(&service, &saved.application_id).await;
+    let id = production(&service, saved.application_id.as_str()).await;
     let direct = service
         .clone()
         .environment_detail(&id, &piqueld_core::access::Scope::All)
@@ -513,10 +558,7 @@ async fn service_and_http_share_acceptance_receipts_and_application_views() {
     assert_eq!(replay.generation, saved.generation);
     assert_eq!(
         service
-            .application(
-                &piqueld_core::ApplicationId::parse(&saved.application_id)
-                    .expect("the application id parses")
-            )
+            .application(&saved.application_id)
             .await
             .expect("the application loads")
             .generation,
@@ -587,12 +629,19 @@ async fn direct_service_mutations_enforce_preconditions_and_explicit_force() {
             .await,
         Err(ApplicationError::PreconditionRequired)
     ));
-    let id = production(&service, &saved.application_id).await;
+    let id = production(&service, saved.application_id.as_str()).await;
     assert!(matches!(
         service
             .accept(
                 Daemon,
-                Mutation::save(manifest.clone(), Some("wrong-application".into()), false),
+                Mutation::save(
+                    manifest.clone(),
+                    Some(
+                        piqueld_core::ApplicationId::parse("wrong-application")
+                            .expect("the id parses"),
+                    ),
+                    false,
+                ),
                 Some(saved.generation),
                 false,
                 None,
@@ -673,7 +722,7 @@ async fn direct_service_validates_log_bounds_and_deployment_ownership() {
             .await,
         Err(ApplicationError::Store(piqueld_store::StoreError::NotFound))
     ));
-    let id = production(&service, &saved.application_id).await;
+    let id = production(&service, saved.application_id.as_str()).await;
     service
         .deployment_attempts(&id, &deployment, None)
         .await
@@ -708,7 +757,7 @@ async fn creating_over_a_repository_backed_name_collides() {
     }));
     let options = at_generation(1);
     api.client
-        .edit_application(&saved.application_id, &repository, &options)
+        .edit_application(saved.application_id.as_str(), &repository, &options)
         .await
         .expect("the edit applies");
     let mut request = new_application();

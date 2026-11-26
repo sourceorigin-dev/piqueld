@@ -21,7 +21,7 @@ struct SaveIdentity<'a> {
     /// The application as saved.
     application: &'a piqueld_core::manifest::ApplicationTemplate,
     /// ID the save expected the application to have.
-    expected_application_id: Option<String>,
+    expected_application_id: Option<ApplicationId>,
     /// Whether the save also deploys.
     deploy: bool,
 }
@@ -425,7 +425,7 @@ impl Store {
                 Self::check_save(current.as_ref(), expected)?;
                 let application = application.with_id(Self::application_identity(
                     current.as_ref(),
-                    expected_application_id.as_deref(),
+                    expected_application_id.as_ref(),
                 )?);
                 let mut saved = Self::save_configuration_on(tx, &application, expected).await?;
                 Self::deploy_saved(tx, application.id(), &mut saved, deploy).await?;
@@ -932,10 +932,9 @@ impl Store {
     /// expected an ID that the name no longer selects.
     fn application_identity(
         current: Option<&StoredApplication>,
-        expected: Option<&str>,
+        expected: Option<&ApplicationId>,
     ) -> Result<ApplicationId, StoreError> {
-        if expected.is_some_and(|id| current.is_none_or(|app| app.application.id().as_str() != id))
-        {
+        if expected.is_some_and(|id| current.is_none_or(|app| app.application.id() != id)) {
             return Err(StoreError::IdentityConflict);
         }
         current.map_or_else(
@@ -968,15 +967,15 @@ impl Store {
         if current.delete_intent || busy != 0 {
             return Err(StoreError::Busy);
         }
-        let saved = |application_id, generation| SavedApplication {
-            application_id,
+        let saved = |generation| SavedApplication {
+            application_id: current.application.id().clone(),
             generation,
             operation_id: None,
             operation_ids: Vec::new(),
         };
         let old_name = current.application.metadata().name.clone();
         if old_name.as_str() == name {
-            return Ok((saved(id, current.generation), false));
+            return Ok((saved(current.generation), false));
         }
         let generation = current
             .generation
@@ -1009,7 +1008,7 @@ impl Store {
         let message = format!("renamed {old_name} to {name}");
         let event_kind = EventKind::ApplicationRenamed.as_str();
         sqlx::query!("INSERT INTO events(application_id,generation,kind,message,created_at_ms) VALUES(?1,?2,?5,?3,?4)",id,revision,message,now,event_kind).execute(&mut **tx).await.map_err(StoreError::database)?;
-        Ok((saved(id, generation), true))
+        Ok((saved(generation), true))
     }
 
     /// Requests deletion of an application, every environment and every
@@ -1062,7 +1061,7 @@ impl Store {
             changed,
             wake: !operations.is_empty(),
             response: MutationResponse::Deleted(DeletedApplication {
-                application_id: id,
+                application_id: current.application.id().clone(),
                 generation,
                 operations,
             }),

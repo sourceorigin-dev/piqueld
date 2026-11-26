@@ -120,7 +120,7 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
     let temp = tempfile::tempdir().expect("tempdir opens");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
-    let application = piqueld_core::ApplicationId::parse(&saved.application_id).expect("id parses");
+    let application = saved.application_id.clone();
     let view = service.application(&application).await.expect("app loads");
     assert_eq!(view.generation, saved.generation);
     let production = view
@@ -161,7 +161,7 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
     else {
         panic!("deployment")
     };
-    assert_eq!(deployed.environment_id, staging.id.as_str());
+    assert_eq!(deployed.environment_id, staging.id);
     assert!(
         service
             .environment_detail(&production, &piqueld_core::access::Scope::All)
@@ -226,9 +226,8 @@ async fn application_history_spans_its_environments() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
-    let application = piqueld_core::ApplicationId::parse(&saved.application_id)
-        .expect("the application id parses");
-    let production = production(&service, &saved.application_id).await;
+    let application = saved.application_id.clone();
+    let production = production(&service, saved.application_id.as_str()).await;
     service
         .accept(
             Daemon,
@@ -296,7 +295,7 @@ async fn previews_compare_with_the_selected_environment() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
-    let production = production(&service, &saved.application_id).await;
+    let production = production(&service, saved.application_id.as_str()).await;
     service
         .accept(
             Daemon,
@@ -376,7 +375,7 @@ async fn previews_render_variables_for_the_selected_environment() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
-    let production = production(&service, &saved.application_id).await;
+    let production = production(&service, saved.application_id.as_str()).await;
     let level = |value: &str| EnvironmentConfig {
         variables: [("level".into(), Variable::String(value.into()))].into(),
         ..EnvironmentConfig::default()

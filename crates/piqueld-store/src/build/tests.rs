@@ -290,7 +290,7 @@ async fn build_pages_filter_before_applying_the_limit() {
         .expect("builds succeeds");
     assert_eq!(
         global.items[0].environment_id,
-        other_operation.environment_id.as_str()
+        other_operation.environment_id
     );
     let application = store
         .builds(Some(app.id()), None, &Scope::All, None, 1)

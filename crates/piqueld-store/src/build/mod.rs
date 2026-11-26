@@ -126,7 +126,8 @@ impl BuildRow {
             .map(piqueld_core::api::BuiltOn::of);
         Ok(BuildRecord {
             id: self.id,
-            environment_id: self.environment_id,
+            environment_id: EnvironmentId::parse(self.environment_id)
+                .map_err(StoreError::corrupt)?,
             operation_id: self.operation_id,
             service: self.service,
             job: self.job,

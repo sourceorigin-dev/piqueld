@@ -1124,7 +1124,7 @@ impl DeployFixture for Client {
 /// sole environment.
 #[derive(Debug)]
 struct Deployed {
-    application_id: String,
+    application_id: piqueld_core::ApplicationId,
     environment_id: String,
     operation_id: String,
     generation: u64,
@@ -1166,7 +1166,7 @@ impl GrantFixture {
         for name in ["blog", "shop"] {
             let mut input = manifest();
             input.metadata.name = name.into();
-            ids.push(save(&state, input).await.application_id);
+            ids.push(String::from(save(&state, input).await.application_id));
         }
         let blog = Some(ids[0].as_str());
         let deployer = seed_account(&database, "deployer", &[("apps:deploy", blog)]).await;
@@ -1247,8 +1247,7 @@ async fn two_environments(
     use piqueld::api::{ApplicationError, Mutation, MutationResponse};
     use piqueld_store::StoreError;
     let mut saved = save(service, manifest()).await;
-    let application = piqueld_core::ApplicationId::parse(&saved.application_id)
-        .expect("the application id parses");
+    let application = saved.application_id.clone();
     let create = |name: &str| Mutation::CreateEnvironment {
         application: application.clone(),
         name: piqueld_core::EnvironmentName::parse(name).expect("the environment name parses"),

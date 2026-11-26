@@ -48,7 +48,7 @@ async fn stored_secret_access_queries_never_widen_environments_implicitly() {
     };
     client
         .put_stored_secret(
-            &app.application_id,
+            app.application_id.as_str(),
             "token",
             0,
             b"one".to_vec(),
@@ -58,12 +58,19 @@ async fn stored_secret_access_queries_never_widen_environments_implicitly() {
         .await
         .expect("the secret is stored");
     let router = api.router();
-    let put = |query: &str| router.send(put_stored_token(&app.application_id, query, 1, "two"));
+    let put = |query: &str| {
+        router.send(put_stored_token(
+            app.application_id.as_str(),
+            query,
+            1,
+            "two",
+        ))
+    };
     put("previews=true")
         .await
         .assert_error(StatusCode::BAD_REQUEST, "query_invalid");
     let stored = client
-        .stored_secrets(&app.application_id)
+        .stored_secrets(app.application_id.as_str())
         .await
         .expect("the stored secrets list");
     assert_eq!(
@@ -73,7 +80,7 @@ async fn stored_secret_access_queries_never_widen_environments_implicitly() {
     let response = put("environments=all&previews=true").await;
     assert_eq!(response.status, StatusCode::OK);
     let stored = client
-        .stored_secrets(&app.application_id)
+        .stored_secrets(app.application_id.as_str())
         .await
         .expect("the stored secrets list");
     assert_eq!(
@@ -115,7 +122,7 @@ async fn stored_secret_uploads_check_their_headers_first() {
     let api = AcceptanceApi::start(&temp).await;
     let app = api.deploy().await;
     let router = api.router();
-    let mut repeated = put_stored_token(&app.application_id, "", 0, "value");
+    let mut repeated = put_stored_token(app.application_id.as_str(), "", 0, "value");
     let headers = repeated.headers_mut();
     headers.append(
         "x-expected-generation",
@@ -123,7 +130,7 @@ async fn stored_secret_uploads_check_their_headers_first() {
     );
     let response = router.send(repeated).await;
     response.assert_error(StatusCode::BAD_REQUEST, "secret_generation_required");
-    let mut text = put_stored_token(&app.application_id, "", 0, "value");
+    let mut text = put_stored_token(app.application_id.as_str(), "", 0, "value");
     text.headers_mut().insert(
         "content-type",
         "text/plain".parse().expect("the value parses"),
@@ -144,7 +151,14 @@ async fn access_changes_from_an_outdated_read_conflict() {
     let client = &api.client;
     let app = api.deploy().await;
     client
-        .put_stored_secret(&app.application_id, "token", 0, b"one".to_vec(), None, None)
+        .put_stored_secret(
+            app.application_id.as_str(),
+            "token",
+            0,
+            b"one".to_vec(),
+            None,
+            None,
+        )
         .await
         .expect("the secret is stored");
     let outdated = piqueld_client::SecretAccess {
@@ -153,7 +167,7 @@ async fn access_changes_from_an_outdated_read_conflict() {
     };
     let refused = client
         .set_secret_access(
-            &app.application_id,
+            app.application_id.as_str(),
             "token",
             &piqueld_client::SecretAccess::default(),
             Some(&outdated),
@@ -165,7 +179,7 @@ async fn access_changes_from_an_outdated_read_conflict() {
     );
     let refused = client
         .put_stored_secret(
-            &app.application_id,
+            app.application_id.as_str(),
             "token",
             1,
             b"two".to_vec(),
@@ -189,7 +203,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
     let response = api
         .router()
         .send(put_stored_token(
-            &app.application_id,
+            app.application_id.as_str(),
             "",
             0,
             "private-token-value",
@@ -203,7 +217,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
     assert_eq!(body["data"]["access"]["previews"], false);
     assert_eq!(
         client
-            .stored_secrets(&app.application_id)
+            .stored_secrets(app.application_id.as_str())
             .await
             .expect("the stored secrets list")
             .len(),
@@ -213,7 +227,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
     let reference = |secrets, generation| async move {
         let edit = edit_web(ServiceEdit::Secrets(secrets));
         client
-            .edit_application(id, &edit, &at_generation(generation))
+            .edit_application(id.as_str(), &edit, &at_generation(generation))
             .await
             .expect("the edit applies")
     };
@@ -224,7 +238,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
     let saved = reference(vec![mount.clone()], app.generation).await;
     assert_eq!(
         client
-            .application(&app.application_id)
+            .application(app.application_id.as_str())
             .await
             .expect("the application loads")
             .application
@@ -234,7 +248,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
             .secrets,
         vec![mount]
     );
-    let referenced = client.delete_stored_secret(&app.application_id, "token", 1);
+    let referenced = client.delete_stored_secret(app.application_id.as_str(), "token", 1);
     assert_eq!(
         api_error(
             referenced
@@ -246,7 +260,7 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
     );
     reference(Vec::new(), saved.generation).await;
     let stale = client.put_stored_secret(
-        &app.application_id,
+        app.application_id.as_str(),
         "token",
         0,
         b"stale".to_vec(),
@@ -263,17 +277,17 @@ async fn stored_secret_api_is_write_only_versioned_and_access_listed() {
         404
     );
     client
-        .delete_stored_secret(&app.application_id, "token", 1)
+        .delete_stored_secret(app.application_id.as_str(), "token", 1)
         .await
         .expect("the secret is deleted");
     assert!(
         client
-            .stored_secrets(&app.application_id)
+            .stored_secrets(app.application_id.as_str())
             .await
             .expect("the stored secrets list")
             .is_empty()
     );
-    assert_secret_history(client, &app.application_id).await;
+    assert_secret_history(client, app.application_id.as_str()).await;
 }
 
 #[tokio::test]
@@ -284,7 +298,7 @@ async fn missing_secret_key_is_a_persisted_daemon_diagnostic() {
     let app = api.deploy().await;
     client
         .put_stored_secret(
-            &app.application_id,
+            app.application_id.as_str(),
             "token",
             0,
             b"value".to_vec(),
@@ -296,7 +310,7 @@ async fn missing_secret_key_is_a_persisted_daemon_diagnostic() {
     std::fs::remove_file(temp.path().join("secrets.key")).expect("the file is removed");
     let error = client
         .put_stored_secret(
-            &app.application_id,
+            app.application_id.as_str(),
             "token",
             1,
             b"replacement".to_vec(),
@@ -537,7 +551,7 @@ async fn deploys_and_previews_fail_when_an_environment_may_not_mount_a_stored_se
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let service = state(&temp).await;
     let (saved, staging) = two_environments(&service).await;
-    let production = production(&service, &saved.application_id).await;
+    let production = production(&service, saved.application_id.as_str()).await;
     let server = Server::tcp(router(service, FakeAuth)).await;
     let client = server.client();
     let production_only = SecretAccess {
@@ -546,7 +560,7 @@ async fn deploys_and_previews_fail_when_an_environment_may_not_mount_a_stored_se
     };
     let stored = client
         .put_stored_secret(
-            &saved.application_id,
+            saved.application_id.as_str(),
             "stripe-prod",
             0,
             b"live".to_vec(),

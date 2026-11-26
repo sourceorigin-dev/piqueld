@@ -479,7 +479,7 @@ impl<'a> PromotionReport<'a> {
     pub(crate) fn new(application: &'a ApplicationView, accepted: &'a AcceptedPromotion) -> Self {
         Self {
             application_id: application.application.id(),
-            environment_id: &accepted.operation.environment_id,
+            environment_id: accepted.operation.environment_id.as_str(),
             deployment_id: &accepted.operation.operation_id,
             operation_id: &accepted.operation.operation_id,
             release_id: &accepted.release_id,

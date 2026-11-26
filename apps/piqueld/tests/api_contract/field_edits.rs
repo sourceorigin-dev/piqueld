@@ -8,7 +8,7 @@ async fn environment_visibility_edits_cap_routes_in_the_saved_manifest() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let id = &saved.application_id;
+    let id = saved.application_id.as_str();
     let set = |visibility, generation| {
         let client = &api.client;
         async move {
@@ -60,7 +60,7 @@ async fn route_field_edits_follow_service_renames_and_removals() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let id = &saved.application_id;
+    let id = saved.application_id.as_str();
     let route = Route::service(
         "notes.example.com".into(),
         piqueld_core::manifest::Visibility::Public,
@@ -127,7 +127,7 @@ async fn job_field_edit_replaces_jobs_in_order_and_validates_atomically() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let id = &saved.application_id;
+    let id = saved.application_id.as_str();
     let job = |name: &str, service: &str| Job {
         name: name.into(),
         service: service.into(),
@@ -196,7 +196,7 @@ async fn field_edits_save_without_docker_and_deploy_only_the_captured_revision()
     let api = AcceptanceApi::start(&temp).await;
     api.runtime.set_unavailable(true);
     let saved = api.save().await;
-    let id = &saved.application_id;
+    let id = saved.application_id.as_str();
     let production = production_through(&api.client, id).await;
     let edit = edit_web(ServiceEdit::Replicas(3.into()));
     let options = at_generation(saved.generation);
@@ -284,7 +284,7 @@ async fn field_edits_validate_atomically_and_track_repository_edits() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let id = &saved.application_id;
+    let id = saved.application_id.as_str();
     let options = at_generation(1);
     let invalid = edit_web(ServiceEdit::Replicas(0.into()));
     let error = api
@@ -372,9 +372,9 @@ async fn concurrent_field_edits_reject_stale_revisions_without_losing_updates() 
     let options = at_generation(1);
     let (a, b) = tokio::join!(
         api.client
-            .edit_application(&saved.application_id, &replicas, &options),
+            .edit_application(saved.application_id.as_str(), &replicas, &options),
         api.client
-            .edit_application(&saved.application_id, &env, &options)
+            .edit_application(saved.application_id.as_str(), &env, &options)
     );
     assert_ne!(a.is_ok(), b.is_ok());
     let (retry, error) = if let Err(error) = a {
@@ -385,12 +385,12 @@ async fn concurrent_field_edits_reject_stale_revisions_without_losing_updates() 
     assert_eq!(api_error(error).code, "generation_conflict");
     let options = at_generation(2);
     api.client
-        .edit_application(&saved.application_id, retry, &options)
+        .edit_application(saved.application_id.as_str(), retry, &options)
         .await
         .expect("the edit applies");
     let manifest = api
         .client
-        .application(&saved.application_id)
+        .application(saved.application_id.as_str())
         .await
         .expect("the application loads")
         .application
@@ -405,7 +405,7 @@ async fn field_edit_source_endpoints_preserve_other_git_settings() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let id = &saved.application_id;
+    let id = saved.application_id.as_str();
     let source = Source::Git {
         repository: SourceRepository::Git(GitRepository {
             url: "https://example.com/first.git".into(),
@@ -496,7 +496,7 @@ async fn field_edit_health_process_and_resource_endpoints_clear_optional_values(
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let api = AcceptanceApi::start(&temp).await;
     let saved = api.save().await;
-    let id = &saved.application_id;
+    let id = saved.application_id.as_str();
     api.edit_service_field(
         id,
         ServiceEdit::Healthcheck(Some(HealthCheck::Http {
@@ -601,7 +601,7 @@ async fn field_edit_resource_lifecycle_rejects_referenced_volume_removal() {
         .create_application("empty", false)
         .await
         .expect("the application is created");
-    let id = &saved.application_id;
+    let id = saved.application_id.as_str();
     assert!(saved.operation_id.is_none());
     api.edit_field(
         id,
@@ -701,20 +701,20 @@ async fn field_edit_receipts_survive_restart_and_reject_key_reuse() {
         .client
         .clone()
         .with_request_id("field-save")
-        .edit_application(&saved.application_id, &edit, &options)
+        .edit_application(saved.application_id.as_str(), &edit, &options)
         .await
         .expect("the edit applies");
     drop(api);
     let api = AcceptanceApi::start(&temp).await;
     let keyed = api.client.clone().with_request_id("field-save");
     let replay = keyed
-        .edit_application(&saved.application_id, &edit, &options)
+        .edit_application(saved.application_id.as_str(), &edit, &options)
         .await
         .expect("the edit applies");
     assert_eq!(replay.generation, receipt.generation);
     let changed = edit_web(ServiceEdit::Replicas(5.into()));
     let error = keyed
-        .edit_application(&saved.application_id, &changed, &options)
+        .edit_application(saved.application_id.as_str(), &changed, &options)
         .await
         .expect_err("the edit is rejected");
     assert_eq!(api_error(error).code, "request_id_conflict");
@@ -770,7 +770,7 @@ async fn typed_edits_record_safe_field_history() {
     )));
     api.client
         .edit_application(
-            &saved.application_id,
+            saved.application_id.as_str(),
             &edit,
             &at_generation(saved.generation),
         )
@@ -778,7 +778,14 @@ async fn typed_edits_record_safe_field_history() {
         .expect("the edit applies");
     let events = api
         .client
-        .events(Some(&saved.application_id), None, None, false, None, 100)
+        .events(
+            Some(saved.application_id.as_str()),
+            None,
+            None,
+            false,
+            None,
+            100,
+        )
         .await
         .expect("the events list");
     let recorded = events

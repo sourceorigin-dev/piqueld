@@ -75,7 +75,7 @@ pub(in crate::browser::management) fn DeploymentActions() -> impl IntoView {
         let request = ApplyApplicationRequest {
             manifest: manifest.to_manifest(),
             expected_generation: Some(app.generation),
-            expected_application_id: Some(app.application.id().to_string()),
+            expected_application_id: Some(app.application.id().clone()),
         };
         let environment = context.environment_id();
         context.busy.set(true);

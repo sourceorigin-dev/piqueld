@@ -552,7 +552,7 @@ impl EditorContext {
         let request = ApplyApplicationRequest {
             manifest: repository.to_manifest(),
             expected_generation: Some(saved.generation),
-            expected_application_id: Some(saved.application.id().to_string()),
+            expected_application_id: Some(saved.application.id().clone()),
         };
         self.mutate(
             move |client| {

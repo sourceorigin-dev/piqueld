@@ -627,7 +627,7 @@ async fn tailnet_bindings_are_rechecked_when_a_command_starts() {
         stdin: false,
         tty: None,
     };
-    let environment = production(&state, &saved.application_id).await;
+    let environment = production(&state, saved.application_id.as_str()).await;
     let (mut output, _input) = client
         .exec(environment.as_str(), &request)
         .await

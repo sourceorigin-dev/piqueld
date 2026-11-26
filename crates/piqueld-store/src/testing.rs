@@ -111,8 +111,7 @@ impl Store {
 
     /// The ID of the `production` environment of the application `saved`.
     pub(crate) async fn saved_production(&self, saved: &SavedApplication) -> EnvironmentId {
-        let application =
-            ApplicationId::parse(&saved.application_id).expect("the application id parses");
+        let application = saved.application_id.clone();
         self.production(&application).await
     }
 
