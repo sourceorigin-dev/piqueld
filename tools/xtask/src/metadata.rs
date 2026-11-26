@@ -10,22 +10,27 @@ use crate::Workspace;
 /// The workspace's crates, as `cargo metadata --no-deps` lists them.
 #[derive(Deserialize)]
 pub(crate) struct Metadata {
+    /// Every workspace crate.
     pub packages: Vec<Package>,
 }
 
 /// A workspace crate.
 #[derive(Deserialize)]
 pub(crate) struct Package {
+    /// The crate's name.
     pub name: String,
+    /// The path of its Cargo.toml.
     pub manifest_path: PathBuf,
     /// Of every kind: normal, development and build.
     pub dependencies: Vec<Dependency>,
+    /// Its libraries, binaries, tests, examples and benchmarks.
     pub targets: Vec<Target>,
 }
 
 /// A crate a package depends on, named as its package is.
 #[derive(Deserialize)]
 pub(crate) struct Dependency {
+    /// The crate's name.
     pub name: String,
 }
 
@@ -37,6 +42,7 @@ pub(crate) struct Target {
 }
 
 impl Workspace {
+    /// Runs `cargo metadata` for the workspace's crates.
     pub(crate) fn metadata(&self) -> Result<Metadata> {
         self.cargo_json(&["metadata", "--locked", "--no-deps", "--format-version", "1"])
     }

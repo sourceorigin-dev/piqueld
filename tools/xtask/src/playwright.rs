@@ -11,6 +11,7 @@ use crate::Workspace;
 use crate::docker::Engine;
 use crate::process::{Job, Shutdown, exit_code};
 
+/// Runs `playwright test` with `args` against Chromium in its pinned container, and returns the tests' exit code.
 pub(crate) async fn run(workspace: &Workspace, args: &[String]) -> Result<ExitCode> {
     let tests = workspace.root().join("tests/playwright");
     let package: serde_json::Value = serde_json::from_slice(

@@ -107,7 +107,9 @@ impl Workspace {
 /// What a change reaches: the filters its paths match, and the crates its
 /// Rust inputs reach.
 struct Change {
+    /// The filters the changed paths match.
     filters: BTreeSet<Filter>,
+    /// The crates the changed Rust inputs reach.
     scope: Scope,
 }
 
@@ -184,14 +186,17 @@ impl Change {
 enum Scope {
     /// Every crate, since `path` is in none, such as Cargo.lock.
     Workspace {
+        /// The path that is in no crate.
         path: String,
     },
+    /// The crates reached.
     Crates(BTreeSet<Crate>),
 }
 
 /// A crate a change reaches.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Crate {
+    /// The package name.
     name: String,
     /// Whether it has a library, which doc tests need.
     library: bool,
@@ -254,9 +259,11 @@ impl fmt::Display for Scope {
 /// A check CI could run, as `just check-changed` plans and runs it.
 #[derive(Debug)]
 struct Step {
+    /// The CI job the check belongs to.
     job: Job,
     /// The command that runs it, narrowed to the crates the change reaches.
     command: Vec<String>,
+    /// Whether it ran, and how it went.
     outcome: Outcome,
 }
 
@@ -310,7 +317,9 @@ impl fmt::Display for Step {
 enum Outcome {
     /// The change needs it here.
     ToRun,
+    /// It ran and succeeded.
     Passed,
+    /// It ran and failed.
     Failed,
     /// The change doesn't need it, for this reason.
     Skipped(String),

@@ -14,19 +14,30 @@ use yaml_rust2::{Yaml, YamlLoader};
 /// `ci.rs`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Filter {
+    /// Workspace-wide inputs, which run everything.
     Workspace,
+    /// The crates the CLI and dashboard build too.
     Crates,
+    /// Every crate, the daemon's own included.
     Daemon,
+    /// Every Rust input.
     Rust,
+    /// Inputs of the dependency audit: manifests and `deny.toml`.
     Deny,
+    /// The workflows and the shell scripts.
     Scripts,
+    /// The dashboard's inputs.
     Ui,
+    /// The CLI's inputs.
     Cli,
+    /// The Docker integration tests' inputs.
     Docker,
+    /// The Playwright suite's inputs.
     Playwright,
 }
 
 impl Filter {
+    /// Every filter.
     const ALL: [Self; 10] = [
         Self::Workspace,
         Self::Crates,
@@ -71,6 +82,7 @@ impl Filters {
     /// Where the filters live, from the workspace root.
     pub(super) const PATH: &str = ".github/filters.yml";
 
+    /// Reads and parses the filters file under the workspace root `root`.
     pub(super) fn load(root: &Path) -> Result<Self> {
         let path = root.join(Self::PATH);
         let yaml =

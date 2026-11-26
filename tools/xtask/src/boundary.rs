@@ -17,14 +17,17 @@ use crate::process::checked_stdout;
 /// A package that must not depend on any of `forbidden`, through the
 /// dependency kinds of `edges`, on any target.
 struct Boundary {
+    /// The package whose dependencies are checked.
     package: &'static str,
     /// `cargo tree --edges` kinds.
     edges: &'static str,
+    /// The packages `package` must not depend on.
     forbidden: &'static [&'static str],
     /// Why, as the error says when the boundary is crossed.
     reason: &'static str,
 }
 
+/// Every boundary `check` verifies.
 const BOUNDARIES: [Boundary; 6] = [
     Boundary {
         package: "piqueld-core",
@@ -94,6 +97,7 @@ const BOUNDARIES: [Boundary; 6] = [
     },
 ];
 
+/// Runs `cargo tree` for each boundary and prints the ones crossed; fails when any is.
 pub(crate) fn check(workspace: &Workspace) -> Result<ExitCode> {
     let mut crossed = false;
     for boundary in &BOUNDARIES {

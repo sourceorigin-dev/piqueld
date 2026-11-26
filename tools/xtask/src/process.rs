@@ -16,8 +16,11 @@ use tokio::signal::unix::{SignalKind, signal};
 /// child outlives it. A job dropped without being waited for, such as on an
 /// error, is killed.
 pub(crate) struct Job {
+    /// The program's name, for errors.
     name: String,
+    /// The child process.
     child: Child,
+    /// Its process group, which is its pid.
     group: Pid,
 }
 
@@ -25,6 +28,7 @@ pub(crate) struct Job {
 const STOP_GRACE: Duration = Duration::from_secs(30);
 
 impl Job {
+    /// Starts `command` as the leader of a new process group.
     pub(crate) fn spawn(command: &mut Command) -> Result<Self> {
         let name = command
             .as_std()
@@ -41,6 +45,7 @@ impl Job {
         Ok(Self { name, child, group })
     }
 
+    /// Waits for the job to exit and returns its status.
     pub(crate) async fn wait(&mut self) -> Result<ExitStatus> {
         self.child
             .wait()
@@ -162,12 +167,16 @@ pub(crate) fn checked_stdout(name: &str, output: Output) -> Result<String> {
 /// SIGINT, SIGTERM, and SIGHUP, each asking xtask to stop its jobs and clean
 /// up before exiting.
 pub(crate) struct Shutdown {
+    /// SIGINT.
     interrupt: tokio::signal::unix::Signal,
+    /// SIGTERM.
     terminate: tokio::signal::unix::Signal,
+    /// SIGHUP.
     hangup: tokio::signal::unix::Signal,
 }
 
 impl Shutdown {
+    /// Starts listening for the signals; fails when one can't be registered.
     pub(crate) fn listen() -> Result<Self> {
         let listen = |kind| signal(kind).context("listen for signals");
         Ok(Self {

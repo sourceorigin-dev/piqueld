@@ -18,6 +18,7 @@ pub(crate) struct Standard {
     /// First make the fixes that need no judgement, and print each.
     #[arg(long)]
     fix: bool,
+    /// The command to run instead of checking.
     #[command(subcommand)]
     command: Option<Command>,
 }

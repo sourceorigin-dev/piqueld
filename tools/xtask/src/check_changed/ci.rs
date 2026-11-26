@@ -10,15 +10,25 @@ use super::filters::Filter;
 /// A job in ci.yml.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Job {
+    /// The `checks` job: formatting, workflow lints, the dependency audit and unused dependencies.
     Checks,
+    /// The `standard` job: the engineering standard's rules.
     Standard,
+    /// The `rust (lint)` job: clippy, rustdoc, the generated-file check and the boundaries.
     RustLint,
+    /// The `rust (test)` job: unit and doc tests.
     RustTest,
+    /// The `msrv` job: a check on the oldest supported Rust.
     Msrv,
+    /// The `wasm-ui` job: the dashboard and client built for wasm32.
     WasmUi,
+    /// The `docker-integration` job: the Docker integration tests.
     DockerIntegration,
+    /// The `browser-playwright` job: the browser suite and the docs screenshots.
     BrowserPlaywright,
+    /// The `cli (macOS)` job: the CLI's validation on macOS.
     MacosCli,
+    /// The `docs` job: the documentation book.
     Docs,
 }
 
@@ -96,6 +106,7 @@ impl Job {
 /// What starts a job on a pull request.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Trigger {
+    /// Every pull request starts the job.
     EveryChange,
     /// A change matching any of these filters.
     AnyOf(&'static [Filter]),
@@ -126,25 +137,45 @@ impl fmt::Display for Trigger {
 /// A check a CI job runs, named for its `just` recipe.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Recipe {
+    /// `just fmt-check`: formatting.
     FmtCheck,
+    /// `just lint-ci`: lints of the workflows and shell scripts.
     LintCi,
+    /// `just audit`: advisories, licenses, bans and sources.
     Audit,
+    /// `just unused`: dependencies a crate declares but never names.
     Unused,
+    /// `just standard`: the engineering standard's rules.
     Standard,
+    /// `just lint`: clippy with warnings denied.
     Lint,
+    /// `just doc`: rustdoc, private items included.
     Doc,
+    /// `just openapi-check`: the generated files against freshly generated ones.
     OpenapiCheck,
+    /// `just boundary`: the crates' dependency boundaries.
     Boundary,
+    /// `just test`: the native tests.
     Test,
+    /// `just doc-test`: the doc tests.
     DocTest,
+    /// `cargo check` on the oldest supported Rust.
     Msrv,
+    /// `just ui-check`: the dashboard and client type-checked for wasm32.
     UiCheck,
+    /// `just check-wasm`: the browser transport compiled.
     CheckWasm,
+    /// `just test-wasm`: the transport tests in a headless browser.
     TestWasm,
+    /// `just docker-test`: the Docker integration tests.
     DockerTest,
+    /// `just test-playwright`: the browser suite.
     TestPlaywright,
+    /// `just docs-screenshots`: the dashboard screenshots, checked against the committed ones.
     DocsScreenshots,
+    /// `just validate-cli`: the CLI's validation.
     ValidateCli,
+    /// `just docs`: the documentation book, built and link-checked.
     Docs,
 }
 
@@ -249,7 +280,10 @@ pub(super) enum Scoping {
     Workspace,
     /// It takes the crates as `--package=<crate>` arguments, only those with
     /// a library when `libraries_only`.
-    Crates { libraries_only: bool },
+    Crates {
+        /// Whether only the crates with a library count.
+        libraries_only: bool,
+    },
     /// It runs only when the change reaches one of these crates.
     Only(&'static [&'static str]),
 }
