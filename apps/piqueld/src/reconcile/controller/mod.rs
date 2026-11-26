@@ -155,7 +155,7 @@ impl<D: DockerApi> Controller<D> {
     /// Completes convergence, then removes the configs of files no service
     /// mounts any more, whether or not it succeeded, and after service
     /// deletion retained secrets and a deleted preview's volumes
-    /// (environments have no volume inventory, so they keep theirs). The
+    /// (environments detach theirs, which they keep). The
     /// environment's next operation waits for this one, and repair for the
     /// mutation lock, so nothing publishes configs meanwhile. A failed removal is only logged, and left
     /// to the next operation, except that a deletion is retried. Returns

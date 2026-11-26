@@ -322,12 +322,10 @@ pub struct ManagedVolume {
     pub name: DockerVolumeName,
     /// The environment its labels name, which created it.
     pub owner: EnvironmentId,
-    /// The disk space it uses, if Docker measured it this time.
-    pub size_bytes: Option<u64>,
 }
 
 impl ManagedVolume {
-    /// The volume named `name` with `labels`, unmeasured, if `instance`
+    /// The volume named `name` with `labels`, if `instance`
     /// manages it: its ownership labels are valid, as every resource piqueld
     /// manages has them, and name `instance`.
     #[must_use]
@@ -342,7 +340,6 @@ impl ManagedVolume {
         Some(Self {
             name: DockerVolumeName::parse(name).ok()?,
             owner: Ownership::labelled_environment(labels)?,
-            size_bytes: None,
         })
     }
 }

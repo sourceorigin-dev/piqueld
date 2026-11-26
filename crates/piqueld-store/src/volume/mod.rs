@@ -36,9 +36,11 @@ pub enum VolumeError {
         volume: VolumeId,
     },
     /// Previews delete their volumes with them.
-    #[error("previews delete their volumes with them, so no volume can be attached to one")]
+    #[error(
+        "previews delete their volumes with them, so no volume can be attached to a preview, nor a live preview's volume to an environment"
+    )]
     Preview,
-    /// The environment's manifest declares no volume of the name.
+    /// The manifest the environment deploys declares no volume of the name.
     #[error(
         "{environment}'s manifest declares no volume {name}; declare it first, then attach the volume before deploying it"
     )]
@@ -118,10 +120,10 @@ impl Store {
 
     /// Binds `name` of `environment` to the detached volume `volume` for
     /// `author`, who needs `apps:write` on the environment and
-    /// `system:operate`. The environment mounts it from its next deployment.
-    /// Refuses a preview (`Preview`), a name the environment's manifest
-    /// doesn't declare (`NameUndeclared`), a name already bound
-    /// (`NameBound`) and an attached volume (`Attached`).
+    /// `system:operate`; it mounts the volume from its next deployment.
+    /// Refuses a preview or a live preview's volume (`Preview`), a name its
+    /// manifest, once it has one, doesn't declare (`NameUndeclared`), a
+    /// bound name (`NameBound`) and an attached volume (`Attached`).
     ///
     /// # Errors
     /// Returns those refusals, `Denied`, `NotFound` for a missing
@@ -150,7 +152,7 @@ impl Store {
         if target.delete_intent() {
             return Err(StoreError::Busy);
         }
-        let declared = target.manifest().is_some_and(|manifest| {
+        let declared = target.manifest().is_none_or(|manifest| {
             manifest
                 .spec()
                 .volumes
@@ -165,15 +167,18 @@ impl Store {
             .into());
         }
         let (id, environment_id, binding) = (volume.as_str(), environment.as_str(), name.as_str());
-        let bound = sqlx::query_scalar!(
-            r#"SELECT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=v.id) AS "bound!: bool" FROM volumes v WHERE v.id=?1"#,
+        let row = sqlx::query!(
+            r#"SELECT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=v.id) AS "bound!: bool",EXISTS(SELECT 1 FROM environments WHERE id=v.owner_environment_id AND kind='preview') AS "preview!: bool" FROM volumes v WHERE v.id=?1"#,
             id
         )
         .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?
         .ok_or(StoreError::NotFound)?;
-        if bound {
+        if row.preview {
+            return Err(VolumeError::Preview.into());
+        }
+        if row.bound {
             return Err(VolumeError::Attached {
                 volume: volume.clone(),
             }
@@ -260,9 +265,9 @@ impl Store {
     }
 
     /// The volumes a preview created, which its deletion removes, including
-    /// those later manifests dropped, but not one another environment has
-    /// attached since. None for an environment, whose deletion detaches its
-    /// volumes instead.
+    /// those later manifests dropped; no other environment can attach them
+    /// (see [`Self::attach_volume`]). None for an environment, whose
+    /// deletion detaches its volumes instead.
     ///
     /// # Errors
     /// Returns a storage or decoding error.
@@ -272,7 +277,7 @@ impl Store {
     ) -> Result<Vec<DockerVolume>, StoreError> {
         let preview = preview.as_str();
         sqlx::query!(
-            r#"SELECT id AS "id!",docker_name AS "docker_name!" FROM volumes WHERE owner_environment_id=?1 AND EXISTS(SELECT 1 FROM environments WHERE id=?1 AND kind='preview') AND NOT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=volumes.id AND environment_id!=?1) ORDER BY docker_name"#,
+            r#"SELECT id AS "id!",docker_name AS "docker_name!" FROM volumes WHERE owner_environment_id=?1 AND EXISTS(SELECT 1 FROM environments WHERE id=?1 AND kind='preview') ORDER BY docker_name"#,
             preview
         )
         .fetch_all(&self.pool)
@@ -292,11 +297,9 @@ impl Store {
 
     /// Records a survey of every volume the instance manages, listed at
     /// `listed_at_ms`: adopts those the database doesn't know as detached
-    /// volumes, records each measured size, keeping the last one of a
-    /// volume not measured, and forgets detached volumes Docker no longer
-    /// has. An attached volume missing from Docker is kept: it may not be
-    /// created yet. So is a record newer than the listing, which can't
-    /// include it.
+    /// volumes, and forgets detached volumes Docker no longer has. An
+    /// attached volume missing from Docker is kept: it may not be created
+    /// yet. So is a record newer than the listing, which can't include it.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -309,21 +312,13 @@ impl Store {
         let now = now_ms();
         for volume in volumes {
             let (name, owner) = (volume.name.as_str(), volume.owner.as_str());
-            let size = volume
-                .size_bytes
-                .map(i64::try_from)
-                .transpose()
-                .map_err(StoreError::corrupt)?;
-            let measured = size.map(|_| now);
             let id = new_id("volume");
             sqlx::query!(
-                "INSERT INTO volumes(id,docker_name,pool,owner_environment_id,created_at_ms,size_bytes,measured_at_ms,detached_application,detached_environment) VALUES(?1,?2,'local',?3,?4,?5,?6,(SELECT a.name FROM environments e JOIN applications a ON a.id=e.application_id WHERE e.id=?3),(SELECT name FROM environments WHERE id=?3)) ON CONFLICT(docker_name) DO UPDATE SET size_bytes=COALESCE(excluded.size_bytes,size_bytes),measured_at_ms=COALESCE(excluded.measured_at_ms,measured_at_ms)",
+                "INSERT INTO volumes(id,docker_name,pool,owner_environment_id,created_at_ms,detached_application,detached_environment) VALUES(?1,?2,'local',?3,?4,(SELECT a.name FROM environments e JOIN applications a ON a.id=e.application_id WHERE e.id=?3),(SELECT name FROM environments WHERE id=?3)) ON CONFLICT(docker_name) DO NOTHING",
                 id,
                 name,
                 owner,
-                now,
-                size,
-                measured
+                now
             )
             .execute(&mut *tx)
             .await
@@ -344,6 +339,32 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(StoreError::database)?;
+        tx.commit().await.map_err(StoreError::database)
+    }
+
+    /// Records the measured `sizes` of tracked volumes, by Docker name.
+    /// Volumes Docker didn't measure keep their last size.
+    ///
+    /// # Errors
+    /// Returns a storage error.
+    pub async fn record_volume_sizes(
+        &self,
+        sizes: &BTreeMap<String, u64>,
+    ) -> Result<(), StoreError> {
+        let (_writer, mut tx) = self.begin_immediate().await?;
+        let now = now_ms();
+        for (name, size) in sizes {
+            let size = i64::try_from(*size).map_err(StoreError::corrupt)?;
+            sqlx::query!(
+                "UPDATE volumes SET size_bytes=?1,measured_at_ms=?2 WHERE docker_name=?3",
+                size,
+                now,
+                name
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(StoreError::database)?;
+        }
         tx.commit().await.map_err(StoreError::database)
     }
 
@@ -487,7 +508,7 @@ impl Store {
         environment: &str,
     ) -> Result<(), StoreError> {
         sqlx::query!(
-            "DELETE FROM volumes WHERE owner_environment_id=?1 AND EXISTS(SELECT 1 FROM environments WHERE id=?1 AND kind='preview') AND NOT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=volumes.id AND environment_id!=?1)",
+            "DELETE FROM volumes WHERE owner_environment_id=?1 AND EXISTS(SELECT 1 FROM environments WHERE id=?1 AND kind='preview')",
             environment
         )
         .execute(&mut *connection)

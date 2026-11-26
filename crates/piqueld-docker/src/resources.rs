@@ -3,12 +3,12 @@
 use super::{
     BTreeMap, BTreeSet, BollardDocker, BollardResult, DesiredNetwork, DesiredService,
     DesiredVolume, DockerApi, DockerError, DockerNetworkName, DockerTimeout, EnvironmentId,
-    HashMap, InspectNetworkOptions, InspectServiceOptions, Ipam, ListNetworksOptionsBuilder,
-    ListServicesOptionsBuilder, ListTasksOptionsBuilder, ListVolumesOptionsBuilder, ManagedVolume,
-    NetworkCreateRequest, OBSERVATION_INSPECT_CONCURRENCY, ObservedApplication, ObservedNetwork,
-    ObservedService, ObservedVolume, ResourceKind, StreamExt, SwarmInitRequest, SwarmState,
-    TryStreamExt, VolumeCreateOptions, async_trait, identity::Filters, resolve_image_digest,
-    stream,
+    HashMap, INSTANCE_LABEL, InspectNetworkOptions, InspectServiceOptions, Ipam,
+    ListNetworksOptionsBuilder, ListServicesOptionsBuilder, ListTasksOptionsBuilder,
+    ListVolumesOptionsBuilder, MANAGED_LABEL, ManagedVolume, NetworkCreateRequest,
+    OBSERVATION_INSPECT_CONCURRENCY, ObservedApplication, ObservedNetwork, ObservedService,
+    ObservedVolume, ResourceKind, StreamExt, SwarmInitRequest, SwarmState, TryStreamExt,
+    VolumeCreateOptions, async_trait, identity::Filters, resolve_image_digest, stream,
 };
 use piqueld_core::wait;
 
@@ -1164,7 +1164,10 @@ impl DockerApi for BollardDocker {
                     .client()?
                     .list_volumes(Some(
                         ListVolumesOptionsBuilder::default()
-                            .filters(&Self::managed_filter())
+                            .filters(&Self::label_filter(vec![
+                                format!("{MANAGED_LABEL}=true"),
+                                format!("{INSTANCE_LABEL}={instance}"),
+                            ]))
                             .build(),
                     ))
                     .await

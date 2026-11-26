@@ -176,8 +176,11 @@ volume; use `piquelctl`.
 The first deployment that declares a name binds it to a new volume, and a
 name the environment already binds can't take another one: attaching to it
 fails with `volume_name_bound`. So attach the volume after declaring the name,
-and before deploying it. A name the manifest doesn't declare fails with
-`volume_name_undeclared`. Previews delete their volumes, so they take none.
+and before deploying it. A name the manifest the environment deploys doesn't
+declare fails with `volume_name_undeclared`; an environment that follows a
+branch has no manifest of its own before its first deployment, so it takes any
+name until then. Previews delete their volumes, so they neither take a volume
+nor give one to an environment: attaching fails with `volume_preview`.
 
 ## Delete a detached volume
 

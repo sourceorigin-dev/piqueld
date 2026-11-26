@@ -192,26 +192,18 @@ async fn a_survey_adopts_unknown_volumes_records_sizes_and_forgets_gone_detached
     let orphan = ManagedVolume {
         name: DockerVolumeName::parse("piqueld-orphan").unwrap(),
         owner: EnvironmentId::parse("env-deleted-long-ago").unwrap(),
-        size_bytes: None,
     };
-    let measured = ManagedVolume {
+    let listed = ManagedVolume {
         name: attached.docker_name.clone(),
         owner: production.clone(),
-        size_bytes: Some(4096),
-    };
-    let listed_at = now_ms();
-    store
-        .record_volume_survey(&[measured.clone(), orphan.clone()], listed_at)
-        .await
-        .unwrap();
-    let unmeasured = ManagedVolume {
-        size_bytes: None,
-        ..measured
     };
     store
-        .record_volume_survey(&[unmeasured, orphan.clone()], listed_at)
+        .record_volume_survey(&[listed, orphan.clone()], now_ms())
         .await
         .unwrap();
+    let measured = |size| BTreeMap::from([(attached.docker_name.to_string(), size)]);
+    store.record_volume_sizes(&measured(4096)).await.unwrap();
+    store.record_volume_sizes(&BTreeMap::new()).await.unwrap();
 
     let attached = store.volume(&attached.id).await.unwrap();
     assert_eq!(attached.size_bytes, Some(4096));
@@ -248,7 +240,7 @@ async fn a_survey_keeps_detached_volumes_recorded_after_its_listing() {
 }
 
 #[tokio::test]
-async fn deleting_a_preview_keeps_a_volume_attached_elsewhere() {
+async fn a_live_previews_volume_stays_its_own_until_it_is_deleted() {
     let (_temp, store) = Store::temporary().await;
     let (production, preview) = notes(&store).await;
     deploy(&store, &preview).await;
@@ -271,17 +263,52 @@ async fn deleting_a_preview_keeps_a_volume_attached_elsewhere() {
         .await
         .unwrap();
     let qa = create(&store, &production, "qa").await;
-    store
-        .attach_volume(Actor::Daemon, &qa, &data(), &leftover.id)
-        .await
-        .unwrap();
+    assert!(matches!(
+        store
+            .attach_volume(Actor::Daemon, &qa, &data(), &leftover.id)
+            .await,
+        Err(StoreError::Volume(VolumeError::Preview))
+    ));
 
-    assert_eq!(store.preview_volumes(&preview).await.unwrap(), []);
+    let [removed] = store
+        .preview_volumes(&preview)
+        .await
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!(removed.id, leftover.id);
     store.finish_delete_operation(&deletion).await.unwrap();
-    let kept = store.volume(&leftover.id).await.unwrap();
-    assert_eq!(kept.binding.unwrap().environment_id, qa);
+    assert!(matches!(
+        store.volume(&leftover.id).await,
+        Err(StoreError::NotFound)
+    ));
 }
 
+#[tokio::test]
+async fn an_environment_before_its_first_fetch_takes_any_volume_name() {
+    let (_temp, store) = Store::temporary().await;
+    let (production, staging) = notes(&store).await;
+    deploy(&store, &staging).await;
+    let [volume] = store
+        .environment_volumes(&staging)
+        .await
+        .unwrap()
+        .try_into()
+        .unwrap();
+    delete(&store, &staging).await;
+    let tracking = create(&store, &production, "tracking").await;
+    sqlx::query("UPDATE environments SET branch='main' WHERE id=?1")
+        .bind(tracking.as_str())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+    let undeclared = VolumeName::parse("restored").unwrap();
+    let attached = store
+        .attach_volume(Actor::Daemon, &tracking, &undeclared, &volume.id)
+        .await
+        .unwrap();
+    assert_eq!(attached.binding.unwrap().name, undeclared);
+}
 #[tokio::test]
 async fn migration_adopts_targets_volumes_and_the_preview_inventory() {
     let temp = tempfile::tempdir().unwrap();

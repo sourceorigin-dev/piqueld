@@ -1,5 +1,5 @@
-//! Detached volumes, which deleted environments leave, on the daemon status
-//! page: what each held and where it came from, with a button to delete it.
+//! Detached volumes, which no environment binds, on the daemon status page:
+//! where each came from and its size, with a button to delete it.
 use super::observability::{Outcome, Refresh};
 use super::ui::{empty, loaded, notice, when};
 use super::{UserError, access::can, confirm};
@@ -88,7 +88,7 @@ pub(super) fn DetachedVolumes(refresh: Refresh) -> impl IntoView {
                             <thead>
                                 <tr>
                                     <th>"Volume"</th>
-                                    <th>"Came from"</th>
+                                    <th>"Detached"</th>
                                     <th class="num">"Size"</th>
                                     <th>"Created"</th>
                                     <th></th>

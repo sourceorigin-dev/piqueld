@@ -25,26 +25,24 @@ impl<D: DockerApi> Controller<D> {
     }
 
     /// Lists every volume the instance manages and records them (see
-    /// `Store::record_volume_survey`), with their sizes when `measure`. A
-    /// failed measurement keeps the sizes recorded before. Each deployment
-    /// surveys, unmeasured, before saving its target, so a name binds to
-    /// the old volume the survey adopts rather than a new one.
+    /// `Store::record_volume_survey`), then, when `measure`, measures and
+    /// records their sizes; a failed measurement keeps the sizes recorded
+    /// before. Each deployment surveys, unmeasured, before saving its
+    /// target, so a name binds to the old volume the survey adopts rather
+    /// than a new one.
     ///
     /// # Errors
     /// Returns Docker errors listing volumes, or storage errors.
     pub async fn survey_volumes(&self, measure: bool) -> Result<(), OperationError> {
         let listed_at = piqueld_store::now_ms();
-        let mut volumes = self.docker.volumes(self.store.instance_id()).await?;
+        let volumes = self.docker.volumes(self.store.instance_id()).await?;
+        self.store.record_volume_survey(&volumes, listed_at).await?;
         if measure {
             match self.docker.volume_sizes().await {
-                Ok(sizes) => {
-                    for volume in &mut volumes {
-                        volume.size_bytes = sizes.get(volume.name.as_str()).copied();
-                    }
-                }
+                Ok(sizes) => self.store.record_volume_sizes(&sizes).await?,
                 Err(error) => tracing::warn!(%error, "measuring volumes failed; sizes kept"),
             }
         }
-        Ok(self.store.record_volume_survey(&volumes, listed_at).await?)
+        Ok(())
     }
 }
