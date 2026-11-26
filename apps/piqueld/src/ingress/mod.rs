@@ -59,8 +59,9 @@ pub const CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared:2026.10.4@sha256:c6c
 /// the store, however long gateway passes take.
 const AVAILABILITY_PERIOD: Duration = Duration::from_secs(15);
 /// The longest gap between `ingress_unavailable` observations that still
-/// counts as a continuous failure: a few [`AVAILABILITY_PERIOD`]s.
-const UNAVAILABLE_GAP_MS: i64 = 45_000;
+/// counts as a continuous failure: a few [`AVAILABILITY_PERIOD`]s, which is
+/// also how often the notification worker samples dependency health.
+pub(crate) const UNAVAILABLE_GAP_MS: i64 = 45_000;
 /// How long relaying Caddy's logs may stretch a gateway pass.
 const LOG_RELAY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Longest one route probe's HTTPS request may take.

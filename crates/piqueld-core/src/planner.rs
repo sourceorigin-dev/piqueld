@@ -1326,7 +1326,8 @@ fn relevant_network_labels(labels: &BTreeMap<String, String>) -> BTreeMap<&str, 
     labels
         .iter()
         .filter(|(key, _)| {
-            key.starts_with("io.piqueld.") && key.as_str() != crate::resource::SPEC_HASH_LABEL
+            key.starts_with(crate::resource::LABEL_PREFIX)
+                && key.as_str() != crate::resource::SPEC_HASH_LABEL
         })
         .map(|(key, value)| (key.as_str(), value.as_str()))
         .collect()

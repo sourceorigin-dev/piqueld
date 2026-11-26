@@ -1,6 +1,7 @@
 //! Times and durations as people read them, as `piquelctl` and the
 //! dashboard show them: Unix times as UTC calendar dates, without a time
 //! zone database, durations, and how long ago a moment was.
+use super::DAY_MS;
 use super::units::Tenths;
 use std::{fmt, time::Duration};
 
@@ -9,9 +10,6 @@ use std::{fmt, time::Duration};
 /// dashboard show traffic windows; [`Self::rfc3339`] gives it exactly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UtcTime(pub i64);
-
-/// A day, in ms.
-const DAY_MS: i64 = 86_400_000;
 
 impl UtcTime {
     /// Its proleptic Gregorian year, month and day, from Howard Hinnant's

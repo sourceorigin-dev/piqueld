@@ -14,7 +14,9 @@ use crate::{EnvironmentId, EnvironmentKind};
 pub struct SecretMetadata {
     /// Logical name.
     pub name: String,
-    /// Current version, used for optimistic writes.
+    /// Current version, used for optimistic writes. Unlike application and
+    /// operation generations (`u64`), it stays an `i64`, so the API's `int64`
+    /// format and clients' types don't change.
     pub generation: i64,
     /// Last update time in Unix milliseconds.
     pub updated_at_ms: i64,

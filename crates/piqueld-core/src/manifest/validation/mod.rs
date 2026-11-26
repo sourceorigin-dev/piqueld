@@ -29,7 +29,7 @@ const MAX_PROCESS_ELEMENT_BYTES: usize = 4_096;
 /// Most CPU a service may limit itself to, in millicores.
 pub(super) const MAX_CPU_MILLIS: u32 = 1_048_576;
 /// Accepted replica counts of a service.
-pub(super) const REPLICAS: std::ops::RangeInclusive<u16> = 1..=100;
+pub const REPLICAS: std::ops::RangeInclusive<u16> = 1..=100;
 /// Most generated secrets an application may declare.
 const MAX_GENERATED_SECRETS: usize = 64;
 /// Accepted raw byte counts for random generated secrets, before encoding.

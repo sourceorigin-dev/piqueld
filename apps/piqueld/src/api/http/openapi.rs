@@ -217,7 +217,11 @@ fn openapi_30_document(document: &utoipa::openapi::OpenApi) -> Value {
         .remove("identifier");
     document["components"]["securitySchemes"] = serde_json::json!({
         "bearerAuth": {"type":"http", "scheme":"bearer"},
-        "browserSession": {"type":"apiKey", "in":"cookie", "name":"piqueld_session"}
+        "browserSession": {
+            "type": "apiKey",
+            "in": "cookie",
+            "name": crate::auth::AuthCookie::Session.base_name(),
+        }
     });
     document["security"] = serde_json::json!([{"bearerAuth":[]},{"browserSession":[]}]);
     remove_nullable_parameters(&mut document);

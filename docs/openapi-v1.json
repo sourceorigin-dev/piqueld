@@ -6601,7 +6601,7 @@
                 "type": "boolean"
               },
               "generation": {
-                "description": "Current version, used for optimistic writes.",
+                "description": "Current version, used for optimistic writes. Unlike application and\noperation generations (`u64`), it stays an `i64`, so the API's `int64`\nformat and clients' types don't change.",
                 "format": "int64",
                 "type": "integer"
               },
@@ -7078,7 +7078,7 @@
                   "type": "boolean"
                 },
                 "generation": {
-                  "description": "Current version, used for optimistic writes.",
+                  "description": "Current version, used for optimistic writes. Unlike application and\noperation generations (`u64`), it stays an `i64`, so the API's `int64`\nformat and clients' types don't change.",
                   "format": "int64",
                   "type": "integer"
                 },
@@ -12308,7 +12308,7 @@
             "type": "boolean"
           },
           "generation": {
-            "description": "Current version, used for optimistic writes.",
+            "description": "Current version, used for optimistic writes. Unlike application and\noperation generations (`u64`), it stays an `i64`, so the API's `int64`\nformat and clients' types don't change.",
             "format": "int64",
             "type": "integer"
           },

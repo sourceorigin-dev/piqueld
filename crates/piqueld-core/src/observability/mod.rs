@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use utoipa::ToSchema;
 
+/// A day, in milliseconds.
+pub const DAY_MS: i64 = 86_400_000;
+
 string_enum! {
     #[serde]
     /// Ownership of historical data, independent of its contextual application and environment.
