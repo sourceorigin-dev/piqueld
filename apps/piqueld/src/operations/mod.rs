@@ -166,10 +166,7 @@ impl OperationError {
     /// Returns the failure an operation that failed with this error records.
     #[must_use]
     pub fn failure(&self) -> OperationFailure {
-        OperationFailure {
-            code: self.diagnostic_code(),
-            message: self.message(),
-        }
+        OperationFailure::new(self.diagnostic_code(), self.message())
     }
 
     /// Returns the typed classification used by diagnostic policy.

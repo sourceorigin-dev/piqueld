@@ -538,7 +538,7 @@ impl Store {
 
 /// Why an operation failed, as stored on it: `code` as its `error_code` and
 /// `message` as its `error_message`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct OperationFailure {
     /// The failure's class, which also decides its follow-up, such as job
     /// cleanup.
