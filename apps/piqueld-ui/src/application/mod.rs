@@ -1,5 +1,5 @@
 //! Application editor logic: the page and tab a route opens, what the editor
-//! derives from the saved application, and the Links tab's rows.
+//! derives from the saved application, and the link rows of the Networking tab.
 
 use piqueld_client::{
     ApplicationManifest, ApplicationView, DeploymentOrigin, EnvironmentSource, EnvironmentView,
@@ -8,33 +8,26 @@ use piqueld_client::{
     sync::short_commit,
 };
 
-/// Tabs of the application and service pages.
-pub const APPLICATION_TABS: [&str; 14] = [
+/// Tabs of the application page.
+pub const APPLICATION_TABS: [&str; 7] = [
     "Overview",
-    "Environments",
-    "Previews",
     "Services",
-    "Source",
-    "Variables",
-    "Routes",
-    "Volumes",
-    "Jobs",
-    "Links",
-    "Secrets",
+    "Networking",
+    "Configuration",
     "Releases",
-    "Builds",
     "Events",
+    "Settings",
 ];
 
 /// Tabs of environment and preview pages.
 pub const ENVIRONMENT_TABS: [&str; 7] = [
     "Overview",
     "Deployments",
-    "Secrets",
     "Logs",
     "Traffic",
     "Terminal",
     "Events",
+    "Settings",
 ];
 
 /// Tabs of a deployment's page.
@@ -47,9 +40,9 @@ pub enum Page {
     Application,
     /// One service's shared configuration.
     Service(String),
-    /// One environment's runtime, deployments, secrets, logs, traffic, terminal, and history.
+    /// One environment's runtime, deployments, logs, traffic, terminal, history, and settings.
     Environment(String),
-    /// One preview's branch, runtime, deployments, secrets, logs, traffic, terminal, and history.
+    /// One preview's branch, runtime, deployments, logs, traffic, terminal, history, and settings.
     Preview(String),
     /// One deployment of an environment or preview: its progress, steps,
     /// details, snapshot, and attempts.

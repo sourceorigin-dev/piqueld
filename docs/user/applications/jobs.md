@@ -92,8 +92,8 @@ new version only ever runs on a migrated database.
    ```
 
 3. Store a new password for `db`, and the address `web` connects to with it.
-   On the application's **Secrets** tab, save them as `db-password` and
-   `database-url`. With `piquelctl`:
+   On the application's **Configuration** tab, under **Secret store**, save
+   them as `db-password` and `database-url`. With `piquelctl`:
 
    ```console
    password=$(openssl rand -hex 32)
@@ -104,12 +104,13 @@ new version only ever runs on a migrated database.
 4. Add the job, `migrate`, which runs `miniflux -migrate` in `web`'s image
    before the services roll out:
 
-   - **In the dashboard,** open the application's **Jobs** tab and select
-     **Add job**. In the dialog, enter the **Name**, pick the **Service**, and
-     enter the command, one **Command element** per row: **Add command
-     element** adds a row. Then select **Add job**, which saves it.
+   - **In the dashboard,** open the application's **Services** tab and, on
+     the **Jobs** card, select **Add job**. In the dialog, enter the **Name**,
+     pick the **Service**, and enter the command, one **Command element** per
+     row: **Add command element** adds a row. Then select **Add job**, which
+     saves it.
 
-     ![The Jobs tab of reader: one job, migrate, on web, up to 300 seconds, running miniflux -migrate](../../images/applications/jobs-tab.png)
+     ![The Jobs card on the Services tab of reader: one job, migrate, on web, up to 300 seconds, running miniflux -migrate](../../images/applications/jobs-tab.png)
 
    - **With `piquelctl`,** give the job's name, its service, and its command
      after `--`:
@@ -230,7 +231,8 @@ The timeout is 300 seconds by default, and at most 86,400 (a day).
 Jobs run one after the other, in their order, and the services roll out once
 every job has succeeded. To change the order, move a job to another position.
 With a second job, such as a `seed` job that `reader` doesn't have, run `seed`
-first: select **Move up** next to it on the **Jobs** tab, or run:
+first: select **Move up** next to it on the **Jobs** card, on the
+application's **Services** tab, or run:
 
 ```console
 piquelctl app job move reader seed 1 --deploy
@@ -273,8 +275,8 @@ A migration that drops or renames something the previous version still uses
 would break that version while the job runs. To avoid it, stop the job's own
 service first:
 
-- **In the dashboard,** select **Edit** on the job, on the **Jobs** tab,
-  check **Stop service first**, and select **Save job**.
+- **In the dashboard,** select **Edit** on the job, on the **Jobs** card of
+  the **Services** tab, check **Stop service first**, and select **Save job**.
 - **With `piquelctl`,** add `--stop-service on` to `job set`:
 
   ```console
@@ -328,10 +330,10 @@ cause, and deploy again.
 ## Check that it works
 
 Each run of a job, with its output, is kept in the application's build
-history. In the dashboard, open the application's **Builds** tab, and select a
-run to see its output.
+history. In the dashboard, open the application's **Releases** tab, and
+select a run under **Builds** to see its output.
 
-![The Builds tab of reader, with run #1 of job migrate expanded: it succeeded with exit code 0 in 1.1 seconds, in the image miniflux/miniflux:2.3.4](../../images/applications/job-run.png)
+![The builds of reader, on its Releases tab, with run #1 of job migrate expanded: it succeeded with exit code 0 in 1.1 seconds, in the image miniflux/miniflux:2.3.4](../../images/applications/job-run.png)
 
 `piquelctl build list` lists the latest runs and builds, newest first:
 
@@ -350,7 +352,7 @@ level=INFO msg="Running database migrations" current_version=0 latest_version=13
 ## Troubleshooting
 
 - **The deployment fails with `job_failed`.** Read the job's output on the
-  **Builds** tab, or with `piquelctl build logs`. Its last line says how the container ended, such as
+  application's **Releases** tab, under **Builds**, or with `piquelctl build logs`. Its last line says how the container ended, such as
   `piqueld: task: non-zero exit (1)`.
 - **The deployment fails with `job_timeout`.** The job ran longer than its
   `timeout_seconds`. Raise it, or find out what the job waits for.

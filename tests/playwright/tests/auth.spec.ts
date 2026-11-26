@@ -90,15 +90,16 @@ test('an application shows only the controls the account may use on it', async (
   await page.goto(`/dashboard/applications/${app}`);
   await expect(title(page)).toHaveText('limited');
   await expect(head(page).getByRole('button')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Delete application', exact: true })).toHaveCount(0);
   await expect(applicationTab(page, 'Events')).toHaveCount(0);
-  await applicationTab(page, 'Environments').click();
+  await applicationTab(page, 'Settings').click();
+  await expect(page.getByRole('heading', { name: 'Delete application', exact: true })).toHaveCount(0);
+  await applicationTab(page, 'Overview').click();
   await expect(page.getByRole('list', { name: 'Environments' }).getByRole('link')).toHaveText(['production']);
   await expect(page.getByRole('list', { name: 'Environments' }).getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'New environment', exact: true })).toHaveCount(0);
 
   // Its configuration is read-only, while secrets:write still stores secrets.
-  await applicationTab(page, 'Secrets').click();
+  await applicationTab(page, 'Configuration').click();
   await expect(page.getByText('Read-only: editing this configuration requires the apps:write permission.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Add secret file', exact: true })).toBeDisabled();
   const store = card(page, 'Secret store');
@@ -115,6 +116,7 @@ test('an application shows only the controls the account may use on it', async (
   await expect(environmentTab(page, 'Logs')).toHaveCount(0);
   await expect(environmentTab(page, 'Events')).toHaveCount(0);
   await expect(head(page).getByRole('button')).toHaveCount(0);
+  await environmentTab(page, 'Settings').click();
   await expect(page.getByRole('heading', { name: 'Delete environment', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Rename environment', exact: true })).toBeDisabled();
 });

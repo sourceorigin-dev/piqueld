@@ -7,14 +7,14 @@ const sent = (request: Request, method: string, path: string) =>
 
 /** Stores `api-token` in a new application, readable by `environments`
  * (its production environment's ID when omitted), and opens the
- * application's Secrets tab: the production environment's ID `env`, the
+ * application's Configuration tab: the production environment's ID `env`, the
  * secret's API `path`, the `store` card and the secret's `row` in it. */
 async function storedSecret(page: Page, environments?: string) {
   const { app, env } = await apply(page, webManifest('vault'));
   const path = `applications/${app}/secrets/api-token`;
   await call(page, 'PUT', `${path}?environments=${environments ?? env}`, 'first', { 'X-Expected-Generation': '0' });
   await page.goto(`/dashboard/applications/${app}`);
-  await applicationTab(page, 'Secrets').click();
+  await applicationTab(page, 'Configuration').click();
   const store = card(page, 'Secret store');
   return { env, path, store, row: store.getByRole('row').filter({ hasText: 'api-token' }) };
 }
@@ -141,7 +141,7 @@ test.describe('with deployments', () => {
     await expect.poll(async () => (await call(page, 'GET', `environments/${env}/secrets`)).length, { timeout: 20_000 }).toBe(1);
 
     await page.goto(`/dashboard/applications/${app}/environments/${env}`);
-    await environmentTab(page, 'Secrets').click();
+    await environmentTab(page, 'Settings').click();
     await expect(card(page, 'Mounted secrets').getByRole('row').filter({ hasText: 'session-key' })).toContainText('generated');
     const generated = card(page, 'Generated secrets');
     const row = generated.getByRole('row').filter({ hasText: 'session-key' });

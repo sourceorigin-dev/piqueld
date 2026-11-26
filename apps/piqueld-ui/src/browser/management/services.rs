@@ -5,8 +5,8 @@ use super::{
     Draft, EditorFeedback, back_link, editor, logs::ApplicationLogs, navigation::remember_tab,
     settings::ServiceGroup,
 };
-use crate::application::{ApplicationViewExt, slug};
-use crate::editor::Section;
+use crate::application::{ApplicationViewExt, named_tab};
+use crate::editor::{Section, SectionTab};
 use crate::state::ApplicationHealth;
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
@@ -18,12 +18,12 @@ use piqueld_client::{
     edit::{ApplicationEdit, ServiceEdit},
 };
 
-/// Every `Section`'s tab, in order, then the service's logs.
-const SERVICE_TABS: [&str; Section::ALL.len() + 1] = {
-    let mut tabs = ["Logs"; Section::ALL.len() + 1];
+/// Every `SectionTab`, in order, then the service's logs.
+const SERVICE_TABS: [&str; SectionTab::ALL.len() + 1] = {
+    let mut tabs = ["Logs"; SectionTab::ALL.len() + 1];
     let mut index = 0;
-    while index < Section::ALL.len() {
-        tabs[index] = Section::ALL[index].title();
+    while index < SectionTab::ALL.len() {
+        tabs[index] = SectionTab::ALL[index].title();
         index += 1;
     }
     tabs
@@ -114,10 +114,11 @@ pub(super) fn ServiceList() -> impl IntoView {
 /// Dirty group of the service page's rename form.
 const NAME_FORM: &str = "service-name";
 
-/// Service page: the service's renamable title, one tab per `Section` settings
-/// group plus a scoped log tab, and a remove button that saves the service's
-/// removal and returns to the service list. Editing is disabled without
-/// `apps:write`, which also hides the rename and remove buttons.
+/// Service page: the service's renamable title, one tab per `SectionTab`
+/// stacking its `Section` settings groups, a scoped log tab, and a remove
+/// button that saves the service's removal and returns to the service list.
+/// Editing is disabled without `apps:write`, which also hides the rename and
+/// remove buttons.
 #[component]
 pub(super) fn ServiceEditor(name: String) -> impl IntoView {
     let context = editor();
@@ -155,23 +156,19 @@ pub(super) fn ServiceEditor(name: String) -> impl IntoView {
         );
     };
     let requested = leptos_router::hooks::use_query_map().with_untracked(|query| query.get("tab"));
-    let selected = RwSignal::new(
-        SERVICE_TABS
-            .iter()
-            .copied()
-            .find(|tab| requested.as_deref() == Some(slug(tab).as_str()))
-            .unwrap_or(Section::General.title()),
-    );
+    let selected = RwSignal::new(named_tab(&SERVICE_TABS, requested.as_deref()));
     let tabs = TabSet::new("Service sections", selected);
     remember_tab(selected);
     let log_service = name.clone();
-    let groups = Section::ALL
+    let groups = SectionTab::ALL
         .into_iter()
-        .map(|section| {
-            tabs.panel(
-                section.title(),
-                view! { <ServiceGroup name={name.clone()} section={section} /> },
-            )
+        .map(|tab| {
+            let sections = Section::ALL
+                .into_iter()
+                .filter(|section| section.tab() == tab)
+                .map(|section| view! { <ServiceGroup name={name.clone()} section={section} /> })
+                .collect_view();
+            tabs.panel(tab.title(), view! { <div class="stack">{sections}</div> })
         })
         .collect_view();
     view! {

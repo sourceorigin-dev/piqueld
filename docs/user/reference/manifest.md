@@ -473,7 +473,7 @@ Environments:
   ! qa   no longer declared; kept until deleted with `piquelctl env delete`
 ```
 
-and `app show` and the application's Environments tab list how the
+and `app show` and the application's Overview tab list how the
 environments differ from the saved manifest. `app apply --deploy` deploys
 every declared environment that builds; promoted ones wait for their first
 `env promote`. So for an application such as
@@ -751,7 +751,7 @@ value.
 
 Besides applying a manifest, declarations can be edited with
 `piquelctl app generated-secret`, the **Generated secrets** card of the dashboard's
-Secrets tab, or `PUT /api/v1/applications/{id}/generated-secrets`.
+Configuration tab, or `PUT /api/v1/applications/{id}/generated-secrets`.
 
 ## Promoted environments
 
@@ -1357,8 +1357,9 @@ and change lists show job settings as `jobs.<name>.<field>`, with commands
 redacted like service commands, and the order jobs run in as `jobs.order`.
 
 Besides applying a manifest, jobs can be edited with `piquelctl app job`, the
-dashboard's Jobs tab, or `PUT /api/v1/applications/{id}/jobs`. Renaming a
-service repoints its jobs; removing a service removes them.
+**Jobs** card on the dashboard's Services tab, or
+`PUT /api/v1/applications/{id}/jobs`. Renaming a service repoints its jobs;
+removing a service removes them.
 
 ## Links
 
@@ -1469,7 +1470,7 @@ each service of an application once (`import_duplicate`). Exceeding a link
 budget fails with `link_count_excessive`.
 
 Besides applying a manifest, links can be edited with `piquelctl app export`
-and `app import`, the dashboard's Links tab, or
+and `app import`, the **Links** section of the dashboard's Networking tab, or
 `PUT /api/v1/applications/{id}/exports` and `/imports`. Renaming a service
 renames its export, so importers must import the new name; removing a service
 removes its export.

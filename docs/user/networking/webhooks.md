@@ -56,9 +56,9 @@ which it accepts GitHub's push webhooks, and nothing else.
 
 4. Make the application deploy on push with the webhook:
 
-   - In the dashboard, open the application's **Source** tab, set **Deploy
-     on push** to **Webhook: when GitHub reports a push**, then select
-     **Save changes**.
+   - In the dashboard, open the application's **Settings** tab. Under
+     **Repository manifest**, set **Deploy on push** to **Webhook: when GitHub
+     reports a push**, then select **Save changes**.
    - With `piquelctl`, use
      [`app repository sync`](../reference/cli-commands.md#piquelctl-app-repository-sync):
 
@@ -78,7 +78,7 @@ which it accepts GitHub's push webhooks, and nothing else.
 5. Opt the `production` environment in. Pushes deploy only the environments
    that opt in, and `production` doesn't by default:
 
-   - In the dashboard, open the environment's **Overview**. In its
+   - In the dashboard, open the environment's **Settings** tab. In its
      **Source** card, select **Deploy on push**. Its **Deploy on push** label
      then says `following`.
    - With `piquelctl`, use
@@ -102,11 +102,11 @@ which it accepts GitHub's push webhooks, and nothing else.
 6. Generate the application's webhook secret. Each application has its own
    payload URL, ending with its ID, and its own secret.
 
-   In the dashboard, the **Source** tab now has a **GitHub webhook** card.
+   In the dashboard, the **Settings** tab now has a **GitHub webhook** card.
    Select **Generate secret**: the card shows the new secret below the
    payload URL.
 
-   ![The Source tab of notes: Deploy on push set to Webhook: when GitHub reports a push, then the GitHub webhook card, with its payload URL on hooks.example.com, the content type application/json, just the push event, no secret yet, and a Generate secret button](../../images/networking/webhook-card.png)
+   ![The Settings tab of notes: Deploy on push set to Webhook: when GitHub reports a push, then the GitHub webhook card, with its payload URL on hooks.example.com, the content type application/json, just the push event, no secret yet, and a Generate secret button](../../images/networking/webhook-card.png)
 
    With `piquelctl`, after you confirm, the command prints the payload URL
    and the new secret:

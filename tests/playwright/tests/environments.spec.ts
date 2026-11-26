@@ -31,7 +31,7 @@ test('the application page stays whole and each environment has its own page', a
   const chooser = page.getByRole('dialog', { name: 'Deploy an environment' });
   await expect(chooser.getByRole('button', { name: /^Deploy to / })).toHaveCount(2);
   await chooser.getByRole('button', { name: 'Close dialog', exact: true }).click();
-  await applicationTab(page, 'Environments').click();
+  await applicationTab(page, 'Overview').click();
   const environments = page.getByRole('list', { name: 'Environments' });
   await expect(environments.getByRole('link')).toHaveText(['production', 'staging']);
 
@@ -42,7 +42,7 @@ test('the application page stays whole and each environment has its own page', a
   await expect(page.locator('.event', { hasText: 'created environment staging' })).toBeVisible();
   await expect(page.locator('.event', { hasText: 'created environment production' })).toBeVisible();
 
-  await applicationTab(page, 'Environments').click();
+  await applicationTab(page, 'Overview').click();
   const deploy = page.waitForRequest(request => request.method() === 'POST' && request.url().includes(`/environments/${sibling}/deploy?`));
   await environments.getByRole('button', { name: 'Deploy to staging', exact: true }).click();
   await deploy;
@@ -55,13 +55,13 @@ test('the application page stays whole and each environment has its own page', a
   await expect(title(page)).toHaveText('staging');
   await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'environments', exact: true }).click();
   await expect(page).toHaveURL(url => url.pathname.endsWith(`/applications/${app}`));
-  await expect(applicationTab(page, 'Environments')).toHaveAttribute('aria-selected', 'true');
+  await expect(applicationTab(page, 'Overview')).toHaveAttribute('aria-selected', 'true');
 });
 
 test('the dashboard creates, renames and deletes only the chosen environment', async ({ page, account }) => {
   void account;
   const { app, env } = await createEnvironments(page);
-  await page.goto(`/dashboard/applications/${app}?tab=environments`);
+  await page.goto(`/dashboard/applications/${app}`);
   await page.getByRole('button', { name: 'New environment', exact: true }).click();
   const creator = page.getByRole('dialog', { name: 'Create environment' });
   await creator.getByLabel('Environment name', { exact: true }).fill('qa');
@@ -70,6 +70,7 @@ test('the dashboard creates, renames and deletes only the chosen environment', a
   await expect(head(page).getByRole('button', { name: 'Deploy', exact: true })).toBeEnabled();
   const qa = new URL(page.url()).pathname.split('/').pop()!;
   expect(qa).not.toBe(env);
+  await environmentTab(page, 'Settings').click();
 
   await page.getByLabel('Environment name', { exact: true }).fill('preview');
   await page.getByRole('button', { name: 'Rename environment', exact: true }).click();
@@ -84,7 +85,7 @@ test('the dashboard creates, renames and deletes only the chosen environment', a
   const deleted = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().includes(`/environments/${qa}?`));
   await remove.click();
   expect((await deleted).status()).toBe(202);
-  await expect(applicationTab(page, 'Environments')).toHaveAttribute('aria-selected', 'true');
+  await expect(applicationTab(page, 'Overview')).toHaveAttribute('aria-selected', 'true');
   const row = page.getByRole('listitem').filter({ hasText: 'preview' });
   await expect(row).toContainText('Deleting');
   await expect(row.getByRole('button', { name: 'Deploy to preview', exact: true })).toBeDisabled();
@@ -94,6 +95,7 @@ test('the dashboard creates, renames and deletes only the chosen environment', a
   await row.click({ position: { x: 400, y: 10 } });
   await expect(title(page)).toHaveText('preview');
   await expect(head(page).getByRole('button', { name: 'Deploy', exact: true })).toBeDisabled();
+  await environmentTab(page, 'Settings').click();
   const retried = page.waitForResponse(response => response.request().method() === 'POST' && response.url().includes(`/environments/${qa}/reconcile?`));
   await page.getByRole('button', { name: 'Retry deletion', exact: true }).click();
   expect((await retried).status()).toBe(202);
@@ -123,10 +125,9 @@ test('an application with no environments can create one in the dashboard', asyn
     }
     await route.fulfill({ response, json: body });
   });
-  await page.goto(`/dashboard/applications/${app}`);
+  await page.goto(`/dashboard/applications/${app}?tab=services`);
   await head(page).getByRole('button', { name: 'Deploy', exact: true }).click();
   await expect(page.getByText('No environments yet.', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: 'New environment', exact: true }).click();
   const creator = page.getByRole('dialog', { name: 'Create environment' });
   await creator.getByLabel('Environment name', { exact: true }).fill('replacement');
   await creator.getByRole('button', { name: 'Create environment', exact: true }).click();
@@ -174,7 +175,7 @@ test('a service receives telemetry once its environment is granted it', async ({
   void account;
   const { app, env } = await apply(page, webManifest('collector'));
   await page.goto(`/dashboard/applications/${app}/services/web`);
-  await serviceTab(page, 'Telemetry').click();
+  await serviceTab(page, 'Security').click();
   await page.getByLabel('Receive telemetry', { exact: true }).check();
   await page.getByRole('button', { name: 'Save changes', exact: true }).locator('visible=true').click();
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
@@ -183,7 +184,7 @@ test('a service receives telemetry once its environment is granted it', async ({
   };
   expect(application.spec.services[0].receives_telemetry).toBe(true);
 
-  await page.goto(`/dashboard/applications/${app}/environments/${env}`);
+  await page.goto(`/dashboard/applications/${app}/environments/${env}?tab=settings`);
   const grant = page.getByRole('button', { name: 'Grant telemetry', exact: true });
   confirmNext(page, 'every application');
   const granted = page.waitForResponse(response => response.request().method() === 'PUT' && response.url().includes(`/environments/${env}/telemetry`));
@@ -222,7 +223,7 @@ test('a new environment is promoted from a live environment chosen in the dialog
   // Staging, being deleted, can no longer be promoted from.
   const staging = await call(page, 'POST', `applications/${app}/environments`, { name: 'staging', expected_generation: generation });
   await call(page, 'DELETE', `environments/${staging.id}?expected_generation=${generation + 1}`);
-  await page.goto(`/dashboard/applications/${app}?tab=environments`);
+  await page.goto(`/dashboard/applications/${app}`);
   await page.getByRole('button', { name: 'New environment', exact: true }).click();
   const creator = page.getByRole('dialog', { name: 'Create environment' });
   const from = creator.getByRole('combobox', { name: 'Promote from', exact: true });
@@ -240,6 +241,7 @@ test('a new environment is promoted from a live environment chosen in the dialog
   expect(body).toMatchObject({ name: 'canary', promote_from: env });
   expect(body.branch ?? null).toBeNull();
   await expect(title(page)).toHaveText('canary');
+  await environmentTab(page, 'Settings').click();
   await expect(card(page, 'Source')).toContainText('Receives releases promoted from production');
 });
 
@@ -247,7 +249,7 @@ test('an unsaved source blocks deploying, and an invalid commit is refused befor
   void account;
   const { app, env } = await createRepositoryApplication(page);
   await page.clock.install();
-  await page.goto(`/dashboard/applications/${app}/environments/${env}`);
+  await page.goto(`/dashboard/applications/${app}/environments/${env}?tab=settings`);
   const source = card(page, 'Source');
   const deploy = head(page).getByRole('button', { name: 'Deploy', exact: true });
   const save = source.getByRole('button', { name: 'Save source', exact: true });
@@ -299,7 +301,7 @@ test('a dashboard listing requested before a save does not undo it', async ({ pa
     await route.fulfill({ json: before });
   });
   const listed = () => page.waitForRequest(request => new URL(request.url()).pathname === '/api/v1/applications');
-  await page.goto(`/dashboard/applications/${app}/environments/${env}`);
+  await page.goto(`/dashboard/applications/${app}/environments/${env}?tab=settings`);
   await expect(title(page)).toHaveText('production');
   await capture;
   const renamed = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === `/api/v1/environments/${env}/rename`);

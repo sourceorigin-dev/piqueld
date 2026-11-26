@@ -35,19 +35,19 @@ pub enum Section {
     Resources,
 }
 impl Section {
-    /// All form groups in display order.
+    /// All form groups, in the order their tab shows them.
     pub const ALL: [Self; 11] = [
         Self::General,
-        Self::Environment,
         Self::Process,
-        Self::Storage,
+        Self::Resources,
+        Self::Environment,
         Self::Files,
+        Self::Storage,
         Self::Health,
         Self::Dependencies,
         Self::Rollout,
-        Self::Telemetry,
         Self::Security,
-        Self::Resources,
+        Self::Telemetry,
     ];
     /// Human-readable form heading.
     #[must_use]
@@ -64,6 +64,50 @@ impl Section {
             Self::Telemetry => "Telemetry",
             Self::Security => "Security",
             Self::Resources => "Resource limits",
+        }
+    }
+
+    /// The service page's tab showing the section.
+    #[must_use]
+    pub const fn tab(self) -> SectionTab {
+        match self {
+            Self::General | Self::Process | Self::Resources => SectionTab::Image,
+            Self::Environment | Self::Files | Self::Storage => SectionTab::Configuration,
+            Self::Health | Self::Dependencies | Self::Rollout => SectionTab::Rollout,
+            Self::Security | Self::Telemetry => SectionTab::Security,
+        }
+    }
+}
+
+/// A settings tab of the service page, stacking the `Section`s that name it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SectionTab {
+    /// What runs: its image, command and limits.
+    Image,
+    /// What it is given: environment entries, files and volumes.
+    Configuration,
+    /// How it starts and updates.
+    Rollout,
+    /// Container hardening and telemetry access.
+    Security,
+}
+impl SectionTab {
+    /// All settings tabs in display order.
+    pub const ALL: [Self; 4] = [
+        Self::Image,
+        Self::Configuration,
+        Self::Rollout,
+        Self::Security,
+    ];
+
+    /// The tab's label.
+    #[must_use]
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Image => "Image & process",
+            Self::Configuration => "Configuration",
+            Self::Rollout => "Rollout",
+            Self::Security => "Security",
         }
     }
 }

@@ -29,11 +29,11 @@ runs to production without building it again.
 ## Add an environment
 
 To add a `staging` environment to `hello` in the dashboard, open the
-application's **Environments** tab and select **New environment**. Fill in
-**Environment name**, then select **Create environment**. The environment's
-page opens: select **Deploy** to deploy it. On the **Environments** tab, each
-environment's row also has its own **Deploy** button, and selecting the row
-opens its page.
+application's **Overview** tab and select **New environment**, under
+**Environments**. Fill in **Environment name**, then select **Create
+environment**. The environment's page opens: select **Deploy** to deploy it.
+On the application's **Overview** tab, each environment's row also has its own
+**Deploy** button, and selecting the row opens its page.
 
 With `piquelctl`:
 
@@ -63,7 +63,7 @@ its own branch. In the dashboard, **New environment** then also asks for its
 **Branch**. `env create` takes `--branch`, by default the branch the
 connection names, and with it `--commit` pins one commit. `env branch`
 changes the branch later, as does **Branch** on the **Source** card of the
-environment's **Overview**. The environment's next deployment reads the new
+environment's **Settings** tab. The environment's next deployment reads the new
 branch:
 
 ```console
@@ -107,7 +107,7 @@ describes each one. When a block sets where its environment deploys from,
 the environment's **Source** card in the dashboard says so, and can't change
 it:
 
-![The page of production, promoted from staging. Its Source card, at the bottom, says that it receives releases promoted from staging and never builds, and that the manifest sets its source in spec.environments.production](../../images/applications/environment-source.png)
+![The Settings tab of production, promoted from staging. Its Source card says that it receives releases promoted from staging and never builds, and that the manifest sets its source in spec.environments.production](../../images/applications/environment-source.png)
 
 ## Give each environment its own values
 
@@ -118,13 +118,15 @@ replicas of `web`, and staging one.
 
 ### In the dashboard
 
-1. On the application's **Variables** tab, which has a row per variable and
-   a column per environment, select **Add variable**. Fill in **Name** with
+1. On the application's **Configuration** tab, under **Variables**, which has
+   a row per variable and a column per environment, select **Add variable**.
+   Fill in **Name** with
    `web_replicas`, **Default** with `1`, and the **production** column with
    `3`, then select **Save changes**.
-2. On `web`'s **Source & scaling** tab, set **Replicas** to
-   `${{ vars.web_replicas }}`, and select **Save changes**.
-3. Deploy each environment, from its row on the **Environments** tab.
+2. On `web`'s **Image & process** tab, under **Source & scaling**, set
+   **Replicas** to `${{ vars.web_replicas }}`, and select **Save changes**.
+3. Deploy each environment, from its row on the application's **Overview**
+   tab.
 
 ### With piquelctl
 
@@ -223,7 +225,7 @@ set its visibility to private:
 
 - **In the dashboard,** set **Route visibility** to **Private: every route
   is tailnet-only** on the **Visibility** card of the environment's
-  **Overview**, and select **Save visibility**.
+  **Settings** tab, and select **Save visibility**.
 - **With `piquelctl`,** run `piquelctl env visibility hello staging private`.
 - **In the manifest,** set `visibility = "private"` in the environment's
   `[spec.environments.<name>]` block.
@@ -317,12 +319,12 @@ piquelctl app delete blog
 2. Create `blog` and connect it to the repository, as in
    [deploying on push](deploy-on-push.md#connect-the-application-to-the-repository),
    and turn on deploying on push, polling every 120 seconds: set **Deploy on
-   push** on the **Source** tab, or add `--sync poll --interval 120` to
+   push** on the **Settings** tab, or add `--sync poll --interval 120` to
    `piquelctl app repository connect`. Don't deploy it yet: its only
    environment, production, will be promoted.
 
 3. Add the `staging` environment, and deploy it. In the dashboard, select
-   **New environment** on the **Environments** tab, fill in **Environment
+   **New environment** on the **Overview** tab, fill in **Environment
    name** with `staging` and **Branch** with `main`, and select **Create
    environment**, then **Deploy** on staging's page. With `piquelctl`:
 
@@ -346,13 +348,13 @@ staging     ready         main                   1         env-01a16d95dac072e2b
 
 Test staging first, from a device on your tailnet. Then promote it.
 
-In the dashboard, production's row on the **Environments** tab, and its page,
-offer **Promote from staging**. Staging's page offers **Promote**, which
+In the dashboard, production's row on the application's **Overview** tab, and
+its page, offer **Promote from staging**. Staging's page offers **Promote**, which
 lists the environments promoted from staging: select production's **Promote
 from staging** there. Each shows the plan first, then **Promote release**
 deploys it.
 
-![The Environments tab of blog: production, promoted from staging, has a "Promote from staging" button, and staging, which follows branch main, has a "Deploy" button](../../images/applications/environments.png)
+![The Overview tab of blog: production, promoted from staging, has a "Promote from staging" button, and staging, which follows branch main, has a "Deploy" button](../../images/applications/environments.png)
 
 With `piquelctl`:
 
@@ -468,7 +470,7 @@ An environment the manifest doesn't declare can be made promoted in the
 dashboard or with `piquelctl`. Neither deploys anything.
 
 In the dashboard, choose the source in **Promote from** when you create the
-environment. For an existing one, open its **Overview**, set **Deploys** on
+environment. For an existing one, open its **Settings** tab, set **Deploys** on
 its **Source** card to **Releases promoted from staging**, and select **Save
 source**. **Builds its own source** makes it build again.
 
@@ -483,7 +485,7 @@ piquelctl env source blog production --tracking
 
 ## Check that it works
 
-The application's **Environments** tab lists each environment with its state
+The application's **Overview** tab lists each environment with its state
 and source. With `piquelctl`:
 
 ```console
@@ -503,7 +505,8 @@ tests. Its routes stop being served and its services stop, but it keeps its
 configuration, volumes and secrets, and its hostnames stay reserved for it.
 
 In the dashboard, select **Stop** on the environment's page, and confirm. Its
-health then shows **Stopped**, on its page and in the **Environments** tab.
+health then shows **Stopped**, on its page and on the application's
+**Overview** tab.
 **Start**, in the same place, runs it again. With `piquelctl`:
 
 ```console
@@ -531,7 +534,7 @@ history. Its named volumes are kept, with their data. If the manifest
 declares the environment, remove its block and save the manifest first.
 
 In the dashboard, select **Delete environment**, at the bottom of the
-environment's **Overview**. With `piquelctl`:
+environment's **Settings** tab. With `piquelctl`:
 
 ```console
 piquelctl env delete hello staging

@@ -313,9 +313,9 @@ fn SyncCheck() -> impl IntoView {
 
 /// What to configure in GitHub for an application syncing on push webhooks:
 /// the payload URL, and a secret generated on demand and shown only once,
-/// on the Source tab, until dismissed or the tab is left. Rotating confirms first, since
-/// the previous secret stops verifying at once, and is never retried.
-/// Generating and rotating need `apps:write`.
+/// on the Settings tab, until dismissed or the tab is left. Rotating confirms
+/// first, since the previous secret stops verifying at once, and is never
+/// retried. Generating and rotating need `apps:write`.
 #[component]
 fn WebhookSettings() -> impl IntoView {
     let context = editor();
@@ -325,7 +325,7 @@ fn WebhookSettings() -> impl IntoView {
     });
     let generated = RwSignal::new(None::<String>);
     Effect::new(move |_| {
-        if context.tabs.selected.get() != "Source" {
+        if context.tabs.selected.get() != "Settings" {
             generated.set(None);
         }
     });
@@ -434,7 +434,7 @@ fn WebhookSettings() -> impl IntoView {
                             .into_any()
                     }
                 }}
-                <Show when={move || context.tabs.selected.get() == "Source"}>
+                <Show when={move || context.tabs.selected.get() == "Settings"}>
                     <Show when={move || generated.with(Option::is_some)}>
                         {notice(
                             Tone::Ok,
@@ -519,7 +519,7 @@ pub(super) fn VolumeSettings() -> impl IntoView {
                 <div>
                     <h3>"Named volumes"</h3>
                     <p>
-                        "Volumes persist across deployments. Mount them from a service’s Volume mounts tab. Removing a volume here keeps its Docker data."
+                        "Volumes persist across deployments. Mount them from a service’s Configuration tab. Removing a volume here keeps its Docker data."
                     </p>
                 </div>
                 {dialog.add_button("Add volume", || false)}

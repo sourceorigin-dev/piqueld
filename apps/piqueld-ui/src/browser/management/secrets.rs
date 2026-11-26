@@ -588,7 +588,7 @@ pub(super) fn StoredSecrets(
     }
 }
 
-/// What the environment's Secrets tab can do to a generated secret.
+/// What the environment's Settings tab can do to a generated secret.
 #[derive(Clone, Copy)]
 enum GeneratedAction {
     /// Generate a new version for the next deployment.
@@ -644,10 +644,10 @@ impl GeneratedAction {
     }
 }
 
-/// An environment's Secrets tab: where each secret the manifest it deploys
-/// mounts comes from, and its generated values (never read back), which
-/// holders of `secrets:write` can regenerate for the next deployment, or
-/// delete so a later deployment generates new ones.
+/// An environment's secrets, on its Settings tab: where each secret the
+/// manifest it deploys mounts comes from, and its generated values (never
+/// read back), which holders of `secrets:write` can regenerate for the next
+/// deployment, or delete so a later deployment generates new ones.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn EnvironmentSecrets() -> impl IntoView {
@@ -837,7 +837,7 @@ pub(super) fn EnvironmentSecrets() -> impl IntoView {
                     <div>
                         <h3>"Generated secrets"</h3>
                         <p>
-                            "Values piqueld generated for this environment, never shared with another one, for the secrets the application's Secrets tab declares. Running deployments keep their versions."
+                            "Values piqueld generated for this environment, never shared with another one, for the secrets the application's Configuration tab declares. Running deployments keep their versions."
                         </p>
                     </div>
                 </header>
@@ -900,7 +900,7 @@ fn GeneratedSecretSettings() -> impl IntoView {
                 <div>
                     <h3>"Generated secrets"</h3>
                     <p>
-                        "Secrets piqueld generates for each environment and preview, the first time one of its deployments mounts them, so they never need a value from you. A value is never replaced: changing or removing a declaration keeps values already generated, which each environment's Secrets tab can regenerate. A name can't be both generated and in the secret store."
+                        "Secrets piqueld generates for each environment and preview, the first time one of its deployments mounts them, so they never need a value from you. A value is never replaced: changing or removing a declaration keeps values already generated, which each environment's Settings tab can regenerate. A name can't be both generated and in the secret store."
                     </p>
                 </div>
             </header>
@@ -1011,7 +1011,7 @@ fn GeneratedSecretSettings() -> impl IntoView {
 }
 
 /// The secrets piqueld generates, then every service's secret file
-/// references, below the secret store on the application's Secrets tab.
+/// references, below the secret store on the application's Configuration tab.
 #[component]
 pub(super) fn SecretFileSettings() -> impl IntoView {
     let context = editor();

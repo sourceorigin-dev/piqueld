@@ -63,19 +63,19 @@ test('adds a service and edits it on the service page', async ({ page, account }
   await expect(page.getByRole('button', { name: 'Remove service', exact: true })).toBeEnabled();
   await page.reload();
   await expect(page.getByLabel('Replicas', { exact: true })).toHaveValue('3');
-  await serviceTab(page, 'Environment').click();
+  await serviceTab(page, 'Configuration').click();
   await page.getByRole('button', { name: 'Add variable', exact: true }).click();
   await page.getByLabel('Key', { exact: true }).fill('PORT');
   await page.getByLabel('Value', { exact: true }).fill('8080');
   await save(page);
   // A section's draft compares only its own fields, also after another section saved.
-  await serviceTab(page, 'Source & scaling').click();
+  await serviceTab(page, 'Image & process').click();
   await page.getByLabel('Replicas', { exact: true }).fill('4');
-  await serviceTab(page, 'Environment').click();
+  await serviceTab(page, 'Configuration').click();
   await page.getByLabel('Value', { exact: true }).fill('9090');
   await visible(page, 'Save changes').click();
   await expect(visible(page, 'Save changes')).toHaveCount(0);
-  await serviceTab(page, 'Source & scaling').click();
+  await serviceTab(page, 'Image & process').click();
   await page.getByLabel('Replicas', { exact: true }).fill('3');
   await expect(visible(page, 'Save changes')).toHaveCount(0);
   await page.locator('.breadcrumb').getByRole('link', { name: 'browser-test', exact: true }).click();
@@ -106,14 +106,14 @@ test('mounts an inline file whose content is kept verbatim', async ({ page, acco
   await createApplication(page);
   await addService(page, 'web', 'nginx:1.27');
   await page.locator('a.list-row', { hasText: 'web' }).click();
-  await serviceTab(page, 'Files').click();
+  await serviceTab(page, 'Configuration').click();
   await page.getByRole('button', { name: 'Add file', exact: true }).click();
   await page.getByLabel('Container path', { exact: true }).fill('/etc/prometheus/prometheus.yml');
   await page.getByLabel('Mode', { exact: true }).fill('0640');
   await page.getByLabel('Content', { exact: true }).fill('target: ${{ vars.missing }} {{ .x }}');
   await save(page);
   await page.reload();
-  await serviceTab(page, 'Files').click();
+  await serviceTab(page, 'Configuration').click();
   await expect(page.getByLabel('Mode', { exact: true })).toHaveValue('0640');
   await expect(page.getByLabel('Content', { exact: true })).toHaveValue('target: ${{ vars.missing }} {{ .x }}');
 });
@@ -144,7 +144,7 @@ test('saves volumes and routes, previews the plan, and records a deployment', as
   void account;
   await createApplication(page);
   await addService(page, 'web', 'nginx:1.27');
-  await applicationTab(page, 'Volumes').click();
+  await applicationTab(page, 'Services').click();
   await page.getByRole('button', { name: 'Add volume', exact: true }).click();
   const volumeDialog = page.getByRole('dialog', { name: 'Add volume' });
   await volumeDialog.getByLabel('Volume name', { exact: true }).fill('data');
@@ -168,7 +168,7 @@ test('saves volumes and routes, previews the plan, and records a deployment', as
   await volumeDialog.getByLabel('Volume name', { exact: true }).fill('data');
   await volumeDialog.getByRole('button', { name: 'Add volume', exact: true }).click();
   await expect(volumeDialog).toBeHidden();
-  await applicationTab(page, 'Routes').click();
+  await applicationTab(page, 'Networking').click();
   await page.getByRole('button', { name: 'Add route', exact: true }).click();
   const routeDialog = page.getByRole('dialog', { name: 'Add route' });
   await routeDialog.getByLabel('Hostname', { exact: true }).fill('shop.example.com');
@@ -181,7 +181,7 @@ test('saves volumes and routes, previews the plan, and records a deployment', as
   await expect(route).toContainText('shop.example.com');
   await expect(route).toContainText('to service web, port 8080');
   await page.reload();
-  await applicationTab(page, 'Routes').click();
+  await applicationTab(page, 'Networking').click();
   await expect(route).toContainText('shop.example.com');
   // Editing starts from the saved route.
   await route.getByRole('button', { name: 'Edit', exact: true }).click();
@@ -189,7 +189,7 @@ test('saves volumes and routes, previews the plan, and records a deployment', as
   await expect(editDialog.getByLabel('Name', { exact: true })).toHaveValue('shop');
   await editDialog.getByRole('button', { name: 'Close dialog' }).click();
 
-  await applicationTab(page, 'Environments').click();
+  await applicationTab(page, 'Overview').click();
   await page.getByRole('button', { name: 'New environment', exact: true }).click();
   const creator = page.getByRole('dialog', { name: 'Create environment' });
   await creator.getByLabel('Environment name', { exact: true }).fill('staging');
@@ -240,7 +240,7 @@ test('adds, edits, reorders, and removes jobs in a dialog', async ({ page, accou
   void account;
   await createApplication(page);
   await addService(page, 'web', 'nginx:1.27');
-  await applicationTab(page, 'Jobs').click();
+  await applicationTab(page, 'Services').click();
   await expect(page.getByText('No jobs. Deployments roll out services directly.', { exact: true })).toBeVisible();
   const jobs = page.getByRole('list', { name: 'Jobs' }).getByRole('listitem');
   const adding = page.getByRole('dialog', { name: 'Add job' });
@@ -296,7 +296,7 @@ test('adds, edits, reorders, and removes jobs in a dialog', async ({ page, accou
   await expect(jobs.nth(0).getByRole('button', { name: 'Move up', exact: true })).toBeDisabled();
   await expect(jobs.nth(1).getByRole('button', { name: 'Move down', exact: true })).toBeDisabled();
   await page.reload();
-  await applicationTab(page, 'Jobs').click();
+  await applicationTab(page, 'Services').click();
   await expect(jobs.nth(0)).toContainText('migrate');
   await expect(jobs.nth(0)).toContainText('stops its service');
   await expect(jobs.nth(1)).toContainText('seed');
@@ -319,7 +319,7 @@ test('adds, edits, reorders, and removes jobs in a dialog', async ({ page, accou
   await jobs.nth(1).getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(jobs).toHaveCount(1);
   await page.reload();
-  await applicationTab(page, 'Jobs').click();
+  await applicationTab(page, 'Services').click();
   await expect(jobs).toHaveCount(1);
   await expect(jobs).toContainText(['migrate']);
 
@@ -332,7 +332,7 @@ test('adds, edits, reorders, and removes jobs in a dialog', async ({ page, accou
 test('declares, changes, and removes generated secrets', async ({ page, account }) => {
   void account;
   await createApplication(page);
-  await applicationTab(page, 'Secrets').click();
+  await applicationTab(page, 'Configuration').click();
   await expect(page.getByText('No generated secrets declared.', { exact: true })).toBeVisible();
   const secret = (index: number) => page.locator(`[data-generated-secret="${index}"]`);
   const add = async (index: number, name: string) => {
@@ -348,7 +348,7 @@ test('declares, changes, and removes generated secrets', async ({ page, account 
   await expect(secret(1).getByRole('combobox', { name: 'Encoding', exact: true })).toHaveCount(0);
   await save(page);
   await page.reload();
-  await applicationTab(page, 'Secrets').click();
+  await applicationTab(page, 'Configuration').click();
   await expect(secret(0).getByLabel('Secret name', { exact: true })).toHaveValue('database-password');
   await expect(secret(0).getByLabel('Bytes', { exact: true })).toHaveValue('64');
   await expect(secret(0).getByRole('combobox', { name: 'Encoding', exact: true })).toHaveValue('base64url');
@@ -364,7 +364,7 @@ test('declares, changes, and removes generated secrets', async ({ page, account 
   await secret(0).getByRole('button', { name: 'Remove', exact: true }).click();
   await save(page);
   await page.reload();
-  await applicationTab(page, 'Secrets').click();
+  await applicationTab(page, 'Configuration').click();
   await expect(secret(0).getByLabel('Secret name', { exact: true })).toHaveValue('signing-key');
   await expect(secret(1)).toHaveCount(0);
 });
@@ -402,7 +402,7 @@ test('unsaved edits gate Deploy, links and Back until discarded, but not downloa
     await page.getByRole('button', { name: 'Add variable', exact: true }).click();
     await page.getByLabel('Variable name', { exact: true }).fill('kept');
   };
-  await applicationTab(page, 'Variables').click();
+  await applicationTab(page, 'Configuration').click();
   await addVariable();
   await expect(deploy).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeDisabled();
@@ -416,10 +416,10 @@ test('unsaved edits gate Deploy, links and Back until discarded, but not downloa
   const asked = expect.stringContaining('discard unsaved form edits');
   await page.getByRole('complementary').getByRole('link', { name: 'Applications', exact: true }).click();
   await expect.poll(() => dialogs).toEqual([asked]);
-  await expect(page).toHaveURL(`${editor}?tab=variables`);
+  await expect(page).toHaveURL(`${editor}?tab=configuration`);
   await page.goBack();
   await expect.poll(() => dialogs).toEqual([asked, asked]);
-  await expect(page).toHaveURL(`${editor}?tab=variables`);
+  await expect(page).toHaveURL(`${editor}?tab=configuration`);
   await expect(page.getByLabel('Variable name', { exact: true })).toHaveValue('kept');
   await visible(page, 'Discard').click();
   await expect(deploy).toBeEnabled();
@@ -445,6 +445,7 @@ test('creating rejects an invalid name, and deleting needs confirmation', async 
   await expect(title(page)).toHaveText('doomed');
   const id = page.url().split('/').pop()!;
 
+  await applicationTab(page, 'Settings').click();
   const remove = page.getByRole('button', { name: 'Delete application', exact: true });
   page.once('dialog', dialog => dialog.dismiss());
   await remove.click();
@@ -477,10 +478,10 @@ test('removes a service from its page, whose address then reports it gone', asyn
   await expect(applicationTab(page, 'Services')).toHaveAttribute('aria-selected', 'true');
 });
 
-test('saves exports and imports from the Links tab, each card on its own', async ({ page, account }) => {
+test('saves exports and imports from the Networking tab, each card on its own', async ({ page, account }) => {
   void account;
   const { app: id } = await apply(page, webManifest('links'));
-  await page.goto(`/dashboard/applications/${id}?tab=links`);
+  await page.goto(`/dashboard/applications/${id}?tab=networking`);
   await page.getByRole('button', { name: 'Add export', exact: true }).click();
   const exporting = page.getByRole('dialog', { name: 'Add export' });
   await exporting.getByRole('combobox', { name: 'Service', exact: true }).selectOption('web');
@@ -527,7 +528,7 @@ test('reloading after a change made elsewhere keeps unsaved edits and shows the 
   await page.clock.install();
   await createApplication(page);
   const id = page.url().split('/').pop()!;
-  await applicationTab(page, 'Variables').click();
+  await applicationTab(page, 'Configuration').click();
   await page.getByRole('button', { name: 'Add variable', exact: true }).click();
   await page.getByLabel('Variable name', { exact: true }).fill('kept');
   await page.getByLabel('Default value', { exact: true }).fill('value');

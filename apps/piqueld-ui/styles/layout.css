@@ -267,6 +267,13 @@
         margin-top: 0;
     }
 
+    /* The heading and its description wrap before the actions beside them
+       drop to a row of their own. */
+    .section-header > div:first-child {
+        flex: 1 1 16rem;
+        min-width: 0;
+    }
+
     .section-header h2 {
         font-size: 15px;
     }
@@ -277,14 +284,23 @@
         color: var(--muted);
     }
 
-    .stack {
+    /* One column no wider than its container, so a wide table scrolls in its
+       card rather than stretching the page. */
+    .stack,
+    .stack-lg {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 16px;
     }
 
     .stack-sm {
         display: grid;
         gap: 8px;
+    }
+
+    /* Sections of one tab, each under its own heading. */
+    .stack-lg {
+        gap: 32px;
     }
 
     .auth-page {

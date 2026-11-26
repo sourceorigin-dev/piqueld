@@ -548,6 +548,35 @@
         color: var(--muted);
     }
 
+    /* Previews are disposable, so their list is an outline, dashed and
+       unfilled, against the environments' solid one, and each row leads with
+       its branch. */
+    .list-previews {
+        border-style: dashed;
+        border-color: var(--line-strong);
+        background: transparent;
+    }
+
+    .list-previews .list-row {
+        border-bottom-style: dashed;
+    }
+
+    .list-previews .title a {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+    }
+
+    .list-previews .title .icon {
+        color: var(--info);
+    }
+
+    .list-previews .title small {
+        margin-left: 24px;
+    }
+
     /* Each environment a route is deployed in, with its HTTPS state. */
     .route-states {
         display: flex;

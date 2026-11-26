@@ -37,10 +37,11 @@ with the images `postgres:17-alpine` and `nginx:alpine`. Then set each service's
 settings as the sections below describe.
 
 In the dashboard, open the application's **Services** tab, then the service.
-Its page has a tab for each group of settings. Once you change a field,
-select **Save changes** below it.
+Its page spreads its settings over four tabs, **Image & process**,
+**Configuration**, **Rollout** and **Security**, with a card for each group of
+settings. Once you change a field, select **Save changes** below it.
 
-![The web service's page, on its Health check tab: an HTTP check of port 80 and path /, every 10 seconds, with a 3-second timeout, no start period and 3 retries](../../images/applications/service-health-check.png)
+![The web service's page, on its Rollout tab: under Health check, an HTTP check of port 80 and path /, every 10 seconds, with a 3-second timeout, no start period and 3 retries](../../images/applications/service-health-check.png)
 
 With `piquelctl`, `piquelctl app service` has a command for each setting.
 
@@ -135,8 +136,8 @@ database at `db:5432`. Services of other applications can't, unless you
 ## Replicas
 
 A service runs one copy, or replica, by default, and up to 100. In the
-dashboard, set **Replicas** on the service's **Source & scaling** tab. With
-`piquelctl`:
+dashboard, set **Replicas** under **Source & scaling**, on the service's
+**Image & process** tab. With `piquelctl`:
 
 ```console
 piquelctl app service replicas notes web 3
@@ -147,7 +148,7 @@ In the manifest, it is `replicas`, in the service's entry.
 ## Environment variables
 
 Every replica of a service gets its environment variables. In the dashboard,
-use the service's **Environment** tab. With `piquelctl`:
+use **Environment** on the service's **Configuration** tab. With `piquelctl`:
 
 ```console
 piquelctl app service env set notes web GREETING hello
@@ -175,8 +176,8 @@ arguments. Each element is one argument, passed as written, without a shell.
 To raise PostgreSQL's connection limit, for example, give `db` the arguments
 `-c` and `max_connections=200`:
 
-- **In the dashboard,** use the service's **Command & arguments** tab, one
-  element per row.
+- **In the dashboard,** use **Command & arguments** on the service's **Image
+  & process** tab, one element per row.
 - **With `piquelctl`,** give the elements after `--`, and give none to go back
   to the image's own:
 
@@ -222,8 +223,8 @@ Give slow starters, such as databases, a start period.
 
 ### In the dashboard
 
-Use the service's **Health check** tab. Choose the **Check type**, then fill
-in its fields. **None** removes the check.
+Use **Health check** on the service's **Rollout** tab. Choose the **Check
+type**, then fill in its fields. **None** removes the check.
 
 ### With piquelctl
 
@@ -265,8 +266,8 @@ The settings above are `interval_seconds`, `timeout_seconds`, `retries` and
 ## Startup dependencies
 
 A service can depend on other services of the same application, which must
-be ready before it is deployed. In the dashboard, check them on the service's
-**Startup dependencies** tab. With `piquelctl`:
+be ready before it is deployed. In the dashboard, check them under **Startup
+dependencies**, on the service's **Rollout** tab. With `piquelctl`:
 
 ```console
 piquelctl app service depends-on notes web -- db
@@ -305,8 +306,8 @@ Docker also watches each new replica, for 30 seconds by default. If one fails
 within that time, Docker pauses the rollout: the replicas it hasn't replaced
 yet keep running the previous version, and the deployment fails.
 
-To choose the order and how long Docker watches, use the service's
-**Rollout** tab in the dashboard. With `piquelctl`, run the command below;
+To choose the order and how long Docker watches, use the **Rollout** card on
+the service's **Rollout** tab in the dashboard. With `piquelctl`, run the command below;
 without flags, it restores the defaults:
 
 ```console
@@ -339,8 +340,8 @@ replica may use all of the host's, except in [previews](previews.md#limits),
 which get the daemon's defaults. CPU is in thousandths of a core, and memory
 in bytes.
 
-In the dashboard, use the service's **Resource limits** tab, and leave a
-field empty for no limit. With `piquelctl`:
+In the dashboard, use **Resource limits** on the service's **Image & process**
+tab, and leave a field empty for no limit. With `piquelctl`:
 
 ```console
 piquelctl app service cpu notes web 500

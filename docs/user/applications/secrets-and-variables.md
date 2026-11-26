@@ -40,7 +40,7 @@ Declare the secret, then mount it in a service, as a file under
 generates the database's password, `db-password`, and mounts it in `db`.
 To declare another one, such as `session-key`:
 
-- **In the dashboard,** open the application's **Secrets** tab. On the
+- **In the dashboard,** open the application's **Configuration** tab. On the
   **Generated secrets** card, select **Add generated secret**, fill in
   **Secret name**, choose what it **Generates**, and select **Save changes**.
 - **With `piquelctl`:**
@@ -108,18 +108,18 @@ path from `SMTP_PASSWORD_FILE`. Deploy once it's mounted.
 
 ### In the dashboard
 
-1. Open the application's **Secrets** tab. Under **Save a secret**, enter the
-   **Secret name** and the **Value**, then select **Save secret**. The value
-   can't be read back, and the dashboard only stores text: store binary files
-   with `piquelctl`.
+1. Open the application's **Configuration** tab. On the **Secret store**
+   card, under **Save a secret**, enter the **Secret name** and the **Value**,
+   then select **Save secret**. The value can't be read back, and the
+   dashboard only stores text: store binary files with `piquelctl`.
 
-   ![The Secrets tab of notes: the secret store lists smtp-password, version 1, mountable by every environment, above the Save a secret form](../../images/applications/application-secrets.png)
+   ![The Secret store card on the Configuration tab of notes: it lists smtp-password, version 1, mountable by every environment, above the Save a secret form](../../images/applications/application-secrets.png)
 
 2. Below the store, each service has a **secret files** card. On `web`'s,
    select **Add secret file**, enter the **Secret name** and the **Container
    path**, `/run/secrets/smtp-password`, then select **Save changes**.
-3. On `web`'s **Environment** tab, set `SMTP_PASSWORD_FILE` to
-   `/run/secrets/smtp-password`.
+3. On `web`'s **Configuration** tab, under **Environment**, set
+   `SMTP_PASSWORD_FILE` to `/run/secrets/smtp-password`.
 
 ### With piquelctl
 
@@ -207,12 +207,12 @@ anything.
 
 ## Check that it works
 
-In the dashboard, open the environment, then its **Secrets** tab:
+In the dashboard, open the environment, then its **Settings** tab:
 **Mounted secrets** lists each secret the environment's manifest mounts, and
 where its next deployment takes the value from. **Generated secrets** lists
 the values piqueld generated for it.
 
-![The Secrets tab of the production environment: Mounted secrets shows db-password generated for this environment and smtp-password from the application store, version 1, above the secret store it may mount from](../../images/applications/environment-secrets.png)
+![The secrets cards of the production environment's Settings tab: Mounted secrets shows db-password generated for this environment and smtp-password from the application store, version 1, above the secret store it may mount from](../../images/applications/environment-secrets.png)
 
 `piquelctl env show` lists the same:
 
@@ -242,9 +242,9 @@ can [override](environments.md#give-each-environment-its-own-values).
 Declare a default, and reference it as `${{ vars.<name> }}`. For example, to
 set how many replicas `web` runs with `web_replicas`:
 
-- **In the dashboard,** the application's **Variables** tab has one row per
-  variable, with its **Default**, a column for each environment, and one for
-  **Previews**. An empty cell has no value there. Select **Add variable**,
+- **In the dashboard,** the **Variables** card, on the application's
+  **Configuration** tab, has one row per variable, with its **Default**, a
+  column for each environment, and one for **Previews**. An empty cell has no value there. Select **Add variable**,
   fill in **Name** with `web_replicas` and **Default** with `2`, and select
   **Save changes**. Then set `web`'s **Replicas** to
   `${{ vars.web_replicas }}`.
@@ -299,8 +299,8 @@ For example, to give a `staging` environment of `notes` a test SMTP account:
 
 2. Give each environment its value of `smtp_secret`: `smtp-password` in
    production and `smtp-test` in staging. In the dashboard, add the variable
-   on the **Variables** tab, fill in each environment's column, and select
-   **Save changes**. With `piquelctl`:
+   under **Variables** on the **Configuration** tab, fill in each
+   environment's column, and select **Save changes**. With `piquelctl`:
 
    ```console
    piquelctl app variable set notes smtp_secret smtp-password --env production
@@ -368,7 +368,8 @@ For example, to give a `staging` environment of `notes` a test SMTP account:
 ## Rotate a secret
 
 To replace a stored value, set it again: select **Edit** next to the secret
-on the **Secrets** tab, enter the new **Value**, and select **Save secret**.
+under **Secret store**, on the application's **Configuration** tab, enter the
+new **Value**, and select **Save secret**.
 With `piquelctl`:
 
 ```console
@@ -384,7 +385,7 @@ To replace a generated value, regenerate it in one environment.
 > old password keeps it, so services that read the new file can't connect
 > until you change it there too.
 
-In the dashboard, open the environment's **Secrets** tab, and select
+In the dashboard, open the environment's **Settings** tab, and select
 **Regenerate** next to the secret under **Generated secrets**. With
 `piquelctl`:
 
@@ -416,7 +417,8 @@ piqueld deletes it, as soon as no running service still mounts it.
 Deleting a secret discards its value and every earlier version, and can't be
 undone. You can only delete a secret that nothing uses. First, remove its
 mounts, and deploy every environment that mounted it. Then select **Delete**
-next to it on the **Secrets** tab, or run:
+next to it under **Secret store**, on the application's **Configuration** tab,
+or run:
 
 ```console
 piquelctl app secret notes delete smtp-password
@@ -425,7 +427,7 @@ piquelctl app secret notes delete smtp-password
 A generated value is deleted in one environment, once nothing there uses it.
 If a deployment mounts that secret again, it generates a new value, which a
 database that stored the old one doesn't know. Select **Delete** next to it
-under **Generated secrets**, on the environment's **Secrets** tab, or run:
+under **Generated secrets**, on the environment's **Settings** tab, or run:
 
 ```console
 piquelctl env secret delete notes production <name>

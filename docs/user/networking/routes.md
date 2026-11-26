@@ -90,8 +90,8 @@ redirects plain HTTP requests to HTTPS.
 
 ### In the dashboard
 
-1. Open **Applications**, then **hello**, then its **Routes** tab.
-2. Select **Add route**.
+1. Open **Applications**, then **hello**, then its **Networking** tab.
+2. Under **Routes**, select **Add route**.
 3. Fill in the **Hostname**, and set **Visibility** to **Public**.
 4. Set **Destination** to **A service**, then choose the **Service** and its
    **HTTP port**.
@@ -102,7 +102,7 @@ Each route is a row, with the environments it is deployed in and whether
 HTTPS answers there. **Edit** changes it in the same dialog, and **Remove**
 takes it out of the saved configuration.
 
-![The Routes tab of hello: a notice that ingress is disabled in the daemon configuration, then one route, hello.example.com, public, to the web service on HTTP port 80](../../images/networking/routes-tab.png)
+![The Routes card on hello's Networking tab: a notice that ingress is disabled in the daemon configuration, then one route, hello.example.com, public, to the web service on HTTP port 80](../../images/networking/routes-tab.png)
 
 On a daemon whose gateway is off, as in this image, the tab says so above the
 routes. You can still save and deploy them. piqueld serves them once you
@@ -157,7 +157,7 @@ The URL is `ready` once all of these hold:
 Until then, it is `pending`, followed by what it waits for.
 
 To see the application's deployed routes, with what each one's hostname needs
-from DNS, open its **Routes** tab: **Where routes are served** lists them. With
+from DNS, open its **Networking** tab: **Where routes are served** lists them. With
 `piquelctl`:
 
 ```console
@@ -183,7 +183,7 @@ health.
 A route can answer with a redirect instead, for example from `www` to your
 main hostname.
 
-In the dashboard, add the route on the **Routes** tab, set its
+In the dashboard, add the route under **Routes** on the **Networking** tab, set its
 **Visibility** to **Public** and its **Destination** to **A redirect**, fill
 in **Redirect to**, then select **Add route** and **Deploy to production**.
 
@@ -229,16 +229,17 @@ everything in one save.
 
 - **In the dashboard**, open the application:
 
-  1. On the **Routes** tab, select **Remove** on the `hello.example.com`
-     route, and confirm.
-  2. On the **Environments** tab, select **New environment**, name it
+  1. On the **Networking** tab, under **Routes**, select **Remove** on the
+     `hello.example.com` route, and confirm.
+  2. On the **Overview** tab, select **New environment**, name it
      `staging`, then select **Create environment**. This opens `staging`'s
      page: return to the application through the **hello** breadcrumb.
-  3. On the **Variables** tab, select **Add variable**, and name it `domain`.
+  3. On the **Configuration** tab, under **Variables**, select **Add
+     variable**, and name it `domain`.
      Set its **Default** to `hello.example.com`, and its value in the
      **staging** column to `staging.hello.example.com`, then select **Save
      changes**.
-  4. On the **Routes** tab, select **Add route**. Set its **Hostname** to
+  4. On the **Networking** tab, select **Add route**. Set its **Hostname** to
      `${{ vars.domain }}`, its **Service** to **web**, its **HTTP port** to `80`
      and its **Visibility** to **Public**, then select **Add route**.
   5. Select **Deploy**, then deploy each environment.

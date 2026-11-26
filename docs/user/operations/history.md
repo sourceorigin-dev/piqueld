@@ -101,8 +101,8 @@ message, with a hint for what to do next.
   following while its browser tab is hidden, and reads the latest lines again
   when you return. These are lines read from Docker; for a lasting record,
   [export them](telemetry.md).
-- A build's output: in the dashboard, see the **Builds** page and each
-  application's **Builds** tab. With `piquelctl`, `piquelctl build list`
+- A build's output: in the dashboard, see the **Builds** page, and **Builds**
+  on each application's **Releases** tab. With `piquelctl`, `piquelctl build list`
   lists recent builds, and `piquelctl build logs <id>` prints one's output.
 
 ## Watch the daemon itself

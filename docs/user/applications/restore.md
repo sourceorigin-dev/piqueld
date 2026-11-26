@@ -23,7 +23,7 @@ on its own when a rollout fails.
 
 ### In the dashboard
 
-1. Open the environment, such as **production** on `hello`'s **Environments**
+1. Open the environment, such as **production** on `hello`'s **Overview**
    tab, then its **Deployments** tab. It lists the environment's deployments,
    newest first.
 2. Select the deployment to return to, to open its page. Each deployment that
@@ -152,7 +152,7 @@ happens then:
 automatically unless you choose otherwise. The others don't, and previews are
 never rolled back. To have `production` roll back on its own:
 
-- **In the dashboard**, open the environment's **Overview**. In its
+- **In the dashboard**, open the environment's **Settings** tab. In its
   **Rollback** card, set **When a rollout fails** to **Automatic: restore the
   last successful deployment**, then select **Save rollback**. **Default**
   removes the setting.

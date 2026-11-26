@@ -219,13 +219,21 @@ fn ImportSettings() -> impl IntoView {
     }
 }
 
-/// The Links tab: exports, then imports.
+/// The links of the Networking tab: exports, then imports.
 #[component]
 pub(super) fn LinkSettings() -> impl IntoView {
     view! {
-        <div class="stack">
-            <ExportSettings />
-            <ImportSettings />
+        <div>
+            <div class="section-header">
+                <div>
+                    <h2>"Links"</h2>
+                    <p>"Private connections between this application's services and other applications'."</p>
+                </div>
+            </div>
+            <div class="stack">
+                <ExportSettings />
+                <ImportSettings />
+            </div>
         </div>
     }
 }

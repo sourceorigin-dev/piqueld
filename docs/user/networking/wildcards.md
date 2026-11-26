@@ -22,9 +22,9 @@ DNS provider for wildcard and [private](private-routes.md) routes.
 
 1. Add a route whose hostname starts with `*.`:
 
-   - In the dashboard, add it on the application's **Routes** tab like any
-     other route, with `*.tenants.example.com` as its **Hostname** and
-     **Visibility** set to **Public**.
+   - In the dashboard, add it under **Routes** on the application's
+     **Networking** tab like any other route, with `*.tenants.example.com` as
+     its **Hostname** and **Visibility** set to **Public**.
    - With `piquelctl`, quote the hostname so that your shell doesn't expand
      the `*`:
 
@@ -56,7 +56,7 @@ tells tenants apart with it.
 
 ## Check that it works
 
-In the dashboard, the application's **Routes** tab lists the route in
+In the dashboard, the application's **Networking** tab lists the route in
 **Where routes are served**. With `piquelctl`:
 
 ```console

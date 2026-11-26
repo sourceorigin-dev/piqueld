@@ -1,4 +1,4 @@
-import { register, call, card, webManifest } from '../fixtures.js';
+import { register, call, card, environmentTab, webManifest } from '../fixtures.js';
 import { test, environment, manifest, Piquelctl, routes, shoot, source } from './docs.js';
 
 // docs/user/networking: hello from the first application, with the route its
@@ -13,6 +13,7 @@ test('networking', async ({ page, daemon, cli, passkeys }) => {
   await shoot(page, 'networking/routes-tab', card(page, 'Routes'));
 
   await environment(page, 'hello', 'production');
+  await environmentTab(page, 'Settings').click();
   const visibility = card(page, 'Visibility');
   const ceiling = visibility.getByRole('combobox', { name: 'Route visibility' });
   await ceiling.selectOption('private');
