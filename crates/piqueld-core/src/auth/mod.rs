@@ -215,6 +215,8 @@ pub struct PasskeyView {
 
 string_enum! {
     /// Credential classes. Only browser sessions have an idle timeout.
+    /// [`CredentialView::kind`] and [`AuditEvent::credential_kind`](crate::audit::AuditEvent::credential_kind)
+    /// keep it a `String`, so a client still reads a kind a newer daemon adds.
     pub enum CredentialKind {
         /// Dashboard session cookie.
         Browser => "browser",
