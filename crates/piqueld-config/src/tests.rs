@@ -171,7 +171,7 @@ fn daemon_settings_set_in_the_file_are_pinned_and_checked_against_their_ranges()
     let config = DaemonConfig::from_toml(
         "[auth]\nmax_token_days = 90\npublic_url = 'https://piqueld.example.com'\n[retention]\nevent_days = 7",
     )
-    .unwrap();
+    .expect("the configuration parses");
     let pins = config.pins();
     assert_eq!(pins.auth.max_token_days, Some(Some(90)));
     assert_eq!(pins.retention.event_days, Some(7));
@@ -189,7 +189,9 @@ fn daemon_settings_set_in_the_file_are_pinned_and_checked_against_their_ranges()
     ] {
         let error = format!(
             "{:#}",
-            anyhow::Error::new(DaemonConfig::from_toml(source).unwrap_err())
+            anyhow::Error::new(
+                DaemonConfig::from_toml(source).expect_err("the configuration is refused")
+            )
         );
         assert!(error.contains(message), "{source}: {error}");
     }

@@ -119,10 +119,6 @@ async fn creating_a_preview_is_idempotent_on_branch_and_slot_and_leaves_the_revi
 }
 
 #[tokio::test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "The scenario reads as one story, and its expect messages wrapped it past the limit."
-)]
 async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count() {
     let (_temp, store) = Store::temporary().await;
     store.pin(|pins| pins.previews.max_per_application = Some(2));

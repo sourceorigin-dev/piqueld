@@ -18,7 +18,7 @@ async fn set_settings_apply_at_once_and_survive_a_restart_unless_pinned() {
     let set = store
         .set_setting(author, "retention.event_days", Some(json!(7)))
         .await
-        .unwrap();
+        .expect("the setting is changed");
     assert_eq!((set.value, set.source), (json!(7), SettingSource::Changed));
     assert_eq!(store.settings().retention.event_days, 7);
     for (key, value) in [
@@ -50,7 +50,7 @@ async fn set_settings_apply_at_once_and_survive_a_restart_unless_pinned() {
     };
     let store = Store::open_unsynced(directory.path().join("db"))
         .await
-        .unwrap();
+        .expect("the store opens");
     store.pin_settings(pins);
     let settings = store.settings();
     assert_eq!(
@@ -69,7 +69,7 @@ async fn set_settings_apply_at_once_and_survive_a_restart_unless_pinned() {
     let reset = store
         .set_setting(author, "retention.event_days", None)
         .await
-        .unwrap();
+        .expect("the setting is reset");
     assert_eq!(
         (reset.value, reset.source),
         (json!(90), SettingSource::Default)
@@ -94,7 +94,7 @@ async fn changing_a_setting_needs_settings_manage() {
             Permission::Global(GlobalPermission::SystemRead),
             &Scope::All,
         )
-        .unwrap();
+        .expect("the permission is granted");
     let reader = store.seed_caller("reader", &grants).await;
     let refused = store
         .set_setting(reader, "previews.max_total", Some(json!(1)))
@@ -107,11 +107,11 @@ async fn changing_a_setting_needs_settings_manage() {
             Permission::Global(GlobalPermission::SettingsManage),
             &Scope::All,
         )
-        .unwrap();
+        .expect("the permission is granted");
     let manager = store.seed_caller("manager", &grants).await;
     store
         .set_setting(manager, "previews.max_total", Some(json!(1)))
         .await
-        .unwrap();
+        .expect("the setting is changed");
     assert_eq!(store.preview_limits().max_total, 1);
 }

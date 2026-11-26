@@ -40,7 +40,7 @@ fn resources_and_settings_show_the_daemon_measurements_and_settings() {
         "/api/v1/system/settings/retention.event_days" => {
             assert_eq!(request.method, "PUT");
             assert_eq!(
-                serde_json::from_slice::<Value>(&request.body).unwrap(),
+                serde_json::from_slice::<Value>(&request.body).expect("the request body is JSON"),
                 json!({"value": 30})
             );
             Reply::json(setting(30, "changed"))

@@ -6,8 +6,12 @@ use super::*;
 /// status and code.
 #[tokio::test]
 async fn settings_change_and_reset_unless_unknown_pinned_or_out_of_range() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = Arc::new(Store::open_unsynced(database(&temp)).await.unwrap());
+    let temp = tempfile::tempdir().expect("the temporary directory is created");
+    let store = Arc::new(
+        Store::open_unsynced(database(&temp))
+            .await
+            .expect("the store opens"),
+    );
     let mut config = DaemonConfig::default();
     config.retention.audit_days = Some(30);
     let (_runtime, state) = contract_state(&temp, Arc::clone(&store), &config).await;
@@ -17,10 +21,13 @@ async fn settings_change_and_reset_unless_unknown_pinned_or_out_of_range() {
     let changed = client
         .put_setting("retention.event_days", serde_json::json!(7))
         .await
-        .unwrap();
+        .expect("the setting is changed");
     assert_eq!(changed.value, serde_json::json!(7));
     assert_eq!(store.settings().retention.event_days, 7);
-    let reset = client.reset_setting("retention.event_days").await.unwrap();
+    let reset = client
+        .reset_setting("retention.event_days")
+        .await
+        .expect("the setting is reset");
     assert_eq!(reset.value, serde_json::json!(90));
     assert_eq!(store.settings().retention.event_days, 90);
 
@@ -50,7 +57,12 @@ async fn settings_change_and_reset_unless_unknown_pinned_or_out_of_range() {
             "setting_invalid",
         ),
     ] {
-        let error = api_error(client.put_setting(key, value).await.unwrap_err());
+        let error = api_error(
+            client
+                .put_setting(key, value)
+                .await
+                .expect_err("the change is refused"),
+        );
         assert_eq!((error.status, error.code.as_str()), (status, code), "{key}");
     }
     assert_eq!(store.settings().retention.audit_days, 30);

@@ -741,9 +741,7 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
     for daemon in [false, true] {
         let temp = tempfile::tempdir().expect("the temp dir is created");
         let path = temp.path().join("db");
-        let store = Store::open_unsynced(&path)
-            .await
-            .expect("the store opens");
+        let store = Store::open_unsynced(&path).await.expect("the store opens");
         store.pin(|pins| pins.retention.daemon_event_days = Some(1));
         notify(&store).await;
         let op = application(&store).await;
@@ -792,9 +790,7 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
             .expect("`event` should succeed");
         drop(store);
 
-        let store = Store::open_unsynced(&path)
-            .await
-            .expect("the store opens");
+        let store = Store::open_unsynced(&path).await.expect("the store opens");
         store.pin(|pins| pins.retention.daemon_event_days = Some(1));
         store
             .restart_failure_windows()

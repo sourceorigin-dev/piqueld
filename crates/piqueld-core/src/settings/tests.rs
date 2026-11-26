@@ -2,6 +2,11 @@ use super::*;
 use crate::manifest::validation::{MAX_CPU_MILLIS, REPLICAS};
 use serde_json::json;
 
+/// The setting with `key`.
+fn setting(key: &str) -> &'static SettingSpec {
+    SettingSpec::find(key).expect("the setting exists")
+}
+
 /// The bounds of an integer setting.
 fn bounds(spec: &SettingSpec) -> (u64, u64, bool) {
     match spec.values {
@@ -25,7 +30,8 @@ fn every_setting_takes_its_whole_declared_range_and_nothing_outside_it() {
         };
         let (minimum, maximum, nullable) = bounds(spec);
         for bound in [minimum, maximum] {
-            spec.apply(&mut settings, &json!(bound)).unwrap();
+            spec.apply(&mut settings, &json!(bound))
+                .expect("the setting takes its bound");
             assert_eq!((spec.value)(&settings), json!(bound), "{}", spec.key);
         }
         assert_eq!(spec.apply(&mut settings, &Value::Null).is_ok(), nullable);
@@ -50,7 +56,8 @@ fn every_choice_and_switch_value_applies() {
         };
         let mut settings = Settings::default();
         for value in values {
-            spec.apply(&mut settings, &value).unwrap();
+            spec.apply(&mut settings, &value)
+                .expect("the setting takes its value");
             assert_eq!((spec.value)(&settings), value, "{}", spec.key);
         }
     }
@@ -58,27 +65,31 @@ fn every_choice_and_switch_value_applies() {
 
 #[test]
 fn choices_and_switches_take_only_their_values() {
-    let unavailable = SettingSpec::find("build.unavailable").unwrap();
+    let unavailable = setting("build.unavailable");
     let mut settings = Settings::default();
-    unavailable.apply(&mut settings, &json!("local")).unwrap();
+    unavailable
+        .apply(&mut settings, &json!("local"))
+        .expect("the choice applies");
     assert_eq!(settings.build.unavailable, WhenUnavailable::Local);
     assert!(unavailable.check(&json!("later")).is_err());
-    let traffic = SettingSpec::find("ingress.traffic").unwrap();
-    traffic.apply(&mut settings, &json!(false)).unwrap();
+    let traffic = setting("ingress.traffic");
+    traffic
+        .apply(&mut settings, &json!(false))
+        .expect("the switch applies");
     assert!(!settings.ingress.traffic);
     assert!(traffic.check(&json!(0)).is_err());
 }
 
 #[test]
 fn preview_bounds_are_those_a_manifest_could_set() {
-    let cpu = bounds(SettingSpec::find("previews.default_cpu_millis").unwrap());
+    let cpu = bounds(setting("previews.default_cpu_millis"));
     assert_eq!((cpu.0, cpu.1), (1, u64::from(MAX_CPU_MILLIS)));
-    let replicas = bounds(SettingSpec::find("previews.max_replicas").unwrap());
+    let replicas = bounds(setting("previews.max_replicas"));
     assert_eq!(
         (replicas.0, replicas.1),
         (u64::from(*REPLICAS.start()), u64::from(*REPLICAS.end()))
     );
-    let memory = bounds(SettingSpec::find("previews.default_memory_bytes").unwrap());
+    let memory = bounds(setting("previews.default_memory_bytes"));
     assert_eq!(memory.1, i64::MAX.unsigned_abs());
 }
 
@@ -86,7 +97,7 @@ fn preview_bounds_are_those_a_manifest_could_set() {
 /// be reset.
 #[test]
 fn a_setting_needing_a_build_machine_applies_only_with_one() {
-    let unavailable = SettingSpec::find("build.unavailable").unwrap();
+    let unavailable = setting("build.unavailable");
     let mut layers = SettingLayers::default();
     let refused = SettingError::Unavailable {
         key: "build.unavailable",
@@ -97,10 +108,12 @@ fn a_setting_needing_a_build_machine_applies_only_with_one() {
         Err(refused.clone())
     );
     assert!(layers.view(unavailable).needs.is_some());
-    layers.check(unavailable, None).unwrap();
+    layers.check(unavailable, None).expect("a reset is allowed");
 
     layers.met.insert(Requirement::BuildMachine);
-    layers.check(unavailable, Some(&json!("local"))).unwrap();
+    layers
+        .check(unavailable, Some(&json!("local")))
+        .expect("the change is allowed");
     assert_eq!(layers.view(unavailable).needs, None);
 }
 
@@ -131,7 +144,7 @@ fn a_pin_beats_a_stored_value_which_beats_the_default() {
         "retention.audit_days",
         "reconciliation.scan_interval_seconds",
     ]
-    .map(|key| layers.view(SettingSpec::find(key).unwrap()).source)
+    .map(|key| layers.view(setting(key)).source)
     .into();
     assert_eq!(
         sources,
@@ -142,19 +155,21 @@ fn a_pin_beats_a_stored_value_which_beats_the_default() {
         ]
     );
 
-    let pinned = SettingSpec::find("retention.event_days").unwrap();
+    let pinned = setting("retention.event_days");
     assert_eq!(
         layers.check(pinned, None),
         Err(SettingError::Pinned("retention.event_days"))
     );
-    let tokens = SettingSpec::find("auth.max_token_days").unwrap();
-    layers.check(tokens, Some(&Value::Null)).unwrap();
+    let tokens = setting("auth.max_token_days");
+    layers
+        .check(tokens, Some(&Value::Null))
+        .expect("no limit is allowed");
     assert!(layers.check(tokens, Some(&json!(0))).is_err());
 }
 
 #[test]
 fn descriptions_are_prose_and_keys_are_unique() {
-    let spec = SettingSpec::find("retention.event_days").unwrap();
+    let spec = setting("retention.event_days");
     assert_eq!(
         spec.description(),
         "Days application events are kept; `0` keeps them forever. Deleting an application also removes its events."

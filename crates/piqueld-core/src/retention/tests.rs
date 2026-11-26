@@ -7,7 +7,7 @@ fn pulled(digest: char) -> ResolvedSource {
         "example.com/web:1",
         format!("example.com/web@sha256:{}", digest.to_string().repeat(64)),
     )
-    .unwrap()
+    .expect("the image parses")
 }
 
 fn built(id: char) -> ResolvedSource {
@@ -17,7 +17,7 @@ fn built(id: char) -> ResolvedSource {
         },
         commit: "a".repeat(40),
         image_id: Sha256Digest::parse(format!("sha256:{}", id.to_string().repeat(64)))
-            .unwrap()
+            .expect("the sha256 digest is valid")
             .into(),
     }
 }
@@ -25,8 +25,8 @@ fn built(id: char) -> ResolvedSource {
 #[test]
 fn missing_registry_images_are_pullable_and_missing_builds_unavailable() {
     let (web, api) = (
-        ServiceName::parse("web").unwrap(),
-        ServiceName::parse("api").unwrap(),
+        ServiceName::parse("web").expect("the service name is valid"),
+        ServiceName::parse("api").expect("the service name is valid"),
     );
     let sources = BTreeMap::from([(web.clone(), pulled('a')), (api.clone(), built('b'))]);
     let all = LocalImages::new(sources.values().map(ResolvedSource::image));
@@ -55,7 +55,11 @@ fn missing_registry_images_are_pullable_and_missing_builds_unavailable() {
 
     let mut pushed = built('b');
     if let ResolvedSource::Git { image_id, .. } = &mut pushed {
-        *image_id = pulled('c').repository_digest().unwrap().clone().into();
+        *image_id = pulled('c')
+            .repository_digest()
+            .expect("the repository digest is valid")
+            .clone()
+            .into();
     }
     assert!(matches!(
         LocalImages::default().availability([(&api, &pushed)]),
@@ -67,7 +71,7 @@ fn missing_registry_images_are_pullable_and_missing_builds_unavailable() {
 /// the promotion; one whose images can be pulled again is not.
 #[test]
 fn only_unavailable_releases_block_plans() {
-    let web = ServiceName::parse("web").unwrap();
+    let web = ServiceName::parse("web").expect("the service name is valid");
     let sources = BTreeMap::from([(web, built('b'))]);
     let diagnostics = LocalImages::default().availability(&sources).diagnostics();
     assert_eq!(
