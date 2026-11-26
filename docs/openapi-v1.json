@@ -28324,7 +28324,8 @@
           }
         },
         "summary": "Starts confirming the calling CLI login with a passkey.",
-        "x-piqueld-access": "authenticated"
+        "x-piqueld-access": "authenticated",
+        "x-piqueld-throttled": true
       }
     },
     "/api/v1/auth/device/inspect": {
@@ -28486,7 +28487,8 @@
         },
         "security": [],
         "summary": "Starts a device sign-in for a command-line client.",
-        "x-piqueld-access": "public"
+        "x-piqueld-access": "public",
+        "x-piqueld-throttled": true
       }
     },
     "/api/v1/auth/directory": {
@@ -28567,7 +28569,8 @@
         },
         "security": [],
         "summary": "Finishes a passkey sign-in.",
-        "x-piqueld-access": "public"
+        "x-piqueld-access": "public",
+        "x-piqueld-ceremony": true
       }
     },
     "/api/v1/auth/login/operator": {
@@ -28628,7 +28631,9 @@
         },
         "security": [],
         "summary": "Redeems a host operator sign-in link.",
-        "x-piqueld-access": "public"
+        "x-piqueld-access": "public",
+        "x-piqueld-ceremony": true,
+        "x-piqueld-throttled": true
       }
     },
     "/api/v1/auth/login/start": {
@@ -28659,7 +28664,9 @@
         },
         "security": [],
         "summary": "Starts a passkey sign-in.",
-        "x-piqueld-access": "public"
+        "x-piqueld-access": "public",
+        "x-piqueld-ceremony": true,
+        "x-piqueld-throttled": true
       }
     },
     "/api/v1/auth/logout": {
@@ -28849,7 +28856,8 @@
           }
         },
         "summary": "Starts confirming the browser session with a passkey.",
-        "x-piqueld-access": "authenticated"
+        "x-piqueld-access": "authenticated",
+        "x-piqueld-throttled": true
       }
     },
     "/api/v1/auth/recovery": {
@@ -28951,7 +28959,8 @@
         },
         "security": [],
         "summary": "Finishes passkey registration.",
-        "x-piqueld-access": "public"
+        "x-piqueld-access": "public",
+        "x-piqueld-ceremony": true
       }
     },
     "/api/v1/auth/register/start": {
@@ -29002,7 +29011,9 @@
         },
         "security": [],
         "summary": "Starts passkey registration.",
-        "x-piqueld-access": "public"
+        "x-piqueld-access": "public",
+        "x-piqueld-ceremony": true,
+        "x-piqueld-throttled": true
       }
     },
     "/api/v1/auth/setup-link": {

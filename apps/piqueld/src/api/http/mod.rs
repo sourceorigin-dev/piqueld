@@ -208,7 +208,7 @@ fn finish_router(
     let request_id = header::HeaderName::from_static("x-request-id");
     let allow_routes = AllowRoutes::build(openapi);
     let route_access = access::RouteAccess::build(openapi);
-    let openapi = openapi::PublishedDocument::new(openapi);
+    let published = openapi::PublishedDocument::new(openapi);
     let router = router.method_not_allowed_fallback(move |matched: Option<MatchedPath>| {
         let allow_routes = Arc::clone(&allow_routes);
         async move { method_not_allowed(&allow_routes, matched.as_ref()) }
@@ -217,7 +217,7 @@ fn finish_router(
         (Arc::clone(&route_access), state.clone()),
         access::enforce,
     ));
-    let router = auth.guard(router);
+    let router = auth.guard(router, openapi);
     let router = if let Some(policy) = browser_policy {
         router.layer(middleware::from_fn(move |request, next| {
             policy.clone().enforce(request, next)
@@ -232,7 +232,7 @@ fn finish_router(
         ))
         .layer(middleware::from_fn(no_store))
         .with_state(state.clone())
-        .layer(Extension(openapi))
+        .layer(Extension(published))
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), bind_error_request_id))
         .layer(SetRequestIdLayer::new(request_id.clone(), MakeRequestUuid))
@@ -286,34 +286,14 @@ fn finish_router(
         )
 }
 
-/// Endpoints must be registered here through `public!`, `authenticated!`, or
-/// `granted!` (see `access`), so Axum, the generated `OpenAPI` document, and the
-/// access table receive the same method, path, and requirement together.
-fn documented_router() -> OpenApiRouter<ApiState> {
+/// Endpoints must be registered here, or in a module's router merged here,
+/// through `public!`, `authenticated!`, or `granted!` (see `access`), so
+/// Axum, the generated `OpenAPI` document, and the access table receive the
+/// same method, path, and requirement together.
+pub(crate) fn documented_router() -> OpenApiRouter<ApiState> {
     OpenApiRouter::with_openapi(openapi::base_document())
         .merge(editing::router())
-        .routes(public!(auth::status))
-        .routes(public!(auth::setup_link))
-        .routes(public!(auth::recover_admin))
-        .routes(public!(auth::sign_in_link))
-        .routes(authenticated!(auth::me))
-        .routes(auth::sign_in_route(public!(auth::register_start)))
-        .routes(auth::sign_in_route(public!(auth::register_finish)))
-        .routes(public!(auth::login_start))
-        .routes(auth::sign_in_route(public!(auth::login_finish)))
-        .routes(auth::sign_in_route(public!(auth::operator_sign_in)))
-        .routes(authenticated!(auth::reauthenticate_start))
-        .routes(auth::sign_in_route(authenticated!(
-            auth::reauthenticate_finish
-        )))
-        .routes(authenticated!(auth::logout))
-        .routes(authenticated!(auth::directory))
-        .routes(authenticated!(auth::manage))
-        .routes(auth::device_start_route(public!(auth::device_start)))
-        .routes(auth::sign_in_route(public!(auth::device_poll)))
-        .routes(auth::sign_in_route(authenticated!(auth::device_confirm)))
-        .routes(authenticated!(auth::device_inspect))
-        .routes(authenticated!(auth::device_approve))
+        .merge(auth::router())
         .routes(authenticated!(system::status))
         .routes(authenticated!(system::readiness))
         .routes(granted!(Global(SystemRead) => system::configuration))

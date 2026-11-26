@@ -1,11 +1,11 @@
 //! Authentication HTTP boundary shared by both daemon transports.
 use super::access::Audited;
-use super::{ApiError, ApiJson, openapi::ApiErrors};
+use super::{ApiError, ApiJson, ApiState, openapi::ApiErrors};
 use crate::auth::{Auth, AuthCookie, AuthError, Identity};
 use crate::tailnet::{LookupTimedOut, TailnetLookup};
 use axum::{
     Extension, Json, Router,
-    extract::{ConnectInfo, DefaultBodyLimit, Request},
+    extract::{ConnectInfo, DefaultBodyLimit, MatchedPath, Request},
     http::{HeaderMap, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -18,22 +18,172 @@ use piqueld_core::auth::{
 };
 use piqueld_core::tailnet::TailnetPeer;
 use piqueld_store::StoreError;
-use std::{net::SocketAddr, sync::Arc};
-use utoipa_axum::router::UtoipaMethodRouter;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use utoipa::openapi::OpenApi;
+use utoipa_axum::router::{OpenApiRouter, UtoipaMethodRouter};
 
 /// Authentication boundary that every API router requires and applies itself.
 /// Daemon listeners use the passkey [`Auth`] service; tests may supply a fake.
 pub trait Authenticator: Clone + Send + Sync + 'static {
-    /// Wraps every route and fallback already registered on `router`.
-    fn guard<S: Clone + Send + Sync + 'static>(self, router: Router<S>) -> Router<S>;
+    /// Wraps every route and fallback already registered on `router`, whose
+    /// operations `document` describes.
+    fn guard<S: Clone + Send + Sync + 'static>(
+        self,
+        router: Router<S>,
+        document: &OpenApi,
+    ) -> Router<S>;
 }
 
 impl Authenticator for Auth {
-    /// Installs the `authenticate` middleware and exposes `Auth` to handlers.
-    fn guard<S: Clone + Send + Sync + 'static>(self, router: Router<S>) -> Router<S> {
+    /// Installs the `authenticate` middleware, with the sign-in rules
+    /// `document` declares, and exposes `Auth` to handlers.
+    fn guard<S: Clone + Send + Sync + 'static>(
+        self,
+        router: Router<S>,
+        document: &OpenApi,
+    ) -> Router<S> {
+        let rules = SignInRoutes::build(document);
         router
-            .layer(middleware::from_fn_with_state(self.clone(), authenticate))
+            .layer(middleware::from_fn_with_state(
+                (self.clone(), rules),
+                authenticate,
+            ))
             .layer(Extension(self))
+    }
+}
+
+/// Registers the account, sign-in and device login endpoints. Sign-in
+/// routes declare their [`SignInRule`]s here, with their access.
+pub(super) fn router() -> OpenApiRouter<ApiState> {
+    use SignInRule::{Ceremony, Throttled};
+    OpenApiRouter::new()
+        .routes(public!(status))
+        .routes(public!(setup_link))
+        .routes(public!(recover_admin))
+        .routes(public!(sign_in_link))
+        .routes(authenticated!(me))
+        .routes(SignInRule::declare(
+            [Throttled, Ceremony],
+            sign_in_route(public!(register_start)),
+        ))
+        .routes(SignInRule::declare(
+            [Ceremony],
+            sign_in_route(public!(register_finish)),
+        ))
+        .routes(SignInRule::declare(
+            [Throttled, Ceremony],
+            public!(login_start),
+        ))
+        .routes(SignInRule::declare(
+            [Ceremony],
+            sign_in_route(public!(login_finish)),
+        ))
+        .routes(SignInRule::declare(
+            [Throttled, Ceremony],
+            sign_in_route(public!(operator_sign_in)),
+        ))
+        .routes(SignInRule::declare(
+            [Throttled],
+            authenticated!(reauthenticate_start),
+        ))
+        .routes(sign_in_route(authenticated!(reauthenticate_finish)))
+        .routes(authenticated!(logout))
+        .routes(authenticated!(directory))
+        .routes(authenticated!(manage))
+        .routes(SignInRule::declare(
+            [Throttled],
+            device_start_route(public!(device_start)),
+        ))
+        .routes(sign_in_route(public!(device_poll)))
+        .routes(SignInRule::declare(
+            [Throttled],
+            sign_in_route(authenticated!(device_confirm)),
+        ))
+        .routes(authenticated!(device_inspect))
+        .routes(authenticated!(device_approve))
+}
+
+/// What [`authorize`] does to a sign-in route beyond authenticating it,
+/// declared where the route is registered and recorded on its `OpenAPI`
+/// operations as an extension set to `true`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SignInRule {
+    /// Charges each request against its peer IP's start throttle, answering
+    /// 429 with `Retry-After` once it is exhausted.
+    Throttled,
+    /// A passkey ceremony that may sign a browser in: refused from another
+    /// site unless a bearer token shows the caller is no browser.
+    Ceremony,
+}
+
+impl SignInRule {
+    /// Every rule.
+    const ALL: [Self; 2] = [Self::Throttled, Self::Ceremony];
+
+    /// The `OpenAPI` operation extension recording the rule.
+    const fn extension(self) -> &'static str {
+        match self {
+            Self::Throttled => "x-piqueld-throttled",
+            Self::Ceremony => "x-piqueld-ceremony",
+        }
+    }
+
+    /// Records `rules` on every operation of `routes`.
+    pub(super) fn declare<S, const N: usize>(
+        rules: [Self; N],
+        (schemas, mut paths, router): UtoipaMethodRouter<S>,
+    ) -> UtoipaMethodRouter<S> {
+        for item in paths.paths.values_mut() {
+            for (_, operation) in super::access::operations_mut(item) {
+                let extensions = operation.extensions.get_or_insert_default();
+                for rule in rules {
+                    extensions.insert(rule.extension().into(), true.into());
+                }
+            }
+        }
+        (schemas, paths, router)
+    }
+}
+
+/// The sign-in rules of every documented operation, by path template and
+/// method.
+#[derive(Debug)]
+struct SignInRoutes(HashMap<(String, Method), Vec<SignInRule>>);
+
+impl SignInRoutes {
+    /// Indexes the rules `document`'s operations declare.
+    fn build(document: &OpenApi) -> Arc<Self> {
+        let mut routes = HashMap::new();
+        for (path, item) in &document.paths.paths {
+            for (method, operation) in super::access::operations(item) {
+                let rules: Vec<_> = SignInRule::ALL
+                    .into_iter()
+                    .filter(|rule| {
+                        operation
+                            .extensions
+                            .as_ref()
+                            .and_then(|extensions| extensions.get(rule.extension()))
+                            .is_some_and(|value| value.as_bool() == Some(true))
+                    })
+                    .collect();
+                if !rules.is_empty() {
+                    routes.insert((path.clone(), method), rules);
+                }
+            }
+        }
+        Arc::new(Self(routes))
+    }
+
+    /// The rules of `request`'s matched route; none for other routes.
+    fn of(&self, request: &Request) -> &[SignInRule] {
+        request
+            .extensions()
+            .get::<MatchedPath>()
+            .and_then(|path| {
+                self.0
+                    .get(&(path.as_str().to_owned(), request.method().clone()))
+            })
+            .map_or(&[], Vec::as_slice)
     }
 }
 
@@ -109,25 +259,30 @@ fn cookie<'a>(auth: &Auth, headers: &'a HeaderMap, cookie: AuthCookie) -> Option
 }
 /// Authentication middleware for API paths; other paths pass through.
 async fn authenticate(
-    axum::extract::State(auth): axum::extract::State<Auth>,
+    axum::extract::State((auth, rules)): axum::extract::State<(Auth, Arc<SignInRoutes>)>,
     request: Request,
     next: Next,
 ) -> Response {
     if !super::ui::is_api_path(request.uri().path()) {
         return next.run(request).await;
     }
-    authorize(&auth, request, next).await
+    authorize(&auth, &rules, request, next).await
 }
 /// Authenticates one API request before running the handler, after the browser
 /// trust policy (see `browser`) refused untrusted hosts. In order: takes the
 /// credential from `Authorization: Bearer`, else the session cookie; blocks
-/// cross-site mutations and upgrades by `Origin`; throttles ceremony starts and
-/// host operator link redemption per peer IP (429 with `Retry-After`); lets a
+/// cross-site mutations and upgrades by `Origin`; throttles the routes
+/// `rules` marks [`SignInRule::Throttled`] per peer IP; lets a
 /// header-less Unix socket request from root or the daemon's user act as the host
 /// operator (see `UnixPeer`); looks up the tailnet peer (see
 /// [`FreshTailnet::verify`]); and inserts the resolved `Identity` and peer as
 /// extensions, leaving `access::enforce` to decide whether one is needed.
-async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
+async fn authorize(
+    auth: &Auth,
+    rules: &SignInRoutes,
+    mut request: Request,
+    next: Next,
+) -> Response {
     let authorization = request.headers().get(header::AUTHORIZATION);
     let bearer = authorization
         .and_then(|v| v.to_str().ok())
@@ -139,8 +294,16 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
     let operator = (authorization.is_none() && !request.headers().contains_key(header::COOKIE))
         .then(|| super::UnixPeer::host_operator(request.extensions()))
         .flatten();
-    let target = (request.method(), request.headers(), request.uri().path());
-    if cross_site(auth, target, bearer, session).await {
+    let route = rules.of(&request);
+    let ceremony = route.contains(&SignInRule::Ceremony);
+    if cross_site(
+        auth,
+        (request.method(), request.headers(), ceremony),
+        bearer,
+        session,
+    )
+    .await
+    {
         let response = ApiError::new(
             StatusCode::FORBIDDEN,
             ApiErrorCode::OriginMismatch,
@@ -149,17 +312,7 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
         .into_response();
         return refused(auth, secret, operator, response).await;
     }
-    if request.method() == Method::POST
-        && matches!(
-            request.uri().path(),
-            "/api/v1/auth/login/start"
-                | "/api/v1/auth/register/start"
-                | "/api/v1/auth/reauthenticate/start"
-                | "/api/v1/auth/device/confirm"
-                | "/api/v1/auth/device/start"
-                | "/api/v1/auth/login/operator"
-        )
-    {
+    if route.contains(&SignInRule::Throttled) {
         let peer = request
             .extensions()
             .get::<ConnectInfo<SocketAddr>>()
@@ -215,15 +368,16 @@ async fn authorize(auth: &Auth, mut request: Request, next: Next) -> Response {
     }
     response
 }
-/// Whether a `method` request to `path` with `headers`, carrying `bearer` or
-/// `session`, is a mutation or upgrade that may come from another site. Any
-/// foreign `Origin` is, and cookies must come with the configured one. So
-/// must ceremonies, unless a bearer token that authenticates shows the
-/// caller is no browser. A token that could not be checked, e.g. while
-/// storage fails, is left for authentication to report.
+/// Whether a `method` request with `headers`, carrying `bearer` or `session`,
+/// to a route that is a [`SignInRule::Ceremony`] or not, is a mutation or
+/// upgrade that may come from another site. Any foreign `Origin` is, and
+/// cookies must come with the configured one. So must ceremonies, unless a
+/// bearer token that authenticates shows the caller is no browser. A token
+/// that could not be checked, e.g. while storage fails, is left for
+/// authentication to report.
 async fn cross_site(
     auth: &Auth,
-    (method, headers, path): (&Method, &HeaderMap, &str),
+    (method, headers, ceremony): (&Method, &HeaderMap, bool),
     bearer: Option<&str>,
     session: Option<&str>,
 ) -> bool {
@@ -233,7 +387,6 @@ async fn cross_site(
     if !mutation || origin == Some(auth.origin()) {
         return false;
     }
-    let ceremony = path.contains("/auth/register/") || path.contains("/auth/login/");
     origin.is_some()
         || (bearer.is_none() && session.is_some())
         || (ceremony
@@ -729,7 +882,7 @@ fn limit_body<S: Clone + Send + Sync + 'static>(
 }
 /// Registers sign-in and passkey ceremony `routes` with the
 /// [`SIGN_IN_LIMIT_BYTES`] body limit.
-pub(super) fn sign_in_route<S: Clone + Send + Sync + 'static>(
+fn sign_in_route<S: Clone + Send + Sync + 'static>(
     routes: UtoipaMethodRouter<S>,
 ) -> UtoipaMethodRouter<S> {
     limit_body(routes, SIGN_IN_LIMIT_BYTES)
@@ -737,7 +890,7 @@ pub(super) fn sign_in_route<S: Clone + Send + Sync + 'static>(
 /// Registers [`device_start`] with its [`DEVICE_START_LIMIT_BYTES`] body
 /// limit, marking the body optional in the `OpenAPI` document: older clients
 /// send none.
-pub(super) fn device_start_route<S: Clone + Send + Sync + 'static>(
+fn device_start_route<S: Clone + Send + Sync + 'static>(
     routes: UtoipaMethodRouter<S>,
 ) -> UtoipaMethodRouter<S> {
     let (schemas, mut paths, limited) = limit_body(routes, DEVICE_START_LIMIT_BYTES);
@@ -805,4 +958,52 @@ pub(super) async fn device_approve(
 ) -> Result<Json<Managed>, ApiError> {
     auth.device_approve(&input.user_code, &identity)?;
     Ok(Json(Managed::default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SignInRoutes, SignInRule};
+    use std::collections::BTreeSet;
+
+    /// The routes the API declares `rule` on, as `METHOD path`.
+    fn declaring(rule: SignInRule) -> BTreeSet<String> {
+        let routes = SignInRoutes::build(&super::super::documented_router().into_openapi());
+        routes
+            .0
+            .iter()
+            .filter(|(_, rules)| rules.contains(&rule))
+            .map(|((path, method), _)| format!("{method} {path}"))
+            .collect()
+    }
+
+    #[test]
+    fn sign_in_starts_are_throttled_and_ceremonies_checked_cross_site() {
+        assert_eq!(
+            declaring(SignInRule::Throttled),
+            BTreeSet::from(
+                [
+                    "POST /api/v1/auth/device/confirm",
+                    "POST /api/v1/auth/device/start",
+                    "POST /api/v1/auth/login/operator",
+                    "POST /api/v1/auth/login/start",
+                    "POST /api/v1/auth/reauthenticate/start",
+                    "POST /api/v1/auth/register/start",
+                ]
+                .map(String::from)
+            )
+        );
+        assert_eq!(
+            declaring(SignInRule::Ceremony),
+            BTreeSet::from(
+                [
+                    "POST /api/v1/auth/login/finish",
+                    "POST /api/v1/auth/login/operator",
+                    "POST /api/v1/auth/login/start",
+                    "POST /api/v1/auth/register/finish",
+                    "POST /api/v1/auth/register/start",
+                ]
+                .map(String::from)
+            )
+        );
+    }
 }

@@ -622,7 +622,9 @@ pub(super) fn operations(item: &PathItem) -> impl Iterator<Item = (Method, &Oper
 }
 
 /// Every operation of a path item with its method, mutably.
-fn operations_mut(item: &mut PathItem) -> impl Iterator<Item = (Method, &mut Operation)> {
+pub(super) fn operations_mut(
+    item: &mut PathItem,
+) -> impl Iterator<Item = (Method, &mut Operation)> {
     path_operations!(item, as_mut)
 }
 
