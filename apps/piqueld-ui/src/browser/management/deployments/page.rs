@@ -296,24 +296,24 @@ impl EditorContext {
     /// Confirms, then restores `deployment` of the shown environment or
     /// preview exactly as it ran, and runs `restored` once accepted.
     fn restore(self, deployment: String, restored: impl FnOnce(AcceptedOperation) + 'static) {
-        if !confirm(&format!(
-            "Restore deployment {deployment}? Its jobs don't run again, and volume contents and migrations stay as they are."
-        )) {
-            return;
-        }
         let Some(environment) = self.selected_environment() else {
             return;
         };
-        self.mutate(
-            move |client| {
-                let (environment, deployment) = (environment.clone(), deployment.clone());
-                async move { client.restore_deployment(&environment, &deployment).await }
-            },
-            move |accepted| {
-                self.refresh_dashboard();
-                restored(accepted);
-            },
+        let message = format!(
+            "Restore deployment {deployment}? Its jobs don't run again, and volume contents and migrations stay as they are."
         );
+        confirm("Restore deployment", message, move || {
+            self.mutate(
+                move |client| {
+                    let (environment, deployment) = (environment.clone(), deployment.clone());
+                    async move { client.restore_deployment(&environment, &deployment).await }
+                },
+                move |accepted| {
+                    self.refresh_dashboard();
+                    restored(accepted);
+                },
+            );
+        });
     }
 
     /// What a deployment page's header says of `deployment`: where it came

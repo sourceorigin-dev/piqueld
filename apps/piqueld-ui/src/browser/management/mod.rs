@@ -542,11 +542,7 @@ impl EditorContext {
         let Some(repository) = saved.repository.clone() else {
             return;
         };
-        if self.action_blocked()
-            || !super::confirm(
-                "Discard every edit made since the manifest was last read from the repository, and save the repository's manifest again? Deploy afterwards to apply it.",
-            )
-        {
+        if self.action_blocked() {
             return;
         }
         let request = ApplyApplicationRequest {
@@ -554,21 +550,27 @@ impl EditorContext {
             expected_generation: Some(saved.generation),
             expected_application_id: Some(saved.application.id().to_string()),
         };
-        self.mutate(
-            move |client| {
-                let request = request.clone();
-                async move { client.apply_application(&request).await }
-            },
-            move |receipt| {
-                self.saved.set(ApplicationView {
-                    spec_hash: repository.spec_hash(),
-                    application: repository,
-                    generation: receipt.generation,
-                    ..saved
-                });
-                self.notice
-                    .set("Reset to the repository's manifest.".into());
-                self.refresh_dashboard();
+        super::confirm(
+            "Reset to repository",
+            "Discard every edit made since the manifest was last read from the repository, and save the repository's manifest again? Deploy afterwards to apply it.",
+            move || {
+                self.mutate(
+                    move |client| {
+                        let request = request.clone();
+                        async move { client.apply_application(&request).await }
+                    },
+                    move |receipt| {
+                        self.saved.set(ApplicationView {
+                            spec_hash: repository.spec_hash(),
+                            application: repository,
+                            generation: receipt.generation,
+                            ..saved
+                        });
+                        self.notice
+                            .set("Reset to the repository's manifest.".into());
+                        self.refresh_dashboard();
+                    },
+                );
             },
         );
     }

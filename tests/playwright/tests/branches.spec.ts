@@ -1,5 +1,5 @@
 import {
-  test, expect, apply, call, card, confirmNext, deploymentRows, deploymentTab, head, openDeployment, repositoryManifest, rewrite, webManifest,
+  test, expect, apply, call, card, confirmDialog, deploymentRows, deploymentTab, head, openDeployment, repositoryManifest, rewrite, webManifest,
   applicationTab, environmentTab, title,
 } from '../fixtures.js';
 import type { Page } from '@playwright/test';
@@ -135,8 +135,8 @@ test('a repository-backed application is edited like any other, and resets to it
   await expect(edits).toBeVisible();
   await expect(page.locator('.diff-row', { hasText: 'volumes.cache' })).toBeVisible();
 
-  confirmNext(page, 'Discard every edit');
   await page.getByRole('button', { name: 'Reset to repository', exact: true }).click();
+  await confirmDialog(page, 'Reset to repository', 'Discard every edit');
   await expect(page.getByText("Reset to the repository's manifest.", { exact: true })).toBeVisible();
   await expect(edits).toHaveCount(0);
   await expect(volumes).toHaveCount(0);
@@ -264,9 +264,9 @@ test('a preview created from the dashboard opens on its own page, also from its 
 
   await environmentTab(page, 'Overview').click();
   await expect(page.getByText('feat/login', { exact: true })).toBeVisible();
-  confirmNext(page);
   const deleted = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().endsWith(`/previews/${preview}`));
   await page.getByRole('button', { name: 'Delete preview', exact: true }).click();
+  await confirmDialog(page, 'Delete preview');
   expect((await deleted).status()).toBe(202);
   await expect(page).toHaveURL(`/dashboard/applications/${app}?tab=previews`);
 });
@@ -286,8 +286,8 @@ test('Prune gone submits the previews whose branch is gone', async ({ page, acco
   await page.route(`**/api/v1/applications/${app}/previews/prune`, route => route.fulfill({ json: { data: [] } }));
 
   await page.goto(`/dashboard/applications/${app}?tab=previews`);
-  confirmNext(page);
   await page.getByRole('button', { name: 'Prune gone', exact: true }).click();
+  await confirmDialog(page, 'Delete previews');
   expect((await pruned).postDataJSON()).toEqual({ previews: [preview] });
 });
 
@@ -375,8 +375,8 @@ test('an application deploys on push by polling or webhook, and an environment o
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   await page.route(`**/applications/${app}/webhook/secret`, async route => { await held; await route.continue(); });
-  confirmNext(page);
   await webhook.getByRole('button', { name: 'Rotate secret', exact: true }).click();
+  await confirmDialog(page, 'Rotate secret');
   await applicationTab(page, 'Overview').click();
   const reloaded = page.waitForResponse(response => response.request().method() === 'GET' && response.url().endsWith(`/applications/${app}/webhook`));
   release();

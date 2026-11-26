@@ -186,28 +186,27 @@ fn DeleteApplication() -> impl IntoView {
             "Delete this application, all its environments ({}) and previews, their services, and all deployment history? Environments' Docker volume data will be retained; previews' volumes are removed with their data.",
             environments.join(", ")
         );
-        if !confirm(&message) {
-            return;
-        }
         let saved = context.saved.get_untracked();
         let navigate = navigate.clone();
-        context.mutate_once(
-            async move |client| {
-                let confirmed = environments.iter().map(String::as_str).collect::<Vec<_>>();
-                client
-                    .delete_application_with_preconditions(
-                        saved.application.id().as_str(),
-                        Some(saved.generation),
-                        false,
-                        &confirmed,
-                    )
-                    .await
-            },
-            move |_| {
-                context.refresh_dashboard();
-                navigate("/dashboard/applications", NavigateOptions::default());
-            },
-        );
+        confirm("Delete application", message, move || {
+            context.mutate_once(
+                async move |client| {
+                    let confirmed = environments.iter().map(String::as_str).collect::<Vec<_>>();
+                    client
+                        .delete_application_with_preconditions(
+                            saved.application.id().as_str(),
+                            Some(saved.generation),
+                            false,
+                            &confirmed,
+                        )
+                        .await
+                },
+                move |_| {
+                    context.refresh_dashboard();
+                    navigate("/dashboard/applications", NavigateOptions::default());
+                },
+            );
+        });
     };
     view! {
         <section class="card card-danger" hidden={move || !context.can(AppPermission::Delete)}>

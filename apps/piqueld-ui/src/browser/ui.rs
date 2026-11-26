@@ -646,6 +646,10 @@ pub(super) fn Modal(
     /// Whether to show the dialog wider.
     #[prop(optional)]
     wide: bool,
+    /// Makes it an `alertdialog`, described by the element with this ID: a
+    /// question that interrupts what the user was doing.
+    #[prop(optional)]
+    alert: Option<&'static str>,
     /// The dialog's content.
     children: Children,
 ) -> impl IntoView {
@@ -686,7 +690,9 @@ pub(super) fn Modal(
             class="modal"
             class:modal-wide={wide}
             node_ref={dialog}
+            role={alert.map(|_| "alertdialog")}
             aria-labelledby={labelled_by}
+            aria-describedby={alert}
             on:cancel={move |event: web_sys::Event| {
                 event.prevent_default();
                 close();
@@ -706,6 +712,129 @@ pub(super) fn Modal(
             </header>
             <div class="modal-body">{children()}</div>
         </dialog>
+    }
+}
+
+/// The question [`ConfirmationDialog`] shows: the action, which titles it and
+/// names its button, why it needs confirming, and what runs once confirmed.
+/// [`Confirmation::provide`] makes it the context [`confirm`] asks through.
+#[derive(Clone, Copy)]
+pub(super) struct Confirmation {
+    /// Whether the dialog is open.
+    opened: RwSignal<bool>,
+    /// The action asked about, such as "Delete preview".
+    action: RwSignal<&'static str>,
+    /// Why the action needs confirming.
+    message: RwSignal<String>,
+    /// What runs once confirmed; `None` once answered.
+    then: StoredValue<Option<Box<dyn FnOnce()>>, LocalStorage>,
+}
+
+impl Confirmation {
+    /// Provides the dashboard's confirmation as context; mount one
+    /// [`ConfirmationDialog`] under it.
+    pub(super) fn provide() {
+        provide_context(Self {
+            opened: RwSignal::new(false),
+            action: RwSignal::new(""),
+            message: RwSignal::new(String::new()),
+            then: StoredValue::new_local(None),
+        });
+    }
+
+    /// Opens the dialog asking whether to `action`. `then` runs in the
+    /// asking owner, so it reads the same context, even if a re-render
+    /// cleaned that owner up meanwhile: cleanup keeps an owner's parents
+    /// and their context. [`ConfirmationDialog`] drops the question when
+    /// the route changes.
+    fn ask(self, action: &'static str, message: String, then: impl FnOnce() + 'static) {
+        let owner = Owner::current();
+        self.action.set(action);
+        self.message.set(message);
+        self.then.set_value(Some(Box::new(move || match owner {
+            Some(owner) => owner.with(then),
+            None => then(),
+        })));
+        self.opened.set(true);
+    }
+
+    /// Closes the dialog without running the pending action.
+    fn cancel(self) {
+        self.opened.set(false);
+        self.then.set_value(None);
+    }
+
+    /// Closes the dialog and runs the pending action.
+    fn accept(self) {
+        self.opened.set(false);
+        if let Some(then) = self.then.try_update_value(Option::take).flatten() {
+            then();
+        }
+    }
+}
+
+/// Asks the user, in the [`ConfirmationDialog`], whether to `action`, such
+/// as "Delete preview", explaining what happens in `message`. Runs `then`
+/// once they confirm, and nothing when they cancel or the route changes.
+pub(super) fn confirm(
+    action: &'static str,
+    message: impl Into<String>,
+    then: impl FnOnce() + 'static,
+) {
+    expect_context::<Confirmation>().ask(action, message.into(), then);
+}
+
+/// [`confirm`] when `ask`, else runs `then` at once.
+pub(super) fn confirm_if(
+    ask: bool,
+    action: &'static str,
+    message: impl Into<String>,
+    then: impl FnOnce() + 'static,
+) {
+    if ask {
+        confirm(action, message, then);
+    } else {
+        then();
+    }
+}
+
+/// The dashboard's one confirmation dialog, which [`confirm`] opens. Mount
+/// it once, inside the router and under [`Confirmation::provide`]: a
+/// question is dropped when the path changes, as its page is gone. Its
+/// confirm button is never focused first, so Enter alone doesn't confirm.
+#[component]
+pub(super) fn ConfirmationDialog() -> impl IntoView {
+    const MESSAGE: &str = "confirmation-message";
+    let confirmation = expect_context::<Confirmation>();
+    let path = leptos_router::hooks::use_location().pathname;
+    Effect::new(move |previous: Option<String>| {
+        let path = path.get();
+        if previous.is_some_and(|previous| previous != path) {
+            confirmation.cancel();
+        }
+        path
+    });
+    view! {
+        <Modal
+            title={confirmation.action}
+            opened={confirmation.opened}
+            on_close={Callback::new(move |()| confirmation.cancel())}
+            alert={MESSAGE}
+        >
+            <p id={MESSAGE}>{move || confirmation.message.get()}</p>
+            <div class="form-actions">
+                <button type="button" class="btn btn-ghost" on:click={move |_| confirmation.cancel()}>
+                    "Cancel"
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-danger"
+                    on:click={move |_| confirmation.accept()}
+                >
+                    {move || confirmation.action.get()}
+                </button>
+            </div>
+        </Modal>
     }
 }
 

@@ -206,15 +206,16 @@ pub(super) fn RouteSettings() -> impl IntoView {
         Err(message) => context.set_error(Some(message.into())),
     };
     let remove = move |index: usize| {
-        if !confirm(
+        confirm(
+            "Remove route",
             "Remove this route from the saved configuration? It is served until the next deployment.",
-        ) {
-            return;
-        }
-        save(RowDialog::without(
-            RouteDraft::rows(&context.manifest()),
-            index,
-        ));
+            move || {
+                save(RowDialog::without(
+                    RouteDraft::rows(&context.manifest()),
+                    index,
+                ));
+            },
+        );
     };
     view! {
         <div class="stack">

@@ -145,16 +145,17 @@ pub(super) fn ServiceEditor(
     let navigate = use_navigate();
     let remove_name = name.clone();
     let remove = move |_| {
-        if !confirm(
-            "Remove this service and its routes from saved configuration? Its running containers remain until Deploy.",
-        ) {
-            return;
-        }
         let navigate = navigate.clone();
         let href = app_href();
-        context.save(
-            ApplicationEdit::RemoveService(remove_name.clone()),
-            move |_| navigate(&href, NavigateOptions::default()),
+        let name = remove_name.clone();
+        confirm(
+            "Remove service",
+            "Remove this service and its routes from saved configuration? Its running containers remain until Deploy.",
+            move || {
+                context.save(ApplicationEdit::RemoveService(name), move |_| {
+                    navigate(&href, NavigateOptions::default());
+                });
+            },
         );
     };
     let requested = leptos_router::hooks::use_query_map().with_untracked(|query| query.get("tab"));

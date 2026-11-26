@@ -1,5 +1,5 @@
 import {
-  test, expect, auth, confirmNext, deployed, deploymentRows, deploymentTab, environmentTab, openDeployment, register, rewrite,
+  test, expect, auth, confirmDialog, deployed, deploymentRows, deploymentTab, environmentTab, openDeployment, register, rewrite,
   serveDeployments,
   type Managed,
 } from '../fixtures.js';
@@ -47,8 +47,8 @@ test('an earlier deployment is restored from the deployment history', async ({ p
   // Restoring the earlier one opens the restoring deployment's page.
   await page.goBack();
   await openDeployment(page, rows.nth(0));
-  confirmNext(page);
   await restoreButton.click();
+  await confirmDialog(page, 'Restore deployment');
   await expect(page).toHaveURL(`/dashboard/applications/${app}/environments/${env}/deployments/operation-0123456789abcdf1`);
   expect(restored).toEqual({ deployment: earlier });
 

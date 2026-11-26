@@ -3,7 +3,7 @@ use super::super::ui::{
     Icon, Tone, add_button, badge, checkbox, empty, icon, loading, member_checkbox, notice,
     remove_button, text_field, when,
 };
-use super::super::{ClientErrorExt, confirm};
+use super::super::{ClientErrorExt, confirm, confirm_if};
 use super::{Draft, EditorContext, Rows, editor};
 use crate::secrets::DeclarationDraft;
 use leptos::prelude::*;
@@ -337,35 +337,33 @@ pub(super) fn StoredSecrets(
         let name = name.get_untracked();
         let (generation, current) = existing(&name).unzip();
         let generation = generation.unwrap_or(0);
-        if generation > 0
-            && !confirm(&format!(
-                "Replace {name}? Running deployments keep their current version. A later Deploy will use the replacement."
-            ))
-        {
-            return;
-        }
-        let bytes = value.get_untracked().into_bytes();
-        value.set(String::new());
-        let access = Some(form.access()).filter(|access| current.as_ref() != Some(access));
-        let expected = current.filter(|_| access.is_some());
-        let id = id.get_value();
-        feedback.send(
-            context,
-            async move {
-                Client::browser()
-                    .put_stored_secret(
-                        &id,
-                        &name,
-                        generation,
-                        bytes,
-                        access.as_ref(),
-                        expected.as_ref(),
-                    )
-                    .await
-            },
-            move |secret| saved(secret, "Secret saved. Deploy to use its new version."),
-            failed,
+        let message = format!(
+            "Replace {name}? Running deployments keep their current version. A later Deploy will use the replacement."
         );
+        confirm_if(generation > 0, "Replace secret", message, move || {
+            let bytes = value.get_untracked().into_bytes();
+            value.set(String::new());
+            let access = Some(form.access()).filter(|access| current.as_ref() != Some(access));
+            let expected = current.filter(|_| access.is_some());
+            let id = id.get_value();
+            feedback.send(
+                context,
+                async move {
+                    Client::browser()
+                        .put_stored_secret(
+                            &id,
+                            &name,
+                            generation,
+                            bytes,
+                            access.as_ref(),
+                            expected.as_ref(),
+                        )
+                        .await
+                },
+                move |secret| saved(secret, "Secret saved. Deploy to use its new version."),
+                failed,
+            );
+        });
     };
     let change_access = move |_| {
         if !idle() {
@@ -388,28 +386,28 @@ pub(super) fn StoredSecrets(
         if !idle() {
             return;
         }
-        if !confirm(&format!(
+        let message = format!(
             "Delete {} from every environment, with its retained versions? Secrets still in use cannot be deleted.",
             secret.name
-        )) {
-            return;
-        }
+        );
         let id = id.get_value();
         let name = secret.name.clone();
-        feedback.send(
-            context,
-            async move {
-                Client::browser()
-                    .delete_stored_secret(&id, &secret.name, secret.generation)
-                    .await
-            },
-            move |()| {
-                secrets.update(|items| items.retain(|s| s.metadata.name != name));
-                feedback.succeed("Secret deleted.");
-                notify();
-            },
-            failed,
-        );
+        confirm("Delete secret", message, move || {
+            feedback.send(
+                context,
+                async move {
+                    Client::browser()
+                        .delete_stored_secret(&id, &secret.name, secret.generation)
+                        .await
+                },
+                move |()| {
+                    secrets.update(|items| items.retain(|s| s.metadata.name != name));
+                    feedback.succeed("Secret deleted.");
+                    notify();
+                },
+                failed,
+            );
+        });
     });
     let shown = move || {
         let scope = scope();
@@ -686,33 +684,33 @@ pub(super) fn EnvironmentSecrets() -> impl IntoView {
         if context.blocked() || !ready.get_untracked() {
             return;
         }
-        if !confirm(&action.confirmation(&secret.name)) {
-            return;
-        }
+        let message = action.confirmation(&secret.name);
         let id = id.get_value();
         let name = secret.name.clone();
-        feedback.send(
-            context,
-            async move { action.send(&id, &secret).await },
-            move |replacement| {
-                generated.update(|items| {
-                    items.retain(|s| s.name != name);
-                    items.extend(replacement);
-                    items.sort_by(|a, b| a.name.cmp(&b.name));
-                });
-                feedback.succeed(action.success());
-            },
-            move |e| {
-                ready.set(false);
-                feedback.fail(
-                    format!(
-                        "{} Refresh, then retry if cleanup is pending.",
-                        e.user_message()
-                    ),
-                    &e,
-                );
-            },
-        );
+        confirm(action.label(), message, move || {
+            feedback.send(
+                context,
+                async move { action.send(&id, &secret).await },
+                move |replacement| {
+                    generated.update(|items| {
+                        items.retain(|s| s.name != name);
+                        items.extend(replacement);
+                        items.sort_by(|a, b| a.name.cmp(&b.name));
+                    });
+                    feedback.succeed(action.success());
+                },
+                move |e| {
+                    ready.set(false);
+                    feedback.fail(
+                        format!(
+                            "{} Refresh, then retry if cleanup is pending.",
+                            e.user_message()
+                        ),
+                        &e,
+                    );
+                },
+            );
+        });
     });
     let mounted = move || {
         let environment = context.selected_environment()?;

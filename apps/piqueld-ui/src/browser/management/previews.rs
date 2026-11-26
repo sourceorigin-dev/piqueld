@@ -31,20 +31,20 @@ impl EditorContext {
             "Delete preview {} of branch {branch}, its services, secrets, and deployment history? Every Docker volume it created is removed with its data.",
             preview.name
         );
-        if !confirm(&message) {
-            return;
-        }
         let id = preview.id.to_string();
-        self.mutate_once(
-            async move |client| client.delete_preview(&id).await,
-            move |_| {
-                self.notice.set(
-                    "Preview deletion accepted. Its volumes and their data will be removed.".into(),
-                );
-                self.refresh_dashboard();
-                deleted();
-            },
-        );
+        confirm("Delete preview", message, move || {
+            self.mutate_once(
+                async move |client| client.delete_preview(&id).await,
+                move |_| {
+                    self.notice.set(
+                        "Preview deletion accepted. Its volumes and their data will be removed."
+                            .into(),
+                    );
+                    self.refresh_dashboard();
+                    deleted();
+                },
+            );
+        });
     }
 }
 
@@ -178,24 +178,23 @@ pub(super) fn PreviewList() -> impl IntoView {
         let message = format!(
             "Delete the previews whose branch is gone ({names}), their services, secrets, and deployment history? Every Docker volume they created is removed with its data."
         );
-        if !confirm(&message) {
-            return;
-        }
         let request = PrunePreviewsRequest {
             previews: previews.into_iter().map(|preview| preview.id).collect(),
         };
         let application = context.id();
-        context.mutate_once(
-            async move |client| client.prune_previews(&application, &request).await,
-            move |deleted| {
-                context.notice.set(format!(
-                    "Deletion of {} previews accepted. Their volumes and their data will be removed.",
-                    deleted.len()
-                ));
-                context.refresh_dashboard();
-                data.refetch();
-            },
-        );
+        confirm("Delete previews", message, move || {
+            context.mutate_once(
+                async move |client| client.prune_previews(&application, &request).await,
+                move |deleted| {
+                    context.notice.set(format!(
+                        "Deletion of {} previews accepted. Their volumes and their data will be removed.",
+                        deleted.len()
+                    ));
+                    context.refresh_dashboard();
+                    data.refetch();
+                },
+            );
+        });
     };
     let none = move || {
         if context.repository_backed() {

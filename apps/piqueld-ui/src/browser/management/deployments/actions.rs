@@ -3,7 +3,7 @@
 use super::plan::{DeploymentPreview, PromotionPlan};
 use crate::browser::management::editor;
 use crate::browser::ui::{Icon, Modal, Tone, icon, notice, text_field};
-use crate::browser::{ClientErrorExt, confirm};
+use crate::browser::{ClientErrorExt, confirm_if};
 use crate::deployments::Promotion;
 use crate::editor::Choice;
 use leptos::prelude::*;
@@ -371,15 +371,14 @@ fn StopAction() -> impl IntoView {
     };
     let toggle = move |_| {
         let stopping = !stopped();
-        if stopping
-            && !confirm(&format!(
-                "Stop environment {}? Its routes are withdrawn and its services stop, keeping their configuration and volumes, until it is started or deployed again.",
-                context.selected_name()
-            ))
-        {
-            return;
-        }
-        context.set_stopped(context.environment_id(), stopping);
+        let message = format!(
+            "Stop environment {}? Its routes are withdrawn and its services stop, keeping their configuration and volumes, until it is started or deployed again.",
+            context.selected_name()
+        );
+        let environment = context.environment_id();
+        confirm_if(stopping, "Stop environment", message, move || {
+            context.set_stopped(environment, stopping);
+        });
     };
     view! {
         <Show when={deployed}>

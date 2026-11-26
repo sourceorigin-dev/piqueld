@@ -322,13 +322,16 @@ pub(super) fn JobSettings() -> impl IntoView {
         Err(message) => context.set_error(Some(message)),
     };
     let remove = move |index: usize| {
-        if !confirm("Remove this job from the saved configuration? Later deployments skip it.") {
-            return;
-        }
-        save(RowDialog::without(
-            JobDraft::rows(&context.manifest()),
-            index,
-        ));
+        confirm(
+            "Remove job",
+            "Remove this job from the saved configuration? Later deployments skip it.",
+            move || {
+                save(RowDialog::without(
+                    JobDraft::rows(&context.manifest()),
+                    index,
+                ));
+            },
+        );
     };
     let swap = move |first: usize| {
         let mut rows = JobDraft::rows(&context.manifest());

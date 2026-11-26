@@ -14,7 +14,7 @@ mod stream;
 mod ui;
 
 use dashboard::{ApplicationsPage, OverviewPage, Sidebar};
-use ui::{Icon, STALE, Tone, icon, notice};
+use ui::{Icon, STALE, Tone, confirm, confirm_if, icon, notice};
 
 use crate::overview::{ApplicationRow, EnvironmentRow};
 use crate::state::{
@@ -376,14 +376,16 @@ pub(super) fn mount() {
 
 /// Root router. Dashboard pages live under `/dashboard` (the daemon redirects
 /// `/` there), behind `auth::ProtectedDashboardLayout`; unknown dashboard paths
-/// render `NotFoundPage` inside the layout. Also installs log preferences and
-/// the unsaved-changes history guard.
+/// render `NotFoundPage` inside the layout. Also installs log preferences,
+/// the unsaved-changes history guard and the confirmation dialog.
 #[component]
 fn App() -> impl IntoView {
     logs::LogPreferences::provide();
     management::HistoryGuard::install();
+    ui::Confirmation::provide();
     view! {
         <Router>
+            <ui::ConfirmationDialog />
             <Routes fallback={|| view! { <NotFoundPage /> }}>
                 <Route path={path!("/dashboard/auth")} view={auth::AuthPage} />
                 <ParentRoute path={path!("/dashboard")} view={auth::ProtectedDashboardLayout}>
@@ -714,9 +716,11 @@ fn document_hidden() -> bool {
         .is_some_and(|document| document.hidden())
 }
 
-/// Asks the user to confirm `message` in a native dialog; `false` when
-/// dismissed or unavailable.
-fn confirm(message: &str) -> bool {
+/// Asks the user to confirm leaving the page, `message`, in a native dialog;
+/// `false` when dismissed or unavailable. Only navigation guards use it,
+/// since they must decide within the event; everything else asks with
+/// [`ui::confirm`].
+fn confirm_leave(message: &str) -> bool {
     browser_window().is_some_and(|window| window.confirm_with_message(message).unwrap_or(false))
 }
 

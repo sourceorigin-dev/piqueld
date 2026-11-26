@@ -9,7 +9,7 @@ use super::super::ui::{
     Icon, Modal, Tone, badge, empty, health_badge, icon, notice, operation_badge, telemetry_badge,
     text_field, text_input, when,
 };
-use super::super::{confirm, dashboard_context};
+use super::super::{confirm, confirm_if, dashboard_context};
 use super::deployments::EnvironmentAction;
 use super::{Draft, EditorContext, editor};
 use crate::environments::{BranchDraft, EnvironmentEdit, NAME_FORM, SOURCE_FORM, SourceDraft};
@@ -736,19 +736,17 @@ fn EnvironmentTelemetry() -> impl IntoView {
     };
     let toggle = move |_| {
         let granted = !granted();
-        if granted
-            && !confirm(&format!(
-                "Grant environment {} the daemon's telemetry? Its receiving service will get the traces, metrics and logs of every application.",
-                context.selected_name()
-            ))
-        {
-            return;
-        }
+        let message = format!(
+            "Grant environment {} the daemon's telemetry? Its receiving service will get the traces, metrics and logs of every application.",
+            context.selected_name()
+        );
         let change = EnvironmentEdit::Telemetry {
             id: id.get_value(),
             granted,
         };
-        context.change_environment(change, |_| {});
+        confirm_if(granted, "Grant telemetry", message, move || {
+            context.change_environment(change, |_| {});
+        });
     };
     view! {
         <section class="card">
@@ -1033,13 +1031,12 @@ pub(super) fn EnvironmentSettings() -> impl IntoView {
             "Delete environment {}, its services, secrets and deployment history? The application and other environments remain. Docker volume data will be retained.",
             current()
         );
-        if !confirm(&message) {
-            return;
-        }
         let navigate = navigate.clone();
         let href = format!("/dashboard/applications/{}?tab=environments", context.id());
-        context.change_environment(EnvironmentEdit::Delete(id.get_value()), move |_| {
-            navigate(&href, NavigateOptions::default());
+        confirm("Delete environment", message, move || {
+            context.change_environment(EnvironmentEdit::Delete(id.get_value()), move |_| {
+                navigate(&href, NavigateOptions::default());
+            });
         });
     };
     view! {
