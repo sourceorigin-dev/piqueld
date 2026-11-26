@@ -157,6 +157,7 @@ macro_rules! desired_service {
                     Ok(service)
                 } else {
                     Err(ServiceImageMismatch {
+                        service: service.logical_name,
                         stored: wire.image,
                         derived,
                     })
@@ -233,8 +234,10 @@ pub struct DesiredService {
 /// A stored or received [`DesiredService`] whose `image` isn't the one its
 /// source resolves to.
 #[derive(Debug, thiserror::Error)]
-#[error("service image {stored} is not {derived}, the image its source resolves to")]
+#[error("service {service}'s image {stored} is not {derived}, the image its source resolves to")]
 pub struct ServiceImageMismatch {
+    /// The service read.
+    service: ServiceName,
     /// The image read.
     stored: ImmutableImage,
     /// The image the source resolves to.

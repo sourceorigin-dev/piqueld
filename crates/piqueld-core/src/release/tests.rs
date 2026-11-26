@@ -220,3 +220,48 @@ fn a_git_release_keeps_the_content_hash_it_was_recorded_with() {
         "sha256:059075f9616ac5c9a04b1d796be732b10bb86edeb2e6cbd30166fff53e32ce96"
     );
 }
+
+/// A built service's stored target, byte for byte as main wrote it: moving a
+/// field, renaming one or dropping a `skip_serializing_if` breaks the rows
+/// older binaries wrote and read back after a roll-back.
+#[test]
+fn a_built_service_is_stored_byte_for_byte_as_before() {
+    let release = staging_release(template("https://example.com"));
+    let rendering = release
+        .render(
+            EnvironmentName::parse("production").expect("the environment name is valid"),
+            Some("deployment".into()),
+        )
+        .expect("the template renders");
+    let target = compile_release(
+        &rendering.application,
+        &environment("production"),
+        instance(),
+        &release,
+        BTreeMap::new(),
+    )
+    .expect("the release compiles");
+    assert_eq!(
+        serde_json::to_string(&target.services[0]).expect("the service serializes"),
+        concat!(
+            r#"{"logical_name":"web""#,
+            r#","name":"piqueld-env-production-0001-service-web-ed1b08c82b57""#,
+            r#","source":{"type":"git","requested":{"type":"git""#,
+            r#","repository":{"url":"https://example.com/shop.git","branch":"main""#,
+            r#","commit":"0123456789abcdef0123456789abcdef01234567"},"build":{"type":"docker""#,
+            r#","dockerfile":"Dockerfile","context":".""#,
+            r#","args":{"REVISION":"0123456789abcdef0123456789abcdef01234567""#,
+            r#","VITE_ORIGIN":"https://example.com"}}}"#,
+            r#","commit":"0123456789abcdef0123456789abcdef01234567""#,
+            r#","image_id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+            r#","image":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#,
+            r#","replicas":3,"environment":{"ORIGIN":"https://example.com"},"command":[]"#,
+            r#","arguments":[],"mounts":[],"healthcheck":null,"resources":null"#,
+            r#","networks":["piqueld-env-production-0001-network-d75cb5f5e14c"]"#,
+            r#","labels":{"io.piqueld.application":"env-production-0001""#,
+            r#","io.piqueld.instance":"instance","io.piqueld.managed":"true""#,
+            r#","io.piqueld.service":"web""#,
+            r#","io.piqueld.spec-hash":"sha256:2b38a7364f74694cf8433c448c95f1bd342ee83edeb760c15fa8c7efabc103e9"}}"#,
+        )
+    );
+}
