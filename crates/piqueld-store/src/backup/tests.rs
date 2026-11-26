@@ -1,4 +1,5 @@
 use super::*;
+use crate::SecretFailure;
 use crate::{SCHEMA_VERSION, secrets::KeyFailure};
 use std::os::unix::fs::PermissionsExt;
 
@@ -112,7 +113,7 @@ async fn verify_key_accepts_only_the_key_the_snapshot_was_bound_to() {
         .verify_key(key)
         .await
     {
-        Err(StoreError::SecretSource(error)) => error.key_failure(),
+        Err(StoreError::Secret(SecretFailure::Source(error))) => error.key_failure(),
         other => panic!("expected a key failure, got {other:?}"),
     };
     assert!(matches!(

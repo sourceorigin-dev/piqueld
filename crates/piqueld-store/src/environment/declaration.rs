@@ -1,6 +1,7 @@
 //! Environments the manifest manages (see `piqueld_core::manifest::declaration`):
 //! converging an application's environments to the ones its manifest
 //! declares, and refusing imperative changes to declared ones.
+use crate::EnvironmentError;
 use crate::{Store, StoreError, environment::SourceWrite};
 use piqueld_core::manifest::{
     ApplicationSpec, ApplicationTemplate, Declaration, DeclaredSource, EnvironmentChange,
@@ -40,7 +41,7 @@ impl Store {
         Self::check_declared_by(application, name, EnvironmentConfig::sets_source)
     }
 
-    /// `EnvironmentDeclared` when `name`'s block in `application`'s saved
+    /// `EnvironmentError::Declared` when `name`'s block in `application`'s saved
     /// manifest is `declares`.
     fn check_declared_by(
         application: &ApplicationTemplate,
@@ -53,9 +54,9 @@ impl Store {
             .get(name.as_str())
             .is_some_and(declares)
         {
-            return Err(StoreError::EnvironmentDeclared {
+            return Err(StoreError::Environment(EnvironmentError::Declared {
                 environment: name.clone(),
-            });
+            }));
         }
         Ok(())
     }
@@ -187,7 +188,7 @@ impl Store {
 
     /// Declares the environments an edit through the CLI or dashboard configures,
     /// which must exist already: a block for a name no environment has, or a name
-    /// in `named`, fails with `EnvironmentUnknown`. An edit declaring the
+    /// in `named`, fails with `EnvironmentError::Unknown`. An edit declaring the
     /// application's first environment declares every existing one too, with a
     /// block that leaves its source as it is. `before` is the saved manifest,
     /// `after` the edited one.
@@ -216,9 +217,9 @@ impl Store {
                 !before.environments.contains_key(*name) && !live.iter().any(|live| live == name)
             })
         {
-            return Err(StoreError::EnvironmentUnknown {
+            return Err(StoreError::Environment(EnvironmentError::Unknown {
                 environment: environment.to_owned(),
-            });
+            }));
         }
         if before.environments.is_empty() && !after.environments.is_empty() {
             for name in live {

@@ -219,13 +219,13 @@ impl Store {
     /// Saves edited configuration with the next generation without creating an
     /// operation, so nothing is deployed until requested. Converges the
     /// environments to the ones it declares (see `converge_environments_on`);
-    /// new applications that declare none get a `production` environment.
-    /// New environments start as `not_deployed`. Returns
-    /// `IllegalTransition` while deletion is pending, `AlreadyExists` for a taken
-    /// name, `SecretDeleting` for manifests that reference secrets being deleted,
-    /// and `secret_name_conflict` for declared secrets the application stores.
-    /// The manifest an application last read from its repository is kept
-    /// while it stays repository-backed (see `Self::repository_manifest_on`).
+    /// new applications that declare none get a `production` environment. New
+    /// environments start as `not_deployed`. Returns `IllegalTransition` while
+    /// deletion is pending, `AlreadyExists` for a taken name,
+    /// `SecretFailure::Deleting` for secrets being deleted, and
+    /// `secret_name_conflict` for declared secrets the application stores.
+    /// The manifest last read from its repository is kept while it stays
+    /// repository-backed (see `Self::repository_manifest_on`).
     pub(super) async fn save_configuration_on(
         tx: &mut Transaction<'_, Sqlite>,
         app: &ApplicationTemplate,
@@ -282,7 +282,7 @@ impl Store {
     /// record, rendered for that environment, together with the values its
     /// references resolved to, so retries never read variables again. A
     /// reference without a value, or a stored secret the environment may not
-    /// mount (`SecretAccessDenied`), fails the request. Repository-backed
+    /// mount (`SecretFailure::AccessDenied`), fails the request. Repository-backed
     /// manifests are rendered and checked once fetched, when their revision is known.
     /// The deployment row shares the operation's ID. A promoted environment
     /// fails with `environment_promoted`: it never builds.

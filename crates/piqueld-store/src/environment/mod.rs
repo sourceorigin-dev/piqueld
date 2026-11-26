@@ -17,6 +17,67 @@ use piqueld_core::{
 };
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
+/// Why an environment or preview could not be selected, renamed or created.
+#[derive(Debug, thiserror::Error)]
+pub enum EnvironmentError {
+    /// A runtime command named an application whose environment is ambiguous.
+    #[error(
+        "environment required: the application has {}; name one explicitly",
+        super::environment_list(environments)
+    )]
+    Required {
+        /// The application's environments, in name order.
+        environments: Vec<EnvironmentName>,
+    },
+    /// Deleting an application with several environments must name every one.
+    #[error(
+        "deleting this application also deletes {}; confirm by naming every environment",
+        super::environment_list(environments)
+    )]
+    ConfirmationRequired {
+        /// The application's environments, in name order.
+        environments: Vec<EnvironmentName>,
+    },
+    /// Previews deploy a branch of the application's manifest repository.
+    #[error(
+        "previews deploy a branch of the application's manifest repository; connect one with `piquelctl app repository` first"
+    )]
+    PreviewRequiresRepository,
+    /// Creating a preview would exceed a `[previews]` count limit.
+    #[error(
+        "creating this preview would exceed [previews] {} ({}); delete a preview first",
+        .0.limit,
+        .0.max
+    )]
+    PreviewLimitReached(Box<piqueld_core::api::PreviewLimitReached>),
+    /// Renaming would change which `[spec.environments.<name>]` block applies.
+    #[error(
+        "the saved manifest configures [spec.environments.{environment}]; renaming would change which configuration applies, so remove that block from the manifest first and add it back under the new name after renaming"
+    )]
+    Configured {
+        /// Old or new name that has a block.
+        environment: EnvironmentName,
+    },
+    /// The saved manifest declares the environment, so it owns whether the
+    /// environment exists and where it deploys from.
+    #[error(
+        "the manifest declares [spec.environments.{environment}], so it decides where {environment} deploys from and whether it exists; change that block instead"
+    )]
+    Declared {
+        /// The declared environment.
+        environment: EnvironmentName,
+    },
+    /// An edit would add a block, declaring an environment, for a name no
+    /// environment has.
+    #[error(
+        "no environment is named {environment}; declare new environments by adding a [spec.environments.{environment}] block with `piquelctl app apply`"
+    )]
+    Unknown {
+        /// The name no environment has.
+        environment: String,
+    },
+}
+
 /// What [`Store::write_source_on`] did to an environment's source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SourceWrite {
@@ -141,9 +202,9 @@ impl Store {
             .into_iter()
             .find(|name| manifest.is_some_and(|manifest| manifest.configures(name)))
         {
-            return Err(StoreError::EnvironmentConfigured {
+            return Err(StoreError::Environment(EnvironmentError::Configured {
                 environment: configured.clone(),
-            });
+            }));
         }
         for declared in [old, name] {
             Self::check_undeclared(&environment.application.application, declared)?;

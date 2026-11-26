@@ -96,14 +96,14 @@ impl DatabaseFile {
     /// one, a stored value. Without either, any key, or none, matches.
     ///
     /// # Errors
-    /// Returns [`StoreError::SecretSource`] carrying the key's
+    /// Returns [`crate::SecretFailure::Source`] carrying the key's
     /// [`crate::secrets::KeyFailure`], or a storage error.
     pub async fn verify_key(&mut self, key: Option<&Path>) -> Result<(), StoreError> {
         let mut tx = self.0.begin().await.map_err(StoreError::database)?;
         Store::key_binding_on(&mut tx, key)
             .await?
             .map(drop)
-            .map_err(StoreError::SecretSource)
+            .map_err(StoreError::secret)
     }
 
     /// Closes the connection, so the file can be moved or deleted.

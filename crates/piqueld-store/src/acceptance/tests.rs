@@ -1,5 +1,6 @@
 use super::super::testing::template;
 use super::*;
+use crate::EnvironmentError;
 
 /// Saves a manifest declaring `staging` and `preview`, then creates the
 /// environment `qa`.
@@ -73,7 +74,7 @@ async fn renames_never_switch_the_configuration_an_environment_deploys() {
     ] {
         assert!(matches!(
             store.force(rename(id, name)).await,
-            Err(StoreError::EnvironmentConfigured { environment })
+            Err(StoreError::Environment(EnvironmentError::Configured { environment }))
                 if environment.as_str() == configured
         ));
     }
@@ -228,7 +229,7 @@ async fn declared_environments_are_managed_by_the_manifest() {
     ] {
         assert!(matches!(
             store.force(refused).await,
-            Err(StoreError::EnvironmentDeclared { .. })
+            Err(StoreError::Environment(EnvironmentError::Declared { .. }))
         ));
     }
 
@@ -300,7 +301,7 @@ async fn edits_declare_no_new_environments() {
         };
         assert!(matches!(
             store.force(typo).await,
-            Err(StoreError::EnvironmentUnknown { environment }) if environment == "stagign"
+            Err(StoreError::Environment(EnvironmentError::Unknown { environment })) if environment == "stagign"
         ));
     }
     assert_eq!(

@@ -1,6 +1,7 @@
 //! Applications with several environments: independent deploys, shared history and environment branches.
 
 use super::*;
+use piqueld_store::EnvironmentError;
 
 /// Environments refuse an invalid branch or commit like previews do, as a
 /// malformed request field rather than a manifest validation failure.
@@ -144,7 +145,7 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
                 None,
             )
             .await,
-        Err(ApplicationError::Store(StoreError::EnvironmentRequired { environments }))
+        Err(ApplicationError::Store(StoreError::Environment(EnvironmentError::Required { environments })))
             if environments.len() == 2
     ));
 
@@ -198,9 +199,9 @@ async fn environments_deploy_independently_and_runtime_commands_never_pick_one()
                 None
             )
             .await,
-        Err(ApplicationError::Store(
-            StoreError::ConfirmationRequired { .. }
-        ))
+        Err(ApplicationError::Store(StoreError::Environment(
+            EnvironmentError::ConfirmationRequired { .. }
+        )))
     ));
     let MutationResponse::Deleted(deleted) = service
         .accept(

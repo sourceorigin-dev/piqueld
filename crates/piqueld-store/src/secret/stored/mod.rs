@@ -5,6 +5,7 @@ use super::{
     NormalizedApplication, SecretOwner, SecretScope, SecretSource, Store, StoreError,
     deletion::SecretDeletion, now_ms,
 };
+use crate::SecretFailure;
 use crate::{Actor, Author};
 use piqueld_core::EventKind;
 use piqueld_core::{
@@ -116,11 +117,11 @@ impl Store {
     /// Creates or rotates a stored secret; rotation only affects a later
     /// deployment. `expected` is the current generation (zero to create) and,
     /// when the caller read it, the access: an existing secret whose access
-    /// changed fails with `SecretAccessConflict`. A new secret gets `access`, or
-    /// every environment and no previews; an existing one keeps its access unless
-    /// `access` replaces it. Rejected while the application or secret is being
-    /// deleted, and for names the manifest declares as generated. The author's
-    /// actor needs `secrets:write`, checked in the transaction.
+    /// changed fails with `SecretFailure::AccessConflict`. A new secret gets
+    /// `access`, or every environment and no previews; an existing one keeps
+    /// its access unless `access` replaces it. Rejected while the application
+    /// or secret is being deleted, and for names the manifest generates. The
+    /// author's actor needs `secrets:write`, checked in the transaction.
     /// # Errors
     /// Returns invalid input, refusal, conflicts, quota, key or database errors.
     pub async fn put_stored_secret<'a>(
@@ -188,7 +189,7 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
             if count >= 100 {
-                return Err(StoreError::SecretQuota);
+                return Err(StoreError::Secret(SecretFailure::Quota));
             }
         }
         let usage = sqlx::query!("SELECT COUNT(*) AS versions, COALESCE(SUM(length(ciphertext)),0) AS bytes FROM application_secret_versions WHERE application_id=?1 AND available=1",id)
@@ -202,7 +203,7 @@ impl Store {
                 generation,
                 &value,
             )
-            .map_err(StoreError::SecretSource)?;
+            .map_err(StoreError::secret)?;
         let now = now_ms();
         let default = SecretAccess::default();
         let created = access.unwrap_or(&default);
@@ -239,8 +240,8 @@ impl Store {
     /// transaction, which also records the request's change.
     ///
     /// # Errors
-    /// Returns refusal, absence, deletion in progress (`SecretDeleting`), a
-    /// changed access (`SecretAccessConflict`), unknown environments
+    /// Returns refusal, absence, deletion in progress (`SecretFailure::Deleting`), a
+    /// changed access (`SecretFailure::AccessConflict`), unknown environments
     /// (`InvalidInput`), or database errors.
     pub async fn set_secret_access(
         &self,
@@ -256,7 +257,7 @@ impl Store {
         Self::require_secrets_write_on(&mut tx, actor, application).await?;
         let current = Self::stored_secret_on(&mut tx, application, name).await?;
         if current.metadata.deleting {
-            return Err(StoreError::SecretDeleting);
+            return Err(StoreError::Secret(SecretFailure::Deleting));
         }
         Self::check_expected_access(&current.access, expected)?;
         let description = Self::write_access_on(&mut tx, application, name, access).await?;
@@ -281,7 +282,7 @@ impl Store {
         expected: Option<&SecretAccess>,
     ) -> Result<(), StoreError> {
         if expected.is_some_and(|expected| expected != current) {
-            return Err(StoreError::SecretAccessConflict);
+            return Err(StoreError::Secret(SecretFailure::AccessConflict));
         }
         Ok(())
     }
@@ -385,7 +386,7 @@ impl Store {
 
     /// Checks that `app`, rendered for `environment`, may use its application
     /// store: no declared secret is also stored, and every stored secret it
-    /// mounts allows the environment (`SecretAccessDenied`, naming the first
+    /// mounts allows the environment (`SecretFailure::AccessDenied`, naming the first
     /// that doesn't). Other unusable secrets fail later, when pinned.
     ///
     /// # Errors
@@ -405,17 +406,17 @@ impl Store {
                 | SecretProblem::Deleting { .. } => None,
             });
         match denied {
-            Some(secret) => Err(StoreError::SecretAccessDenied {
+            Some(secret) => Err(StoreError::Secret(SecretFailure::AccessDenied {
                 environment: environment.name.clone(),
                 secret,
-            }),
+            })),
             None => Ok(()),
         }
     }
 
     /// Checks a preview of `app` for `environment`; see `check_secret_access_on`.
     /// # Errors
-    /// Returns `SecretAccessDenied`, validation, or database errors.
+    /// Returns `SecretFailure::AccessDenied`, validation, or database errors.
     pub async fn check_secret_access(
         &self,
         environment: &EnvironmentView,
@@ -425,11 +426,11 @@ impl Store {
     }
 
     /// Reserves a stored secret for deletion and returns each environment's
-    /// Docker secrets to remove. A new deletion is refused (`SecretReferenced`)
-    /// while any environment still uses it (see `secret_in_use_on`). Resuming
-    /// an existing reservation skips that check and reuses its token. `actor`
-    /// needs `secrets:write` on the application, checked in the reserving
-    /// transaction.
+    /// Docker secrets to remove. A new deletion is refused
+    /// (`SecretFailure::Referenced`) while any environment still uses it (see
+    /// `secret_in_use_on`). Resuming an existing reservation skips that check
+    /// and reuses its token. `actor` needs `secrets:write` on the application,
+    /// checked in the reserving transaction.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -473,7 +474,7 @@ impl Store {
                 if Self::secret_in_use_on(&mut tx, &environment, name, SecretSource::Stored, copies)
                     .await?
                 {
-                    return Err(StoreError::SecretReferenced);
+                    return Err(StoreError::Secret(SecretFailure::Referenced));
                 }
             }
         }

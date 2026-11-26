@@ -401,7 +401,7 @@ impl Store {
             encoding: SecretEncoding::Hex,
         }
         .generate()
-        .map_err(StoreError::SecretSource)?;
+        .map_err(StoreError::secret)?;
         let secret = Zeroizing::new(
             String::from_utf8(std::mem::take(&mut *generated)).map_err(StoreError::corrupt)?,
         );
@@ -414,7 +414,7 @@ impl Store {
                 1,
                 secret.as_bytes(),
             )
-            .map_err(StoreError::SecretSource)?;
+            .map_err(StoreError::secret)?;
         let (id, now) = (application.as_str(), now_ms());
         sqlx::query!(
             "INSERT INTO webhook_secrets(application_id,nonce,ciphertext,created_at_ms) VALUES(?1,?2,?3,?4) ON CONFLICT(application_id) DO UPDATE SET nonce=excluded.nonce,ciphertext=excluded.ciphertext,created_at_ms=excluded.created_at_ms",
@@ -498,7 +498,7 @@ impl Store {
                 )
             })
             .map(Some)
-            .map_err(StoreError::SecretSource)
+            .map_err(StoreError::secret)
     }
 }
 

@@ -10,6 +10,7 @@ use piqueld_core::{
     api::{BranchState, DeletedPreview, EnvironmentView, LocalSnapshot, PreviewView},
     manifest::RepositoryManifest,
 };
+use piqueld_store::EnvironmentError;
 use piqueld_store::{PreviewOrigins, StoreError};
 use std::sync::Arc;
 
@@ -73,7 +74,9 @@ impl ApplicationService {
             .spec()
             .manifest
             .as_ref()
-            .ok_or(StoreError::PreviewRequiresRepository)?
+            .ok_or(StoreError::Environment(
+                EnvironmentError::PreviewRequiresRepository,
+            ))?
             .repository
             .url
             .clone();

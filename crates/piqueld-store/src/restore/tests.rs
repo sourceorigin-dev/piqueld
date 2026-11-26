@@ -1,5 +1,6 @@
 use super::*;
 use crate::Actor::Daemon;
+use crate::SecretFailure;
 use crate::{Mutation, MutationResponse, Restore};
 use crate::{
     OperationState,
@@ -300,7 +301,7 @@ async fn narrowed_secret_access_applies_to_restores() {
         .expect("set secret access succeeds");
     assert!(matches!(
         restore(&store, &environment, &first.id).await,
-        Err(StoreError::SecretAccessDenied { secret, .. }) if secret == "stripe"
+        Err(StoreError::Secret(SecretFailure::AccessDenied { secret, .. })) if secret == "stripe"
     ));
 }
 

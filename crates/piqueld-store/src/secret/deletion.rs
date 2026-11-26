@@ -1,5 +1,6 @@
 //! Reserve cleanup under the writer lock, then release it before Docker I/O.
 use super::{EnvironmentId, NormalizedApplication, SecretScope, SecretSource, Store, StoreError};
+use crate::SecretFailure;
 use crate::StoredEnvironment;
 use piqueld_core::EventKind;
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,7 +41,7 @@ impl Store {
         }
         .map_err(StoreError::database)?;
         if deleting.iter().any(|name| mounted.contains(name.as_str())) {
-            return Err(StoreError::SecretDeleting);
+            return Err(StoreError::Secret(SecretFailure::Deleting));
         }
         Ok(())
     }
@@ -88,7 +89,7 @@ impl Store {
     }
 
     /// Reserves an environment's secret for deletion and returns the runtime
-    /// versions to remove. A new deletion is refused (`SecretReferenced`)
+    /// versions to remove. A new deletion is refused (`SecretFailure::Referenced`)
     /// while the environment still uses it (see `secret_in_use_on`). Resuming
     /// an existing reservation skips that check and reuses its token. The
     /// author's actor needs `secrets:write` on the environment's
@@ -127,7 +128,7 @@ impl Store {
             && Self::secret_in_use_on(&mut tx, &app, name, SecretSource::Generated, &versions)
                 .await?
         {
-            return Err(StoreError::SecretReferenced);
+            return Err(StoreError::Secret(SecretFailure::Referenced));
         }
         let reserving = row.deletion_id.is_none();
         let deletion_id = row

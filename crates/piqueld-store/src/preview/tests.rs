@@ -143,7 +143,8 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
     let (created, refused): (Vec<_>, Vec<_>) = results.into_iter().partition(Result::is_ok);
     let created = created.into_iter().map(Result::unwrap).collect::<Vec<_>>();
     assert_eq!((created.len(), refused.len()), (2, 3));
-    let Err(StoreError::PreviewLimitReached(reached)) = &refused[0] else {
+    let Err(StoreError::Environment(EnvironmentError::PreviewLimitReached(reached))) = &refused[0]
+    else {
         panic!("{:?}", refused[0]);
     };
     assert_eq!(
@@ -204,7 +205,7 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
     );
     assert!(matches!(
         create(&lowered, &application, "feat/other", None).await,
-        Err(StoreError::PreviewLimitReached(reached)) if reached.limit == PreviewLimit::Total
+        Err(StoreError::Environment(EnvironmentError::PreviewLimitReached(reached))) if reached.limit == PreviewLimit::Total
     ));
     let usage = lowered
         .preview_usage(&Scope::All)
@@ -225,7 +226,7 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
         )
         .await
         .expect("accept succeeds");
-    let Err(StoreError::PreviewLimitReached(reached)) =
+    let Err(StoreError::Environment(EnvironmentError::PreviewLimitReached(reached))) =
         create(&store, &application, "feat/other", None).await
     else {
         panic!("a preview being deleted still counts");
@@ -239,7 +240,9 @@ async fn previews_need_a_repository_and_environment_changes_never_reach_them() {
     let saved = save(&store, true).await;
     assert!(matches!(
         create(&store, &saved, "feat/login", None).await,
-        Err(StoreError::PreviewRequiresRepository)
+        Err(StoreError::Environment(
+            EnvironmentError::PreviewRequiresRepository
+        ))
     ));
 
     let (_temp, store) = Store::temporary().await;
@@ -337,7 +340,7 @@ async fn previews_mount_shared_secrets_only_when_their_access_allows_previews() 
         .expect("put stored secret succeeds");
     assert!(matches!(
         store.check_secret_access(&preview, &rendered).await,
-        Err(StoreError::SecretAccessDenied { secret, .. }) if secret == "stripe"
+        Err(StoreError::Secret(SecretFailure::AccessDenied { secret, .. })) if secret == "stripe"
     ));
     let named = SecretAccess {
         environments: EnvironmentAccess::Only([preview.id.clone()].into()),
@@ -492,7 +495,9 @@ async fn local_snapshots_create_previews_within_limits_and_record_their_provenan
             (NOTES, &first)
         )
         .await,
-        Err(StoreError::PreviewLimitReached(_))
+        Err(StoreError::Environment(
+            EnvironmentError::PreviewLimitReached(_)
+        ))
     ));
     assert!(matches!(
         local(

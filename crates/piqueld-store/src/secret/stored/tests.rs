@@ -1,5 +1,6 @@
 use super::*;
 use crate::Actor::Daemon;
+use crate::SecretFailure;
 use crate::{Mutation, MutationResponse};
 use piqueld_core::{
     EnvironmentName,
@@ -233,7 +234,7 @@ async fn capture_and_pinning_deny_stored_secrets_outside_the_access_list() {
     let denied = |result: Result<_, StoreError>| {
         matches!(
             result,
-            Err(StoreError::SecretAccessDenied { environment, secret })
+            Err(StoreError::Secret(SecretFailure::AccessDenied { environment, secret }))
                 if environment.as_str() == "staging" && secret == "stripe-dev"
         )
     };
@@ -282,7 +283,7 @@ async fn access_changes_from_an_outdated_read_are_refused() {
         store
             .set_secret_access(Daemon, &application, secret, &mine, Some(&read))
             .await,
-        Err(StoreError::SecretAccessConflict)
+        Err(StoreError::Secret(SecretFailure::AccessConflict))
     ));
     let current = store
         .set_secret_access(Daemon, &application, secret, &mine, Some(&theirs))
@@ -324,7 +325,7 @@ async fn uploads_from_an_outdated_access_read_are_refused() {
     };
     assert!(matches!(
         upload(Some(&read)).await,
-        Err(StoreError::SecretAccessConflict)
+        Err(StoreError::Secret(SecretFailure::AccessConflict))
     ));
     assert_eq!(
         upload(Some(&theirs))
@@ -500,7 +501,7 @@ async fn a_store_holds_at_most_100_secrets() {
     }
     assert!(matches!(
         put("secret-100".into()).await,
-        Err(StoreError::SecretQuota)
+        Err(StoreError::Secret(SecretFailure::Quota))
     ));
 }
 
@@ -521,7 +522,7 @@ async fn access_is_fixed_while_a_secret_is_deleted() {
         store
             .set_secret_access(Daemon, &application, "shared", &only([&staging]), None)
             .await,
-        Err(StoreError::SecretDeleting)
+        Err(StoreError::Secret(SecretFailure::Deleting))
     ));
     let secret = &store
         .stored_secrets(&application)

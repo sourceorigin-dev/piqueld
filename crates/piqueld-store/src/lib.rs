@@ -11,9 +11,11 @@ mod backup;
 mod build;
 mod deployment;
 mod environment;
+pub use environment::EnvironmentError;
 mod history;
 mod images;
 pub mod ingress;
+pub use ingress::HostnameConflict;
 mod jobs;
 mod journal;
 mod links;
@@ -34,7 +36,7 @@ pub use build::{BuildOutcome, LogAppend, LogEnding, ReusableBuild};
 pub use journal::JournalAction;
 pub(crate) use observability::DESTINATION_CHANGED;
 pub use observability::{ContainerCursors, DestinationError, RetryError, traffic};
-pub use secret::{SecretDeletion, SecretPrecondition};
+pub use secret::{SecretDeletion, SecretFailure, SecretPrecondition};
 mod operation;
 mod preview;
 mod promotion;
@@ -107,79 +109,15 @@ pub enum StoreError {
     /// The edited manifest fails semantic validation.
     #[error(transparent)]
     Validation(#[from] piqueld_core::ValidationErrors),
-    /// Secret ciphertext or its master key could not be used.
-    #[error("secret storage is unavailable")]
-    SecretSource(#[source] secrets::SecretError),
-    /// Required values were discarded during lost-key recovery.
-    #[error(
-        "secret values unavailable: {names}; supply replacement values and start a new deployment"
-    )]
-    SecretUnavailable {
-        /// Logical names only, never values.
-        names: String,
-    },
-    /// Mounted secrets have no value: neither stored in the application's
-    /// store nor generated.
-    #[error(
-        "secret values missing: {names}; store them with `piquelctl app secret` or declare them in spec.secrets, then deploy again"
-    )]
-    SecretMissing {
-        /// Logical names only, never values.
-        names: String,
-    },
-    /// An environment mounts a stored secret whose access list excludes it.
-    #[error("environment {environment} may not mount secret {secret}: its access list excludes it")]
-    SecretAccessDenied {
-        /// Environment being deployed or planned.
-        environment: EnvironmentName,
-        /// Logical secret name.
-        secret: String,
-    },
-    /// Lost-key recovery was requested, but the current key still works.
-    #[error("the secret master key still works; recovery would discard values needlessly")]
-    SecretKeyUsable,
-    /// Saved configuration or a retained deployment still refers to the secret.
-    #[error("secret is still referenced by application configuration or deployment")]
-    SecretReferenced,
-    /// Runtime cleanup is pending and may already have removed some versions.
-    #[error("secret deletion is in progress; retry deletion to finish cleanup")]
-    SecretDeleting,
-    /// The secret's access changed since the caller read it.
-    #[error("the secret's access changed since it was read")]
-    SecretAccessConflict,
-    /// A store holds a bounded number of secrets and retained ciphertext,
-    /// without evicting deployment pins.
-    #[error(
-        "secret storage quota exceeded (100 secrets, 1000 versions or 100 MiB per environment or application store); delete unused secrets to free space"
-    )]
-    SecretQuota,
-    /// A secret changed after the caller inspected its metadata.
-    #[error("secret generation changed: expected {expected}, actual {actual}")]
-    SecretVersionConflict {
-        /// Version supplied by the caller.
-        expected: i64,
-        /// Current logical secret version.
-        actual: i64,
-    },
-    /// A public hostname belongs to another environment, another
-    /// application's wildcard, or the installation.
-    #[error(
-        "hostname {hostname} is reserved by another environment, another application's wildcard, or this installation"
-    )]
-    HostnameConflict {
-        /// Conflicting canonical public hostname.
-        hostname: String,
-    },
-    /// Another environment of the same application renders the same hostname.
-    #[error(
-        "hostname {hostname} is reserved by environment {environment} of this application; give each environment its own hostname, e.g. `hostname = \"${{{{ vars.domain }}}}\"` with a different `domain` per environment"
-    )]
-    SharedHostnameConflict {
-        /// Conflicting canonical public hostname.
-        hostname: String,
-        /// Sibling environment holding the reservation.
-        environment: EnvironmentName,
-    },
+    /// A secret could not be stored, read or mounted.
+    #[error(transparent)]
+    Secret(#[from] SecretFailure),
+    /// A public hostname is reserved elsewhere.
+    #[error(transparent)]
+    Hostname(#[from] HostnameConflict),
+    /// An environment or preview could not be selected, renamed or created.
+    #[error(transparent)]
+    Environment(#[from] EnvironmentError),
     /// A storage operation failed without a lower-level source.
     #[error("database operation failed")]
     Database,
@@ -215,65 +153,9 @@ pub enum StoreError {
     /// Mutation cannot run during pending work or deletion.
     #[error("application is busy; wait for its current operation to finish")]
     Busy,
-    /// A runtime command named an application whose environment is ambiguous.
-    #[error(
-        "environment required: the application has {}; name one explicitly",
-        environment_list(environments)
-    )]
-    EnvironmentRequired {
-        /// The application's environments, in name order.
-        environments: Vec<EnvironmentName>,
-    },
-    /// Deleting an application with several environments must name every one.
-    #[error(
-        "deleting this application also deletes {}; confirm by naming every environment",
-        environment_list(environments)
-    )]
-    ConfirmationRequired {
-        /// The application's environments, in name order.
-        environments: Vec<EnvironmentName>,
-    },
     /// A repository-backed application's name is its manifests' name.
     #[error("a repository-backed application's name is managed by its repository manifest")]
     RepositoryManaged,
-    /// Previews deploy a branch of the application's manifest repository.
-    #[error(
-        "previews deploy a branch of the application's manifest repository; connect one with `piquelctl app repository` first"
-    )]
-    PreviewRequiresRepository,
-    /// Creating a preview would exceed a `[previews]` count limit.
-    #[error(
-        "creating this preview would exceed [previews] {} ({}); delete a preview first",
-        .0.limit,
-        .0.max
-    )]
-    PreviewLimitReached(Box<piqueld_core::api::PreviewLimitReached>),
-    /// Renaming would change which `[spec.environments.<name>]` block applies.
-    #[error(
-        "the saved manifest configures [spec.environments.{environment}]; renaming would change which configuration applies, so remove that block from the manifest first and add it back under the new name after renaming"
-    )]
-    EnvironmentConfigured {
-        /// Old or new name that has a block.
-        environment: EnvironmentName,
-    },
-    /// The saved manifest declares the environment, so it owns whether the
-    /// environment exists and where it deploys from.
-    #[error(
-        "the manifest declares [spec.environments.{environment}], so it decides where {environment} deploys from and whether it exists; change that block instead"
-    )]
-    EnvironmentDeclared {
-        /// The declared environment.
-        environment: EnvironmentName,
-    },
-    /// An edit would add a block, declaring an environment, for a name no
-    /// environment has.
-    #[error(
-        "no environment is named {environment}; declare new environments by adding a [spec.environments.{environment}] block with `piquelctl app apply`"
-    )]
-    EnvironmentUnknown {
-        /// The name no environment has.
-        environment: String,
-    },
     /// A promotion, or a promoted environment's source, was refused.
     #[error(transparent)]
     Promotion(#[from] PromotionError),
@@ -339,6 +221,11 @@ impl StoreError {
     /// Wraps an unclassified `SQLx` failure.
     fn database(source: sqlx::Error) -> Self {
         Self::DatabaseSource(source)
+    }
+
+    /// Wraps a failure to use secret ciphertext or its master key.
+    fn secret(source: secrets::SecretError) -> Self {
+        Self::Secret(SecretFailure::Source(source))
     }
 
     /// Classifies constraint violations on writes that name or reference rows.

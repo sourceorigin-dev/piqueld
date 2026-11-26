@@ -352,7 +352,7 @@ async fn saved_store(temp: &TempDir, id: &str) -> (Arc<Store>, ApplicationTempla
 async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_failure() {
     use piqueld::api::{ApplicationError, Mutation};
     use piqueld_core::edit::{ApplicationEdit, ServiceEdit};
-    use piqueld_store::StoreError;
+    use piqueld_store::{SecretFailure, StoreError};
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let (store, app) = saved_store(&temp, "app-cleanup").await;
     let gate = Arc::new(Gate::default());
@@ -395,23 +395,21 @@ async fn secret_cleanup_releases_writers_and_remains_reserved_after_runtime_fail
     };
     assert!(matches!(
         service.accept(Daemon, edit, Some(1), false, None).await,
-        Err(ApplicationError::Store(StoreError::SecretDeleting))
+        Err(ApplicationError::Store(StoreError::Secret(
+            SecretFailure::Deleting
+        )))
     ));
     gate.release.notify_one();
     assert!(matches!(
         cleanup.await.expect("the cleanup result is present"),
         Err(ApplicationError::Runtime(_))
     ));
+    let filter = piqueld_core::observability::EventFilter {
+        kind: Some("action_failed".into()),
+        ..Default::default()
+    };
     let failed = store
-        .filtered_events(
-            &piqueld_core::observability::EventFilter {
-                kind: Some("action_failed".into()),
-                ..Default::default()
-            },
-            &piqueld_store::Visibility::ALL,
-            None,
-            100,
-        )
+        .filtered_events(&filter, &piqueld_store::Visibility::ALL, None, 100)
         .await
         .expect("the filtered events list")
         .items;
