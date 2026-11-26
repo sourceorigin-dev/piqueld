@@ -1966,7 +1966,7 @@ async fn registration_refuses_scoped_callers_ambiguous_targets_and_taken_usernam
         f.auth
             .registration_start(both, "browser", Some(&alice))
             .await,
-        Err(AuthError::Invalid(_))
+        Err(AuthError::Invalid(message)) if message.contains("not both")
     ));
     assert!(matches!(
         f.auth
