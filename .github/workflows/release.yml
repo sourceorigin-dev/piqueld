@@ -1,15 +1,18 @@
 # Creates the GitHub release of a version when `just release` pushes its tag,
-# such as v0.1.0, with the static release archive install.sh installs and its
-# checksums, each with a build provenance attestation. gh creates the release
-# as a draft, uploads the files, then publishes it, so the latest release
-# always has its archive. Its notes list the pull requests merged since the
-# previous release. See docs/dev/releasing.md.
+# such as v0.1.0, with the static release archive install.sh installs, its
+# checksums and their build provenance attestations, published once its files
+# are uploaded. Its notes list the pull requests merged since the previous
+# release. It then makes the version the stable channel's newest build
+# (.github/actions/channel). See docs/dev/releasing.md.
 
 name: Release
 
 on:
   push:
-    tags: ["v*"]
+    # Not nightlies, such as v0.3.0-nightly.20261125, which the release checks
+    # publish. Their tags come from GITHUB_TOKEN, which starts no workflow, so
+    # this only guards against a nightly tag pushed by hand.
+    tags: ["v*", "!v*-nightly.*"]
 
 permissions:
   contents: read
@@ -28,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
-      # Creates the release.
+      # Creates the release, and moves the stable tag.
       contents: write
       # Signs and stores the build provenance attestation.
       id-token: write
@@ -58,10 +61,18 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: target/dist/*
+      # The notes start from the previous stable release, not a nightly.
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          previous=$(gh release list --exclude-pre-releases --exclude-drafts --limit 1 \
+            --json tagName --jq '.[0].tagName // empty')
           gh release create "$GITHUB_REF_NAME" --verify-tag \
-            --title "piqueld ${GITHUB_REF_NAME#v}" --generate-notes target/dist/*
+            --title "piqueld ${GITHUB_REF_NAME#v}" --generate-notes ${previous:+--notes-start-tag "$previous"} \
+            target/dist/*.tar.gz target/dist/SHA256SUMS
+      - uses: ./.github/actions/channel
+        with:
+          channel: stable
+          token: ${{ github.token }}

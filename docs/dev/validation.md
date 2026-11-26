@@ -222,10 +222,12 @@ these checks run after a pull request merges instead of before:
 
 They run on each push to `main` that changes what they build from, such as a
 manifest, the lockfile, a build script, a migration, the toolchain, the flake,
-the dashboard, the examples, `install.sh` or `xtask`. They also run every night at 04:00 UTC,
+the dashboard, the examples, `install.sh` or `xtask`. They also run every night at midnight UTC,
 which catches the rest and what breaks without a commit, such as a new stable
 Rust or a new runner image. Only the latest commit is checked: a push cancels
-the run of the one before it.
+the run of the one before it. Once every check of the nightly run passes, its
+`nightly` job publishes the archive the `install` job built and installed as
+the [nightly channel's](releasing.md#channels) build.
 
 While a check fails on `main`, an issue titled *Release checks fail on main*
 stays open. The first failure opens it, each later one comments on it, and the
@@ -240,6 +242,9 @@ access to the repository:
 ```console
 gh workflow run release-checks.yml --ref <branch>
 ```
+
+Add `-f nightly=true` to build and install a nightly instead, as the nightly
+run does; on a branch other than `main`, it isn't published.
 
 The Nix job caches the store, including crane's dependency builds and the
 dashboard. It roots the dependency builds with out-links, so the cache

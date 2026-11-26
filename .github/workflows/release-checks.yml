@@ -1,6 +1,8 @@
 # Release builds of piqueld, checked after merging instead of before: `nix`,
-# `package` (publish --dry-run) and `install` (dist, then install.sh). What
-# they cover, when they run and the cache notes are in docs/dev/validation.md.
+# `package` (publish --dry-run) and `install` (dist, then install.sh). The
+# midnight run on main also publishes the build `install` checked as the
+# nightly channel's (`nightly`). What they cover, when they run and the cache
+# notes are in docs/dev/validation.md.
 
 name: Release checks
 
@@ -29,13 +31,20 @@ on:
       - .github/workflows/release-checks.yml
       - .github/actions/report/**
   schedule:
-    - cron: "0 4 * * *"
+    - cron: "0 0 * * *"
   workflow_dispatch:
+    inputs:
+      nightly:
+        description: Build a nightly; on main, also publish it.
+        type: boolean
+        default: false
 
-# Only a branch's latest commit matters; other branches leave main's alone.
+# Only a branch's latest commit matters; other branches leave main's alone. A
+# nightly run is never cancelled, nor cancels the others, so a push can't stop
+# it publishing.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}${{ (github.event_name == 'schedule' || inputs.nightly) && '-nightly' || '' }}
+  cancel-in-progress: ${{ !(github.event_name == 'schedule' || inputs.nightly) }}
 
 permissions:
   contents: read
@@ -116,9 +125,13 @@ jobs:
           shared-key: dist
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask dist
+        env:
+          PIQUELD_BUILD_CHANNEL: ${{ (github.event_name == 'schedule' || inputs.nightly) && 'nightly' || '' }}
       - name: Install with install.sh, then update
         run: |
-          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml)
+          archive=$(basename target/dist/piqueld-*-x86_64-linux.tar.gz)
+          version=${archive#piqueld-}
+          version=${version%-x86_64-linux.tar.gz}
           for run in install update; do
             echo "::group::$run"
             PIQUELD_VERSION="$version" PIQUELD_RELEASE_URL="file://$PWD/target/dist" sh apps/site/install.sh --yes
@@ -130,11 +143,108 @@ jobs:
       - name: Show the daemon's logs
         if: failure()
         run: sudo journalctl --unit piqueld --no-pager
+      - if: github.event_name == 'schedule' || inputs.nightly
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightly
+          path: target/dist
+          retention-days: 3
+
+  # Publishes the nightly the install job built and installed as a GitHub
+  # prerelease tagged with its version, such as v0.3.0-nightly.20261125, then
+  # makes it the nightly channel's newest build (.github/actions/channel),
+  # unless the channel already has this commit or a newer one. Last, it deletes nightlies
+  # older than two weeks, but never the one the channel's feed names.
+  nightly:
+    name: nightly
+    needs: [nix, package, install]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Creates the release, and moves the nightly tag.
+      contents: write
+      # Signs and stores the build provenance attestation.
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nightly
+          path: target/dist
+      # Outputs the version the feed names now, `version`, and the tag it
+      # names once this run is done, `current`, which pruning keeps. Only a
+      # missing feed, before the first nightly, names none. Skips a build no
+      # newer than the feed's.
+      - name: Skip a build no newer than the channel's
+        id: published
+        run: |
+          status=$(curl --silent --location --retry 3 --output feed.json --write-out '%{http_code}' \
+            "https://github.com/$GH_REPO/releases/download/channels/nightly.json")
+          case "$status" in
+          200) version=$(jq -er .version.number feed.json) at=$(jq -er .version.committed_at_ms feed.json) ;;
+          404) version='' at=0 ;;
+          *) echo "::error::reading the nightly feed failed with HTTP $status"; exit 1 ;;
+          esac
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          # This commit, or an older one, such as a rerun of an old run.
+          if [ "$at" -ge "$(jq -r .version.committed_at_ms target/dist/nightly.json)" ]; then
+            echo "The nightly channel already has $(jq -r .version.commit feed.json), no older than $GITHUB_SHA."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+            echo "current=v$version" >>"$GITHUB_OUTPUT"
+          else
+            echo "current=v$(jq -r .version.number target/dist/nightly.json)" >>"$GITHUB_OUTPUT"
+          fi
+      - if: steps.published.outputs.skip != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: target/dist/*
+      # A release the feed doesn't name yet was left by a run that failed
+      # before the feed step, so no one installed it: replace it with this
+      # run's build, whose files the feed names.
+      - name: Create the nightly's GitHub release
+        if: steps.published.outputs.skip != 'true'
+        env:
+          PUBLISHED: ${{ steps.published.outputs.version }}
+        run: |
+          version=$(jq -r .version.number target/dist/nightly.json)
+          if [ "$PUBLISHED" = "$version" ]; then
+            echo "::error::v$version is already published from another commit: one nightly is published a day"
+            exit 1
+          fi
+          gh release delete "v$version" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "v$version" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "piqueld $version" --generate-notes \
+            target/dist/*.tar.gz target/dist/SHA256SUMS
+      - if: steps.published.outputs.skip != 'true'
+        uses: ./.github/actions/channel
+        with:
+          channel: nightly
+          token: ${{ github.token }}
+      # Never the one the feed names.
+      - name: Delete nightlies older than two weeks
+        env:
+          CURRENT: ${{ steps.published.outputs.current }}
+        run: |
+          cutoff=$(date --utc --date '14 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh release list --limit 200 --json tagName,isPrerelease,publishedAt \
+            --jq ".[] | select(.isPrerelease and (.tagName | contains(\"-nightly.\"))
+              and .tagName != \"$CURRENT\" and .publishedAt < \"$cutoff\") | .tagName" |
+            while read -r tag; do
+              gh release delete "$tag" --yes --cleanup-tag
+            done
 
   # Keeps an issue open while main fails a release check.
   report:
     name: report
-    needs: [nix, package, install]
+    needs: [nix, package, install, nightly]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

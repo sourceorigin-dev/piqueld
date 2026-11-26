@@ -3,9 +3,9 @@
 //!
 //! Release builds stamp these at compile time through environment
 //! variables: `cargo xtask dist` and the Nix packages set
-//! `PIQUELD_BUILD_COMMIT` and `PIQUELD_BUILD_COMMIT_TIME`, the release
-//! workflow sets `PIQUELD_BUILD_CHANNEL`, and `PIQUELD_BUILD_VERSION`
-//! replaces the crate version. Other builds, such as `cargo install` and
+//! `PIQUELD_BUILD_COMMIT` and `PIQUELD_BUILD_COMMIT_TIME`, `cargo xtask dist`
+//! sets `PIQUELD_BUILD_VERSION`, which replaces the crate version, and with
+//! `--channel`, `PIQUELD_BUILD_CHANNEL`. Other builds, such as `cargo install` and
 //! development builds, know only their crate version. A commit time or
 //! channel that doesn't parse fails the build.
 
@@ -46,6 +46,33 @@ pub struct Version {
 }
 
 compared_as_string!(Channel);
+
+/// The repository whose GitHub releases hold every published build, and the
+/// `channels` release with each channel's [`Feed`].
+pub const REPOSITORY_URL: &str = "https://github.com/sourceorigin-dev/piqueld";
+
+impl Channel {
+    /// The file its feed is published as, such as `nightly.json`.
+    #[must_use]
+    pub fn feed_file(self) -> String {
+        format!("{self}.json")
+    }
+}
+
+/// The newest build on a channel. The workflow that publishes a build on a
+/// channel also replaces its feed, so installations can tell whether their
+/// channel has a newer build than theirs.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct Feed {
+    /// The build: its version, commit and channel.
+    pub version: Version,
+    /// Its release page, with its notes.
+    pub notes_url: String,
+    /// Its `x86_64` Linux release archive, which install.sh installs.
+    pub archive_url: String,
+    /// The archive's SHA-256, in lowercase hex.
+    pub archive_sha256: String,
+}
 
 /// This binary's version number, for `--version`.
 pub const NUMBER: &str = match option_env!("PIQUELD_BUILD_VERSION") {

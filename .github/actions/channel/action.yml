@@ -1,0 +1,40 @@
+# Makes the build in target/dist its channel's newest: creates the channel's
+# tag, `stable` or `nightly`, again at the built commit, then uploads the
+# channel's feed, target/dist/<channel>.json, to the rolling `channels`
+# release. Run it once the build's own release is published, so the feed
+# never names missing files, with `contents: write`. Why the tag is created
+# again, and the feed goes last: docs/dev/releasing.md#channels.
+
+name: Publish a channel's build
+description: Points a release channel's tag and feed at the build in target/dist.
+
+inputs:
+  channel:
+    description: The channel, `stable` or `nightly`.
+    required: true
+  token:
+    description: A token that can write the repository's releases and tags.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CHANNEL: ${{ inputs.channel }}
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        feed="target/dist/$CHANNEL.json"
+        # The commit the build reports, which the tag must name too.
+        commit=$(jq -r .version.commit "$feed")
+        gh api --method DELETE "repos/$GH_REPO/git/refs/tags/$CHANNEL" >/dev/null 2>&1 || true
+        gh api --method POST "repos/$GH_REPO/git/refs" \
+          -f ref="refs/tags/$CHANNEL" -f sha="$commit" >/dev/null
+        # A prerelease, so it is never the latest release install.sh installs.
+        gh release view channels >/dev/null 2>&1 ||
+          gh release create channels --prerelease --latest=false --target "$commit" \
+            --title "Release channels" \
+            --notes "Each channel's newest build, which piqueld checks for updates: stable.json and nightly.json."
+        gh release upload channels "$feed" --clobber
