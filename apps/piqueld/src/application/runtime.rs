@@ -392,17 +392,12 @@ impl<D: DockerApi> ApplicationRuntime<D> {
                 let (commit, image_id) = self
                     .prepare_git(environment, name, &source, repository, build)
                     .await
-                    .map_err(|error| {
-                        if matches!(
-                            error.downcast_ref(),
-                            Some(DockerError::BuilderUnavailable(_))
-                        ) {
-                            error
-                                .downcast()
-                                .map_or_else(BoundaryError::GitBuild, BoundaryError::Runtime)
-                        } else {
-                            BoundaryError::GitBuild(error)
-                        }
+                    .map_err(|error| match error.downcast::<crate::git::GitError>() {
+                        Ok(crate::git::GitError::Build(
+                            docker @ DockerError::BuilderUnavailable(_),
+                        )) => BoundaryError::Runtime(docker),
+                        Ok(git) => BoundaryError::GitBuild(git.into()),
+                        Err(error) => BoundaryError::GitBuild(error),
                     })?;
                 Ok(ResolvedSource::Git {
                     requested: source,
@@ -478,7 +473,9 @@ impl<D: DockerApi> ApplicationRuntime<D> {
             Err(error) => {
                 if !matches!(
                     error.downcast_ref(),
-                    Some(DockerError::BuilderUnavailable(_))
+                    Some(crate::git::GitError::Build(
+                        DockerError::BuilderUnavailable(_)
+                    ))
                 ) {
                     attempt
                         .log

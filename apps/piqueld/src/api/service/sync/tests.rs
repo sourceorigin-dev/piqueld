@@ -1,6 +1,7 @@
 pub(crate) use super::Schedule;
 use super::*;
 use crate::api::PreviewMutation;
+use crate::git::GitError;
 use parking_lot::Mutex;
 use piqueld_core::{EnvironmentId, EnvironmentName, TrackedBranch, manifest::parse_template_toml};
 use std::sync::Arc;
@@ -162,13 +163,14 @@ impl Fake {
 }
 
 impl Lister for Fake {
-    fn list(&self, url: &str) -> impl Future<Output = anyhow::Result<Heads>> + Send {
+    fn list(&self, url: &str) -> impl Future<Output = Result<Heads, GitError>> + Send {
         self.listed.lock().push(url.to_owned());
         let heads = self.heads.lock().clone();
         let url = url.to_owned();
         async move {
-            let heads =
-                heads.ok_or_else(|| anyhow::anyhow!("git ls-remote failed (exit status: 128)"))?;
+            let heads = heads.ok_or(GitError::ListFailed {
+                status: std::os::unix::process::ExitStatusExt::from_raw(128 << 8),
+            })?;
             Ok(Heads::new(
                 &url,
                 heads

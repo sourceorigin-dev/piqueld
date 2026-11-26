@@ -2,9 +2,10 @@
 //! gone, and deploying snapshots of local worktrees. Creating, deploying, and
 //! deleting one are mutations.
 use super::{ApplicationError, ApplicationService, Mutation, MutationResponse, PreviewMutation};
-use crate::git::Heads;
+use crate::git::{GitError, Heads};
 use axum::body::Bytes;
 use futures_util::Stream;
+use piqueld_core::ErrorChain as _;
 use piqueld_core::{
     ApplicationId, EnvironmentId, GitBranch, PreviewSlot,
     api::{BranchState, DeletedPreview, EnvironmentView, LocalSnapshot, PreviewView},
@@ -122,7 +123,7 @@ impl ApplicationService {
         let author = author.into();
         let listing = self.heads(application).await?.1;
         let heads = listing.as_ref().as_ref().map_err(|error| {
-            ApplicationError::RepositoryUnavailable(anyhow::anyhow!("{error:#}"))
+            ApplicationError::RepositoryUnavailable(anyhow::anyhow!("{}", error.chain()))
         })?;
         let mut deleted = Vec::new();
         for preview in self.store.previews(application).await? {
@@ -152,14 +153,12 @@ impl ApplicationService {
     async fn heads(
         &self,
         application: &ApplicationId,
-    ) -> Result<(Option<RepositoryManifest>, Arc<anyhow::Result<Heads>>), ApplicationError> {
+    ) -> Result<(Option<RepositoryManifest>, Arc<Result<Heads, GitError>>), ApplicationError> {
         let application = self.store.application(application).await?;
         let connection = application.application.spec().manifest.clone();
         let heads = match &connection {
             Some(connection) => self.listings.list(&connection.repository.url).await,
-            None => Arc::new(Err(anyhow::anyhow!(
-                "the application has no manifest repository"
-            ))),
+            None => Arc::new(Err(GitError::NoManifestRepository)),
         };
         Ok((connection, heads))
     }
@@ -171,7 +170,7 @@ impl ApplicationService {
         &self,
         preview: EnvironmentView,
         connection: Option<&RepositoryManifest>,
-        heads: &Result<Heads, anyhow::Error>,
+        heads: &Result<Heads, GitError>,
     ) -> Result<PreviewView, ApplicationError> {
         let hostnames = self
             .store
@@ -206,14 +205,14 @@ impl ApplicationService {
     fn branch_state(
         preview: &EnvironmentView,
         origins: &PreviewOrigins,
-        heads: Result<&Heads, &anyhow::Error>,
+        heads: Result<&Heads, &GitError>,
         fetched: Option<&str>,
     ) -> Result<BranchState, ApplicationError> {
         let identity = preview.preview().ok_or(StoreError::NotFound)?;
         let branch = identity.branch.as_str();
         Ok(match heads {
             Err(error) => BranchState::Unknown {
-                message: format!("{error:#}"),
+                message: error.chain(),
             },
             Ok(heads) if origins.local() => BranchState::Local {
                 head: heads.head(branch).map(str::to_owned),
