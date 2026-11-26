@@ -938,7 +938,7 @@ struct WriteTransaction<'a> {
 impl<'a> WriteTransaction<'a> {
     /// Commits the transaction, then gives up the writer's turn.
     async fn commit(self) -> Result<(), sqlx::Error> {
-        self.tx.commit().await
+        self.commit_holding().await.map(drop)
     }
 
     /// Commits the transaction, keeping the writer's turn until the returned
