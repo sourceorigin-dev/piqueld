@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::names::string_enum;
+use crate::names::{compared_as_string, string_enum};
 
 /// Bounded historical container output read directly from Docker.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
@@ -22,6 +22,30 @@ string_enum! {
         Stdout => "stdout",
         /// Standard error.
         Stderr => "stderr",
+    }
+}
+
+string_enum! {
+    /// Where a [`LogRecord`] came from. Its `stream` keeps it a `String`, so
+    /// a client still reads a source a newer daemon adds.
+    pub enum LogSource {
+        /// Standard output.
+        Stdout => "stdout",
+        /// Standard error.
+        Stderr => "stderr",
+        /// Merged terminal output of a container with a TTY.
+        Console => "console",
+    }
+}
+compared_as_string!(LogSource);
+
+impl From<LogStream> for LogSource {
+    /// The source of a selectable stream's records.
+    fn from(stream: LogStream) -> Self {
+        match stream {
+            LogStream::Stdout => Self::Stdout,
+            LogStream::Stderr => Self::Stderr,
+        }
     }
 }
 

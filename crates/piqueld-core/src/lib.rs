@@ -57,7 +57,9 @@ pub use names::{
     ApplicationName, EnvironmentName, EnvironmentNameError, GitBranch, GitBranchError, JobName,
     PreviewSlot, PreviewSlotError, PreviewSlug, RouteName, ServiceName, VolumeName, is_request_id,
 };
-pub use operation::{ApplicationState, Operation, OperationKind, OperationState, Phase};
+pub use operation::{
+    ApplicationState, Operation, OperationKind, OperationState, Phase, RuntimeHealth,
+};
 pub(crate) use planner::ActionReason;
 pub use planner::{
     ActionKind, DiagnosticSeverity, Plan, PlanAction, PlanDiagnostic, PlanRequest, PlanSummary,

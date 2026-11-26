@@ -68,14 +68,7 @@ pub(super) fn StreamFilter(
             <select
                 prop:value={move || stream.get().map_or("", LogStream::as_str)}
                 on:change={move |event| {
-                    stream
-                        .set(
-                            match event_target_value(&event).as_str() {
-                                "stdout" => Some(LogStream::Stdout),
-                                "stderr" => Some(LogStream::Stderr),
-                                _ => None,
-                            },
-                        );
+                    stream.set(LogStream::parse(&event_target_value(&event)));
                 }}
             >
                 <option value="">"Both"</option>

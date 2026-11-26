@@ -1,7 +1,9 @@
 //! The URLs of an environment's rendered routes and whether each is ready,
 //! derived only from state the daemon already observes. Clients read the
 //! result; none probes a URL or computes readiness itself.
-use crate::api::{DnsRecordState, IngressStatus, ObservedServiceView, PublicIngressStatus};
+use crate::api::{
+    DnsRecordState, IngressStatus, ObservedServiceView, PublicIngressStatus, RouteState,
+};
 use crate::manifest::{RouteTarget, ValidatedRoute, Visibility};
 use crate::names::string_enum;
 use crate::{Convergence, RouteName, ServiceName};
@@ -126,7 +128,7 @@ impl RouteUrl {
         let https = match status {
             _ if listener.is_some_and(str::is_empty) => Some("Its listener is unavailable".into()),
             _ if let Some(message) = listener => Some(message.to_owned()),
-            Some(status) if status.state == "ready" => None,
+            Some(status) if status.state == RouteState::Ready => None,
             Some(status) => Some(status.message.clone()),
             None => Some(
                 "Not checked yet: the daemon verifies HTTPS once the gateway serves the route"

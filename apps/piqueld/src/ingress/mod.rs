@@ -25,7 +25,7 @@ use piqueld_core::{
     EnvironmentId, InstanceId,
     api::{
         DnsRecordState, DnsRecords, IngressStatus, PrivateIngressStatus, PublicIngressStatus,
-        RouteStatus,
+        RouteState, RouteStatus,
     },
     manifest::{Hostname, RouteHostname, ValidatedRoute, Visibility},
     resource::{INGRESS_LABEL, INSTANCE_LABEL},
@@ -807,7 +807,7 @@ impl Ingress {
                     .route_state(&id, &route, exact, applied, healthy, private)
                     .await;
                 let dns = self.route_dns(&route.hostname);
-                if let Some(problem) = dns.message.filter(|_| state != "ready") {
+                if let Some(problem) = dns.message.filter(|_| state != RouteState::Ready) {
                     message = format!("DNS records ({}): {problem}", dns.state);
                 }
                 RouteStatus {
@@ -855,39 +855,42 @@ impl Ingress {
         applied: &RoutingTable,
         healthy: bool,
         private: &PrivateIngressStatus,
-    ) -> (&'static str, String) {
+    ) -> (RouteState, String) {
         if !self.enabled {
             return if healthy {
                 (
-                    "disabled",
+                    RouteState::Disabled,
                     "Ingress is disabled in daemon configuration".into(),
                 )
             } else {
-                ("failed", "Gateway shutdown is not confirmed; routing may still be active. See ingress health".into())
+                (RouteState::Failed, "Gateway shutdown is not confirmed; routing may still be active. See ingress health".into())
             };
         }
         let is_private = route.visibility == Visibility::Private;
         if is_private && self.node.is_none() {
             return if private.healthy {
-                ("disabled", "Private ingress is disabled in daemon TOML ([ingress.private]), so this private route is not served".into())
+                (RouteState::Disabled, "Private ingress is disabled in daemon TOML ([ingress.private]), so this private route is not served".into())
             } else {
-                ("failed", private.message.clone())
+                (RouteState::Failed, private.message.clone())
             };
         }
         if let Some(problem) = self.certificates.problem(&route.hostname) {
-            return ("failed", format!("No DNS-01 certificate: {problem}"));
+            return (
+                RouteState::Failed,
+                format!("No DNS-01 certificate: {problem}"),
+            );
         }
         if !applied
             .get(id)
             .is_some_and(|applied| applied.contains(route))
         {
             return (
-                "pending",
+                RouteState::Pending,
                 "Waiting for the gateway configuration to be applied".into(),
             );
         }
         if is_private && !private.healthy {
-            return ("pending", private.message.clone());
+            return (RouteState::Pending, private.message.clone());
         }
         let result = tokio::time::timeout(PROBE_LOOKUP_TIMEOUT, async {
             let hostname = route
@@ -906,9 +909,9 @@ impl Ingress {
         .context("the route check took over 10s")
         .and_then(|result| result);
         match result {
-            Ok(()) if is_private => ("ready", "DNS points at the apps node and the private listener serves trusted HTTPS; the tailnet hop and backend health are reported separately".into()),
-            Ok(()) if self.tunnel.is_some() => ("ready", "DNS and trusted HTTPS through the Cloudflare Tunnel verified from this daemon; backend health is reported separately".into()),
-            Ok(()) => ("ready", "DNS and trusted HTTPS verified from this daemon; backend health is reported separately".into()),
+            Ok(()) if is_private => (RouteState::Ready, "DNS points at the apps node and the private listener serves trusted HTTPS; the tailnet hop and backend health are reported separately".into()),
+            Ok(()) if self.tunnel.is_some() => (RouteState::Ready, "DNS and trusted HTTPS through the Cloudflare Tunnel verified from this daemon; backend health is reported separately".into()),
+            Ok(()) => (RouteState::Ready, "DNS and trusted HTTPS verified from this daemon; backend health is reported separately".into()),
             Err(error) => {
                 tracing::debug!(hostname=%route.hostname, visibility=%route.visibility, error=?error, "HTTPS is not ready");
                 let message = match &self.tunnel {
@@ -916,7 +919,7 @@ impl Ingress {
                     Some(tunnel) => format!("Public HTTPS is not verified yet. Check the proxied CNAME record to {}, the tunnel's connection state, and daemon logs", tunnel.hostname()),
                     None => "Public HTTPS is not verified yet. Check DNS A/AAAA records, inbound ports 80/443, and Caddy certificate diagnostics in daemon logs".into(),
                 };
-                ("pending", message)
+                (RouteState::Pending, message)
             }
         }
     }

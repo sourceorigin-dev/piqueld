@@ -2,7 +2,7 @@
 use super::DestinationRow;
 use crate::{Paging, Store, StoreError, new_id, now_ms, seconds_ms};
 use piqueld_core::{
-    Event, EventKind,
+    Event, EventKind, RuntimeHealth,
     api::Page,
     observability::{
         DeliveryState, Diagnostic, DiagnosticCode, EventScope, NotificationCategory,
@@ -760,8 +760,8 @@ impl Store {
                 self.observe_condition(
                     &row.environment_id,
                     Some(&row.environment_id),
-                    row.runtime_health.as_deref() == Some("degraded")
-                        || (row.runtime_health.as_deref() == Some("absent")
+                    row.runtime_health.as_deref() == Some(RuntimeHealth::Degraded.as_str())
+                        || (row.runtime_health.as_deref() == Some(RuntimeHealth::Absent.as_str())
                             && row.expected_services > 0),
                     observed,
                     max_gap_ms,

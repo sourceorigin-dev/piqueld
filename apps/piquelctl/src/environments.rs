@@ -22,7 +22,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use piqueld_client::{
     ApplicationView, Client, ClientError, CreateEnvironmentRequest, EnvironmentBranchRequest,
     EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView, EnvironmentView, LogTime,
-    Operation, PromoteRequest, Rollback, Visibility, edit::ApplicationEdit,
+    Operation, PromoteRequest, Rollback, RuntimeHealth, Visibility, edit::ApplicationEdit,
     environments::LogRecordStream,
 };
 use piqueld_core::wait;
@@ -1175,7 +1175,10 @@ async fn wait_until_stopped(
             continue;
         };
         let health = status.runtime_health.as_deref().unwrap_or("unknown");
-        if matches!(health, "stopped" | "absent") {
+        if matches!(
+            RuntimeHealth::parse(health),
+            Some(RuntimeHealth::Stopped | RuntimeHealth::Absent)
+        ) {
             wait.progress
                 .finish(TaskOutcome::Succeeded, "services stopped");
             return Ok(environment);

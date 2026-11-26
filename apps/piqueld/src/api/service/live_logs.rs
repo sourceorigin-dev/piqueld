@@ -5,7 +5,7 @@ use crate::application::{BoundaryError, RuntimeBoundary};
 use futures_util::{StreamExt as _, stream::BoxStream, stream::SelectAll};
 use piqueld_core::{
     EnvironmentId,
-    api::{LogRecord, LogStream, LogTime},
+    api::{LogRecord, LogSource, LogStream, LogTime},
 };
 use piqueld_docker::{ContainerStarts, ContainerState, DockerError, LogLines, Workload, now_ns};
 use std::collections::{HashSet, VecDeque};
@@ -178,7 +178,7 @@ impl LogFollower {
                 service: service.to_owned(),
                 task_id: task.to_owned(),
                 timestamp: LogTime(timestamp).to_string(),
-                stream: written.as_str().to_owned(),
+                stream: LogSource::from(written).into(),
                 message: LogRecord::clean_message(&message),
             })
             .collect()

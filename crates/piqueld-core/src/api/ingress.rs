@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::names::string_enum;
+use crate::names::{compared_as_string, string_enum};
 
 /// Managed gateway health, per listener, and route diagnostics.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -219,3 +219,19 @@ pub struct RouteStatus {
     /// Diagnostic explaining DNS, TLS, or gateway readiness.
     pub message: String,
 }
+
+string_enum! {
+    /// Whether a route serves trusted HTTPS. [`RouteStatus::state`] keeps
+    /// it a `String`, so a client still reads a state a newer daemon adds.
+    pub enum RouteState {
+        /// Ingress, or the private listener the route needs, is disabled.
+        Disabled => "disabled",
+        /// The gateway or HTTPS is not verified yet.
+        Pending => "pending",
+        /// DNS and trusted HTTPS are verified from the daemon.
+        Ready => "ready",
+        /// The route can't be served, such as without a certificate.
+        Failed => "failed",
+    }
+}
+compared_as_string!(RouteState);

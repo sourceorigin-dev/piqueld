@@ -7,7 +7,7 @@ use piqueld_client::{
     ApplicationSummary, ApplicationView, Export, FileSource, Import, Page, PlanView, RouteUrl,
     SecretDeclaration, SecretGenerator, SecretMount, ServiceFile, Source, Template,
     sync::{WebhookSecret, WebhookView},
-    system::RouteStatus,
+    system::{RouteState, RouteStatus},
 };
 use serde::Serialize;
 use std::io;
@@ -111,7 +111,7 @@ report!(Vec<RouteRow> as [RouteRow], self, out, {
                     route.dns_state.to_string(),
                     route.dns.to_string(),
                 ],
-                note: (route.state != "ready").then(|| route.message.clone()),
+                note: (route.state != RouteState::Ready).then(|| route.message.clone()),
             }
         },
     )
