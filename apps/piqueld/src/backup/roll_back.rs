@@ -85,11 +85,10 @@ pub enum RollBack {
 
 impl Backups {
     /// Rolls the data directory back to the newest pre-migration backup this
-    /// binary opens, once a newer piqueld migrated its database: makes room
-    /// among the [`RolledBack`] directories, verifies the backup as
-    /// [`Self::restore`] does, calls `stop_ingress` with the instance, moves
-    /// the state into a new [`RolledBack`] directory, and publishes the
-    /// backup. Does nothing when this binary opens the database, or there is
+    /// binary opens, once a newer piqueld migrated its database: verifies the
+    /// backup as [`Self::restore`] does, calls `stop_ingress` with the
+    /// instance, makes room among the [`RolledBack`] directories, moves the
+    /// state into a new one, and publishes the backup. Does nothing when this binary opens the database, or there is
     /// none.
     ///
     /// # Errors
@@ -131,9 +130,9 @@ impl Backups {
         if manifest.instance_id != live.instance_id.as_str() {
             bail!(Refusal::OtherInstance(manifest.instance_id));
         }
-        RolledBack::prune(data_dir, RolledBack::KEEP - 1)?;
         let staged = self.copy_verified(&backup, &manifest).await?;
         stop_ingress(&live.instance_id).await?;
+        RolledBack::prune(data_dir, RolledBack::KEEP - 1)?;
 
         let aside = data_dir.join(RolledBack::name(piqueld_store::now_ms()));
         fs::DirBuilder::new()
