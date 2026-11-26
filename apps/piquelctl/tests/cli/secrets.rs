@@ -30,6 +30,10 @@ fn ctrl_c_ends_a_pending_secret_read_from_stdin() {
         .expect("secret metadata requested");
     // wall-clock: nothing outside piquelctl shows its stdin read started, so
     // give it time to block in that read before the Ctrl-C.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "The test is synchronous, so it cannot await `wait::pause`."
+    )]
     thread::sleep(Duration::from_millis(200));
     Command::new("kill")
         .args(["-INT", &child.id().to_string()])

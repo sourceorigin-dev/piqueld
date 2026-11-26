@@ -5,3 +5,11 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-dbg-in-tests = true
 allow-print-in-tests = true
+
+# Every wait goes through `piqueld_core::wait`, whose `pause` is the one place
+# allowed to sleep.
+disallowed-methods = [
+  { path = "std::thread::sleep", reason = "wait with `piqueld_core::wait::pause` or `poll_until`" },
+  { path = "tokio::time::sleep", reason = "wait with `piqueld_core::wait::pause` or `poll_until`" },
+  { path = "tokio::time::sleep_until", reason = "wait with `piqueld_core::wait::pause` or `poll_until`" },
+]

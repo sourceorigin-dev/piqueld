@@ -71,6 +71,10 @@ fn read_request_uses_the_full_command_timeout() {
     let server = start_server(false, 1, |_| {
         // wall-clock: piquelctl is a real process, whose clock the test can't
         // pause; the reply comes late in its 1s --timeout.
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "The mock server's handler is a synchronous closure, so it cannot await `wait::pause`."
+        )]
         thread::sleep(Duration::from_millis(650));
         Reply::json(
             json!({"status": "ok", "daemon_version": "test", "api_version": "v1", "instance_id": "test"}),
