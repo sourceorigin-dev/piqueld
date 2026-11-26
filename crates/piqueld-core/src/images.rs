@@ -1,9 +1,6 @@
 //! Checked requested and immutable image references at the runtime boundary.
 
-use crate::{
-    names::validated_string,
-    resource::{Sha256Digest, image_name},
-};
+use crate::{manifest::ImageParts, names::validated_string, resource::Sha256Digest};
 
 validated_string!(
     /// A syntactically valid requested container image reference.
@@ -16,12 +13,12 @@ validated_string!(
     /// URLs, credentials, IPv6 registry authorities, whitespace, and query or
     /// fragment suffixes are rejected.
     #[schema(
-        pattern = r"^(?=.{1,512}$)(?=.{1,255}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@[a-z][a-z0-9]*(?:[_+.-][a-z][a-z0-9]*)*:[A-Za-z0-9=_-]{32,})?$)(?:(?:(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+)(?::0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@[a-z][a-z0-9]*(?:[_+.-][a-z][a-z0-9]*)*:[A-Za-z0-9=_-]{32,})?$"
+        pattern = r"^(?=.{1,512}$)(?=.{1,255}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@[a-z][a-z0-9]*(?:[_+.-][a-z][a-z0-9]*)*:[A-Za-z0-9=_-]{32,})?$)(?:(?:(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+)(?::0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))/|(?![^/]*\.[^/]*/)(?!localhost/))[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@[a-z][a-z0-9]*(?:[_+.-][a-z][a-z0-9]*)*:[A-Za-z0-9=_-]{32,})?$"
     )]
     ImageReference,
     ImageReferenceError,
     "image reference must use a supported repository, optional tag, and optional SHA-256 digest",
-    crate::manifest::valid_image_reference
+    |value: &str| ImageParts::parse(value).is_some()
 );
 validated_string!(
     /// A repository reference pinned to an explicit SHA-256 digest.
@@ -30,12 +27,12 @@ validated_string!(
     /// as [`ImageReference`], but requires a trailing SHA-256 digest containing
     /// exactly 64 lowercase hexadecimal digits.
     #[schema(
-        pattern = r"^(?=.{1,512}$)(?=.{1,255}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$)(?:(?:(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+)(?::0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$"
+        pattern = r"^(?=.{1,512}$)(?=.{1,255}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$)(?:(?:(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+)(?::0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))/|(?![^/]*\.[^/]*/)(?!localhost/))[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$"
     )]
     RepositoryDigest,
     RepositoryDigestError,
     "repository digest must use repository@sha256:<64 lowercase hexadecimal digits>",
-    crate::resource::immutable_digest_reference
+    |value: &str| ImageParts::parse(value).is_some_and(|parts| parts.is_pinned())
 );
 validated_string!(
     /// An immutable runtime image: a repository digest or a local SHA-256 image ID.
@@ -49,16 +46,29 @@ validated_string!(
     /// ID written as `sha256:` followed by exactly 64 lowercase hexadecimal
     /// digits. Mutable tags and unqualified repository names are rejected.
     #[schema(
-        pattern = r"^(?:sha256:[0-9a-f]{64}|(?=.{1,512}$)(?=.{1,255}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$)(?:(?:(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+)(?::0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64})$"
+        pattern = r"^(?:sha256:[0-9a-f]{64}|(?=.{1,512}$)(?=.{1,255}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$)(?:(?:(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+)(?::0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:0*(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))/|(?![^/]*\.[^/]*/)(?!localhost/))[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64})$"
     )]
     ImmutableImage,
     ImmutableImageError,
     "runtime image must be a repository digest or local SHA-256 image ID",
-    |value: &str| crate::resource::immutable_digest_reference(value)
+    |value: &str| ImageParts::parse(value).is_some_and(|parts| parts.is_pinned())
         || Sha256Digest::parse(value).is_ok()
 );
 
 impl ImageReference {
+    /// The canonical repository it names, such as `docker.io/library/nginx`
+    /// for `nginx:1.27`; see [`crate::image_repository`].
+    #[must_use]
+    pub fn repository(&self) -> String {
+        ImageParts::split(self.as_str()).repository()
+    }
+
+    /// The digest it is pinned to, after `@`, if any.
+    #[must_use]
+    pub fn digest(&self) -> Option<&str> {
+        ImageParts::split(self.as_str()).digest
+    }
+
     /// The reference's repository, as written, pinned to `digest`.
     ///
     /// ```text
@@ -67,7 +77,10 @@ impl ImageReference {
     /// ```
     #[must_use]
     pub fn pinned(&self, digest: &Sha256Digest) -> RepositoryDigest {
-        RepositoryDigest(format!("{}@{digest}", image_name(self.as_str())))
+        RepositoryDigest(format!(
+            "{}@{digest}",
+            ImageParts::split(self.as_str()).name
+        ))
     }
 }
 
@@ -87,11 +100,10 @@ impl RepositoryDigest {
         reason = "A repository digest is validated to end in `@` and a SHA-256 digest."
     )]
     pub fn digest(&self) -> Sha256Digest {
-        let (_, digest) = self
-            .as_str()
-            .rsplit_once('@')
-            .expect("a repository digest names its digest after `@`");
-        Sha256Digest::parse(digest).expect("a repository digest ends in a SHA-256 digest")
+        ImageParts::split(self.as_str())
+            .digest
+            .and_then(|digest| Sha256Digest::parse(digest).ok())
+            .expect("a repository digest ends in a SHA-256 digest")
     }
 }
 

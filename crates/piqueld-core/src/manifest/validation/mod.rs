@@ -451,8 +451,9 @@ impl ApplicationManifest {
         for service in &mut self.spec.services {
             if let Source::Image { image } = &mut service.source
                 && let Some(literal) = image.as_literal()
+                && let Some(parts) = ImageParts::parse(&literal)
             {
-                *image = Template::literal(&canonicalize_image_reference(&literal));
+                *image = Template::literal(&parts.canonical());
             }
         }
         Ok(ValidatedTemplate::new(

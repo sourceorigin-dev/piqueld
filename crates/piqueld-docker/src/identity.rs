@@ -208,20 +208,6 @@ impl BollardDocker {
             label(APPLICATION_LABEL)?,
         ])
     }
-
-    /// Returns whether an image reference contains a complete SHA-256 digest.
-    ///
-    /// ```text
-    /// repo@sha256:<64 lowercase hex> → true
-    /// repo@sha256:ABC…, repo:tag     → false
-    /// ```
-    pub(super) fn valid_digest(value: &str) -> bool {
-        value.rsplit_once("@sha256:").is_some_and(|(_, d)| {
-            d.len() == 64
-                && d.bytes()
-                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-        })
-    }
 }
 
 #[async_trait::async_trait]

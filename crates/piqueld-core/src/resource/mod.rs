@@ -18,7 +18,7 @@ pub use observed::*;
 pub use ownership::*;
 pub use resolution::*;
 
-use crate::manifest::{registry_component, valid_image_reference};
+use crate::manifest::ImageParts;
 use crate::names::validated_string;
 
 /// Label marking a resource as managed by piqueld.
@@ -82,80 +82,17 @@ pub fn valid_logical_name(value: &str) -> bool {
         && value.starts_with(|c: char| c.is_ascii_lowercase())
 }
 
-/// Whether a valid image reference is pinned by exactly one SHA-256 digest.
-///
-/// ```text
-/// "nginx@sha256:<64 hex>"           -> true
-/// "nginx:1.27@sha256:<64 hex>"      -> true
-/// "nginx:1.27", "nginx@sha512:..."  -> false
-/// ```
-pub(crate) fn immutable_digest_reference(reference: &str) -> bool {
-    valid_image_reference(reference)
-        && reference
-            .split_once('@')
-            .is_some_and(|(_, digest)| valid_sha256(digest))
-}
-
-/// Returns the canonical repository portion of a valid image reference.
-///
-/// Strips the tag and digest, then applies Docker Hub defaults so equivalent
-/// spellings compare equal. Explicit registry hosts are lowercased.
+/// Returns the canonical repository portion of a valid image reference,
+/// without tag or digest, with Docker Hub's defaults applied so equivalent
+/// spellings compare equal.
 ///
 /// ```text
 /// "nginx:1.27"                    -> "docker.io/library/nginx"
-/// "user/app@sha256:..."           -> "docker.io/user/app"
-/// "index.docker.io/nginx"         -> "docker.io/library/nginx"
 /// "Registry.io:5000/team/app:v1"  -> "registry.io:5000/team/app"
 /// ```
 #[must_use]
 pub fn image_repository(reference: &str) -> Option<String> {
-    if !valid_image_reference(reference) {
-        return None;
-    }
-    let repository = image_name(reference);
-    if repository.is_empty() {
-        return None;
-    }
-    let path = match repository.split_once('/') {
-        Some((host, path))
-            if host.eq_ignore_ascii_case("docker.io")
-                || host.eq_ignore_ascii_case("index.docker.io") =>
-        {
-            path
-        }
-        _ => match registry_component(repository) {
-            Some(registry) => {
-                return Some(format!(
-                    "{}{}",
-                    registry.to_ascii_lowercase(),
-                    &repository[registry.len()..]
-                ));
-            }
-            None => repository,
-        },
-    };
-    Some(if path.contains('/') {
-        format!("docker.io/{path}")
-    } else {
-        format!("docker.io/library/{path}")
-    })
-}
-
-/// Returns `reference`'s repository as written, without its tag or digest.
-///
-/// ```text
-/// "nginx:1.27@sha256:..."        -> "nginx"
-/// "registry.io:5000/team/app:v1" -> "registry.io:5000/team/app"
-/// ```
-pub(crate) fn image_name(reference: &str) -> &str {
-    let without_digest = reference
-        .split_once('@')
-        .map_or(reference, |(name, _)| name);
-    let last_slash = without_digest.rfind('/');
-    match without_digest.rfind(':') {
-        Some(colon) if last_slash.is_none_or(|slash| colon > slash) => &without_digest[..colon],
-        _ => without_digest,
-    }
+    ImageParts::parse(reference).map(|parts| parts.repository())
 }
 
 /// Whether a value is `sha256:` followed by 64 lowercase hex digits.

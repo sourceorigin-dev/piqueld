@@ -6,8 +6,8 @@ use super::super::{
     ServiceSecurity, Source, ValidatedRollout,
 };
 use super::{
-    MAX_CPU_MILLIS, REPLICAS, ValidationError, VariableMap, lacks_executable, safe_key_echo,
-    valid_image_reference, valid_repository_path, validate_name, validate_process_arguments,
+    ImageParts, MAX_CPU_MILLIS, REPLICAS, ValidationError, VariableMap, lacks_executable,
+    safe_key_echo, valid_repository_path, validate_name, validate_process_arguments,
 };
 use crate::ApiErrorCode;
 use std::collections::BTreeSet;
@@ -58,7 +58,7 @@ impl Service {
         if let Source::Image { image } = &self.source
             && image
                 .as_literal()
-                .is_some_and(|image| !valid_image_reference(&image))
+                .is_some_and(|image| ImageParts::parse(&image).is_none())
         {
             errors.push(ValidationError::new(
                 ApiErrorCode::ImageInvalid,

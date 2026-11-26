@@ -33,8 +33,8 @@ use piqueld_core::resource::{
 };
 use piqueld_core::wait;
 use piqueld_core::{
-    DockerNetworkName, EnvironmentId, InstanceId, ObservedApplication, ResourceKind,
-    docker_resource_name, docker_resource_readable_prefix,
+    DockerNetworkName, EnvironmentId, ImageReference, InstanceId, ObservedApplication,
+    RepositoryDigest, ResourceKind, docker_resource_name, docker_resource_readable_prefix,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -259,7 +259,7 @@ pub struct LocalImage {
     /// with this ID always carries the same ones.
     pub id: piqueld_core::Sha256Digest,
     /// Registry digests Docker recorded for it.
-    pub repo_digests: Vec<piqueld_core::RepositoryDigest>,
+    pub repo_digests: Vec<RepositoryDigest>,
     /// Image labels.
     pub labels: BTreeMap<String, String>,
     /// Size in bytes, including layers shared with other images.
@@ -483,13 +483,10 @@ pub trait DockerApi: Send + Sync + 'static {
     async fn pushed_images(
         &self,
         owner: &InstanceId,
-    ) -> Result<BTreeSet<piqueld_core::RepositoryDigest>, DockerError>;
+    ) -> Result<BTreeSet<RepositoryDigest>, DockerError>;
     /// Deletes `image`, which the build machine pushed, from the build registry by
     /// digest. An image the registry doesn't have counts as deleted.
-    async fn delete_pushed_image(
-        &self,
-        image: &piqueld_core::RepositoryDigest,
-    ) -> Result<(), DockerError>;
+    async fn delete_pushed_image(&self, image: &RepositoryDigest) -> Result<(), DockerError>;
     /// Removes `instance`'s `piqueld-probe` configs of other versions that no
     /// service mounts, such as those older daemons published.
     async fn prune_health_probes(&self, instance: &InstanceId) -> Result<(), DockerError>;
@@ -541,9 +538,10 @@ pub async fn resolve_image_digest(
     source: &(impl ImageSource + ?Sized),
     reference: &str,
 ) -> Result<String, DockerError> {
-    let repository = image_repository(reference)
+    let requested = ImageReference::parse(reference)
+        .ok()
         .ok_or(DockerError::ImageResolution("parse image repository"))?;
-    let requested_digest = reference.split_once('@').map(|(_, digest)| digest);
+    let repository = requested.repository();
     for attempt in 0..IMAGE_RESOLVE_ATTEMPTS {
         let before = matching_repo_digests(source, reference, &repository).await?;
         source.pull(reference).await?;
@@ -551,16 +549,12 @@ pub async fn resolve_image_digest(
         let Some(digest) = after
             .iter()
             .find(|digest| {
-                requested_digest.map_or_else(
+                requested.digest().map_or_else(
                     || before.is_empty() || before.contains(*digest),
-                    |requested| {
-                        digest
-                            .split_once('@')
-                            .is_some_and(|(_, resolved)| resolved == requested)
-                    },
+                    |requested| digest.digest().as_str() == requested,
                 )
             })
-            .cloned()
+            .map(ToString::to_string)
         else {
             if after.is_empty() {
                 return Err(DockerError::ImageResolution("find repository digest"));
@@ -582,16 +576,14 @@ async fn matching_repo_digests(
     source: &(impl ImageSource + ?Sized),
     reference: &str,
     repository: &str,
-) -> Result<BTreeSet<String>, DockerError> {
+) -> Result<BTreeSet<RepositoryDigest>, DockerError> {
     Ok(source
         .repo_digests(reference)
         .await?
         .unwrap_or_default()
         .into_iter()
-        .filter(|digest| {
-            image_repository(digest).as_deref() == Some(repository)
-                && BollardDocker::valid_digest(digest)
-        })
+        .filter_map(|digest| RepositoryDigest::parse(digest).ok())
+        .filter(|digest| image_repository(digest.as_str()).as_deref() == Some(repository))
         .collect())
 }
 
@@ -655,7 +647,7 @@ mod tests {
             id: piqueld_core::Sha256Digest::parse(format!("sha256:{hex}"))
                 .expect("the digest parses"),
             repo_digests: vec![
-                piqueld_core::RepositoryDigest::parse(format!("example.com/web@sha256:{hex}"))
+                RepositoryDigest::parse(format!("example.com/web@sha256:{hex}"))
                     .expect("the image parses"),
             ],
             labels: BTreeMap::new(),

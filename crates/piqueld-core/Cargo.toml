@@ -26,6 +26,7 @@ utoipa.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+fancy-regex.workspace = true
 proptest.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
