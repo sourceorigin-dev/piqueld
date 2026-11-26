@@ -111,6 +111,11 @@ impl Auth {
         caller: Option<&Identity>,
     ) -> Result<Ceremony> {
         Self::validate_passkey_name(&input.passkey_name)?;
+        if input.invitation.is_some() && input.user_id.is_some() {
+            return Err(AuthError::Invalid(
+                "registration takes either a link or a signed-in account, not both",
+            ));
+        }
         let (user, invitation) = if let Some(id) = input.user_id {
             let caller = caller.ok_or(AuthError::Unauthorized)?;
             if caller.scoped {

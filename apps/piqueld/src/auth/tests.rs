@@ -1935,10 +1935,10 @@ async fn setup_link_is_private_stable_and_never_reopens() {
 }
 
 /// Registration refuses up front what finishing it would: a scoped
-/// credential adding a passkey, and a taken username, before any passkey
-/// is created.
+/// credential adding a passkey, a request naming both a link and the
+/// caller's account, and a taken username, before any passkey is created.
 #[tokio::test]
-async fn registration_refuses_scoped_callers_and_taken_usernames_at_start() {
+async fn registration_refuses_scoped_callers_ambiguous_targets_and_taken_usernames_at_start() {
     let f = Fixture::new().await;
     let alice = f.identity("alice", &Grants::admin()).await;
     let read_only = Preset::ReadOnly.grants(&Scope::All);
@@ -1961,6 +1961,13 @@ async fn registration_refuses_scoped_callers_and_taken_usernames_at_start() {
         grants: Grants::default(),
     };
     let invitation = f.link(&alice, invite).await;
+    let both = start(Some(&invitation), Some(&alice.account().id));
+    assert!(matches!(
+        f.auth
+            .registration_start(both, "browser", Some(&alice))
+            .await,
+        Err(AuthError::Invalid(_))
+    ));
     assert!(matches!(
         f.auth
             .registration_start(start(Some(&invitation), None), "browser", None)

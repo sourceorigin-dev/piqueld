@@ -11048,7 +11048,7 @@
             "type": "string"
           },
           "user_id": {
-            "description": "The signed-in caller's own account, when adding a passkey to itself.",
+            "description": "The signed-in caller's own account, when adding a passkey to itself;\na request with both this and `invitation` is rejected.",
             "nullable": true,
             "type": "string"
           },
