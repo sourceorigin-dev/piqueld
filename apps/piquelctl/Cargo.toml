@@ -27,6 +27,8 @@ clap_complete.workspace = true
 futures-util.workspace = true
 http.workspace = true
 piqueld-client.workspace = true
+# `wait::pause`, the only way to sleep.
+piqueld-core.workspace = true
 # Raw mode and window size for `app exec --tty`.
 rustix = { workspace = true, features = ["termios"] }
 serde.workspace = true

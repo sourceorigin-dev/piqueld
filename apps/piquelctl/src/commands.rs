@@ -26,6 +26,7 @@ use piqueld_client::{
     operations::TimelineStream,
     timeline::Timeline,
 };
+use piqueld_core::wait;
 use serde_json::json;
 use std::{cell::Cell, collections::BTreeSet, path::Path, time::Duration};
 use tokio::time;
@@ -736,7 +737,7 @@ impl<P: Progress> Wait<P> {
         let until = *self
             .paused_until
             .get_or_insert_with(|| time::Instant::now() + interval);
-        time::sleep_until(until).await;
+        wait::pause(until).await;
         self.paused_until = None;
         self.interval = (self.interval * 2).min(MAX_POLL_INTERVAL);
     }
@@ -948,7 +949,7 @@ impl<'a> TimelineFollower<'a> {
                     }
                 }
                 TimelineSource::Polling(due) => {
-                    time::sleep_until(*due).await;
+                    wait::pause(*due).await;
                     *due = time::Instant::now() + POLL_INTERVAL;
                     self.client.operation_timeline(self.operation_id).await
                 }

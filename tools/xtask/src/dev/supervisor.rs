@@ -1,6 +1,7 @@
 //! The instance's supervisor: it starts the instance's engine, then builds and
 //! runs the daemon, rebuilding and restarting it whenever the sources change.
 
+use piqueld_core::wait;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::{self, TryLockError};
@@ -128,7 +129,7 @@ impl Supervisor {
                     return Ok(file);
                 }
                 Err(TryLockError::WouldBlock) => {
-                    tokio::time::sleep(PID_POLL).await;
+                    wait::pause(PID_POLL).await;
                 }
                 Err(TryLockError::Error(error)) => {
                     return Err(error).with_context(|| format!("lock {}", path.display()));
@@ -160,7 +161,7 @@ impl Supervisor {
                 }
                 bail!("the supervisor exited ({status})");
             }
-            tokio::time::sleep(PID_POLL).await;
+            wait::pause(PID_POLL).await;
         }
         Ok(())
     }
@@ -175,7 +176,7 @@ impl Supervisor {
             if self.running().is_none() {
                 return Ok(());
             }
-            tokio::time::sleep(STOP_POLL).await;
+            wait::pause(STOP_POLL).await;
         }
         bail!("the instance did not stop within 15 seconds")
     }
@@ -287,7 +288,7 @@ impl Instance {
         let mut changed = false;
         loop {
             let pause = if changed { 300 } else { 500 };
-            tokio::time::sleep(Duration::from_millis(pause)).await;
+            wait::pause(Duration::from_millis(pause)).await;
             if !self.workspace.root().join(".git").exists() {
                 eprintln!("[dev] the worktree was removed; stopping");
                 return Event::Shutdown;

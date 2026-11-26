@@ -6,6 +6,7 @@ use crate::{
 };
 use parking_lot::Mutex;
 use piqueld_client::ClientError;
+use piqueld_core::wait;
 use rustix::termios::{LocalModes, OptionalActions, Termios, tcgetattr, tcsetattr};
 use serde_json::json;
 use std::{
@@ -17,7 +18,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::Duration,
 };
-use tokio::{sync::Notify, time};
+use tokio::sync::Notify;
 
 /// Daemon socket used when no socket or URL is configured.
 pub(crate) const DEFAULT_SOCKET: &str = "/run/piqueld/piqueld.sock";
@@ -319,7 +320,7 @@ where
 {
     let result = request().await;
     if matches!(&result, Err(ClientError::Transport { .. })) {
-        time::sleep(TRANSPORT_RETRY_DELAY).await;
+        wait::pause(TRANSPORT_RETRY_DELAY).await;
         request().await
     } else {
         result

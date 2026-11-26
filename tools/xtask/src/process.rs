@@ -1,5 +1,6 @@
 //! Child processes that xtask stops together with their descendants.
 
+use piqueld_core::wait;
 use std::io::Write;
 use std::process::{ExitCode, ExitStatus, Output};
 use std::time::Duration;
@@ -64,7 +65,7 @@ impl Job {
             status = self.wait() => return status,
             () = async {
                 match limit {
-                    Some(limit) => tokio::time::sleep(limit).await,
+                    Some(limit) => wait::pause(limit).await,
                     None => std::future::pending().await,
                 }
             } => "timed out",

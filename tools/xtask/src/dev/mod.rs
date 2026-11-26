@@ -4,6 +4,7 @@
 
 mod supervisor;
 
+use piqueld_core::wait;
 use std::collections::HashMap;
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -595,7 +596,7 @@ auto_initialize_swarm = true
                     }
                 }
             }
-            tokio::time::sleep(WAIT_POLL).await;
+            wait::pause(WAIT_POLL).await;
         }
         bail!("not ready after {timeout} seconds; see `just dev status`")
     }
