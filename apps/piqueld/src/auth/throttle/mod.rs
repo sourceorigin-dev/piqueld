@@ -16,10 +16,13 @@ const PER_PEER: u32 = 30;
 
 /// Start count for one peer bucket since `started`.
 struct Window {
+    /// When the window opened.
     started: Instant,
+    /// How many starts the peer made in this window.
     count: u32,
 }
 impl Window {
+    /// Opens a window at `now` with no starts counted.
     fn new(now: Instant) -> Self {
         Self {
             started: now,
@@ -31,6 +34,7 @@ impl Window {
 /// Fixed-window counters keyed by peer bucket.
 #[derive(Default)]
 pub(super) struct Throttle {
+    /// Each peer's window; `None` is the Unix socket.
     peers: HashMap<Option<IpAddr>, Window>,
 }
 impl Throttle {

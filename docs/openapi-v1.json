@@ -30284,6 +30284,7 @@
             "description": "Structured, sanitized error"
           }
         },
+        "summary": "Runs an interactive command in a service's task over a WebSocket.",
         "x-piqueld-access": "apps:exec"
       }
     },

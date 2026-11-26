@@ -10,6 +10,7 @@ use piqueld_core::{
 };
 use serde::Deserialize;
 
+/// Query parameters of listing builds.
 #[derive(Default, Deserialize, utoipa::IntoParams)]
 #[serde(deny_unknown_fields)]
 #[into_params(parameter_in=Query)]
@@ -55,6 +56,7 @@ pub(super) async fn list(
         .await?))
 }
 
+/// Query parameters of reading a build's output.
 #[derive(Default, Deserialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in=Query)]

@@ -14,10 +14,12 @@ use webauthn_rs_core::proto::{
 
 /// Server-side state of one started ceremony, redeemable once before `expires`.
 pub(super) struct Pending {
+    /// When the ceremony expires, in Unix seconds.
     pub(super) expires: i64,
     /// Hash of the per-ceremony browser cookie secret, so only the browser that
     /// started the ceremony can finish it.
     binding: String,
+    /// What the ceremony does once the browser answers.
     kind: Kind,
 }
 /// The ceremony-specific state needed to verify the browser's response.
@@ -26,17 +28,23 @@ enum Kind {
     /// invitation whose hash `invitation` holds: creating `user`, or adding to
     /// it for enrollment links.
     Register {
+        /// State of the registration, from its start.
         state: RegistrationState,
+        /// User the passkey is registered for.
         user: User,
+        /// Invitation being redeemed, if the registration redeems one.
         invitation: Option<String>,
         /// Display name for the new passkey.
         name: String,
     },
+    /// Signs a user in with a passkey.
     Login(AuthenticationState),
     /// Confirms the browser session `credential_id` with one of its
     /// account's passkeys, making it fresh for sensitive actions.
     Reauthenticate {
+        /// State of the authentication, from its start.
         state: AuthenticationState,
+        /// ID of the CLI login being confirmed.
         credential_id: String,
     },
 }

@@ -294,11 +294,15 @@ impl FreshTailnet {
 /// the connection's address. Absent on other listeners.
 #[derive(Clone)]
 pub(super) struct TailnetSource {
+    /// Resolves a peer's tailnet identity.
     lookup: Arc<dyn TailnetLookup>,
+    /// Address of the connection to resolve.
     peer: SocketAddr,
 }
 
 impl TailnetSource {
+    /// Reads the lookup and peer address a tailnet listener attached to a request; `None` on other
+    /// listeners.
     fn of(extensions: &http::Extensions) -> Option<Self> {
         let lookup = extensions.get::<Arc<dyn TailnetLookup>>().cloned()?;
         let ConnectInfo(peer) = *extensions.get::<ConnectInfo<SocketAddr>>()?;

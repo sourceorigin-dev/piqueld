@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use utoipa::openapi::{RefOr, Response};
 use utoipa::{OpenApi, ToResponse};
 
+/// The `OpenAPI` document's static parts: its info, tags and schemas.
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -67,6 +68,7 @@ pub(super) fn base_document() -> utoipa::openapi::OpenApi {
 /// What the structured error response every operation documents says.
 const GENERIC_ERROR: &str = "Structured, sanitized error";
 
+/// The generic structured error response, documented in the `OpenAPI` document.
 #[expect(
     dead_code,
     reason = "Utoipa reads the field's type as the body schema; no value is ever built"
@@ -138,6 +140,7 @@ impl<
     }
 }
 
+/// The `reauthentication_required` response, documented in the `OpenAPI` document.
 #[expect(
     dead_code,
     reason = "Utoipa reads the field's type as the body schema; no value is ever built"
@@ -148,6 +151,7 @@ impl<
 )]
 pub(super) struct ReauthenticationResponse(ErrorBody);
 
+/// Serves the published `OpenAPI` document.
 #[utoipa::path(
     get,
     path = "/api/v1/openapi.json",

@@ -96,6 +96,7 @@ pub use piqueld_store::{
 pub struct ApplicationService {
     /// Managed ingress state, reported by readiness and used by plan previews.
     ingress: Option<Arc<crate::ingress::Ingress>>,
+    /// Tailnet node's status, if the daemon has a tailnet node.
     tailnet: Option<tokio::sync::watch::Receiver<piqueld_core::api::TailnetStatus>>,
     /// The built images as of the last cleanup; `None` without a controller.
     images: Option<tokio::sync::watch::Receiver<piqueld_core::api::ImageStatus>>,
@@ -103,6 +104,7 @@ pub struct ApplicationService {
     builder: Option<Arc<piqueld_docker::RemoteBuilder>>,
     /// Effective host settings; `None` unless attached at startup.
     configuration: Option<Arc<Configuration>>,
+    /// Database holding the control plane's state.
     store: Arc<Store>,
     /// Receives local snapshots and reports checkout limits.
     sources: Arc<crate::git::Sources>,

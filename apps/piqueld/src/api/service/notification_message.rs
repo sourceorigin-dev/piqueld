@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 pub(super) struct Notification<'a> {
     /// What it reports; `None` for a test notification.
     pub(super) category: Option<NotificationCategory>,
+    /// The event the notification reports.
     pub(super) event: &'a Event,
     /// Names of the application and environment it is about.
     pub(super) subject: &'a NotificationSubject,
@@ -19,15 +20,23 @@ pub(super) struct Notification<'a> {
 
 /// How a notification looks: an emoji, a title and a Discord embed colour.
 struct Heading {
+    /// Emoji that opens the message.
     emoji: &'static str,
+    /// Title of the message.
     title: &'static str,
+    /// Discord embed colour, as `0xRRGGBB`.
     color: u32,
 }
 
+/// Embed colour for failures.
 const RED: u32 = 0x00ED_4245;
+/// Embed colour for degraded services.
 const AMBER: u32 = 0x00F0_B232;
+/// Embed colour for recoveries and successful deployments.
 const GREEN: u32 = 0x0057_F287;
+/// Embed colour for security events and test notifications.
 const BLURPLE: u32 = 0x0058_65F2;
+/// Embed colour for the daemon starting.
 const BLUE: u32 = 0x0034_98DB;
 
 impl Notification<'_> {

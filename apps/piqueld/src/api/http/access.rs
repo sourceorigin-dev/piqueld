@@ -400,6 +400,7 @@ impl<S: Send + Sync> FromRequestParts<S> for Audited {
 struct Answer {
     /// Tailnet identity of the peer, described.
     tailnet: Option<String>,
+    /// HTTP status of the response.
     status: StatusCode,
     /// Authorization refusal behind an error response.
     denied: Option<Denied>,
@@ -414,13 +415,17 @@ struct Answer {
 /// One API request, as the audit trail will record it.
 #[derive(Clone)]
 pub(super) struct Audit {
+    /// How the request authenticated and what it was granted.
     access: Access,
     /// Route template, or the raw path (truncated) when no route matched.
     route: String,
+    /// HTTP method of the request.
     method: Method,
     /// Application or environment the route names.
     owner: Option<(PathOwner, String)>,
+    /// Address of the connecting peer, if known.
     peer: Option<std::net::IpAddr>,
+    /// ID the request carried or was given, for correlating logs.
     request_id: Option<String>,
     /// Set once a change the request made recorded its own success.
     recorded: Recorded,

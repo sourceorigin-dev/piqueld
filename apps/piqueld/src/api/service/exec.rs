@@ -9,19 +9,25 @@ use piqueld_docker::{DockerError, Exec, ExecIo};
 
 /// A created command, recorded in history once it runs.
 pub struct ExecSession {
+    /// Service the command starts through.
     owner: ApplicationService,
     /// Resolved when the command starts, so its completion stays in the
     /// application's history even if the environment is deleted meanwhile.
     application: ApplicationId,
+    /// Environment the command runs in.
     environment: EnvironmentId,
+    /// Service the command runs in.
     service: ServiceName,
+    /// The command to run, with its terminal settings.
     exec: Exec,
     /// Who started the command, as history names them.
     who: String,
     /// Account and credential, or host operator and its session, that
     /// started the command, which its completion is attributed to as well.
     actor_user_id: Option<String>,
+    /// ID of the credential that started the command, if it was not the host operator.
     actor_credential_id: Option<String>,
+    /// Host operator that started the command, if it was one.
     actor_operator: Option<HostOperator>,
 }
 

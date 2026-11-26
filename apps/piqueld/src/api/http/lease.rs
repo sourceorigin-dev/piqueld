@@ -57,7 +57,9 @@ pub(super) enum Ended {
 
 /// The authorization of one long-lived connection.
 pub(super) struct Lease {
+    /// Application state the stream reads from.
     state: ApiState,
+    /// Caller the stream was opened for.
     identity: Identity,
     /// Where the connection came from, to recheck a token's tailnet binding.
     source: Option<TailnetSource>,

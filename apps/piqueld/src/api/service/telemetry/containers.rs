@@ -36,6 +36,7 @@ type Exports = Arc<Mutex<HashMap<String, Exported>>>;
 
 /// One container being exported.
 struct Exported {
+    /// The container, as Docker reported it.
     container: ManagedContainer,
     /// Its resource and cursors, shared with its follower.
     export: Arc<ContainerExport>,
@@ -131,6 +132,7 @@ struct Discovery {
     scanned: Option<i64>,
     /// When the last discovery ran.
     ran: Option<Instant>,
+    /// Names labelling what this discovery exports.
     names: Names,
 }
 

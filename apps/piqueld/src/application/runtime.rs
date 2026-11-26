@@ -26,6 +26,7 @@ const SWARM_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Application runtime orchestration backed by Docker.
 pub struct ApplicationRuntime<D> {
+    /// Docker boundary the application's services run on.
     docker: Arc<D>,
     /// Instance whose ownership labels scope every Docker lookup and mutation.
     instance_id: InstanceId,

@@ -49,6 +49,8 @@ async fn submit(
     mutator.accept(mutation, expected, force).await
 }
 
+/// Defines a handler for each field endpoint listed by `piqueld_core::field_endpoints!`, and
+/// `field_routes` to register them.
 macro_rules! edit_endpoints {
     ($($(#[$doc:meta])* $name:ident: $method:ident $path:literal ($($param:ident = $label:literal),*) $body:tt => { $($edit:tt)* };)*) => {
         $(edit_endpoints!(@handler $(#[$doc])* $name $method $path ($($param: String = $label),*) $body { $($edit)* });)*
@@ -95,6 +97,7 @@ piqueld_core::field_endpoints!(edit_endpoints);
 #[derive(Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct CreateQuery {
+    /// Whether to deploy the new application after saving it.
     deploy: bool,
 }
 

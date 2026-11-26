@@ -48,7 +48,9 @@ enum Attempt {
     /// It may succeed later: after a transport failure, or HTTP 408, 429 or
     /// 5xx, waiting `retry_after` seconds when the receiver says so.
     Retry {
+        /// Safe summary of what failed.
         error: String,
+        /// Seconds to wait before retrying, if the receiver said so in `Retry-After`.
         retry_after: Option<u64>,
     },
     /// The receiver refused it with another status.

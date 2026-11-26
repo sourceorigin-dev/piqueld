@@ -38,6 +38,7 @@ impl QueryParams for ListQuery {
     const INVALID_MESSAGE: &'static str = "pagination parameters are invalid";
 }
 
+/// Lists the applications the caller may read, one page at a time.
 #[utoipa::path(
     get,
     path = "/api/v1/applications",
@@ -66,6 +67,7 @@ pub(super) async fn list(
         .await?))
 }
 
+/// Returns one application and its environments.
 #[utoipa::path(
     get,
     path = "/api/v1/applications/{id}",
@@ -84,6 +86,7 @@ pub(super) async fn get(
     Ok(ok(state.application(&ApplicationId::parse(id)?).await?))
 }
 
+/// Saves a manifest as an application's configuration and, when asked, deploys it.
 #[utoipa::path(
     post, path = "/api/v1/applications/apply", operation_id = "applyApplication",
     summary = "Apply an application manifest",
@@ -112,6 +115,7 @@ pub(super) async fn apply(
         .await
 }
 
+/// Query parameters of applying a manifest.
 #[derive(Default, Deserialize, utoipa::IntoParams)]
 #[serde(default, deny_unknown_fields)]
 #[into_params(parameter_in = Query)]
@@ -149,6 +153,8 @@ impl QueryParams for DeleteApplicationQuery {
         "expected_generation must be an integer and force must be true or false";
 }
 
+/// Deletes an application, with its environments and previews, after the generation precondition;
+/// accepts the deletion operations.
 #[utoipa::path(
     delete, path = "/api/v1/applications/{id}", operation_id = "deleteApplication",
     summary = "Delete an application with its environments, retaining their volumes, and its previews",
@@ -181,6 +187,7 @@ pub(super) async fn delete(
         .await
 }
 
+/// Previews applying a manifest without changing anything.
 #[utoipa::path(
     post, path = "/api/v1/applications/plan", operation_id = "planApplication",
     summary = "Preview an application manifest",
@@ -223,6 +230,7 @@ impl QueryParams for PlanQuery {
     const INVALID_MESSAGE: &'static str = "environment must appear at most once";
 }
 
+/// Query parameters of deleting an environment or application.
 #[derive(Default, Deserialize, utoipa::IntoParams)]
 #[serde(deny_unknown_fields)]
 #[into_params(parameter_in = Query)]

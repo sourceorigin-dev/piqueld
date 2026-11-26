@@ -60,6 +60,7 @@ impl<S: Send + Sync> FromRequestParts<S> for ExecUpgrade {
     }
 }
 
+/// Runs an interactive command in a service's task over a WebSocket.
 #[utoipa::path(get,path="/api/v1/environments/{id}/exec",operation_id="execEnvironmentCommand",params(("id"=String,Path)),
  description="Opens a WebSocket whose first message is a JSON ExecRequest; see piqueld_core::exec.",
  responses((status=101,description="Switched to a WebSocket streaming the command"),

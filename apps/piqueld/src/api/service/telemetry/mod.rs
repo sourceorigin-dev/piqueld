@@ -33,14 +33,18 @@ const GAUGE_INTERVAL: Duration = Duration::from_secs(30);
 /// Names labelling an environment's telemetry, looked up when first needed
 /// and forgotten every [`NAMES_TTL`].
 struct Names {
+    /// Names found so far, by environment.
     names: HashMap<EnvironmentId, EnvironmentNames>,
+    /// When the names were last forgotten.
     since: std::time::Instant,
 }
 
 /// The names labelling one environment's telemetry.
 #[derive(Clone)]
 struct EnvironmentNames {
+    /// Name of the application.
     application: String,
+    /// Name of the environment.
     environment: String,
     /// The preview's slug, for previews.
     preview: Option<String>,
@@ -49,8 +53,11 @@ struct EnvironmentNames {
 /// Where the journal exporter is: its exporter, the last event it read, and
 /// the names labelling what it exports.
 struct Tail {
+    /// Reads journal events.
     journal: Journal,
+    /// ID of the last journal event read.
     cursor: i64,
+    /// Names labelling what it exports.
     names: Names,
 }
 
