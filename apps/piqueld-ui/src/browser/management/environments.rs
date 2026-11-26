@@ -115,7 +115,10 @@ pub(super) fn EnvironmentList() -> impl IntoView {
 /// One row of `EnvironmentList`: environment `id`'s name and source, its
 /// latest deployment, health and action, each read live.
 #[component]
-fn EnvironmentRow(id: String) -> impl IntoView {
+fn EnvironmentRow(
+    /// ID of the environment.
+    id: String,
+) -> impl IntoView {
     let context = editor();
     let signals = context.signals();
     let href = context.environment_href(&id);
@@ -340,11 +343,18 @@ impl EditorContext {
 /// or empty for the `none` option.
 #[component]
 fn PromotionSource(
+    /// The chosen source environment's ID, or empty for none.
     value: RwSignal<String>,
+    /// The sources to offer, as (ID, name) pairs.
     sources: Signal<Vec<(String, String)>>,
+    /// The label of the option choosing no source.
     none: &'static str,
-    #[prop(default = "Promote from")] label: &'static str,
-    #[prop(default = "")] prefix: &'static str,
+    /// The select's label.
+    #[prop(default = "Promote from")]
+    label: &'static str,
+    /// Text put before each source's name.
+    #[prop(default = "")]
+    prefix: &'static str,
 ) -> impl IntoView {
     view! {
         <label class="field">
@@ -830,6 +840,7 @@ impl EditorContext {
 /// The text of a card editing one `[spec.environments.<name>]` setting of
 /// the environment page's environment. `view` renders it.
 struct SettingCard {
+    /// The card's title.
     title: &'static str,
     /// What the setting does.
     about: &'static str,

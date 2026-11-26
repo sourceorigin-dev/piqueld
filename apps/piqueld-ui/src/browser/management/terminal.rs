@@ -26,16 +26,22 @@ const INITIAL_SIZE: TerminalSize = TerminalSize {
 /// Where the latest session stands.
 #[derive(Clone, Debug, PartialEq)]
 enum Status {
+    /// No session has started.
     Idle,
+    /// The session is connecting.
     Connecting,
+    /// The command is running.
     Running,
+    /// The command exited with this code.
     Exited(i64),
+    /// The session failed with this message.
     Failed(String),
     /// The user disconnected; the command may still run.
     Detached,
 }
 
 impl Status {
+    /// Whether a session is connecting or running.
     const fn active(&self) -> bool {
         matches!(self, Self::Connecting | Self::Running)
     }
@@ -54,9 +60,11 @@ enum Update {
 /// A command session's input. Dropping it closes the WebSocket: `stop` ends
 /// the session task, which drops the connection.
 struct Session {
+    /// Sends input messages to the session's task.
     input: mpsc::UnboundedSender<ExecInput>,
     /// The command has a terminal and reads input; otherwise nothing is sent.
     interactive: bool,
+    /// Dropping it ends the session's task.
     _stop: oneshot::Sender<()>,
 }
 
@@ -139,7 +147,9 @@ impl Session {
 /// The command form's fields.
 #[derive(Clone, Copy)]
 struct Form {
+    /// Name of the service to run the command in.
     service: RwSignal<String>,
+    /// The command line, as typed.
     command: RwSignal<String>,
     /// Allocate a terminal and forward input.
     tty: RwSignal<bool>,
@@ -170,14 +180,18 @@ impl Form {
 /// every handler holds it whole.
 #[derive(Clone, Copy)]
 struct Console {
+    /// Where the latest session stands.
     status: RwSignal<Status>,
     /// The rendered screen, as `Terminal::html` returns it.
     screen: RwSignal<String>,
+    /// The terminal emulator holding the screen's contents.
     terminal: StoredValue<Terminal, LocalStorage>,
+    /// The current session; `None` when there is none.
     session: StoredValue<Option<Session>, LocalStorage>,
     /// Sessions ending after a newer one started, or after the component
     /// unmounted and disposed it, must not touch its state.
     generation: StoredValue<u64>,
+    /// The element the screen is shown in.
     viewport: NodeRef<html::Div>,
     /// One character cell, measured to fit the screen to the viewport.
     probe: NodeRef<html::Span>,
@@ -206,6 +220,7 @@ impl Console {
         console
     }
 
+    /// Renders the emulator's screen into `screen`.
     fn redraw(self) {
         self.screen.set(self.terminal.with_value(Terminal::html));
     }
@@ -263,10 +278,12 @@ impl Console {
         }
     }
 
+    /// Drops the session, closing its connection; the command may keep running.
     fn disconnect(self) {
         self.session.set_value(None);
     }
 
+    /// Whether the command is running.
     fn running(self) -> bool {
         self.status.get_untracked() == Status::Running
     }

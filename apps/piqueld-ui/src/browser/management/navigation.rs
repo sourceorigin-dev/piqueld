@@ -14,7 +14,9 @@ use std::collections::BTreeSet;
 struct GuardedLocation {
     /// The editor's dirty form groups; navigation is only guarded while non-empty.
     dirty: RwSignal<BTreeSet<String>>,
+    /// The editor's address, with its query.
     url: String,
+    /// The editor's browser history state.
     state: JsValue,
 }
 

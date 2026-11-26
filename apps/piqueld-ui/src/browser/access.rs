@@ -75,9 +75,13 @@ pub(super) fn short_summary(grants: &Grants) -> String {
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn GrantEditor(
+    /// The grants to start from.
     initial: Grants,
+    /// The edited grants, written as the selection changes.
     value: RwSignal<Grants>,
-    #[prop(optional)] limit: Option<Grants>,
+    /// The most the result may grant; `None` for no limit.
+    #[prop(optional)]
+    limit: Option<Grants>,
 ) -> impl IntoView {
     let GrantSelection {
         permissions,

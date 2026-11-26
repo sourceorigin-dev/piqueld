@@ -16,12 +16,15 @@ use piqueld_client::{Client, DeploymentSummary, Page};
 /// older pages appended on request.
 #[derive(Clone, Copy)]
 struct History {
+    /// The deployments loaded so far, newest first.
     items: RwSignal<Vec<DeploymentSummary>>,
     /// Cursor of the next older page.
     cursor: RwSignal<Option<String>>,
     /// Whether an older page was appended, so polls merge instead of replacing.
     paginated: RwSignal<bool>,
+    /// Why the last load failed; `None` otherwise.
     error: RwSignal<Option<String>>,
+    /// Whether a page is loading.
     loading: RwSignal<bool>,
     /// Whether the first page was read, so the list is known to be empty
     /// rather than still loading.
@@ -29,6 +32,7 @@ struct History {
 }
 
 impl History {
+    /// Creates an empty history, before anything is loaded.
     fn new() -> Self {
         Self {
             items: RwSignal::new(Vec::new()),
@@ -182,7 +186,10 @@ pub(in crate::browser::management) fn DeploymentHistory() -> impl IntoView {
 /// configuration revision and commit it deploys, and how long it ran, or
 /// while the page follows it running, its progress.
 #[component]
-fn DeploymentRow(deployment: Signal<DeploymentSummary>) -> impl IntoView {
+fn DeploymentRow(
+    /// The deployment to show.
+    deployment: Signal<DeploymentSummary>,
+) -> impl IntoView {
     let context = editor();
     let running = expect_context::<RunningDeployment>();
     let id = deployment.with_untracked(|deployment| deployment.operation.id.clone());

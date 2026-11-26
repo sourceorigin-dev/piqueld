@@ -23,7 +23,10 @@ const SEARCH_PAGES: usize = 5;
 /// are appended on request, and until the `?release=` one is shown, up to
 /// `SEARCH_PAGES` per load; a notice then says it is older or missing.
 #[component]
-pub(super) fn ReleaseHistory(application: String) -> impl IntoView {
+pub(super) fn ReleaseHistory(
+    /// ID of the application whose releases to list.
+    application: String,
+) -> impl IntoView {
     let releases = RwSignal::new(Vec::<ReleaseView>::new());
     let cursor = RwSignal::new(None::<String>);
     let error = RwSignal::new(None::<String>);
@@ -154,8 +157,11 @@ fn missing_release(
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn ReleaseCard(
+    /// The release to show.
     release: Signal<ReleaseView>,
-    #[prop(optional)] planned: bool,
+    /// Whether the release is shown in a deployment's plan.
+    #[prop(optional)]
+    planned: bool,
 ) -> impl IntoView {
     let context = editor();
     let initial = release.get_untracked();

@@ -163,10 +163,18 @@ pub(super) fn ErrorsPage() -> impl IntoView {
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn EventHistory(
-    #[prop(optional, into)] application: Option<String>,
-    #[prop(optional, into)] environment: Option<String>,
-    #[prop(optional, into)] operation: Option<String>,
-    #[prop(optional)] errors_only: bool,
+    /// Only show events of this application, with all its environments.
+    #[prop(optional, into)]
+    application: Option<String>,
+    /// Only show events of this environment.
+    #[prop(optional, into)]
+    environment: Option<String>,
+    /// Only show events of this operation.
+    #[prop(optional, into)]
+    operation: Option<String>,
+    /// Whether to show only errors.
+    #[prop(optional)]
+    errors_only: bool,
 ) -> impl IntoView {
     let refresh = Refresh::new();
     let scoped = environment.is_some();
@@ -386,8 +394,12 @@ pub(super) fn kind_badge(event: &Event) -> AnyView {
 /// refresh, so an opened card stays open.
 #[component]
 fn EventCard(
+    /// The event to show.
     event: Event,
-    #[prop(optional)] scoped: bool,
+    /// Whether the list is already scoped to one environment, so its name is left out.
+    #[prop(optional)]
+    scoped: bool,
+    /// IDs of the events showing their details, kept by the list.
     expanded: RwSignal<BTreeSet<i64>>,
 ) -> impl IntoView {
     let signals = dashboard_context().signals;
@@ -524,7 +536,10 @@ pub(super) fn DiagnosticPage() -> impl IntoView {
 /// Full diagnostic view: what failed and what to do, where it happened, and
 /// the events of its operation, or the event itself without one.
 #[component]
-fn DiagnosticDetails(event: Event) -> impl IntoView {
+fn DiagnosticDetails(
+    /// The diagnostic event to show.
+    event: Event,
+) -> impl IntoView {
     let detail = event.diagnostic.clone();
     let operation = event.operation_id.clone();
     let signals = dashboard_context().signals;
@@ -1144,7 +1159,10 @@ fn audit_row(event: AuditEvent) -> AnyView {
 /// chain and sets `result` to whether any record was altered, with the anchor
 /// and newest record to keep elsewhere.
 #[component]
-fn AuditVerify(result: RwSignal<Option<(Tone, String)>>) -> impl IntoView {
+fn AuditVerify(
+    /// Where the verification's result is shown, with its tone.
+    result: RwSignal<Option<(Tone, String)>>,
+) -> impl IntoView {
     let allowed = can(Permission::Global(GlobalPermission::AuditRead));
     let busy = RwSignal::new(false);
     let verify = move |_| {

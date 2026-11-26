@@ -39,19 +39,26 @@ const TAIL: usize = 12;
 /// that owner is disposed.
 #[derive(Clone, Copy)]
 pub(super) struct LiveTimeline {
+    /// The latest timeline the stream sent; `None` until it does.
     timeline: RwSignal<Option<Timeline>>,
     /// The current time, ticking every second while the operation runs.
     now: RwSignal<i64>,
     /// Whether the operation may still change: true until a timeline shows
     /// it ended.
     live: Memo<bool>,
+    /// The timeline's steps laid out on a time axis.
     waterfall: Memo<Waterfall>,
+    /// Why following the operation failed; `None` otherwise.
     error: RwSignal<Option<String>>,
     /// Whether the first timeline was drawn, so rows appearing later flash.
     settled: StoredValue<bool>,
+    /// ID of the followed operation.
     operation: StoredValue<String>,
+    /// The open stream; `None` once closed.
     stream: StoredValue<Option<EventStream>, LocalStorage>,
+    /// The timer ticking `now`; `None` once stopped.
     clock: StoredValue<Option<Interval>, LocalStorage>,
+    /// Whether the owner is still alive, so late events are dropped.
     alive: StoredValue<Alive>,
 }
 
@@ -225,6 +232,7 @@ pub(super) fn duration(milliseconds: u64) -> String {
 pub(super) struct RunningDeployment {
     /// The newest operation seen running.
     operation: RwSignal<Option<String>>,
+    /// The followed deployment's timeline; `None` while none runs.
     live: RwSignal<Option<LiveTimeline>>,
 }
 
@@ -321,7 +329,10 @@ pub(super) fn RunningProgress() -> impl IntoView {
 /// A running operation in brief: its steps done, time left, and a segment
 /// per step.
 #[component]
-pub(super) fn CompactProgress(live: LiveTimeline) -> impl IntoView {
+pub(super) fn CompactProgress(
+    /// The timeline to summarize.
+    live: LiveTimeline,
+) -> impl IntoView {
     let progress = live.progress();
     view! {
         <span class="progress-compact">
@@ -361,7 +372,12 @@ pub(super) fn status_pill(progress: &Progress) -> impl IntoView + use<> {
 /// how long it usually takes. The tab title follows it while the page is
 /// open, titled by `subject`.
 #[component]
-pub(super) fn DeploymentProgress(live: LiveTimeline, subject: String) -> impl IntoView {
+pub(super) fn DeploymentProgress(
+    /// The timeline to show.
+    live: LiveTimeline,
+    /// What the tab title names while the deployment runs.
+    subject: String,
+) -> impl IntoView {
     let progress = live.progress();
     let title = Memo::new(move |_| progress.with(|p| p.as_ref().map(|p| p.title(&subject))));
     let original = document().title();
@@ -420,7 +436,10 @@ pub(super) fn DeploymentProgress(live: LiveTimeline, subject: String) -> impl In
 /// One segment per step: done, failed, left, or filling as a running step
 /// nears its usual duration.
 #[component]
-fn ProgressBar(live: LiveTimeline) -> impl IntoView {
+fn ProgressBar(
+    /// The timeline whose steps to show.
+    live: LiveTimeline,
+) -> impl IntoView {
     let waterfall = live.waterfall;
     let ids = Memo::new(move |_| {
         waterfall.with(|w| w.rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>())
@@ -454,7 +473,10 @@ fn ProgressBar(live: LiveTimeline) -> impl IntoView {
 /// `events:read`, its events as they are recorded. The running step is
 /// shown unless a step was picked; "Follow live" returns to it.
 #[component]
-pub(super) fn OperationTimeline(live: LiveTimeline) -> impl IntoView {
+pub(super) fn OperationTimeline(
+    /// The timeline to show.
+    live: LiveTimeline,
+) -> impl IntoView {
     let picked = RwSignal::new(None::<RowId>);
     let shown = Memo::new(move |_| {
         picked
@@ -505,7 +527,10 @@ pub(super) fn OperationTimeline(live: LiveTimeline) -> impl IntoView {
 
 /// The steps `steps` lists, as a waterfall without times: a plan.
 #[component]
-pub(super) fn PlannedSteps(steps: Vec<StepKey>) -> impl IntoView {
+pub(super) fn PlannedSteps(
+    /// The planned steps, in order.
+    steps: Vec<StepKey>,
+) -> impl IntoView {
     let steps: Vec<_> = steps
         .into_iter()
         .map(|key| Step::pending(key, StepState::Planned, None))
@@ -517,7 +542,9 @@ pub(super) fn PlannedSteps(steps: Vec<StepKey>) -> impl IntoView {
 /// does.
 #[derive(Clone, Copy)]
 struct Selection {
+    /// The row whose detail is shown.
     shown: Memo<Option<RowId>>,
+    /// Called with a row when the user picks it.
     pick: Callback<RowId>,
 }
 
@@ -527,9 +554,14 @@ struct Selection {
 /// it is set flash.
 #[component]
 fn StepWaterfall(
+    /// The steps to draw.
     waterfall: Signal<Waterfall>,
-    #[prop(optional)] selection: Option<Selection>,
-    #[prop(optional)] settled: Option<StoredValue<bool>>,
+    /// How rows are picked; `None` makes them unselectable.
+    #[prop(optional)]
+    selection: Option<Selection>,
+    /// Whether the first timeline was drawn; rows appearing after it flash.
+    #[prop(optional)]
+    settled: Option<StoredValue<bool>>,
 ) -> impl IntoView {
     let ids = Memo::new(move |_| {
         waterfall.with(|w| w.rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>())
@@ -606,9 +638,13 @@ fn StepWaterfall(
 /// Picking it, by click or keyboard, shows its detail.
 #[component]
 fn StepRow(
+    /// The step to show; `None` once it disappeared.
     row: Memo<Option<Row>>,
+    /// Whether to flash the row as it appears.
     flash: bool,
+    /// Whether this is the shown step.
     selected: Signal<bool>,
+    /// Called when the user picks the step; `None` makes it unselectable.
     pick: Option<Callback<()>>,
 ) -> impl IntoView {
     let field = move |read: fn(&Row) -> String| {
@@ -727,8 +763,11 @@ fn StepRow(
 /// their output, and for a rollout, its Swarm tasks.
 #[component]
 fn StepDetail(
+    /// The followed timeline.
     live: LiveTimeline,
+    /// The row whose detail to show.
     shown: Memo<Option<RowId>>,
+    /// The row the user picked; `None` follows the running step.
     picked: RwSignal<Option<RowId>>,
 ) -> impl IntoView {
     let row = Memo::new(move |_| {
@@ -897,7 +936,12 @@ const LOOKS: [(TaskLook, &str); 7] = [
 /// a task kept serving. Lanes are redrawn when the step changes; between
 /// ticks, their open states grow to the `--now` the clock sets.
 #[component]
-fn RolloutTasks(row: Memo<Option<Row>>, now: RwSignal<i64>) -> impl IntoView {
+fn RolloutTasks(
+    /// The step; its tasks show when it waited for a rollout.
+    row: Memo<Option<Row>>,
+    /// The current time, in Unix milliseconds.
+    now: RwSignal<i64>,
+) -> impl IntoView {
     let step = Memo::new(move |_| {
         row.with(|row| {
             row.as_ref()
@@ -1066,10 +1110,15 @@ fn RolloutTasks(row: Memo<Option<Row>>, now: RwSignal<i64>) -> impl IntoView {
 /// visible), then until a read made after it ended succeeds.
 #[component]
 fn StepOutput(
+    /// ID of the environment that ran the step.
     environment: String,
+    /// ID of the operation that ran the step.
     operation: String,
+    /// The step whose output to show.
     id: RowId,
+    /// When the step started, in Unix milliseconds.
     since: i64,
+    /// Whether the step is running.
     running: Signal<bool>,
 ) -> impl IntoView {
     let lines = RwSignal::new(None::<Vec<LogLine>>);
@@ -1196,7 +1245,14 @@ async fn find_build(
 /// newer `attempt`, even one that ended before the page saw it run. Events
 /// arriving together are drawn in one frame.
 #[component]
-fn EventFeed(operation: String, live: Memo<bool>, attempt: Memo<u64>) -> impl IntoView {
+fn EventFeed(
+    /// ID of the operation whose events to show.
+    operation: String,
+    /// Whether the operation may still change.
+    live: Memo<bool>,
+    /// The operation's attempt number, which opens the stream again when it grows.
+    attempt: Memo<u64>,
+) -> impl IntoView {
     let events = RwSignal::new(VecDeque::<Event>::new());
     let pending = StoredValue::new_local(Vec::<Event>::new());
     let settled = StoredValue::new(false);

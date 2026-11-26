@@ -36,6 +36,7 @@ pub(super) fn relative(milliseconds: i64) -> String {
     clippy::cast_precision_loss,
     reason = "browser timestamps fit within f64's exact integer range"
 )]
+/// Builds a JavaScript `Date` from Unix `milliseconds`.
 fn date(milliseconds: i64) -> js_sys::Date {
     js_sys::Date::new(&JsValue::from_f64(milliseconds as f64))
 }

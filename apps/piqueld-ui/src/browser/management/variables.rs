@@ -13,9 +13,13 @@ use std::collections::{BTreeMap, BTreeSet};
 /// value in previews, as typed.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct VariableDraft {
+    /// The variable's name.
     name: String,
+    /// The value used where an environment has none of its own.
     default: String,
+    /// The value per environment name.
     environments: BTreeMap<String, String>,
+    /// The value in previews.
     previews: String,
 }
 

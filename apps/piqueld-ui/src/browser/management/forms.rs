@@ -9,7 +9,9 @@ use piqueld_client::{ApplicationManifest, access::AppPermission, edit::Applicati
 /// compares against. While they differ the group is in the editor's dirty
 /// set, which blocks deploys and guards navigation.
 pub(super) struct Draft<T: Send + Sync + 'static> {
+    /// The edited value.
     pub(super) value: RwSignal<T>,
+    /// The saved value the edits are compared against.
     pub(super) baseline: RwSignal<T>,
 }
 
@@ -174,8 +176,11 @@ impl Draft<String> {
 /// replaced under it. Closing it after a refused save keeps the editor's
 /// error, with its Reload button, on the page.
 pub(super) struct RowDialog<T: Send + Sync + 'static> {
+    /// Whether the dialog is open.
     pub(super) opened: RwSignal<bool>,
+    /// The row being edited.
     pub(super) draft: RwSignal<T>,
+    /// Position of the row being edited; `None` when adding one.
     index: RwSignal<Option<usize>>,
 }
 
@@ -224,6 +229,7 @@ impl<T: Clone + Default + Send + Sync + 'static> RowDialog<T> {
         self.open(Some(index), row);
     }
 
+    /// Opens the dialog on `row`, at `index` when editing and `None` when adding.
     fn open(self, index: Option<usize>, row: T) {
         editor().set_error(None);
         self.draft.set(row);

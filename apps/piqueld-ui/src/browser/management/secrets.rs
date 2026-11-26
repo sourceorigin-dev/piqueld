@@ -21,12 +21,16 @@ use std::collections::BTreeSet;
 /// link, or a success notice.
 #[derive(Clone, Copy)]
 struct Feedback {
+    /// The error shown to the user; `None` when there is none.
     error: RwSignal<Option<String>>,
+    /// ID of the diagnostic event behind `error`, for a link to it.
     diagnostic: RwSignal<Option<String>>,
+    /// The success message shown to the user; empty when there is none.
     notice: RwSignal<String>,
 }
 
 impl Feedback {
+    /// Creates feedback with nothing to show.
     fn new() -> Self {
         Self {
             error: RwSignal::new(None),
@@ -158,12 +162,16 @@ fn status_badge(metadata: &SecretMetadata, held: &'static str) -> AnyView {
 /// environment IDs, and whether previews may mount the secret.
 #[derive(Clone, Copy)]
 struct AccessForm {
+    /// Whether every environment may mount the secret.
     all: RwSignal<bool>,
+    /// The environments that may mount it when `all` is unchecked.
     allowed: RwSignal<BTreeSet<EnvironmentId>>,
+    /// Whether previews may mount it.
     previews: RwSignal<bool>,
 }
 
 impl AccessForm {
+    /// Creates a form granting every environment, and no previews.
     fn new() -> Self {
         let form = Self {
             all: RwSignal::new(true),
@@ -242,8 +250,12 @@ impl AccessForm {
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn StoredSecrets(
-    #[prop(optional, into)] mounts: Option<Signal<BTreeSet<String>>>,
-    #[prop(optional)] changed: Option<Callback<()>>,
+    /// Names of the secrets the shown environment's manifest mounts.
+    #[prop(optional, into)]
+    mounts: Option<Signal<BTreeSet<String>>>,
+    /// Called after every write.
+    #[prop(optional)]
+    changed: Option<Callback<()>>,
 ) -> impl IntoView {
     let context = editor();
     let scope = move || mounts.and_then(|_| context.selected_environment());
@@ -598,6 +610,7 @@ enum GeneratedAction {
 }
 
 impl GeneratedAction {
+    /// The label of the button that starts the action.
     fn label(self) -> &'static str {
         match self {
             Self::Regenerate => "Regenerate",
@@ -605,6 +618,7 @@ impl GeneratedAction {
         }
     }
 
+    /// The question asking to confirm the action on the secret `name`.
     fn confirmation(self, name: &str) -> String {
         match self {
             Self::Regenerate => format!(
@@ -616,6 +630,7 @@ impl GeneratedAction {
         }
     }
 
+    /// The message shown once the action succeeded.
     fn success(self) -> &'static str {
         match self {
             Self::Regenerate => "New value generated. Deploy to use it.",
@@ -1051,7 +1066,10 @@ fn secret_files(manifest: &ApplicationManifest, service: &str) -> Vec<SecretMoun
 /// Editor for one service's secret file references (secret name and container
 /// path), saved as part of the application configuration.
 #[component]
-fn SecretFiles(service_name: String) -> impl IntoView {
+fn SecretFiles(
+    /// Name of the service whose secret files to edit.
+    service_name: String,
+) -> impl IntoView {
     let context = editor();
     let read = service_name.clone();
     let draft = Draft::synced(format!("secret-files:{service_name}"), move |manifest| {

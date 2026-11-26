@@ -9,10 +9,15 @@ use piqueld_client::LogStream;
 /// Build and service-scoped viewers keep separate timestamp/service defaults.
 #[derive(Clone, Copy)]
 pub(super) struct LogPreferences {
+    /// Whether application and service viewers show timestamps.
     timestamps: RwSignal<bool>,
+    /// Whether build viewers show timestamps.
     build_timestamps: RwSignal<bool>,
+    /// Whether application viewers show service names.
     services: RwSignal<bool>,
+    /// Whether service-scoped viewers show service names.
     scoped_services: RwSignal<bool>,
+    /// Whether long lines wrap in every viewer.
     wrap: RwSignal<bool>,
 }
 impl LogPreferences {
@@ -53,7 +58,10 @@ impl LogPreferences {
 
 /// Select that filters logs to `stdout`, `stderr`, or both (`None`).
 #[component]
-pub(super) fn StreamFilter(stream: RwSignal<Option<LogStream>>) -> impl IntoView {
+pub(super) fn StreamFilter(
+    /// The selected stream; `None` shows both.
+    stream: RwSignal<Option<LogStream>>,
+) -> impl IntoView {
     view! {
         <label class="field">
             <span>"Stream"</span>
@@ -107,8 +115,11 @@ impl LogLine {
 #[derive(Clone, Copy, Default)]
 pub(super) enum LogKind {
     #[default]
+    /// Application-wide logs.
     Application,
+    /// One service's logs.
     Service,
+    /// A build's output.
     Build,
 }
 
@@ -116,11 +127,21 @@ pub(super) enum LogKind {
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(super) fn LogViewer(
-    #[prop(into)] lines: Signal<Vec<LogLine>>,
-    #[prop(into)] label: String,
-    #[prop(into)] empty: String,
-    #[prop(default = LogKind::Application)] kind: LogKind,
-    #[prop(default = Signal::derive(|| 0), into)] prepend_revision: Signal<u64>,
+    /// The lines to show, oldest first.
+    #[prop(into)]
+    lines: Signal<Vec<LogLine>>,
+    /// The accessible label of the log region.
+    #[prop(into)]
+    label: String,
+    /// What to show when there are no lines.
+    #[prop(into)]
+    empty: String,
+    /// Which preference set the viewer uses.
+    #[prop(default = LogKind::Application)]
+    kind: LogKind,
+    /// Changes whenever lines are added at the top, which keeps the scroll position.
+    #[prop(default = Signal::derive(|| 0), into)]
+    prepend_revision: Signal<u64>,
 ) -> impl IntoView {
     #[expect(
         clippy::expect_used,

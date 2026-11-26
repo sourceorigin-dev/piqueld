@@ -40,16 +40,22 @@ use web_sys::window as browser_window;
 /// Everything one successful refresh loaded, applied to `DashboardSignals` at once.
 #[derive(Clone, Debug)]
 struct DashboardSnapshot {
+    /// Daemon status.
     system: SystemStatus,
+    /// Readiness checks, or why they could not be read.
     readiness: Result<ReadinessStatus, String>,
+    /// Every application's row.
     applications: Vec<ApplicationRow>,
+    /// Whether the application listing stopped before its last page.
     incomplete: bool,
 }
 
 /// A refresh failure, split by whether the daemon was reachable at all.
 #[derive(Clone, Debug)]
 struct LoadFailure {
+    /// Whether the daemon could not be reached at all, rather than answering with an error.
     unreachable: bool,
+    /// The failure, as shown to the user.
     message: String,
 }
 
@@ -65,21 +71,35 @@ impl From<ClientError> for LoadFailure {
 /// Reactive state shared by every dashboard route, written by the refresh loop.
 #[derive(Clone, Copy)]
 struct DashboardSignals {
+    /// Daemon status; `None` until the first refresh succeeds.
     system: RwSignal<Option<SystemStatus>>,
+    /// Every application's row from the last successful refresh.
     applications: RwSignal<Vec<ApplicationRow>>,
+    /// Whether the daemon was reachable at the last refresh.
     connection: RwSignal<ConnectionState>,
+    /// Whether `applications` is loading, ready, empty or stale.
     data_state: RwSignal<DataState>,
+    /// The last refresh's failure message; `None` after a success.
     refresh_error: RwSignal<Option<String>>,
+    /// Whether a refresh is in flight.
     refreshing: RwSignal<bool>,
+    /// Readiness checks; `None` until read, or when they could not be.
     readiness: RwSignal<Option<ReadinessStatus>>,
+    /// Why the readiness checks could not be read; `None` when they were.
     readiness_error: RwSignal<Option<String>>,
+    /// Whether the application listing stopped before its last page, so rows may be missing.
     pagination_incomplete: RwSignal<bool>,
+    /// ID of the application whose detail is shown; `None` when none is.
     selected_id: RwSignal<Option<String>>,
     /// Environment page being shown, from the route; `None` on application pages.
     selected_environment: RwSignal<Option<String>>,
+    /// The selected application's detail; `None` until it loads.
     detail: RwSignal<Option<EnvironmentDetailView>>,
+    /// Whether the selected application's detail is loading.
     detail_loading: RwSignal<bool>,
+    /// Counts detail loads, so a load that finished after a newer one began is dropped.
     detail_request: RwSignal<u64>,
+    /// Why the selected application's detail failed to load; `None` otherwise.
     detail_error: RwSignal<Option<String>>,
 }
 
@@ -341,7 +361,9 @@ impl Alive {
 /// Context provided by `DashboardLayout` to all nested dashboard routes.
 #[derive(Clone)]
 struct DashboardContext {
+    /// The shared dashboard state.
     signals: DashboardSignals,
+    /// The client the dashboard's requests go through.
     client: Client,
     /// Requests an immediate (manual) dashboard refresh.
     refresh: Callback<()>,

@@ -119,7 +119,10 @@ const NAME_FORM: &str = "service-name";
 /// removal and returns to the service list. Editing is disabled without
 /// `apps:write`, which also hides the rename and remove buttons.
 #[component]
-pub(super) fn ServiceEditor(name: String) -> impl IntoView {
+pub(super) fn ServiceEditor(
+    /// Name of the service.
+    name: String,
+) -> impl IntoView {
     let context = editor();
     let app_href = move || format!("/dashboard/applications/{}?tab=services", context.id());
     if !context
@@ -221,7 +224,10 @@ pub(super) fn ServiceEditor(name: String) -> impl IntoView {
 /// the service, then replaces the page with the renamed service's. Unsaved
 /// edits to other forms block renaming, as the page remounts.
 #[component]
-fn ServiceTitle(name: String) -> impl IntoView {
+fn ServiceTitle(
+    /// Name of the service.
+    name: String,
+) -> impl IntoView {
     let context = editor();
     let navigate = use_navigate();
     let editing = RwSignal::new(false);
@@ -260,7 +266,10 @@ fn ServiceTitle(name: String) -> impl IntoView {
 /// environments, links to each environment's logs instead. Remounts when the
 /// target environment changes, so polling never keeps a stale target.
 #[component]
-fn ServiceLogs(name: String) -> impl IntoView {
+fn ServiceLogs(
+    /// Name of the service.
+    name: String,
+) -> impl IntoView {
     let context = editor();
     move || {
         if context.environment.get().is_some() {

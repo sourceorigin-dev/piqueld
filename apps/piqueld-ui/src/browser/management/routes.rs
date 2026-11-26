@@ -15,15 +15,23 @@ use piqueld_client::{
 /// so switching between them does not discard typed values.
 #[derive(Clone, PartialEq)]
 struct RouteDraft {
+    /// The hostname the route serves.
     hostname: String,
     /// Optional stable name; empty when unnamed.
     name: String,
+    /// Who may reach the route.
     visibility: Visibility,
+    /// Whether the destination is a redirect rather than a service.
     redirect: bool,
+    /// Name of the destination service.
     service: String,
+    /// The destination service's port, as typed.
     port: String,
+    /// The redirect's target URL.
     to: String,
+    /// The redirect's HTTP status code, as typed.
     status: String,
+    /// Whether the redirect keeps the request's path.
     preserve_path: bool,
 }
 

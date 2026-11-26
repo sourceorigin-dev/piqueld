@@ -251,10 +251,15 @@ type Shown = (String, Option<String>);
 /// success message, and an optional one-time secret to copy.
 #[derive(Clone, Copy)]
 struct Feedback {
+    /// Whether an action is running.
     busy: RwSignal<bool>,
+    /// The last action's error; empty when there is none.
     error: RwSignal<String>,
+    /// The last action's success message; empty when there is none.
     message: RwSignal<String>,
+    /// The one-time secret the last action returned, to copy; `None` when there is none.
     secret: RwSignal<Option<String>>,
+    /// Counts successful actions, for views that reload when one finishes.
     revision: RwSignal<u32>,
 }
 
@@ -370,11 +375,17 @@ impl From<&Principal> for Identity {
 /// Session state owned by `Gate` and shared through context.
 #[derive(Clone, Copy)]
 struct AuthState {
+    /// Whether the first session check has finished.
     loaded: RwSignal<bool>,
+    /// Whether the daemon has an account, as opposed to awaiting first-run setup.
     initialized: RwSignal<bool>,
+    /// The signed-in session; `None` when signed out.
     current: RwSignal<Option<Session>>,
+    /// Why the session check failed; empty when it did not.
     error: RwSignal<String>,
+    /// Whether the session ended while the dashboard was open.
     expired: RwSignal<bool>,
+    /// The invitation or enrollment link the page was opened with, if any.
     invitation: StoredValue<Option<Invite>>,
 }
 
@@ -562,7 +573,10 @@ pub(super) fn Gate() -> impl IntoView {
 /// action, which then retries by itself. As a native modal dialog opened
 /// last, it shows above the form that asked, which keeps what was entered.
 #[component]
-fn ConfirmPasskey(step_up: StepUp) -> impl IntoView {
+fn ConfirmPasskey(
+    /// The request this dialog answers.
+    step_up: StepUp,
+) -> impl IntoView {
     let feedback = Feedback::new();
     let cancel = Callback::new(move |()| step_up.finish(false));
     view! {
@@ -615,7 +629,10 @@ fn ConfirmPasskey(step_up: StepUp) -> impl IntoView {
     clippy::map_err_ignore,
     reason = "any failure to read the session means the page is still signed out"
 )]
-fn SessionExpired(state: AuthState) -> impl IntoView {
+fn SessionExpired(
+    /// The auth state whose session ended.
+    state: AuthState,
+) -> impl IntoView {
     let feedback = Feedback::new();
     let operator = state.current.with_untracked(|session| {
         session
@@ -708,8 +725,11 @@ pub(super) fn AuthPage() -> impl IntoView {
 /// with the CLI's code filled in) and a signed-in landing view.
 #[component]
 fn SignIn(
+    /// Whether the daemon has an account, as opposed to awaiting first-run setup.
     initialized: bool,
+    /// The signed-in session, if any.
     current: Option<Session>,
+    /// The invitation or enrollment link the page was opened with, if any.
     invitation: Option<Invite>,
 ) -> impl IntoView {
     let feedback = Feedback::new();
@@ -926,7 +946,12 @@ fn passkey_sign_in(feedback: Feedback) -> AnyView {
 /// A `code` from the CLI's link is reviewed straight away, leaving only the
 /// approval to the user.
 #[component]
-fn DeviceApproval(who: String, code: String) -> impl IntoView {
+fn DeviceApproval(
+    /// Name of the signed-in account, shown with the request.
+    who: String,
+    /// The CLI's device code, or empty to have it typed in.
+    code: String,
+) -> impl IntoView {
     let feedback = Feedback::new();
     let prefilled = !code.is_empty();
     let code = RwSignal::new(code);
@@ -1075,7 +1100,11 @@ fn DeviceApproval(who: String, code: String) -> impl IntoView {
 /// Sign-out button; an already-invalid session (401) still counts as signed
 /// out. `compact` shows only its icon.
 #[component]
-pub(super) fn Logout(#[prop(optional)] compact: bool) -> impl IntoView {
+pub(super) fn Logout(
+    /// Whether to show only the icon.
+    #[prop(optional)]
+    compact: bool,
+) -> impl IntoView {
     let feedback = Feedback::new();
     let sign_out = move |_| {
         feedback.run(async move {
@@ -1256,7 +1285,12 @@ fn account_row(account: Account, passkeys: usize) -> AnyView {
 
 /// Dialog choosing the grants of a new invitation.
 #[component]
-fn InvitationDialog(opened: RwSignal<bool>, feedback: Feedback) -> impl IntoView {
+fn InvitationDialog(
+    /// Whether the dialog is open.
+    opened: RwSignal<bool>,
+    /// Reports the outcome of creating the invitation.
+    feedback: Feedback,
+) -> impl IntoView {
     let grants = RwSignal::new(Grants::default());
     view! {
         <Modal title="Create invitation" opened={opened} wide=true>
@@ -1324,14 +1358,19 @@ const REACH: &str = "It reaches them even when credentials in between have ended
 /// that covers. Confirming runs `on_confirm(cascade)`.
 #[component]
 fn CascadeDialog(
+    /// Whether the dialog is open.
     opened: RwSignal<bool>,
+    /// The dialog's title.
     title: &'static str,
     /// What happens, e.g. "piquelctl stops working at once."
     #[prop(into)]
     message: Signal<String>,
-    #[prop(default = ISSUED)] hint: &'static str,
+    /// What the cascade covers, shown before the shared reach note.
+    #[prop(default = ISSUED)]
+    hint: &'static str,
     /// The confirming button's label, e.g. "Revoke".
     confirm: &'static str,
+    /// Called with whether the box was checked when the user confirms.
     on_confirm: Callback<bool>,
 ) -> impl IntoView {
     let cascade = RwSignal::new(true);
@@ -1396,7 +1435,12 @@ fn revoke_credential(feedback: Feedback, id: String, name: &str) -> AnyView {
 /// Renders nothing when there are none. A session acts with `admin` on
 /// everything, so only callers holding that may revoke one.
 #[component]
-fn OperatorSessions(directory: Directory, feedback: Feedback) -> impl IntoView {
+fn OperatorSessions(
+    /// The account directory to list the sessions of.
+    directory: Directory,
+    /// Reports the outcome of revoking a session.
+    feedback: Feedback,
+) -> impl IntoView {
     let revoke = can(Permission::Admin);
     let sessions = directory.operator_sessions;
     (!sessions.is_empty()).then(|| {
@@ -1456,7 +1500,12 @@ fn OperatorSessions(directory: Directory, feedback: Feedback) -> impl IntoView {
 
 /// Pending invitation and enrollment links, each revocable.
 #[component]
-fn Invitations(directory: Directory, feedback: Feedback) -> impl IntoView {
+fn Invitations(
+    /// The account directory to list the links of.
+    directory: Directory,
+    /// Reports the outcome of revoking a link.
+    feedback: Feedback,
+) -> impl IntoView {
     let users = directory.users;
     let username = move |id: &str| {
         users
@@ -1736,7 +1785,12 @@ pub(super) fn AccountPage() -> impl IntoView {
 /// "Delete account", which confirms, then deletes `user` with its passkeys,
 /// sessions and tokens and returns to the directory.
 #[component]
-fn DeleteAccount(user: User, feedback: Feedback) -> impl IntoView {
+fn DeleteAccount(
+    /// The account to delete.
+    user: User,
+    /// Reports the outcome of deleting it.
+    feedback: Feedback,
+) -> impl IntoView {
     let navigate = use_navigate();
     let opened = RwSignal::new(false);
     let message = format!(
@@ -1773,7 +1827,12 @@ fn DeleteAccount(user: User, feedback: Feedback) -> impl IntoView {
 
 /// The account's username and display name, saved together.
 #[component]
-fn Profile(user: User, feedback: Feedback) -> impl IntoView {
+fn Profile(
+    /// The account to edit.
+    user: User,
+    /// Reports the outcome of saving it.
+    feedback: Feedback,
+) -> impl IntoView {
     let id = StoredValue::new(user.id);
     let saved = StoredValue::new((user.username.clone(), user.display_name.clone()));
     let username = RwSignal::new(user.username);
@@ -1820,7 +1879,14 @@ fn Profile(user: User, feedback: Feedback) -> impl IntoView {
 
 /// The `user` account's `grants`, edited in place with `accounts:manage`.
 #[component]
-fn Access(user: String, grants: Grants, feedback: Feedback) -> impl IntoView {
+fn Access(
+    /// ID of the account.
+    user: String,
+    /// The account's current grants.
+    grants: Grants,
+    /// Reports the outcome of saving them.
+    feedback: Feedback,
+) -> impl IntoView {
     let manage = can(Permission::Global(GlobalPermission::AccountsManage));
     let id = StoredValue::new(user);
     let editing = RwSignal::new(false);
@@ -1871,10 +1937,15 @@ fn Access(user: String, grants: Grants, feedback: Feedback) -> impl IntoView {
 /// dialog, whose outcome `adding` reports; others receive an enrollment link.
 #[component]
 fn Passkeys(
+    /// The account's passkeys.
     passkeys: Vec<PasskeyView>,
+    /// ID of the account.
     user: String,
+    /// Whether the signed-in account is this one.
     own: bool,
+    /// Reports the outcome of renaming or removing a passkey.
     feedback: Feedback,
+    /// Reports the outcome of adding a passkey.
     adding: Feedback,
 ) -> impl IntoView {
     let issuer = account_session().get_untracked();
@@ -1982,7 +2053,12 @@ fn Passkeys(
 /// One passkey: its name, **Edit** turning the row into a rename form, and
 /// **Remove**.
 #[component]
-fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
+fn PasskeyRow(
+    /// The passkey to show.
+    passkey: PasskeyView,
+    /// Reports the outcome of renaming or removing it.
+    feedback: Feedback,
+) -> impl IntoView {
     let id = StoredValue::new(passkey.id);
     let saved = StoredValue::new(passkey.name.clone());
     let label = RwSignal::new(passkey.name.clone());
@@ -2056,11 +2132,17 @@ fn PasskeyRow(passkey: PasskeyView, feedback: Feedback) -> impl IntoView {
 /// itself (`own`) the **New token** dialog, whose outcome `creating` reports.
 #[component]
 fn Credentials(
+    /// The account's sessions and API tokens.
     credentials: Vec<CredentialView>,
+    /// ID of the account.
     user: String,
+    /// The account's grants, which bound what each credential may do.
     grants: Grants,
+    /// Whether the signed-in account is this one.
     own: bool,
+    /// Reports the outcome of revoking credentials.
     feedback: Feedback,
+    /// Reports the outcome of creating a token.
     creating: Feedback,
 ) -> impl IntoView {
     let user = StoredValue::new(user);
@@ -2171,7 +2253,12 @@ fn Credentials(
 /// **New token** and its dialog, creating an API token of the signed-in
 /// account, limited to its `grants`; new tokens start read-only.
 #[component]
-fn NewToken(grants: Grants, creating: Feedback) -> impl IntoView {
+fn NewToken(
+    /// The signed-in account's grants, which limit the new token.
+    grants: Grants,
+    /// Reports the outcome of creating the token.
+    creating: Feedback,
+) -> impl IntoView {
     let opened = RwSignal::new(false);
     let token_name = RwSignal::new(String::new());
     let days = RwSignal::new("90".to_owned());

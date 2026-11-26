@@ -409,9 +409,14 @@ fn StopAction() -> impl IntoView {
 /// an open promotion preview. Hidden without `apps:deploy`.
 #[component]
 pub(in crate::browser::management) fn EnvironmentAction(
+    /// ID of the environment to deploy or promote.
     environment: String,
-    #[prop(optional)] compact: bool,
-    #[prop(default = None)] dialog: Option<RwSignal<bool>>,
+    /// Whether to show the smaller list-row button.
+    #[prop(optional)]
+    compact: bool,
+    /// A dialog to close once the action was accepted.
+    #[prop(default = None)]
+    dialog: Option<RwSignal<bool>>,
 ) -> impl IntoView {
     let context = editor();
     let id = StoredValue::new(environment);
@@ -469,8 +474,11 @@ pub(in crate::browser::management) fn EnvironmentAction(
 /// accepted. Hidden without `apps:deploy`.
 #[component]
 fn ChooseEnvironment(
+    /// The button's label.
     label: &'static str,
+    /// The dialog's title.
     title: &'static str,
+    /// IDs of the environments to offer.
     environments: Signal<Vec<String>>,
 ) -> impl IntoView {
     let context = editor();
@@ -520,10 +528,17 @@ fn ChooseEnvironment(
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
 pub(in crate::browser::management) fn PromoteAction(
+    /// ID of the environment to promote into.
     environment: String,
-    #[prop(optional)] release: Option<String>,
-    #[prop(optional)] compact: bool,
-    #[prop(default = None)] dialog: Option<RwSignal<bool>>,
+    /// ID of the release to promote; `None` for the source environment's current one.
+    #[prop(optional)]
+    release: Option<String>,
+    /// Whether to show the smaller list-row button.
+    #[prop(optional)]
+    compact: bool,
+    /// A dialog to close once the promotion was accepted.
+    #[prop(default = None)]
+    dialog: Option<RwSignal<bool>>,
 ) -> impl IntoView {
     let context = editor();
     let environment = StoredValue::new(environment);

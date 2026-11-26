@@ -74,19 +74,28 @@ impl Page {
 /// State shared by every section of one application editor, provided as context.
 #[derive(Clone, Copy)]
 struct EditorContext {
+    /// The dashboard's context.
     dashboard: StoredValue<DashboardContext>,
     /// The signed-in credential's grants, which `can` checks.
     grants: Signal<Grants>,
+    /// The application as last saved; edits are applied here only once the daemon accepts them.
     saved: RwSignal<ApplicationView>,
+    /// Which page of the application the editor shows.
     page: StoredValue<Page>,
     /// Environment that runtime actions target: the environment page's, or on
     /// application pages the only environment. `None` with several or none.
     environment: Memo<Option<String>>,
+    /// Keys of the forms with unsaved edits.
     dirty: RwSignal<BTreeSet<String>>,
+    /// Whether a request is in flight.
     busy: RwSignal<bool>,
+    /// Whether the last request's outcome is unknown, after a transport failure.
     uncertain: RwSignal<bool>,
+    /// The error shown to the user; `None` when there is none.
     error: RwSignal<Option<String>>,
+    /// ID of the diagnostic event behind `error`, for a link to it.
     diagnostic_id: RwSignal<Option<String>>,
+    /// The success message shown to the user; empty when there is none.
     notice: RwSignal<String>,
     /// The page's tabs; `tabs.selected` is the shown one.
     tabs: TabSet,
@@ -892,7 +901,12 @@ pub(super) fn CreateApplication() -> impl IntoView {
 
 /// Loads saved application `id` once and mounts `ApplicationEditor` for `page`.
 #[component]
-pub(super) fn ApplicationPage(id: String, page: Page) -> impl IntoView {
+pub(super) fn ApplicationPage(
+    /// ID of the application to load.
+    id: String,
+    /// Which page of it to show.
+    page: Page,
+) -> impl IntoView {
     let initial = RwSignal::new(None::<ApplicationView>);
     let error = RwSignal::new(None::<String>);
     spawn_local(async move {
@@ -937,7 +951,12 @@ fn back_link(href: impl ToHref + Send + Sync + 'static, label: impl IntoView + '
 /// the application page, a service editor, or an environment page. The initial
 /// tab comes from the `deployment` or `tab` query parameters.
 #[component]
-fn ApplicationEditor(initial: ApplicationView, page: Page) -> impl IntoView {
+fn ApplicationEditor(
+    /// The application as saved, to start editing from.
+    initial: ApplicationView,
+    /// Which page of it to show.
+    page: Page,
+) -> impl IntoView {
     let query = leptos_router::hooks::use_query_map();
     let dashboard = dashboard_context();
     let signals = dashboard.signals;
