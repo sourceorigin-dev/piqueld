@@ -57,10 +57,11 @@ impl Store {
 
     /// Creates the preview of `branch` and `slot`, named by the slug derived
     /// from them, unless one exists. Returns its ID and whether it was created.
-    /// The application must be repository-backed (`PreviewRequiresRepository`)
-    /// and not being deleted (`Busy`); so must an existing preview. A slug
-    /// already naming an environment is `AlreadyExists`. A new preview must
-    /// fit `limits` (`PreviewLimitReached`); an existing one is returned
+    /// The application must be repository-backed
+    /// (`EnvironmentError::PreviewRequiresRepository`) and not being deleted
+    /// (`Busy`); so must an existing preview. A slug already naming an
+    /// environment is `AlreadyExists`. A new preview must fit `limits`
+    /// (`EnvironmentError::PreviewLimitReached`); an existing one is returned
     /// whatever the counts.
     pub(super) async fn create_preview_on(
         tx: &mut Transaction<'_, Sqlite>,
@@ -210,7 +211,8 @@ impl Store {
     }
 
     /// Starts a deployment of the head of a preview's branch. Fails with
-    /// `PreviewRequiresRepository` once its application was disconnected.
+    /// `EnvironmentError::PreviewRequiresRepository` once its application was
+    /// disconnected.
     pub(super) async fn deploy_preview_on(
         tx: &mut Transaction<'_, Sqlite>,
         preview: &StoredEnvironment,

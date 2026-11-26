@@ -11,13 +11,13 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Why a public hostname could not be reserved.
 #[derive(Debug, thiserror::Error)]
-pub enum HostnameError {
+pub enum HostnameConflict {
     /// A public hostname belongs to another environment, another
     /// application's wildcard, or the installation.
     #[error(
         "hostname {hostname} is reserved by another environment, another application's wildcard, or this installation"
     )]
-    Conflict {
+    Reserved {
         /// Conflicting canonical public hostname.
         hostname: String,
     },
@@ -25,7 +25,7 @@ pub enum HostnameError {
     #[error(
         "hostname {hostname} is reserved by environment {environment} of this application; give each environment its own hostname, e.g. `hostname = \"${{{{ vars.domain }}}}\"` with a different `domain` per environment"
     )]
-    SiblingConflict {
+    Sibling {
         /// Conflicting canonical public hostname.
         hostname: String,
         /// Sibling environment holding the reservation.
@@ -272,7 +272,7 @@ impl Store {
             if installation.iter().any(|domain| parsed.is_within(domain))
                 || Self::under_foreign_wildcard(&mut *connection, &parsed, environment_id).await?
             {
-                return Err(StoreError::Hostname(HostnameError::Conflict {
+                return Err(StoreError::Hostname(HostnameConflict::Reserved {
                     hostname: hostname.clone(),
                 }));
             }
@@ -305,12 +305,12 @@ impl Store {
                     environment_id
                 ).fetch_optional(&mut *connection).await.map_err(StoreError::database)?;
                 return Err(match sibling {
-                    Some(name) => StoreError::Hostname(HostnameError::SiblingConflict {
+                    Some(name) => StoreError::Hostname(HostnameConflict::Sibling {
                         hostname,
                         environment: piqueld_core::EnvironmentName::parse(name)
                             .map_err(StoreError::corrupt)?,
                     }),
-                    None => StoreError::Hostname(HostnameError::Conflict { hostname }),
+                    None => StoreError::Hostname(HostnameConflict::Reserved { hostname }),
                 });
             }
         }

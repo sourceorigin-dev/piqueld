@@ -15,7 +15,7 @@ pub use environment::EnvironmentError;
 mod history;
 mod images;
 pub mod ingress;
-pub use ingress::HostnameError;
+pub use ingress::HostnameConflict;
 mod jobs;
 mod journal;
 mod links;
@@ -114,7 +114,7 @@ pub enum StoreError {
     Secret(#[from] SecretFailure),
     /// A public hostname is reserved elsewhere.
     #[error(transparent)]
-    Hostname(#[from] HostnameError),
+    Hostname(#[from] HostnameConflict),
     /// An environment or preview could not be selected, renamed or created.
     #[error(transparent)]
     Environment(#[from] EnvironmentError),

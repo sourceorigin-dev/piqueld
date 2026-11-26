@@ -328,7 +328,7 @@ impl Store {
     /// generation takes time.
     ///
     /// # Errors
-    /// Returns `SecretSource` when generation fails, or database errors.
+    /// Returns `SecretFailure::Source` when generation fails, or database errors.
     pub async fn generated_secrets(
         &self,
         id: &EnvironmentId,
@@ -438,10 +438,10 @@ impl Store {
     /// first storing the `generated` values it needs (see `generated_secrets`);
     /// a value set concurrently wins. The first call checks the environment may
     /// mount every stored secret (see `check_secret_access_on`), then pins the
-    /// current generation of every referenced secret, so retries deploy the same
-    /// versions; later calls reuse the pins. Fails if referenced secrets have no
-    /// value (`SecretMissing`, naming them), are being deleted, or had their value
-    /// discarded by key recovery.
+    /// current generation of every referenced secret, so retries deploy the
+    /// same versions; later calls reuse the pins. Fails if referenced secrets
+    /// have no value (`SecretFailure::Missing`, naming them), are being
+    /// deleted, or had their value discarded by key recovery.
     pub(super) async fn pin_secrets_on(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,

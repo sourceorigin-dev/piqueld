@@ -89,7 +89,7 @@ impl Store {
     }
 
     /// Reserves an environment's secret for deletion and returns the runtime
-    /// versions to remove. A new deletion is refused (`SecretReferenced`)
+    /// versions to remove. A new deletion is refused (`SecretFailure::Referenced`)
     /// while the environment still uses it (see `secret_in_use_on`). Resuming
     /// an existing reservation skips that check and reuses its token. The
     /// author's actor needs `secrets:write` on the environment's

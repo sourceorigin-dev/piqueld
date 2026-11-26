@@ -117,11 +117,11 @@ impl Store {
     /// Creates or rotates a stored secret; rotation only affects a later
     /// deployment. `expected` is the current generation (zero to create) and,
     /// when the caller read it, the access: an existing secret whose access
-    /// changed fails with `SecretAccessConflict`. A new secret gets `access`, or
-    /// every environment and no previews; an existing one keeps its access unless
-    /// `access` replaces it. Rejected while the application or secret is being
-    /// deleted, and for names the manifest declares as generated. The author's
-    /// actor needs `secrets:write`, checked in the transaction.
+    /// changed fails with `SecretFailure::AccessConflict`. A new secret gets
+    /// `access`, or every environment and no previews; an existing one keeps
+    /// its access unless `access` replaces it. Rejected while the application
+    /// or secret is being deleted, and for names the manifest generates. The
+    /// author's actor needs `secrets:write`, checked in the transaction.
     /// # Errors
     /// Returns invalid input, refusal, conflicts, quota, key or database errors.
     pub async fn put_stored_secret<'a>(
@@ -240,8 +240,8 @@ impl Store {
     /// transaction, which also records the request's change.
     ///
     /// # Errors
-    /// Returns refusal, absence, deletion in progress (`SecretDeleting`), a
-    /// changed access (`SecretAccessConflict`), unknown environments
+    /// Returns refusal, absence, deletion in progress (`SecretFailure::Deleting`), a
+    /// changed access (`SecretFailure::AccessConflict`), unknown environments
     /// (`InvalidInput`), or database errors.
     pub async fn set_secret_access(
         &self,
@@ -386,7 +386,7 @@ impl Store {
 
     /// Checks that `app`, rendered for `environment`, may use its application
     /// store: no declared secret is also stored, and every stored secret it
-    /// mounts allows the environment (`SecretAccessDenied`, naming the first
+    /// mounts allows the environment (`SecretFailure::AccessDenied`, naming the first
     /// that doesn't). Other unusable secrets fail later, when pinned.
     ///
     /// # Errors
@@ -416,7 +416,7 @@ impl Store {
 
     /// Checks a preview of `app` for `environment`; see `check_secret_access_on`.
     /// # Errors
-    /// Returns `SecretAccessDenied`, validation, or database errors.
+    /// Returns `SecretFailure::AccessDenied`, validation, or database errors.
     pub async fn check_secret_access(
         &self,
         environment: &EnvironmentView,
@@ -426,11 +426,11 @@ impl Store {
     }
 
     /// Reserves a stored secret for deletion and returns each environment's
-    /// Docker secrets to remove. A new deletion is refused (`SecretReferenced`)
-    /// while any environment still uses it (see `secret_in_use_on`). Resuming
-    /// an existing reservation skips that check and reuses its token. `actor`
-    /// needs `secrets:write` on the application, checked in the reserving
-    /// transaction.
+    /// Docker secrets to remove. A new deletion is refused
+    /// (`SecretFailure::Referenced`) while any environment still uses it (see
+    /// `secret_in_use_on`). Resuming an existing reservation skips that check
+    /// and reuses its token. `actor` needs `secrets:write` on the application,
+    /// checked in the reserving transaction.
     ///
     /// # Errors
     /// Returns a storage error.

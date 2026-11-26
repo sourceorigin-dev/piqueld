@@ -266,7 +266,7 @@ impl Store {
             Ok(cipher) => Ok(cipher),
             Err(error) => match error.key_failure() {
                 Some(failure) if failure.lost() => Err(failure),
-                _ => return Err(StoreError::Secret(SecretFailure::Source(error))),
+                _ => return Err(StoreError::secret(error)),
             },
         };
         let cipher = key.as_ref().ok();

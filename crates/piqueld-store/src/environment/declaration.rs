@@ -41,7 +41,7 @@ impl Store {
         Self::check_declared_by(application, name, EnvironmentConfig::sets_source)
     }
 
-    /// `EnvironmentDeclared` when `name`'s block in `application`'s saved
+    /// `EnvironmentError::Declared` when `name`'s block in `application`'s saved
     /// manifest is `declares`.
     fn check_declared_by(
         application: &ApplicationTemplate,
@@ -188,7 +188,7 @@ impl Store {
 
     /// Declares the environments an edit through the CLI or dashboard configures,
     /// which must exist already: a block for a name no environment has, or a name
-    /// in `named`, fails with `EnvironmentUnknown`. An edit declaring the
+    /// in `named`, fails with `EnvironmentError::Unknown`. An edit declaring the
     /// application's first environment declares every existing one too, with a
     /// block that leaves its source as it is. `before` is the saved manifest,
     /// `after` the edited one.

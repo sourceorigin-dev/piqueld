@@ -13,7 +13,7 @@ use piqueld_core::{
     ApplicationIdError, EnvironmentIdError, EnvironmentNameError, GitBranchError, PreviewSlotError,
 };
 use piqueld_store::{
-    EnvironmentError, HostnameError, PromotionError, RestoreError, SecretFailure, StoreError,
+    EnvironmentError, HostnameConflict, PromotionError, RestoreError, SecretFailure, StoreError,
 };
 use serde_json::{Value, json};
 
@@ -168,9 +168,9 @@ impl ApiError {
     }
 
     /// Maps environment selection and rename failures, naming the
-    /// environments in `details`, previews
-    /// of applications without a manifest repository, and previews over a
-    /// `[previews]` limit, listing the previews it counts in `details`.
+    /// environments in `details`, previews of applications without a
+    /// manifest repository, and previews over a `[previews]` limit, listing
+    /// the previews it counts in `details`.
     fn from_environment_error(error: EnvironmentError) -> Self {
         match error {
             EnvironmentError::Required { environments } => Self::new(
@@ -294,15 +294,15 @@ impl ApiError {
 
     /// Maps hostname reservation conflicts, naming the hostname, and the
     /// sibling environment reserving it if any.
-    fn from_hostname_conflict(error: HostnameError) -> Self {
+    fn from_hostname_conflict(error: HostnameConflict) -> Self {
         match error {
-            HostnameError::Conflict { hostname } => Self::new(
+            HostnameConflict::Reserved { hostname } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::HostnameConflict,
                 "Hostname is reserved by another environment, another application's wildcard, or this installation",
             )
             .details(json!({"hostname": hostname})),
-            ref error @ HostnameError::SiblingConflict {
+            ref error @ HostnameConflict::Sibling {
                 ref hostname,
                 ref environment,
             } => Self::new(StatusCode::CONFLICT, ApiErrorCode::HostnameConflict, error.to_string())

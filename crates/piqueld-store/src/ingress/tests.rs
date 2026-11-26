@@ -81,7 +81,7 @@ async fn installation_hostnames_and_subdomains_are_never_routed() {
     for hostname in ["piqueld.example.com", "api.piqueld.example.com"] {
         assert!(matches!(
             save(&store, app("late", Some(hostname)), false).await,
-            Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+            Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
         ));
     }
     save(
@@ -108,7 +108,7 @@ async fn wildcards_keep_the_names_they_serve_from_other_applications() {
         .expect("save succeeds");
     assert!(matches!(
         save(&store, app("other", Some("late.tenants.example.com")), false).await,
-        Err(StoreError::Hostname(HostnameError::Conflict { hostname })) if hostname == "late.tenants.example.com"
+        Err(StoreError::Hostname(HostnameConflict::Reserved { hostname })) if hostname == "late.tenants.example.com"
     ));
     save(
         &store,
@@ -137,7 +137,7 @@ async fn environments_of_one_application_cannot_share_a_hostname() {
     };
     assert!(matches!(
         store.force(staging).await,
-        Err(StoreError::Hostname(HostnameError::SiblingConflict { hostname, environment }))
+        Err(StoreError::Hostname(HostnameConflict::Sibling { hostname, environment }))
             if hostname == "site.example.com" && environment.as_str() == "production"
     ));
     assert_eq!(
@@ -198,7 +198,7 @@ async fn environments_render_their_own_hostnames_from_variables() {
     assert_eq!(deployed, ["piquel.fr", "staging.piquel.fr"]);
     assert!(matches!(
         save(&store, app("other", Some("staging.piquel.fr")), false).await,
-        Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+        Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
     ));
 
     let same = piqueld_core::edit::Variables {
@@ -212,7 +212,7 @@ async fn environments_render_their_own_hostnames_from_variables() {
     };
     assert!(matches!(
         store.force(edit).await,
-        Err(StoreError::Hostname(HostnameError::SiblingConflict { hostname, environment }))
+        Err(StoreError::Hostname(HostnameConflict::Sibling { hostname, environment }))
             if hostname == "piquel.fr" && environment.as_str() == "production"
     ));
 }
@@ -231,7 +231,7 @@ async fn replacing_pending_deployment_releases_only_superseded_hostnames() {
         .expect("save succeeds");
     assert!(matches!(
         save(&store, app("three", Some("new.example.com")), false).await,
-        Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+        Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
     ));
 }
 
@@ -263,7 +263,7 @@ async fn hostname_conflict_rolls_back_deployment_and_replay_receipt() {
         .await;
     assert!(matches!(
         result,
-        Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+        Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
     ));
     assert_eq!(
         store
@@ -313,9 +313,9 @@ async fn concurrent_saves_cannot_claim_the_same_hostname() {
         (&one, &two),
         (
             Ok(_),
-            Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+            Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
         ) | (
-            Err(StoreError::Hostname(HostnameError::Conflict { .. })),
+            Err(StoreError::Hostname(HostnameConflict::Reserved { .. })),
             Ok(_)
         )
     ));
@@ -367,7 +367,7 @@ async fn stopped_environments_keep_their_routes_unserved() {
         .expect("acknowledge routes succeeds");
     assert!(matches!(
         save(&store, app("two", Some("site.example.com")), false).await,
-        Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+        Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
     ));
 
     accept(Mutation::deploy(id.clone())).await;
@@ -554,7 +554,7 @@ async fn deployed_names_survive_disabled_ingress_and_failed_gateway_withdrawal()
         .expect("save succeeds");
     assert!(matches!(
         save(&store, app("two", Some("site.example.com")), false).await,
-        Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+        Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
     ));
     store
         .stage_routes(&id, &[], true, None)
@@ -563,7 +563,7 @@ async fn deployed_names_survive_disabled_ingress_and_failed_gateway_withdrawal()
     assert!(
         matches!(
             save(&store, app("two", Some("site.example.com")), false).await,
-            Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+            Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
         ),
         "last accepted configuration still reserves its host"
     );
@@ -587,7 +587,7 @@ async fn captured_and_fetched_deployments_reserve_hostnames() {
         .expect("save succeeds");
     assert!(matches!(
         save(&store, app("two", Some("site.example.com")), false).await,
-        Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+        Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
     ));
     save(&store, app("two", Some("taken.example.com")), false)
         .await
@@ -610,7 +610,7 @@ async fn captured_and_fetched_deployments_reserve_hostnames() {
         store
             .save_deployment_input(&operation, (&fetched, None), &rendering, (None, None), &[])
             .await,
-        Err(StoreError::Hostname(HostnameError::Conflict { .. }))
+        Err(StoreError::Hostname(HostnameConflict::Reserved { .. }))
     ));
 }
 
