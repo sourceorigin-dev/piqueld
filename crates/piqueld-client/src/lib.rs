@@ -57,7 +57,8 @@ mod client;
 mod editing;
 #[expect(
     unreachable_pub,
-    reason = "Progenitor writes the generated client with `pub` items"
+    clippy::unwrap_used,
+    reason = "Progenitor writes the generated client with `pub` items and unwraps its HTTP client's build"
 )]
 mod generated;
 mod secrets;
