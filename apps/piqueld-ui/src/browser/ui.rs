@@ -10,31 +10,57 @@ use std::collections::BTreeSet;
 /// Inline stroke icons, drawn on a 24-unit grid.
 #[derive(Clone, Copy)]
 pub(super) enum Icon {
+    /// Dashboard home.
     Home,
+    /// Applications.
     Apps,
+    /// Builds.
     Builds,
+    /// Events.
     Events,
+    /// Errors.
     Errors,
+    /// The daemon's status.
     Daemon,
+    /// Analytics.
     Analytics,
+    /// Notifications.
     Notifications,
+    /// Accounts.
     Accounts,
+    /// Settings.
     Settings,
+    /// Signing out.
     LogOut,
+    /// Adding something.
     Plus,
+    /// A chevron pointing right, for a link into a page.
     ChevronRight,
+    /// An arrow pointing left, for a link back.
     ArrowLeft,
+    /// Closing.
     Close,
+    /// Editing.
     Pencil,
+    /// Refreshing.
     Refresh,
+    /// Downloading.
     Download,
+    /// Previewing.
     Eye,
+    /// Deploying.
     Rocket,
+    /// An application.
     Package,
+    /// Passkeys and signing in.
     Key,
+    /// Copying to the clipboard.
     Copy,
+    /// A branch, for previews.
     GitBranch,
+    /// Restoring a deployment.
     Restore,
+    /// Opening the navigation menu.
     Menu,
 }
 
@@ -202,11 +228,17 @@ pub(super) fn one_time_secret(
 /// Semantic colour used by badges, notices, and status cards.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Tone {
+    /// Success or health.
     Ok,
+    /// A warning.
     Warn,
+    /// A failure.
     Bad,
+    /// Work in progress.
     Pending,
+    /// Information.
     Info,
+    /// No state to report.
     Neutral,
 }
 
@@ -548,9 +580,15 @@ pub(super) fn when(milliseconds: i64) -> AnyView {
 /// Page title with an optional description and right-aligned actions.
 #[component]
 pub(super) fn PageHeader(
-    #[prop(into)] title: String,
-    #[prop(optional, into)] description: Option<String>,
-    #[prop(optional)] children: Option<Children>,
+    /// The page's title.
+    #[prop(into)]
+    title: String,
+    /// A line below the title saying what the page is for.
+    #[prop(optional, into)]
+    description: Option<String>,
+    /// Actions shown to the right of the title.
+    #[prop(optional)]
+    children: Option<Children>,
 ) -> impl IntoView {
     view! {
         <header class="page-header">
@@ -594,11 +632,21 @@ pub(super) fn text_field(label: &'static str, value: RwSignal<String>) -> AnyVie
 /// the browser's choice, its Close button, so Enter never confirms by itself.
 #[component]
 pub(super) fn Modal(
-    #[prop(into)] title: Signal<&'static str>,
+    /// The dialog's title.
+    #[prop(into)]
+    title: Signal<&'static str>,
+    /// Whether the dialog is open.
     opened: RwSignal<bool>,
-    #[prop(default = Signal::derive(|| false), into)] busy: Signal<bool>,
-    #[prop(optional, into)] on_close: Option<Callback<()>>,
-    #[prop(optional)] wide: bool,
+    /// Whether a request is in flight, which keeps the dialog from closing.
+    #[prop(default = Signal::derive(|| false), into)]
+    busy: Signal<bool>,
+    /// Called when the dialog closes.
+    #[prop(optional, into)]
+    on_close: Option<Callback<()>>,
+    /// Whether to show the dialog wider.
+    #[prop(optional)]
+    wide: bool,
+    /// The dialog's content.
     children: Children,
 ) -> impl IntoView {
     let dialog = NodeRef::<leptos::html::Dialog>::new();
@@ -667,13 +715,26 @@ pub(super) fn Modal(
 /// submission went through.
 #[component]
 pub(super) fn FormModal(
-    #[prop(into)] title: Signal<&'static str>,
+    /// The dialog's title.
+    #[prop(into)]
+    title: Signal<&'static str>,
+    /// Whether the dialog is open.
     opened: RwSignal<bool>,
-    #[prop(into)] busy: Signal<bool>,
-    #[prop(into)] error: Signal<Option<String>>,
-    #[prop(into)] submit: Signal<&'static str>,
+    /// Whether a submission is in flight, which disables the fields.
+    #[prop(into)]
+    busy: Signal<bool>,
+    /// The last submission's error; `None` when there is none.
+    #[prop(into)]
+    error: Signal<Option<String>>,
+    /// The submit button's label.
+    #[prop(into)]
+    submit: Signal<&'static str>,
+    /// Called when the form is submitted.
     on_submit: Callback<()>,
-    #[prop(optional)] wide: bool,
+    /// Whether to show the dialog wider.
+    #[prop(optional)]
+    wide: bool,
+    /// The form's fields.
     children: Children,
 ) -> impl IntoView {
     view! {
@@ -739,10 +800,12 @@ pub(super) fn row_detail(text: String) -> AnyView {
 /// is shown, so their forms keep their edits.
 #[derive(Clone, Copy)]
 pub(super) struct TabSet {
+    /// Names the tab set for assistive technology.
     label: &'static str,
     /// Tells this set's element IDs from another set's with the same label,
     /// such as one per deployment.
     id: u32,
+    /// The shown tab.
     pub(super) selected: RwSignal<&'static str>,
 }
 

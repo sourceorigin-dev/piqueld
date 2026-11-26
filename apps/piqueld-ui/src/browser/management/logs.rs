@@ -66,7 +66,11 @@ impl Follow {
 /// showing it reads the latest lines again; a paused stream stays paused.
 #[component]
 #[expect(clippy::too_many_lines, reason = "flat view! markup")]
-pub(super) fn ApplicationLogs(#[prop(optional)] fixed_service: Option<String>) -> impl IntoView {
+pub(super) fn ApplicationLogs(
+    /// A service to show the logs of, hiding the service selector.
+    #[prop(optional)]
+    fixed_service: Option<String>,
+) -> impl IntoView {
     let context = editor();
     let records = RwSignal::new(VecDeque::<LogRecord>::new());
     let pending = StoredValue::new_local(VecDeque::<LogRecord>::new());

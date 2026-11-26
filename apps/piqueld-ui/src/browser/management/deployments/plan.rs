@@ -12,7 +12,10 @@ use piqueld_client::{ManifestChange, PlanView, RuntimeCoverage, SecretProblem};
 /// adds, every secret the environment lacks for it, and what deploying it
 /// changes.
 #[component]
-pub(super) fn PromotionPlan(plan: PlanView) -> impl IntoView {
+pub(super) fn PromotionPlan(
+    /// The promotion plan to show.
+    plan: PlanView,
+) -> impl IntoView {
     let context = editor();
     let release = plan.release.clone().map(|release| {
         let volumes = if release.new_volumes.is_empty() {
@@ -83,7 +86,10 @@ pub(super) fn PromotionPlan(plan: PlanView) -> impl IntoView {
 /// Panel showing a deployment plan: configuration changes, planned runtime
 /// actions and plan diagnostics.
 #[component]
-pub(super) fn DeploymentPreview(preview: RwSignal<Option<PlanView>>) -> impl IntoView {
+pub(super) fn DeploymentPreview(
+    /// The plan to show; the panel closes while it is `None`.
+    preview: RwSignal<Option<PlanView>>,
+) -> impl IntoView {
     let opened = RwSignal::new(false);
     Effect::new(move |_| opened.set(preview.get().is_some()));
     view! {
@@ -166,7 +172,10 @@ pub(in crate::browser::management) fn change_row(change: ManifestChange) -> impl
 /// What deploying a plan changes: configuration changes, variable values,
 /// planned runtime actions, rollouts, and plan diagnostics.
 #[component]
-fn PlanDetails(plan: PlanView) -> impl IntoView {
+fn PlanDetails(
+    /// The plan to show.
+    plan: PlanView,
+) -> impl IntoView {
     view! {
         <section>
             <div class="section-header">

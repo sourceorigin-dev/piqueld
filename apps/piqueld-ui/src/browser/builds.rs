@@ -60,9 +60,15 @@ async fn builds_page(
 /// caller may not read.
 #[component]
 pub(super) fn BuildHistory(
-    #[prop(optional, into)] application: Option<String>,
-    #[prop(optional, into)] environment: Option<String>,
-    #[prop(optional)] allowed: Option<Callback<(AppPermission, String), bool>>,
+    /// Only show builds of this application.
+    #[prop(optional, into)]
+    application: Option<String>,
+    /// Only show builds of this environment.
+    #[prop(optional, into)]
+    environment: Option<String>,
+    /// Whether the caller holds a permission in an environment; `None` leaves the daemon to refuse.
+    #[prop(optional)]
+    allowed: Option<Callback<(AppPermission, String), bool>>,
 ) -> impl IntoView {
     let records = RwSignal::new(Vec::<BuildRecord>::new());
     let cursor = RwSignal::new(None::<String>);
@@ -239,8 +245,11 @@ fn BuildMachine() -> impl IntoView {
 /// `BuildOutput`. See `BuildHistory` for `allowed`.
 #[component]
 fn BuildCard(
+    /// The build to show.
     record: Signal<BuildRecord>,
+    /// Whether the list is already scoped to one environment, so its name is left out.
     scoped: bool,
+    /// Whether the caller holds a permission in an environment; `None` leaves the daemon to refuse.
     allowed: Option<Callback<(AppPermission, String), bool>>,
 ) -> impl IntoView {
     let opened = RwSignal::new(false);
@@ -359,7 +368,10 @@ fn BuildCard(
 
 /// Only mounted for an expanded build; the final successful fetch stops polling.
 #[component]
-fn BuildOutput(record: Signal<BuildRecord>) -> impl IntoView {
+fn BuildOutput(
+    /// The build whose output to show.
+    record: Signal<BuildRecord>,
+) -> impl IntoView {
     let chunks = RwSignal::new(Vec::<piqueld_client::BuildLogChunk>::new());
     let prepend_revision = RwSignal::new(0u64);
     let previous = RwSignal::new(None::<i64>);

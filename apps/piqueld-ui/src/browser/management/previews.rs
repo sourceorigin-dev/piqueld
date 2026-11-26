@@ -345,7 +345,9 @@ fn NewPreview() -> impl IntoView {
 /// `previews:delete`, reloads `list` once accepted.
 #[component]
 fn PreviewRow(
+    /// The preview to show.
     view: PreviewView,
+    /// The previews list, reloaded after a delete.
     list: LocalResource<Result<Vec<PreviewView>, String>>,
 ) -> impl IntoView {
     let context = editor();

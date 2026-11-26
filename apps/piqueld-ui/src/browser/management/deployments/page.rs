@@ -23,15 +23,18 @@ use piqueld_client::{
 /// once it ended.
 #[derive(Clone, Copy)]
 struct ShownDeployment {
+    /// The deployment; `None` until it loads.
     deployment: RwSignal<Option<DeploymentView>>,
     /// Whether the environment's latest deployment is a newer one: one that
     /// failed before replacing the current target leaves Restore offered on
     /// it.
     newer: RwSignal<bool>,
+    /// Why the deployment failed to load; `None` otherwise.
     error: RwSignal<Option<String>>,
 }
 
 impl ShownDeployment {
+    /// Creates the state of a page that has loaded nothing yet.
     fn new() -> Self {
         Self {
             deployment: RwSignal::new(None),
@@ -100,7 +103,10 @@ impl ShownDeployment {
 /// snapshot, and attempts. A deployment that may be restored offers
 /// Restore, which opens the restoring deployment's page.
 #[component]
-pub(in crate::browser::management) fn DeploymentPage(operation: String) -> impl IntoView {
+pub(in crate::browser::management) fn DeploymentPage(
+    /// ID of the deployment's operation.
+    operation: String,
+) -> impl IntoView {
     let context = editor();
     let tabs = context.tabs;
     let environment = context.environment_id();
@@ -192,7 +198,10 @@ pub(in crate::browser::management) fn DeploymentPage(operation: String) -> impl 
 /// A deployment page's tabs past its timeline: its operation's fields, the
 /// configuration it captured, and its attempts, loaded once their tab opens.
 #[component]
-fn DeploymentSections(deployment: Signal<DeploymentView>) -> impl IntoView {
+fn DeploymentSections(
+    /// The deployment whose tabs to show.
+    deployment: Signal<DeploymentView>,
+) -> impl IntoView {
     let context = editor();
     let tabs = context.tabs;
     view! {
@@ -219,7 +228,9 @@ fn DeploymentSections(deployment: Signal<DeploymentView>) -> impl IntoView {
 /// replace it. Opens the restoring deployment's page once accepted.
 #[component]
 fn RestoreDeployment(
+    /// The deployment to restore, when loaded.
     deployment: Signal<Option<DeploymentView>>,
+    /// Whether a newer deployment failed to replace it.
     newer: RwSignal<bool>,
 ) -> impl IntoView {
     let context = editor();
@@ -394,7 +405,10 @@ impl EditorContext {
 
 /// Paginated attempt outcomes of one deployment, plus the live attempt while it runs.
 #[component]
-fn DeploymentAttempts(deployment: Signal<DeploymentView>) -> impl IntoView {
+fn DeploymentAttempts(
+    /// The deployment whose attempts to list.
+    deployment: Signal<DeploymentView>,
+) -> impl IntoView {
     let op = deployment.get_untracked().operation;
     let attempts = RwSignal::new(Attempts::default());
     let failure = RwSignal::new(None::<String>);
@@ -495,7 +509,10 @@ fn DeploymentAttempts(deployment: Signal<DeploymentView>) -> impl IntoView {
 /// One attempt outcome with a link to its events and diagnostics, shown with
 /// `events:read`.
 #[component]
-fn AttemptRow(attempt: Operation) -> impl IntoView {
+fn AttemptRow(
+    /// The attempt's operation.
+    attempt: Operation,
+) -> impl IntoView {
     let context = editor();
     let history = operation_events(&attempt.id);
     let outcome = attempt.failure();

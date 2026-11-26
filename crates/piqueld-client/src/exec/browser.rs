@@ -17,17 +17,24 @@ use web_sys::{BinaryType, CloseEvent, Event, MessageEvent, WebSocket};
 
 /// What the socket's event handlers report, in order.
 enum SocketEvent {
+    /// The handshake completed.
     Open,
+    /// A binary message's payload.
     Message(Vec<u8>),
+    /// The socket closed, with the browser's close event.
     Closed(CloseEvent),
 }
 
 /// The socket and the handlers feeding its events to the [`Reader`]. Dropping
 /// it, once both halves are gone, detaches the handlers and closes the socket.
 struct Connection {
+    /// The browser WebSocket.
     socket: WebSocket,
+    /// The `open` handler, kept alive while the socket is.
     _opened: Closure<dyn FnMut(Event)>,
+    /// The `message` handler, kept alive while the socket is.
     _message: Closure<dyn FnMut(MessageEvent)>,
+    /// The `close` handler, kept alive while the socket is.
     _closed: Closure<dyn FnMut(CloseEvent)>,
 }
 
@@ -46,7 +53,9 @@ impl Drop for Connection {
 
 /// Receiving half: binary message payloads.
 pub(super) struct Reader {
+    /// Keeps the socket and its handlers alive while the reader exists.
     _connection: Rc<Connection>,
+    /// Events the socket's handlers reported, oldest first.
     events: UnboundedReceiver<SocketEvent>,
 }
 

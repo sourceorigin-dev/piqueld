@@ -11,7 +11,10 @@ use piqueld_client::{
 /// in a deployment's configuration snapshot: the rendered configuration, or
 /// the captured manifest until a repository-backed manifest is fetched.
 #[component]
-pub(super) fn DeploymentSnapshot(deployment: Signal<DeploymentView>) -> impl IntoView {
+pub(super) fn DeploymentSnapshot(
+    /// The deployment whose snapshot to show.
+    deployment: Signal<DeploymentView>,
+) -> impl IntoView {
     view! {
         {move || {
             let deployment = deployment.get();
@@ -113,7 +116,10 @@ pub(super) fn DeploymentSnapshot(deployment: Signal<DeploymentView>) -> impl Int
 
 /// Definition list describing one snapshotted service's configuration.
 #[component]
-fn SnapshotService(service: Service) -> impl IntoView {
+fn SnapshotService(
+    /// The service to describe.
+    service: Service,
+) -> impl IntoView {
     let source = match service.source.clone() {
         Source::Image { image } => image.to_string(),
         Source::Git {
@@ -218,7 +224,10 @@ fn SnapshotService(service: Service) -> impl IntoView {
 
 /// Health check and resource limit rows for `SnapshotService`.
 #[component]
-fn SnapshotRuntime(service: Service) -> impl IntoView {
+fn SnapshotRuntime(
+    /// The service whose health check and limits to show.
+    service: Service,
+) -> impl IntoView {
     view! {
         <dt>"Health check"</dt>
         <dd>

@@ -11,8 +11,11 @@ type Listener = Closure<dyn FnMut(MessageEvent)>;
 /// like every dashboard request. The browser reconnects it after a dropped
 /// connection on its own; dropping it closes the stream.
 pub(super) struct EventStream {
+    /// The underlying browser event source.
     source: EventSource,
+    /// The message listeners registered on the source, by the message each handles.
     listeners: Vec<(StreamMessage, Listener)>,
+    /// The source's error handler, kept alive while the stream is.
     _error: Closure<dyn FnMut(Event)>,
 }
 

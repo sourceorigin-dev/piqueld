@@ -572,7 +572,12 @@ pub(super) fn VolumeSettings() -> impl IntoView {
 /// onto a copy of the saved service (validating the text fields) and sends the
 /// matching `ServiceEdit`, so other sections' saved values are left untouched.
 #[component]
-pub(super) fn ServiceGroup(name: String, section: Section) -> impl IntoView {
+pub(super) fn ServiceGroup(
+    /// Name of the service.
+    name: String,
+    /// The group of settings to edit.
+    section: Section,
+) -> impl IntoView {
     let context = editor();
     #[expect(
         clippy::expect_used,

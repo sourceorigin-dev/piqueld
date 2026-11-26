@@ -12,15 +12,21 @@ use piqueld_client::{
 /// One editable job. The command keeps one element per row, without shell parsing.
 #[derive(Clone)]
 struct JobDraft {
+    /// The job's name.
     name: String,
+    /// Name of the service whose image the job runs in.
     service: String,
+    /// The command to run, one element per argument.
     command: Vec<String>,
     /// Environment variables the job adds, as key/value rows.
     environment: Vec<(String, String)>,
     /// Secrets the job adds, as name/container path rows.
     secrets: Vec<(String, String)>,
+    /// How long the job may run, in seconds, as typed.
     timeout: String,
+    /// Whether the job may write to the service's volumes.
     volume_access: JobVolumeAccess,
+    /// Whether the service stops while the job runs.
     stop_service: bool,
 }
 
@@ -191,16 +197,22 @@ fn command_rows(job: RwSignal<JobDraft>) -> AnyView {
 /// A two-column list of rows a job adds to its service's container.
 #[derive(Clone, Copy)]
 struct PairRows {
+    /// The list's heading.
     title: &'static str,
+    /// The column labels.
     labels: [&'static str; 2],
+    /// The label of the button adding a row.
     add: &'static str,
     /// Values of a newly added row.
     new: [&'static str; 2],
+    /// Reads the rows from a draft.
     read: fn(&JobDraft) -> &Vec<(String, String)>,
+    /// Reads the rows from a draft for changing them.
     write: fn(&mut JobDraft) -> &mut Vec<(String, String)>,
 }
 
 impl PairRows {
+    /// The environment variables a job adds.
     const ENVIRONMENT: Self = Self {
         title: "Environment",
         labels: ["Key", "Value"],
@@ -209,6 +221,7 @@ impl PairRows {
         read: |j| &j.environment,
         write: |j| &mut j.environment,
     };
+    /// The secret files a job mounts.
     const SECRETS: Self = Self {
         title: "Secrets",
         labels: ["Secret name", "Container path"],

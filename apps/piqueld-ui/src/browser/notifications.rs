@@ -52,7 +52,9 @@ pub(super) fn NotificationsPage() -> impl IntoView {
 /// Outcome of the last destination action: an error or a success notice.
 #[derive(Clone, Copy)]
 struct Outcome {
+    /// Whether a request is running.
     busy: RwSignal<bool>,
+    /// The last request's result, with its tone; `None` when there is none.
     message: RwSignal<Option<(Tone, String)>>,
 }
 
@@ -85,7 +87,10 @@ impl Outcome {
 /// The destinations, with buttons to test, edit and delete them for
 /// accounts with `notifications:manage`.
 #[component]
-fn Destinations(refresh: Refresh) -> impl IntoView {
+fn Destinations(
+    /// Reloads the list when requested.
+    refresh: Refresh,
+) -> impl IntoView {
     let manage = can(Permission::Global(GlobalPermission::NotificationsManage));
     let applications = dashboard_context().signals.applications;
     let outcome = Outcome {
@@ -339,6 +344,7 @@ destination_form! {
 }
 
 impl DestinationForm {
+    /// Renders the form's fields.
     fn view(self) -> impl IntoView {
         let applications = dashboard_context().signals.applications;
         let category = move |category: NotificationCategory| {
@@ -438,14 +444,22 @@ impl DestinationForm {
 /// and one at a time, `busy` while one is sent.
 #[derive(Clone, Copy)]
 struct Retry {
+    /// Whether the caller may retry deliveries.
     allowed: Signal<bool>,
+    /// Whether a retry is being sent.
     busy: RwSignal<bool>,
+    /// Retries the delivery with this ID.
     run: Callback<String>,
 }
 
 /// A page of deliveries, newest first, from `cursor`.
 #[component]
-fn Deliveries(refresh: Refresh, cursor: RwSignal<Option<String>>) -> impl IntoView {
+fn Deliveries(
+    /// Reloads the page when requested.
+    refresh: Refresh,
+    /// Where the page starts; `None` for the newest.
+    cursor: RwSignal<Option<String>>,
+) -> impl IntoView {
     let error = RwSignal::new(None::<String>);
     let data = LocalResource::new(move || {
         refresh.track();
