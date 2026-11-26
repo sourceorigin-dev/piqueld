@@ -283,7 +283,7 @@ How many of each environment's latest successful deployments also keep their ima
 
 Type: integer. Default: `10`.
 
-How many of each environment's latest successful deployments keep their images in the build registry, `build.repository`, and never fewer than `keep_deployments`. Cleanup deletes the other images this host's builds pushed there, and skips the registry while it can't be reached. Without a build machine, it does nothing.
+How many of each environment's latest successful deployments keep their images in the build registry, `build.repository`: never fewer than `keep_deployments`. Without a build machine, it does nothing.
 
 ## `[ingress]` table
 
@@ -475,7 +475,7 @@ Days events not tied to an application, such as those about shared infrastructur
 
 Type: integer. Default: `90`.
 
-Days each environment's deployment history is kept; `0` keeps it forever. A deployment is removed once it is older than this and beyond the newest `deployments_per_environment`, but never while it is still needed, such as its environment's current deployment or the newest successful one an automatic rollback restores. The history guide lists what is kept. `0` here or in `deployments_per_environment` stops this pruning, of previews, releases and build records too.
+Days each environment's deployment history is kept; `0` keeps it forever. A deployment is removed once it is older than this and beyond the newest `deployments_per_environment`, never while its environment still needs it.
 
 ### `retention.deployments_per_environment`
 

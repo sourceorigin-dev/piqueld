@@ -274,7 +274,7 @@
         },
         "registry_keep_deployments": {
           "default": 10,
-          "description": "How many of each environment's latest successful deployments keep\ntheir images in the build registry, `build.repository`, and never\nfewer than `keep_deployments`. Cleanup deletes the other images this\nhost's builds pushed there, and skips the registry while it can't be\nreached. Without a build machine, it does nothing.",
+          "description": "How many of each environment's latest successful deployments keep\ntheir images in the build registry, `build.repository`: never fewer\nthan `keep_deployments`. Without a build machine, it does nothing.",
           "format": "int32",
           "minimum": 0,
           "type": "integer"
@@ -516,7 +516,7 @@
         },
         "deployment_days": {
           "default": 90,
-          "description": "Days each environment's deployment history is kept; `0` keeps it\nforever. A deployment is removed once it is older than this and\nbeyond the newest `deployments_per_environment`, but never while\nit is still needed, such as its environment's current deployment\nor the newest successful one an automatic rollback restores. The\nhistory guide lists what is kept. `0` here or in\n`deployments_per_environment` stops this pruning, of previews,\nreleases and build records too.",
+          "description": "Days each environment's deployment history is kept; `0` keeps it\nforever. A deployment is removed once it is older than this and\nbeyond the newest `deployments_per_environment`, never while its\nenvironment still needs it.",
           "format": "int64",
           "minimum": 0,
           "type": "integer"

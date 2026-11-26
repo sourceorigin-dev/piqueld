@@ -186,6 +186,10 @@ pub struct Setting {
     /// build machine; while set, the setting can't be changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs: Option<String>,
+    /// Whether it keeps history: a lower value deletes what only a higher
+    /// one kept, for good, and `0`, where it takes it, keeps everything.
+    #[serde(default)]
+    pub prunes: bool,
 }
 
 impl Setting {
@@ -193,6 +197,17 @@ impl Setting {
     #[must_use]
     pub fn pinned(&self) -> bool {
         self.source == SettingSource::Configuration
+    }
+
+    /// Whether changing it to `value` keeps less history than it does now,
+    /// which deletes the rest for good.
+    #[must_use]
+    pub fn keeps_less(&self, value: &serde_json::Value) -> bool {
+        let kept = |value: &serde_json::Value| match value.as_u64() {
+            Some(0) | None => u64::MAX,
+            Some(kept) => kept,
+        };
+        self.prunes && kept(value) < kept(&self.value)
     }
 }
 

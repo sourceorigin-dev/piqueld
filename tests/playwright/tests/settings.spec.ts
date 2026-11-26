@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { test, expect } from '../fixtures.js';
+import { test, expect, confirmNext } from '../fixtures.js';
 
 test('daemon settings change in their fields, say why a value is refused, and reset', async ({ page, account }) => {
   void account;
@@ -25,8 +25,17 @@ test('daemon settings change in their fields, say why a value is refused, and re
   await expect(days).toHaveValue('90');
   await expect(days).toBeFocused();
 
-  // Enter saves; the field stays where it is, and its note says so.
+  // Keeping less history asks first: declined, the number stays in its
+  // field, not saved.
   await days.fill('30');
+  page.once('dialog', dialog => dialog.dismiss());
+  await days.press('Enter');
+  await expect(events).toContainText('Not saved');
+  await expect(reset).toBeHidden();
+
+  // Confirmed, Enter saves; the field stays where it is, and its note
+  // says so.
+  confirmNext(page, 'Change Application events (days) from 90 to 30? That keeps less history');
   await days.press('Enter');
   await expect(events).toContainText('Saved');
   await expect(events).toContainText('Default: 90');
@@ -85,6 +94,15 @@ test('daemon settings change in their fields, say why a value is refused, and re
   await expect(days).toHaveValue('90');
   await expect(days).toBeFocused();
   await expect(reset).toBeHidden();
+
+  // A reset that keeps less history asks first too.
+  const audit = page.getByRole('textbox', { name: 'Audit trail (days)', exact: true });
+  await audit.fill('400');
+  await audit.press('Enter');
+  await expect(row('retention.audit_days')).toContainText('Default: 365');
+  confirmNext(page, 'Change Audit trail (days) from 400 to 365?');
+  await page.getByRole('button', { name: 'Reset Audit trail (days) to its default, 365', exact: true }).click();
+  await expect(audit).toHaveValue('365');
 
   // A switch saves when toggled, by its name too.
   const traffic = page.getByRole('switch', { name: 'Count traffic', exact: true });

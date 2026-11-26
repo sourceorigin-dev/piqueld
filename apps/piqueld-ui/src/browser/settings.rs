@@ -3,7 +3,7 @@
 //! settings, read-only.
 use super::observability::Refresh;
 use super::ui::{Icon, PageHeader, Tone, focus, icon, key_values, loading, notice, prose};
-use super::{ClientErrorExt, UserError, access::can, live_row};
+use super::{ClientErrorExt, UserError, access::can, confirm, live_row};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use piqueld_client::{
@@ -349,13 +349,38 @@ impl Field {
             self.revert();
             return;
         }
+        if !self.confirmed(&value) {
+            return;
+        }
         self.send("Saved".into(), async move {
             Client::browser().put_setting(&key, value).await
         });
     }
 
+    /// Whether the change to `value` may go ahead: asked first when it
+    /// keeps less history than now, which deletes the rest for good.
+    /// Declined, a number stays in its field, not saved.
+    fn confirmed(self, value: &Value) -> bool {
+        self.setting.with_untracked(|setting| {
+            !setting.keeps_less(value)
+                || confirm(&format!(
+                    "Change {} from {} to {}? That keeps less history: piqueld deletes the rest for good.",
+                    setting.label,
+                    display(setting, &setting.value),
+                    display(setting, value),
+                ))
+        })
+    }
+
     /// Resets the setting to its default; the note then says what it was.
     fn reset(self) {
+        if !self.confirmed(
+            &self
+                .setting
+                .with_untracked(|setting| setting.default.clone()),
+        ) {
+            return;
+        }
         let (key, was) = self
             .setting
             .with_untracked(|setting| (setting.key.clone(), display(setting, &setting.value)));

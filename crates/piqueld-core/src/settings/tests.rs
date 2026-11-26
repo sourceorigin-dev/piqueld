@@ -177,3 +177,29 @@ fn descriptions_are_prose_and_keys_are_unique() {
     let keys: BTreeSet<_> = SETTINGS.iter().map(|spec| spec.key).collect();
     assert_eq!(keys.len(), SETTINGS.len());
 }
+
+/// Only a setting that keeps history says a change keeps less of it: a
+/// lower number, where `0` keeps everything.
+#[test]
+fn only_history_settings_keep_less_at_a_lower_value() {
+    let layers = SettingLayers::default();
+    let events = layers.view(setting("retention.event_days"));
+    assert!(events.prunes);
+    assert!(events.keeps_less(&json!(30)));
+    assert!(!events.keeps_less(&json!(90)));
+    assert!(!events.keeps_less(&json!(365)));
+    assert!(!events.keeps_less(&json!(0)));
+    let forever = Setting {
+        value: json!(0),
+        ..events
+    };
+    assert!(forever.keeps_less(&json!(3650)));
+    assert!(
+        layers
+            .view(setting("build_history.log_retention_days"))
+            .prunes
+    );
+    let previews = layers.view(setting("previews.max_total"));
+    assert!(!previews.prunes);
+    assert!(!previews.keeps_less(&json!(1)));
+}

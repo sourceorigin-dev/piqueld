@@ -6673,6 +6673,10 @@
                 "nullable": true,
                 "type": "string"
               },
+              "prunes": {
+                "description": "Whether it keeps history: a lower value deletes what only a higher\none kept, for good, and `0`, where it takes it, keeps everything.",
+                "type": "boolean"
+              },
               "section": {
                 "description": "The title of its section, such as `History`.",
                 "type": "string"
@@ -12891,6 +12895,10 @@
             "description": "What the installation lacks for the setting to apply, such as a\nbuild machine; while set, the setting can't be changed.",
             "nullable": true,
             "type": "string"
+          },
+          "prunes": {
+            "description": "Whether it keeps history: a lower value deletes what only a higher\none kept, for good, and `0`, where it takes it, keeps everything.",
+            "type": "boolean"
           },
           "section": {
             "description": "The title of its section, such as `History`.",

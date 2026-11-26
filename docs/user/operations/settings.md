@@ -84,6 +84,12 @@ gateway starts or stops counting traffic, and the next build follows
 Lowering a limit never removes what already exists: existing previews keep
 running, and existing tokens keep their lifetime.
 
+Keeping less history does remove it. Lowering a setting under **History**,
+or **Output kept (days)**, deletes what the new value no longer keeps the
+next time piqueld prunes, and nothing brings it back. The dashboard asks you
+to confirm such a change, and a reset that does the same. `piquelctl settings
+set` doesn't ask.
+
 Every change is recorded in the [audit trail](audit.md), with the old and the
 new value.
 

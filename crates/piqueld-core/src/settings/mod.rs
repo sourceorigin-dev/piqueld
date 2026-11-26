@@ -187,6 +187,16 @@ macro_rules! requirement {
     };
 }
 
+/// Whether a setting declares that it keeps history, with `keeps history`.
+macro_rules! keeps {
+    () => {
+        false
+    };
+    (history) => {
+        true
+    };
+}
+
 /// Declares every daemon setting, grouped in the sections `config.toml`
 /// writes them in:
 ///
@@ -194,14 +204,16 @@ macro_rules! requirement {
 /// /// The section's description.
 /// section("Title") SectionType / SectionPins {
 ///     /// The setting's description.
-///     field("Label"): type = default, from min to max, needs Requirement;
+///     field("Label"): type = default, from min to max, needs Requirement, keeps history;
 /// }
 /// ```
 ///
 /// An integer's range is optional, and may be open (`at least 1`). Its
 /// bounds are token trees, which `utoipa`'s derive reads unlike `literal`s;
 /// one beyond `i32` needs a suffix, such as `_u64`. `needs` names a
-/// [`Requirement`]. The type implements [`SettingType`].
+/// [`Requirement`]. `keeps history` marks a setting whose lower value
+/// deletes what a higher one kept, where `0`, if it takes it, keeps
+/// everything. The type implements [`SettingType`].
 macro_rules! settings {
     ($(
         $(#[doc = $section_doc:literal])*
@@ -210,7 +222,7 @@ macro_rules! settings {
                 $(#[doc = $doc:literal])*
                 $field:ident($label:literal): $type:ty = $default:expr
                     $(, from $min:tt to $max:tt)? $(, at least $least:tt)?
-                    $(, needs $requirement:ident)?;
+                    $(, needs $requirement:ident)? $(, keeps $kept:ident)?;
             )*
         }
     )*) => {
@@ -295,6 +307,7 @@ macro_rules! settings {
                 doc: concat!($($doc, "\n",)*),
                 values: values!($type $(, $min, $max)? $(, $least)?),
                 requires: requirement!($($requirement)?),
+                prunes: keeps!($($kept)?),
                 value: |settings| settings.$section.$field.to_json(),
                 apply: |settings, value| {
                     settings.$section.$field = serde_json::from_value(value.clone())?;
@@ -313,30 +326,26 @@ settings! {
         /// are removed during reconciliation, except each environment's latest
         /// operation and those in its deployment history or with job cleanup
         /// pending.
-        finished_operation_days("Finished operations (days)"): u64 = 10;
+        finished_operation_days("Finished operations (days)"): u64 = 10, keeps history;
         /// Days each environment's deployment history is kept; `0` keeps it
         /// forever. A deployment is removed once it is older than this and
-        /// beyond the newest `deployments_per_environment`, but never while
-        /// it is still needed, such as its environment's current deployment
-        /// or the newest successful one an automatic rollback restores. The
-        /// history guide lists what is kept. `0` here or in
-        /// `deployments_per_environment` stops this pruning, of previews,
-        /// releases and build records too.
-        deployment_days("Deployment history (days)"): u64 = 90;
+        /// beyond the newest `deployments_per_environment`, never while its
+        /// environment still needs it.
+        deployment_days("Deployment history (days)"): u64 = 90, keeps history;
         /// Deployments each environment keeps however old they are; `0` keeps
         /// every deployment, release and build record, as for `deployment_days`.
-        deployments_per_environment("Deployments per environment"): u32 = 50;
+        deployments_per_environment("Deployments per environment"): u32 = 50, keeps history;
         /// Days application events are kept; `0` keeps them forever. Deleting an
         /// application also removes its events.
-        event_days("Application events (days)"): u64 = 90;
+        event_days("Application events (days)"): u64 = 90, keeps history;
         /// Days events not tied to an application, such as those about shared
         /// infrastructure, are kept; `0` keeps them forever.
-        daemon_event_days("Daemon events (days)"): u64 = 90;
+        daemon_event_days("Daemon events (days)"): u64 = 90, keeps history;
         /// Days the audit trail of API requests is kept; `0` keeps it forever.
-        audit_days("Audit trail (days)"): u64 = 365;
+        audit_days("Audit trail (days)"): u64 = 365, keeps history;
         /// Days each environment's traffic counts are kept; `0` keeps them
         /// forever. Deleting an environment also removes its counts.
-        traffic_days("Traffic counts (days)"): u64 = 90;
+        traffic_days("Traffic counts (days)"): u64 = 90, keeps history;
     }
 
     /// How much output of each build is kept, and for how long. Builds
@@ -350,7 +359,7 @@ settings! {
         log_max_bytes("Output kept per build (bytes)"): u32 = 4 * 1024 * 1024, from 1 to 67_108_864;
         /// Days a build's output is kept after it finishes. The build stays
         /// listed, marked as expired.
-        log_retention_days("Output kept (days)"): u32 = 30, from 1 to 3650;
+        log_retention_days("Output kept (days)"): u32 = 30, from 1 to 3650, keeps history;
     }
 
     /// Where images build.
@@ -374,10 +383,8 @@ settings! {
         /// keep their images, so their releases can be deployed again.
         keep_deployments("Deployments kept per environment"): u32 = 3;
         /// How many of each environment's latest successful deployments keep
-        /// their images in the build registry, `build.repository`, and never
-        /// fewer than `keep_deployments`. Cleanup deletes the other images this
-        /// host's builds pushed there, and skips the registry while it can't be
-        /// reached. Without a build machine, it does nothing.
+        /// their images in the build registry, `build.repository`: never fewer
+        /// than `keep_deployments`. Without a build machine, it does nothing.
         registry_keep_deployments("Deployments kept in the registry"): u32 = 10;
         /// Seconds between cleanups. Cleanup also runs after each operation.
         cleanup_interval_seconds("Cleanup interval (seconds)"): u64 = 3600, from 1 to 86_400;
@@ -411,10 +418,7 @@ settings! {
     ingress("Ingress") IngressSettings / IngressPins {
         /// Count the requests each route serves, for each environment's
         /// traffic page, while `ingress.enabled` is set. piqueld stores hourly
-        /// totals, not the requests themselves or visitors' addresses. While the
-        /// daemon isn't connected to the gateway, such as while it restarts, the
-        /// gateway writes its requests, visitors' addresses and paths included, to
-        /// its own Docker log, which keeps up to 30 MB.
+        /// totals, not the requests themselves or visitors' addresses.
         traffic("Count traffic"): bool = true;
     }
 
@@ -464,6 +468,9 @@ pub struct SettingSpec {
     pub values: Values,
     /// What it needs of the installation to apply, if anything.
     pub requires: Option<Requirement>,
+    /// Whether it keeps history, so that a lower value deletes what a
+    /// higher one kept.
+    pub prunes: bool,
     /// Reads its value.
     value: fn(&Settings) -> Value,
     /// Sets its value, already [`Self::check`]ed.
@@ -676,6 +683,7 @@ impl SettingLayers {
             source,
             kind: spec.kind(),
             needs: self.unmet(spec).map(|needs| needs.to_string()),
+            prunes: spec.prunes,
         }
     }
 

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { card, deploymentRows, environmentTab, expect, openDeployment, register, rewrite } from '../fixtures.js';
+import { card, confirmNext, deploymentRows, environmentTab, expect, openDeployment, register, rewrite } from '../fixtures.js';
 import { test, audit, deliveries, destination, environment, errors, manifest, notifications, Piquelctl, shoot, steadyDeployment, telemetryGrant } from './docs.js';
 
 // docs/user/operations: a deployment that fails, what it notifies, the
@@ -106,6 +106,8 @@ test('settings', async ({ page, account }) => {
   await page.goto('/dashboard/settings');
   const days = page.getByRole('textbox', { name: 'Application events (days)', exact: true });
   await days.fill('30');
+  // Keeping fewer days of history asks first.
+  confirmNext(page);
   await days.press('Enter');
   const history = card(page, 'History');
   await expect(history).toContainText('Default: 90');
