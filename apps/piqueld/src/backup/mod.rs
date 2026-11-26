@@ -20,8 +20,8 @@ mod tests;
 use anyhow::{Context, Result, bail};
 use piqueld_store::{DatabaseCopy, DatabaseFile, DatabaseIdentity, SCHEMA_VERSION};
 pub use restore::Refusal;
-pub use roll_back::RollBack;
 use roll_back::RolledBack;
+pub use roll_back::{RollBack, RollBackReport};
 pub use rotation::PreMigration;
 use rustix::fs::{AtFlags, CWD, Dir, FileType, Mode, OFlags};
 use serde::{Deserialize, Serialize};
@@ -54,10 +54,11 @@ const INGRESS_CONTROL: &str = "ingress/control";
 /// The data directory's subdirectory holding pre-migration backups.
 const BACKUPS: &str = "backups";
 /// The data directory's entries that restores and roll-backs leave in place:
-/// the backups, the telemetry receivers' sockets, which their collectors keep
+/// a roll-back's report, the backups, the telemetry receivers' sockets, which their collectors keep
 /// listening on, and what the daemon reuses whatever its database: Git
 /// checkouts, local-change snapshots and the build machine's registration.
-const KEPT: [&str; 5] = [
+const KEPT: [&str; 6] = [
+    RollBackReport::FILE,
     BACKUPS,
     crate::telemetry::Sockets::DIRECTORY,
     crate::git::Sources::CHECKOUTS,

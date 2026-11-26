@@ -1425,6 +1425,35 @@ async fn daemon_starts_notify_with_version_changes() {
     );
 }
 
+/// A roll-back notifies as `daemon_rolled_back`, naming the backup.
+#[tokio::test]
+async fn roll_backs_notify() {
+    let (_temp, store) = Store::temporary().await;
+    notify(&store).await;
+    store
+        .record_daemon_rolled_back("pre-7-1000", "piqueld rolled back to pre-7-1000")
+        .await
+        .expect("the roll-back is recorded");
+    store
+        .process_notifications()
+        .await
+        .expect("notifications are queued");
+    let deliveries = store
+        .deliveries(None, 10)
+        .await
+        .expect("deliveries list")
+        .items;
+    let [delivery] = deliveries.as_slice() else {
+        panic!("one notification is queued: {deliveries:?}");
+    };
+    assert_eq!(delivery.category, NotificationCategory::DaemonRolledBack);
+    let event = store
+        .event(delivery.event_id)
+        .await
+        .expect("its event reads");
+    assert_eq!(event.resource.as_deref(), Some("pre-7-1000"));
+}
+
 /// On the Unix socket, refusals by the host operator and by anonymous
 /// callers share no account and no address, yet count separately.
 #[tokio::test]
@@ -2091,7 +2120,7 @@ async fn requested_notification_changes_commit_with_their_audit_record() {
         .expect("the destination is deleted");
     let route = "POST /api/v1/notifications";
     let receives = "categories build_failures,deployment_failures,service_degradation,\
-        daemon_failures,recovery,daemon_started; applications";
+        daemon_failures,recovery,daemon_started,daemon_rolled_back; applications";
     let actions = store.audit_actions().await;
     assert_eq!(
         actions,

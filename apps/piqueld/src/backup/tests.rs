@@ -540,6 +540,7 @@ async fn roll_back_restores_the_newest_backup_this_binary_opens() {
             BACKUPS,
             "ingress",
             DATABASE,
+            RollBackReport::FILE,
             aside_name,
             SECRET_KEY,
             "snapshots",
@@ -696,6 +697,7 @@ async fn a_roll_back_interrupted_moving_the_state_is_finished() {
                 .copy_verified(&backup, &manifest)
                 .await
                 .expect("the backup verifies"),
+            piqueld_store::now_ms(),
         )
         .expect("the restore starts");
     let aside = data_dir.join(RolledBack::name(staging.at_ms));
@@ -771,4 +773,95 @@ async fn restore_names_an_unfinished_restore() {
         matches!(error.downcast_ref(), Some(Refusal::Unfinished(..))),
         "{error:#}"
     );
+}
+
+/// A roll-back leaves a report of what it did, which the daemon records as a
+/// `daemon_rolled_back` event once it starts, then removes. The fixture's
+/// backup only records an older schema, so the store opens it once the
+/// current one is recorded again.
+#[tokio::test]
+async fn a_roll_back_is_reported_once_the_daemon_starts() {
+    let (data_dir, backup, _) = migrated_by_a_newer_daemon().await;
+    let data_dir = data_dir.path();
+    let (result, _) = roll_back(data_dir).await;
+    let Ok(RollBack::Restored { aside, .. }) = result else {
+        panic!("the state is rolled back: {result:?}");
+    };
+    let report = RollBackReport::read(data_dir)
+        .await
+        .expect("the report reads")
+        .expect("the roll-back left a report");
+    assert_eq!(
+        report,
+        RollBackReport {
+            backup: backup
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("the backup has a name")
+                .to_owned(),
+            from_schema: SCHEMA_VERSION + 1,
+            to_schema: SCHEMA_VERSION - 1,
+            replaced: aside,
+        }
+    );
+
+    set_schema(data_dir, SCHEMA_VERSION).await;
+    let store = Store::open_unsynced(data_dir.join(DATABASE))
+        .await
+        .expect("the restored database opens");
+    let backups = Backups::new(data_dir);
+    backups
+        .report_roll_back(&store)
+        .await
+        .expect("the roll-back is reported");
+    assert!(!data_dir.join(RollBackReport::FILE).exists());
+    drop(store);
+    let options = sqlx::sqlite::SqliteConnectOptions::new().filename(data_dir.join(DATABASE));
+    let pool = sqlx::SqlitePool::connect_with(options)
+        .await
+        .expect("the database opens");
+    let reported: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT scope, resource FROM events WHERE kind='daemon_rolled_back'")
+            .fetch_all(&pool)
+            .await
+            .expect("the events read");
+    assert_eq!(reported, [("daemon".to_owned(), Some(report.backup))]);
+}
+
+/// A report a roll-back left before it began, naming a rolled-back directory
+/// that doesn't exist, is removed without announcing a roll-back.
+#[tokio::test]
+async fn a_report_of_a_roll_back_that_never_began_is_dropped() {
+    let (data_dir, _, _) = backed_up().await;
+    let data_dir = data_dir.path();
+    set_schema(data_dir, SCHEMA_VERSION).await;
+    RollBackReport {
+        backup: "pre-1-1".to_owned(),
+        from_schema: SCHEMA_VERSION + 1,
+        to_schema: 1,
+        replaced: data_dir.join("rolled-back-1"),
+    }
+    .write(data_dir)
+    .await
+    .expect("the report is written");
+    let store = Store::open_unsynced(data_dir.join(DATABASE))
+        .await
+        .expect("the database opens");
+
+    Backups::new(data_dir)
+        .report_roll_back(&store)
+        .await
+        .expect("the report is dropped");
+    assert!(!data_dir.join(RollBackReport::FILE).exists());
+    drop(store);
+    let options = sqlx::sqlite::SqliteConnectOptions::new().filename(data_dir.join(DATABASE));
+    let pool = sqlx::SqlitePool::connect_with(options)
+        .await
+        .expect("the database opens");
+    let reported: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE kind='daemon_rolled_back'")
+            .fetch_one(&pool)
+            .await
+            .expect("the events count");
+    assert_eq!(reported, 0);
 }

@@ -180,6 +180,7 @@ impl Store {
             }
             NotificationCategory::Security
             | NotificationCategory::DaemonStarted
+            | NotificationCategory::DaemonRolledBack
             | NotificationCategory::DeploymentSucceeded => {}
             _ => {
                 let open = sqlx::query_scalar!(
@@ -326,6 +327,10 @@ impl Store {
         if known == Some(EventKind::DaemonStarted) {
             let started = NotificationCategory::DaemonStarted;
             return Self::enqueue(tx, event.id, started).await;
+        }
+        if known == Some(EventKind::DaemonRolledBack) {
+            let rolled_back = NotificationCategory::DaemonRolledBack;
+            return Self::enqueue(tx, event.id, rolled_back).await;
         }
         let category = match (known, event.scope, event.error_code.as_deref()) {
             (

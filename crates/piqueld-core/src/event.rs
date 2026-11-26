@@ -183,6 +183,10 @@ string_enum! {
         DependencyHealthChanged => "dependency_health_changed",
         /// The daemon started; the resource is its version.
         DaemonStarted => "daemon_started",
+        /// The daemon's state was rolled back to a backup, because an older
+        /// version started on a database a newer one had migrated; the
+        /// resource is the backup.
+        DaemonRolledBack => "daemon_rolled_back",
 
         /// An account received `admin` on every application.
         AdminGranted => "admin_granted",
