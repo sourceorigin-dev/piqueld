@@ -285,7 +285,7 @@ async fn a_live_previews_volume_stays_its_own_until_it_is_deleted() {
 }
 
 #[tokio::test]
-async fn an_environment_before_its_first_fetch_takes_any_volume_name() {
+async fn an_environment_following_a_branch_takes_any_unbound_name() {
     let (_temp, store) = Store::temporary().await;
     let (production, staging) = notes(&store).await;
     deploy(&store, &staging).await;
@@ -309,6 +309,7 @@ async fn an_environment_before_its_first_fetch_takes_any_volume_name() {
         .unwrap();
     assert_eq!(attached.binding.unwrap().name, undeclared);
 }
+
 #[tokio::test]
 async fn migration_adopts_targets_volumes_and_the_preview_inventory() {
     let temp = tempfile::tempdir().unwrap();

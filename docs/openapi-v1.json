@@ -32771,7 +32771,7 @@
     },
     "/api/v1/environments/{id}/volumes/{name}": {
       "put": {
-        "description": "The environment mounts it from its next deployment. Needs `apps:write` on\nthe environment and `system:operate`, since the volume may hold another\napplication's data. A name the manifest the environment deploys doesn't\ndeclare fails with 409 `volume_name_undeclared`, a name it already binds\nwith `volume_name_bound`, an attached volume with `volume_attached`, and a\npreview, or a live preview's volume, with `volume_preview`.",
+        "description": "The environment mounts it from its next deployment. Needs `apps:write` on\nthe environment and `system:operate`, since the volume may hold another\napplication's data. For an environment deploying the saved manifest, a\nname that manifest doesn't declare fails with 409 `volume_name_undeclared`, a name it already binds\nwith `volume_name_bound`, an attached volume with `volume_attached`, and a\npreview, or a live preview's volume, with `volume_preview`.",
         "operationId": "attachVolume",
         "parameters": [
           {
@@ -34774,7 +34774,7 @@
     },
     "/api/v1/volumes/{volume}": {
       "delete": {
-        "description": "Attached volumes fail with 409 `volume_attached`. If Docker can't remove\nit, the volume reappears as detached at the next volume survey, and\ndeleting it again retries.",
+        "description": "Attached volumes fail with 409 `volume_attached`. If Docker can't remove\nit, the volume reappears as detached at the next volume survey, under a\nnew ID, and deleting it again retries.",
         "operationId": "deleteVolume",
         "parameters": [
           {

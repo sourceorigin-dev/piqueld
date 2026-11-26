@@ -325,9 +325,9 @@ pub struct ManagedVolume {
 }
 
 impl ManagedVolume {
-    /// The volume named `name` with `labels`, if `instance`
-    /// manages it: its ownership labels are valid, as every resource piqueld
-    /// manages has them, and name `instance`.
+    /// The volume named `name` with `labels`, if `instance` manages it: its
+    /// ownership labels are valid, as every resource piqueld manages has
+    /// them, and name `instance`.
     #[must_use]
     pub fn of(
         name: &str,

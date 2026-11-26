@@ -11,7 +11,8 @@ use piqueld_core::access::{AppPermission, GlobalPermission, Permission};
 use piqueld_core::api::{DetachedFrom, VolumeBinding, VolumePool, VolumeState, VolumeView};
 use piqueld_core::resource::{BoundVolume, ManagedVolume};
 use piqueld_core::{
-    ApplicationId, ApplicationName, DockerVolumeName, EnvironmentName, VolumeId, VolumeName,
+    ApplicationId, ApplicationName, DockerVolumeName, EnvironmentName, EnvironmentSource, VolumeId,
+    VolumeName,
 };
 use sqlx::SqliteConnection;
 use std::collections::BTreeMap;
@@ -40,7 +41,8 @@ pub enum VolumeError {
         "previews delete their volumes with them, so no volume can be attached to a preview, nor a live preview's volume to an environment"
     )]
     Preview,
-    /// The manifest the environment deploys declares no volume of the name.
+    /// The saved manifest the environment deploys declares no volume of the
+    /// name.
     #[error(
         "{environment}'s manifest declares no volume {name}; declare it first, then attach the volume before deploying it"
     )]
@@ -119,11 +121,11 @@ impl Store {
     }
 
     /// Binds `name` of `environment` to the detached volume `volume` for
-    /// `author`, who needs `apps:write` on the environment and
-    /// `system:operate`; it mounts the volume from its next deployment.
-    /// Refuses a preview or a live preview's volume (`Preview`), a name its
-    /// manifest, once it has one, doesn't declare (`NameUndeclared`), a
-    /// bound name (`NameBound`) and an attached volume (`Attached`).
+    /// `author`, who needs `apps:write` on it and `system:operate`; it mounts
+    /// the volume from its next deployment. Refuses a preview or a live
+    /// preview's volume (`Preview`), a name the saved manifest it deploys
+    /// lacks (`NameUndeclared`), a bound name (`NameBound`) and an attached
+    /// volume (`Attached`).
     ///
     /// # Errors
     /// Returns those refusals, `Denied`, `NotFound` for a missing
@@ -152,13 +154,14 @@ impl Store {
         if target.delete_intent() {
             return Err(StoreError::Busy);
         }
-        let declared = target.manifest().is_none_or(|manifest| {
-            manifest
+        let declared = target.environment.source != EnvironmentSource::Saved
+            || target
+                .application
+                .application
                 .spec()
                 .volumes
                 .iter()
-                .any(|volume| volume.name == name.as_str())
-        });
+                .any(|volume| volume.name == name.as_str());
         if !declared {
             return Err(VolumeError::NameUndeclared {
                 environment: target.environment.name.clone(),

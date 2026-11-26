@@ -175,12 +175,20 @@ volume; use `piquelctl`.
 
 The first deployment that declares a name binds it to a new volume, and a
 name the environment already binds can't take another one: attaching to it
-fails with `volume_name_bound`. So attach the volume after declaring the name,
-and before deploying it. A name the manifest the environment deploys doesn't
-declare fails with `volume_name_undeclared`; an environment that follows a
-branch has no manifest of its own before its first deployment, so it takes any
-name until then. Previews delete their volumes, so they neither take a volume
-nor give one to an environment: attaching fails with `volume_preview`.
+fails with `volume_name_bound`. So attach the volume before the first
+deployment that declares the name:
+
+- **An application without a manifest repository:** declare the volume and
+  save the manifest without deploying, attach, then deploy. Attaching a name
+  the saved manifest doesn't declare fails with `volume_name_undeclared`.
+- **An environment that follows a branch or receives promotions:** attach
+  first, then push or promote a manifest that declares the name. Any name the
+  environment doesn't bind yet works, so check its spelling: a volume attached
+  under a name the manifest never declares stays bound to it, mounted nowhere,
+  until you declare the name or delete the environment.
+
+Previews delete their volumes, so they neither take a volume nor give one to
+an environment: attaching fails with `volume_preview`.
 
 ## Delete a detached volume
 
@@ -325,7 +333,8 @@ $ piquelctl app exec notes web -- ls -l /etc/nginx/conf.d/default.conf
   binds it to that volume, with its data.
 - **A deleted volume is listed again.** Docker couldn't remove it, for example
   because a container you started yourself mounts it. piqueld lists it again as
-  detached at its next measurement; delete it again once nothing uses it.
+  detached within 15 minutes, under a new ID and with no environment it came
+  from; delete it again once nothing uses it.
 - **The database's data is gone after a new deployment.** Check that the volume
   is mounted where the image keeps its data, such as `/var/lib/postgresql/data`
   for PostgreSQL. Data written anywhere else is lost when the container is

@@ -10595,8 +10595,8 @@ impl Client {
 
     The environment mounts it from its next deployment. Needs `apps:write` on
     the environment and `system:operate`, since the volume may hold another
-    application's data. A name the manifest the environment deploys doesn't
-    declare fails with 409 `volume_name_undeclared`, a name it already binds
+    application's data. For an environment deploying the saved manifest, a
+    name that manifest doesn't declare fails with 409 `volume_name_undeclared`, a name it already binds
     with `volume_name_bound`, an attached volume with `volume_attached`, and a
     preview, or a live preview's volume, with `volume_preview`.
 
@@ -12295,8 +12295,8 @@ impl Client {
     /*Deletes a detached volume and its data
 
     Attached volumes fail with 409 `volume_attached`. If Docker can't remove
-    it, the volume reappears as detached at the next volume survey, and
-    deleting it again retries.
+    it, the volume reappears as detached at the next volume survey, under a
+    new ID, and deleting it again retries.
 
     Sends a `DELETE` request to `/api/v1/volumes/{volume}`
 

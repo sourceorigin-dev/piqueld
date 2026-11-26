@@ -154,11 +154,12 @@ impl<D: DockerApi> Controller<D> {
 
     /// Completes convergence, then removes the configs of files no service
     /// mounts any more, whether or not it succeeded, and after service
-    /// deletion retained secrets and a deleted preview's volumes
-    /// (environments detach theirs, which they keep). The
+    /// deletion retained secrets and a deleted preview's volumes; a deleted
+    /// environment's volumes are detached instead, and kept. The
     /// environment's next operation waits for this one, and repair for the
-    /// mutation lock, so nothing publishes configs meanwhile. A failed removal is only logged, and left
-    /// to the next operation, except that a deletion is retried. Returns
+    /// mutation lock, so nothing publishes configs meanwhile. A failed
+    /// removal is only logged, and left to the next operation, except that
+    /// a deletion is retried. Returns
     /// whether the environment was stopped as the final plan saw it.
     async fn execute_and_cleanup(
         &self,

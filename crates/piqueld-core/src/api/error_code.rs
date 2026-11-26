@@ -176,8 +176,8 @@ string_enum! {
         /// 409: previews delete their volumes with them, so no volume can be
         /// attached to one, nor a live preview's volume elsewhere.
         VolumePreview => "volume_preview",
-        /// 409: the manifest the environment deploys declares no volume of
-        /// the name.
+        /// 409: the saved manifest the environment deploys declares no volume
+        /// of the name.
         VolumeNameUndeclared => "volume_name_undeclared",
         /// 409: the hostname is reserved by another environment, another
         /// application's wildcard, or this installation.
