@@ -210,7 +210,7 @@ pub struct DesiredService {
     /// Planning order only; it is not part of the Docker specification.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<ServiceName>,
-    /// Rollout settings, resolved by [`Self::rollout_policy`]. Omitted when
+    /// Rollout settings, resolved by [`DesiredService::rollout_policy`]. Omitted when
     /// default, so targets prepared before the setting existed still decode.
     #[serde(default, skip_serializing_if = "ValidatedRollout::is_default")]
     pub rollout: ValidatedRollout,
