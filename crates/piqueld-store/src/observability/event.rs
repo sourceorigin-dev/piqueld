@@ -456,7 +456,7 @@ impl Store {
         backup: &str,
         message: &str,
     ) -> Result<(), StoreError> {
-        let (_writer, mut tx) = self.begin_immediate().await?;
+        let mut tx = self.begin_immediate().await?;
         let kind = EventKind::DaemonRolledBack.as_str();
         let now = now_ms();
         sqlx::query!(

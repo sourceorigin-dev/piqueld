@@ -930,8 +930,9 @@ impl Store {
 /// turn in the queue. It derefs to its connection; dropping it uncommitted
 /// queues its rollback before the turn passes on.
 struct WriteTransaction<'a> {
-    /// Declared before `_writer`, so it drops first.
+    /// The transaction, declared before `_writer` so it drops first.
     tx: Transaction<'static, Sqlite>,
+    /// This writer's turn in the queue, given up when it drops.
     _writer: Writer<'a>,
 }
 
