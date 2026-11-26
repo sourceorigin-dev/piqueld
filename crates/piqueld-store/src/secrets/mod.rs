@@ -289,24 +289,31 @@ mod tests {
     use super::*;
     #[test]
     fn key_and_ciphertext_are_bound_to_their_original_identity() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let path = directory.path().join("secrets.key");
-        let cipher = SecretCipher::load(&path, false).unwrap();
-        assert_eq!(std::fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
-        let (environment, other) = (
-            EnvironmentId::parse("app-aaaaaaaa").unwrap(),
-            EnvironmentId::parse("app-bbbbbbbb").unwrap(),
+        let cipher = SecretCipher::load(&path, false).expect("the cipher loads");
+        assert_eq!(
+            std::fs::metadata(&path)
+                .expect("the key file exists")
+                .mode()
+                & 0o777,
+            0o600
         );
-        let application = ApplicationId::parse("app-aaaaaaaa").unwrap();
+        let (environment, other) = (
+            EnvironmentId::parse("app-aaaaaaaa").expect("the environment id is valid"),
+            EnvironmentId::parse("app-bbbbbbbb").expect("the environment id is valid"),
+        );
+        let application =
+            ApplicationId::parse("app-aaaaaaaa").expect("the application id is valid");
         let owner = SecretOwner::Environment(&environment);
         let mut encrypted = cipher
             .encrypt(owner, "token", 1, b"sensitive value")
-            .unwrap();
+            .expect("the secret encrypts");
         assert_ne!(encrypted.ciphertext, b"sensitive value");
         assert_eq!(
             cipher
                 .decrypt(owner, "token", 1, &encrypted)
-                .unwrap()
+                .expect("the secret decrypts")
                 .as_slice(),
             b"sensitive value"
         );
@@ -324,7 +331,7 @@ mod tests {
         cipher
             .decrypt(owner, "token", 1, &encrypted)
             .expect_err("`decrypt` should be rejected");
-        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_file(&path).expect("the file is removed");
         assert!(SecretCipher::load(&path, true).is_err());
         assert!(
             !path.exists(),

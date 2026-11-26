@@ -13,15 +13,21 @@ async fn application(store: &Store) -> Operation {
 }
 /// The application whose environment `operation` runs on.
 async fn application_of(store: &Store, operation: &Operation) -> ApplicationId {
-    let environment = store.get(&operation.environment_id).await.unwrap();
+    let environment = store
+        .get(&operation.environment_id)
+        .await
+        .expect("the store can get");
     environment.environment.application_id
 }
 /// Saves and deploys an empty application, returning its running operation.
 async fn named_application(store: &Store, name: &str) -> Operation {
     let saved = store.save_template(template(name, "[spec]"), true).await;
-    let operation_id = saved.operation_id.unwrap();
+    let operation_id = saved.operation_id.expect("the store can operation id");
     store.mark_running(&operation_id).await;
-    store.operation(&operation_id).await.unwrap()
+    store
+        .operation(&operation_id)
+        .await
+        .expect("the store can operation")
 }
 /// Settings receiving every application, preview and category, except
 /// security events, which destination changes raise.
@@ -39,19 +45,26 @@ async fn notify(store: &Store) {
     store.add_destination("test", url, settings()).await;
 }
 #[tokio::test]
+#[expect(clippy::too_many_lines, reason = "one scenario reads top to bottom")]
 async fn interrupted_actions_and_diagnostics_survive_restart_and_scope_controls_deletion() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temp dir is created");
     let path = temp.path().join("db");
-    let store = Store::open_unsynced(&path).await.unwrap();
+    let store = Store::open_unsynced(&path).await.expect("the store opens");
     let op = application(&store).await;
     let action = store
         .begin_action(Some(&op.id), Phase::EnsureService, Some("web"))
         .await
-        .unwrap();
-    store.action_request(&action, 1).await.unwrap();
+        .expect("the store can begin action");
+    store
+        .action_request(&action, 1)
+        .await
+        .expect("the store can action request");
     drop(store);
-    let store = Store::open_unsynced(&path).await.unwrap();
-    store.interrupt_actions(None).await.unwrap();
+    let store = Store::open_unsynced(&path).await.expect("the store opens");
+    store
+        .interrupt_actions(None)
+        .await
+        .expect("the store can interrupt actions");
     let history = store
         .filtered_events(
             &EventFilter {
@@ -63,7 +76,7 @@ async fn interrupted_actions_and_diagnostics_survive_restart_and_scope_controls_
             100,
         )
         .await
-        .unwrap();
+        .expect("the store can filtered events");
     assert_eq!(
         history
             .items
@@ -92,7 +105,7 @@ async fn interrupted_actions_and_diagnostics_survive_restart_and_scope_controls_
         store
             .record_diagnostic(diagnostic, None, environment, daemon)
             .await
-            .unwrap();
+            .expect("the store can record diagnostic");
     }
     let (MutationResponse::Deleted(deleted), _) = store
         .accept(
@@ -106,28 +119,36 @@ async fn interrupted_actions_and_diagnostics_survive_restart_and_scope_controls_
             None,
         )
         .await
-        .unwrap()
+        .expect("the store can accept")
     else {
         panic!("delete");
     };
     let delete = &deleted.operations[0];
     store.mark_running(&delete.operation_id).await;
     store
-        .finish_delete_operation(&store.operation(&delete.operation_id).await.unwrap())
+        .finish_delete_operation(
+            &store
+                .operation(&delete.operation_id)
+                .await
+                .expect("the store can operation"),
+        )
         .await
-        .unwrap();
+        .expect("the store can finish delete operation");
     assert!(matches!(
         store.diagnostic(&failure.id).await,
         Err(StoreError::NotFound)
     ));
-    let retained = store.diagnostic(&diagnostic.id).await.unwrap();
+    let retained = store
+        .diagnostic(&diagnostic.id)
+        .await
+        .expect("the store can diagnostic");
     assert_eq!(retained.scope, EventScope::Daemon);
     assert_eq!(retained.environment_id, Some(op.environment_id));
     assert!(
         store
             .events(None, None, 100)
             .await
-            .unwrap()
+            .expect("the store can events")
             .items
             .iter()
             .all(|event| event.scope == EventScope::Daemon)
@@ -142,7 +163,15 @@ async fn retries_keep_cause_and_outbox_deduplicates_until_recovery() {
         fail(&store, &op).await;
         rerun(&store, &op).await;
     }
-    assert_eq!(store.deliveries(None, 100).await.unwrap().items.len(), 1);
+    assert_eq!(
+        store
+            .deliveries(None, 100)
+            .await
+            .expect("the store can deliveries")
+            .items
+            .len(),
+        1
+    );
     let failed = store
         .filtered_events(
             &EventFilter {
@@ -154,21 +183,27 @@ async fn retries_keep_cause_and_outbox_deduplicates_until_recovery() {
             100,
         )
         .await
-        .unwrap();
+        .expect("the store can filtered events");
     assert_eq!(failed.items.len(), 2);
     assert!(failed.items.iter().all(|event| event.diagnostic.is_some()));
     succeed(&store, &op).await;
-    let deliveries = store.deliveries(None, 100).await.unwrap();
+    let deliveries = store
+        .deliveries(None, 100)
+        .await
+        .expect("the store can deliveries");
     assert_eq!(deliveries.items.len(), 2);
     assert_eq!(deliveries.items[0].category, NotificationCategory::Recovery);
     let cursor = store
         .deliveries(None, 1)
         .await
-        .unwrap()
+        .expect("the store can deliveries")
         .next_cursor
-        .unwrap();
+        .expect("the store can next cursor");
     assert_eq!(cursor, format!("v1:{}", deliveries.items[0].id));
-    let older = store.deliveries(Some(&cursor), 1).await.unwrap();
+    let older = store
+        .deliveries(Some(&cursor), 1)
+        .await
+        .expect("the store can deliveries");
     assert_eq!(older.items[0].id, deliveries.items[1].id);
     let bare = store.deliveries(Some(&deliveries.items[0].id), 1).await;
     assert!(matches!(bare, Err(StoreError::InvalidInput)));
@@ -181,7 +216,11 @@ async fn closed_incidents_cannot_be_retried_after_failed_delivery() {
         notify(&store).await;
         let op = application(&store).await;
         fail(&store, &op).await;
-        let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
+        let (failure, _) = store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .expect("a delivery is pending");
         let state = if failed_before_close {
             DeliveryState::Failed
         } else {
@@ -190,16 +229,16 @@ async fn closed_incidents_cannot_be_retried_after_failed_delivery() {
         store
             .complete_delivery(&failure.id, state, Some("Receiver rejected alert"), 3600)
             .await
-            .unwrap();
+            .expect("the store can complete delivery");
         if failed_before_close {
             store
                 .retry_delivery(Actor::Daemon, &failure.id)
                 .await
-                .unwrap();
+                .expect("the store can retry delivery");
             store
                 .complete_delivery(&failure.id, DeliveryState::Failed, Some("Rejected"), 0)
                 .await
-                .unwrap();
+                .expect("the store can complete delivery");
         }
         rerun(&store, &op).await;
         succeed(&store, &op).await;
@@ -207,8 +246,14 @@ async fn closed_incidents_cannot_be_retried_after_failed_delivery() {
             store
                 .complete_delivery(&failure.id, DeliveryState::Failed, Some("Rejected"), 0)
                 .await
-                .unwrap();
-            assert!(store.claim_delivery().await.unwrap().is_none());
+                .expect("the store can complete delivery");
+            assert!(
+                store
+                    .claim_delivery()
+                    .await
+                    .expect("the delivery claims")
+                    .is_none()
+            );
         }
         assert!(matches!(
             store.retry_delivery(Actor::Daemon, &failure.id).await,
@@ -228,7 +273,11 @@ async fn failed_recovery_cannot_be_retried_after_its_incident_reopens() {
         } else {
             fail(&store, &op).await;
         }
-        let (delivery, _) = store.claim_delivery().await.unwrap().unwrap();
+        let (delivery, _) = store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .expect("a delivery is pending");
         rerun(&store, &op).await;
         delivery
     };
@@ -236,21 +285,21 @@ async fn failed_recovery_cannot_be_retried_after_its_incident_reopens() {
     store
         .complete_delivery(&failure.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     let recovery = finish(true).await;
     assert_eq!(recovery.category, NotificationCategory::Recovery);
     store
         .complete_delivery(&recovery.id, DeliveryState::Failed, Some("Rejected"), 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     store
         .retry_delivery(Actor::Daemon, &recovery.id)
         .await
-        .unwrap();
+        .expect("the store can retry delivery");
     store
         .complete_delivery(&recovery.id, DeliveryState::Failed, Some("Rejected"), 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     finish(false).await;
     assert!(matches!(
         store.retry_delivery(Actor::Daemon, &recovery.id).await,
@@ -270,13 +319,20 @@ async fn failed_daemon_delivery(store: &Store) -> String {
     store
         .record_diagnostic(&diagnostic, None, None, Attribution::default())
         .await
-        .unwrap();
-    store.process_notifications().await.unwrap();
-    let (delivery, _) = store.claim_delivery().await.unwrap().unwrap();
+        .expect("the store can record diagnostic");
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
+    let (delivery, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     store
         .complete_delivery(&delivery.id, DeliveryState::Failed, Some("Rejected"), 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     delivery.id
 }
 /// An open daemon incident's failed delivery can be retried; retry names why
@@ -291,7 +347,7 @@ async fn retry_refusals_name_their_reason() {
         store.retry_delivery(Actor::Daemon, "missing").await,
         Err(StoreError::NotFound)
     ));
-    retry().await.unwrap();
+    retry().await.expect("the store can retry");
     assert!(matches!(
         retry().await,
         Err(StoreError::Retry(RetryError::NotFailed(
@@ -301,7 +357,7 @@ async fn retry_refusals_name_their_reason() {
     store
         .complete_delivery(&delivery, DeliveryState::Failed, Some("Rejected"), 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     put(
         &store,
         &DestinationSettings {
@@ -329,18 +385,25 @@ async fn an_undeliverable_delivery_does_not_block_the_next() {
         store
             .record_diagnostic(&diagnostic, None, None, Attribution::default())
             .await
-            .unwrap();
+            .expect("the store can record diagnostic");
     }
-    store.process_notifications().await.unwrap();
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
     let poisoned: String = sqlx::query_scalar(
         "UPDATE notification_deliveries SET category='retired' WHERE id=(SELECT id FROM \
          notification_deliveries ORDER BY next_attempt_ms,id LIMIT 1) RETURNING id",
     )
     .fetch_one(&store.pool)
     .await
-    .unwrap();
+    .expect("the row is present");
 
-    let (claimed, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (claimed, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
 
     assert_ne!(claimed.id, poisoned);
     let settled: (String, Option<String>) =
@@ -348,7 +411,7 @@ async fn an_undeliverable_delivery_does_not_block_the_next() {
             .bind(&poisoned)
             .fetch_one(&store.pool)
             .await
-            .unwrap();
+            .expect("the row is present");
     assert_eq!(
         settled,
         (
@@ -356,7 +419,11 @@ async fn an_undeliverable_delivery_does_not_block_the_next() {
             Some("Unknown notification category".into())
         )
     );
-    let listed = store.deliveries(None, 100).await.unwrap().items;
+    let listed = store
+        .deliveries(None, 100)
+        .await
+        .expect("the store can deliveries")
+        .items;
     assert_eq!(
         listed.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
         [claimed.id.as_str()]
@@ -376,20 +443,20 @@ async fn put(store: &Store, settings: &DestinationSettings, url: Option<&str>) {
     store
         .put_notification_destination(
             Actor::Daemon,
-            &DestinationName::parse("test").unwrap(),
+            &DestinationName::parse("test").expect("the destination name is valid"),
             request,
         )
         .await
-        .unwrap();
+        .expect("the store can put notification destination");
 }
 /// Delivers every due delivery, returning their destinations and categories.
 async fn drain(store: &Store) -> Vec<(String, NotificationCategory)> {
     let mut delivered = Vec::new();
-    while let Some((delivery, _)) = store.claim_delivery().await.unwrap() {
+    while let Some((delivery, _)) = store.claim_delivery().await.expect("the delivery claims") {
         store
             .complete_delivery(&delivery.id, DeliveryState::Delivered, None, 0)
             .await
-            .unwrap();
+            .expect("the store can complete delivery");
         delivered.push((delivery.destination, delivery.category));
     }
     delivered
@@ -404,8 +471,11 @@ async fn fail(store: &Store, op: &Operation) {
             Some(("service_update_failed", "Update paused")),
         )
         .await
-        .unwrap();
-    store.process_notifications().await.unwrap();
+        .expect("the store can transition operation");
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
 }
 /// Succeeds `op`'s deployment and processes the success's notifications.
 async fn succeed(store: &Store, op: &Operation) {
@@ -417,13 +487,22 @@ async fn succeed(store: &Store, op: &Operation) {
             None,
         )
         .await
-        .unwrap();
-    store.process_notifications().await.unwrap();
+        .expect("the store can transition operation");
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
 }
 /// Retries `op` once it finished, marking the retry running.
 async fn rerun(store: &Store, op: &Operation) {
-    let finished = store.operation(&op.id).await.unwrap();
-    store.retry_operation(&finished).await.unwrap();
+    let finished = store
+        .operation(&op.id)
+        .await
+        .expect("the store can operation");
+    store
+        .retry_operation(&finished)
+        .await
+        .expect("the store can retry operation");
     store.mark_running(&op.id).await;
 }
 #[tokio::test]
@@ -436,13 +515,27 @@ async fn disabling_cancels_pending_and_reenabling_never_replays() {
     settings.enabled = false;
     put(&store, &settings, None).await;
     assert_eq!(
-        store.deliveries(None, 100).await.unwrap().items[0].state,
+        store
+            .deliveries(None, 100)
+            .await
+            .expect("the store can deliveries")
+            .items[0]
+            .state,
         DeliveryState::Cancelled
     );
     settings.enabled = true;
     put(&store, &settings, None).await;
-    store.process_notifications().await.unwrap();
-    assert!(store.claim_delivery().await.unwrap().is_none());
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
 }
 /// A new URL makes the destination a new receiver, which is never sent the
 /// recovery of a failure the old one received.
@@ -452,23 +545,44 @@ async fn new_urls_receive_no_recovery_of_earlier_failures() {
     notify(&store).await;
     let op = application(&store).await;
     fail(&store, &op).await;
-    let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (failure, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     store
         .complete_delivery(&failure.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     let settings = settings();
     put(&store, &settings, Some("https://example.com/private-token")).await;
-    store.process_notifications().await.unwrap();
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
     assert!(
-        store.claim_delivery().await.unwrap().is_none(),
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none(),
         "unchanged URL"
     );
     put(&store, &settings, Some("https://example.com/new-token")).await;
     rerun(&store, &op).await;
     succeed(&store, &op).await;
-    assert!(store.claim_delivery().await.unwrap().is_none());
-    let history = store.deliveries(None, 100).await.unwrap().items;
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
+    let history = store
+        .deliveries(None, 100)
+        .await
+        .expect("the store can deliveries")
+        .items;
     assert!(
         history
             .iter()
@@ -483,11 +597,15 @@ async fn reenabled_destinations_still_receive_recoveries() {
     notify(&store).await;
     let op = application(&store).await;
     fail(&store, &op).await;
-    let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (failure, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     store
         .complete_delivery(&failure.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     let mut settings = settings();
     settings.enabled = false;
     put(&store, &settings, None).await;
@@ -495,7 +613,11 @@ async fn reenabled_destinations_still_receive_recoveries() {
     put(&store, &settings, None).await;
     rerun(&store, &op).await;
     succeed(&store, &op).await;
-    let (recovery, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (recovery, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     assert_eq!(recovery.category, NotificationCategory::Recovery);
 }
 /// Destinations receive notifications about their applications, previews
@@ -512,19 +634,36 @@ async fn destinations_receive_their_applications_and_daemon_notifications() {
         ApplicationSelection::Only([application_of(&store, &watched).await].into());
     fail(&store, &other).await;
     put(&store, &settings, None).await;
-    let cancelled = store.deliveries(None, 100).await.unwrap().items.remove(0);
+    let cancelled = store
+        .deliveries(None, 100)
+        .await
+        .expect("the store can deliveries")
+        .items
+        .remove(0);
     assert_eq!(cancelled.state, DeliveryState::Cancelled);
-    assert!(store.claim_delivery().await.unwrap().is_none());
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
     fail(&store, &watched).await;
-    store.record_daemon_started("0.1.0").await.unwrap();
-    store.process_notifications().await.unwrap();
+    store
+        .record_daemon_started("0.1.0")
+        .await
+        .expect("the store can record daemon started");
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
     let mut categories = Vec::new();
-    while let Some((delivery, _)) = store.claim_delivery().await.unwrap() {
+    while let Some((delivery, _)) = store.claim_delivery().await.expect("the delivery claims") {
         categories.push(delivery.category);
         store
             .complete_delivery(&delivery.id, DeliveryState::Delivered, None, 0)
             .await
-            .unwrap();
+            .expect("the store can complete delivery");
     }
     categories.sort();
     assert_eq!(
@@ -543,31 +682,63 @@ async fn sustained_observation_requires_continuity_and_emits_one_recovery() {
         store
             .observe_condition("docker_unavailable", None, true, timestamp, 45_000)
             .await
-            .unwrap();
+            .expect("the store can observe condition");
     }
-    assert!(store.deliveries(None, 100).await.unwrap().items.is_empty());
+    assert!(
+        store
+            .deliveries(None, 100)
+            .await
+            .expect("the store can deliveries")
+            .items
+            .is_empty()
+    );
     store
         .observe_condition("docker_unavailable", None, true, 121_000, 45_000)
         .await
-        .unwrap();
-    assert_eq!(store.deliveries(None, 100).await.unwrap().items.len(), 1);
+        .expect("the store can observe condition");
+    assert_eq!(
+        store
+            .deliveries(None, 100)
+            .await
+            .expect("the store can deliveries")
+            .items
+            .len(),
+        1
+    );
     store
         .observe_condition("docker_unavailable", None, false, 151_000, 45_000)
         .await
-        .unwrap();
-    assert_eq!(store.deliveries(None, 100).await.unwrap().items.len(), 2);
+        .expect("the store can observe condition");
+    assert_eq!(
+        store
+            .deliveries(None, 100)
+            .await
+            .expect("the store can deliveries")
+            .items
+            .len(),
+        2
+    );
     for timestamp in [200_000, 400_000, 430_000] {
         store
             .observe_condition("docker_unavailable", None, true, timestamp, 45_000)
             .await
-            .unwrap();
+            .expect("the store can observe condition");
     }
-    assert_eq!(store.deliveries(None, 100).await.unwrap().items.len(), 2);
+    assert_eq!(
+        store
+            .deliveries(None, 100)
+            .await
+            .expect("the store can deliveries")
+            .items
+            .len(),
+        2
+    );
 }
 #[tokio::test]
+#[expect(clippy::too_many_lines, reason = "one scenario reads top to bottom")]
 async fn open_incidents_survive_retention_until_recovery_is_delivered() {
     for daemon in [false, true] {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("the temp dir is created");
         let path = temp.path().join("db");
         let retention = piqueld_core::RetentionConfig {
             daemon_event_days: 1,
@@ -575,7 +746,7 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
         };
         let store = Store::open_unsynced(&path)
             .await
-            .unwrap()
+            .expect("the store opens")
             .with_observability(
                 &retention,
                 &piqueld_core::ImagesConfig::default(),
@@ -590,22 +761,38 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
         store
             .observe_condition(key, application, true, started, 45_000)
             .await
-            .unwrap();
-        store.prune_events(cutoff).await.unwrap();
-        store.prune_daemon_events().await.unwrap();
+            .expect("the store can observe condition");
+        store
+            .prune_events(cutoff)
+            .await
+            .expect("the store can prune events");
+        store
+            .prune_daemon_events()
+            .await
+            .expect("the store can prune daemon events");
         for elapsed in [30_000, 60_000, 90_000, 120_000] {
             store
                 .observe_condition(key, application, true, started + elapsed, 45_000)
                 .await
-                .unwrap();
+                .expect("the store can observe condition");
         }
-        let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
+        let (failure, _) = store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .expect("a delivery is pending");
         store
             .complete_delivery(&failure.id, DeliveryState::Delivered, None, 0)
             .await
-            .unwrap();
-        store.prune_events(cutoff).await.unwrap();
-        store.prune_daemon_events().await.unwrap();
+            .expect("the store can complete delivery");
+        store
+            .prune_events(cutoff)
+            .await
+            .expect("the store can prune events");
+        store
+            .prune_daemon_events()
+            .await
+            .expect("the store can prune daemon events");
         store
             .event(failure.event_id)
             .await
@@ -614,20 +801,33 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
 
         let store = Store::open_unsynced(&path)
             .await
-            .unwrap()
+            .expect("the store opens")
             .with_observability(
                 &retention,
                 &piqueld_core::ImagesConfig::default(),
                 Duration::from_secs(60),
             );
-        store.restart_failure_windows().await.unwrap();
+        store
+            .restart_failure_windows()
+            .await
+            .expect("the store can restart failure windows");
         store
             .observe_condition(key, application, false, started + 150_000, 45_000)
             .await
-            .unwrap();
-        store.prune_events(cutoff).await.unwrap();
-        store.prune_daemon_events().await.unwrap();
-        let (recovery, _) = store.claim_delivery().await.unwrap().unwrap();
+            .expect("the store can observe condition");
+        store
+            .prune_events(cutoff)
+            .await
+            .expect("the store can prune events");
+        store
+            .prune_daemon_events()
+            .await
+            .expect("the store can prune daemon events");
+        let (recovery, _) = store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .expect("a delivery is pending");
         assert_eq!(recovery.category, NotificationCategory::Recovery);
         assert_eq!(recovery.destination, failure.destination);
         store
@@ -637,11 +837,23 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
         store
             .complete_delivery(&recovery.id, DeliveryState::Delivered, None, 0)
             .await
-            .unwrap();
-        assert!(store.claim_delivery().await.unwrap().is_none());
+            .expect("the store can complete delivery");
+        assert!(
+            store
+                .claim_delivery()
+                .await
+                .expect("the delivery claims")
+                .is_none()
+        );
 
-        store.prune_events(cutoff).await.unwrap();
-        store.prune_daemon_events().await.unwrap();
+        store
+            .prune_events(cutoff)
+            .await
+            .expect("the store can prune events");
+        store
+            .prune_daemon_events()
+            .await
+            .expect("the store can prune daemon events");
         assert!(matches!(
             store.event(failure.event_id).await,
             Err(StoreError::NotFound)
@@ -650,7 +862,14 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
             store.event(recovery.event_id).await,
             Err(StoreError::NotFound)
         ));
-        assert!(store.deliveries(None, 100).await.unwrap().items.is_empty());
+        assert!(
+            store
+                .deliveries(None, 100)
+                .await
+                .expect("the store can deliveries")
+                .items
+                .is_empty()
+        );
     }
 }
 
@@ -670,7 +889,7 @@ async fn pruning_marks_stream_gaps_and_analytics_coverage() {
             1,
         )
         .await
-        .unwrap()
+        .expect("the store can filtered events")
         .items[0]
         .id;
     let quiet = EventFilter {
@@ -680,10 +899,13 @@ async fn pruning_marks_stream_gaps_and_analytics_coverage() {
     let (items, checkpoint) = store
         .stream_events(&quiet, &Visibility::ALL, 0, 10)
         .await
-        .unwrap();
+        .expect("the store can stream events");
     assert!(items.is_empty());
     assert_eq!(checkpoint, last);
-    store.prune_events(now_ms() + 1).await.unwrap();
+    store
+        .prune_events(now_ms() + 1)
+        .await
+        .expect("the store can prune events");
     assert!(matches!(
         store
             .stream_events(&EventFilter::default(), &Visibility::ALL, last - 1, 1)
@@ -697,22 +919,27 @@ async fn pruning_marks_stream_gaps_and_analytics_coverage() {
     let analytics = store
         .deployment_analytics(None, &Visibility::ALL, 0, now_ms())
         .await
-        .unwrap();
+        .expect("the store can deployment analytics");
     assert!(analytics.incomplete);
     assert_eq!(analytics.succeeded, 1);
 }
 
 #[tokio::test]
+#[expect(clippy::too_many_lines, reason = "one scenario reads top to bottom")]
 async fn recovery_waits_for_its_destination_failure_across_restart_and_pruning() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temp dir is created");
     let path = temp.path().join("db");
-    let store = Store::open_unsynced(&path).await.unwrap();
+    let store = Store::open_unsynced(&path).await.expect("the store opens");
     notify(&store).await;
     let url = "https://example.com/second";
     store.add_destination("second", url, settings()).await;
     let op = application(&store).await;
     fail(&store, &op).await;
-    let (delayed, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (delayed, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     store
         .complete_delivery(
             &delayed.id,
@@ -721,45 +948,83 @@ async fn recovery_waits_for_its_destination_failure_across_restart_and_pruning()
             3600,
         )
         .await
-        .unwrap();
-    let (acknowledged, _) = store.claim_delivery().await.unwrap().unwrap();
+        .expect("the store can complete delivery");
+    let (acknowledged, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     store
         .complete_delivery(&acknowledged.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     drop(store);
 
-    let store = Store::open_unsynced(&path).await.unwrap();
+    let store = Store::open_unsynced(&path).await.expect("the store opens");
     let url = "https://example.com/new";
     store
         .add_destination("new-destination", url, settings())
         .await;
     rerun(&store, &op).await;
     succeed(&store, &op).await;
-    let (recovery, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (recovery, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     assert_eq!(recovery.category, NotificationCategory::Recovery);
     assert_eq!(recovery.destination, acknowledged.destination);
     store
         .complete_delivery(&recovery.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
-    assert!(store.claim_delivery().await.unwrap().is_none());
-    assert_eq!(store.deliveries(None, 100).await.unwrap().items.len(), 4);
+        .expect("the store can complete delivery");
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
+    assert_eq!(
+        store
+            .deliveries(None, 100)
+            .await
+            .expect("the store can deliveries")
+            .items
+            .len(),
+        4
+    );
     drop(store);
 
-    let store = Store::open_unsynced(&path).await.unwrap();
-    store.restart_failure_windows().await.unwrap();
-    assert!(store.claim_delivery().await.unwrap().is_none());
+    let store = Store::open_unsynced(&path).await.expect("the store opens");
+    store
+        .restart_failure_windows()
+        .await
+        .expect("the store can restart failure windows");
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
     store
         .complete_delivery(&delayed.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
-    store.prune_events(now_ms() + 1).await.unwrap();
+        .expect("the store can complete delivery");
+    store
+        .prune_events(now_ms() + 1)
+        .await
+        .expect("the store can prune events");
     store
         .event(delayed.event_id)
         .await
         .expect("`event` should succeed");
-    let (recovery, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (recovery, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     assert_eq!(recovery.category, NotificationCategory::Recovery);
     assert_eq!(recovery.destination, delayed.destination);
     store
@@ -774,7 +1039,11 @@ async fn undelivered_failures_expire_and_cancel_recovery_even_when_nothing_is_du
     notify(&store).await;
     let op = application(&store).await;
     fail(&store, &op).await;
-    let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (failure, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     store
         .complete_delivery(
             &failure.id,
@@ -783,7 +1052,7 @@ async fn undelivered_failures_expire_and_cancel_recovery_even_when_nothing_is_du
             3600,
         )
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     rerun(&store, &op).await;
     succeed(&store, &op).await;
     sqlx::query!(
@@ -792,15 +1061,25 @@ async fn undelivered_failures_expire_and_cancel_recovery_even_when_nothing_is_du
     )
     .execute(&store.pool)
     .await
-    .unwrap();
-    assert!(store.claim_delivery().await.unwrap().is_none());
-    let deliveries = store.deliveries(None, 100).await.unwrap().items;
+    .expect("the statement executes");
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
+    let deliveries = store
+        .deliveries(None, 100)
+        .await
+        .expect("the store can deliveries")
+        .items;
     assert_eq!(deliveries.len(), 2);
     assert_eq!(
         deliveries
             .iter()
             .find(|d| d.id == failure.id)
-            .unwrap()
+            .expect("the item is found")
             .state,
         DeliveryState::Failed
     );
@@ -808,7 +1087,7 @@ async fn undelivered_failures_expire_and_cancel_recovery_even_when_nothing_is_du
         deliveries
             .iter()
             .find(|d| d.category == NotificationCategory::Recovery)
-            .unwrap()
+            .expect("the item is found")
             .state,
         DeliveryState::Cancelled
     );
@@ -828,16 +1107,27 @@ async fn recovery_waits_for_all_pending_failure_categories_at_the_same_destinati
                 Some((code, "Attempt failed")),
             )
             .await
-            .unwrap();
-        store.process_notifications().await.unwrap();
+            .expect("the store can transition operation");
+        store
+            .process_notifications()
+            .await
+            .expect("the notifications process");
         rerun(&store, &op).await;
     }
-    let (first, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (first, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     store
         .complete_delivery(&first.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
-    let (second, _) = store.claim_delivery().await.unwrap().unwrap();
+        .expect("the store can complete delivery");
+    let (second, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     store
         .complete_delivery(
             &second.id,
@@ -846,24 +1136,40 @@ async fn recovery_waits_for_all_pending_failure_categories_at_the_same_destinati
             3600,
         )
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     succeed(&store, &op).await;
-    assert!(store.claim_delivery().await.unwrap().is_none());
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
     store
         .complete_delivery(&second.id, DeliveryState::Failed, Some("Rejected"), 0)
         .await
-        .unwrap();
-    let (recovery, _) = store.claim_delivery().await.unwrap().unwrap();
+        .expect("the store can complete delivery");
+    let (recovery, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     assert_eq!(recovery.category, NotificationCategory::Recovery);
     store
         .complete_delivery(&recovery.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     assert!(matches!(
         store.retry_delivery(Actor::Daemon, &second.id).await,
         Err(StoreError::Retry(RetryError::Recovered))
     ));
-    assert!(store.claim_delivery().await.unwrap().is_none());
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
 }
 
 /// History, the event stream, builds, and analytics only include the
@@ -882,7 +1188,7 @@ async fn visibility_limits_history_builds_and_analytics() {
         store
             .start_build(&op.environment_id, &op.id, "web", &source, None)
             .await
-            .unwrap();
+            .expect("the store can start build");
         ids.push((application_of(&store, &op).await, op.environment_id));
     }
     let daemon = Diagnostic::from_recorded_code(
@@ -893,7 +1199,7 @@ async fn visibility_limits_history_builds_and_analytics() {
     store
         .record_diagnostic(&daemon, None, None, Attribution::default())
         .await
-        .unwrap();
+        .expect("the store can record diagnostic");
     let blog = Scope::one(ids[0].0.clone());
     let only_blog = |event: &piqueld_core::Event| {
         event.scope == EventScope::Application && event.application_id.as_ref() == Some(&ids[0].0)
@@ -906,12 +1212,12 @@ async fn visibility_limits_history_builds_and_analytics() {
         let page = store
             .filtered_events(&EventFilter::default(), &visible, None, 100)
             .await
-            .unwrap()
+            .expect("the store can filtered events")
             .items;
         let (streamed, _) = store
             .stream_events(&EventFilter::default(), &visible, 0, 100)
             .await
-            .unwrap();
+            .expect("the store can stream events");
         for events in [page, streamed] {
             assert!(events.iter().any(only_blog));
             assert!(
@@ -928,7 +1234,7 @@ async fn visibility_limits_history_builds_and_analytics() {
     let builds = store
         .builds(None, None, &blog, None, 50)
         .await
-        .unwrap()
+        .expect("the store can builds")
         .items;
     assert_eq!(builds.len(), 1);
     assert_eq!(builds[0].environment_id, ids[0].1.as_str());
@@ -942,7 +1248,7 @@ async fn visibility_limits_history_builds_and_analytics() {
             let analytics = store
                 .deployment_analytics(None, &visible, 0, now_ms())
                 .await
-                .unwrap();
+                .expect("the store can deployment analytics");
             let daemon_failure = analytics
                 .failures
                 .iter()
@@ -982,12 +1288,21 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
     let settings = DestinationSettings::new(DestinationKind::Json);
     store.add_destination("test", url, settings).await;
     for _ in 0..25 {
-        store.record_audit(&refused("203.0.113.9")).await.unwrap();
+        store
+            .record_audit(&refused("203.0.113.9"))
+            .await
+            .expect("the store can record audit");
     }
     let rearm =
         "UPDATE events SET created_at_ms=created_at_ms-660000 WHERE kind='access_denial_burst'";
-    sqlx::query(rearm).execute(&store.pool).await.unwrap();
-    store.record_audit(&refused("203.0.113.9")).await.unwrap();
+    sqlx::query(rearm)
+        .execute(&store.pool)
+        .await
+        .expect("the statement executes");
+    store
+        .record_audit(&refused("203.0.113.9"))
+        .await
+        .expect("the store can record audit");
     store
         .seed_auth_user(&user("alice"), &piqueld_core::access::Grants::admin())
         .await;
@@ -996,25 +1311,41 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
         name: "piquelctl",
         ..credential("laptop", CredentialKind::Cli)
     };
-    store.insert_credential("alice", &laptop).await.unwrap();
+    store
+        .insert_credential("alice", &laptop)
+        .await
+        .expect("the store can insert credential");
     for address in ["192.0.2.1", "192.0.2.1", "198.51.100.7"] {
         let note = store.note_credential_address("laptop", "alice", address);
-        note.await.unwrap();
+        note.await.expect("the store can note");
     }
-    store.process_notifications().await.unwrap();
-    let deliveries = store.deliveries(None, 10).await.unwrap().items;
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
+    let deliveries = store
+        .deliveries(None, 10)
+        .await
+        .expect("the store can deliveries")
+        .items;
     let failed = &deliveries[0].id;
     let fail = "UPDATE notification_deliveries SET state='failed' WHERE id=?1";
     sqlx::query(fail)
         .bind(failed)
         .execute(&store.pool)
         .await
-        .unwrap();
-    store.retry_delivery(Actor::Daemon, failed).await.unwrap();
+        .expect("the statement executes");
+    store
+        .retry_delivery(Actor::Daemon, failed)
+        .await
+        .expect("the store can retry delivery");
     let mut notified = Vec::new();
     for delivery in deliveries {
         assert_eq!(delivery.category, NotificationCategory::Security);
-        let event = store.event(delivery.event_id).await.unwrap();
+        let event = store
+            .event(delivery.event_id)
+            .await
+            .expect("the store can event");
         notified.push(event.message.unwrap_or_default());
     }
     notified.sort();
@@ -1035,16 +1366,20 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
 async fn security_events_record_their_system_actor() {
     let (_temp, store) = Store::temporary().await;
     let system = piqueld_core::sync::SystemActor::SyncPoll;
-    let mut db = store.pool.acquire().await.unwrap();
+    let mut db = store
+        .pool
+        .acquire()
+        .await
+        .expect("a connection is acquired");
     let by = Actor::System(system).attribution();
     Store::security_event_on(&mut db, SecurityEvent::AdminGranted, "granted", by)
         .await
-        .unwrap();
+        .expect("the store can security event on");
     let id = sqlx::query_scalar("SELECT last_insert_rowid()")
         .fetch_one(&mut *db)
         .await
-        .unwrap();
-    let event = store.event(id).await.unwrap();
+        .expect("the row is present");
+    let event = store.event(id).await.expect("the store can event");
     let actor = piqueld_core::event::EventActor::System { actor: system };
     assert_eq!(event.actor, Some(actor));
 }
@@ -1056,13 +1391,27 @@ async fn daemon_starts_notify_with_version_changes() {
     let (_temp, store) = Store::temporary().await;
     notify(&store).await;
     for version in ["0.1.0", "0.1.0", "0.2.0"] {
-        store.record_daemon_started(version).await.unwrap();
+        store
+            .record_daemon_started(version)
+            .await
+            .expect("the store can record daemon started");
     }
-    store.process_notifications().await.unwrap();
+    store
+        .process_notifications()
+        .await
+        .expect("the notifications process");
     let mut notified = Vec::new();
-    for delivery in store.deliveries(None, 10).await.unwrap().items {
+    for delivery in store
+        .deliveries(None, 10)
+        .await
+        .expect("the store can deliveries")
+        .items
+    {
         assert_eq!(delivery.category, NotificationCategory::DaemonStarted);
-        let event = store.event(delivery.event_id).await.unwrap();
+        let event = store
+            .event(delivery.event_id)
+            .await
+            .expect("the store can event");
         notified.push(event.message.unwrap_or_default());
     }
     notified.sort();
@@ -1092,14 +1441,20 @@ async fn operator_and_anonymous_refusals_burst_separately() {
         sqlx::query_scalar::<_, String>(messages)
             .fetch_all(&store.pool)
             .await
-            .unwrap()
+            .expect("the rows load")
     };
     for uid in std::iter::repeat_n(None, 19).chain([Some(0)]) {
-        store.record_audit(&socket(uid)).await.unwrap();
+        store
+            .record_audit(&socket(uid))
+            .await
+            .expect("the store can record audit");
     }
     assert_eq!(bursts().await, Vec::<String>::new());
     for uid in std::iter::once(None).chain(std::iter::repeat_n(Some(0), 19)) {
-        store.record_audit(&socket(uid)).await.unwrap();
+        store
+            .record_audit(&socket(uid))
+            .await
+            .expect("the store can record audit");
     }
     let messages = bursts().await;
     assert_eq!(messages.len(), 2, "{messages:?}");
@@ -1117,21 +1472,31 @@ async fn audit_pruning_keeps_records_after_a_retained_one() {
     let (_temp, mut store) = Store::temporary().await;
     store.audit_days = 1;
     for (peer, at) in [("a", 0), ("b", now_ms()), ("c", 0)] {
-        store.record_audit_at(&refused(peer), at).await.unwrap();
+        store
+            .record_audit_at(&refused(peer), at)
+            .await
+            .expect("the store can record audit at");
     }
-    store.prune_audit().await.unwrap();
+    store
+        .prune_audit()
+        .await
+        .expect("the store can prune audit");
     let kept = sqlx::query_scalar::<_, String>("SELECT peer FROM audit_events ORDER BY id")
         .fetch_all(&store.pool)
         .await
-        .unwrap();
+        .expect("the rows load");
     assert_eq!(kept, ["b", "c"]);
-    let verified = store.verify_audit().await.unwrap();
+    let verified = store
+        .verify_audit()
+        .await
+        .expect("the store can verify audit");
     assert_eq!((verified.checked, verified.broken_at), (2, None));
 }
 
 /// The audit chain detects edited, renumbered, inserted, and removed records,
 /// and pruning keeps it verifiable without ever erasing a broken part.
 #[tokio::test]
+#[expect(clippy::too_many_lines, reason = "one scenario reads top to bottom")]
 async fn the_audit_chain_detects_alteration_and_survives_pruning() {
     let (_temp, mut store) = Store::temporary().await;
     store.audit_days = 1;
@@ -1141,37 +1506,90 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
         event.origin.tailnet = (peer == "d").then(|| "tag:ci on runner".into());
         event.origin.operator =
             (peer == "d").then_some(piqueld_core::auth::HostOperator { uid: 1000 });
-        store.record_audit_at(&event, at).await.unwrap();
+        store
+            .record_audit_at(&event, at)
+            .await
+            .expect("the store can record audit at");
     }
-    let intact = store.verify_audit().await.unwrap();
+    let intact = store
+        .verify_audit()
+        .await
+        .expect("the store can verify audit");
     assert_eq!((intact.checked, intact.broken_at), (4, None));
     let renamed = "UPDATE audit_events SET tailnet='tag:prod on runner' WHERE peer='d'";
-    sqlx::query(renamed).execute(&store.pool).await.unwrap();
+    sqlx::query(renamed)
+        .execute(&store.pool)
+        .await
+        .expect("the statement executes");
     let d_id: i64 = sqlx::query_scalar("SELECT id FROM audit_events WHERE peer='d'")
         .fetch_one(&store.pool)
         .await
-        .unwrap();
-    assert_eq!(store.verify_audit().await.unwrap().broken_at, Some(d_id));
+        .expect("the row is present");
+    assert_eq!(
+        store
+            .verify_audit()
+            .await
+            .expect("the store can verify audit")
+            .broken_at,
+        Some(d_id)
+    );
     let restore = "UPDATE audit_events SET tailnet='tag:ci on runner' WHERE peer='d'";
-    sqlx::query(restore).execute(&store.pool).await.unwrap();
+    sqlx::query(restore)
+        .execute(&store.pool)
+        .await
+        .expect("the statement executes");
     let operator = "UPDATE audit_events SET operator_uid=0 WHERE peer='d'";
-    sqlx::query(operator).execute(&store.pool).await.unwrap();
-    assert_eq!(store.verify_audit().await.unwrap().broken_at, Some(d_id));
+    sqlx::query(operator)
+        .execute(&store.pool)
+        .await
+        .expect("the statement executes");
+    assert_eq!(
+        store
+            .verify_audit()
+            .await
+            .expect("the store can verify audit")
+            .broken_at,
+        Some(d_id)
+    );
     let restore = "UPDATE audit_events SET operator_uid=1000 WHERE peer='d'";
-    sqlx::query(restore).execute(&store.pool).await.unwrap();
+    sqlx::query(restore)
+        .execute(&store.pool)
+        .await
+        .expect("the statement executes");
     let run = async |sql: &str| {
-        sqlx::query(sql).execute(&store.pool).await.unwrap();
-        store.verify_audit().await.unwrap()
+        sqlx::query(sql)
+            .execute(&store.pool)
+            .await
+            .expect("the statement executes");
+        store
+            .verify_audit()
+            .await
+            .expect("the store can verify audit")
     };
     let edited = run("UPDATE audit_events SET status=200 WHERE peer='b'").await;
     assert_eq!(edited.broken_at, Some(2));
-    store.prune_audit().await.unwrap();
-    assert_eq!(store.verify_audit().await.unwrap(), edited);
+    store
+        .prune_audit()
+        .await
+        .expect("the store can prune audit");
+    assert_eq!(
+        store
+            .verify_audit()
+            .await
+            .expect("the store can verify audit"),
+        edited
+    );
     run("UPDATE audit_events SET status=404 WHERE peer='b'").await;
-    store.prune_audit().await.unwrap();
-    let pruned = store.verify_audit().await.unwrap();
+    store
+        .prune_audit()
+        .await
+        .expect("the store can prune audit");
+    let pruned = store
+        .verify_audit()
+        .await
+        .expect("the store can verify audit");
     assert_eq!((pruned.checked, pruned.broken_at), (2, None));
-    assert_eq!(pruned.anchor.unwrap().id, 2);
+    assert_eq!(pruned.anchor.expect("the store can anchor").id, 2);
     assert_eq!(pruned.head, intact.head);
     let edited = run("UPDATE audit_events SET environment_id='env-other' WHERE peer='c'").await;
     assert_eq!(edited.broken_at, Some(3));
@@ -1189,8 +1607,18 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
             VALUES({id},0,'forged','allowed',200)"
         );
         assert_eq!(run(&forged).await.broken_at, Some(id));
-        store.prune_audit().await.unwrap();
-        assert_eq!(store.verify_audit().await.unwrap().broken_at, Some(id));
+        store
+            .prune_audit()
+            .await
+            .expect("the store can prune audit");
+        assert_eq!(
+            store
+                .verify_audit()
+                .await
+                .expect("the store can verify audit")
+                .broken_at,
+            Some(id)
+        );
         run(&format!("DELETE FROM audit_events WHERE id={id}")).await;
     }
     let half = sqlx::query("UPDATE audit_chain SET pruned_link=NULL");
@@ -1214,29 +1642,44 @@ async fn audit_appends_commit_and_roll_back_with_their_transaction() {
     store.audit_days = 1;
     let now = now_ms();
     let append = async |peer: &str, at: i64, commit: bool| {
-        let (_writer, mut tx) = store.begin_immediate().await.unwrap();
+        let (_writer, mut tx) = store
+            .begin_immediate()
+            .await
+            .expect("the store can begin immediate");
         Store::append_audit_on(&mut tx, &refused(peer), at)
             .await
-            .unwrap();
+            .expect("the store can append audit on");
         if commit {
-            tx.commit().await.unwrap();
+            tx.commit().await.expect("the transaction commits");
         }
     };
     append("a", 0, false).await;
-    store.record_audit_at(&refused("b"), 0).await.unwrap();
+    store
+        .record_audit_at(&refused("b"), 0)
+        .await
+        .expect("the store can record audit at");
     append("c", now, true).await;
     append("d", now, false).await;
-    store.record_audit_at(&refused("e"), now).await.unwrap();
+    store
+        .record_audit_at(&refused("e"), now)
+        .await
+        .expect("the store can record audit at");
     let rows = "SELECT id,peer FROM audit_events ORDER BY id";
     let kept = sqlx::query_as::<_, (i64, String)>(rows)
         .fetch_all(&store.pool)
         .await
-        .unwrap();
+        .expect("the rows load");
     assert_eq!(kept, [(1, "b".into()), (2, "c".into()), (3, "e".into())]);
-    store.prune_audit().await.unwrap();
-    let verified = store.verify_audit().await.unwrap();
+    store
+        .prune_audit()
+        .await
+        .expect("the store can prune audit");
+    let verified = store
+        .verify_audit()
+        .await
+        .expect("the store can verify audit");
     assert_eq!((verified.checked, verified.broken_at), (2, None));
-    assert_eq!(verified.anchor.unwrap().id, 1);
+    assert_eq!(verified.anchor.expect("the store can anchor").id, 1);
 }
 /// Successful deployments notify only destinations receiving them, naming
 /// the application and environment as of then.
@@ -1254,7 +1697,11 @@ async fn successful_deployments_notify_with_their_names() {
     store.add_destination("deployments", url, deployments).await;
     let op = named_application(&store, "shop").await;
     succeed(&store, &op).await;
-    let (delivery, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (delivery, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     assert_eq!(delivery.destination, "deployments");
     assert_eq!(delivery.category, NotificationCategory::DeploymentSucceeded);
     assert_eq!(
@@ -1264,8 +1711,14 @@ async fn successful_deployments_notify_with_their_names() {
     store
         .complete_delivery(&delivery.id, DeliveryState::Delivered, None, 0)
         .await
-        .unwrap();
-    assert!(store.claim_delivery().await.unwrap().is_none());
+        .expect("the store can complete delivery");
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
 
     let mut both = settings();
     both.categories.retain(|category, _| {
@@ -1311,7 +1764,11 @@ async fn deployments_follow_cancelled_recoveries_and_stay_retryable() {
     fail(&store, &op).await;
     rerun(&store, &op).await;
     succeed(&store, &op).await;
-    let (failure, _) = store.claim_delivery().await.unwrap().unwrap();
+    let (failure, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     assert_eq!(failure.category, NotificationCategory::DeploymentFailures);
     store
         .complete_delivery(
@@ -1321,28 +1778,38 @@ async fn deployments_follow_cancelled_recoveries_and_stay_retryable() {
             3600,
         )
         .await
-        .unwrap();
-    assert!(store.claim_delivery().await.unwrap().is_none());
+        .expect("the store can complete delivery");
+    assert!(
+        store
+            .claim_delivery()
+            .await
+            .expect("the delivery claims")
+            .is_none()
+    );
     sqlx::query("UPDATE notification_deliveries SET retry_started_at_ms=0 WHERE id=?1")
         .bind(&failure.id)
         .execute(&store.pool)
         .await
-        .unwrap();
-    let (deployed, _) = store.claim_delivery().await.unwrap().unwrap();
+        .expect("the statement executes");
+    let (deployed, _) = store
+        .claim_delivery()
+        .await
+        .expect("the delivery claims")
+        .expect("a delivery is pending");
     assert_eq!(deployed.category, NotificationCategory::DeploymentSucceeded);
     store
         .complete_delivery(&deployed.id, DeliveryState::Failed, Some("Rejected"), 0)
         .await
-        .unwrap();
+        .expect("the store can complete delivery");
     store
         .retry_delivery(Actor::Daemon, &deployed.id)
         .await
-        .unwrap();
+        .expect("the store can retry delivery");
 }
 
 #[tokio::test]
 async fn migration_types_the_phases_recorded_before_them() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("the temp dir is created");
     let pool = Store::migrated(&temp.path().join("db"), 1).await;
     for (kind, phase) in [
         ("application_edited", "jobs"),
@@ -1356,7 +1823,7 @@ async fn migration_types_the_phases_recorded_before_them() {
             .bind(phase)
             .execute(&pool)
             .await
-            .unwrap();
+            .expect("the statement executes");
     }
     for (attempt, phase) in [(1, "running_job"), (2, "preparing_sources"), (3, "deploy")] {
         sqlx::raw_sql(&format!(
@@ -1365,16 +1832,18 @@ async fn migration_types_the_phases_recorded_before_them() {
         ))
         .execute(&pool)
         .await
-        .unwrap();
+        .expect("the statement executes");
     }
     pool.close().await;
-    let store = Store::open_unsynced(temp.path().join("db")).await.unwrap();
+    let store = Store::open_unsynced(temp.path().join("db"))
+        .await
+        .expect("the store opens");
     let attempts: Vec<Option<String>> = sqlx::query_scalar(
         "SELECT json_extract(outcome_json,'$.phase') FROM deployment_attempts ORDER BY attempt",
     )
     .fetch_all(&store.pool)
     .await
-    .unwrap();
+    .expect("the rows load");
     assert_eq!(
         attempts,
         [Some("run_job".into()), Some("preparing".into()), None]
@@ -1382,7 +1851,7 @@ async fn migration_types_the_phases_recorded_before_them() {
     let events = store
         .filtered_events(&EventFilter::default(), &Visibility::ALL, None, 10)
         .await
-        .unwrap()
+        .expect("the store can filtered events")
         .items;
     let recorded: Vec<_> = events
         .iter()
@@ -1417,15 +1886,18 @@ async fn timeline_expectations_count_each_earlier_operations_last_run_of_a_step(
         let action = store
             .begin_action(Some(&op.id), phase, Some("web"))
             .await
-            .unwrap();
-        store.finish_action(&action, None).await.unwrap();
+            .expect("the store can begin action");
+        store
+            .finish_action(&action, None)
+            .await
+            .expect("the store can finish action");
         sqlx::query("UPDATE events SET attempt=?1, duration_ms=?2 WHERE action_id=?3")
             .bind(attempt)
             .bind(duration)
             .bind(&action.id)
             .execute(&store.pool)
             .await
-            .unwrap();
+            .expect("the statement executes");
     }
     sqlx::query(
         "UPDATE operations SET state='succeeded', attempt=2, finished_at_ms=created_at_ms WHERE id=?1",
@@ -1433,9 +1905,12 @@ async fn timeline_expectations_count_each_earlier_operations_last_run_of_a_step(
     .bind(&op.id)
     .execute(&store.pool)
     .await
-    .unwrap();
+    .expect("the statement executes");
     let expected = async |operation: Operation| {
-        let baseline = store.timeline_baseline(&operation).await.unwrap();
+        let baseline = store
+            .timeline_baseline(&operation)
+            .await
+            .expect("the store can timeline baseline");
         baseline
             .expected
             .iter()
@@ -1469,8 +1944,11 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
     let action = store
         .begin_action(Some(&operation.id), Phase::EnsureService, Some("web"))
         .await
-        .unwrap();
-    store.action_request(&action, 1).await.unwrap();
+        .expect("the store can begin action");
+    store
+        .action_request(&action, 1)
+        .await
+        .expect("the store can action request");
     let busy = Diagnostic::new(
         "diagnostic-1".into(),
         DiagnosticCode::DockerUnavailable,
@@ -1479,8 +1957,11 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
     store
         .action_retry(&action, 1, Duration::from_secs(1), &busy)
         .await
-        .unwrap();
-    store.finish_action(&action, None).await.unwrap();
+        .expect("the store can action retry");
+    store
+        .finish_action(&action, None)
+        .await
+        .expect("the store can finish action");
     store
         .record_plan(
             &operation.id,
@@ -1489,7 +1970,7 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
             Some("data"),
         )
         .await
-        .unwrap();
+        .expect("the store can record plan");
     store
         .transition_operation(
             &operation.id,
@@ -1498,8 +1979,11 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
             Some(("ownership_conflict", "a volume is not ours")),
         )
         .await
-        .unwrap();
-    let failed = store.operation(&operation.id).await.unwrap();
+        .expect("the store can transition operation");
+    let failed = store
+        .operation(&operation.id)
+        .await
+        .expect("the store can operation");
     assert_eq!(
         (failed.phase, failed.resource.as_deref()),
         (Some(Phase::Planning), Some("data"))
@@ -1507,9 +1991,15 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
     let cleanup = store
         .begin_action(Some(&operation.id), Phase::RemoveJobs, None)
         .await
-        .unwrap();
-    store.finish_action(&cleanup, Some(busy)).await.unwrap();
-    let failed = store.operation(&operation.id).await.unwrap();
+        .expect("the store can begin action");
+    store
+        .finish_action(&cleanup, Some(busy))
+        .await
+        .expect("the store can finish action");
+    let failed = store
+        .operation(&operation.id)
+        .await
+        .expect("the store can operation");
     assert_eq!(
         (failed.phase, failed.resource.as_deref()),
         (Some(Phase::Planning), Some("data"))
@@ -1672,7 +2162,7 @@ async fn daemon_stats_report_write_waits_and_queue_ages() {
         release
     );
     assert!(saved.operation_id.is_some());
-    let stats = store.daemon_stats().await.unwrap();
+    let stats = store.daemon_stats().await.expect("the daemon stats load");
     assert_eq!((stats.waiting_writes, stats.write_waits), (0, 1));
     assert!(stats.write_wait_ms >= 20, "{stats:?}");
     assert!(
@@ -1695,10 +2185,16 @@ async fn a_retried_operation_waits_from_its_retry() {
         .bind(&op.id)
         .execute(&store.pool)
         .await
-        .unwrap();
-    let failed = store.operation(&op.id).await.unwrap();
-    store.retry_operation(&failed).await.unwrap();
-    let stats = store.daemon_stats().await.unwrap();
+        .expect("the operation is backdated");
+    let failed = store
+        .operation(&op.id)
+        .await
+        .expect("the failed operation loads");
+    store
+        .retry_operation(&failed)
+        .await
+        .expect("the operation is retried");
+    let stats = store.daemon_stats().await.expect("the daemon stats load");
     assert!(
         stats
             .oldest_queued_operation_ms

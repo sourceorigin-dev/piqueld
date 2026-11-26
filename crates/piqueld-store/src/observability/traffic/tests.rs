@@ -53,13 +53,19 @@ async fn tallies_add_up_into_hourly_and_daily_points() {
         .insert((route(&id, "b.example.com"), day + 30 * HOUR_MS), failure);
     let page = (route(&id, "a.example.com"), day, RankKind::Page, "/".into());
     tally.ranks.insert(page, 2);
-    store.record_traffic(&tally).await.unwrap();
-    store.record_traffic(&tally).await.unwrap();
+    store
+        .record_traffic(&tally)
+        .await
+        .expect("the store can record traffic");
+    store
+        .record_traffic(&tally)
+        .await
+        .expect("the store can record traffic");
 
     let partial = store
         .traffic(&id, window(day, day + HOUR_MS + 1))
         .await
-        .unwrap();
+        .expect("the store can traffic");
     assert_eq!(
         (partial.until_ms, partial.totals.requests),
         (day + 2 * HOUR_MS, 6)
@@ -67,12 +73,12 @@ async fn tallies_add_up_into_hourly_and_daily_points() {
     let latest = store
         .traffic(&id, window(i64::MAX - DAY_MS, i64::MAX))
         .await
-        .unwrap();
+        .expect("the store can traffic");
     assert_eq!(latest.until_ms % HOUR_MS, 0);
     let report = store
         .traffic(&id, window(day, day + 2 * DAY_MS))
         .await
-        .unwrap();
+        .expect("the store can traffic");
     assert_eq!((report.bucket_ms, report.series.len()), (HOUR_MS, 48));
     assert_eq!(report.series[1].counts.requests, 6);
     assert_eq!(report.series[30].counts.server_errors, 2);
@@ -97,7 +103,10 @@ async fn tallies_add_up_into_hourly_and_daily_points() {
         hostname: Some("b.example.com"),
         ..window(day + 5, day + 7 * DAY_MS)
     };
-    let daily = store.traffic(&id, only_b).await.unwrap();
+    let daily = store
+        .traffic(&id, only_b)
+        .await
+        .expect("the store can traffic");
     assert_eq!((daily.bucket_ms, daily.since_ms), (DAY_MS, day));
     assert_eq!(daily.series.len(), 7);
     assert_eq!(daily.series[1].counts.requests, 2);
@@ -115,19 +124,25 @@ async fn ranks_stop_growing_at_their_limit_and_old_counts_are_pruned() {
     for index in 0..=TRAFFIC_RANK_LIMIT {
         tally.ranks.insert(page(format!("/{index}")), 1);
     }
-    store.record_traffic(&tally).await.unwrap();
+    store
+        .record_traffic(&tally)
+        .await
+        .expect("the store can record traffic");
     let mut again = TrafficTally::default();
     again.ranks.insert(page("/0".into()), 5);
-    store.record_traffic(&again).await.unwrap();
+    store
+        .record_traffic(&again)
+        .await
+        .expect("the store can record traffic");
     let ranks = sqlx::query_scalar!("SELECT COUNT(*) FROM traffic_ranks")
         .fetch_one(&store.pool)
         .await
-        .unwrap();
+        .expect("the row is present");
     assert_eq!(ranks, TRAFFIC_RANK_LIMIT);
     let report = store
         .traffic(&id, window(today, today + DAY_MS))
         .await
-        .unwrap();
+        .expect("the store can traffic");
     assert_eq!(report.pages.len(), 20);
     assert_eq!(
         (report.pages[0].value.as_str(), report.pages[0].page_views),
@@ -153,13 +168,19 @@ async fn ranks_stop_growing_at_their_limit_and_old_counts_are_pruned() {
         "/old".into(),
     );
     tally.ranks.insert(old_page, 50);
-    store.record_traffic(&tally).await.unwrap();
+    store
+        .record_traffic(&tally)
+        .await
+        .expect("the store can record traffic");
     store.traffic_days = 1;
-    store.prune_traffic().await.unwrap();
+    store
+        .prune_traffic()
+        .await
+        .expect("the store can prune traffic");
     let report = store
         .traffic(&id, window(old, today + DAY_MS))
         .await
-        .unwrap();
+        .expect("the store can traffic");
     assert_eq!(report.totals.requests, 1);
     assert!(
         report.pages.iter().all(|page| page.value != "/old"),
