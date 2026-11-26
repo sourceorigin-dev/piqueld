@@ -10,6 +10,7 @@
 //! [`Backups::restore`] puts a backup back into an empty data directory, and
 //! [`Backups::roll_back`] the newest one this binary opens.
 
+mod error;
 mod restore;
 mod roll_back;
 mod rotation;
@@ -17,9 +18,12 @@ mod staging;
 #[cfg(test)]
 mod tests;
 
-use anyhow::{Context, Result, bail};
+pub use error::{BackupError, StagingKept};
 use piqueld_store::{DatabaseCopy, DatabaseFile, DatabaseIdentity, SCHEMA_VERSION};
 pub use restore::Refusal;
+
+/// What a backup operation returns.
+type Result<T> = std::result::Result<T, BackupError>;
 use roll_back::RolledBack;
 pub use roll_back::{RollBack, RollBackReport};
 pub use rotation::PreMigration;
@@ -127,16 +131,16 @@ impl Backups {
                 io::ErrorKind::AlreadyExists => Ok(()),
                 _ => Err(error),
             })
-            .with_context(|| format!("create {}", directory.display()))?;
+            .map_err(BackupError::io("create", &directory))?;
         sync(&self.data_dir)?;
         let staging = tempfile::Builder::new()
             .prefix(PreMigration::PARTIAL)
             .tempdir_in(&directory)
-            .with_context(|| format!("create a backup in {}", directory.display()))?;
+            .map_err(BackupError::io("create a backup in", &directory))?;
         let manifest = self.stage(staging.path()).await?;
         let backup = directory.join(PreMigration::from(&manifest).name());
         fs::rename(staging.path(), &backup)
-            .with_context(|| format!("move the backup to {}", backup.display()))?;
+            .map_err(BackupError::io("move the backup to", &backup))?;
         drop(staging);
         sync(&directory)?;
         PreMigration::prune(&directory, PRE_MIGRATION_KEEP)?;
@@ -149,18 +153,20 @@ impl Backups {
         let database = self.data_dir.join(DATABASE);
         if !database
             .try_exists()
-            .with_context(|| format!("inspect {}", database.display()))?
+            .map_err(BackupError::io("inspect", &database))?
         {
             return Ok(None);
         }
         let mut live = DatabaseFile::open(&database)
             .await
-            .with_context(|| format!("open {}", database.display()))?;
+            .map_err(BackupError::database("open", &database))?;
         let identity = live
             .identity()
             .await
-            .context("read the database's schema")?;
-        live.close().await.context("close the database")?;
+            .map_err(BackupError::live("read the database's schema"))?;
+        live.close()
+            .await
+            .map_err(BackupError::live("close the database"))?;
         Ok(identity)
     }
 
@@ -184,11 +190,13 @@ impl Backups {
         let database = destination.join(DATABASE);
         let mut live = DatabaseFile::open(&self.data_dir.join(DATABASE))
             .await
-            .context("open the database")?;
+            .map_err(BackupError::live("open the database"))?;
         live.snapshot_into(&database)
             .await
-            .context("snapshot the database")?;
-        live.close().await.context("close the database")?;
+            .map_err(BackupError::live("snapshot the database"))?;
+        live.close()
+            .await
+            .map_err(BackupError::live("close the database"))?;
 
         let data_dir = self.data_dir.clone();
         let staged = destination.to_path_buf();
@@ -201,10 +209,13 @@ impl Backups {
                 let source = data_dir.join(tree);
                 copy_tree(CWD, &source, &source, &staged.join(tree), Some(&control))?;
             }
-            Ok::<_, anyhow::Error>(copied.then_some(key))
+            Ok::<_, BackupError>(copied.then_some(key))
         })
         .await
-        .context("copy the data directory")??;
+        .map_err(|source| BackupError::CopyTask {
+            action: "copy the data directory",
+            source,
+        })??;
 
         let identity = verify(&database, key.as_deref()).await?;
 
@@ -217,10 +228,13 @@ impl Backups {
         };
         let path = destination.join(MANIFEST);
         let mut file = create_private(&path)?;
-        serde_json::to_writer_pretty(&mut file, &manifest)
-            .with_context(|| format!("write {}", path.display()))?;
-        file.sync_all()
-            .with_context(|| format!("sync {}", path.display()))?;
+        serde_json::to_writer_pretty(&mut file, &manifest).map_err(|source| {
+            BackupError::WriteManifest {
+                path: path.clone(),
+                source,
+            }
+        })?;
+        file.sync_all().map_err(BackupError::io("sync", &path))?;
         sync(destination)?;
         Ok(manifest)
     }
@@ -239,25 +253,25 @@ pub struct Damaged(pub Vec<String>);
 async fn verify(database: &Path, key: Option<&Path>) -> Result<DatabaseIdentity> {
     let mut copy = DatabaseCopy::open(database)
         .await
-        .with_context(|| format!("open {}", database.display()))?;
+        .map_err(BackupError::database("open", database))?;
     let problems = copy
         .integrity_problems()
         .await
-        .with_context(|| format!("check {}", database.display()))?;
+        .map_err(BackupError::database("check", database))?;
     if !problems.is_empty() {
-        bail!(Damaged(problems));
+        return Err(Damaged(problems).into());
     }
     let identity = copy
         .identity()
         .await
-        .with_context(|| format!("read the schema of {}", database.display()))?
-        .context("the database has no schema yet")?;
+        .map_err(BackupError::database("read the schema of", database))?
+        .ok_or(BackupError::NoSchema)?;
     copy.verify_key(key)
         .await
-        .with_context(|| format!("{SECRET_KEY} does not match the database"))?;
+        .map_err(BackupError::KeyMismatch)?;
     copy.close()
         .await
-        .with_context(|| format!("close {}", database.display()))?;
+        .map_err(BackupError::database("close", database))?;
     Ok(identity)
 }
 
@@ -268,7 +282,7 @@ fn create_private(path: &Path) -> Result<File> {
         .create_new(true)
         .mode(0o600)
         .open(path)
-        .with_context(|| format!("create {}", path.display()))
+        .map_err(BackupError::io("create", path))
 }
 
 /// Opens `name`, relative to the directory `at`, read-only and never
@@ -295,19 +309,19 @@ fn open_at(at: BorrowedFd<'_>, name: &Path, directory: bool) -> io::Result<File>
 fn copy_file(at: BorrowedFd<'_>, name: &Path, shown: &Path, target: &Path) -> Result<bool> {
     let mut from = match open_at(at, name, false) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-        opened => opened.with_context(|| format!("open {}", shown.display()))?,
+        opened => opened.map_err(BackupError::io("open", shown))?,
     };
-    let metadata = from
-        .metadata()
-        .with_context(|| format!("inspect {}", shown.display()))?;
+    let metadata = from.metadata().map_err(BackupError::io("inspect", shown))?;
     if !metadata.is_file() {
-        bail!("{} is not a regular file", shown.display());
+        return Err(BackupError::NotRegularFile(shown.to_path_buf()));
     }
     let mut to = create_private(target)?;
-    io::copy(&mut from, &mut to)
-        .with_context(|| format!("copy {} to {}", shown.display(), target.display()))?;
-    to.sync_all()
-        .with_context(|| format!("sync {}", target.display()))?;
+    io::copy(&mut from, &mut to).map_err(|source| BackupError::Copy {
+        from: shown.to_path_buf(),
+        to: target.to_path_buf(),
+        source,
+    })?;
+    to.sync_all().map_err(BackupError::io("sync", target))?;
     Ok(true)
 }
 
@@ -325,16 +339,15 @@ fn copy_tree(
 ) -> Result<()> {
     let directory = match open_at(at, name, true) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        opened => opened.with_context(|| format!("open {}", shown.display()))?,
+        opened => opened.map_err(BackupError::io("open", shown))?,
     };
-    let entries =
-        Dir::read_from(&directory).with_context(|| format!("read {}", shown.display()))?;
+    let entries = Dir::read_from(&directory).map_err(BackupError::io("read", shown))?;
     fs::DirBuilder::new()
         .mode(0o700)
         .create(target)
-        .with_context(|| format!("create {}", target.display()))?;
+        .map_err(BackupError::io("create", target))?;
     for entry in entries {
-        let entry = entry.with_context(|| format!("read {}", shown.display()))?;
+        let entry = entry.map_err(BackupError::io("read", shown))?;
         let name = Path::new(OsStr::from_bytes(entry.file_name().to_bytes()));
         if name == Path::new(".") || name == Path::new("..") {
             continue;
@@ -345,8 +358,7 @@ fn copy_tree(
                 match rustix::fs::statat(&directory, name, AtFlags::SYMLINK_NOFOLLOW) {
                     Err(rustix::io::Errno::NOENT) => continue,
                     stat => FileType::from_raw_mode(
-                        stat.with_context(|| format!("inspect {}", from.display()))?
-                            .st_mode,
+                        stat.map_err(BackupError::io("inspect", &from))?.st_mode,
                     ),
                 }
             }
@@ -369,17 +381,15 @@ fn copy_tree(
 fn sync(path: &Path) -> Result<()> {
     File::open(path)
         .and_then(|directory| directory.sync_all())
-        .with_context(|| format!("sync {}", path.display()))
+        .map_err(BackupError::io("sync", path))
 }
 
 /// The names of the entries in the directory `path` that `keep` keeps,
 /// sorted.
 fn entries(path: &Path, keep: impl Fn(&OsStr) -> bool) -> Result<Vec<OsString>> {
     let mut names = Vec::new();
-    for entry in fs::read_dir(path).with_context(|| format!("read {}", path.display()))? {
-        let name = entry
-            .with_context(|| format!("read {}", path.display()))?
-            .file_name();
+    for entry in fs::read_dir(path).map_err(BackupError::io("read", path))? {
+        let name = entry.map_err(BackupError::io("read", path))?.file_name();
         if keep(&name) {
             names.push(name);
         }
@@ -394,8 +404,11 @@ fn entries(path: &Path, keep: impl Fn(&OsStr) -> bool) -> Result<Vec<OsString>> 
 /// still to move in `from`.
 fn move_entries(from: &Path, to: &Path, names: &[OsString]) -> Result<()> {
     for name in names {
-        rename(&from.join(name), &to.join(name))
-            .with_context(|| format!("move {} into {}", from.join(name).display(), to.display()))?;
+        rename(&from.join(name), &to.join(name)).map_err(|source| BackupError::Move {
+            from: from.join(name),
+            to: to.to_path_buf(),
+            source,
+        })?;
     }
     sync(to)?;
     sync(from)

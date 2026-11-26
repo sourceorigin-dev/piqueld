@@ -7,8 +7,9 @@
 //! its contents but [`Backups::kept`] ones move into a `rolled-back-<ms>`
 //! directory inside it, then the backup is restored around them.
 
+use super::{BackupError, Result};
 use super::{Backups, Manifest, PreMigration, Refusal, entries, millis_after};
-use anyhow::{Context, Result, bail};
+use crate::ingress::IngressError;
 use piqueld_core::InstanceId;
 use piqueld_store::SCHEMA_VERSION;
 use serde::{Deserialize, Serialize};
@@ -41,7 +42,7 @@ impl RolledBack {
         for (_, name) in generated.into_iter().skip(keep) {
             let path = data_dir.join(name);
             fs::remove_dir_all(&path)
-                .with_context(|| format!("delete the old rolled-back state {}", path.display()))?;
+                .map_err(BackupError::io("delete the old rolled-back state", &path))?;
         }
         Ok(())
     }
@@ -110,7 +111,7 @@ impl RollBackReport {
 
     /// Writes it into `data_dir`, privately and atomically.
     pub(super) async fn write(&self, data_dir: &Path) -> Result<()> {
-        let bytes = serde_json::to_vec_pretty(self).context("encode the roll-back report")?;
+        let bytes = serde_json::to_vec_pretty(self).map_err(BackupError::EncodeReport)?;
         Ok(
             piqueld_config::directories::PrivateFile::at(data_dir.join(Self::FILE))
                 .write(bytes)
@@ -129,10 +130,14 @@ impl RollBackReport {
 
     /// `error`, once the report in `data_dir` is removed, or with why it
     /// couldn't be.
-    async fn remove_after(data_dir: &Path, error: anyhow::Error) -> anyhow::Error {
+    async fn remove_after(data_dir: &Path, error: BackupError) -> BackupError {
         match Self::remove(data_dir).await {
             Ok(()) => error,
-            Err(removal) => error.context(format!("{removal:#}")),
+            Err(BackupError::Report(removal)) => BackupError::ReportNotRemoved {
+                removal,
+                source: Box::new(error),
+            },
+            Err(removal) => removal,
         }
     }
 
@@ -141,11 +146,11 @@ impl RollBackReport {
         let path = data_dir.join(Self::FILE);
         let bytes = match tokio::fs::read(&path).await {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            read => read.with_context(|| format!("read {}", path.display()))?,
+            read => read.map_err(BackupError::io("read", &path))?,
         };
         serde_json::from_slice(&bytes)
             .map(Some)
-            .with_context(|| format!("parse {}", path.display()))
+            .map_err(|source| BackupError::Parse { path, source })
     }
 }
 
@@ -165,8 +170,8 @@ impl Backups {
         let report = match RollBackReport::read(&self.data_dir).await {
             Ok(Some(report)) => report,
             Ok(None) => return Ok(()),
-            Err(error) if error.downcast_ref::<serde_json::Error>().is_some() => {
-                let error = error.context("removed the roll-back report it can't parse");
+            Err(error @ BackupError::Parse { .. }) => {
+                let error = BackupError::UnparsableReport(Box::new(error));
                 return Err(RollBackReport::remove_after(&self.data_dir, error).await);
             }
             Err(error) => return Err(error),
@@ -174,7 +179,7 @@ impl Backups {
         let replaced = &report.replaced;
         if !tokio::fs::try_exists(replaced)
             .await
-            .with_context(|| format!("inspect {}", replaced.display()))?
+            .map_err(BackupError::io("inspect", replaced))?
         {
             return RollBackReport::remove(&self.data_dir).await;
         }
@@ -183,7 +188,7 @@ impl Backups {
         store
             .record_daemon_rolled_back(&report.backup, &message)
             .await
-            .context("record the roll-back")?;
+            .map_err(BackupError::RecordRollBack)?;
         RollBackReport::remove(&self.data_dir).await
     }
 
@@ -200,12 +205,12 @@ impl Backups {
     /// restore unfinished, for the next run to finish.
     pub async fn roll_back(
         &self,
-        stop_ingress: impl AsyncFnOnce(&InstanceId) -> Result<()>,
+        stop_ingress: impl AsyncFnOnce(&InstanceId) -> std::result::Result<(), IngressError>,
     ) -> Result<RollBack> {
         let data_dir = &self.data_dir;
         if !data_dir
             .try_exists()
-            .with_context(|| format!("inspect {}", data_dir.display()))?
+            .map_err(BackupError::io("inspect", data_dir))?
         {
             return Ok(RollBack::Unneeded);
         }
@@ -227,15 +232,16 @@ impl Backups {
             .into_iter()
             .find(|backup| backup.schema_version <= SCHEMA_VERSION)
         else {
-            bail!(Refusal::NoBackup {
+            return Err(Refusal::NoBackup {
                 schema: live.schema_version,
                 directory,
-            });
+            }
+            .into());
         };
         let backup = directory.join(newest.name());
         let manifest = Self::manifest(&backup)?;
         if manifest.instance_id != live.instance_id.as_str() {
-            bail!(Refusal::OtherInstance(manifest.instance_id));
+            return Err(Refusal::OtherInstance(manifest.instance_id).into());
         }
         let staged = self.copy_verified(&backup, &manifest).await?;
         stop_ingress(&live.instance_id).await?;
@@ -255,13 +261,12 @@ impl Backups {
             Ok(staging) => staging,
             Err(error) => return Err(RollBackReport::remove_after(data_dir, error).await),
         };
-        self.finish(staging).with_context(|| {
-            format!(
-                "roll back to {}, with the state it replaced in {}",
-                backup.display(),
-                aside.display()
-            )
-        })?;
+        self.finish(staging)
+            .map_err(|source| BackupError::RollBack {
+                backup: backup.clone(),
+                aside: aside.clone(),
+                source: Box::new(source),
+            })?;
         Ok(RollBack::Restored {
             backup,
             manifest,

@@ -4,6 +4,7 @@ use super::ApplicationService;
 use crate::{operations::OperationError, reconcile::Controller};
 use anyhow::Context;
 use piqueld_config::DaemonConfig;
+use piqueld_core::ErrorChain as _;
 use piqueld_core::Phase;
 use piqueld_core::manifest::Hostname;
 use piqueld_core::wait;
@@ -202,10 +203,7 @@ impl ApplicationService {
             .report_roll_back(&self.store)
             .await
         {
-            tracing::error!(
-                error = format!("{error:#}"),
-                "failed to report the roll-back"
-            );
+            tracing::error!(error = error.chain(), "failed to report the roll-back");
         }
         Ok(())
     }

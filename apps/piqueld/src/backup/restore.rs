@@ -7,11 +7,11 @@
 //! Only then does it become the restore's
 //! [`Staging`](super::staging::Staging) directory, which
 //! [`Backups::finish`] moves into place.
+use super::{BackupError, Result};
 use super::{
     Backups, DATABASE, FORMAT, KEPT, MANIFEST, Manifest, RolledBack, SECRET_KEY, TREES, copy_file,
     copy_tree, entries, sync, verify,
 };
-use anyhow::{Context, Result, bail};
 use piqueld_config::directories::DirectoryLock;
 use piqueld_store::{DatabaseIdentity, SCHEMA_VERSION};
 use rustix::fs::CWD;
@@ -84,7 +84,7 @@ impl Backups {
     pub async fn restore(&self, backup: &Path, check_only: bool) -> Result<Manifest> {
         let manifest = Self::manifest(backup)?;
         if check_only {
-            let scratch = tempfile::tempdir().context("create a temporary directory")?;
+            let scratch = tempfile::tempdir().map_err(BackupError::TempDir)?;
             Self::stage_restore(backup, scratch.path(), &manifest).await?;
             return Ok(manifest);
         }
@@ -92,7 +92,7 @@ impl Backups {
         self.ensure_restore_complete()?;
         let data_dir = &self.data_dir;
         if !entries(data_dir, |name| !Self::kept(name))?.is_empty() {
-            bail!(Refusal::NotEmpty(data_dir.clone()));
+            return Err(Refusal::NotEmpty(data_dir.clone()).into());
         }
         let staged = self.copy_verified(backup, &manifest).await?;
         let staging = self.mark(staged, piqueld_store::now_ms())?;
@@ -118,20 +118,19 @@ impl Backups {
             .collect();
         piqueld_config::directories::prepare_data_dir(data_dir)
             .await
-            .with_context(|| format!("prepare {}", data_dir.display()))?;
+            .map_err(BackupError::io("prepare", data_dir))?;
         for directory in &missing {
             let parent = directory
                 .parent()
                 .filter(|parent| !parent.as_os_str().is_empty());
             sync(parent.unwrap_or(Path::new(".")))?;
         }
-        let lock = DirectoryLock::acquire(data_dir)
-            .with_context(|| format!("lock {}", data_dir.display()))?;
+        let lock = DirectoryLock::acquire(data_dir).map_err(BackupError::io("lock", data_dir))?;
         for name in entries(data_dir, |name| {
             name.as_encoded_bytes().starts_with(STAGED.as_bytes())
         })? {
             let path = data_dir.join(name);
-            fs::remove_dir_all(&path).with_context(|| format!("remove {}", path.display()))?;
+            fs::remove_dir_all(&path).map_err(BackupError::io("remove", &path))?;
         }
         Ok(lock)
     }
@@ -147,7 +146,7 @@ impl Backups {
         let staged = tempfile::Builder::new()
             .prefix(STAGED)
             .tempdir_in(data_dir)
-            .with_context(|| format!("create a directory in {}", data_dir.display()))?;
+            .map_err(BackupError::io("create a directory in", data_dir))?;
         Self::stage_restore(backup, staged.path(), manifest).await?;
         Ok(staged)
     }
@@ -155,14 +154,17 @@ impl Backups {
     /// Reads `backup`'s manifest, refusing one this binary can't restore.
     pub(super) fn manifest(backup: &Path) -> Result<Manifest> {
         let path = backup.join(MANIFEST);
-        let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        let bytes = fs::read(&path).map_err(BackupError::io("read", &path))?;
         let manifest: Manifest =
-            serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
+            serde_json::from_slice(&bytes).map_err(|source| BackupError::Parse {
+                path: path.clone(),
+                source,
+            })?;
         if manifest.format != FORMAT {
-            bail!(Refusal::Format(manifest.format));
+            return Err(Refusal::Format(manifest.format).into());
         }
         if manifest.schema_version > SCHEMA_VERSION {
-            bail!(Refusal::NewerSchema(manifest.schema_version));
+            return Err(Refusal::NewerSchema(manifest.schema_version).into());
         }
         Ok(manifest)
     }
@@ -176,12 +178,8 @@ impl Backups {
     ) -> Result<()> {
         let (source, target) = (backup.to_path_buf(), staging.to_path_buf());
         tokio::task::spawn_blocking(move || {
-            for entry in
-                fs::read_dir(&source).with_context(|| format!("read {}", source.display()))?
-            {
-                let name = entry
-                    .with_context(|| format!("read {}", source.display()))?
-                    .file_name();
+            for entry in fs::read_dir(&source).map_err(BackupError::io("read", &source))? {
+                let name = entry.map_err(BackupError::io("read", &source))?.file_name();
                 let (from, to) = (source.join(&name), target.join(&name));
                 match name.to_str() {
                     Some(MANIFEST) => {}
@@ -191,29 +189,34 @@ impl Backups {
                     Some(tree) if TREES.contains(&tree) => {
                         copy_tree(CWD, &from, &from, &to, None)?;
                     }
-                    _ => bail!(Refusal::UnexpectedEntry(
-                        name.to_string_lossy().into_owned()
-                    )),
+                    _ => {
+                        return Err(
+                            Refusal::UnexpectedEntry(name.to_string_lossy().into_owned()).into(),
+                        );
+                    }
                 }
             }
             sync(&target)
         })
         .await
-        .context("copy the backup")??;
+        .map_err(|source| BackupError::CopyTask {
+            action: "copy the backup",
+            source,
+        })??;
 
         let database = staging.join(DATABASE);
         if !database.exists() {
-            bail!(Refusal::MissingDatabase);
+            return Err(Refusal::MissingDatabase.into());
         }
         let key = staging.join(SECRET_KEY);
         let identity = verify(&database, key.exists().then_some(key.as_path())).await?;
         let expected = DatabaseIdentity {
             schema_version: manifest.schema_version,
             instance_id: piqueld_core::InstanceId::parse(manifest.instance_id.clone())
-                .context("parse the manifest's instance ID")?,
+                .map_err(BackupError::ParseInstance)?,
         };
         if identity != expected {
-            bail!(Refusal::Mismatch);
+            return Err(Refusal::Mismatch.into());
         }
         Ok(())
     }

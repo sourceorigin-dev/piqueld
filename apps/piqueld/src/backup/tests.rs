@@ -1,4 +1,5 @@
 use super::*;
+use crate::ingress::IngressError;
 use piqueld_store::Store;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
@@ -243,7 +244,7 @@ async fn a_damaged_database_is_never_backed_up() {
         .before_migration()
         .await
         .expect_err("the damaged snapshot is refused");
-    assert!(error.is::<Damaged>(), "{error:#}");
+    assert!(matches!(error, BackupError::Damaged(_)), "{error:#}");
     let kept = backup.file_name().expect("the backup has a name");
     assert_eq!(
         backup_names(data_dir.path()),
@@ -313,7 +314,7 @@ async fn a_backup_restores_into_an_empty_data_directory() {
 
 /// Restores `backup` into a new data directory, expecting a refusal that
 /// leaves the directory empty.
-async fn refused(backup: &Path) -> anyhow::Error {
+async fn refused(backup: &Path) -> BackupError {
     let target = tempfile::tempdir().expect("a directory is created");
     let data_dir = target.path().join("data");
     let error = Backups::new(&data_dir)
@@ -336,7 +337,7 @@ async fn restore_refuses_backups_it_cannot_trust() {
     fs::write(&extra, b"").expect("an extra file is written");
     let error = refused(&backup).await;
     assert!(
-        matches!(error.downcast_ref(), Some(Refusal::UnexpectedEntry(name)) if name == "extra"),
+        matches!(&error, BackupError::Refusal(Refusal::UnexpectedEntry(name)) if name == "extra"),
         "{error:#}"
     );
     fs::remove_file(&extra).expect("the extra file is removed");
@@ -346,10 +347,10 @@ async fn restore_refuses_backups_it_cannot_trust() {
     fs::write(&key, [7; 32]).expect("another key is written");
     let error = refused(&backup).await;
     assert!(
-        error.chain().any(|cause| matches!(
-            cause.downcast_ref(),
-            Some(piqueld_store::StoreError::SecretSource(_))
-        )),
+        matches!(
+            error,
+            BackupError::KeyMismatch(piqueld_store::StoreError::SecretSource(_))
+        ),
         "{error:#}"
     );
     fs::write(&key, original).expect("the original key is written back");
@@ -365,21 +366,21 @@ async fn restore_refuses_backups_it_cannot_trust() {
     .expect("the manifest is written");
     let error = refused(&backup).await;
     assert!(
-        matches!(error.downcast_ref(), Some(Refusal::NewerSchema(_))),
+        matches!(error, BackupError::Refusal(Refusal::NewerSchema(_))),
         "{error:#}"
     );
     fs::write(&path, manifest).expect("the original manifest is written back");
 
     tamper(&backup, "UPDATE applications SET desired_json='{not json'").await;
     let error = refused(&backup).await;
-    assert!(error.is::<Damaged>(), "{error:#}");
+    assert!(matches!(error, BackupError::Damaged(_)), "{error:#}");
 
     let error = Backups::new(source.path())
         .restore(&backup, false)
         .await
         .expect_err("a data directory in use is refused");
     assert!(
-        matches!(error.downcast_ref(), Some(Refusal::NotEmpty(_))),
+        matches!(error, BackupError::Refusal(Refusal::NotEmpty(_))),
         "{error:#}"
     );
 }
@@ -397,7 +398,7 @@ fn an_unfinished_restore_blocks_startup() {
         .ensure_restore_complete()
         .expect_err("the unfinished restore is refused");
     assert!(
-        matches!(error.downcast_ref(), Some(Refusal::Unfinished(..))),
+        matches!(error, BackupError::Refusal(Refusal::Unfinished(..))),
         "{error:#}"
     );
 }
@@ -438,7 +439,7 @@ fn finishing_never_replaces_state() {
 /// returning what it did and the instance whose ingress it stopped, if any.
 async fn roll_back_stopping(
     data_dir: &Path,
-    stopped: Result<()>,
+    stopped: std::result::Result<(), IngressError>,
 ) -> (Result<RollBack>, Option<String>) {
     let mut instance = None;
     let result = Backups::new(data_dir)
@@ -600,7 +601,7 @@ async fn roll_back_without_a_fitting_backup_changes_nothing() {
     let (result, stopped) = roll_back(data_dir).await;
     let error = result.expect_err("the roll-back fails");
     assert!(
-        matches!(error.downcast_ref(), Some(Refusal::NoBackup { .. })),
+        matches!(error, BackupError::Refusal(Refusal::NoBackup { .. })),
         "{error:#}"
     );
     assert!(stopped.is_none());
@@ -615,7 +616,11 @@ async fn roll_back_fails_unchanged_when_ingress_does_not_stop() {
     let data_dir = data_dir.path();
     let before = state(data_dir);
 
-    let (result, _) = roll_back_stopping(data_dir, Err(anyhow::anyhow!("Docker is down"))).await;
+    let (result, _) = roll_back_stopping(
+        data_dir,
+        Err(IngressError::Io(io::Error::other("Docker is down"))),
+    )
+    .await;
     result.expect_err("the roll-back fails");
     assert_eq!(state(data_dir), before);
 }
@@ -654,8 +659,11 @@ async fn a_roll_back_that_cannot_publish_is_finished_by_the_next() {
         .roll_back(async |_| {
             for name in entries(data_dir, |name| {
                 name.as_encoded_bytes().starts_with(b".staged-")
-            })? {
-                fs::create_dir(data_dir.join(name).join("telemetry"))?;
+            })
+            .expect("the data directory reads")
+            {
+                fs::create_dir(data_dir.join(name).join("telemetry"))
+                    .expect("a conflicting entry is created");
             }
             Ok(())
         })
@@ -770,7 +778,7 @@ async fn restore_names_an_unfinished_restore() {
         .await
         .expect_err("the restore is refused");
     assert!(
-        matches!(error.downcast_ref(), Some(Refusal::Unfinished(..))),
+        matches!(error, BackupError::Refusal(Refusal::Unfinished(..))),
         "{error:#}"
     );
 }
