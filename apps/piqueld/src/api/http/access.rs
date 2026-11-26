@@ -473,7 +473,9 @@ impl Audit {
         if let Some(identity) = identity {
             origin = AuditOrigin {
                 credential_id: identity.credential_id().map(str::to_owned),
-                credential_kind: identity.kind().map(piqueld_store::CredentialKind::as_str),
+                credential_kind: identity
+                    .kind()
+                    .map(piqueld_core::auth::CredentialKind::as_str),
                 scoped: Some(identity.scoped),
                 ..origin.acting((&identity.principal()).into())
             };

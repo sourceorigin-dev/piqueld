@@ -2,7 +2,7 @@
 use super::DestinationRow;
 use crate::{Paging, Store, StoreError, new_id, now_ms, seconds_ms};
 use piqueld_core::{
-    Event, EventKind,
+    Event, EventKind, OperationKind,
     api::Page,
     observability::{
         DeliveryState, Diagnostic, DiagnosticCode, EventScope, NotificationCategory,
@@ -315,7 +315,7 @@ impl Store {
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(StoreError::database)?;
-            if app.is_some() && kind.is_some_and(|kind| kind != "delete") {
+            if app.is_some() && kind.is_some_and(|kind| kind != OperationKind::Delete.as_str()) {
                 let deployed = NotificationCategory::DeploymentSucceeded;
                 return Self::enqueue(tx, event.id, deployed).await;
             }

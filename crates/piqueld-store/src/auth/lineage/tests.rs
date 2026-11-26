@@ -1,8 +1,9 @@
 use super::*;
 use crate::testing::{credential, proved, user};
-use crate::{Actor, Caller, CredentialKind, NewInvitation, NewPasskey};
+use crate::{Actor, Caller, NewInvitation, NewPasskey};
 use crate::{PasskeyOwner, now_secs};
 use piqueld_core::access::{GlobalPermission, Grants, Permission, Scope};
+use piqueld_core::auth::CredentialKind;
 
 /// The IDs of `node`'s issuers, nearest first.
 async fn ancestry(store: &Store, node: Issued<'_>) -> Vec<String> {

@@ -13,7 +13,7 @@ use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 /// The `kind` column of `environments`.
 #[derive(Clone, Copy)]
-enum Kind {
+pub(crate) enum Kind {
     /// An environment.
     Environment,
     /// A preview of a branch.
@@ -22,7 +22,7 @@ enum Kind {
 
 impl Kind {
     /// The stored value.
-    const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Environment => "environment",
             Self::Preview => "preview",

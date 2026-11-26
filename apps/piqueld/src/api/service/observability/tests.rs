@@ -1,5 +1,6 @@
 use super::*;
-use piqueld_store::{CredentialKind, NewCredential, Store};
+use piqueld_core::auth::CredentialKind;
+use piqueld_store::{NewCredential, Store};
 use sqlx::Connection as _;
 use std::sync::Arc;
 

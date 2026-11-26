@@ -1,8 +1,9 @@
 use super::*;
+use crate::NewCredential;
 use crate::testing::{credential, template, user};
 use crate::{Actor, Mutation, MutationResponse};
-use crate::{CredentialKind, NewCredential};
 use piqueld_core::access::{AppPermission, Preset};
+use piqueld_core::auth::CredentialKind;
 
 /// The actor `alice`'s session (see `Store::seed_caller`) records as.
 fn alice() -> piqueld_core::EventActor {
