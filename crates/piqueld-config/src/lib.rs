@@ -377,7 +377,7 @@ impl Default for TailscaleConfig {
             hostname: "piqueld".into(),
             auth_key_file: None,
             socket: None,
-            https_port: const { NonZeroU16::new(443).unwrap() },
+            https_port: const { NonZeroU16::new(443).expect("443 is not zero") },
         }
     }
 }

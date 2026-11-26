@@ -1,5 +1,9 @@
 //! Wire-level checks for the generated bindings and shared transport adapter.
 #![cfg(not(target_arch = "wasm32"))]
+#![expect(
+    clippy::expect_used,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
 
 use axum::{
     Router,
@@ -37,13 +41,20 @@ impl Server {
                     body,
                 })
                 .await
-                .unwrap();
+                .expect("the request is recorded");
                 (status, response)
             }
         });
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let client = Client::tcp(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
-        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the listener binds");
+        let client = Client::tcp(&format!(
+            "http://{}/",
+            listener.local_addr().expect("the listener has an address")
+        ))
+        .expect("the tcp client builds");
+        let task =
+            tokio::spawn(async move { axum::serve(listener, app).await.expect("the server runs") });
         Self {
             client,
             requests,
@@ -72,7 +83,7 @@ async fn log_parameters_are_encoded_and_readiness_keeps_its_503_payload() {
             .await,
         Err(ClientError::Api { .. })
     ));
-    let request = server.requests.recv().await.unwrap();
+    let request = server.requests.recv().await.expect("a message is received");
     assert_eq!(
         request.uri,
         "/api/v1/environments/a%2Fb/logs?service=web+%26+worker&since_seconds=90&tail=20"
@@ -89,9 +100,14 @@ async fn log_parameters_are_encoded_and_readiness_keeps_its_503_payload() {
             message: "unavailable".into(),
         },
     };
-    let body = serde_json::to_vec(&piqueld_client::Envelope { data: readiness }).unwrap();
+    let body = serde_json::to_vec(&piqueld_client::Envelope { data: readiness })
+        .expect("the body serializes");
     let server = Server::start(http::StatusCode::SERVICE_UNAVAILABLE, body).await;
-    let readiness = server.client.system_readiness().await.unwrap();
+    let readiness = server
+        .client
+        .system_readiness()
+        .await
+        .expect("the readiness is read");
     assert!(!readiness.ready);
     assert!(
         matches!(readiness.docker, DependencyStatus::Failed { message } if message == "unavailable")
@@ -110,7 +126,7 @@ async fn toml_adapter_preserves_headers_and_unsigned_revisions() {
         .clone()
         .with_request_id("fallback-key")
         .with_bearer("fixture-token")
-        .unwrap();
+        .expect("the bearer token is valid");
     assert!(!format!("{client:?}").contains("fixture-token"));
     let manifest = "name = 'café'\n";
     let saved = client
@@ -124,9 +140,9 @@ async fn toml_adapter_preserves_headers_and_unsigned_revisions() {
             },
         )
         .await
-        .unwrap();
+        .expect("the application applies");
     assert_eq!(saved.application_id, "app");
-    let request = server.requests.recv().await.unwrap();
+    let request = server.requests.recv().await.expect("a message is received");
     assert_eq!(request.uri, "/api/v1/applications/apply?deploy=true");
     assert_eq!(request.headers["content-type"], "application/toml");
     assert_eq!(request.headers["authorization"], "Bearer fixture-token");
@@ -142,9 +158,12 @@ async fn toml_adapter_preserves_headers_and_unsigned_revisions() {
     assert_eq!(request.headers["idempotency-key"], "fallback-key");
     assert_eq!(request.body, manifest.as_bytes());
 
-    let created = client.apply_application_toml(manifest).await.unwrap();
+    let created = client
+        .apply_application_toml(manifest)
+        .await
+        .expect("the application applies");
     assert_eq!(created.operation_id.as_deref(), Some("op-1"));
-    let request = server.requests.recv().await.unwrap();
+    let request = server.requests.recv().await.expect("a message is received");
     assert_eq!(request.headers["x-expected-generation"], "0");
 }
 
@@ -163,10 +182,10 @@ async fn generated_json_mutation_encodes_paths_and_decodes_api_errors() {
         .clone()
         .with_request_id("command-key")
         .with_bearer("fixture-token")
-        .unwrap()
+        .expect("the bearer token is valid")
         .set_application_name("a/b ?é", &body, &options)
         .await
-        .unwrap_err();
+        .expect_err("the server rejects the request");
     let ClientError::Api { status, error } = error else {
         panic!("expected structured API error")
     };
@@ -175,7 +194,7 @@ async fn generated_json_mutation_encodes_paths_and_decodes_api_errors() {
     assert_eq!(error.message, "stale revision");
     assert_eq!(error.details["current"], 7);
     assert_eq!(error.request_id, "trace");
-    let request = server.requests.recv().await.unwrap();
+    let request = server.requests.recv().await.expect("a message is received");
     assert_eq!(
         request.uri,
         "/api/v1/applications/a%2Fb%20%3F%C3%A9/name?deploy=false&expected_generation=6"
@@ -184,8 +203,9 @@ async fn generated_json_mutation_encodes_paths_and_decodes_api_errors() {
     assert_eq!(request.headers["authorization"], "Bearer fixture-token");
     assert_eq!(request.headers["idempotency-key"], "command-key");
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
-        serde_json::to_value(body).unwrap()
+        serde_json::from_slice::<serde_json::Value>(&request.body)
+            .expect("the request body is json"),
+        serde_json::to_value(body).expect("the expected body serializes")
     );
 }
 
@@ -194,11 +214,20 @@ async fn manifest_download_decodes_text_and_rejects_invalid_utf8() {
     let manifest = "name = 'café'\n";
     let mut server = Server::start(http::StatusCode::OK, manifest).await;
     assert_eq!(
-        server.client.application_manifest("a/b").await.unwrap(),
+        server
+            .client
+            .application_manifest("a/b")
+            .await
+            .expect("the manifest is fetched"),
         manifest
     );
     assert_eq!(
-        server.requests.recv().await.unwrap().uri,
+        server
+            .requests
+            .recv()
+            .await
+            .expect("a message is received")
+            .uri,
         "/api/v1/applications/a%2Fb/manifest"
     );
     let server = Server::start(http::StatusCode::OK, vec![0xff]).await;

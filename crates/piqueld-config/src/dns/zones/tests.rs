@@ -2,13 +2,13 @@ use super::*;
 
 fn zone(name: &str) -> Zone {
     Zone {
-        name: Hostname::parse(name).unwrap(),
+        name: Hostname::parse(name).expect("the hostname parses"),
         id: name.into(),
     }
 }
 
 fn host(name: &str) -> Hostname {
-    Hostname::parse(name).unwrap()
+    Hostname::parse(name).expect("the hostname parses")
 }
 
 #[test]

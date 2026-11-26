@@ -45,19 +45,19 @@ async fn records_are_listed_by_name_and_cnames_are_absolute() {
     let provider = DnsProvider::Ovh(ovh(recorded.url.clone()));
     let http = reqwest::Client::new();
     let zone = Zone {
-        name: Hostname::parse("piquel.fr").unwrap(),
+        name: Hostname::parse("piquel.fr").expect("the hostname parses"),
         id: "piquel.fr".into(),
     };
     let found = provider
         .records(&http, &zone, "www.piquel.fr")
         .await
-        .unwrap();
-    let target = Hostname::parse("web2.example.com").unwrap();
+        .expect("the records are listed");
+    let target = Hostname::parse("web2.example.com").expect("the hostname parses");
     assert_eq!(
         found.iter().map(|f| f.record.clone()).collect::<Vec<_>>(),
         [
             Record::Cname {
-                target: Hostname::parse("web.example.com").unwrap(),
+                target: Hostname::parse("web.example.com").expect("the hostname parses"),
                 proxied: false
             },
             Record::Txt("owner".into()),
@@ -70,17 +70,17 @@ async fn records_are_listed_by_name_and_cnames_are_absolute() {
     provider
         .upsert(&http, &zone, "www.piquel.fr", Some(&found[0].id), &cname)
         .await
-        .unwrap();
+        .expect("the record is updated");
     let id = provider
         .upsert(
             &http,
             &zone,
             "www.piquel.fr",
             None,
-            &Record::A("192.0.2.9".parse().unwrap()),
+            &Record::A("192.0.2.9".parse().expect("the address parses")),
         )
         .await
-        .unwrap();
+        .expect("the record is written");
     assert_eq!(id, RecordId("4".into()));
     let error = provider
         .upsert(
@@ -94,7 +94,7 @@ async fn records_are_listed_by_name_and_cnames_are_absolute() {
             },
         )
         .await
-        .unwrap_err();
+        .expect_err("the record write fails");
     assert!(format!("{:#}", anyhow::Error::from(error)).contains("OVH cannot proxy"));
     let signed: Vec<_> = recorded
         .requests()
@@ -158,14 +158,14 @@ async fn apex_records_are_listed_by_type_with_one_clock_read() {
     ])
     .await;
     let provider = DnsProvider::Ovh(ovh(recorded.url.clone()));
-    let zone = Zone::named(Hostname::parse("piquel.fr").unwrap());
+    let zone = Zone::named(Hostname::parse("piquel.fr").expect("the hostname parses"));
     let found = provider
         .records(&reqwest::Client::new(), &zone, "piquel.fr")
         .await
-        .unwrap();
+        .expect("the records are listed");
     assert_eq!(
         found.iter().map(|f| f.record.clone()).collect::<Vec<_>>(),
-        [Record::A("192.0.2.1".parse().unwrap())]
+        [Record::A("192.0.2.1".parse().expect("the address parses"))]
     );
     let requests = recorded.requests().await;
     assert_eq!(requests.len(), 7);
@@ -189,7 +189,7 @@ async fn records_are_relative_to_their_zone_and_published_by_refresh() {
     ]).await;
     let provider = DnsProvider::Ovh(ovh(recorded.url.clone()));
     let http = reqwest::Client::new();
-    let zones = provider.zones(&http).await.unwrap();
+    let zones = provider.zones(&http).await.expect("the zones are listed");
     assert_eq!(zones.len(), 1);
     let id = provider
         .upsert(
@@ -200,15 +200,24 @@ async fn records_are_relative_to_their_zone_and_published_by_refresh() {
             &Record::Txt("v".into()),
         )
         .await
-        .unwrap();
+        .expect("the record is written");
     assert_eq!(id, RecordId("5170142".into()));
-    provider.publish(&http, &zones[0]).await.unwrap();
-    provider.delete_record(&http, &zones[0], &id).await.unwrap();
-    provider.publish(&http, &zones[0]).await.unwrap();
+    provider
+        .publish(&http, &zones[0])
+        .await
+        .expect("the zone publishes");
+    provider
+        .delete_record(&http, &zones[0], &id)
+        .await
+        .expect("the record is deleted");
+    provider
+        .publish(&http, &zones[0])
+        .await
+        .expect("the zone publishes");
     provider
         .delete_record(&http, &zones[0], &RecordId("1".into()))
         .await
-        .unwrap();
+        .expect("the record is deleted");
     let requests = recorded.requests().await;
     let signed: Vec<_> = requests.iter().filter(|r| r.path != "/auth/time").collect();
     assert_eq!(

@@ -1,5 +1,9 @@
 //! Test-only provider keeping records in memory, shared by its clones so a
 //! test can inspect and change what reconciliation sees.
+#![expect(
+    clippy::expect_used,
+    reason = "This test-only provider panics on a malformed fixture, as a test would."
+)]
 use super::{ApiError, Found, Provider, Record, RecordId, Zone};
 use parking_lot::{Mutex, MutexGuard};
 use piqueld_core::manifest::Hostname;
@@ -71,7 +75,10 @@ impl TestProvider {
     #[must_use]
     pub fn new(zones: &[&str]) -> Self {
         Self {
-            zones: zones.iter().map(|z| Hostname::parse(*z).unwrap()).collect(),
+            zones: zones
+                .iter()
+                .map(|z| Hostname::parse(*z).expect("the hostname parses"))
+                .collect(),
             state: Arc::default(),
         }
     }
@@ -158,7 +165,7 @@ impl TestProvider {
     ) -> Result<RecordId, ApiError> {
         let mut state = self.state()?;
         let id = if let Some(id) = id {
-            id.0.parse().unwrap()
+            id.0.parse().expect("the record id is a number")
         } else {
             state.next += 1;
             state.next
@@ -183,7 +190,10 @@ impl TestProvider {
         if state.outage == Some(Outage::Delete) {
             return Err(ApiError::Unsupported("delete failed"));
         }
-        if let Some((name, record)) = state.records.remove(&id.0.parse().unwrap()) {
+        if let Some((name, record)) = state
+            .records
+            .remove(&id.0.parse().expect("the record id is a number"))
+        {
             state.changes.push(format!("delete {name} {record}"));
         }
         Ok(())

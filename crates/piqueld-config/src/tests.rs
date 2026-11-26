@@ -4,8 +4,8 @@ use super::*;
 #[test]
 fn empty_document_uses_documented_defaults() {
     assert_eq!(
-        DaemonConfig::from_toml("").unwrap(),
-        DaemonConfig::validated_default().unwrap()
+        DaemonConfig::from_toml("").expect("the config parses"),
+        DaemonConfig::validated_default().expect("the default config validates")
     );
 }
 
@@ -108,14 +108,14 @@ fn schema_ranges_are_enforced() {
 #[test]
 fn tcp_defaults_to_off_with_or_without_a_server_table() {
     for source in ["", "[server]", "[server]\ndata_dir = '/tmp/p'"] {
-        let config = DaemonConfig::from_toml(source).unwrap();
+        let config = DaemonConfig::from_toml(source).expect("the config parses");
         assert_eq!(config.server.listen_mode, ListenMode::Off);
         assert_eq!(config.server.port, 7845);
     }
     for mode in ["off", "localhost", "tailscale", "both"] {
         let config =
             DaemonConfig::from_toml(&format!("[server]\nlisten_mode = '{mode}'\nport = 8443"))
-                .unwrap();
+                .expect("the config parses");
         assert_eq!(config.server.listen_mode.to_string(), mode);
         assert_eq!(config.server.port, 8443);
     }
@@ -135,7 +135,8 @@ fn socket_and_database_use_separate_directories() {
             "/var/lib/piqueld/piqueld.db",
         ),
     ] {
-        let config = DaemonConfig::from_toml(&format!("[server]\n{server}")).unwrap();
+        let config =
+            DaemonConfig::from_toml(&format!("[server]\n{server}")).expect("the config parses");
         assert_eq!(config.server.socket_path(), PathBuf::from(socket));
         assert_eq!(config.server.database_path(), PathBuf::from(database));
     }
@@ -146,7 +147,7 @@ fn parse_failures_keep_the_diagnostic_but_not_the_source_line() {
     let error = DaemonConfig::from_toml(
         "[server]\nport = 7845\n\n[auth]\nmax_token_days = 90\npublic_url = 'https://secret-token.example.com'\nunknown_key = true",
     )
-    .unwrap_err();
+    .expect_err("the config is invalid");
     let ConfigError::Parse(diagnostic) = &error else {
         panic!("expected a parse error, got {error:?}");
     };
@@ -170,7 +171,7 @@ fn tailscale_node_settings_are_validated() {
     let config = DaemonConfig::from_toml(
         "[tailscale]\nhostname = 'piqueld-dev'\nauth_key_file = '/run/credentials/ts-auth-key'",
     )
-    .unwrap();
+    .expect("the tailscale settings parse");
     assert_eq!(config.tailscale.hostname, "piqueld-dev");
     assert_eq!(
         config.server.tailscale_dir(),
@@ -181,7 +182,7 @@ fn tailscale_node_settings_are_validated() {
     let shared = DaemonConfig::from_toml(
         "[tailscale]\nsocket = '/run/tailscale-shared/tailscaled.sock'\nhttps_port = 7846",
     )
-    .unwrap();
+    .expect("the shared tailscale settings parse");
     assert_eq!(shared.tailscale.https_port.get(), 7846);
     for document in [
         "[tailscale]\nhostname = ''",
@@ -203,12 +204,12 @@ fn the_dashboard_hostname_needs_private_ingress_and_becomes_the_public_url() {
     let config = DaemonConfig::from_toml(&format!(
         "{private}dashboard_hostname = 'dashboard.example.com'"
     ))
-    .unwrap();
+    .expect("the dashboard hostname parses");
     assert_eq!(config.public_url(), "https://dashboard.example.com");
     let explicit = DaemonConfig::from_toml(&format!(
         "[auth]\npublic_url = 'https://piqueld.example.com'\n{private}dashboard_hostname = 'dashboard.example.com'"
     ))
-    .unwrap();
+    .expect("the explicit public url parses");
     assert_eq!(explicit.public_url(), "https://piqueld.example.com");
     for document in [
         "[ingress.private]\nenabled = true\ndashboard_hostname = 'dashboard.example.com'".into(),
@@ -227,19 +228,24 @@ fn the_dashboard_hostname_needs_private_ingress_and_becomes_the_public_url() {
 
 #[test]
 fn credential_files_are_read_and_never_shown() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     let headers = directory.path().join("otlp-headers");
     let auth_key = directory.path().join("ts-auth-key");
-    std::fs::write(&headers, "authorization: Bearer secret\n").unwrap();
+    std::fs::write(&headers, "authorization: Bearer secret\n").expect("the file is written");
     let source = format!(
         "[tailscale]\nauth_key_file = '{}'\n\
          [telemetry]\nendpoint = 'unix:///run/otel/otlp.sock'\nheaders_file = '{}'",
         auth_key.display(),
         headers.display()
     );
-    let config = DaemonConfig::from_toml(&source).unwrap();
+    let config = DaemonConfig::from_toml(&source).expect("the config parses");
     assert_eq!(
-        config.telemetry.headers.as_ref().unwrap().expose(),
+        config
+            .telemetry
+            .headers
+            .as_ref()
+            .expect("the headers are set")
+            .expose(),
         "authorization: Bearer secret"
     );
     let view = format!("{:?} {config:?}", config.view());
@@ -256,9 +262,10 @@ fn credential_files_are_read_and_never_shown() {
 
 #[test]
 fn dns_providers_accept_credentials_only_from_files() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     for name in ["cf", "ak", "as", "ck"] {
-        std::fs::write(directory.path().join(name), format!("{name}-value\n")).unwrap();
+        std::fs::write(directory.path().join(name), format!("{name}-value\n"))
+            .expect("the file is written");
     }
     let path = |name: &str| directory.path().join(name).display().to_string();
     let source = format!(
@@ -272,7 +279,7 @@ fn dns_providers_accept_credentials_only_from_files() {
         path("as"),
         path("ck")
     );
-    let config = DaemonConfig::from_toml(&source).unwrap();
+    let config = DaemonConfig::from_toml(&source).expect("the config parses");
     assert_eq!(
         config
             .dns
@@ -325,22 +332,22 @@ fn the_shipped_example_is_valid() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../examples/piqueld.toml"
     ))
-    .unwrap();
+    .expect("the shipped example config is valid");
 }
 
 #[test]
 fn checks_locate_credential_files_without_reading_them() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temp dir is created");
     let path = directory.path().join("piqueld.toml");
     let check = |document: &str| {
-        std::fs::write(&path, document).unwrap();
+        std::fs::write(&path, document).expect("the file is written");
         DaemonConfig::check(&path)
     };
     let credentials = "[telemetry]\nendpoint = 'unix:///run/otel/otlp.sock'\nheaders_file = 'otlp-headers'\n\
          [ingress.private]\nauth_key_file = 'ts-apps-auth-key'\n\
          [ingress.tunnel]\nenabled = true\ncredentials_file = 'cloudflared-tunnel'\n\
          [[dns.providers]]\nkind = 'cloudflare'\napi_token_file = '/missing/token'";
-    check(credentials).unwrap();
+    check(credentials).expect("the provider credentials are valid");
     DaemonConfig::load(&path).expect_err("`DaemonConfig::load` should be rejected");
     for invalid in [
         "[server]\nport = 0",
@@ -354,10 +361,10 @@ fn checks_locate_credential_files_without_reading_them() {
         &path,
         "[[dns.providers]]\nkind = 'cloudflare'\napi_token_file = '/missing/token'",
     )
-    .unwrap();
+    .expect("the provider config is written");
     let error = format!(
         "{:#}",
-        anyhow::Error::new(DaemonConfig::load(&path).unwrap_err())
+        anyhow::Error::new(DaemonConfig::load(&path).expect_err("the config is invalid"))
     );
     assert!(
         error.contains("could not read `api_token_file` /missing/token"),

@@ -1,6 +1,10 @@
 //! Transport integration tests for the typed client.
 
 #![cfg(not(target_arch = "wasm32"))]
+#![expect(
+    clippy::expect_used,
+    reason = "Integration tests and their helpers fail the test by panicking."
+)]
 
 use axum::{Json, Router, http::HeaderMap, routing::get};
 use piqueld_client::{
@@ -36,18 +40,27 @@ async fn status() -> Json<Envelope<SystemStatus>> {
 
 /// Binds a free IPv4 loopback port and returns it with a client for it.
 async fn listen() -> (TcpListener, Client) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let client = Client::tcp(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener binds");
+    let client = Client::tcp(&format!(
+        "http://{}/",
+        listener.local_addr().expect("the listener has an address")
+    ))
+    .expect("the tcp client builds");
     (listener, client)
 }
 
 /// Answers one connection with a hand-written HTTP response.
 async fn serve_raw(listener: TcpListener, response: Vec<u8>) {
-    let (mut socket, _) = listener.accept().await.unwrap();
+    let (mut socket, _) = listener.accept().await.expect("the connection is accepted");
     let mut buffer = [0u8; 2048];
-    let read = socket.read(&mut buffer).await.unwrap();
+    let read = socket.read(&mut buffer).await.expect("the request is read");
     assert_ne!(read, 0, "the client sent no request");
-    socket.write_all(&response).await.unwrap();
+    socket
+        .write_all(&response)
+        .await
+        .expect("the response is written");
 }
 
 fn raw_response(status_line: &str, content_type: &str, body: &str) -> Vec<u8> {
@@ -63,7 +76,7 @@ async fn read_head(socket: &mut (impl AsyncRead + Unpin)) -> String {
     let mut buffer = Vec::new();
     loop {
         let mut chunk = [0u8; 1024];
-        let read = socket.read(&mut chunk).await.unwrap();
+        let read = socket.read(&mut chunk).await.expect("the request is read");
         assert_ne!(read, 0, "client closed before sending request headers");
         buffer.extend_from_slice(&chunk[..read]);
         if buffer.windows(4).any(|window| window == b"\r\n\r\n") {
@@ -75,7 +88,7 @@ async fn read_head(socket: &mut (impl AsyncRead + Unpin)) -> String {
 
 /// Accepts one connection and returns it with its request head.
 async fn accept_head(listener: TcpListener) -> (TcpStream, String) {
-    let (mut socket, _) = listener.accept().await.unwrap();
+    let (mut socket, _) = listener.accept().await.expect("the connection is accepted");
     let head = read_head(&mut socket).await;
     (socket, head)
 }
@@ -88,7 +101,7 @@ async fn stall_body(mut socket: impl AsyncRead + AsyncWrite + Unpin) {
     socket
         .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 64\r\n\r\nshort")
         .await
-        .unwrap();
+        .expect("the response is written");
     std::future::pending::<()>().await;
 }
 
@@ -115,8 +128,14 @@ async fn tcp_hosts_reach_the_server_and_name_it_in_the_host_header() {
         ("127.0.0.1:0", "dev.localhost", Some("secret")),
         ("[::1]:0", "[::1]", None),
     ] {
-        let listener = TcpListener::bind(bind).await.unwrap();
-        let authority = format!("{host}:{}", listener.local_addr().unwrap().port());
+        let listener = TcpListener::bind(bind).await.expect("the listener binds");
+        let authority = format!(
+            "{host}:{}",
+            listener
+                .local_addr()
+                .expect("the listener has an address")
+                .port()
+        );
         let expected = authority.clone();
         let server = tokio::spawn(async move {
             let route = get(move |headers: HeaderMap| async move {
@@ -124,19 +143,21 @@ async fn tcp_hosts_reach_the_server_and_name_it_in_the_host_header() {
                 assert_eq!(
                     headers
                         .get("authorization")
-                        .map(|value| value.to_str().unwrap()),
+                        .map(|value| value.to_str().expect("the header is text")),
                     bearer.map(|token| format!("Bearer {token}")).as_deref()
                 );
                 status().await
             });
             let app = Router::new().route("/api/v1/system/status", route);
-            axum::serve(listener, app).await.unwrap();
+            axum::serve(listener, app).await.expect("the server runs");
         });
-        let mut client = Client::tcp(&format!("http://{authority}")).unwrap();
+        let mut client = Client::tcp(&format!("http://{authority}")).expect("the client builds");
         if let Some(token) = bearer {
-            client = client.with_bearer(token).unwrap();
+            client = client
+                .with_bearer(token)
+                .expect("the bearer token is valid");
         }
-        let response = client.system_status().await.unwrap();
+        let response = client.system_status().await.expect("the status is read");
         assert_eq!(response.status, "running", "{host}");
         server.abort();
     }
@@ -144,19 +165,24 @@ async fn tcp_hosts_reach_the_server_and_name_it_in_the_host_header() {
 
 #[tokio::test]
 async fn dns_and_connect_failures_include_the_endpoint() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener binds");
+    let port = listener
+        .local_addr()
+        .expect("the listener has an address")
+        .port();
     drop(listener);
     for endpoint in [
         format!("localhost.:{port}"),
         "invalid..hostname:7845".into(),
     ] {
         let error = Client::tcp(&format!("http://{endpoint}"))
-            .unwrap()
+            .expect("the client builds")
             .with_timeout(Duration::from_secs(5))
             .system_status()
             .await
-            .unwrap_err();
+            .expect_err("the status request fails");
         assert!(
             matches!(&error, ClientError::Transport { message, .. } if message.contains(&endpoint)),
             "{error}"
@@ -166,12 +192,17 @@ async fn dns_and_connect_failures_include_the_endpoint() {
 
 #[tokio::test]
 async fn typed_client_uses_unix_socket() {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new().expect("the temp dir is created");
     let path = temp.path().join("piqueld.sock");
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = UnixListener::bind(&path).expect("the listener binds");
     let app = Router::new().route("/api/v1/system/status", get(status));
-    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let response = Client::unix(&path).unwrap().system_status().await.unwrap();
+    let server =
+        tokio::spawn(async move { axum::serve(listener, app).await.expect("the server runs") });
+    let response = Client::unix(&path)
+        .expect("the unix client builds")
+        .system_status()
+        .await
+        .expect("the status is read");
     assert_eq!(response.instance_id, "instance-test");
     assert_eq!(response.status, "running");
     assert_eq!(response.api_version, "v1");
@@ -182,20 +213,20 @@ async fn typed_client_uses_unix_socket() {
 #[tokio::test]
 async fn requests_use_origin_form_with_an_explicit_host_header() {
     let (listener, client) = listen().await;
-    let address = listener.local_addr().unwrap();
+    let address = listener.local_addr().expect("the listener has an address");
     let (wire_tx, mut wire_rx) = mpsc::channel(1);
     let server = tokio::spawn(async move {
         let (mut socket, head) = accept_head(listener).await;
-        wire_tx.send(head).await.unwrap();
+        wire_tx.send(head).await.expect("the message is sent");
         let body = r#"{"data":{"status":"running","api_version":"v1","daemon_version":"0.1.0","instance_id":"i"}}"#;
         socket
             .write_all(&raw_response("HTTP/1.1 200 OK", "application/json", body))
             .await
-            .unwrap();
+            .expect("the response is written");
     });
-    let response = client.system_status().await.unwrap();
-    server.await.unwrap();
-    let wire = wire_rx.recv().await.unwrap();
+    let response = client.system_status().await.expect("the status is read");
+    server.await.expect("the server task finishes");
+    let wire = wire_rx.recv().await.expect("a message is received");
     assert!(wire.starts_with("GET /api/v1/system/status HTTP/1.1\r\n"));
     let host = wire
         .lines()
@@ -225,19 +256,22 @@ async fn timeline_streams_outlive_the_request_timeout() {
         "error_message": null, "created_at_ms": 1, "updated_at_ms": 1,
         "started_at_ms": 1, "finished_at_ms": null
     }))
-    .unwrap();
+    .expect("the operation parses");
     let timeline = serde_json::to_string(&piqueld_client::timeline::Timeline::new(
         operation,
         Vec::new(),
         Vec::new(),
     ))
-    .unwrap();
+    .expect("the timeline serializes");
     let server = tokio::spawn(async move {
         let (mut socket, _) = accept_head(listener).await;
         let head =
             "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
         let first = format!("{head}event: timeline\ndata: {timeline}\n\n");
-        socket.write_all(first.as_bytes()).await.unwrap();
+        socket
+            .write_all(first.as_bytes())
+            .await
+            .expect("the response is written");
         // wall-clock: the pause must outlast the client's 50ms timeout, which
         // `.streaming()` drops. Paused time would jump to the 30s connect
         // timeout while the loopback connect is still in flight (seen on
@@ -246,36 +280,64 @@ async fn timeline_streams_outlive_the_request_timeout() {
         let ended =
             r#"{"code":"forbidden","message":"access ended","details":null,"request_id":"r1"}"#;
         let last = format!(":\n\nevent: access_ended\ndata: {ended}\n\n");
-        socket.write_all(last.as_bytes()).await.unwrap();
+        socket
+            .write_all(last.as_bytes())
+            .await
+            .expect("the response is written");
     });
     let mut stream = client
         .with_timeout(Duration::from_millis(50))
         .operation_timeline_stream("operation-01")
         .await
-        .unwrap();
-    let timeline = stream.next().await.unwrap().unwrap().unwrap();
+        .expect("the timeline stream opens");
+    let timeline = stream
+        .next()
+        .await
+        .expect("the stream yields an item")
+        .expect("the event decodes")
+        .expect("the event is a timeline");
     assert_eq!(timeline.operation.id, "operation-01");
     assert!(matches!(stream.next().await, Some(Ok(None))));
-    let ended = stream.next().await.unwrap().unwrap_err();
+    let ended = stream
+        .next()
+        .await
+        .expect("the stream yields an item")
+        .expect_err("the stream ends with an error");
     assert!(
         matches!(&ended, ClientError::Api { status, error } if status.as_u16() == 403 && error.code == "forbidden"),
         "{ended:?}"
     );
     assert!(stream.next().await.is_none());
-    server.await.unwrap();
+    server.await.expect("the server task finishes");
 }
 
 #[tokio::test]
 async fn stalled_response_bodies_time_out_over_tcp_and_unix_sockets() {
     let (listener, tcp) = listen().await;
-    let tcp_server =
-        tokio::spawn(async move { stall_body(listener.accept().await.unwrap().0).await });
-    let temp = TempDir::new().unwrap();
+    let tcp_server = tokio::spawn(async move {
+        stall_body(
+            listener
+                .accept()
+                .await
+                .expect("the connection is accepted")
+                .0,
+        )
+        .await;
+    });
+    let temp = TempDir::new().expect("the temp dir is created");
     let path = temp.path().join("stalled.sock");
-    let listener = UnixListener::bind(&path).unwrap();
-    let unix_server =
-        tokio::spawn(async move { stall_body(listener.accept().await.unwrap().0).await });
-    for client in [tcp, Client::unix(&path).unwrap()] {
+    let listener = UnixListener::bind(&path).expect("the listener binds");
+    let unix_server = tokio::spawn(async move {
+        stall_body(
+            listener
+                .accept()
+                .await
+                .expect("the connection is accepted")
+                .0,
+        )
+        .await;
+    });
+    for client in [tcp, Client::unix(&path).expect("the unix client builds")] {
         let result = client
             .with_timeout(Duration::from_millis(50))
             .system_status()
@@ -291,9 +353,9 @@ async fn oversized_response_bodies_are_rejected() {
     let (listener, client) = listen().await;
     let total = 16 * 1024 * 1024 + 1;
     let server = tokio::spawn(async move {
-        let (mut socket, _) = listener.accept().await.unwrap();
+        let (mut socket, _) = listener.accept().await.expect("the connection is accepted");
         let mut buffer = [0u8; 2048];
-        let read = socket.read(&mut buffer).await.unwrap();
+        let read = socket.read(&mut buffer).await.expect("the request is read");
         assert_ne!(read, 0, "the client sent no request");
         let head = format!(
             "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {total}\r\n\r\n"
@@ -334,7 +396,7 @@ async fn malformed_success_envelopes_decode_as_errors() {
         ),
     ));
     let result = client.system_status().await;
-    server.await.unwrap();
+    server.await.expect("the server task finishes");
     let Err(ClientError::Decode { source }) = result else {
         panic!("malformed success envelope must preserve its decoder error");
     };
@@ -354,7 +416,7 @@ async fn unreadable_error_bodies_fall_back_to_invalid_error_response() {
         ),
     ));
     let result = client.system_status().await;
-    server.await.unwrap();
+    server.await.expect("the server task finishes");
     match result {
         Err(ClientError::Api { status, error }) => {
             assert_eq!(status, http::StatusCode::INTERNAL_SERVER_ERROR);
@@ -376,7 +438,7 @@ async fn structured_api_errors_expose_status_code_and_message() {
         raw_response("HTTP/1.1 409 Conflict", "application/json", body),
     ));
     let result = client.system_status().await;
-    server.await.unwrap();
+    server.await.expect("the server task finishes");
     match result {
         Err(ClientError::Api { status, error }) => {
             assert_eq!(status, http::StatusCode::CONFLICT);
@@ -391,15 +453,17 @@ async fn structured_api_errors_expose_status_code_and_message() {
 #[tokio::test]
 async fn redirects_are_not_followed() {
     let (listener, client) = listen().await;
-    let decoy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let decoy = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener binds");
     let redirect = format!(
         "HTTP/1.1 302 Found\r\nlocation: http://{}/api/v1/system/status\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-        decoy.local_addr().unwrap()
+        decoy.local_addr().expect("the listener has an address")
     )
     .into_bytes();
     let server = tokio::spawn(serve_raw(listener, redirect));
     let result = client.system_status().await;
-    server.await.unwrap();
+    server.await.expect("the server task finishes");
     assert!(matches!(
         result,
         Err(ClientError::Api { status, .. }) if status == http::StatusCode::FOUND
@@ -424,7 +488,7 @@ async fn application_queries_are_percent_encoded() {
             .and_then(|line| line.split_whitespace().nth(1))
             .unwrap_or_default()
             .to_owned();
-        target_tx.send(target).await.unwrap();
+        target_tx.send(target).await.expect("the message is sent");
         socket
             .write_all(&raw_response(
                 "HTTP/1.1 200 OK",
@@ -432,7 +496,7 @@ async fn application_queries_are_percent_encoded() {
                 r#"{"data":{"items":[],"next_cursor":null}}"#,
             ))
             .await
-            .unwrap();
+            .expect("the response is written");
     });
     let page = client
         .applications_with(&ListApplicationsOptions {
@@ -441,10 +505,10 @@ async fn application_queries_are_percent_encoded() {
             name: None,
         })
         .await
-        .unwrap();
-    server.await.unwrap();
+        .expect("the applications list");
+    server.await.expect("the server task finishes");
     assert_eq!(
-        target_rx.recv().await.unwrap(),
+        target_rx.recv().await.expect("a message is received"),
         "/api/v1/applications?cursor=a%26b+c&limit=3"
     );
     assert!(page.items.is_empty());
@@ -453,7 +517,7 @@ async fn application_queries_are_percent_encoded() {
 
 #[tokio::test]
 async fn application_limits_outside_server_range_are_rejected_before_transport() {
-    let client = Client::tcp("http://127.0.0.1:1/").unwrap();
+    let client = Client::tcp("http://127.0.0.1:1/").expect("the client builds");
     for limit in [0, 101, u16::MAX] {
         let error = client
             .applications_with(&ListApplicationsOptions {
@@ -507,10 +571,16 @@ fn tcp_transport_accepts_remote_hosts_but_requires_an_http_origin() {
 
 #[tokio::test]
 async fn remote_http_rejects_credentials_before_sending() {
-    let anonymous = Client::tcp("http://192.0.2.1:7845").unwrap();
-    let authenticated = anonymous.clone().with_bearer("secret").unwrap();
+    let anonymous = Client::tcp("http://192.0.2.1:7845").expect("the client builds");
+    let authenticated = anonymous
+        .clone()
+        .with_bearer("secret")
+        .expect("the bearer token is valid");
     let errors = [
-        authenticated.system_status().await.unwrap_err(),
+        authenticated
+            .system_status()
+            .await
+            .expect_err("the authenticated request fails"),
         authenticated
             .apply_application_toml_with_preconditions(
                 "name = 'test'",
@@ -519,12 +589,15 @@ async fn remote_http_rejects_credentials_before_sending() {
                 &ApplyOptions::default(),
             )
             .await
-            .unwrap_err(),
-        anonymous.auth_device_start(None).await.unwrap_err(),
+            .expect_err("the apply request fails"),
+        anonymous
+            .auth_device_start(None)
+            .await
+            .expect_err("the device start request fails"),
         anonymous
             .auth_device_poll("device-secret")
             .await
-            .unwrap_err(),
+            .expect_err("the device poll request fails"),
     ];
     for error in errors {
         assert!(

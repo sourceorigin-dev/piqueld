@@ -176,7 +176,7 @@ mod tests {
         ))));
         let mut read = Vec::new();
         while let Some(received) = messages.next().await {
-            read.push(match received.unwrap() {
+            read.push(match received.expect("the event stream yields an event") {
                 Received::Message(message) => (message.event, message.data),
                 Received::Comment => ("comment".to_owned(), String::new()),
             });

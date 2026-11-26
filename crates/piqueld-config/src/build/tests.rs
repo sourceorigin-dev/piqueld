@@ -16,14 +16,17 @@ fn builds_run_one_at_a_time_unless_parallel_says_otherwise() {
 
 #[test]
 fn a_build_machine_needs_its_builder_and_its_repository() {
-    assert_eq!(parse("").unwrap(), BuildConfig::default());
+    assert_eq!(
+        parse("").expect("an empty build config parses"),
+        BuildConfig::default()
+    );
     let remote = parse(
         "builder = 'tcp://build.example.ts.net:1234'\n\
          repository = 'build.example.ts.net:5000/piqueld'",
     )
-    .unwrap()
+    .expect("the remote build config parses")
     .remote
-    .unwrap();
+    .expect("the build config is remote");
     assert_eq!(
         remote.builder.to_string(),
         "tcp://build.example.ts.net:1234"

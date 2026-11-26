@@ -540,7 +540,7 @@ mod tests {
             left(Phase::EnsureService, "api", 10),
         ];
         let waterfall = Waterfall::new(&steps, Some(30_000));
-        let axis = waterfall.axis.unwrap();
+        let axis = waterfall.axis.expect("the waterfall has an axis");
         assert_eq!(
             axis.ticks().map(|(_, label)| label).collect::<Vec<_>>(),
             ["10s", "20s", "30s", "40s", "50s"]
@@ -598,7 +598,7 @@ mod tests {
                 id: id.into(),
                 slot: Some(1),
                 current,
-                state: spans.last().unwrap().0,
+                state: spans.last().expect("the list has a last item").0,
                 healthy: None,
             },
             spans: spans
@@ -632,7 +632,7 @@ mod tests {
         };
         let looks = |now_ms| {
             Lanes::new(&step, now_ms)
-                .unwrap()
+                .expect("the lanes build")
                 .lanes
                 .into_iter()
                 .map(|lane| {
@@ -684,6 +684,9 @@ mod tests {
     fn hours_long_operations_tick_in_whole_hours() {
         let axis = Axis::new(0, 9 * 3_600_000);
         assert_eq!(axis.ticks().count(), 5);
-        assert_eq!(axis.ticks().last().unwrap(), (10_000, "10h".to_owned()));
+        assert_eq!(
+            axis.ticks().last().expect("the list has a last item"),
+            (10_000, "10h".to_owned())
+        );
     }
 }

@@ -212,17 +212,20 @@ mod tests {
 
     #[tokio::test]
     async fn supplied_budget_covers_a_stalled_response_body() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let socket = directory.path().join("api.sock");
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let listener = tokio::net::UnixListener::bind(&socket).expect("the listener binds");
         let mut server = tokio::task::JoinSet::new();
         server.spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            stream.read_exact(&mut [0; 1]).await.unwrap();
+            let (mut stream, _) = listener.accept().await.expect("the connection is accepted");
+            stream
+                .read_exact(&mut [0; 1])
+                .await
+                .expect("the request is read");
             stream
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nx")
                 .await
-                .unwrap();
+                .expect("the response is written");
             std::future::pending::<()>().await;
         });
         let client = UnixHttp::new(socket, "localhost", Duration::from_millis(50));
@@ -232,7 +235,7 @@ mod tests {
         )
         .await
         .expect("the supplied 50ms budget must override the usual request budget")
-        .unwrap_err();
+        .expect_err("the request times out");
         assert!(matches!(error, UnixHttpError::Timeout { .. }));
     }
 }

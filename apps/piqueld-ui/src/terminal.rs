@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn command_lines_split_like_a_shell() {
-        let command = parse_command(r#"psql -c 'select 1' "a b"\ c"#).unwrap();
+        let command = parse_command(r#"psql -c 'select 1' "a b"\ c"#).expect("the command parses");
         assert_eq!(command.as_slice(), ["psql", "-c", "select 1", "a b c"]);
         assert_eq!(parse_command("sh -c 'x"), Err(CommandLineError::Unbalanced));
         assert!(matches!(
@@ -584,7 +584,11 @@ mod tests {
         let mut terminal = Terminal::new(SIZE, true);
         drop(terminal.write(b"\x1b[38;5;196ma\x1b[38;2;0;250;10mb\x1b[0m"));
         assert_eq!(
-            terminal.html().lines().next().unwrap(),
+            terminal
+                .html()
+                .lines()
+                .next()
+                .expect("the iterator has an item"),
             r#"<span class="tf-9">a</span><span class="tf-10">b</span><span class="tf-bg tb-fg"> </span>       "#
         );
     }

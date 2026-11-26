@@ -10,9 +10,9 @@ const APP: &str = "app-notes-01";
 
 fn environment(id: &str, name: &str, source: EnvironmentSource) -> EnvironmentView {
     EnvironmentView {
-        id: EnvironmentId::parse(id).unwrap(),
-        application_id: ApplicationId::parse(APP).unwrap(),
-        name: EnvironmentName::parse(name).unwrap(),
+        id: EnvironmentId::parse(id).expect("the environment id parses"),
+        application_id: ApplicationId::parse(APP).expect("the application id parses"),
+        name: EnvironmentName::parse(name).expect("the environment name parses"),
         source,
         kind: EnvironmentKind::Environment,
         sync: false,
@@ -29,9 +29,9 @@ fn environment(id: &str, name: &str, source: EnvironmentSource) -> EnvironmentVi
 fn preview(id: &str, branch: &str) -> EnvironmentView {
     let mut preview = environment(id, id, EnvironmentSource::Saved);
     preview.kind = EnvironmentKind::Preview(Box::new(piqueld_client::Preview {
-        branch: branch.parse().unwrap(),
+        branch: branch.parse().expect("the branch name parses"),
         slot: None,
-        slug: id.parse().unwrap(),
+        slug: id.parse().expect("the slug parses"),
     }));
     preview
 }
@@ -41,13 +41,13 @@ fn promoted(id: &str, name: &str, from: &str) -> EnvironmentView {
         id,
         name,
         EnvironmentSource::Promoted(PromotedFrom {
-            environment: EnvironmentId::parse(from).unwrap(),
+            environment: EnvironmentId::parse(from).expect("the environment id parses"),
         }),
     )
 }
 
 fn branch(name: &str) -> EnvironmentSource {
-    EnvironmentSource::Branch(TrackedBranch::new(name.into(), None).unwrap())
+    EnvironmentSource::Branch(TrackedBranch::new(name.into(), None).expect("the branch is valid"))
 }
 
 /// Application `notes` at revision 3, updated at 10, reading its
@@ -74,8 +74,8 @@ fn view(connected: bool, environments: Vec<EnvironmentView>) -> ApplicationView 
         spec,
     }
     .validate_template()
-    .unwrap()
-    .normalize(ApplicationId::parse(APP).unwrap());
+    .expect("the template is valid")
+    .normalize(ApplicationId::parse(APP).expect("the application id parses"));
     ApplicationView {
         spec_hash: application.spec_hash(),
         application,
@@ -110,11 +110,11 @@ fn replica_summaries_resolve_variables_per_environment() {
             ],
         },
     }))
-    .unwrap();
+    .expect("the manifest parses");
     let application = manifest
         .validate_template()
-        .unwrap()
-        .normalize(ApplicationId::parse(APP).unwrap());
+        .expect("the template is valid")
+        .normalize(ApplicationId::parse(APP).expect("the application id parses"));
     let api = application.spec().services[0].clone();
     let db = application.spec().services[1].clone();
     let web = application.spec().services[2].clone();
@@ -155,9 +155,9 @@ fn grants(permission: AppPermission, application: &str) -> Grants {
     grants
         .grant(
             Permission::App(permission),
-            &Scope::one(ApplicationId::parse(application).unwrap()),
+            &Scope::one(ApplicationId::parse(application).expect("the application id parses")),
         )
-        .unwrap();
+        .expect("the permission is granted");
     grants
 }
 
@@ -203,7 +203,7 @@ fn sources_and_origins_name_environments_or_their_id_once_gone() {
         ],
     );
     let promotion = |environment: &str| DeploymentOrigin::Promotion {
-        environment: EnvironmentId::parse(environment).unwrap(),
+        environment: EnvironmentId::parse(environment).expect("the environment id parses"),
         deployment: "dep-1".into(),
     };
     assert_eq!(

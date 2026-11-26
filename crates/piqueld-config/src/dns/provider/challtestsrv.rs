@@ -1,6 +1,10 @@
 //! Test-only provider writing TXT records into Pebble's `challtestsrv`, which
 //! answers DNS for the test CA. Record IDs are names: `/clear-txt` removes
 //! every value of a name.
+#![expect(
+    clippy::expect_used,
+    reason = "This test-only provider panics when `challtestsrv` refuses a change, as a test would."
+)]
 use super::{ApiError, Found, Provider, Record, RecordId, Zone, send};
 use piqueld_core::manifest::Hostname;
 use serde_json::json;
@@ -43,7 +47,7 @@ impl Challtestsrv {
         };
         self.manage(http, endpoint, &json!({"host":format!("{name}.")}))
             .await
-            .unwrap();
+            .expect("challtestsrv accepts the change");
     }
 
     /// Answers A and AAAA queries for `name` with `addresses`.
@@ -60,7 +64,7 @@ impl Challtestsrv {
                 &json!({"host":format!("{name}."),"addresses":family}),
             )
             .await
-            .unwrap();
+            .expect("challtestsrv accepts the change");
         }
     }
 }
