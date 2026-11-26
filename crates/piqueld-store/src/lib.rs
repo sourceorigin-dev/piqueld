@@ -928,24 +928,34 @@ impl Store {
 
 /// A write transaction from [`Store::begin_immediate`], holding its writer's
 /// turn in the queue. It derefs to its connection; dropping it uncommitted
-/// rolls it back before the turn passes on.
+/// queues its rollback before the turn passes on.
 struct WriteTransaction<'a> {
     /// Declared before `_writer`, so it drops first.
     tx: Transaction<'static, Sqlite>,
     _writer: Writer<'a>,
 }
 
-impl WriteTransaction<'_> {
+impl<'a> WriteTransaction<'a> {
     /// Commits the transaction, then gives up the writer's turn.
     async fn commit(self) -> Result<(), sqlx::Error> {
         self.tx.commit().await
     }
-}
 
-#[cfg(test)]
-impl<'a> WriteTransaction<'a> {
+    /// Commits the transaction, keeping the writer's turn until the returned
+    /// guard drops, for work after the commit that other writers must not
+    /// interleave with, such as moving the secret key aside.
+    async fn commit_holding(self) -> Result<Writer<'a>, sqlx::Error> {
+        let Self {
+            tx,
+            _writer: writer,
+        } = self;
+        tx.commit().await?;
+        Ok(writer)
+    }
+
     /// Rolls the transaction back, keeping the writer's turn until the
     /// returned guard drops.
+    #[cfg(test)]
     async fn rollback(self) -> Result<Writer<'a>, sqlx::Error> {
         let Self {
             tx,

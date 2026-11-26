@@ -293,7 +293,9 @@ impl Store {
     }
 
     /// Discards every stored value and webhook secret in `tx`, the key
-    /// recovery `author` requested, and moves the lost key aside once committed.
+    /// recovery `author` requested, and moves the lost key aside once
+    /// committed, still holding the writer's turn, so no other writer loads
+    /// the lost key in between and encrypts with it.
     async fn discard_secret_values(
         &self,
         mut tx: crate::WriteTransaction<'_>,
@@ -360,10 +362,13 @@ impl Store {
         let recovered = crate::SecurityEvent::SecretKeyRecovered;
         Self::security_event_on(&mut tx, recovered, &message, by).await?;
         let change = format!("secret key recovery discarded {counts}");
-        author
-            .commit_recorded(tx, 200, Some(&change), (None, None))
+        let appended = author
+            .record_on(&mut tx, 200, Some(&change), (None, None))
             .await?;
+        let writer = tx.commit_holding().await.map_err(StoreError::database)?;
+        appended.committed();
         SecretCipher::retire(&self.secret_key_path, now).map_err(StoreError::SecretSource)?;
+        drop(writer);
         Ok(SecretKeyRecovery {
             affected_environments: usage.environments,
             affected_applications: stored.applications,
