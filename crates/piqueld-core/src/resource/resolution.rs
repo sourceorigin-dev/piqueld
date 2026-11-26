@@ -177,14 +177,25 @@ pub struct ResolutionSet {
 }
 
 impl ResolutionSet {
-    /// The pinned Docker secret of each mount in `secrets`. Must only run after
-    /// [`Self::errors`] finds none: it panics on an unpinned secret.
-    pub(super) fn secret_files<'a>(
-        &'a self,
-        secrets: &'a [ValidatedSecretMount],
-    ) -> impl Iterator<Item = SecretFile> + 'a {
-        secrets.iter().map(|secret| SecretFile {
-            secret_name: self.secret_names[&secret.name].clone(),
+    /// The resolved source of `service`.
+    pub(super) fn source(&self, service: &ServiceName) -> Result<&ResolvedSource, CompileError> {
+        self.sources
+            .get(service)
+            .ok_or_else(|| CompileError::source_unresolved(service))
+    }
+
+    /// The pinned Docker secret of `secret`, mounted by `owner`.
+    pub(super) fn secret_file(
+        &self,
+        owner: &str,
+        secret: &ValidatedSecretMount,
+    ) -> Result<SecretFile, CompileError> {
+        let secret_name = self
+            .secret_names
+            .get(&secret.name)
+            .ok_or_else(|| CompileError::secret_unresolved(owner, &secret.name))?;
+        Ok(SecretFile {
+            secret_name: secret_name.clone(),
             target: secret.target.clone(),
         })
     }
@@ -203,11 +214,9 @@ impl ResolutionSet {
             .into_iter()
             .map(|requirement| match requirement {
                 ResolutionRequirement::ResolveImage { service, .. }
-                | ResolutionRequirement::BuildGit { service, .. } => CompileError::new(
-                    ApiErrorCode::SourceUnresolved,
-                    service.as_str(),
-                    "service source has not been resolved to an immutable image",
-                ),
+                | ResolutionRequirement::BuildGit { service, .. } => {
+                    CompileError::source_unresolved(&service)
+                }
             })
             .collect::<Vec<_>>();
         for service in &app.spec().services {
@@ -215,11 +224,7 @@ impl ResolutionSet {
                 if let FileSource::Path(path) = &file.source
                     && app.files().get(path).is_none()
                 {
-                    errors.push(CompileError::new(
-                        ApiErrorCode::FileUnresolved,
-                        service.name.as_str(),
-                        format!("repository file {path} was not captured with the manifest"),
-                    ));
+                    errors.push(CompileError::file_unresolved(&service.name, path));
                 }
             }
         }
@@ -235,15 +240,12 @@ impl ResolutionSet {
                     .map(|job| (job.name.as_str(), &job.secrets)),
             );
         for (owner, secrets) in mounts {
-            for secret in secrets {
-                if !self.secret_names.contains_key(&secret.name) {
-                    errors.push(CompileError::new(
-                        ApiErrorCode::SecretUnresolved,
-                        owner,
-                        format!("secret {} has not been pinned", secret.name),
-                    ));
-                }
-            }
+            errors.extend(
+                secrets
+                    .iter()
+                    .filter(|secret| !self.secret_names.contains_key(&secret.name))
+                    .map(|secret| CompileError::secret_unresolved(owner, &secret.name)),
+            );
         }
         for service in &app.spec().services {
             let Some(resolved) = self.sources.get(&service.name) else {

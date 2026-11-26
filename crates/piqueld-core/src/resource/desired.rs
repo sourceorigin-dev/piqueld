@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::{
-    JOB_LABEL, JOB_OPERATION_LABEL, NetworkAttachment, Ownership, ResolutionSet, ResolvedSource,
-    SERVICE_LABEL, SecretFile, valid_logical_name,
+    CompileError, JOB_LABEL, JOB_OPERATION_LABEL, NetworkAttachment, Ownership, ResolutionSet,
+    ResolvedSource, SERVICE_LABEL, SecretFile,
 };
 #[cfg(doc)]
 use super::{ResolvedApplication, TELEMETRY_TARGET};
@@ -63,15 +63,14 @@ pub struct DesiredVolume {
 impl DesiredVolume {
     /// Returns whether the volume has a canonical name and identity.
     ///
-    /// Requires valid ownership labels without a service label, a safe logical
-    /// name, and a Docker name derived from the labelled application.
+    /// Requires valid ownership labels without a service label, and a Docker
+    /// name derived from the labelled application.
     #[must_use]
     pub fn has_valid_identity(&self) -> bool {
         let Some(application) = Ownership::labelled_environment(&self.labels) else {
             return false;
         };
-        valid_logical_name(self.logical_name.as_str())
-            && !self.labels.contains_key(SERVICE_LABEL)
+        !self.labels.contains_key(SERVICE_LABEL)
             && self.name == DockerVolumeName::for_volume(&application, &self.logical_name)
     }
 }
@@ -183,27 +182,22 @@ pub struct TelemetryMount {
 impl DesiredService {
     /// Builds the desired Docker service for one validated service.
     ///
-    /// Must only run after [`ResolutionSet::errors`] finds none: it indexes the
-    /// resolved source, pinned secret names, and captured repository `files`
-    /// directly and panics if missing. Services start attached to the private
-    /// network only; ingress is projected later by
-    /// `ResolvedApplication::with_ingress_routes`.
-    #[expect(
-        clippy::expect_used,
-        reason = "Validated applications captured every repository file they reference."
-    )]
+    /// Fails on the first missing resolved source, pinned secret or captured
+    /// repository file, which [`ResolutionSet::errors`] reports in full first.
+    /// Services start attached to the private network only; ingress is
+    /// projected later by `ResolvedApplication::with_ingress_routes`.
     pub(super) fn compile(
         service: &Service,
         resolutions: &ResolutionSet,
         files: &RepositoryFiles,
         environment_ownership: &Ownership,
         private_network: &DockerNetworkName,
-    ) -> Self {
-        let source = resolutions.sources[&service.name].clone();
+    ) -> Result<Self, CompileError> {
+        let source = resolutions.source(&service.name)?.clone();
         let environment = &environment_ownership.environment_id;
         let mut ownership = environment_ownership.clone();
         ownership.service = Some(service.name.clone());
-        Self {
+        Ok(Self {
             logical_name: service.name.clone(),
             name: DockerServiceName::for_service(environment, &service.name),
             image: source.image(),
@@ -221,7 +215,11 @@ impl DesiredService {
                     read_only: mount.read_only,
                 })
                 .collect(),
-            secrets: resolutions.secret_files(&service.secrets).collect(),
+            secrets: service
+                .secrets
+                .iter()
+                .map(|secret| resolutions.secret_file(service.name.as_str(), secret))
+                .collect::<Result<_, _>>()?,
             files: service
                 .files
                 .iter()
@@ -230,16 +228,16 @@ impl DesiredService {
                         FileSource::Content(content) => content.as_str(),
                         FileSource::Path(path) => files
                             .get(path)
-                            .expect("validated applications captured their repository files"),
+                            .ok_or_else(|| CompileError::file_unresolved(&service.name, path))?,
                     };
-                    DesiredFile {
+                    Ok(DesiredFile {
                         config_name: DockerConfigName::for_file(environment, content, file.mode),
                         target: file.target.clone(),
                         mode: file.mode,
                         content: content.to_owned(),
-                    }
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, CompileError>>()?,
             healthcheck: service.healthcheck.clone(),
             resources: service.resources.clone(),
             networks: vec![private_network.clone()],
@@ -250,7 +248,7 @@ impl DesiredService {
             security: service.security,
             receives_telemetry: service.receives_telemetry,
             telemetry: None,
-        }
+        })
     }
 
     /// The update policy Docker applies to this service; see
@@ -276,9 +274,7 @@ impl DesiredService {
         let Some(application) = Ownership::labelled_environment(&self.labels) else {
             return false;
         };
-        valid_logical_name(self.logical_name.as_str())
-            && self.labels.get(SERVICE_LABEL).map(String::as_str)
-                == Some(self.logical_name.as_str())
+        self.labels.get(SERVICE_LABEL).map(String::as_str) == Some(self.logical_name.as_str())
             && self.name == DockerServiceName::for_service(&application, &self.logical_name)
     }
 
@@ -347,21 +343,18 @@ impl DesiredJob {
     /// check, dependencies, or rollout settings, and its own Docker name and
     /// labels. Validation guarantees that every job references a declared
     /// service and overrides none of its settings; like
-    /// [`DesiredService::compile`], it panics on an unpinned secret.
-    #[expect(
-        clippy::expect_used,
-        reason = "Validated jobs reference declared services."
-    )]
+    /// [`DesiredService::compile`], it fails on a missing service or an
+    /// unpinned secret rather than panicking.
     pub(super) fn compile(
         job: &Job,
         services: &[DesiredService],
         resolutions: &ResolutionSet,
         environment_ownership: &Ownership,
-    ) -> Self {
+    ) -> Result<Self, CompileError> {
         let mut container = services
             .iter()
             .find(|service| service.logical_name == job.service)
-            .expect("validated jobs reference declared services")
+            .ok_or_else(|| CompileError::job_service_missing(job))?
             .clone();
         container.name =
             DockerServiceName::for_job(&environment_ownership.environment_id, &job.name);
@@ -369,9 +362,11 @@ impl DesiredJob {
         container.command.clone_from(&job.command);
         container.arguments.clear();
         container.environment.extend(job.environment.clone());
-        container
-            .secrets
-            .extend(resolutions.secret_files(&job.secrets));
+        for secret in &job.secrets {
+            container
+                .secrets
+                .push(resolutions.secret_file(job.name.as_str(), secret)?);
+        }
         container.healthcheck = None;
         container.depends_on.clear();
         container.rollout = ValidatedRollout::default();
@@ -380,14 +375,14 @@ impl DesiredJob {
         container
             .labels
             .insert(JOB_LABEL.into(), job.name.to_string());
-        Self {
+        Ok(Self {
             logical_name: job.name.clone(),
             run: job.run,
             timeout_seconds: job.timeout_seconds,
             volume_access: job.volume_access,
             stop_service: job.stop_service,
             container,
-        }
+        })
     }
 
     /// Returns whether the job has a canonical name and identity.

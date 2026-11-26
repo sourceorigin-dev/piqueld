@@ -30,23 +30,12 @@ impl BollardDocker {
     /// published, or the ingress network is missing or still has no subnet
     /// after bounded inspection retries, since Swarm assigns subnets after
     /// creating it.
-    #[expect(
-        clippy::expect_used,
-        reason = "`service_spec` always builds a task template."
-    )]
     pub(super) async fn runtime_service_spec(
         &self,
         desired: &DesiredService,
         node_id: &str,
     ) -> Result<ServiceSpec, DockerError> {
-        let mut spec = Self::service_spec(desired, node_id)?;
-        let container = spec
-            .task_template
-            .as_mut()
-            .expect("service_spec always constructs Some(task_template)")
-            .container_spec
-            .as_mut()
-            .expect("task_spec always constructs Some(container_spec)");
+        let mut container = Self::container_spec(desired);
         if !desired.secrets.is_empty() {
             container.secrets = Some(self.secret_references(desired).await?);
         }
@@ -79,7 +68,7 @@ impl BollardDocker {
                 .get_or_insert_default()
                 .push(format!("{INGRESS_PROXIES_ENV}={proxies}"));
         }
-        Ok(spec)
+        Self::service_spec_with(desired, node_id, container)
     }
 
     /// Lists a network's Docker-assigned subnets as comma-separated CIDRs, or
@@ -100,15 +89,27 @@ impl BollardDocker {
         (!subnets.is_empty()).then(|| subnets.join(","))
     }
 
-    /// Builds the complete Docker service specification from desired state.
+    /// Builds the service specification from desired state alone, without the
+    /// inputs Docker assigns, which tests inspect.
+    #[cfg(test)]
     pub(super) fn service_spec(
         desired: &DesiredService,
         node_id: &str,
     ) -> Result<ServiceSpec, DockerError> {
+        Self::service_spec_with(desired, node_id, Self::container_spec(desired))
+    }
+
+    /// Builds the service specification around `container`, the desired
+    /// container with any inputs Docker assigns.
+    fn service_spec_with(
+        desired: &DesiredService,
+        node_id: &str,
+        container: TaskSpecContainerSpec,
+    ) -> Result<ServiceSpec, DockerError> {
         Ok(ServiceSpec {
             name: Some(desired.name.to_string()),
             labels: Some(desired.labels.clone().into_iter().collect()),
-            task_template: Some(Self::task_spec(desired, node_id)?),
+            task_template: Some(Self::task_spec(desired, node_id, container)?),
             mode: Some(ServiceSpecMode {
                 replicated: Some(ServiceSpecModeReplicated {
                     replicas: Some(i64::from(desired.replicas)),
@@ -120,72 +121,19 @@ impl BollardDocker {
         })
     }
 
-    /// Builds the container, network, resource, placement, and restart
-    /// portions of a service. A telemetry receiver also bind-mounts its
-    /// socket directory and runs as its user. Its security settings set the
-    /// user, a read-only root with an in-memory `/tmp`, no capabilities, and
-    /// no new privileges.
-    fn task_spec(desired: &DesiredService, node_id: &str) -> Result<TaskSpec, DockerError> {
-        let security = desired.security;
+    /// Builds the network, resource, placement, and restart portions of a
+    /// service around its `container`.
+    fn task_spec(
+        desired: &DesiredService,
+        node_id: &str,
+        container: TaskSpecContainerSpec,
+    ) -> Result<TaskSpec, DockerError> {
         Ok(TaskSpec {
             placement: Some(bollard::models::TaskSpecPlacement {
                 constraints: Some(vec![Self::placement_constraint(node_id)]),
                 ..Default::default()
             }),
-            container_spec: Some(TaskSpecContainerSpec {
-                image: Some(desired.image.to_string()),
-                command: Self::nonempty(&desired.command),
-                args: Self::nonempty(&desired.arguments),
-                env: Some(
-                    desired
-                        .environment
-                        .iter()
-                        .map(|(key, value)| format!("{key}={}", Self::swarm_literal(value)))
-                        .collect(),
-                ),
-                mounts: Some(
-                    desired
-                        .mounts
-                        .iter()
-                        .map(|mount| Mount {
-                            target: Some(Self::swarm_literal(&mount.target)),
-                            source: Some(mount.volume_name.to_string()),
-                            typ: Some(MountTypeEnum::VOLUME),
-                            read_only: Some(mount.read_only),
-                            ..Default::default()
-                        })
-                        .chain(desired.telemetry.as_ref().map(|telemetry| Mount {
-                            target: Some(TELEMETRY_TARGET.into()),
-                            source: Some(telemetry.source.clone()),
-                            typ: Some(MountTypeEnum::BIND),
-                            read_only: Some(false),
-                            ..Default::default()
-                        }))
-                        .chain(security.read_only_root.then(|| Mount {
-                            target: Some(ServiceSecurity::TMPFS_TARGET.into()),
-                            typ: Some(MountTypeEnum::TMPFS),
-                            ..Default::default()
-                        }))
-                        .collect(),
-                ),
-                user: desired
-                    .telemetry
-                    .as_ref()
-                    .map(|telemetry| telemetry.user.clone())
-                    .or_else(|| security.user.map(|user| user.to_string())),
-                read_only: security.read_only_root.then_some(true),
-                capability_drop: security
-                    .drop_capabilities
-                    .then(|| vec![ALL_CAPABILITIES.into()]),
-                privileges: security
-                    .no_new_privileges
-                    .then(|| TaskSpecContainerSpecPrivileges {
-                        no_new_privileges: Some(true),
-                        ..Default::default()
-                    }),
-                health_check: desired.healthcheck.as_ref().map(Self::health_config),
-                ..Default::default()
-            }),
+            container_spec: Some(container),
             networks: Some(
                 desired
                     .network_attachments()
@@ -206,6 +154,68 @@ impl BollardDocker {
             }),
             ..Default::default()
         })
+    }
+
+    /// Builds the container portion of a service. A telemetry receiver also
+    /// bind-mounts its socket directory and runs as its user. Its security
+    /// settings set the user, a read-only root with an in-memory `/tmp`, no
+    /// capabilities, and no new privileges.
+    fn container_spec(desired: &DesiredService) -> TaskSpecContainerSpec {
+        let security = desired.security;
+        TaskSpecContainerSpec {
+            image: Some(desired.image.to_string()),
+            command: Self::nonempty(&desired.command),
+            args: Self::nonempty(&desired.arguments),
+            env: Some(
+                desired
+                    .environment
+                    .iter()
+                    .map(|(key, value)| format!("{key}={}", Self::swarm_literal(value)))
+                    .collect(),
+            ),
+            mounts: Some(
+                desired
+                    .mounts
+                    .iter()
+                    .map(|mount| Mount {
+                        target: Some(Self::swarm_literal(&mount.target)),
+                        source: Some(mount.volume_name.to_string()),
+                        typ: Some(MountTypeEnum::VOLUME),
+                        read_only: Some(mount.read_only),
+                        ..Default::default()
+                    })
+                    .chain(desired.telemetry.as_ref().map(|telemetry| Mount {
+                        target: Some(TELEMETRY_TARGET.into()),
+                        source: Some(telemetry.source.clone()),
+                        typ: Some(MountTypeEnum::BIND),
+                        read_only: Some(false),
+                        ..Default::default()
+                    }))
+                    .chain(security.read_only_root.then(|| Mount {
+                        target: Some(ServiceSecurity::TMPFS_TARGET.into()),
+                        typ: Some(MountTypeEnum::TMPFS),
+                        ..Default::default()
+                    }))
+                    .collect(),
+            ),
+            user: desired
+                .telemetry
+                .as_ref()
+                .map(|telemetry| telemetry.user.clone())
+                .or_else(|| security.user.map(|user| user.to_string())),
+            read_only: security.read_only_root.then_some(true),
+            capability_drop: security
+                .drop_capabilities
+                .then(|| vec![ALL_CAPABILITIES.into()]),
+            privileges: security
+                .no_new_privileges
+                .then(|| TaskSpecContainerSpecPrivileges {
+                    no_new_privileges: Some(true),
+                    ..Default::default()
+                }),
+            health_check: desired.healthcheck.as_ref().map(Self::health_config),
+            ..Default::default()
+        }
     }
 
     /// Returns the constraint pinning tasks to `node_id`, which keeps local images

@@ -12,7 +12,11 @@ use super::{
 };
 use crate::manifest::NormalizedApplication;
 use crate::manifest::dependencies::StartupOrder;
-use crate::{ApplicationName, DockerNetworkName, DockerVolumeName, EnvironmentId, Release};
+use crate::manifest::domain::ValidatedJob;
+use crate::{
+    ApiErrorCode, ApplicationName, DockerNetworkName, DockerVolumeName, EnvironmentId, Release,
+    ServiceName,
+};
 
 /// Desired state for an application and its resources.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -88,14 +92,16 @@ impl ResolvedApplication {
                     &private_network,
                 )
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| vec![error])?;
         Ok(Self {
             jobs: app
                 .spec()
                 .jobs
                 .iter()
                 .map(|job| DesiredJob::compile(job, &services, resolutions, &ownership))
-                .collect(),
+                .collect::<Result<_, _>>()
+                .map_err(|error| vec![error])?,
             secret_names: resolutions.secret_names.clone(),
             routes: app.spec().routes.clone(),
             exports: app.spec().exports.clone(),
@@ -363,7 +369,7 @@ pub struct CompileError {
 impl CompileError {
     /// An error with the stable `code` at `resource`.
     pub(super) fn new(
-        code: crate::ApiErrorCode,
+        code: ApiErrorCode,
         resource: impl Into<String>,
         message: impl Into<String>,
     ) -> Self {
@@ -372,6 +378,42 @@ impl CompileError {
             resource: resource.into(),
             message: message.into(),
         }
+    }
+
+    /// `service` has no resolved source.
+    pub(super) fn source_unresolved(service: &ServiceName) -> Self {
+        Self::new(
+            ApiErrorCode::SourceUnresolved,
+            service.as_str(),
+            "service source has not been resolved to an immutable image",
+        )
+    }
+
+    /// `service` mounts the repository file at `path`, which wasn't captured.
+    pub(super) fn file_unresolved(service: &ServiceName, path: &str) -> Self {
+        Self::new(
+            ApiErrorCode::FileUnresolved,
+            service.as_str(),
+            format!("repository file {path} was not captured with the manifest"),
+        )
+    }
+
+    /// `job` runs a service the application doesn't declare.
+    pub(super) fn job_service_missing(job: &ValidatedJob) -> Self {
+        Self::new(
+            ApiErrorCode::JobServiceMissing,
+            job.name.as_str(),
+            format!("job runs undeclared service {}", job.service),
+        )
+    }
+
+    /// `owner`, a service or job, mounts `secret`, which isn't pinned.
+    pub(super) fn secret_unresolved(owner: &str, secret: &str) -> Self {
+        Self::new(
+            ApiErrorCode::SecretUnresolved,
+            owner,
+            format!("secret {secret} has not been pinned"),
+        )
     }
 }
 
