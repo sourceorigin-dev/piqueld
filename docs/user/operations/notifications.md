@@ -83,6 +83,7 @@ Each destination picks:
 | `daemon_started` | Daemon starts | The daemon starts, including after an update |
 | `daemon_rolled_back` | Roll-backs | The daemon starts after [`piqueld roll-back`](backups.md#roll-back) restored a backup |
 | `deployment_succeeded` | Deployments | A deployment succeeds |
+| `update_available` | Updates | A newer piqueld build is out on the [channel the daemon follows](updates.md) |
 
 For example, to send only deployment failures and recoveries about `shop`, and
 to mention a Discord role with each failure, select **Edit** on the

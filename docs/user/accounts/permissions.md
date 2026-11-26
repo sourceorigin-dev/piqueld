@@ -118,8 +118,8 @@ These permissions always apply to the whole installation.
 | Permission | Allows |
 | --- | --- |
 | `apps:create` | Creating applications; see [who may create applications](#who-may-create-applications) |
-| `system:read` | Reading the daemon's configuration, installation checks, resources, history and diagnostics, notification destinations and deliveries, and DNS providers and certificates |
-| `system:operate` | Recovering from a [lost secret key](../reference/configuration.md#recovering-from-a-lost-key), retrying notification deliveries, and checking DNS providers |
+| `system:read` | Reading the daemon's configuration, installation checks, resources, history and diagnostics, notification destinations and deliveries, DNS providers and certificates, and [updates](../operations/updates.md) |
+| `system:operate` | Recovering from a [lost secret key](../reference/configuration.md#recovering-from-a-lost-key), retrying notification deliveries, checking DNS providers, and checking for updates and choosing the release channel |
 | `accounts:manage` | Managing other accounts and invitations; see [who may manage accounts](#who-may-manage-accounts) |
 | `audit:read` | Reading every account's [audit trail](../operations/audit.md), and verifying its integrity. Everyone reads their own |
 | `telemetry:grant` | Granting and revoking an environment's [telemetry](#telemetry) |

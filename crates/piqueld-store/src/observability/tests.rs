@@ -2121,7 +2121,7 @@ async fn requested_notification_changes_commit_with_their_audit_record() {
         .expect("the destination is deleted");
     let route = "POST /api/v1/notifications";
     let receives = "categories build_failures,deployment_failures,service_degradation,\
-        daemon_failures,recovery,daemon_started,daemon_rolled_back; applications";
+        daemon_failures,recovery,daemon_started,daemon_rolled_back,update_available; applications";
     let actions = store.audit_actions().await;
     assert_eq!(
         actions,

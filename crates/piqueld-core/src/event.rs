@@ -187,6 +187,9 @@ string_enum! {
         /// version started on a database a newer one had migrated; the
         /// resource is the backup.
         DaemonRolledBack => "daemon_rolled_back",
+        /// A newer build appeared on the daemon's release channel; the
+        /// resource is its version.
+        UpdateAvailable => "update_available",
 
         /// An account received `admin` on every application.
         AdminGranted => "admin_granted",

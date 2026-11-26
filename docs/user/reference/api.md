@@ -122,6 +122,9 @@ when the complete normalized manifest is needed.
 | GET | `/api/v1/system/configuration` | Effective read-only host settings (`system:read`); 503 `configuration_unavailable` without them |
 | GET | `/api/v1/system/checks` | Installation checks, each `pass`, `warn`, `fail` or `skip` with a next step (`system:read`); see [`piquelctl doctor`](cli.md#installation-checks) |
 | POST | `/api/v1/system/dns/refresh` | Check DNS provider credentials and zones now (`system:operate`); returns `DnsStatus`, empty without `system:read` |
+| GET | `/api/v1/system/updates` | The [release channel](../operations/updates.md) the daemon follows, its newest build as of the last check, and whether it is newer than the daemon (`system:read`) |
+| POST | `/api/v1/system/updates/check` | Check the release channel now (`system:operate`); a feed it can't read is the status's `error` |
+| PUT | `/api/v1/system/updates/channel` | Follow another release channel, `{"channel":"nightly"}`, then check it (`system:operate`); 409 `update_channel_configured` while `updates.channel` in the daemon configuration sets it |
 | POST | `/api/v1/system/builder/check` | Check that the [build machine](configuration.md#build-machine)'s BuildKit daemon answers now (`system:operate`); returns that `BuilderCheck`, which names no address and becomes the status's latest check, or 404 `builder_not_configured` without a build machine |
 | GET | `/api/v1/openapi.json` | Generated API schema |
 | GET | `/api/v1/applications?name=…` | Paginated application summaries (up to 100 per page), each environment with its `status` and `latest_operation`; `name` returns only the application with exactly that name |

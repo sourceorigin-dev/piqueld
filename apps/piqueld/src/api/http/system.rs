@@ -9,9 +9,12 @@ use axum::{
 };
 use piqueld_core::ApiErrorCode;
 use piqueld_core::access::{AppPermission, GlobalPermission};
-use piqueld_core::api::{BuilderCheck, DnsStatus, Envelope, SystemStatus};
+use piqueld_core::api::{
+    BuilderCheck, DnsStatus, Envelope, SystemStatus, UpdateChannelRequest, UpdateStatus,
+};
 
-use super::{ApiError, ApiState, ok, openapi::ApiErrors};
+use super::access::Audited;
+use super::{ApiError, ApiJson, ApiState, ok, openapi::ApiErrors};
 
 /// Gets daemon status.
 ///
@@ -104,6 +107,66 @@ pub(super) async fn refresh_dns(
     let mut dns = state.refresh_dns().await;
     redact_dns(&identity, &mut dns);
     ok(dns)
+}
+
+/// Gets the release channel this installation follows, and whether it has
+/// a newer build than the daemon, as of the last check.
+#[utoipa::path(
+    get,
+    path = "/api/v1/system/updates",
+    operation_id = "updateStatus",
+    summary = "Get update status",
+    responses(
+        (status = 200, description = "Success", body = Envelope<UpdateStatus>),
+    )
+)]
+pub(super) async fn updates(State(state): State<ApiState>) -> Result<Response, ApiError> {
+    Ok(ok(state.update_status().await?).into_response())
+}
+
+/// Checks the release channel for a newer build now.
+///
+/// The first time it finds one, it notifies `update_available`. A feed it
+/// can't read is the status's `error`, not a failed request. piqueld never
+/// installs an update.
+#[utoipa::path(
+    post,
+    path = "/api/v1/system/updates/check",
+    operation_id = "checkForUpdates",
+    summary = "Check for updates now",
+    responses(
+        (status = 200, description = "Success", body = Envelope<UpdateStatus>),
+    )
+)]
+pub(super) async fn check_for_updates(State(state): State<ApiState>) -> Result<Response, ApiError> {
+    Ok(ok(state.check_for_updates().await?).into_response())
+}
+
+/// Follows another release channel, then checks it.
+///
+/// 409 `update_channel_configured` when `updates.channel` in the daemon
+/// configuration sets the channel.
+#[utoipa::path(
+    put,
+    path = "/api/v1/system/updates/channel",
+    operation_id = "setUpdateChannel",
+    summary = "Follow another release channel",
+    request_body = UpdateChannelRequest,
+    responses(
+        (status = 200, description = "Success", body = Envelope<UpdateStatus>),
+        ApiErrors<400, 409, 415>,
+    )
+)]
+pub(super) async fn set_update_channel(
+    State(state): State<ApiState>,
+    Extension(identity): Extension<Identity>,
+    audited: Audited,
+    ApiJson(request): ApiJson<UpdateChannelRequest>,
+) -> Result<Response, ApiError> {
+    let status = state
+        .set_update_channel(audited.author(&identity), request.channel)
+        .await?;
+    Ok(ok(status).into_response())
 }
 
 /// Static liveness body: `{"status":"ok"}`.

@@ -32,7 +32,9 @@ whose **Menu** button opens the navigation and the footer. The home page and App
 across applications, the latest of each environment; each row opens that
 deployment in its environment's history.
 Daemon status also runs the [installation checks](reference/cli.md#installation-checks)
-when it opens and on demand, showing each with its next step.
+when it opens and on demand, showing each with its next step. Its **Updates**
+panel shows the [release channel](operations/updates.md) the daemon follows
+and its newest build, and the sidebar links to it while an update is out.
 Applications also has a clickable directory with each application's health (its
 least healthy environment) and last deployment time.
 

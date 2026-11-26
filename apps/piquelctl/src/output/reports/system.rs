@@ -7,7 +7,7 @@ use piqueld_client::{
     observability::{Bytes, DaemonStats, Elapsed, Timestamp, Uptime},
     system::{
         BuilderCheck, BuilderStatus, HostConfiguration, IngressStatus, PublicIngressStatus,
-        SystemCheck,
+        SystemCheck, UpdateStatus,
     },
 };
 use serde::Serialize;
@@ -165,6 +165,46 @@ report!(BuilderStatus, self, out, {
             checked(self.last_check.as_ref())
         ),
     )
+});
+
+report!(UpdateStatus, self, out, {
+    let configured = if self.channel_configured {
+        " (set by the daemon configuration)"
+    } else {
+        ""
+    };
+    out.line(format_args!(
+        "piqueld {} follows the {} channel{configured}",
+        self.current.number, self.channel
+    ))?;
+    match &self.latest {
+        Some(latest) if self.available => {
+            out.label("Update available", &latest.version.number)?;
+            out.label("Release notes", &latest.notes_url)?;
+            if let Some(how) = self.how_to_update() {
+                out.label("To update", how)?;
+            }
+        }
+        Some(latest) => out.label(
+            "Up to date",
+            format_args!(
+                "the newest {} build is {}",
+                self.channel, latest.version.number
+            ),
+        )?,
+        None => {}
+    }
+    match self.checked_at_ms {
+        Some(at) => out.label("Last checked", Timestamp(at))?,
+        None => out.label("Last checked", "never")?,
+    }
+    if let Some(error) = &self.error {
+        out.label("Last check failed", error)?;
+    }
+    if !self.checks {
+        out.label("Checks", "off: updates.check in the daemon configuration")?;
+    }
+    Ok(())
 });
 
 report!(BuilderCheck, self, out, {

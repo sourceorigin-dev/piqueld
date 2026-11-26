@@ -396,6 +396,14 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: BuilderCommand,
     },
+    /// Check for newer piqueld builds, and choose the release channel.
+    ///
+    /// piqueld only checks: install a newer build the way you installed it.
+    Update {
+        /// The update operation to run.
+        #[command(subcommand)]
+        command: UpdateCommand,
+    },
     /// Create, inspect, edit and deploy applications.
     App {
         /// The application operation to run.
@@ -447,6 +455,33 @@ pub(crate) enum Command {
         /// Which page of events to show.
         #[command(flatten)]
         page: crate::support::PageArgs,
+    },
+}
+
+/// `piquelctl update` subcommands.
+#[derive(Debug, Subcommand)]
+pub(crate) enum UpdateCommand {
+    /// Show the release channel the daemon follows, and whether it has a
+    /// newer build, as of the daemon's last check.
+    ///
+    /// The daemon checks every six hours unless `updates.check` is off in its
+    /// configuration. Needs `system:read`.
+    Status,
+    /// Check the release channel for a newer build now.
+    ///
+    /// Exits 6 when the check couldn't read the channel's feed. Needs
+    /// `system:operate`.
+    Check,
+    /// Follow another release channel, then check it.
+    ///
+    /// `stable` has the versions maintainers release; `nightly`, a build of
+    /// main every night. From nightly to stable, the daemon keeps its build
+    /// until stable has a newer one. Fails while `updates.channel` in the
+    /// daemon configuration sets the channel, and exits 6 when the check of
+    /// the new channel couldn't read its feed. Needs `system:operate`.
+    Channel {
+        /// `stable` or `nightly`.
+        channel: piqueld_client::version::Channel,
     },
 }
 

@@ -2,9 +2,10 @@
 pub use piqueld_core::api::{
     BuilderCheck, BuilderStatus, BuiltOn, CertificateStatus, CheckStatus, DependencyStatus,
     DnsProviderStatus, DnsRecordState, DnsRecords, DnsStatus, HostConfiguration, ImageStatus,
-    IngressStatus, PrivateIngressStatus, PublicIngressStatus, ReadinessStatus, RegistryImageStatus,
-    RouteStatus, SnapshotLimits, SystemCheck, SystemCheckId, SystemChecks, SystemStatus,
-    TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver, TelemetryStatus,
+    IngressStatus, InstallMethod, PrivateIngressStatus, PublicIngressStatus, ReadinessStatus,
+    RegistryImageStatus, RouteStatus, SnapshotLimits, SystemCheck, SystemCheckId, SystemChecks,
+    SystemStatus, TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver, TelemetryStatus,
+    UpdateChannelRequest, UpdateStatus,
 };
 
 use crate::{Client, ClientError, client::EnvelopedCall};
@@ -35,6 +36,38 @@ impl Client {
     /// Returns [`ClientError`] when transport, decoding, or API response handling fails.
     pub async fn check_builder(&self) -> Result<BuilderCheck, ClientError> {
         self.generated.check_builder().data().await
+    }
+
+    /// Reads the release channel the installation follows, and whether it
+    /// has a newer build, as of the daemon's last check.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when transport, decoding, or API response handling fails.
+    pub async fn update_status(&self) -> Result<UpdateStatus, ClientError> {
+        self.generated.update_status().data().await
+    }
+
+    /// Checks the release channel for a newer build now.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when transport, decoding, or API response handling fails.
+    pub async fn check_for_updates(&self) -> Result<UpdateStatus, ClientError> {
+        self.generated.check_for_updates().data().await
+    }
+
+    /// Follows `channel`, then checks it. Fails with
+    /// `update_channel_configured` when the daemon configuration sets it.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when transport, decoding, or API response handling fails.
+    pub async fn set_update_channel(
+        &self,
+        channel: crate::version::Channel,
+    ) -> Result<UpdateStatus, ClientError> {
+        self.generated
+            .set_update_channel(&UpdateChannelRequest { channel })
+            .data()
+            .await
     }
 
     /// Reads effective daemon configuration without changing host settings.

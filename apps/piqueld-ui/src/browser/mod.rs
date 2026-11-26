@@ -12,6 +12,7 @@ mod observability;
 mod runtime;
 mod stream;
 mod ui;
+mod updates;
 
 use dashboard::{ApplicationsPage, OverviewPage, Sidebar};
 use ui::{Icon, STALE, Tone, icon, notice};
@@ -101,6 +102,9 @@ struct DashboardSignals {
     detail_request: RwSignal<u64>,
     /// Why the selected application's detail failed to load; `None` otherwise.
     detail_error: RwSignal<Option<String>>,
+    /// The release channel and its newest build, once loaded (see
+    /// `updates::load_updates`).
+    updates: RwSignal<Option<piqueld_client::system::UpdateStatus>>,
 }
 
 impl DashboardSignals {
@@ -122,6 +126,7 @@ impl DashboardSignals {
             detail_loading: RwSignal::new(false),
             detail_request: RwSignal::new(0),
             detail_error: RwSignal::new(None),
+            updates: RwSignal::new(None),
         }
     }
 

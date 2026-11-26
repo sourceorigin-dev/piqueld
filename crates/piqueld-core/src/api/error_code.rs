@@ -129,6 +129,9 @@ string_enum! {
         RepositoryManaged => "repository_managed",
         /// 409: the application is busy with another operation.
         ApplicationBusy => "application_busy",
+        /// 409: `updates.channel` in the daemon configuration sets the release
+        /// channel, so only the configuration changes it.
+        UpdateChannelConfigured => "update_channel_configured",
         /// 409: an application, environment or preview of that identity or
         /// name already exists.
         ApplicationNameCollision => "application_name_collision",

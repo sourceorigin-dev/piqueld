@@ -69,6 +69,7 @@ pub(super) fn Sidebar() -> impl IntoView {
         opened.set(false);
     });
     let system = can(Permission::Global(GlobalPermission::SystemRead));
+    super::updates::load_updates();
     let display_name = move || who.get().map(|who| who.name().to_owned());
     let initial = move || {
         who.get()
@@ -131,6 +132,7 @@ pub(super) fn Sidebar() -> impl IntoView {
                     </div>
                 </nav>
                 <div class="sidebar-footer">
+                    <super::updates::UpdateLink />
                     <span class="connection">
                         <span
                             class="dot"

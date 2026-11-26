@@ -81,6 +81,7 @@ Commands:
 - [`piquelctl doctor`](#piquelctl-doctor): Check this CLI's connection and the installation's health.
 - [`piquelctl dns`](#piquelctl-dns): Inspect the daemon's DNS providers.
 - [`piquelctl builder`](#piquelctl-builder): Inspect the build machine images build on.
+- [`piquelctl update`](#piquelctl-update): Check for newer piqueld builds, and choose the release channel.
 - [`piquelctl app`](#piquelctl-app): Create, inspect, edit and deploy applications.
 - [`piquelctl env`](#piquelctl-env): Create, inspect, deploy and delete an application's environments.
 - [`piquelctl preview`](#piquelctl-preview): Create, inspect, deploy and delete previews: disposable deployments of a branch.
@@ -124,7 +125,7 @@ Options:
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
   - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key and retry notifications.
+  - `system:operate`: Recover the secret key, retry notifications, and choose the release channel.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -217,7 +218,7 @@ Options:
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
   - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key and retry notifications.
+  - `system:operate`: Recover the secret key, retry notifications, and choose the release channel.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -260,7 +261,7 @@ Options:
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
   - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key and retry notifications.
+  - `system:operate`: Recover the secret key, retry notifications, and choose the release channel.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -477,7 +478,7 @@ Options:
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
   - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key and retry notifications.
+  - `system:operate`: Recover the secret key, retry notifications, and choose the release channel.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -713,13 +714,13 @@ Options:
   `false` pauses the destination and cancels its pending deliveries. `true` resumes it, without sending what happened meanwhile. Values: `true`, `false`.
 - `--categories <CATEGORIES>`: Receive only these categories: comma-separated, or `''` for none.
 
-  A category that stays keeps its message. Values: `build_failures`, `deployment_failures`, `service_degradation`, `daemon_failures`, `recovery`, `security`, `daemon_started`, `daemon_rolled_back`, `deployment_succeeded`.
+  A category that stays keeps its message. Values: `build_failures`, `deployment_failures`, `service_degradation`, `daemon_failures`, `recovery`, `security`, `daemon_started`, `daemon_rolled_back`, `deployment_succeeded`, `update_available`.
 - `--message <CATEGORY=TEXT>`: Send TEXT with each notification of CATEGORY, and receive that category.
 
   TEXT has 1 to 1000 characters, such as a Discord role mention `<@&ROLE_ID>`. CATEGORY is one of the values `--categories` accepts. Repeat it for several categories.
 - `--no-message <CATEGORY>`: Stop sending text with this category's notifications.
 
-  Repeat it for several categories. Values: `build_failures`, `deployment_failures`, `service_degradation`, `daemon_failures`, `recovery`, `security`, `daemon_started`, `daemon_rolled_back`, `deployment_succeeded`.
+  Repeat it for several categories. Values: `build_failures`, `deployment_failures`, `service_degradation`, `daemon_failures`, `recovery`, `security`, `daemon_started`, `daemon_rolled_back`, `deployment_succeeded`, `update_available`.
 - `--apps <APPS>`: Receive notifications only about these applications: comma-separated names or IDs, or `''` for none.
 
   Daemon-wide notifications, such as daemon failures and security events, arrive either way.
@@ -864,6 +865,56 @@ The daemon otherwise checks it before each build, and `piquelctl status` shows t
 ```text
 piquelctl builder check [OPTIONS]
 ```
+
+## `piquelctl update`
+
+Check for newer piqueld builds, and choose the release channel.
+
+piqueld only checks: install a newer build the way you installed it.
+
+```text
+piquelctl update [OPTIONS] <COMMAND>
+```
+
+Commands:
+
+- [`piquelctl update status`](#piquelctl-update-status): Show the release channel the daemon follows, and whether it has a newer build, as of the daemon's last check.
+- [`piquelctl update check`](#piquelctl-update-check): Check the release channel for a newer build now.
+- [`piquelctl update channel`](#piquelctl-update-channel): Follow another release channel, then check it.
+
+## `piquelctl update status`
+
+Show the release channel the daemon follows, and whether it has a newer build, as of the daemon's last check.
+
+The daemon checks every six hours unless `updates.check` is off in its configuration. Needs `system:read`.
+
+```text
+piquelctl update status [OPTIONS]
+```
+
+## `piquelctl update check`
+
+Check the release channel for a newer build now.
+
+Exits 6 when the check couldn't read the channel's feed. Needs `system:operate`.
+
+```text
+piquelctl update check [OPTIONS]
+```
+
+## `piquelctl update channel`
+
+Follow another release channel, then check it.
+
+`stable` has the versions maintainers release; `nightly`, a build of main every night. From nightly to stable, the daemon keeps its build until stable has a newer one. Fails while `updates.channel` in the daemon configuration sets the channel, and exits 6 when the check of the new channel couldn't read its feed. Needs `system:operate`.
+
+```text
+piquelctl update channel [OPTIONS] <CHANNEL>
+```
+
+Arguments:
+
+- `<CHANNEL>`: `stable` or `nightly`.
 
 ## `piquelctl app`
 

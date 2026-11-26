@@ -2,7 +2,7 @@
 use crate::{
     cli::{
         AppCommand, ApplyArgs, BuildCommand, BuilderCommand, Cli, Command, DeleteArgs, DnsCommand,
-        ManifestArgs, OperationArgs, expected_generation,
+        ManifestArgs, OperationArgs, UpdateCommand, expected_generation,
     },
     environments,
     error::{CliError, ErrorKind, Result},
@@ -68,6 +68,7 @@ pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Re
         Command::Builder {
             command: BuilderCommand::Check,
         } => check_builder(client, console).await,
+        Command::Update { command } => update(client, console, command).await,
         Command::App { command } => app(cli, client, console, command).await,
         Command::Env { command } => command.run(cli, client, console).await,
         Command::Preview { command } => command.run(client, console).await,
@@ -299,6 +300,29 @@ async fn refresh_dns(client: &Client, console: &mut Console) -> Result<()> {
         console.warning("no DNS providers are configured ([[dns.providers]] in daemon TOML)")?;
     }
     console.emit(&status)
+}
+
+/// Runs `command` and prints the update status it returns, failing when the
+/// check it ran couldn't read the channel's feed.
+async fn update(client: &Client, console: &mut Console, command: &UpdateCommand) -> Result<()> {
+    let checked = !matches!(command, UpdateCommand::Status);
+    let status = match command {
+        UpdateCommand::Status => client.update_status().await?,
+        UpdateCommand::Check => client.check_for_updates().await?,
+        UpdateCommand::Channel { channel } => client.set_update_channel(*channel).await?,
+    };
+    console.emit(&status)?;
+    match (command, status.error) {
+        (UpdateCommand::Channel { channel }, Some(error)) => Err(CliError::new(
+            ErrorKind::Unhealthy,
+            format!("now following the {channel} channel, but couldn't check it: {error}"),
+        )),
+        (_, Some(error)) if checked => Err(CliError::new(
+            ErrorKind::Unhealthy,
+            format!("couldn't check for updates: {error}"),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Checks the build machine now and prints it, failing like a deployment

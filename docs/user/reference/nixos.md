@@ -25,6 +25,10 @@ with your flake's input, and update to its newest build with
 }
 ```
 
+`services.piqueld.settings.updates.channel`, `stable` by default, tells the
+daemon which channel's newer builds to tell you about; set it to `nightly`
+when you follow nightly. See [updating piqueld](../operations/updates.md).
+
 ## Daemon and CLI
 
 The default package embeds the dashboard. `services.piqueld.package` can select

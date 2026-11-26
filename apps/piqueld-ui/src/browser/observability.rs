@@ -675,8 +675,8 @@ fn DiagnosticDetails(
     }
 }
 
-/// `/system` page: readiness panel, installation checks, and auto-refreshing
-/// daemon resource usage.
+/// `/system` page: updates, readiness panel, installation checks, and
+/// auto-refreshing daemon resource usage.
 #[component]
 pub(super) fn SystemPage() -> impl IntoView {
     let refresh = Refresh::new();
@@ -695,6 +695,7 @@ pub(super) fn SystemPage() -> impl IntoView {
             </button>
         </PageHeader>
         <div class="stack">
+            <super::updates::UpdatesPanel />
             <super::dashboard::ReadinessPanel />
             <ChecksPanel />
             {loaded(data, "Collecting resource usage…", |stats| resource_stats(&stats))}

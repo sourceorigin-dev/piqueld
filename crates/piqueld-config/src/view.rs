@@ -65,6 +65,7 @@ impl DaemonConfig {
             ("Private ingress".into(), self.private_ingress_view()),
             ("Cloudflare Tunnel".into(), self.tunnel_view()),
             ("Observability".into(), self.observability_view()),
+            ("Updates".into(), self.updates_view()),
         ]);
         groups.extend(self.dns_view().map(|view| ("DNS providers".into(), view)));
         HostConfiguration { groups }
@@ -117,6 +118,22 @@ impl DaemonConfig {
         };
         view.insert("Parallel builds".into(), self.build.parallel.to_string());
         view
+    }
+
+    /// Builds the `Updates` group.
+    fn updates_view(&self) -> Group {
+        let updates = &self.updates;
+        group([
+            ("Check for updates", updates.check.to_string()),
+            (
+                "Channel",
+                updates.channel.map_or_else(
+                    || "chosen by operators".into(),
+                    |channel| channel.to_string(),
+                ),
+            ),
+            ("Feeds", updates.feed_url.clone()),
+        ])
     }
 
     /// Builds the `Reconciliation` group.

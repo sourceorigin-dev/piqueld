@@ -37,7 +37,7 @@ test('destinations are added, refused with a reason in their dialog, tested, edi
     await dialog.getByRole('button', { name: 'Save destination', exact: true }).click();
     await expect(dialog).toBeHidden();
     const row = page.getByRole('row', { name: /ops/ });
-    await expect(row).toContainText('6 categories · every application');
+    await expect(row).toContainText('7 categories · every application');
     await expect(row).toContainText('enabled');
 
     await row.getByRole('button', { name: 'Test', exact: true }).click();

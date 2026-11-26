@@ -109,6 +109,9 @@ pub struct DaemonConfig {
     /// The disk space Git checkouts may take.
     #[serde(default)]
     pub checkouts: CheckoutsConfig,
+    /// Checks for newer piqueld builds on a release channel.
+    #[serde(default)]
+    pub updates: UpdatesConfig,
 }
 
 impl DaemonConfig {
@@ -212,6 +215,11 @@ impl DaemonConfig {
         ConfigError::require(
             self.server.data_dir != self.server.runtime_dir,
             "server.data_dir and server.runtime_dir must be different directories",
+        )?;
+        ConfigError::require(
+            url::Url::parse(&self.updates.feed_url)
+                .is_ok_and(|url| matches!(url.scheme(), "http" | "https")),
+            "updates.feed_url must be an HTTP or HTTPS URL",
         )?;
         if let Some(public_url) = &self.auth.public_url {
             AuthConfig::validate_origin(public_url)
@@ -843,6 +851,36 @@ impl Default for ReconciliationConfig {
             scan_interval_seconds: 60,
             prepare_timeout_seconds: 300,
             convergence_timeout_seconds: 120,
+        }
+    }
+}
+
+/// Checks for newer piqueld builds on a release channel. piqueld only
+/// checks and notifies: it never updates itself.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct UpdatesConfig {
+    /// Check the channel for a newer build every six hours, and notify the
+    /// `update_available` notification category when one appears.
+    pub check: bool,
+    /// The channel to follow, `stable` or `nightly`. Unset, choose it with
+    /// `piquelctl update channel` or on the dashboard; it starts as the
+    /// channel this build was published on, or `stable`.
+    pub channel: Option<piqueld_core::version::Channel>,
+    /// The HTTP(S) URL of the directory holding the channels' feeds,
+    /// `stable.json` and `nightly.json`, such as a mirror's.
+    pub feed_url: String,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self {
+            check: true,
+            channel: None,
+            feed_url: format!(
+                "{}/releases/download/channels",
+                piqueld_core::version::REPOSITORY_URL
+            ),
         }
     }
 }

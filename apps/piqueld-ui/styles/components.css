@@ -751,6 +751,75 @@
         color: var(--muted);
     }
 
+    /* Updates panel: the channel picker sits in a status row, and notices
+       below the rows keep the card's inset. */
+    .updates-notice {
+        padding: 0 16px 16px;
+    }
+
+    .inline-select {
+        appearance: none;
+        padding: 5px 30px 5px 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-sm);
+        background: var(--surface-muted) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2385858f' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+        color: var(--ink);
+        font-size: 13px;
+        cursor: pointer;
+    }
+
+    .inline-select:focus-visible {
+        border-color: var(--accent);
+        outline: none;
+    }
+
+    .inline-select:disabled {
+        opacity: .6;
+        cursor: progress;
+    }
+
+    .channel-name {
+        text-transform: capitalize;
+    }
+
+    .update-how {
+        display: block;
+        overflow-wrap: anywhere;
+    }
+
+    /* The sidebar's way to an available update: quiet, but the one accent
+       in the footer. */
+    .update-link {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border: 1px solid var(--accent-strong);
+        border-radius: var(--radius-sm);
+        background: var(--accent-bg);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    .update-link:hover {
+        border-color: var(--accent);
+    }
+
+    .update-link svg {
+        flex: none;
+        width: 14px;
+        height: 14px;
+    }
+
+    .update-link small {
+        display: block;
+        font-weight: 500;
+        color: var(--ink-soft);
+        overflow-wrap: anywhere;
+    }
+
     /* A version's pre-release, such as a nightly's `-nightly.20261125`, on
        its own smaller line, so the number stays whole. */
     .metric-suffix {

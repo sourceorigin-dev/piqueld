@@ -158,6 +158,12 @@ pub fn check_builder() -> String {
     String::from("/api/v1/system/builder/check")
 }
 
+/// `POST /api/v1/system/updates/check`
+#[must_use]
+pub fn check_for_updates() -> String {
+    String::from("/api/v1/system/updates/check")
+}
+
 /// `POST /api/v1/applications`
 #[must_use]
 pub fn create_application() -> String {
@@ -1085,6 +1091,12 @@ pub fn set_service_source(id: &str, service: &str) -> String {
     )
 }
 
+/// `PUT /api/v1/system/updates/channel`
+#[must_use]
+pub fn set_update_channel() -> String {
+    String::from("/api/v1/system/updates/channel")
+}
+
 /// `POST /api/v1/environments/{id}/start`
 #[must_use]
 pub fn start_environment(id: &str) -> String {
@@ -1158,6 +1170,12 @@ pub fn test_notification_destination(name: &str) -> String {
         "/api/v1/notifications/destinations/{name}/test",
         name = encode_path(name)
     )
+}
+
+/// `GET /api/v1/system/updates`
+#[must_use]
+pub fn update_status() -> String {
+    String::from("/api/v1/system/updates")
 }
 
 /// `GET /api/v1/audit/verify`

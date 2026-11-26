@@ -157,6 +157,8 @@ string_enum! {
         DaemonRolledBack => "daemon_rolled_back",
         /// Each successful deployment. New destinations do not receive it.
         DeploymentSucceeded => "deployment_succeeded",
+        /// A newer piqueld build on the release channel the daemon follows.
+        UpdateAvailable => "update_available",
     }
 }
 impl NotificationCategory {
@@ -173,6 +175,7 @@ impl NotificationCategory {
             Self::DaemonStarted => "Daemon starts",
             Self::DaemonRolledBack => "Roll-backs",
             Self::DeploymentSucceeded => "Deployments",
+            Self::UpdateAvailable => "Updates",
         }
     }
 }
