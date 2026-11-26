@@ -65,8 +65,11 @@ impl IsolatedDocker {
                 "refusing to mutate the default host Docker socket"
             );
         }
-        let docker = BollardDocker::connect(&resolved).unwrap();
-        docker.ensure_swarm(true).await.unwrap();
+        let docker = BollardDocker::connect(&resolved).expect("the bollard docker connects");
+        docker
+            .ensure_swarm(true)
+            .await
+            .expect("ensure swarm succeeds");
         Self {
             socket: resolved,
             docker,
@@ -96,11 +99,11 @@ impl IsolatedDocker {
     /// A Bollard client of the same Engine, bypassing the adapter.
     fn raw(&self) -> bollard::Docker {
         bollard::Docker::connect_with_unix(
-            self.socket.to_str().unwrap(),
+            self.socket.to_str().expect("the path is utf-8"),
             120,
             bollard::API_DEFAULT_VERSION,
         )
-        .unwrap()
+        .expect("connect with unix succeeds")
     }
 
     /// Applies `request`'s plans until nothing is left to do: each environment
@@ -131,7 +134,7 @@ impl IsolatedDocker {
                 tokio::time::Instant::now() < deadline,
                 "{id} did not converge"
             );
-            let observed = self.docker.observe(&id).await.unwrap();
+            let observed = self.docker.observe(&id).await.expect("observe succeeds");
             let request = match request {
                 PlanRequest::Reconcile { desired } => PlanRequest::Reconcile {
                     desired: desired.clone().with_links(links, &observed),
@@ -149,13 +152,19 @@ impl IsolatedDocker {
             };
             match &action.kind {
                 ActionKind::EnsureNetwork { network } => {
-                    self.docker.ensure_network(network).await.unwrap();
+                    self.docker
+                        .ensure_network(network)
+                        .await
+                        .expect("ensure network succeeds");
                 }
                 ActionKind::EnsureService { service } => {
                     self.ensure_service_eventually(service).await;
                 }
                 ActionKind::RemoveService { name } => {
-                    self.docker.remove_service(name, &ownership).await.unwrap();
+                    self.docker
+                        .remove_service(name, &ownership)
+                        .await
+                        .expect("remove service succeeds");
                 }
                 ActionKind::RemoveNetwork { name } => {
                     #[expect(
@@ -176,7 +185,7 @@ impl IsolatedDocker {
 
     /// Waits until `service` of `environment` logs `line`, and returns its logs.
     async fn logged(&self, environment: &EnvironmentId, service: &str, line: &str) -> Vec<String> {
-        let instance = InstanceId::parse("integration-instance").unwrap();
+        let instance = InstanceId::parse("integration-instance").expect("the instance id parses");
         let mut messages = Vec::new();
         eventually(
             Duration::from_mins(1),
@@ -186,7 +195,7 @@ impl IsolatedDocker {
                     .docker
                     .application_logs(&instance, environment, Some(service), 200, 300, None)
                     .await
-                    .unwrap()
+                    .expect("application logs succeeds")
                     .items
                     .into_iter()
                     .map(|record| record.message)
@@ -208,7 +217,11 @@ impl IsolatedDocker {
         &self,
         desired: &piqueld_core::ResolvedApplication,
     ) -> Vec<(String, String)> {
-        let observed = self.docker.observe(&desired.id).await.unwrap();
+        let observed = self
+            .docker
+            .observe(&desired.id)
+            .await
+            .expect("observe succeeds");
         let revoked = observed
             .revoked_links(
                 &desired.instance_id,
@@ -222,9 +235,13 @@ impl IsolatedDocker {
             self.docker
                 .detach_network(service, network, &desired.networks[0].labels)
                 .await
-                .unwrap();
+                .expect("detach network succeeds");
         }
-        let observed = self.docker.observe(&desired.id).await.unwrap();
+        let observed = self
+            .docker
+            .observe(&desired.id)
+            .await
+            .expect("observe succeeds");
         assert!(
             observed.services.iter().all(|service| desired
                 .services
@@ -252,19 +269,27 @@ impl SwarmScenario {
         let labels = &environment.labels;
         let network = environment.network();
         let volume = environment.volume();
-        engine.docker.ensure_network(&network).await.unwrap();
-        let observed = engine.docker.observe(app).await.unwrap();
+        engine
+            .docker
+            .ensure_network(&network)
+            .await
+            .expect("ensure network succeeds");
+        let observed = engine.docker.observe(app).await.expect("observe succeeds");
         assert!(
             observed.networks[0].runtime_configuration_matches,
             "a network created by piqueld must match Docker's inspected representation"
         );
-        engine.docker.ensure_volume(&volume).await.unwrap();
+        engine
+            .docker
+            .ensure_volume(&volume)
+            .await
+            .expect("ensure volume succeeds");
         let secret_name = environment.secret_name();
         engine
             .docker
             .ensure_secret(&secret_name, b"mounted-value", labels)
             .await
-            .unwrap();
+            .expect("ensure secret succeeds");
         let service = DesiredService {
             secrets: vec![piqueld_core::resource::SecretFile { secret_name: secret_name.clone(), target: "/run/secrets/token".into() }],
             files: vec![Self::motd(app)],
@@ -314,7 +339,7 @@ impl SwarmScenario {
             .docker
             .observe(&self.environment.app)
             .await
-            .unwrap()
+            .expect("observe succeeds")
             .services
             .into_iter()
             .find(|observed| observed.name == service.name.as_str())
@@ -359,19 +384,24 @@ impl SwarmScenario {
             .docker
             .prune_files(&self.environment.labels)
             .await
-            .unwrap();
+            .expect("prune files succeeds");
         let remaining = self
             .docker_api("GET", "/configs")
             .await
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
             .filter(|config| {
                 config["Spec"]["Labels"]["io.piqueld.file"] == "true"
                     && config["Spec"]["Labels"]["io.piqueld.application"]
                         == self.environment.app.as_str()
             })
-            .map(|config| config["Spec"]["Name"].as_str().unwrap().to_owned())
+            .map(|config| {
+                config["Spec"]["Name"]
+                    .as_str()
+                    .expect("the value is a string")
+                    .to_owned()
+            })
             .collect::<Vec<_>>();
         assert_eq!(remaining, [self.service.files[0].config_name.to_string()]);
         assert_eq!(
@@ -379,7 +409,7 @@ impl SwarmScenario {
                 .docker
                 .observe(&self.environment.app)
                 .await
-                .unwrap()
+                .expect("observe succeeds")
                 .services[0]
                 .files,
             self.service
@@ -401,7 +431,7 @@ impl SwarmScenario {
                 .docker
                 .application_logs(&instance, &self.environment.app, Some("web"), 20, 60, None)
                 .await
-                .unwrap();
+                .expect("application logs succeeds");
             logs.items
                 .iter()
                 .any(|line| line.message == "log-stderr")
@@ -433,7 +463,7 @@ impl SwarmScenario {
                     Some(stream),
                 )
                 .await
-                .unwrap();
+                .expect("application logs succeeds");
             assert_eq!(logs.items.len(), 1);
             assert_eq!(logs.items[0].stream, stream.as_str());
         }
@@ -441,7 +471,7 @@ impl SwarmScenario {
             self.engine
                 .docker
                 .application_logs(
-                    &InstanceId::parse("another-instance").unwrap(),
+                    &InstanceId::parse("another-instance").expect("the instance id parses"),
                     &self.environment.app,
                     None,
                     20,
@@ -449,7 +479,7 @@ impl SwarmScenario {
                     None
                 )
                 .await
-                .unwrap()
+                .expect("application logs succeeds")
                 .items
                 .is_empty()
         );
@@ -463,9 +493,9 @@ impl SwarmScenario {
     ) -> piqueld_docker::Exec {
         use piqueld_core::exec::{ExecCommand, ExecRequest};
         let request = ExecRequest {
-            service: piqueld_core::ServiceName::parse("web").unwrap(),
+            service: piqueld_core::ServiceName::parse("web").expect("the service name parses"),
             command: ExecCommand::parse(vec!["/bin/sh".into(), "-c".into(), script.into()])
-                .unwrap(),
+                .expect("the exec command parses"),
             stdin: true,
             tty,
         };
@@ -477,7 +507,7 @@ impl SwarmScenario {
                 &request,
             )
             .await
-            .unwrap()
+            .expect("create exec succeeds")
             .expect("web has a running task")
     }
 
@@ -492,8 +522,14 @@ impl SwarmScenario {
         let exec = self.create_exec(script, tty).await;
         let (input, input_rx) = tokio::sync::mpsc::channel(4);
         let (output_tx, mut output) = tokio::sync::mpsc::channel(16);
-        input.send(ExecInput::Stdin(stdin.to_vec())).await.unwrap();
-        input.send(ExecInput::CloseStdin).await.unwrap();
+        input
+            .send(ExecInput::Stdin(stdin.to_vec()))
+            .await
+            .expect("the request is sent");
+        input
+            .send(ExecInput::CloseStdin)
+            .await
+            .expect("the request is sent");
         let io = piqueld_docker::ExecIo {
             input: input_rx,
             output: output_tx,
@@ -516,7 +552,7 @@ impl SwarmScenario {
         )
         .await
         .expect("exec finishes");
-        (stdout, stderr, code.unwrap())
+        (stdout, stderr, code.expect("the code is present"))
     }
 
     async fn assert_exec(&self) {
@@ -530,7 +566,12 @@ impl SwarmScenario {
             height: 17,
         };
         let (stdout, stderr, code) = self.exec("stty size", b"", Some(size)).await;
-        assert_eq!(String::from_utf8(stdout).unwrap().trim(), "17 91");
+        assert_eq!(
+            String::from_utf8(stdout)
+                .expect("the bytes are utf-8")
+                .trim(),
+            "17 91"
+        );
         assert_eq!(stderr, b"");
         assert_eq!(code, 0);
         let (stdout, _, code) = self
@@ -543,7 +584,7 @@ impl SwarmScenario {
         input
             .send(piqueld_core::exec::ExecInput::Stdin(vec![0; 8 << 20]))
             .await
-            .unwrap();
+            .expect("the request is sent");
         let stop = tokio_util::sync::CancellationToken::new();
         let io = piqueld_docker::ExecIo {
             input: input_rx,
@@ -568,9 +609,16 @@ impl SwarmScenario {
     async fn add_http_service(&self) -> DesiredService {
         let mut http_service = self.derived_service("http");
         let reference = "traefik/whoami:v1.11.0";
-        let image = self.engine.docker.resolve_image(reference).await.unwrap();
-        http_service.source = ResolvedSource::parse_image(reference, image.clone()).unwrap();
-        http_service.image = piqueld_core::ImmutableImage::parse(image).unwrap();
+        let image = self
+            .engine
+            .docker
+            .resolve_image(reference)
+            .await
+            .expect("resolve image succeeds");
+        http_service.source =
+            ResolvedSource::parse_image(reference, image.clone()).expect("the image source parses");
+        http_service.image =
+            piqueld_core::ImmutableImage::parse(image).expect("the immutable image parses");
         http_service.command = Vec::new();
         http_service.arguments = vec!["--port".into(), "8080".into()];
         http_service.healthcheck = Some(ValidatedHealthCheck::Http {
@@ -586,8 +634,15 @@ impl SwarmScenario {
         http_service
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "A long end-to-end scenario; rustfmt wraps its expect messages."
+    )]
     async fn assert_healthchecks(&self, http_service: &DesiredService) {
-        let web = self.observed_service(&self.service).await.unwrap();
+        let web = self
+            .observed_service(&self.service)
+            .await
+            .expect("observed service succeeds");
         assert_eq!(web.secrets, self.service.secrets);
         assert_eq!(
             web.healthcheck, self.service.healthcheck,
@@ -596,7 +651,7 @@ impl SwarmScenario {
         assert_eq!(
             self.observed_service(http_service)
                 .await
-                .unwrap()
+                .expect("observed service succeeds")
                 .healthcheck,
             http_service.healthcheck,
             "HTTP health check survives complete service inspection"
@@ -605,7 +660,10 @@ impl SwarmScenario {
         for service in [&self.service, http_service] {
             let mut healthy = None;
             let observed = eventually(Duration::from_secs(30), POLL, async || {
-                let observed = self.observed_service(service).await.unwrap();
+                let observed = self
+                    .observed_service(service)
+                    .await
+                    .expect("observed service succeeds");
                 healthy = observed
                     .tasks
                     .iter()
@@ -629,11 +687,14 @@ impl SwarmScenario {
         let configs = &spec["Spec"]["TaskTemplate"]["ContainerSpec"]["Configs"];
         let probe = configs
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
             .find(|config| config["File"]["Name"] == "/run/piqueld/probe")
             .unwrap_or_else(|| panic!("no probe config in {configs}"));
-        let current = probe["ConfigName"].as_str().unwrap().to_owned();
+        let current = probe["ConfigName"]
+            .as_str()
+            .expect("the value is a string")
+            .to_owned();
         let instance = &http_service.labels[piqueld_core::resource::INSTANCE_LABEL];
         for (name, owner) in [
             ("piqueld-health-probe-stale", None),
@@ -651,19 +712,24 @@ impl SwarmScenario {
             )
             .await;
         }
-        let instance = InstanceId::parse(instance.clone()).unwrap();
+        let instance = InstanceId::parse(instance.clone()).expect("the instance id parses");
         self.engine
             .docker
             .prune_health_probes(&instance)
             .await
-            .unwrap();
+            .expect("prune health probes succeeds");
         let names = self
             .docker_api("GET", "/configs")
             .await
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
-            .map(|config| config["Spec"]["Name"].as_str().unwrap().to_owned())
+            .map(|config| {
+                config["Spec"]["Name"]
+                    .as_str()
+                    .expect("the value is a string")
+                    .to_owned()
+            })
             .collect::<Vec<_>>();
         assert!(names.contains(&current), "{names:?}");
         assert!(
@@ -681,7 +747,8 @@ impl SwarmScenario {
     async fn scale_and_reconnect(&mut self) {
         self.service.replicas = 2;
         self.engine.ensure_service_eventually(&self.service).await;
-        self.engine.docker = BollardDocker::connect(&self.engine.socket).unwrap();
+        self.engine.docker =
+            BollardDocker::connect(&self.engine.socket).expect("the bollard docker connects");
         let scaled = eventually(Duration::from_mins(1), POLL, async || {
             self.observed_service(&self.service)
                 .await
@@ -697,7 +764,7 @@ impl SwarmScenario {
         let inspect = async || {
             raw.inspect_service(self.service.name.as_str(), None::<InspectServiceOptions>)
                 .await
-                .unwrap()
+                .expect("inspect service succeeds")
         };
         let version = |service: &bollard::models::Service| {
             service.version.as_ref().and_then(|version| version.index)
@@ -711,7 +778,14 @@ impl SwarmScenario {
                 .and_then(|placement| placement.constraints.clone())
         };
         let matching = inspect().await;
-        let node_id = raw.info().await.unwrap().swarm.unwrap().node_id.unwrap();
+        let node_id = raw
+            .info()
+            .await
+            .expect("info succeeds")
+            .swarm
+            .expect("the swarm is present")
+            .node_id
+            .expect("the node id is present");
         let expected_constraint = Some(vec![format!("node.id == {node_id}")]);
         assert_eq!(constraints(&matching), expected_constraint);
         let matching_version = version(&matching);
@@ -722,31 +796,38 @@ impl SwarmScenario {
             "a matching reconcile must not update the Docker service"
         );
 
-        let mut drifted_spec = matching.spec.unwrap();
-        drifted_spec.task_template.as_mut().unwrap().placement = None;
+        let mut drifted_spec = matching.spec.expect("the spec is present");
+        drifted_spec
+            .task_template
+            .as_mut()
+            .expect("as mut succeeds")
+            .placement = None;
         drifted_spec
             .mode
             .as_mut()
-            .unwrap()
+            .expect("as mut succeeds")
             .replicated
             .as_mut()
-            .unwrap()
+            .expect("as mut succeeds")
             .replicas = Some(1);
         raw.update_service(
             self.service.name.as_str(),
             drifted_spec,
             UpdateServiceOptionsBuilder::default()
-                .version(i32::try_from(matching_version.unwrap()).unwrap())
+                .version(
+                    i32::try_from(matching_version.expect("the matching version is present"))
+                        .expect("the i32 converts"),
+                )
                 .build(),
             None,
         )
         .await
-        .unwrap();
+        .expect("update service succeeds");
         self.engine
             .docker
             .ensure_service(&self.service)
             .await
-            .unwrap();
+            .expect("ensure service succeeds");
         let repaired = inspect().await;
         assert!(
             version(&repaired)
@@ -812,7 +893,10 @@ impl SwarmScenario {
             let options = ListContainersOptionsBuilder::default()
                 .filters(&filters)
                 .build();
-            let running = raw.list_containers(Some(options)).await.unwrap();
+            let running = raw
+                .list_containers(Some(options))
+                .await
+                .expect("list containers succeeds");
             (!running.is_empty()).then_some(())
         })
         .await
@@ -829,8 +913,14 @@ impl SwarmScenario {
             "operation-1",
             "test \"$(cat /run/secrets/token)\" = mounted-value && echo out && echo err >&2",
         );
-        assert_eq!(docker.job_status(&first).await.unwrap(), JobStatus::Missing);
-        docker.start_job(&first).await.unwrap();
+        assert_eq!(
+            docker
+                .job_status(&first)
+                .await
+                .expect("job status succeeds"),
+            JobStatus::Missing
+        );
+        docker.start_job(&first).await.expect("start job succeeds");
         let spec = self
             .docker_api("GET", &format!("/services/{}", first.container.name))
             .await["Spec"]
@@ -842,7 +932,7 @@ impl SwarmScenario {
             serde_json::json!(["NONE"])
         );
         assert_eq!(task["RestartPolicy"]["Condition"], "none");
-        let networks = task["Networks"].as_array().unwrap();
+        let networks = task["Networks"].as_array().expect("the value is an array");
         assert!(
             !networks.is_empty()
                 && networks
@@ -857,7 +947,10 @@ impl SwarmScenario {
                 error: None
             }
         );
-        let mut output = docker.job_output(&first).await.unwrap();
+        let mut output = docker
+            .job_output(&first)
+            .await
+            .expect("job output succeeds");
         assert!(!output.truncated);
         output
             .chunks
@@ -872,11 +965,20 @@ impl SwarmScenario {
 
         let second = self.job("operation-2", "exit 3");
         assert_eq!(
-            docker.job_status(&second).await.unwrap(),
+            docker
+                .job_status(&second)
+                .await
+                .expect("job status succeeds"),
             JobStatus::Missing
         );
-        docker.start_job(&second).await.unwrap();
-        assert_eq!(docker.job_status(&first).await.unwrap(), JobStatus::Missing);
+        docker.start_job(&second).await.expect("start job succeeds");
+        assert_eq!(
+            docker
+                .job_status(&first)
+                .await
+                .expect("job status succeeds"),
+            JobStatus::Missing
+        );
         let JobStatus::Finished { exit_code, error } = Self::wait_job(docker, &second).await else {
             panic!("the failing job must finish");
         };
@@ -885,17 +987,23 @@ impl SwarmScenario {
         docker
             .remove_jobs(&self.environment.labels, JobRuns::Except("operation-2"))
             .await
-            .unwrap();
+            .expect("remove jobs succeeds");
         assert_ne!(
-            docker.job_status(&second).await.unwrap(),
+            docker
+                .job_status(&second)
+                .await
+                .expect("job status succeeds"),
             JobStatus::Missing
         );
         docker
             .remove_jobs(&self.environment.labels, JobRuns::All)
             .await
-            .unwrap();
+            .expect("remove jobs succeeds");
         assert_eq!(
-            docker.job_status(&second).await.unwrap(),
+            docker
+                .job_status(&second)
+                .await
+                .expect("job status succeeds"),
             JobStatus::Missing
         );
     }
@@ -923,13 +1031,16 @@ impl SwarmScenario {
         docker
             .remove_service(writer.name.as_str(), &self.environment.labels)
             .await
-            .unwrap();
+            .expect("remove service succeeds");
         assert!(matches!(
             docker.start_job(&job).await,
             Err(DockerError::Request(_))
         ));
-        docker.wait_services_stopped(&job).await.unwrap();
-        docker.start_job(&job).await.unwrap();
+        docker
+            .wait_services_stopped(&job)
+            .await
+            .expect("wait services stopped succeeds");
+        docker.start_job(&job).await.expect("start job succeeds");
         assert!(matches!(
             docker.ensure_service(&writer).await,
             Err(DockerError::Request(_))
@@ -937,7 +1048,7 @@ impl SwarmScenario {
         docker
             .remove_jobs(&self.environment.labels, JobRuns::All)
             .await
-            .unwrap();
+            .expect("remove jobs succeeds");
         eventually(Duration::from_mins(1), POLL, async || {
             docker.ensure_service(&writer).await.ok()
         })
@@ -946,7 +1057,7 @@ impl SwarmScenario {
         docker
             .remove_service(writer.name.as_str(), &self.environment.labels)
             .await
-            .unwrap();
+            .expect("remove service succeeds");
     }
 
     /// A run that stops its own service does not start while the service
@@ -969,13 +1080,16 @@ impl SwarmScenario {
         docker
             .remove_service(auth.name.as_str(), &self.environment.labels)
             .await
-            .unwrap();
+            .expect("remove service succeeds");
         assert!(matches!(
             docker.start_job(&job).await,
             Err(DockerError::Request(_))
         ));
-        docker.wait_services_stopped(&job).await.unwrap();
-        docker.start_job(&job).await.unwrap();
+        docker
+            .wait_services_stopped(&job)
+            .await
+            .expect("wait services stopped succeeds");
+        docker.start_job(&job).await.expect("start job succeeds");
         assert_eq!(
             Self::wait_job(docker, &job).await,
             JobStatus::Finished {
@@ -986,7 +1100,7 @@ impl SwarmScenario {
         docker
             .remove_jobs(&self.environment.labels, JobRuns::All)
             .await
-            .unwrap();
+            .expect("remove jobs succeeds");
     }
 
     /// Waiting for removed job runs covers a run's container until it
@@ -995,7 +1109,7 @@ impl SwarmScenario {
     async fn job_runs_are_waited_for_until_their_containers_stop(&self) {
         let docker = &self.engine.docker;
         let third = self.job("operation-3", LINGERING);
-        docker.start_job(&third).await.unwrap();
+        docker.start_job(&third).await.expect("start job succeeds");
         let running = || async {
             self.docker_api(
                 "GET",
@@ -1003,7 +1117,7 @@ impl SwarmScenario {
             )
             .await
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .len()
         };
         eventually(Duration::from_mins(1), POLL, async || {
@@ -1016,11 +1130,11 @@ impl SwarmScenario {
         docker
             .remove_jobs(&self.environment.labels, JobRuns::All)
             .await
-            .unwrap();
+            .expect("remove jobs succeeds");
         docker
             .wait_jobs_stopped(&self.environment.labels, JobRuns::All)
             .await
-            .unwrap();
+            .expect("wait jobs stopped succeeds");
         assert_eq!(running().await, 0);
     }
 
@@ -1045,15 +1159,22 @@ impl SwarmScenario {
             body.len()
         );
         let response = tokio::task::spawn_blocking(move || {
-            let mut stream = std::os::unix::net::UnixStream::connect(socket).unwrap();
-            stream.write_all(request.as_bytes()).unwrap();
+            let mut stream =
+                std::os::unix::net::UnixStream::connect(socket).expect("the unix stream connects");
+            stream
+                .write_all(request.as_bytes())
+                .expect("write all succeeds");
             let mut response = String::new();
-            stream.read_to_string(&mut response).unwrap();
+            stream
+                .read_to_string(&mut response)
+                .expect("read to string succeeds");
             response
         })
         .await
-        .unwrap();
-        let (head, body) = response.split_once("\r\n\r\n").unwrap();
+        .expect("spawn blocking succeeds");
+        let (head, body) = response
+            .split_once("\r\n\r\n")
+            .expect("the separator is present");
         assert!(
             [" 200 ", " 201 ", " 204 "]
                 .iter()
@@ -1063,13 +1184,13 @@ impl SwarmScenario {
         if body.is_empty() {
             return serde_json::Value::Null;
         }
-        serde_json::from_str(body).unwrap()
+        serde_json::from_str(body).expect("the json parses")
     }
 
     /// Polls a job run until it stops.
     async fn wait_job(docker: &BollardDocker, job: &piqueld_core::DesiredJobRun) -> JobStatus {
         eventually(Duration::from_mins(1), POLL, async || {
-            match docker.job_status(job).await.unwrap() {
+            match docker.job_status(job).await.expect("job status succeeds") {
                 JobStatus::Running { .. } => None,
                 status => Some(status),
             }
@@ -1083,12 +1204,12 @@ impl SwarmScenario {
             .docker
             .remove_service(http_service.name.as_str(), &self.environment.labels)
             .await
-            .unwrap();
+            .expect("remove service succeeds");
         self.engine
             .docker
             .remove_service(self.service.name.as_str(), &self.environment.labels)
             .await
-            .unwrap();
+            .expect("remove service succeeds");
         let removed = [self.service.name.as_str(), http_service.name.as_str()];
         eventually(Duration::from_mins(1), POLL, async || {
             let observed = self
@@ -1096,7 +1217,7 @@ impl SwarmScenario {
                 .docker
                 .observe(&self.environment.app)
                 .await
-                .unwrap();
+                .expect("observe succeeds");
             (!observed
                 .services
                 .iter()
@@ -1129,7 +1250,7 @@ impl SwarmScenario {
                 .docker
                 .observe(&self.environment.app)
                 .await
-                .unwrap();
+                .expect("observe succeeds");
             (!observed
                 .networks
                 .iter()
@@ -1143,7 +1264,7 @@ impl SwarmScenario {
             .docker
             .observe(&self.environment.app)
             .await
-            .unwrap();
+            .expect("observe succeeds");
         assert!(
             retained
                 .volumes
@@ -1156,7 +1277,7 @@ impl SwarmScenario {
             .docker
             .remove_secrets(std::slice::from_ref(secret_name), &self.environment.labels)
             .await
-            .unwrap();
+            .expect("remove secrets succeeds");
         assert!(matches!(
             raw.inspect_secret(secret_name).await,
             Err(bollard::errors::Error::DockerResponseServerError {
@@ -1169,7 +1290,7 @@ impl SwarmScenario {
             None::<bollard::query_parameters::RemoveVolumeOptions>,
         )
         .await
-        .unwrap();
+        .expect("remove volume succeeds");
     }
 }
 
@@ -1196,6 +1317,10 @@ async fn swarm_init_create_replica_drift_restart_jobs_delete_and_volume_retentio
 
 #[tokio::test]
 #[ignore = "requires an isolated privileged Docker Engine"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "A long end-to-end scenario; rustfmt wraps its expect messages."
+)]
 async fn git_build_runs_as_a_local_swarm_image() {
     let engine = IsolatedDocker::from_env().await;
     let docker = &engine.docker;
@@ -1203,14 +1328,17 @@ async fn git_build_runs_as_a_local_swarm_image() {
     let source = fixture.source.clone();
     let manifest = serde_json::json!({"api_version":"piqueld.dev/v1alpha1", "kind":"Application", "metadata":{"name":"git-local"}, "spec":{"services":[{"name":"web", "source":source}]}});
     let app = piqueld_core::parse_json(&manifest.to_string())
-        .unwrap()
-        .normalize(ApplicationId::parse("git-local-build").unwrap());
-    let environment = EnvironmentId::parse("env-git-local-build").unwrap();
-    let state = tempfile::tempdir().unwrap();
+        .expect("parse json succeeds")
+        .normalize(ApplicationId::parse("git-local-build").expect("the application id parses"));
+    let environment =
+        EnvironmentId::parse("env-git-local-build").expect("the environment id parses");
+    let state = tempfile::tempdir().expect("the temporary directory is created");
     let store = piqueld_store::Store::open_unsynced(state.path().join("state.db"))
         .await
-        .unwrap();
-    let sources = piqueld::git::Sources::open(state.path()).await.unwrap();
+        .expect("open unsynced succeeds");
+    let sources = piqueld::git::Sources::open(state.path())
+        .await
+        .expect("the sources open");
     let owner = store.instance_id().clone();
     let runtime = piqueld::application::ApplicationRuntime::new(
         std::sync::Arc::new(docker.clone()),
@@ -1224,14 +1352,26 @@ async fn git_build_runs_as_a_local_swarm_image() {
     let target = runtime
         .prepare(&environment, &app, &piqueld_core::ResolutionSet::default())
         .await
-        .unwrap();
-    docker.ensure_network(&target.networks[0]).await.unwrap();
-    let observed = docker.observe(&environment).await.unwrap();
+        .expect("the change prepares");
+    docker
+        .ensure_network(&target.networks[0])
+        .await
+        .expect("ensure network succeeds");
+    let observed = docker
+        .observe(&environment)
+        .await
+        .expect("observe succeeds");
     assert!(observed.networks[0].runtime_configuration_matches);
-    docker.ensure_network(&target.networks[0]).await.unwrap();
+    docker
+        .ensure_network(&target.networks[0])
+        .await
+        .expect("ensure network succeeds");
     engine.ensure_service_eventually(&target.services[0]).await;
     eventually(Duration::from_mins(1), POLL, async || {
-        let observed = docker.observe(&environment).await.unwrap();
+        let observed = docker
+            .observe(&environment)
+            .await
+            .expect("observe succeeds");
         observed
             .services
             .iter()
@@ -1243,18 +1383,19 @@ async fn git_build_runs_as_a_local_swarm_image() {
     docker
         .remove_service(target.services[0].name.as_str(), &target.services[0].labels)
         .await
-        .unwrap();
+        .expect("remove service succeeds");
 
-    let id = piqueld_core::Sha256Digest::parse(target.services[0].image.as_str()).unwrap();
+    let id = piqueld_core::Sha256Digest::parse(target.services[0].image.as_str())
+        .expect("the sha256 digest parses");
     let built = || async {
         docker
             .images()
             .await
-            .unwrap()
+            .expect("images succeeds")
             .into_iter()
             .find(|image| image.id == id)
     };
-    let other = InstanceId::parse("another-installation").unwrap();
+    let other = InstanceId::parse("another-installation").expect("the instance id parses");
     let image = built().await.expect("the build is listed by its ID");
     assert!(image.built_by(&owner) && !image.built_by(&other));
     let tags = std::process::Command::new("docker")
@@ -1263,9 +1404,11 @@ async fn git_build_runs_as_a_local_swarm_image() {
         .args(["image", "inspect", "--format", "{{json .RepoTags}}"])
         .arg(id.as_str())
         .output()
-        .unwrap();
+        .expect("output succeeds");
     assert_eq!(
-        String::from_utf8(tags.stdout).unwrap().trim(),
+        String::from_utf8(tags.stdout)
+            .expect("the bytes are utf-8")
+            .trim(),
         format!(
             r#"["piqueld-build/{owner}:{}"]"#,
             id.as_str().trim_start_matches("sha256:")
@@ -1280,7 +1423,10 @@ async fn git_build_runs_as_a_local_swarm_image() {
     })
     .await
     .expect("the removed service's containers go");
-    docker.remove_image(&owner, &id).await.unwrap();
+    docker
+        .remove_image(&owner, &id)
+        .await
+        .expect("remove image succeeds");
     assert!(built().await.is_none());
 }
 
@@ -1293,13 +1439,13 @@ fn compile_images(
     mut services: serde_json::Value,
     images: &BTreeMap<&str, String>,
 ) -> piqueld_core::ResolvedApplication {
-    for service in services.as_array_mut().unwrap() {
+    for service in services.as_array_mut().expect("as array mut succeeds") {
         service["rollout"] = serde_json::json!({"monitor_seconds": 1});
     }
     let manifest = serde_json::json!({"api_version": "piqueld.dev/v1alpha1", "kind": "Application", "metadata": {"name": name}, "spec": {"services": services}});
-    let id = ApplicationId::parse(format!("app-{name}")).unwrap();
+    let id = ApplicationId::parse(format!("app-{name}")).expect("the application id parses");
     let app = piqueld_core::parse_json(&manifest.to_string())
-        .unwrap()
+        .expect("parse json succeeds")
         .normalize(id.clone());
     let sources = app
         .spec()
@@ -1312,20 +1458,21 @@ fn compile_images(
             let digest = images[image.as_str()].clone();
             (
                 service.name.clone(),
-                ResolvedSource::parse_image(image.as_str(), digest).unwrap(),
+                ResolvedSource::parse_image(image.as_str(), digest)
+                    .expect("the image source parses"),
             )
         })
         .collect();
     piqueld_core::compile_application(
         &app,
-        &EnvironmentId::parse(format!("env-{name}")).unwrap(),
-        InstanceId::parse("integration-instance").unwrap(),
+        &EnvironmentId::parse(format!("env-{name}")).expect("the environment id parses"),
+        InstanceId::parse("integration-instance").expect("the instance id parses"),
         &piqueld_core::ResolutionSet {
             sources,
             secret_names: BTreeMap::new(),
         },
     )
-    .unwrap()
+    .expect("compile application succeeds")
 }
 
 /// An importer reaches the exported service by its link name and nothing else
@@ -1333,6 +1480,10 @@ fn compile_images(
 /// link detaches the exporter and removes the network.
 #[tokio::test]
 #[ignore = "requires an isolated privileged Docker Engine"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "A long end-to-end scenario; rustfmt wraps its expect messages."
+)]
 async fn links_reach_only_the_imported_service_until_removed() {
     use piqueld_core::links::Link;
     use piqueld_core::{PlanRequest, ServiceName};
@@ -1343,8 +1494,12 @@ async fn links_reach_only_the_imported_service_until_removed() {
         .docker
         .resolve_image("traefik/whoami:v1.10")
         .await
-        .unwrap();
-    let alpine = engine.docker.resolve_image("alpine:3.20").await.unwrap();
+        .expect("resolve image succeeds");
+    let alpine = engine
+        .docker
+        .resolve_image("alpine:3.20")
+        .await
+        .expect("resolve image succeeds");
     let images = BTreeMap::from([("traefik/whoami:v1.10", whoami), ("alpine:3.20", alpine)]);
     let compile = |name: &str, services: serde_json::Value| compile_images(name, services, &images);
     let exporter = compile(
@@ -1374,7 +1529,7 @@ async fn links_reach_only_the_imported_service_until_removed() {
         importer: importer.id.clone(),
         exporter: exporter.id.clone(),
         exporter_application: exporter.name.clone(),
-        services: [ServiceName::parse("api").unwrap()].into(),
+        services: [ServiceName::parse("api").expect("the service name parses")].into(),
     };
     let reconcile = |desired: &piqueld_core::ResolvedApplication| PlanRequest::Reconcile {
         desired: desired.clone(),
@@ -1403,7 +1558,7 @@ async fn links_reach_only_the_imported_service_until_removed() {
         .services
         .iter()
         .find(|service| service.logical_name.as_str() == "api")
-        .unwrap();
+        .expect("the item exists");
     assert_eq!(
         engine.revoke_links(&exporter).await,
         [(api.name.to_string(), network.to_string())]
@@ -1412,7 +1567,7 @@ async fn links_reach_only_the_imported_service_until_removed() {
         .docker
         .observe(&importer.id)
         .await
-        .unwrap()
+        .expect("observe succeeds")
         .networks
         .iter()
         .any(|observed| observed.name == network.as_str())
@@ -1422,7 +1577,11 @@ async fn links_reach_only_the_imported_service_until_removed() {
         tokio::time::sleep(Duration::from_millis(500)).await;
         engine.converge(&reconcile(&importer), &[]).await;
     }
-    let observed = engine.docker.observe(&exporter.id).await.unwrap();
+    let observed = engine
+        .docker
+        .observe(&exporter.id)
+        .await
+        .expect("observe succeeds");
     assert_eq!(observed.linked_networks, []);
     assert!(observed.services.iter().all(|service| {
         service

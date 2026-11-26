@@ -70,7 +70,11 @@ async fn fresh_database_persists_resolved_state_and_deletion_intent() {
     assert_eq!(stored.resolved, Some(desired.clone()));
     assert!(!stored.delete_intent());
     assert_eq!(
-        store.operation(&created.id).await.unwrap().state,
+        store
+            .operation(&created.id)
+            .await
+            .expect("the operation loads")
+            .state,
         OperationState::Requested
     );
 
@@ -79,19 +83,29 @@ async fn fresh_database_persists_resolved_state_and_deletion_intent() {
         .await
         .expect("deletion saved");
     assert_eq!(
-        store.operation(&created.id).await.unwrap().state,
+        store
+            .operation(&created.id)
+            .await
+            .expect("the operation loads")
+            .state,
         OperationState::Superseded
     );
     assert_eq!(deleted.state, OperationState::Requested);
-    assert!(store.get(&environment).await.unwrap().delete_intent());
+    assert!(
+        store
+            .get(&environment)
+            .await
+            .expect("the item exists")
+            .delete_intent()
+    );
     drop(store);
 
     let reopened = Store::open_unsynced(&database)
         .await
         .expect("database reopens");
-    let stored = reopened.get(&environment).await.unwrap();
+    let stored = reopened.get(&environment).await.expect("the item exists");
     assert!(stored.delete_intent());
-    assert_eq!(stored.resolved.unwrap(), desired);
+    assert_eq!(stored.resolved.expect("the resolved is present"), desired);
     reopened
         .transition_operation(
             &deleted.id,
@@ -100,9 +114,15 @@ async fn fresh_database_persists_resolved_state_and_deletion_intent() {
             None,
         )
         .await
-        .unwrap();
-    let running = reopened.operation(&deleted.id).await.unwrap();
-    reopened.finish_delete_operation(&running).await.unwrap();
+        .expect("the operation transitions");
+    let running = reopened
+        .operation(&deleted.id)
+        .await
+        .expect("the operation loads");
+    reopened
+        .finish_delete_operation(&running)
+        .await
+        .expect("the delete operation finishes");
     assert!(matches!(
         reopened.get(&environment).await,
         Err(StoreError::NotFound)
@@ -114,7 +134,7 @@ async fn fresh_database_persists_resolved_state_and_deletion_intent() {
     let events = reopened
         .events(Some(&environment), None, 100)
         .await
-        .unwrap();
+        .expect("the events list");
     assert!(
         events
             .items
@@ -128,26 +148,30 @@ async fn replacement_cancels_previous_work_and_retry_reuses_the_failed_operation
     let directory = tempfile::tempdir().expect("temporary directory");
     let store = Store::open_unsynced(directory.path().join("state.db"))
         .await
-        .unwrap();
+        .expect("the store opens");
     let application = application();
     let first = save(&store, &application).await;
     let mut replacement = application.to_manifest();
     replacement.spec.services[0].replicas = 2.into();
     let replacement = replacement
         .validate()
-        .unwrap()
+        .expect("the value validates")
         .normalize(application.id().clone());
     let replaced = save(&store, &replacement).await;
     assert_ne!(first.id, replaced.id);
     assert_eq!(
-        store.operation(&first.id).await.unwrap().state,
+        store
+            .operation(&first.id)
+            .await
+            .expect("the operation loads")
+            .state,
         OperationState::Superseded
     );
     assert_eq!(
         store
             .get(&first.environment_id)
             .await
-            .unwrap()
+            .expect("the item exists")
             .application
             .application,
         ApplicationTemplate::from(&replacement)
@@ -160,7 +184,7 @@ async fn replacement_cancels_previous_work_and_retry_reuses_the_failed_operation
             None,
         )
         .await
-        .unwrap();
+        .expect("the operation transitions");
     store
         .transition_operation(
             &replaced.id,
@@ -169,16 +193,22 @@ async fn replacement_cancels_previous_work_and_retry_reuses_the_failed_operation
             Some(("docker_error", "unavailable")),
         )
         .await
-        .unwrap();
-    let failed = store.operation(&replaced.id).await.unwrap();
-    let retried = store.retry_operation(&failed).await.unwrap();
+        .expect("the operation transitions");
+    let failed = store
+        .operation(&replaced.id)
+        .await
+        .expect("the operation loads");
+    let retried = store
+        .retry_operation(&failed)
+        .await
+        .expect("retry operation succeeds");
     assert_eq!(retried.id, replaced.id);
     assert_eq!(retried.state, OperationState::Requested);
     assert_eq!(retried.error_code, None);
     assert_eq!(retried.error_message, None);
     assert!(matches!(
         store
-            .get(&EnvironmentId::parse("missing-app").unwrap())
+            .get(&EnvironmentId::parse("missing-app").expect("the environment id parses"))
             .await,
         Err(StoreError::NotFound)
     ));
@@ -257,10 +287,10 @@ async fn list_quarantines_corrupt_rows_and_get_stays_fail_closed() {
 
 #[tokio::test]
 async fn deployment_history_survives_pruning_and_events_have_independent_retention() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temporary directory is created");
     let store = Store::open_unsynced(directory.path().join("state.db"))
         .await
-        .unwrap();
+        .expect("the store opens");
     let app = application();
     let first = store
         .save_application(
@@ -269,10 +299,16 @@ async fn deployment_history_survives_pruning_and_events_have_independent_retenti
             Some(0),
         )
         .await
-        .unwrap();
+        .expect("the application saves");
     let environment = first.environment_id.clone();
-    let second = store.request_deploy(&environment, Some(1)).await.unwrap();
-    store.prune_finished_operations(i64::MAX).await.unwrap();
+    let second = store
+        .request_deploy(&environment, Some(1))
+        .await
+        .expect("request deploy succeeds");
+    store
+        .prune_finished_operations(i64::MAX)
+        .await
+        .expect("prune finished operations succeeds");
     store
         .operation(&first.id)
         .await
@@ -281,9 +317,24 @@ async fn deployment_history_survives_pruning_and_events_have_independent_retenti
         .operation(&second.id)
         .await
         .expect("`operation` should succeed");
-    assert!(store.prepared_target(&first.id).await.unwrap().is_some());
-    assert!(store.prepared_target(&second.id).await.unwrap().is_none());
-    let events = store.events(Some(&environment), None, 100).await.unwrap();
+    assert!(
+        store
+            .prepared_target(&first.id)
+            .await
+            .expect("prepared target succeeds")
+            .is_some()
+    );
+    assert!(
+        store
+            .prepared_target(&second.id)
+            .await
+            .expect("prepared target succeeds")
+            .is_none()
+    );
+    let events = store
+        .events(Some(&environment), None, 100)
+        .await
+        .expect("the events list");
     assert!(
         events
             .items
@@ -291,12 +342,15 @@ async fn deployment_history_survives_pruning_and_events_have_independent_retenti
             .any(|event| event.operation_id.as_deref() == Some(&first.id)
                 && event.kind == "operation_superseded")
     );
-    store.prune_events(i64::MAX).await.unwrap();
+    store
+        .prune_events(i64::MAX)
+        .await
+        .expect("the events prune");
     assert!(
         store
             .events(None, None, 100)
             .await
-            .unwrap()
+            .expect("the events list")
             .items
             .is_empty()
     );
@@ -309,35 +363,50 @@ async fn deployment_history_survives_pruning_and_events_have_independent_retenti
 
 #[tokio::test]
 async fn history_pages_remain_application_scoped_and_follow_id_cursors() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("the temporary directory is created");
     let database = directory.path().join("history.db");
-    let store = Store::open_unsynced(&database).await.unwrap();
+    let store = Store::open_unsynced(&database)
+        .await
+        .expect("the store opens");
     let app = application();
     let other = application_named("app-other", "other");
     let initial = store
         .save_application(&ApplicationTemplate::from(&app), None, Some(0))
         .await
-        .unwrap();
+        .expect("the application saves");
     let env = initial.environment_id.clone();
     let other = store
         .save_application(&ApplicationTemplate::from(&other), None, Some(0))
         .await
-        .unwrap()
+        .expect("the application saves")
         .environment_id;
     let mut expected_deployments = vec![initial.id];
     for _ in 0..3 {
-        expected_deployments.push(store.request_deploy(&env, Some(1)).await.unwrap().id);
-        store.request_deploy(&other, Some(1)).await.unwrap();
+        expected_deployments.push(
+            store
+                .request_deploy(&env, Some(1))
+                .await
+                .expect("request deploy succeeds")
+                .id,
+        );
+        store
+            .request_deploy(&other, Some(1))
+            .await
+            .expect("request deploy succeeds");
     }
     expected_deployments.sort_unstable_by(|left, right| right.cmp(left));
 
     sqlx::query("UPDATE deployments SET created_at_ms=1")
         .execute(&mut sqlite::connect(&database).await)
         .await
-        .unwrap();
-    let deployments =
-        all_pages(async |cursor| store.deployments(&env, cursor.as_deref(), 2).await.unwrap())
-            .await;
+        .expect("the statement executes");
+    let deployments = all_pages(async |cursor| {
+        store
+            .deployments(&env, cursor.as_deref(), 2)
+            .await
+            .expect("the deployments list")
+    })
+    .await;
     for deployment in &deployments {
         assert_eq!(deployment.operation.environment_id, env);
     }
@@ -350,7 +419,7 @@ async fn history_pages_remain_application_scoped_and_follow_id_cursors() {
     let expected_events = store
         .events(None, None, 100)
         .await
-        .unwrap()
+        .expect("the events list")
         .items
         .into_iter()
         .filter(|event| event.environment_id.as_ref() == Some(&env))
@@ -360,7 +429,7 @@ async fn history_pages_remain_application_scoped_and_follow_id_cursors() {
         store
             .events(Some(&env), cursor.as_deref(), 2)
             .await
-            .unwrap()
+            .expect("the events list")
     })
     .await;
     for event in &events {
@@ -368,12 +437,12 @@ async fn history_pages_remain_application_scoped_and_follow_id_cursors() {
     }
     let events = events.into_iter().map(|event| event.id).collect::<Vec<_>>();
     assert_eq!(events, expected_events);
-    let absent = EnvironmentId::parse("app-absent").unwrap();
+    let absent = EnvironmentId::parse("app-absent").expect("the environment id parses");
     assert!(
         store
             .events(Some(&absent), None, 2)
             .await
-            .unwrap()
+            .expect("the events list")
             .items
             .is_empty()
     );

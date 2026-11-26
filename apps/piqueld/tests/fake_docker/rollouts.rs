@@ -25,13 +25,13 @@ async fn assert_active_repair(docker: &FakeDocker, id: &EnvironmentId) {
             .services
             .iter_mut()
             .find(|service| service.labels.get(APPLICATION_LABEL) == Some(&id.to_string()))
-            .unwrap();
+            .expect("the item exists");
         service.replicas = 9;
         service.convergence = Convergence::Degraded;
     }
-    let repaired = docker
-        .mutations
-        .until(async || docker.observe(id).await.unwrap().services[0].replicas == 1);
+    let repaired = docker.mutations.until(async || {
+        docker.observe(id).await.expect("observe succeeds").services[0].replicas == 1
+    });
     tokio::time::timeout(Duration::from_secs(3), repaired)
         .await
         .expect("active target is repaired while candidate image pull is blocked");
@@ -42,7 +42,13 @@ async fn image_resolution_repairs_a_single_tag_flip_through_a_retry() {
     let docker = FakeDocker::default();
     docker.arm_tag_flips(1).await;
     let pinned = format!("ghcr.io/example/notes@sha256:{}", "c".repeat(64));
-    assert_eq!(docker.resolve_image(&pinned).await.unwrap(), pinned);
+    assert_eq!(
+        docker
+            .resolve_image(&pinned)
+            .await
+            .expect("resolve image succeeds"),
+        pinned
+    );
 
     let resolved = docker
         .resolve_image("ghcr.io/example/notes:1.4.0")
@@ -73,7 +79,9 @@ async fn image_resolution_preserves_a_requested_digest() {
     ]);
 
     assert_eq!(
-        resolve_image_digest(&source, &requested).await.unwrap(),
+        resolve_image_digest(&source, &requested)
+            .await
+            .expect("resolve image digest succeeds"),
         requested
     );
 }
@@ -101,7 +109,11 @@ async fn save_and_deploy_are_durable_before_resolution_and_reconcile_reuses_imag
     let manifest = manifest();
     let accepted = harness.apply(manifest.clone(), Some(0)).await;
     assert_eq!(harness.pulls().await, 0);
-    let stored = harness.store.get(&accepted.environment_id).await.unwrap();
+    let stored = harness
+        .store
+        .get(&accepted.environment_id)
+        .await
+        .expect("the item exists");
     assert_eq!(stored.application.generation, 1);
     assert!(stored.resolved.is_none());
     harness.finish(&accepted).await;
@@ -113,13 +125,13 @@ async fn save_and_deploy_are_durable_before_resolution_and_reconcile_reuses_imag
     let reconcile = applications
         .reconcile(&accepted.environment_id, Some(2))
         .await
-        .unwrap();
+        .expect("reconcile succeeds");
     harness.finish(&reconcile).await;
     assert_eq!(harness.pulls().await, pulls);
     let refresh = applications
         .deploy(&accepted.environment_id, Some(2))
         .await
-        .unwrap();
+        .expect("deploy succeeds");
     assert_ne!(refresh.id, accepted.id);
     harness.finish(&refresh).await;
     assert!(harness.pulls().await > pulls);
@@ -128,7 +140,7 @@ async fn save_and_deploy_are_durable_before_resolution_and_reconcile_reuses_imag
             .store
             .get(&accepted.environment_id)
             .await
-            .unwrap()
+            .expect("the item exists")
             .application
             .generation,
         2
@@ -137,7 +149,7 @@ async fn save_and_deploy_are_durable_before_resolution_and_reconcile_reuses_imag
         .store
         .events(Some(&accepted.environment_id), None, 100)
         .await
-        .unwrap()
+        .expect("the events list")
         .items;
     assert!(
         events
@@ -164,7 +176,13 @@ async fn generations_protect_full_replacement_and_deletion_without_merging() {
     assert_eq!(second.generation, 2);
     assert!(matches!(
         applications
-            .apply(manifest.clone().validate_template().unwrap(), Some(1))
+            .apply(
+                manifest
+                    .clone()
+                    .validate_template()
+                    .expect("the template validates"),
+                Some(1)
+            )
             .await,
         Err(piqueld::api::ApplicationError::Store(
             piqueld_store::StoreError::GenerationConflict {
@@ -184,9 +202,9 @@ async fn generations_protect_full_replacement_and_deletion_without_merging() {
             .store
             .get(&first.environment_id)
             .await
-            .unwrap()
+            .expect("the item exists")
             .manifest()
-            .unwrap()
+            .expect("the manifest builds")
             .spec()
             .services[0]
             .environment
@@ -196,13 +214,13 @@ async fn generations_protect_full_replacement_and_deletion_without_merging() {
     let deletion = applications
         .delete(&first.environment_id, Some(3))
         .await
-        .unwrap();
+        .expect("delete succeeds");
     assert_eq!(deletion.generation, 4);
     assert_eq!(
         applications
             .delete(&first.environment_id, None)
             .await
-            .unwrap()
+            .expect("delete succeeds")
             .id,
         deletion.id
     );
@@ -212,13 +230,22 @@ async fn generations_protect_full_replacement_and_deletion_without_merging() {
         .expect_err("`` should be rejected");
     assert!(matches!(
         applications
-            .apply(manifest.validate_template().unwrap(), Some(4))
+            .apply(
+                manifest
+                    .validate_template()
+                    .expect("the template validates"),
+                Some(4)
+            )
             .await,
         Err(piqueld::api::ApplicationError::Store(
             piqueld_store::StoreError::IllegalTransition
         ))
     ));
-    let deleting = harness.store.get(&first.environment_id).await.unwrap();
+    let deleting = harness
+        .store
+        .get(&first.environment_id)
+        .await
+        .expect("the item exists");
     assert_eq!(deleting.application.generation, 4);
     assert!(deleting.delete_intent());
     assert_eq!(
@@ -240,7 +267,7 @@ async fn periodic_recovery_reuses_failed_prepared_target_and_records_health_chan
             None,
         )
         .await
-        .unwrap();
+        .expect("the operation transitions");
     harness
         .store
         .transition_operation(
@@ -250,7 +277,7 @@ async fn periodic_recovery_reuses_failed_prepared_target_and_records_health_chan
             Some(("docker_unavailable", "Docker is unavailable")),
         )
         .await
-        .unwrap();
+        .expect("the operation transitions");
     harness.expire_backoff(&operation).await;
     harness.finish(&operation).await;
     assert_eq!(harness.pulls().await, 0);
@@ -260,18 +287,23 @@ async fn periodic_recovery_reuses_failed_prepared_target_and_records_health_chan
         .docker
         .observe(&operation.environment_id)
         .await
-        .unwrap();
+        .expect("observe succeeds");
     harness
         .store
         .record_health(&operation.id, &observed)
         .await
-        .unwrap();
+        .expect("record health succeeds");
     harness
         .store
         .record_health(&operation.id, &observed)
         .await
-        .unwrap();
-    let events = harness.store.events(None, None, 100).await.unwrap().items;
+        .expect("record health succeeds");
+    let events = harness
+        .store
+        .events(None, None, 100)
+        .await
+        .expect("the events list")
+        .items;
     assert_eq!(
         events
             .iter()
@@ -299,19 +331,28 @@ async fn unchanged_health_within_a_scan_interval_writes_nothing() {
         .docker
         .observe(&operation.environment_id)
         .await
-        .unwrap();
+        .expect("observe succeeds");
     let store = &harness.store;
-    store.record_health(&operation.id, &observed).await.unwrap();
-    let status = store.status(&operation.environment_id).await.unwrap();
+    store
+        .record_health(&operation.id, &observed)
+        .await
+        .expect("record health succeeds");
+    let status = store
+        .status(&operation.environment_id)
+        .await
+        .expect("status succeeds");
     let mut written = store.written();
     written.borrow_and_update();
-    store.record_health(&operation.id, &observed).await.unwrap();
-    assert!(!written.has_changed().unwrap());
+    store
+        .record_health(&operation.id, &observed)
+        .await
+        .expect("record health succeeds");
+    assert!(!written.has_changed().expect("has changed succeeds"));
     assert_eq!(
         store
             .status(&operation.environment_id)
             .await
-            .unwrap()
+            .expect("status succeeds")
             .health_observed_at_ms,
         status.health_observed_at_ms
     );
@@ -326,25 +367,29 @@ async fn health_is_degraded_while_an_expected_service_is_missing() {
         .docker
         .observe(&operation.environment_id)
         .await
-        .unwrap();
+        .expect("observe succeeds");
     observed.services[0].name = "unexpected".into();
 
     harness
         .store
         .record_health(&operation.id, &observed)
         .await
-        .unwrap();
+        .expect("record health succeeds");
 
     let status = harness
         .store
         .status(&operation.environment_id)
         .await
-        .unwrap();
+        .expect("status succeeds");
     assert_eq!(status.runtime_health.as_deref(), Some("degraded"));
     assert!(status.health_observed_at_ms.is_some());
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "A long end-to-end scenario; rustfmt wraps its expect messages."
+)]
 async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_discarded() {
     let gate = Arc::new(Gate::default());
     let harness = ControllerHarness::with_docker(FakeDocker {
@@ -362,23 +407,34 @@ async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_dis
     let mut slow = manifest();
     slow.metadata.name = "slow".into();
     let original = applications
-        .apply(slow.clone().validate_template().unwrap(), None)
+        .apply(
+            slow.clone()
+                .validate_template()
+                .expect("the template validates"),
+            None,
+        )
         .await
-        .unwrap();
-    controller.scan(&CancellationToken::new()).await.unwrap();
+        .expect("apply succeeds");
+    controller
+        .scan(&CancellationToken::new())
+        .await
+        .expect("scan succeeds");
     let original_target = store
         .get(&original.environment_id)
         .await
-        .unwrap()
+        .expect("the item exists")
         .resolved
-        .unwrap();
+        .expect("the resolved is present");
     slow.spec.services[0].source = piqueld_core::Source::Image {
         image: "ghcr.io/example/slow:1".into(),
     };
     let accepted = applications
-        .apply(slow.validate_template().unwrap(), None)
+        .apply(
+            slow.validate_template().expect("the template validates"),
+            None,
+        )
         .await
-        .unwrap();
+        .expect("apply succeeds");
     let cancellation = CancellationToken::new();
     let token = cancellation.clone();
     let controller_task = tokio::spawn(async move {
@@ -393,16 +449,27 @@ async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_dis
     let mut fast = manifest();
     fast.metadata.name = "fast".into();
     let fast = applications
-        .apply(fast.validate_template().unwrap(), None)
+        .apply(
+            fast.validate_template().expect("the template validates"),
+            None,
+        )
         .await
-        .unwrap();
+        .expect("apply succeeds");
     let succeeded = store.wait_until(async || {
-        store.operation(&fast.id).await.unwrap().state == OperationState::Succeeded
+        store
+            .operation(&fast.id)
+            .await
+            .expect("the operation loads")
+            .state
+            == OperationState::Succeeded
     });
     tokio::time::timeout(Duration::from_secs(3), succeeded)
         .await
         .expect("unrelated application completes while slow pull is pending");
-    let pending = store.get(&accepted.environment_id).await.unwrap();
+    let pending = store
+        .get(&accepted.environment_id)
+        .await
+        .expect("the item exists");
     assert_eq!(pending.application.generation, 2);
     assert_eq!(pending.environment.resolved_generation, Some(1));
     assert_eq!(pending.resolved, Some(original_target));
@@ -410,7 +477,7 @@ async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_dis
         docker
             .observe(&accepted.environment_id)
             .await
-            .unwrap()
+            .expect("observe succeeds")
             .services[0]
             .convergence,
         Convergence::Converged
@@ -418,7 +485,7 @@ async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_dis
     let deleted = applications
         .delete(&accepted.environment_id, None)
         .await
-        .unwrap();
+        .expect("delete succeeds");
     let superseded = store.wait_until(async || {
         matches!(
             store.operation(&deleted.id).await,
@@ -430,7 +497,10 @@ async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_dis
         .expect("delete supersedes pending preparation without waiting for its pull");
     assert_eq!(docker.images.maximum.load(Ordering::SeqCst), 2);
     cancellation.cancel();
-    controller_task.await.unwrap().unwrap();
+    controller_task
+        .await
+        .expect("the controller task is present")
+        .expect("the nested value is present");
 }
 
 #[tokio::test]
@@ -458,9 +528,13 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
     let changed = harness.save(input.clone(), Some(1)).await;
     assert!(changed.operation_id.is_none());
     assert_eq!(harness.pulls().await, pulls);
-    let app = harness.store.get(&first.environment_id).await.unwrap();
+    let app = harness
+        .store
+        .get(&first.environment_id)
+        .await
+        .expect("the item exists");
     assert!(
-        app.resolved.unwrap().services[0]
+        app.resolved.expect("the resolved is present").services[0]
             .image
             .as_str()
             .ends_with(&"a".repeat(64))
@@ -468,15 +542,15 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
     let refreshed = applications
         .deploy(&first.environment_id, Some(2))
         .await
-        .unwrap();
+        .expect("deploy succeeds");
     harness.finish(&refreshed).await;
     let before = harness
         .store
         .get(&first.environment_id)
         .await
-        .unwrap()
+        .expect("the item exists")
         .resolved
-        .unwrap();
+        .expect("the resolved is present");
     assert!(before.services[0].image.as_str().ends_with(&"b".repeat(64)));
     let renamed = applications
         .accept(
@@ -491,7 +565,7 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
             Some("rename-resources"),
         )
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     let piqueld::api::MutationResponse::Saved(renamed) = renamed else {
         panic!("rename response")
     };
@@ -500,20 +574,25 @@ async fn saving_preserves_active_images_until_deploy_and_rename_preserves_resour
         .store
         .get(&first.environment_id)
         .await
-        .unwrap()
+        .expect("the item exists")
         .resolved
-        .unwrap();
+        .expect("the resolved is present");
     assert_eq!(after.services, before.services);
     assert_eq!(after.networks, before.networks);
     assert_eq!(after.volumes, before.volumes);
     assert_eq!(harness.latest(&first.environment_id).await.id, refreshed.id);
-    let events = harness.store.events(None, None, 100).await.unwrap().items;
+    let events = harness
+        .store
+        .events(None, None, 100)
+        .await
+        .expect("the events list")
+        .items;
     assert!(events.iter().any(|event| event.kind == "resource_mutated"
         && event.phase.map(piqueld_core::Phase::as_str) == Some("ensure_service")
         && event.resource.as_deref() == Some(after.services[0].logical_name.as_str())));
     assert!(
         !serde_json::to_string(&events)
-            .unwrap()
+            .expect("the value serialises")
             .contains("private-value")
     );
 }
@@ -543,7 +622,7 @@ async fn failed_preparation_preserves_active_repair_and_save_does_not_retry() {
         .accept(
             Daemon,
             piqueld::api::Mutation::save(
-                input.validate_template().unwrap(),
+                input.validate_template().expect("the template validates"),
                 Some(
                     harness
                         .application_of(&first.environment_id)
@@ -557,7 +636,7 @@ async fn failed_preparation_preserves_active_repair_and_save_does_not_retry() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     let piqueld::api::MutationResponse::Saved(saved) = response else {
         panic!("saved configuration")
     };
@@ -571,9 +650,18 @@ async fn failed_preparation_preserves_active_repair_and_save_does_not_retry() {
     }
     harness.scan().await;
     assert_eq!(harness.docker.observed.lock().await.services[0].replicas, 1);
-    let stored = harness.store.get(&first.environment_id).await.unwrap();
+    let stored = harness
+        .store
+        .get(&first.environment_id)
+        .await
+        .expect("the item exists");
     assert_eq!(stored.environment.resolved_generation, Some(1));
-    let events = harness.store.events(None, None, 100).await.unwrap().items;
+    let events = harness
+        .store
+        .events(None, None, 100)
+        .await
+        .expect("the events list")
+        .items;
     assert!(events.iter().any(|event| event.kind == "operation_failed"
         && event.error_code.as_deref() == Some("image_resolution_failed")
         && event.resource.as_deref() == Some("web")));
@@ -621,13 +709,15 @@ async fn deploy_dependents(
             "[[spec.services]]\nname = \"{name}\"\ndepends_on = {depends_on:?}\n[spec.services.source]\ntype = \"image\"\nimage = \"{}\"\n",
             prebuilt::IMAGE
         )
-        .unwrap();
+        .expect("the manifest writes");
     }
     let mut harness = ControllerHarness::new().await;
     harness.set_application(
         piqueld_core::parse_toml(&manifest)
-            .unwrap()
-            .normalize(ApplicationId::parse("app-dependents-01").unwrap()),
+            .expect("parse toml succeeds")
+            .normalize(
+                ApplicationId::parse("app-dependents-01").expect("the application id parses"),
+            ),
     );
     harness.docker.slow_services.lock().await.extend(
         slow.iter()
@@ -737,7 +827,7 @@ async fn git_deploy_prepares_before_rollout_and_supersedes_pending_requests() {
     let MutationResponse::Operation(replacement) = applications
         .accept(Daemon, deploy(), None, true, None)
         .await
-        .unwrap()
+        .expect("the connection is accepted")
     else {
         panic!("deployment")
     };
@@ -751,9 +841,9 @@ async fn git_deploy_prepares_before_rollout_and_supersedes_pending_requests() {
         .store
         .get(&first.environment_id)
         .await
-        .unwrap()
+        .expect("the item exists")
         .resolved
-        .unwrap();
+        .expect("the resolved is present");
     assert!(
         matches!(&active.services[0].source, ResolvedSource::Git { commit, .. } if piqueld_core::manifest::valid_git_commit(commit))
     );
@@ -762,10 +852,10 @@ async fn git_deploy_prepares_before_rollout_and_supersedes_pending_requests() {
         let actor = Daemon;
         applications.accept(actor, deploy(), None, true, Some("git-deploy"))
     };
-    let MutationResponse::Operation(accepted) = keyed().await.unwrap() else {
+    let MutationResponse::Operation(accepted) = keyed().await.expect("keyed succeeds") else {
         panic!("expected operation")
     };
-    let MutationResponse::Operation(replay) = keyed().await.unwrap() else {
+    let MutationResponse::Operation(replay) = keyed().await.expect("keyed succeeds") else {
         panic!("expected operation")
     };
     assert_eq!(accepted.operation_id, replay.operation_id);
@@ -788,9 +878,9 @@ async fn git_deploy_prepares_before_rollout_and_supersedes_pending_requests() {
             .store
             .get(&first.environment_id)
             .await
-            .unwrap()
+            .expect("the item exists")
             .resolved
-            .unwrap(),
+            .expect("the resolved is present"),
         active
     );
     harness
@@ -856,7 +946,7 @@ async fn preparation_timeout_is_retried_after_backoff() {
             .store
             .prepared_target(&operation.id)
             .await
-            .unwrap()
+            .expect("prepared target succeeds")
             .is_none()
     );
     assert_eq!(
@@ -924,7 +1014,7 @@ async fn topology_change_during_preparation_blocks_promotion_and_mutation() {
         gate.release.notify_one();
     };
     let (result, ()) = tokio::join!(scan, change_topology);
-    result.unwrap();
+    result.expect("the result is present");
     assert_eq!(
         harness.operation(&operation.id).await.error_code.as_deref(),
         Some("swarm_topology_unsupported")
@@ -934,7 +1024,7 @@ async fn topology_change_during_preparation_blocks_promotion_and_mutation() {
             .store
             .get(&operation.environment_id)
             .await
-            .unwrap()
+            .expect("the item exists")
             .resolved
             .is_none()
     );
@@ -1003,7 +1093,7 @@ async fn restoring_a_deployment_runs_its_image_again_without_jobs() {
         .applications()
         .deploy(&environment, None)
         .await
-        .unwrap();
+        .expect("deploy succeeds");
     harness.finish(&second).await;
     assert_ne!(image().await, original);
     assert_eq!(harness.started_jobs().await, ["migrate", "migrate"]);
@@ -1021,7 +1111,7 @@ async fn restoring_a_deployment_runs_its_image_again_without_jobs() {
             None,
         )
         .await
-        .unwrap();
+        .expect("restore succeeds");
     assert_eq!(harness.pulls().await, pulls + 1);
     harness
         .finish(&harness.operation(&accepted.operation_id).await)
@@ -1049,7 +1139,7 @@ async fn an_unreachable_build_machine_fails_the_deployment_as_builder_unavailabl
         .store
         .build_logs(build.id, None, None)
         .await
-        .unwrap();
+        .expect("build logs succeeds");
     assert!(
         !output
             .items

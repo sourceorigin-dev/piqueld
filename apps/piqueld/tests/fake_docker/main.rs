@@ -121,7 +121,11 @@ impl ControllerHarness {
                 .await
                 .expect("fresh database opens"),
         );
-        let sources = Arc::new(Sources::open(directory.path()).await.unwrap());
+        let sources = Arc::new(
+            Sources::open(directory.path())
+                .await
+                .expect("the sources open"),
+        );
         let application = prebuilt::application("app-fake-docker-01");
         let docker = Arc::new(docker);
         let controller = Controller::new(
@@ -146,7 +150,7 @@ impl ControllerHarness {
         self.store = Arc::new(
             Store::open_unsynced(&self.database_path)
                 .await
-                .unwrap()
+                .expect("the store opens")
                 .with_observability(
                     &config.retention,
                     &config.images,
@@ -177,7 +181,7 @@ impl ControllerHarness {
 
     /// The application environment `environment` belongs to.
     async fn application_of(&self, environment: &EnvironmentId) -> ApplicationId {
-        let stored = self.store.get(environment).await.unwrap();
+        let stored = self.store.get(environment).await.expect("the item exists");
         stored.environment.application_id
     }
 
@@ -186,7 +190,7 @@ impl ControllerHarness {
         self.store
             .environments(application)
             .await
-            .unwrap()
+            .expect("environments succeeds")
             .into_iter()
             .find(|environment| environment.name.as_str() == "production")
             .expect("a production environment")
@@ -223,11 +227,15 @@ impl ControllerHarness {
     /// Saves and deploys `manifest`, expecting generation `expected`.
     async fn apply(&self, manifest: ApplicationManifest, expected: Option<u64>) -> Operation {
         Box::pin(
-            self.applications()
-                .apply(manifest.validate_template().unwrap(), expected),
+            self.applications().apply(
+                manifest
+                    .validate_template()
+                    .expect("the template validates"),
+                expected,
+            ),
         )
         .await
-        .unwrap()
+        .expect("pin succeeds")
     }
 
     /// Saves `manifest` without deploying, expecting generation `expected`.
@@ -237,11 +245,15 @@ impl ControllerHarness {
         expected: Option<u64>,
     ) -> piqueld_core::api::SavedApplication {
         Box::pin(
-            self.applications()
-                .save(manifest.validate_template().unwrap(), expected),
+            self.applications().save(
+                manifest
+                    .validate_template()
+                    .expect("the template validates"),
+                expected,
+            ),
         )
         .await
-        .unwrap()
+        .expect("pin succeeds")
     }
 
     /// Saves and deploys the fixture with `web` built from `fixture`'s Git
@@ -265,7 +277,10 @@ impl ControllerHarness {
             revision,
             rebuild,
         };
-        self.applications().submit(deploy, None).await.unwrap()
+        self.applications()
+            .submit(deploy, None)
+            .await
+            .expect("submit succeeds")
     }
 
     /// Journals the application with its resolved target.
@@ -293,10 +308,9 @@ impl ControllerHarness {
         let mut manifest = self.application.to_manifest();
         manifest.metadata.name = name.into();
         edit(&mut manifest);
-        let application = manifest
-            .validate()
-            .unwrap()
-            .normalize(ApplicationId::parse(format!("app-{name}-0001")).unwrap());
+        let application = manifest.validate().expect("the value validates").normalize(
+            ApplicationId::parse(format!("app-{name}-0001")).expect("the application id parses"),
+        );
         self.store
             .save_application(
                 &ApplicationTemplate::from(&application),
@@ -304,7 +318,7 @@ impl ControllerHarness {
                 None,
             )
             .await
-            .unwrap()
+            .expect("the application saves")
             .environment_id
     }
 
@@ -321,7 +335,7 @@ impl ControllerHarness {
                 None,
             )
             .await
-            .unwrap();
+            .expect("the secret is stored");
     }
 
     /// Runs one reconciliation scan.
@@ -329,7 +343,7 @@ impl ControllerHarness {
         self.controller
             .scan(&CancellationToken::new())
             .await
-            .unwrap();
+            .expect("scan succeeds");
     }
 
     /// Scans once and expects `operation` to have succeeded.
@@ -347,7 +361,7 @@ impl ControllerHarness {
     }
 
     async fn operation(&self, id: &str) -> Operation {
-        self.store.operation(id).await.unwrap()
+        self.store.operation(id).await.expect("the operation loads")
     }
 
     /// The latest operation of environment `id`.
@@ -355,8 +369,8 @@ impl ControllerHarness {
         self.store
             .latest_operation_for_environment(id)
             .await
-            .unwrap()
-            .unwrap()
+            .expect("latest operation for environment succeeds")
+            .expect("the nested value is present")
     }
 
     /// Environment `environment`'s deployment by operation `id`.
@@ -368,11 +382,11 @@ impl ControllerHarness {
         self.store
             .deployments(environment, None, 50)
             .await
-            .unwrap()
+            .expect("the deployments list")
             .items
             .into_iter()
             .find(|deployment| deployment.operation.id == id)
-            .unwrap()
+            .expect("the item exists")
     }
 
     /// Environment `environment`'s builds, newest first.
@@ -386,7 +400,7 @@ impl ControllerHarness {
                 50,
             )
             .await
-            .unwrap()
+            .expect("the builds list")
             .items
     }
 
@@ -403,13 +417,18 @@ impl ControllerHarness {
                 100,
             )
             .await
-            .unwrap()
+            .expect("the filtered events list")
             .items
     }
 
     /// The target environment `id` runs.
     async fn target(&self, id: &EnvironmentId) -> ResolvedApplication {
-        self.store.get(id).await.unwrap().resolved.unwrap()
+        self.store
+            .get(id)
+            .await
+            .expect("the item exists")
+            .resolved
+            .expect("the resolved is present")
     }
 
     /// Image pulls so far, across references.
@@ -440,14 +459,18 @@ impl ControllerHarness {
             .bind(&operation.id)
             .execute(&mut self.database().await)
             .await
-            .unwrap();
+            .expect("the statement executes");
     }
 
     /// Simulates a daemon restart: reopens the database behind a fresh controller.
     async fn reopen(&mut self) {
-        self.store = Arc::new(Store::open_unsynced(&self.database_path).await.unwrap());
-        let directory = self.database_path.parent().unwrap();
-        self.sources = Arc::new(Sources::open(directory).await.unwrap());
+        self.store = Arc::new(
+            Store::open_unsynced(&self.database_path)
+                .await
+                .expect("the store opens"),
+        );
+        let directory = self.database_path.parent().expect("parent succeeds");
+        self.sources = Arc::new(Sources::open(directory).await.expect("the sources open"));
         self.controller = self.new_controller();
     }
 
@@ -475,7 +498,7 @@ impl ControllerHarness {
         replacement.spec.services[0].replicas = 2.into();
         let replacement = replacement
             .validate()
-            .unwrap()
+            .expect("the value validates")
             .normalize(self.application.id().clone());
         self.store
             .save_application(
@@ -494,7 +517,12 @@ impl ControllerHarness {
 
     /// The replicas Docker runs of environment `id`'s first service.
     async fn replicas_of(&self, id: &EnvironmentId) -> u16 {
-        self.docker.observe(id).await.unwrap().services[0].replicas
+        self.docker
+            .observe(id)
+            .await
+            .expect("observe succeeds")
+            .services[0]
+            .replicas
     }
 
     async fn repair_drift(&self) {
@@ -659,7 +687,7 @@ impl ControllerHarness {
         }
         meanwhile.await;
         drop(held);
-        scan.await.unwrap();
+        scan.await.expect("the scan is present");
     }
 
     /// Adds a service of another installation named like `operation`'s
@@ -669,12 +697,12 @@ impl ControllerHarness {
             .store
             .prepared_target(&operation.id)
             .await
-            .unwrap()
-            .unwrap()
+            .expect("prepared target succeeds")
+            .expect("the nested value is present")
             .services
             .into_iter()
             .find(|service| service.logical_name.as_str() == name)
-            .unwrap();
+            .expect("the item exists");
         let mut labels = foreign_labels(&operation.environment_id);
         labels.insert(SERVICE_LABEL.into(), name.into());
         let foreign = ObservedService {
@@ -728,7 +756,7 @@ impl ControllerHarness {
             .store
             .build_logs(run.id, None, None)
             .await
-            .unwrap()
+            .expect("build logs succeeds")
             .items
             .into_iter()
             .map(|line| line.text)
@@ -754,7 +782,7 @@ impl ControllerHarness {
             self.store
                 .build_logs(builds[0].id, None, None)
                 .await
-                .unwrap()
+                .expect("build logs succeeds")
                 .items
                 .iter()
                 .any(|chunk| chunk.text.contains("Build failed"))
@@ -768,7 +796,7 @@ fn web(observed: &ObservedApplication) -> ObservedService {
         .services
         .iter()
         .find(|service| service.labels.get(SERVICE_LABEL).map(String::as_str) == Some("web"))
-        .unwrap()
+        .expect("the item exists")
         .clone()
 }
 

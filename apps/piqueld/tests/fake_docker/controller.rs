@@ -46,7 +46,7 @@ async fn controller_converges_a_prebuilt_application_through_the_docker_seam() {
             .store
             .get(&harness.environment().await)
             .await
-            .unwrap()
+            .expect("the item exists")
             .delete_intent()
     );
     harness
@@ -73,7 +73,7 @@ async fn controller_executes_actions_introduced_by_fresh_planning() {
         .store
         .status(&harness.environment().await)
         .await
-        .unwrap();
+        .expect("status succeeds");
     assert_eq!(status.state, piqueld_store::ApplicationState::Ready);
     assert_eq!(harness.docker.observed.lock().await.networks.len(), 1);
 }
@@ -143,7 +143,13 @@ async fn controller_enforces_global_io_bounds_on_a_single_thread() {
     assert_eq!(docker.mutations.maximum.load(Ordering::SeqCst), 1);
     assert!((1..=2).contains(&docker.images.maximum.load(Ordering::SeqCst)));
     assert!((1..=8).contains(&docker.observations.maximum.load(Ordering::SeqCst)));
-    for app in harness.store.list(None, 100).await.unwrap().items {
+    for app in harness
+        .store
+        .list(None, 100)
+        .await
+        .expect("the list loads")
+        .items
+    {
         assert_eq!(
             harness.latest(app.id()).await.state,
             OperationState::Succeeded
@@ -160,7 +166,7 @@ async fn operation_traces_correlate_outcomes_without_configuration_values() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
-    tracing::subscriber::set_global_default(subscriber).unwrap();
+    tracing::subscriber::set_global_default(subscriber).expect("set global default succeeds");
     let (environment_id, operation_id) = {
         let mut harness = ControllerHarness::new().await;
         let mut manifest = harness.application.to_manifest();
@@ -169,18 +175,18 @@ async fn operation_traces_correlate_outcomes_without_configuration_values() {
             .insert("TOKEN".into(), "must-not-appear-in-traces".into());
         let application = manifest
             .validate()
-            .unwrap()
+            .expect("the value validates")
             .normalize(harness.application.id().clone());
         harness.set_application(application);
         let operation = harness.create().await;
         harness.scan().await;
         (operation.environment_id.to_string(), operation.id)
     };
-    let text = String::from_utf8(capture.0.lock().clone()).unwrap();
+    let text = String::from_utf8(capture.0.lock().clone()).expect("the bytes are utf-8");
     assert!(!text.contains("must-not-appear-in-traces"));
     let events: Vec<serde_json::Value> = text
         .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
+        .map(|line| serde_json::from_str(line).expect("the json parses"))
         .collect();
     let completed = events
         .iter()
@@ -209,7 +215,7 @@ async fn unavailable_action_journal_prevents_runtime_mutations() {
     let harness = ControllerHarness::new().await;
     harness.create().await;
     let mut connection = harness.database().await;
-    sqlx::query("CREATE TRIGGER reject_action_journal BEFORE INSERT ON events WHEN NEW.kind='action_requested' BEGIN SELECT RAISE(FAIL,'journal unavailable'); END").execute(&mut connection).await.unwrap();
+    sqlx::query("CREATE TRIGGER reject_action_journal BEFORE INSERT ON events WHEN NEW.kind='action_requested' BEGIN SELECT RAISE(FAIL,'journal unavailable'); END").execute(&mut connection).await.expect("the statement executes");
     assert!(
         harness
             .controller
@@ -221,19 +227,19 @@ async fn unavailable_action_journal_prevents_runtime_mutations() {
     let open_actions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM active_actions")
         .fetch_one(&mut connection)
         .await
-        .unwrap();
+        .expect("the row exists");
     assert_eq!(open_actions, 0);
     let failed_actions: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM events WHERE kind='action_failed' AND error_code='journal_unavailable'",
     )
     .fetch_one(&mut connection)
     .await
-    .unwrap();
+    .expect("the row exists");
     assert!(failed_actions > 0);
     sqlx::query("DROP TRIGGER reject_action_journal")
         .execute(&mut connection)
         .await
-        .unwrap();
+        .expect("the statement executes");
     harness.scan().await;
     assert!(harness.docker.mutations.maximum.load(Ordering::SeqCst) > 0);
 }
@@ -281,7 +287,7 @@ async fn full_scan_records_one_docker_failure_for_overlapping_observers() {
                 10,
             )
             .await
-            .unwrap()
+            .expect("the filtered events list")
             .items
             .len()
     };
@@ -305,7 +311,9 @@ async fn full_scan_records_one_docker_failure_for_overlapping_observers() {
     // record a duplicate.
     tokio::time::sleep(Duration::from_millis(100)).await;
     cancellation.cancel();
-    task.await.unwrap().unwrap();
+    task.await
+        .expect("the controller task joins")
+        .expect("the nested value is present");
     assert_eq!(recorded().await, 1);
 }
 
@@ -322,7 +330,7 @@ async fn a_scan_leaves_operations_requested_after_discovery_to_the_next_pass() {
             newer = Some(harness.apply(manifest(), None).await);
         })
         .await;
-    let newer = newer.unwrap();
+    let newer = newer.expect("the newer operation is present");
     assert_eq!(
         harness.operation(&newer.id).await.state,
         OperationState::Requested
@@ -347,13 +355,13 @@ async fn a_scan_leaves_an_operation_finished_since_discovery_alone() {
             None,
         )
         .await
-        .unwrap();
+        .expect("the operation transitions");
     let status = async || {
         harness
             .store
             .status(&operation.environment_id)
             .await
-            .unwrap()
+            .expect("status succeeds")
             .state
     };
     let before = status().await;
@@ -368,7 +376,7 @@ async fn a_scan_leaves_an_operation_finished_since_discovery_alone() {
                     None,
                 )
                 .await
-                .unwrap();
+                .expect("the operation transitions");
         })
         .await;
     assert_eq!(status().await, before);

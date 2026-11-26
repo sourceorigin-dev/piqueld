@@ -18,20 +18,20 @@ impl EnvironmentHarness {
         let mut harness = ControllerHarness::new().await;
         harness.application = with_token(harness.application.to_manifest())
             .validate()
-            .unwrap()
+            .expect("the value validates")
             .normalize(harness.application.id().clone());
         let store = &harness.store;
         let applications = harness.applications();
         let saved = store
             .save_application(&ApplicationTemplate::from(&harness.application), None, None)
             .await
-            .unwrap();
+            .expect("the application saves");
         let production = harness.environment().await;
         let MutationResponse::Environment(staging) = Box::pin(applications.accept(
             Daemon,
             Mutation::CreateEnvironment {
                 application: harness.application.id().clone(),
-                name: EnvironmentName::parse("staging").unwrap(),
+                name: EnvironmentName::parse("staging").expect("the environment name parses"),
                 source: None,
             },
             Some(saved.generation),
@@ -39,13 +39,16 @@ impl EnvironmentHarness {
             None,
         ))
         .await
-        .unwrap() else {
+        .expect("pin succeeds") else {
             panic!("created staging")
         };
         let generation = saved.generation + 1;
         harness.store_token(&production, 0, b"shared token").await;
         for id in [&production, &staging.id] {
-            applications.deploy(id, Some(generation)).await.unwrap();
+            applications
+                .deploy(id, Some(generation))
+                .await
+                .expect("deploy succeeds");
         }
         harness.scan().await;
         Self {
@@ -70,20 +73,32 @@ impl EnvironmentHarness {
                 None,
             )
             .await
-            .unwrap();
+            .expect("the connection is accepted");
         self.harness.scan().await;
     }
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "A long end-to-end scenario; rustfmt wraps its expect messages."
+)]
 async fn deleting_staging_preserves_production_runtime_secrets_and_history() {
     let fixture = Box::pin(EnvironmentHarness::new()).await;
     let harness = &fixture.harness;
     let store = &harness.store;
     let production = &fixture.production;
     let staging = &fixture.staging;
-    let production_runtime = harness.docker.observe(production).await.unwrap();
-    let staging_runtime = harness.docker.observe(staging).await.unwrap();
+    let production_runtime = harness
+        .docker
+        .observe(production)
+        .await
+        .expect("observe succeeds");
+    let staging_runtime = harness
+        .docker
+        .observe(staging)
+        .await
+        .expect("observe succeeds");
     assert_eq!(production_runtime.services.len(), 1);
     assert_eq!(staging_runtime.services.len(), 1);
     assert_ne!(
@@ -94,14 +109,20 @@ async fn deleting_staging_preserves_production_runtime_secrets_and_history() {
         production_runtime.volumes[0].name,
         staging_runtime.volumes[0].name
     );
-    let production_history = store.deployments(production, None, 10).await.unwrap();
-    let production_events = store.events(Some(production), None, 100).await.unwrap();
+    let production_history = store
+        .deployments(production, None, 10)
+        .await
+        .expect("the deployments list");
+    let production_events = store
+        .events(Some(production), None, 100)
+        .await
+        .expect("the events list");
     assert!(!production_history.items.is_empty());
     assert_eq!(
         store
             .deployments(staging, None, 10)
             .await
-            .unwrap()
+            .expect("the deployments list")
             .items
             .len(),
         1
@@ -114,7 +135,11 @@ async fn deleting_staging_preserves_production_runtime_secrets_and_history() {
         store.get(staging).await,
         Err(piqueld_store::StoreError::NotFound)
     ));
-    let remaining = harness.docker.observe(staging).await.unwrap();
+    let remaining = harness
+        .docker
+        .observe(staging)
+        .await
+        .expect("observe succeeds");
     assert_eq!(remaining.services, [] as [ObservedService; 0]);
     assert_eq!(remaining.networks, [] as [ObservedNetwork; 0]);
     assert_eq!(
@@ -122,14 +147,25 @@ async fn deleting_staging_preserves_production_runtime_secrets_and_history() {
         "staging volume data is retained"
     );
     assert_eq!(
-        harness.docker.observe(production).await.unwrap(),
+        harness
+            .docker
+            .observe(production)
+            .await
+            .expect("observe succeeds"),
         production_runtime
     );
     assert_eq!(
-        store.status(production).await.unwrap().state,
+        store
+            .status(production)
+            .await
+            .expect("status succeeds")
+            .state,
         piqueld_store::ApplicationState::Ready
     );
-    let history = store.deployments(production, None, 10).await.unwrap();
+    let history = store
+        .deployments(production, None, 10)
+        .await
+        .expect("the deployments list");
     assert_eq!(
         history
             .items
@@ -142,14 +178,20 @@ async fn deleting_staging_preserves_production_runtime_secrets_and_history() {
             .map(|item| (&item.operation.id, &item.application))
             .collect::<Vec<_>>()
     );
-    let events = store.events(Some(production), None, 100).await.unwrap();
+    let events = store
+        .events(Some(production), None, 100)
+        .await
+        .expect("the events list");
     assert!(
         production_events
             .items
             .iter()
             .all(|old| events.items.iter().any(|event| event.id == old.id))
     );
-    let staging_events = store.events(Some(staging), None, 100).await.unwrap();
+    let staging_events = store
+        .events(Some(staging), None, 100)
+        .await
+        .expect("the events list");
     assert!(
         staging_events
             .items
@@ -159,18 +201,25 @@ async fn deleting_staging_preserves_production_runtime_secrets_and_history() {
     let stored = store
         .stored_secrets(harness.application.id())
         .await
-        .unwrap();
+        .expect("the stored secrets list");
     assert_eq!(stored[0].metadata.generation, 1);
     let values = harness.docker.secrets.lock().await;
     assert_eq!(values.len(), 1, "only staging's copy is removed");
-    assert_eq!(values.values().next().unwrap().value, b"shared token");
+    assert_eq!(
+        values
+            .values()
+            .next()
+            .expect("the stream yields an item")
+            .value,
+        b"shared token"
+    );
     let environments = store.environments(harness.application.id()).await;
-    assert_eq!(environments.unwrap().len(), 1);
+    assert_eq!(environments.expect("the environments are present").len(), 1);
     assert_eq!(
         store
             .application(harness.application.id())
             .await
-            .unwrap()
+            .expect("the application loads")
             .generation,
         fixture.generation + 1,
         "deleting staging bumps the generation once"
@@ -218,7 +267,11 @@ async fn linked_applications_join_the_importers_network() {
     use piqueld_core::links::ImportState;
     let (harness, auth, notes) = linked_harness().await;
     let network = piqueld_core::DockerNetworkName::for_link(&notes, &auth);
-    let importer = harness.docker.observe(&notes).await.unwrap();
+    let importer = harness
+        .docker
+        .observe(&notes)
+        .await
+        .expect("observe succeeds");
     assert!(
         importer
             .networks
@@ -228,7 +281,11 @@ async fn linked_applications_join_the_importers_network() {
     assert!(importer.services[0].networks.iter().any(|attachment| {
         attachment.network == network.as_str() && attachment.aliases.is_empty()
     }));
-    let exporter = harness.docker.observe(&auth).await.unwrap();
+    let exporter = harness
+        .docker
+        .observe(&auth)
+        .await
+        .expect("observe succeeds");
     assert!(
         web(&exporter)
             .networks
@@ -252,13 +309,13 @@ async fn linked_applications_join_the_importers_network() {
         .store
         .link_report(&notes, None, &piqueld_core::access::Scope::All)
         .await
-        .unwrap();
+        .expect("link report succeeds");
     assert_eq!(report.imports[0].state, ImportState::Connected);
     let report = harness
         .store
         .link_report(&auth, None, &piqueld_core::access::Scope::All)
         .await
-        .unwrap();
+        .expect("link report succeeds");
     assert_eq!(report.importers[0].application.as_str(), "notes");
 }
 
@@ -274,7 +331,11 @@ async fn revoked_links_close_while_the_exporters_plan_is_blocked() {
             service.convergence = Convergence::Failed;
         }
     }
-    harness.store.request_delete(&notes).await.unwrap();
+    harness
+        .store
+        .request_delete(&notes)
+        .await
+        .expect("request delete succeeds");
     for _ in 0..3 {
         harness.scan().await;
     }
@@ -282,7 +343,11 @@ async fn revoked_links_close_while_the_exporters_plan_is_blocked() {
         harness.store.get(&notes).await,
         Err(piqueld_store::StoreError::NotFound)
     ));
-    let exporter = harness.docker.observe(&auth).await.unwrap();
+    let exporter = harness
+        .docker
+        .observe(&auth)
+        .await
+        .expect("observe succeeds");
     assert!(
         web(&exporter)
             .networks
@@ -317,11 +382,19 @@ async fn deleting_an_exporter_removes_networks_its_deleted_importers_left() {
         .iter()
         .find(|observed| observed.name == network.as_str())
         .cloned()
-        .unwrap();
-    harness.store.request_delete(&notes).await.unwrap();
+        .expect("cloned succeeds");
+    harness
+        .store
+        .request_delete(&notes)
+        .await
+        .expect("request delete succeeds");
     scan().await;
     harness.docker.observed.lock().await.networks.push(leftover);
-    harness.store.request_delete(&auth).await.unwrap();
+    harness
+        .store
+        .request_delete(&auth)
+        .await
+        .expect("request delete succeeds");
     scan().await;
     assert!(matches!(
         harness.store.get(&auth).await,
@@ -346,19 +419,30 @@ async fn deleting_an_exporter_removes_networks_its_deleted_importers_left() {
 #[tokio::test]
 async fn telemetry_sockets_are_mounted_while_the_environment_is_granted() {
     let mut harness = ControllerHarness::new().await;
-    let data = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().expect("the temporary directory is created");
     harness.controller = harness
         .new_controller()
         .with_telemetry(Some(piqueld::telemetry::Sockets::new(data.path())));
     let mut manifest = harness.application.to_manifest();
     manifest.spec.services[0].receives_telemetry = true;
     let id = harness.application.id().clone();
-    harness.set_application(manifest.clone().validate().unwrap().normalize(id.clone()));
+    harness.set_application(
+        manifest
+            .clone()
+            .validate()
+            .expect("the value validates")
+            .normalize(id.clone()),
+    );
     let created = harness.create().await;
     harness.finish(&created).await;
     let environment = harness.environment().await;
     let mounted = async |harness: &ControllerHarness| {
-        harness.docker.observe(&environment).await.unwrap().services[0]
+        harness
+            .docker
+            .observe(&environment)
+            .await
+            .expect("observe succeeds")
+            .services[0]
             .telemetry
             .clone()
     };
@@ -373,7 +457,7 @@ async fn telemetry_sockets_are_mounted_while_the_environment_is_granted() {
         async move {
             Box::pin(applications.accept(Daemon, mutation, None, false, None))
                 .await
-                .unwrap();
+                .expect("pin succeeds");
         }
     };
     grant(&harness, true).await;
@@ -388,7 +472,12 @@ async fn telemetry_sockets_are_mounted_while_the_environment_is_granted() {
     assert!(directory.is_dir());
 
     manifest.spec.services[0].name = "otel".into();
-    harness.set_application(manifest.validate().unwrap().normalize(id));
+    harness.set_application(
+        manifest
+            .validate()
+            .expect("the value validates")
+            .normalize(id),
+    );
     let renamed = harness.create().await;
     harness.finish(&renamed).await;
     harness.scan().await;
@@ -420,10 +509,17 @@ async fn stopped_environments_run_no_replicas_until_started_or_deployed() {
     let first = harness.apply(manifest(), None).await;
     harness.finish(&first).await;
     let id = first.environment_id.clone();
-    let health = async || harness.store.status(&id).await.unwrap().runtime_health;
+    let health = async || {
+        harness
+            .store
+            .status(&id)
+            .await
+            .expect("status succeeds")
+            .runtime_health
+    };
     let replicas = async || harness.replicas_of(&id).await;
 
-    let stopped = applications.stop(&id).await.unwrap();
+    let stopped = applications.stop(&id).await.expect("stop succeeds");
     assert_eq!(stopped.id, first.id, "the rolled out deployment runs again");
     harness.finish(&stopped).await;
     assert_eq!(replicas().await, 0);
@@ -431,7 +527,10 @@ async fn stopped_environments_run_no_replicas_until_started_or_deployed() {
     harness.scan().await;
     assert_eq!(replicas().await, 0, "repair keeps it stopped");
 
-    let started = applications.reconcile(&id, None).await.unwrap();
+    let started = applications
+        .reconcile(&id, None)
+        .await
+        .expect("reconcile succeeds");
     harness.finish(&started).await;
     assert_eq!(replicas().await, 1);
     assert_eq!(health().await.as_deref(), Some("ready"));
@@ -447,7 +546,7 @@ async fn stopped_environments_run_no_replicas_until_started_or_deployed() {
         harness.operation(&failed.id).await.state,
         OperationState::Failed
     );
-    let stopped = applications.stop(&id).await.unwrap();
+    let stopped = applications.stop(&id).await.expect("stop succeeds");
     assert_eq!(
         (stopped.id.as_str(), stopped.state),
         (failed.id.as_str(), OperationState::Failed),
@@ -460,5 +559,13 @@ async fn stopped_environments_run_no_replicas_until_started_or_deployed() {
     let deployed = harness.apply(manifest(), None).await;
     harness.finish(&deployed).await;
     assert_eq!(replicas().await, 1);
-    assert!(!harness.store.get(&id).await.unwrap().environment.stopped());
+    assert!(
+        !harness
+            .store
+            .get(&id)
+            .await
+            .expect("the item exists")
+            .environment
+            .stopped()
+    );
 }

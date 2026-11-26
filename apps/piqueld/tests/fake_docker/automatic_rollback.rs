@@ -41,7 +41,7 @@ async fn deploy_twice(
         .applications()
         .deploy(&first.environment_id, None)
         .await
-        .unwrap();
+        .expect("the second deploy starts");
     (first, second)
 }
 
@@ -101,8 +101,8 @@ async fn a_failed_rollout_restores_the_last_successful_deployment() {
                 .store
                 .prepared_target(&original.id)
                 .await
-                .unwrap()
-                .unwrap()
+                .expect("the prepared target loads")
+                .expect("the original deployment has a prepared target")
         )
     );
     assert_eq!(harness.started_jobs().await, ["migrate", "migrate"]);
@@ -150,7 +150,7 @@ async fn a_failure_without_an_earlier_success_says_why_it_was_not_rolled_back() 
     let unavailable = events
         .iter()
         .find(|event| event.kind == "rollback_unavailable")
-        .unwrap();
+        .expect("the operation records rollback_unavailable");
     assert_eq!(
         unavailable.message.as_deref(),
         Some("not rolled back automatically: no earlier deployment of the environment succeeded")

@@ -32,7 +32,7 @@ async fn secret_rotation_requires_deploy_and_service_references_follow_pinned_ve
     let next = applications
         .deploy(&first.environment_id, None)
         .await
-        .unwrap();
+        .expect("deploy succeeds");
     harness.finish(&next).await;
     let target = harness.target(&first.environment_id).await;
     let new = &target.secret_names["token"];
@@ -46,7 +46,7 @@ async fn secret_rotation_requires_deploy_and_service_references_follow_pinned_ve
             .docker
             .observe(&first.environment_id)
             .await
-            .unwrap()
+            .expect("observe succeeds")
             .services[0]
             .secrets,
         target.services[0].secrets
@@ -57,9 +57,16 @@ async fn secret_rotation_requires_deploy_and_service_references_follow_pinned_ve
     applications
         .delete_stored_secret(Daemon, &app, "token", 2)
         .await
-        .unwrap();
+        .expect("the secret is deleted");
     assert!(harness.docker.secrets.lock().await.is_empty());
-    assert!(harness.store.stored_secrets(&app).await.unwrap().is_empty());
+    assert!(
+        harness
+            .store
+            .stored_secrets(&app)
+            .await
+            .expect("the stored secrets list")
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -72,7 +79,7 @@ async fn application_deletion_journals_secret_cleanup_failures() {
         .store
         .put_secret(Daemon, &first.environment_id, "token", 0, b"value".to_vec())
         .await
-        .unwrap();
+        .expect("the secret is stored");
     harness
         .docker
         .fail_secret_removal
@@ -80,7 +87,7 @@ async fn application_deletion_journals_secret_cleanup_failures() {
     let deletion = applications
         .delete(&first.environment_id, Some(1))
         .await
-        .unwrap();
+        .expect("delete succeeds");
     harness.scan().await;
     let events = harness.operation_events(&deletion.id).await;
     let phases = |kind: &str| {
@@ -112,7 +119,13 @@ async fn missing_stored_secrets_fail_deployment_with_their_names() {
     harness.scan().await;
     let result = harness.operation(&failed.id).await;
     assert_eq!(result.error_code.as_deref(), Some("secret_missing"));
-    assert!(result.error_message.as_deref().unwrap().contains("token"));
+    assert!(
+        result
+            .error_message
+            .as_deref()
+            .expect("the value is present")
+            .contains("token")
+    );
 }
 
 #[tokio::test]
@@ -126,20 +139,40 @@ async fn secret_key_recovery_leaves_running_services_and_blocks_discarded_rollou
     let deployed = harness.apply(with_token(manifest()), Some(1)).await;
     harness.finish(&deployed).await;
     let target = harness.target(id).await;
-    let original = harness.docker.observe(id).await.unwrap();
+    let original = harness.docker.observe(id).await.expect("observe succeeds");
 
-    std::fs::remove_file(harness.database_path.with_file_name("secrets.key")).unwrap();
-    harness.store.recover_secret_key(Daemon).await.unwrap();
-    let failed = applications.deploy(id, None).await.unwrap();
+    std::fs::remove_file(harness.database_path.with_file_name("secrets.key"))
+        .expect("the file is removed");
+    harness
+        .store
+        .recover_secret_key(Daemon)
+        .await
+        .expect("the secret key recovers");
+    let failed = applications
+        .deploy(id, None)
+        .await
+        .expect("deploy succeeds");
     harness.scan().await;
     let result = harness.operation(&failed.id).await;
     assert_eq!(result.error_code.as_deref(), Some("secret_unavailable"));
-    assert!(result.error_message.as_deref().unwrap().contains("token"));
+    assert!(
+        result
+            .error_message
+            .as_deref()
+            .expect("the value is present")
+            .contains("token")
+    );
     assert_eq!(harness.target(id).await, target);
-    assert_eq!(harness.docker.observe(id).await.unwrap(), original);
+    assert_eq!(
+        harness.docker.observe(id).await.expect("observe succeeds"),
+        original
+    );
 
     harness.store_token(id, 1, b"replacement").await;
-    let replacement = applications.deploy(id, None).await.unwrap();
+    let replacement = applications
+        .deploy(id, None)
+        .await
+        .expect("deploy succeeds");
     harness.finish(&replacement).await;
     let new_target = harness.target(id).await;
     assert_eq!(
@@ -161,7 +194,8 @@ async fn missing_secret_key_fails_rollout_before_docker_mutation() {
     harness
         .store_token(&first.environment_id, 0, b"value")
         .await;
-    std::fs::remove_file(harness.database_path.with_file_name("secrets.key")).unwrap();
+    std::fs::remove_file(harness.database_path.with_file_name("secrets.key"))
+        .expect("the file is removed");
     let deployment = harness.apply(with_token(manifest()), Some(1)).await;
     harness.scan().await;
     let operation = harness.operation(&deployment.id).await;
@@ -183,7 +217,7 @@ async fn missing_secret_key_fails_rollout_before_docker_mutation() {
         Some("secret_storage_unavailable")
     );
     assert_eq!(
-        failed.diagnostic.as_ref().unwrap().causes,
+        failed.diagnostic.as_ref().expect("as ref succeeds").causes,
         ["Secret master key: missing"]
     );
     assert!(
@@ -201,7 +235,7 @@ impl ControllerHarness {
         .bind(swarm_name)
         .fetch_one(&mut self.database().await)
         .await
-        .unwrap()
+        .expect("the row exists")
             > 0
     }
 
@@ -228,7 +262,7 @@ impl ControllerHarness {
         self.store
             .events(Some(environment), None, 100)
             .await
-            .unwrap()
+            .expect("the events list")
             .items
             .iter()
             .filter(|event| {
@@ -265,7 +299,7 @@ impl Rotation {
             .applications()
             .deploy(&environment, None)
             .await
-            .unwrap();
+            .expect("deploy succeeds");
         harness.finish(&next).await;
         let new = harness.target(&environment).await.secret_names["token"].clone();
         Self {
@@ -293,7 +327,7 @@ async fn history_passes_remove_versions_no_deployment_pins_from_docker_then_the_
         .bind(&rotation.pinning.id)
         .execute(&mut harness.database().await)
         .await
-        .unwrap();
+        .expect("the statement executes");
 
     harness
         .docker
@@ -338,7 +372,7 @@ async fn pruned_deployments_release_old_versions_unless_a_service_still_mounts_t
         .bind(&rotation.next.id)
         .execute(&mut harness.database().await)
         .await
-        .unwrap();
+        .expect("the statement executes");
 
     harness.docker.observed.lock().await.services[0]
         .secrets
