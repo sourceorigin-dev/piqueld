@@ -30,6 +30,15 @@ validated_string!(
 );
 
 impl Hostname {
+    /// Parses a hostname after giving it its canonical spelling; see
+    /// [`RouteHostname::canonicalize`].
+    ///
+    /// # Errors
+    /// Returns [`HostnameError`] when the canonical spelling is invalid.
+    pub fn parse_canonical(hostname: &str) -> Result<Self, HostnameError> {
+        Self::parse(RouteHostname::canonicalize(hostname))
+    }
+
     /// Whether this is `domain` itself or one of its subdomains.
     ///
     /// ```text
@@ -80,6 +89,14 @@ impl RouteHostname {
             .strip_suffix('.')
             .unwrap_or(hostname)
             .to_ascii_lowercase()
+    }
+
+    /// Parses a route hostname after giving it its canonical spelling.
+    ///
+    /// # Errors
+    /// Returns [`RouteHostnameError`] when the canonical spelling is invalid.
+    pub fn parse_canonical(hostname: &str) -> Result<Self, RouteHostnameError> {
+        Self::parse(Self::canonicalize(hostname))
     }
 
     /// The hostname whose direct children a wildcard matches; `None` when

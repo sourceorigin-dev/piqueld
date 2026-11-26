@@ -4,8 +4,8 @@
 use super::domain::{ValidatedMetadata, ValidatedSpec};
 use super::variables::{RenderContext, RenderTarget, VariableValue};
 use super::{
-    APPLICATION_API_VERSION, APPLICATION_KIND, ApplicationManifest, ApplicationSpec,
-    FileCaptureError, ManifestRevision, Metadata, NormalizedApplication, RepositoryFiles,
+    APPLICATION_API_VERSION, APPLICATION_KIND, ApiVersion, ApplicationManifest, ApplicationSpec,
+    FileCaptureError, Kind, ManifestRevision, Metadata, NormalizedApplication, RepositoryFiles,
     RepositoryManifest, RouteHostname, SecretSource, ValidatedApplication, ValidationError,
     ValidationErrors,
 };
@@ -32,9 +32,11 @@ pub struct ApplicationTemplate {
     /// Stable application identity.
     id: ApplicationId,
     /// API version string.
-    api_version: String,
+    #[schema(value_type = String)]
+    api_version: ApiVersion,
     /// Resource kind string.
-    kind: String,
+    #[schema(value_type = String)]
+    kind: Kind,
     /// Canonical metadata.
     metadata: ValidatedMetadata,
     /// Resource specification, with references unresolved.
@@ -79,8 +81,8 @@ impl ValidatedTemplate {
         sort_unordered!(self.spec);
         ApplicationTemplate {
             id,
-            api_version: APPLICATION_API_VERSION.into(),
-            kind: APPLICATION_KIND.into(),
+            api_version: ApiVersion,
+            kind: Kind,
             metadata: self.metadata,
             spec: self.spec,
             files: RepositoryFiles::default(),
@@ -200,8 +202,8 @@ impl ApplicationTemplate {
     #[must_use]
     pub fn to_manifest(&self) -> ApplicationManifest {
         ApplicationManifest {
-            api_version: self.api_version.clone(),
-            kind: self.kind.clone(),
+            api_version: APPLICATION_API_VERSION.into(),
+            kind: APPLICATION_KIND.into(),
             metadata: Metadata {
                 name: self.metadata.name.to_string(),
             },
@@ -241,9 +243,7 @@ impl ApplicationTemplate {
             .routes
             .iter()
             .filter_map(|route| route.hostname.as_literal())
-            .filter_map(|hostname| {
-                RouteHostname::parse(RouteHostname::canonicalize(&hostname)).ok()
-            })
+            .filter_map(|hostname| RouteHostname::parse_canonical(&hostname).ok())
             .collect()
     }
 
@@ -352,8 +352,8 @@ impl From<&NormalizedApplication> for ApplicationTemplate {
     fn from(application: &NormalizedApplication) -> Self {
         Self {
             id: application.id().clone(),
-            api_version: APPLICATION_API_VERSION.into(),
-            kind: APPLICATION_KIND.into(),
+            api_version: ApiVersion,
+            kind: Kind,
             metadata: application.metadata().clone(),
             spec: application.spec().to_input(),
             files: application.files().clone(),

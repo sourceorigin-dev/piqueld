@@ -9693,7 +9693,7 @@
         "type": "object"
       },
       "NormalizedApplication": {
-        "description": "Canonical desired application plus persistence-assigned identity.\n\nConfiguration is immutable. Export input with [`Self::to_manifest`] and\nvalidate edits before constructing a replacement.\n\n```compile_fail\nfn bypass_validation(app: &mut piqueld_core::NormalizedApplication) {\n    app.spec.services.clear();\n}\n```",
+        "description": "Canonical desired application plus persistence-assigned identity.\n\nConfiguration is immutable and stays in canonical order, so hashing and\nserializing need no sort. Export input with [`Self::to_manifest`] and\nvalidate edits before constructing a replacement.\n\n```compile_fail\nfn bypass_validation(app: &mut piqueld_core::NormalizedApplication) {\n    app.spec.services.clear();\n}\n```",
         "properties": {
           "api_version": {
             "description": "API version string.",

@@ -189,8 +189,7 @@ impl Record {
             "A" => Self::A(content.parse().map_err(|error| invalid(&error))?),
             "AAAA" => Self::Aaaa(content.parse().map_err(|error| invalid(&error))?),
             "CNAME" => Self::Cname {
-                target: Hostname::parse(content.trim_end_matches('.').to_ascii_lowercase())
-                    .map_err(|error| invalid(&error))?,
+                target: Hostname::parse_canonical(content).map_err(|error| invalid(&error))?,
                 proxied,
             },
             "TXT" => Self::Txt(

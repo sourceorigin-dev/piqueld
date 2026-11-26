@@ -8,7 +8,8 @@ use crate::{
 };
 use clap::{Args, Subcommand};
 use piqueld_client::{
-    Client, Redirect, RedirectStatus, Route, Template, Visibility, edit::ApplicationEdit,
+    Client, Redirect, RedirectStatus, Route, RouteHostname, Template, Visibility,
+    edit::ApplicationEdit,
 };
 
 /// A route of an application, and how its edit is saved.
@@ -139,7 +140,8 @@ impl RouteCommand {
         let hostname = if Template::mentions_reference(&target.hostname) {
             target.hostname.clone()
         } else {
-            target.hostname.trim_end_matches('.').to_ascii_lowercase()
+            RouteHostname::parse_canonical(&target.hostname)
+                .map_or_else(|_| target.hostname.clone(), String::from)
         };
         let not_found = || {
             CliError::new(
