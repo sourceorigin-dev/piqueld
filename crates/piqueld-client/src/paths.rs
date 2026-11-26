@@ -26,6 +26,12 @@ pub fn apply_application() -> String {
     String::from("/api/v1/applications/apply")
 }
 
+/// `POST /api/v1/system/updates/apply`
+#[must_use]
+pub fn apply_update() -> String {
+    String::from("/api/v1/system/updates/apply")
+}
+
 /// `POST /api/v1/auth/device/approve`
 #[must_use]
 pub fn auth_device_approve() -> String {
@@ -600,6 +606,12 @@ pub fn retry_notification_delivery(id: &str) -> String {
         "/api/v1/notifications/deliveries/{id}/retry",
         id = encode_path(id)
     )
+}
+
+/// `POST /api/v1/system/updates/rollback`
+#[must_use]
+pub fn rollback_update() -> String {
+    String::from("/api/v1/system/updates/rollback")
 }
 
 /// `PUT /api/v1/applications/{id}/exports`

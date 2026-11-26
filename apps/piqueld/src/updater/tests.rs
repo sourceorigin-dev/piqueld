@@ -5,7 +5,7 @@ fn layout(root: &Path) -> Layout {
     let layout = Layout {
         builds: root.join("lib"),
         bin: root.join("bin"),
-        unit: root.join("piqueld.service"),
+        units: root.join("units"),
     };
     fs::create_dir_all(&layout.builds).expect("the builds directory is created");
     fs::create_dir_all(&layout.bin).expect("the bin directory is created");

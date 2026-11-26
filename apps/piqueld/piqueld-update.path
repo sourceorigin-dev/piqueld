@@ -1,0 +1,15 @@
+# Starts piqueld-update.service when the daemon asks for an update or
+# rollback, through the request file it writes to its runtime directory. The
+# daemon runs unprivileged, so it can't change the host itself. Installed with
+# piqueld.service by install.sh and `piqueld update`; see
+# docs/user/operations/updates.md.
+
+[Unit]
+Description=Watch for piqueld update requests
+
+[Path]
+PathExists=/run/piqueld/update-request
+Unit=piqueld-update.service
+
+[Install]
+WantedBy=multi-user.target

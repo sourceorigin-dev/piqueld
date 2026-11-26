@@ -10,11 +10,29 @@ use axum::{
 use piqueld_core::ApiErrorCode;
 use piqueld_core::access::{AppPermission, GlobalPermission};
 use piqueld_core::api::{
-    BuilderCheck, DnsStatus, Envelope, SystemStatus, UpdateChannelRequest, UpdateStatus,
+    BuilderCheck, DnsStatus, Envelope, SystemStatus, UpdateAction, UpdateChannelRequest,
+    UpdateStatus,
 };
 
 use super::access::Audited;
 use super::{ApiError, ApiJson, ApiState, ok, openapi::ApiErrors};
+use utoipa_axum::router::OpenApiRouter;
+
+/// The daemon's status, configuration, checks and updates.
+pub(super) fn router() -> OpenApiRouter<ApiState> {
+    OpenApiRouter::new()
+        .routes(authenticated!(status))
+        .routes(authenticated!(readiness))
+        .routes(granted!(Global(SystemRead) => configuration))
+        .routes(granted!(Global(SystemRead) => checks))
+        .routes(granted!(Global(SystemOperate) => refresh_dns))
+        .routes(granted!(Global(SystemOperate) => check_builder))
+        .routes(granted!(Global(SystemRead) => updates))
+        .routes(granted!(Global(SystemOperate) => check_for_updates))
+        .routes(granted!(Global(SystemOperate) => set_update_channel))
+        .routes(granted!(Global(SystemOperate) => apply_update))
+        .routes(granted!(Global(SystemOperate) => rollback_update))
+}
 
 /// Gets daemon status.
 ///
@@ -167,6 +185,46 @@ pub(super) async fn set_update_channel(
         .set_update_channel(audited.author(&identity), request.channel)
         .await?;
     Ok(ok(status).into_response())
+}
+
+/// Installs the channel's newer build on this host, through the updater,
+/// which restarts piqueld on it.
+///
+/// Only where the install script set piqueld up; 409 `update_unavailable`
+/// elsewhere, or without a newer build, and `update_running` while an update
+/// or rollback runs. The status's `run` follows it.
+#[utoipa::path(
+    post,
+    path = "/api/v1/system/updates/apply",
+    operation_id = "applyUpdate",
+    summary = "Install the newer build",
+    responses(
+        (status = 200, description = "Requested", body = Envelope<UpdateStatus>),
+        ApiErrors<409>,
+    )
+)]
+pub(super) async fn apply_update(State(state): State<ApiState>) -> Result<Response, ApiError> {
+    Ok(ok(state.request_update(UpdateAction::Update).await?).into_response())
+}
+
+/// Returns to the build the last update replaced, through the updater,
+/// which restarts piqueld on it.
+///
+/// Only where the install script set piqueld up; 409 `update_unavailable`
+/// elsewhere, or without a previous build, and `update_running` while an
+/// update or rollback runs. The status's `run` follows it.
+#[utoipa::path(
+    post,
+    path = "/api/v1/system/updates/rollback",
+    operation_id = "rollbackUpdate",
+    summary = "Return to the previous build",
+    responses(
+        (status = 200, description = "Requested", body = Envelope<UpdateStatus>),
+        ApiErrors<409>,
+    )
+)]
+pub(super) async fn rollback_update(State(state): State<ApiState>) -> Result<Response, ApiError> {
+    Ok(ok(state.request_update(UpdateAction::Rollback).await?).into_response())
 }
 
 /// Static liveness body: `{"status":"ok"}`.

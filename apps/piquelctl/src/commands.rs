@@ -24,6 +24,7 @@ use piqueld_client::{
     ListApplicationsOptions, Operation, OperationState, Page,
     observability::{DiagnosticCode, EventFilter},
     operations::TimelineStream,
+    system::{UpdateRunState, UpdateStatus},
     timeline::Timeline,
 };
 use piqueld_core::wait;
@@ -310,6 +311,12 @@ async fn update(client: &Client, console: &mut Console, command: &UpdateCommand)
         UpdateCommand::Status => client.update_status().await?,
         UpdateCommand::Check => client.check_for_updates().await?,
         UpdateCommand::Channel { channel } => client.set_update_channel(*channel).await?,
+        UpdateCommand::Apply => {
+            return run_update(client, console, client.apply_update().await?).await;
+        }
+        UpdateCommand::Rollback => {
+            return run_update(client, console, client.rollback_update().await?).await;
+        }
     };
     console.emit(&status)?;
     match (command, status.error) {
@@ -322,6 +329,86 @@ async fn update(client: &Client, console: &mut Console, command: &UpdateCommand)
             format!("couldn't check for updates: {error}"),
         )),
         _ => Ok(()),
+    }
+}
+
+/// Time an update or rollback may take, the daemon's restart included.
+const UPDATE_TIMEOUT: Duration = Duration::from_mins(10);
+/// Time between reads of a running update's progress.
+const UPDATE_POLL: Duration = Duration::from_secs(3);
+
+/// Waits for the update or rollback `requested` started to finish, through
+/// the daemon's restart, then prints the status, failing when it failed. A
+/// build from before piqueld updated itself, which has no update status, has
+/// finished once it reports the target version. The daemon, or a proxy in
+/// front of it, doesn't answer while it restarts, so it retries then.
+async fn run_update(client: &Client, console: &mut Console, requested: UpdateStatus) -> Result<()> {
+    let Some(started) = requested.run.as_ref().map(|run| run.started_at_ms) else {
+        return Err(CliError::new(
+            ErrorKind::Unhealthy,
+            "the daemon accepted the request but reports no run",
+        ));
+    };
+    let target = requested
+        .run
+        .as_ref()
+        .and_then(|run| run.version.clone())
+        .unwrap_or_default();
+    let progress = console.start_task(&format!("piqueld {target}"));
+    progress.update("waiting for the updater, which restarts piqueld");
+    let deadline = time::Instant::now() + UPDATE_TIMEOUT;
+    let status = loop {
+        wait::pause(UPDATE_POLL).await;
+        match client.update_status().await {
+            Ok(status)
+                if status
+                    .run
+                    .as_ref()
+                    .map_or(status.current.number == target, |run| {
+                        run.started_at_ms >= started && !run.in_progress()
+                    }) =>
+            {
+                break status;
+            }
+            Ok(_) => {}
+            Err(error) if error.is_not_found() => match client.system_status().await {
+                Ok(system) if system.daemon_version == target => {
+                    drop(progress);
+                    return console.info(format_args!("piqueld {target} is running"));
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    let error = CliError::from(error);
+                    if !error.is_unavailable() {
+                        return Err(error);
+                    }
+                }
+            },
+            Err(error) => {
+                let error = CliError::from(error);
+                if !error.is_unavailable() {
+                    return Err(error);
+                }
+            }
+        }
+        if time::Instant::now() >= deadline {
+            return Err(CliError::new(
+                ErrorKind::Unhealthy,
+                format!(
+                    "piqueld {target} didn't finish within {} minutes; see: journalctl -u piqueld-update",
+                    UPDATE_TIMEOUT.as_secs() / 60
+                ),
+            ));
+        }
+    };
+    drop(progress);
+    console.emit(&status)?;
+    match status.run.filter(|run| run.state == UpdateRunState::Failed) {
+        Some(run) => Err(CliError::new(
+            ErrorKind::Unhealthy,
+            run.message.unwrap_or_else(|| "the update failed".into()),
+        )),
+        None => Ok(()),
     }
 }
 

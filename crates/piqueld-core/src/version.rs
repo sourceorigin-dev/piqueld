@@ -127,6 +127,17 @@ impl Version {
         }
     }
 
+    /// A version known only by its number, which compares by it.
+    #[must_use]
+    pub fn numbered(number: &str) -> Self {
+        Self {
+            number: number.to_owned(),
+            commit: None,
+            committed_at_ms: None,
+            channel: None,
+        }
+    }
+
     /// Whether `self` is a newer build than `other`: made from a later
     /// commit, or, when either doesn't know its commit's time, a higher
     /// version.
@@ -211,7 +222,9 @@ const fn parse_channel(text: &str) -> Option<Channel> {
 mod tests {
     use super::*;
 
-    /// Without a commit time, only a higher version is newer.
+    /// Without a commit time, only a higher version is newer. By number
+    /// alone, a later stable patch is older than the next minor's nightly,
+    /// whatever their commits.
     #[test]
     fn a_later_commit_is_newer_whatever_the_version() {
         let build = |number: &str, committed_at_ms| Version {
@@ -228,6 +241,9 @@ mod tests {
         assert!(!build("0.2.0", None).is_newer_than(&build("0.2.0", Some(1))));
         assert!(!build("0.3.0", Some(1)).is_newer_than(&build("0.4.0-dev", None)));
         assert!(build("0.3.0", None).is_newer_than(&build("0.3.0-nightly.20261125", None)));
+        assert!(
+            !Version::numbered("0.4.1").is_newer_than(&Version::numbered("0.5.0-nightly.20261125"))
+        );
     }
 
     #[test]

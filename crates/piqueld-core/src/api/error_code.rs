@@ -132,6 +132,14 @@ string_enum! {
         /// 409: `updates.channel` in the daemon configuration sets the release
         /// channel, so only the configuration changes it.
         UpdateChannelConfigured => "update_channel_configured",
+        /// 409: this host can't update from piqueld, as only installs of the
+        /// install script can, or there is no build to update or roll back
+        /// to.
+        UpdateUnavailable => "update_unavailable",
+        /// 409: an update or rollback hasn't finished yet.
+        UpdateRunning => "update_running",
+        /// 500: the daemon couldn't write its request to the updater.
+        UpdateRequestFailed => "update_request_failed",
         /// 409: an application, environment or preview of that identity or
         /// name already exists.
         ApplicationNameCollision => "application_name_collision",

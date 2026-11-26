@@ -12082,6 +12082,55 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
+    /*Install the newer build
+
+    Only where the install script set piqueld up; 409 `update_unavailable`
+    elsewhere, or without a newer build, and `update_running` while an update
+    or rollback runs. The status's `run` follows it.
+
+    Sends a `POST` request to `/api/v1/system/updates/apply`
+
+    */
+    pub async fn apply_update<'a>(
+        &'a self,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::api::UpdateStatus>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!("{}/api/v1/system/updates/apply", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "apply_update",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            409u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
     /*Follow another release channel
 
     409 `update_channel_configured` when `updates.channel` in the daemon
@@ -12182,6 +12231,55 @@ impl Client {
         match response.status().as_u16() {
             200u16 => crate::client::decode_response(response).await,
             403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Return to the previous build
+
+    Only where the install script set piqueld up; 409 `update_unavailable`
+    elsewhere, or without a previous build, and `update_running` while an
+    update or rollback runs. The status's `run` follows it.
+
+    Sends a `POST` request to `/api/v1/system/updates/rollback`
+
+    */
+    pub async fn rollback_update<'a>(
+        &'a self,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::api::UpdateStatus>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!("{}/api/v1/system/updates/rollback", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "rollback_update",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            409u16 => Err(Error::ErrorResponse(
                 crate::client::decode_response(response).await?,
             )),
             _ => Err(Error::UnexpectedResponse(response)),

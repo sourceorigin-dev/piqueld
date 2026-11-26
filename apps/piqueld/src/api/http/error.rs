@@ -680,6 +680,22 @@ impl From<ApplicationError> for ApiError {
                 ApiErrorCode::UpdateChannelConfigured,
                 "updates.channel in the daemon configuration sets the release channel; change it there",
             ),
+            ApplicationError::UpdateUnavailable(why) => {
+                Self::new(StatusCode::CONFLICT, ApiErrorCode::UpdateUnavailable, why)
+            }
+            ApplicationError::UpdateRunning => Self::new(
+                StatusCode::CONFLICT,
+                ApiErrorCode::UpdateRunning,
+                "an update or rollback is running; wait for it to finish",
+            ),
+            ApplicationError::UpdateFile(error) => {
+                tracing::error!(error = %format!("{error:#}"), "couldn't ask the updater");
+                Self::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ApiErrorCode::UpdateRequestFailed,
+                    "couldn't ask the updater; see the daemon's log",
+                )
+            }
         }
     }
 }

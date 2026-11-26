@@ -125,7 +125,7 @@ Options:
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
   - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key, retry notifications, and choose the release channel.
+  - `system:operate`: Recover the secret key, retry notifications, and update piqueld.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -218,7 +218,7 @@ Options:
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
   - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key, retry notifications, and choose the release channel.
+  - `system:operate`: Recover the secret key, retry notifications, and update piqueld.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -261,7 +261,7 @@ Options:
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
   - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key, retry notifications, and choose the release channel.
+  - `system:operate`: Recover the secret key, retry notifications, and update piqueld.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -478,7 +478,7 @@ Options:
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
   - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key, retry notifications, and choose the release channel.
+  - `system:operate`: Recover the secret key, retry notifications, and update piqueld.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -881,6 +881,8 @@ Commands:
 - [`piquelctl update status`](#piquelctl-update-status): Show the release channel the daemon follows, and whether it has a newer build, as of the daemon's last check.
 - [`piquelctl update check`](#piquelctl-update-check): Check the release channel for a newer build now.
 - [`piquelctl update channel`](#piquelctl-update-channel): Follow another release channel, then check it.
+- [`piquelctl update apply`](#piquelctl-update-apply): Install the channel's newer build on the daemon's host, then wait while piqueld restarts on it.
+- [`piquelctl update rollback`](#piquelctl-update-rollback): Return to the build the last update replaced, then wait while piqueld restarts on it.
 
 ## `piquelctl update status`
 
@@ -915,6 +917,26 @@ piquelctl update channel [OPTIONS] <CHANNEL>
 Arguments:
 
 - `<CHANNEL>`: `stable` or `nightly`.
+
+## `piquelctl update apply`
+
+Install the channel's newer build on the daemon's host, then wait while piqueld restarts on it.
+
+Only where the install script set piqueld up; elsewhere, update it the way you installed it. If the daemon doesn't start on the build, the host goes back to the one it ran. Exits 6 when the update fails. Needs `system:operate`.
+
+```text
+piquelctl update apply [OPTIONS]
+```
+
+## `piquelctl update rollback`
+
+Return to the build the last update replaced, then wait while piqueld restarts on it.
+
+Refused when the build you run updated the database; see `piqueld update rollback`. Exits 6 when the rollback fails. Needs `system:operate`.
+
+```text
+piquelctl update rollback [OPTIONS]
+```
 
 ## `piquelctl app`
 

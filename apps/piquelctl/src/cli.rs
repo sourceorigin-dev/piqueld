@@ -483,6 +483,21 @@ pub(crate) enum UpdateCommand {
         /// `stable` or `nightly`.
         channel: piqueld_client::version::Channel,
     },
+    /// Install the channel's newer build on the daemon's host, then wait
+    /// while piqueld restarts on it.
+    ///
+    /// Only where the install script set piqueld up; elsewhere, update it
+    /// the way you installed it. If the daemon doesn't start on the build,
+    /// the host goes back to the one it ran. Exits 6 when the update fails.
+    /// Needs `system:operate`.
+    Apply,
+    /// Return to the build the last update replaced, then wait while
+    /// piqueld restarts on it.
+    ///
+    /// Refused when the build you run updated the database; see `piqueld
+    /// update rollback`. Exits 6 when the rollback fails. Needs
+    /// `system:operate`.
+    Rollback,
 }
 
 /// `piquelctl dns` subcommands.

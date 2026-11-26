@@ -5,7 +5,7 @@ pub use piqueld_core::api::{
     IngressStatus, InstallMethod, PrivateIngressStatus, PublicIngressStatus, ReadinessStatus,
     RegistryImageStatus, RouteStatus, SnapshotLimits, SystemCheck, SystemCheckId, SystemChecks,
     SystemStatus, TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver, TelemetryStatus,
-    UpdateChannelRequest, UpdateStatus,
+    UpdateAction, UpdateChannelRequest, UpdateRun, UpdateRunState, UpdateStatus,
 };
 
 use crate::{Client, ClientError, client::EnvelopedCall};
@@ -68,6 +68,25 @@ impl Client {
             .set_update_channel(&UpdateChannelRequest { channel })
             .data()
             .await
+    }
+
+    /// Asks the updater to install the channel's newer build, which restarts
+    /// the daemon. Fails with `update_unavailable` where the install script
+    /// didn't set piqueld up, or without a newer build.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when transport, decoding, or API response handling fails.
+    pub async fn apply_update(&self) -> Result<UpdateStatus, ClientError> {
+        self.generated.apply_update().data().await
+    }
+
+    /// Asks the updater to return to the previous build, which restarts the
+    /// daemon.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when transport, decoding, or API response handling fails.
+    pub async fn rollback_update(&self) -> Result<UpdateStatus, ClientError> {
+        self.generated.rollback_update().data().await
     }
 
     /// Reads effective daemon configuration without changing host settings.

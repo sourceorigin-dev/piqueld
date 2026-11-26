@@ -1,16 +1,17 @@
 //! `piqueld update`: installs a published build on a host the install script
 //! set up, and rolls it back, as root. It reports each step as a `tracing`
-//! event.
+//! event, and records each run in [`RUN_FILE`], which the daemon reports.
 //!
 //! Each build lives in its own directory, such as
 //! `/usr/local/lib/piqueld/0.3.0`. The `current` link names the one that
-//! runs, which `/usr/local/bin/piqueld` and `piquelctl` resolve through, and
-//! `previous` the one it replaced, for rollback. A database a newer version
-//! updated is never handed to an older one ([`Updater::rollback`]).
+//! runs, and `previous` the one it replaced, for rollback. The daemon asks
+//! for a run with an [`UpdateRequest`] in [`REQUEST_FILE`], which the
+//! `piqueld-update.path` unit watches ([`Updater::take_request`]).
 
 use crate::backup::Backups;
 use anyhow::{Context, Result, bail, ensure};
 use piqueld_config::DaemonConfig;
+use piqueld_core::api::{UpdateAction, UpdateRequest, UpdateRun, UpdateRunState};
 use piqueld_core::version::REPOSITORY_URL;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -20,6 +21,21 @@ use std::time::Duration;
 
 /// The service the install script installs.
 const SERVICE: &str = "piqueld";
+/// The systemd units each build ships, which the updater installs from it:
+/// the service, and the path unit that starts the updater, with its service.
+const UNITS: [&str; 3] = [
+    "piqueld.service",
+    "piqueld-update.service",
+    "piqueld-update.path",
+];
+/// The request file, in the runtime directory, through which the daemon
+/// asks for an update or rollback.
+pub const REQUEST_FILE: &str = "update-request";
+/// The file, in the data directory, where the updater records its latest
+/// run.
+pub const RUN_FILE: &str = "update.json";
+/// The most bytes of a request the updater reads.
+const REQUEST_LIMIT: u64 = 4096;
 /// Time the restarted daemon may take to answer, migrations included.
 const START_TIMEOUT: Duration = Duration::from_mins(3);
 /// Time between attempts to reach the restarted daemon.
@@ -36,19 +52,19 @@ pub struct Layout {
     builds: PathBuf,
     /// The directory linking `piqueld` and `piquelctl` to the current build.
     bin: PathBuf,
-    /// The systemd unit, replaced by each build's own.
-    unit: PathBuf,
+    /// The directory of systemd units, whose [`UNITS`] each build replaces.
+    units: PathBuf,
 }
 
 impl Layout {
     /// The install script's: builds in `/usr/local/lib/piqueld`, linked
-    /// from `/usr/local/bin`, and `/etc/systemd/system/piqueld.service`.
+    /// from `/usr/local/bin`, and units in `/etc/systemd/system`.
     #[must_use]
     pub fn script() -> Self {
         Self {
             builds: PathBuf::from("/usr/local/lib/piqueld"),
             bin: PathBuf::from("/usr/local/bin"),
-            unit: PathBuf::from("/etc/systemd/system/piqueld.service"),
+            units: PathBuf::from("/etc/systemd/system"),
         }
     }
 
@@ -58,7 +74,7 @@ impl Layout {
     }
 
     /// The build a link of [`Self::builds`], `current` or `previous`, names.
-    fn linked(&self, link: &str) -> Option<String> {
+    pub(crate) fn linked(&self, link: &str) -> Option<String> {
         fs::read_link(self.builds.join(link))
             .ok()
             .and_then(|target| target.file_name()?.to_str().map(str::to_owned))
@@ -122,15 +138,27 @@ impl Layout {
         Ok(lock)
     }
 
-    /// Installs the build `version`'s unit, if it differs, and reloads
-    /// systemd.
-    fn install_unit(&self, version: &str) -> Result<()> {
-        let unit = self.build(version).join("piqueld.service");
-        let wanted = fs::read(&unit).with_context(|| format!("read {}", unit.display()))?;
-        if fs::read(&self.unit).ok().as_deref() != Some(wanted.as_slice()) {
-            fs::write(&self.unit, wanted)
-                .with_context(|| format!("write {}", self.unit.display()))?;
+    /// Installs the build `version`'s units that differ, reloads systemd if
+    /// one did, and enables the updater's path unit when the build has it.
+    fn install_units(&self, version: &str) -> Result<()> {
+        let mut changed = false;
+        for name in UNITS {
+            let unit = self.build(version).join(name);
+            let Ok(wanted) = fs::read(&unit) else {
+                continue;
+            };
+            let installed = self.units.join(name);
+            if fs::read(&installed).ok().as_deref() != Some(wanted.as_slice()) {
+                fs::write(&installed, wanted)
+                    .with_context(|| format!("write {}", installed.display()))?;
+                changed = true;
+            }
+        }
+        if changed {
             systemctl(&["daemon-reload"])?;
+        }
+        if self.build(version).join("piqueld-update.path").exists() {
+            systemctl(&["enable", "--now", "piqueld-update.path"])?;
         }
         Ok(())
     }
@@ -323,6 +351,168 @@ impl Updater {
         })
     }
 
+    /// Runs `action`, to `version` or the channel's newest build for an
+    /// update, recording its progress in [`RUN_FILE`] for the daemon to
+    /// report. It locks the builds before the first record, so a second
+    /// updater doesn't overwrite it.
+    ///
+    /// # Errors
+    /// Fails as [`Self::update`] and [`Self::rollback`] do.
+    pub async fn run(
+        &self,
+        action: UpdateAction,
+        version: Option<&str>,
+        from: Option<&Path>,
+    ) -> Result<()> {
+        let _lock = self.layout.lock()?;
+        let mut run = UpdateRun {
+            action: action.into(),
+            version: version.map(str::to_owned),
+            state: UpdateRunState::Running.into(),
+            message: None,
+            started_at_ms: piqueld_store::now_ms(),
+            finished_at_ms: None,
+        };
+        self.record(&run)?;
+        let result = match action {
+            UpdateAction::Update => match self.target(version, from).await {
+                Ok(build) => {
+                    run.version = Some(build.version.clone());
+                    self.record(&run)?;
+                    self.update(&build).await
+                }
+                Err(error) => Err(error),
+            },
+            UpdateAction::Rollback => {
+                run.version = self.layout.linked("previous");
+                self.record(&run)?;
+                self.rollback().await
+            }
+        };
+        run.finished_at_ms = Some(piqueld_store::now_ms());
+        match &result {
+            Ok(()) => run.state = UpdateRunState::Succeeded.into(),
+            Err(error) => {
+                run.state = UpdateRunState::Failed.into();
+                run.message = Some(format!("{error:#}"));
+            }
+        }
+        self.record(&run)?;
+        result
+    }
+
+    /// Reads and deletes the [`UpdateRequest`] the daemon wrote to `path`,
+    /// before anything else can fail, so the path unit doesn't start the
+    /// updater again. The daemon's user owns the directory, so it reads only
+    /// a regular file, not through a link, without waiting on a FIFO, and
+    /// only so much of it.
+    ///
+    /// # Errors
+    /// Fails when the request can't be read or parsed.
+    pub fn take_request(path: &Path) -> Result<UpdateRequest> {
+        use std::io::Read;
+        use std::os::unix::fs::OpenOptionsExt;
+        let flags = rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK;
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(flags.bits().cast_signed())
+            .open(path)
+            .with_context(|| format!("open {}", path.display()));
+        let directory = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir());
+        if directory {
+            fs::remove_dir(path)
+        } else {
+            fs::remove_file(path)
+        }
+        .with_context(|| format!("delete {}", path.display()))?;
+        let file = file?;
+        ensure!(
+            file.metadata()?.is_file(),
+            "{} isn't a file",
+            path.display()
+        );
+        let mut bytes = Vec::new();
+        file.take(REQUEST_LIMIT)
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("read {}", path.display()))?;
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))
+    }
+
+    /// Runs `request`. An update must name a version newer than the one
+    /// that runs, so the daemon can't downgrade its host. It records a
+    /// refused one, holding the lock as `run` does, so the daemon reports why
+    /// rather than a run that never started.
+    ///
+    /// # Errors
+    /// Fails for an older version, then as [`Self::run`] does.
+    pub async fn requested(&self, request: UpdateRequest) -> Result<()> {
+        match request {
+            UpdateRequest::Update { version } => {
+                let lock = self.layout.lock()?;
+                if let Err(error) = self.check_newer(&version) {
+                    self.record(&UpdateRun {
+                        action: UpdateAction::Update.into(),
+                        version: Some(version),
+                        state: UpdateRunState::Failed.into(),
+                        message: Some(format!("{error:#}")),
+                        started_at_ms: piqueld_store::now_ms(),
+                        finished_at_ms: Some(piqueld_store::now_ms()),
+                    })?;
+                    return Err(error);
+                }
+                drop(lock);
+                self.run(UpdateAction::Update, Some(&version), None).await
+            }
+            UpdateRequest::Rollback => self.run(UpdateAction::Rollback, None, None).await,
+        }
+    }
+
+    /// Fails unless `version` is newer, by its number, than the build that
+    /// runs.
+    fn check_newer(&self, version: &str) -> Result<()> {
+        let Some(current) = self.layout.linked("current") else {
+            return Ok(());
+        };
+        let running = self.layout.reported_version(&current)?;
+        ensure!(
+            piqueld_core::version::Version::numbered(version)
+                .is_newer_than(&piqueld_core::version::Version::numbered(&running)),
+            "the daemon asked for piqueld {version}, which isn't newer than piqueld {running}; install it on the host with sudo piqueld update --version {version}"
+        );
+        Ok(())
+    }
+
+    /// Writes `run` to [`RUN_FILE`], owned by the data directory's owner,
+    /// the daemon's user, which reads and replaces it. The directory is the
+    /// daemon's, so the staged file is created anew, never through a link,
+    /// and given away through its descriptor.
+    fn record(&self, run: &UpdateRun) -> Result<()> {
+        use std::io::Write;
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+        let data_dir = &self.config.server.data_dir;
+        let owner =
+            fs::metadata(data_dir).with_context(|| format!("read {}", data_dir.display()))?;
+        let path = data_dir.join(RUN_FILE);
+        let staged = data_dir.join(format!(".{RUN_FILE}.new"));
+        remove(&staged)?;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits().cast_signed())
+            .open(&staged)
+            .with_context(|| format!("create {}", staged.display()))?;
+        file.write_all(&serde_json::to_vec(run).context("serialize the run")?)
+            .with_context(|| format!("write {}", staged.display()))?;
+        rustix::fs::fchown(
+            &file,
+            Some(rustix::fs::Uid::from_raw(owner.uid())),
+            Some(rustix::fs::Gid::from_raw(owner.gid())),
+        )
+        .with_context(|| format!("give {} to the daemon's user", staged.display()))?;
+        fs::rename(&staged, &path).with_context(|| format!("replace {}", path.display()))
+    }
+
     /// A client of the daemon's socket, which root reaches as the host
     /// operator.
     fn daemon(&self) -> Result<piqueld_client::Client> {
@@ -371,9 +561,8 @@ impl Updater {
     /// # Errors
     /// Fails, changing nothing, when the build can't be fetched or rejects
     /// the configuration, and when the daemon doesn't start on it.
-    pub async fn update(&self, build: &Build) -> Result<()> {
+    async fn update(&self, build: &Build) -> Result<()> {
         let layout = &self.layout;
-        let _lock = layout.lock()?;
         let Some(current) = layout.linked("current") else {
             bail!(
                 "piqueld update updates hosts the install script set up, and {} names no build; run the script instead",
@@ -407,9 +596,8 @@ impl Updater {
     /// # Errors
     /// Fails when there is no previous build, when the database was
     /// updated, and when the previous build doesn't start.
-    pub async fn rollback(&self) -> Result<()> {
+    async fn rollback(&self) -> Result<()> {
         let layout = &self.layout;
-        let _lock = layout.lock()?;
         let (Some(current), Some(previous)) = (layout.linked("current"), layout.linked("previous"))
         else {
             bail!("there is no previous build to roll back to");
@@ -524,7 +712,7 @@ impl Updater {
         let layout = &self.layout;
         let since_ms = piqueld_store::now_ms();
         let switched = layout
-            .install_unit(version)
+            .install_units(version)
             .and_then(|()| layout.link("current", version))
             .and_then(|()| layout.link_binaries())
             .and_then(|()| systemctl(&["restart", SERVICE]));

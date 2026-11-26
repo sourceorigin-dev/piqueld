@@ -520,6 +520,9 @@
           "repository_managed",
           "application_busy",
           "update_channel_configured",
+          "update_unavailable",
+          "update_running",
+          "update_request_failed",
           "application_name_collision",
           "application_state_conflict",
           "history_expired",
@@ -6994,6 +6997,30 @@
                       }
                     ],
                     "description": "The channel's newest build, as of the last check that reached its\nfeed; absent before one did."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              },
+              "previous": {
+                "description": "The build `piqueld update rollback` returns to, on a host the install\nscript set up; absent elsewhere, and before an update.",
+                "nullable": true,
+                "type": "string"
+              },
+              "run": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/UpdateRun"
+                      }
+                    ],
+                    "description": "The latest update or rollback on this host, as the updater records\nit; absent before one."
                   },
                   {
                     "enum": [
@@ -14103,6 +14130,46 @@
         ],
         "type": "object"
       },
+      "UpdateRun": {
+        "description": "One run of the updater: an update or a rollback.",
+        "properties": {
+          "action": {
+            "description": "The [`UpdateAction`].",
+            "type": "string"
+          },
+          "finished_at_ms": {
+            "description": "When it finished, in Unix milliseconds; absent while it runs.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "message": {
+            "description": "What happened, such as why it failed.",
+            "nullable": true,
+            "type": "string"
+          },
+          "started_at_ms": {
+            "description": "When it was requested or started, in Unix milliseconds.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "state": {
+            "description": "The [`UpdateRunState`].",
+            "type": "string"
+          },
+          "version": {
+            "description": "The build it installs, or returns to; absent while the updater\nresolves it.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "state",
+          "started_at_ms"
+        ],
+        "type": "object"
+      },
       "UpdateStatus": {
         "description": "The channel an installation follows, and whether it has a newer build\nthan the running daemon. piqueld only checks: updating is the operator's\nchoice, by [`InstallMethod`].",
         "properties": {
@@ -14150,6 +14217,30 @@
                   }
                 ],
                 "description": "The channel's newest build, as of the last check that reached its\nfeed; absent before one did."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          },
+          "previous": {
+            "description": "The build `piqueld update rollback` returns to, on a host the install\nscript set up; absent elsewhere, and before an update.",
+            "nullable": true,
+            "type": "string"
+          },
+          "run": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateRun"
+                  }
+                ],
+                "description": "The latest update or rollback on this host, as the updater records\nit; absent before one."
               },
               {
                 "enum": [
@@ -34387,6 +34478,46 @@
         "x-piqueld-access": "system:read"
       }
     },
+    "/api/v1/system/updates/apply": {
+      "post": {
+        "description": "Only where the install script set piqueld up; 409 `update_unavailable`\nelsewhere, or without a newer build, and `update_running` while an update\nor rollback runs. The status's `run` follows it.",
+        "operationId": "applyUpdate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_UpdateStatus"
+                }
+              }
+            },
+            "description": "Requested"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Install the newer build",
+        "x-piqueld-access": "system:operate"
+      }
+    },
     "/api/v1/system/updates/channel": {
       "put": {
         "description": "409 `update_channel_configured` when `updates.channel` in the daemon\nconfiguration sets the channel.",
@@ -34494,6 +34625,46 @@
           }
         },
         "summary": "Check for updates now",
+        "x-piqueld-access": "system:operate"
+      }
+    },
+    "/api/v1/system/updates/rollback": {
+      "post": {
+        "description": "Only where the install script set piqueld up; 409 `update_unavailable`\nelsewhere, or without a previous build, and `update_running` while an\nupdate or rollback runs. The status's `run` follows it.",
+        "operationId": "rollbackUpdate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_UpdateStatus"
+                }
+              }
+            },
+            "description": "Requested"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Return to the previous build",
         "x-piqueld-access": "system:operate"
       }
     }

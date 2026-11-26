@@ -5,7 +5,7 @@ use super::*;
 /// Write routes that change no persistent state, such as a plan, a test
 /// send or an in-memory sign-in step, so they are recorded in the
 /// background.
-const BACKGROUND: [(&str, &str); 13] = [
+const BACKGROUND: [(&str, &str); 15] = [
     ("POST", "/api/v1/applications/plan"),
     ("POST", "/api/v1/environments/{id}/promote/plan"),
     ("POST", "/api/v1/auth/device/start"),
@@ -19,6 +19,8 @@ const BACKGROUND: [(&str, &str); 13] = [
     ("POST", "/api/v1/system/builder/check"),
     ("POST", "/api/v1/system/dns/refresh"),
     ("POST", "/api/v1/system/updates/check"),
+    ("POST", "/api/v1/system/updates/apply"),
+    ("POST", "/api/v1/system/updates/rollback"),
 ];
 
 /// Write routes outside the typed application edits whose changes append

@@ -49,7 +49,9 @@ starts it:
   that file exists. The configuration serves the dashboard on the host's
   [localhost](#localhost).
 - It installs the `piqueld` systemd service, starts it, and waits until it
-  answers.
+  answers. It also installs `piqueld-update.path` and
+  `piqueld-update.service`, which apply the updates you ask for from the
+  dashboard or `piquelctl`, as root.
 
 The steps that need root run with `sudo`, which asks for your password, and
 the script prints each of their commands before it runs it.
