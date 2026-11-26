@@ -116,7 +116,7 @@ async fn tallies_add_up_into_hourly_and_daily_points() {
 
 #[tokio::test]
 async fn ranks_stop_growing_at_their_limit_and_old_counts_are_pruned() {
-    let (_directory, mut store, id) = environment().await;
+    let (_directory, store, id) = environment().await;
     let now = now_ms();
     let today = now - now.rem_euclid(DAY_MS);
     let page = |value: String| (route(&id, "a.example.com"), today, RankKind::Page, value);
@@ -172,7 +172,7 @@ async fn ranks_stop_growing_at_their_limit_and_old_counts_are_pruned() {
         .record_traffic(&tally)
         .await
         .expect("the store can record traffic");
-    store.traffic_days = 1;
+    store.pin(|pins| pins.retention.traffic_days = Some(1));
     store
         .prune_traffic()
         .await

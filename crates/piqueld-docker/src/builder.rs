@@ -11,7 +11,7 @@
 //! registry.example.ts.net:5000/piqueld@sha256:<64 hex>
 //! ```
 use crate::command::CommandError;
-use piqueld_core::build_machine::{BuilderEndpoint, RemoteBuild, WhenUnavailable};
+use piqueld_core::build_machine::{BuilderEndpoint, RemoteBuild};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
@@ -54,8 +54,6 @@ pub struct RemoteBuilder {
     /// Where the build machine pushes images, and a client of that
     /// registry.
     pub(super) registry: crate::BuildRegistry,
-    /// What a build does while the build machine can't be reached.
-    pub(super) unavailable: WhenUnavailable,
     /// The latest check of its `BuildKit` daemon; see [`Self::probe`].
     last_check: parking_lot::Mutex<Option<piqueld_core::api::BuilderCheck>>,
 }
@@ -83,7 +81,6 @@ impl RemoteBuilder {
             endpoint: remote.builder.clone(),
             registry: crate::BuildRegistry::new(remote.repository.clone())
                 .map_err(RegisterError::Registry)?,
-            unavailable: remote.unavailable,
             last_check: parking_lot::Mutex::default(),
         };
         match tokio::fs::remove_dir_all(&builder.config).await {
@@ -225,7 +222,6 @@ mod tests {
                     .expect("the builder repository parses"),
             )
             .expect("the build registry builds"),
-            unavailable: WhenUnavailable::Fail,
             last_check: parking_lot::Mutex::default(),
         }
     }

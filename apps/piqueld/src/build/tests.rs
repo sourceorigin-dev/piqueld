@@ -73,11 +73,14 @@ fn a_small_cap_keeps_what_fits_and_a_tail_without_the_note() {
 async fn attempt(directory: &std::path::Path, cap: u32) -> BuildAttempt {
     let store = Store::open_unsynced(directory.join("db"))
         .await
-        .expect("the store opens")
-        .with_build_history(piqueld_config::BuildHistoryConfig {
-            log_max_bytes: cap,
-            log_retention_days: 1,
-        });
+        .expect("the store opens");
+    store.pin_settings(piqueld_core::SettingsPins {
+        build_history: piqueld_core::settings::BuildHistoryPins {
+            log_max_bytes: Some(cap),
+            log_retention_days: Some(1),
+        },
+        ..piqueld_core::SettingsPins::default()
+    });
     let app = piqueld_core::manifest::parse_template_toml(
         "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='notes'\n\
          [[spec.services]]\nname='web'\n[spec.services.source]\ntype='image'\nimage='nginx'",

@@ -504,6 +504,22 @@ pub(super) fn empty(message: impl Into<String>) -> AnyView {
     view! { <p class="empty">{message.into()}</p> }.into_any()
 }
 
+/// Prose whose `` `code` `` spans show as code, such as a setting's
+/// description.
+pub(super) fn prose(text: &str) -> AnyView {
+    text.split('`')
+        .enumerate()
+        .map(|(index, part)| {
+            if index % 2 == 1 {
+                view! { <code>{part.to_owned()}</code> }.into_any()
+            } else {
+                part.to_owned().into_any()
+            }
+        })
+        .collect_view()
+        .into_any()
+}
+
 /// Placeholder for a list or section whose content is still being read,
 /// announced politely to assistive technology.
 pub(super) fn loading(message: impl Into<String>) -> AnyView {
@@ -627,6 +643,14 @@ pub(super) fn text_field(label: &'static str, value: RwSignal<String>) -> AnyVie
     text_input(label, value, String::clone, |value, input| *value = input)
 }
 
+/// Moves the focus to `element`, when it is one that takes it.
+pub(super) fn focus(element: &web_sys::Element) {
+    if let Some(element) = element.dyn_ref::<web_sys::HtmlElement>() {
+        #[expect(clippy::let_underscore_must_use, reason = "focusing is best effort")]
+        let _ = element.focus();
+    }
+}
+
 /// Native dialogs provide focus containment, Escape handling, and focus
 /// restoration. Opening focuses the first field; a dialog without one keeps
 /// the browser's choice, its Close button, so Enter never confirms by itself.
@@ -660,13 +684,8 @@ pub(super) fn Modal(
                 }
                 if let Ok(Some(field)) = dialog.query_selector(
                     ".modal-body input:not([type=checkbox]), .modal-body select, .modal-body textarea",
-                ) && let Some(field) = field.dyn_ref::<web_sys::HtmlElement>()
-                {
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "focusing is best effort"
-                    )]
-                    let _ = field.focus();
+                ) {
+                    focus(&field);
                 }
             } else {
                 dialog.close();
@@ -865,11 +884,8 @@ impl TabSet {
                 (index + offered.len() - 1) % offered.len()
             };
             selected.set(offered[next]);
-            if let Some(button) = document().get_element_by_id(&self.tab_id(offered[next]))
-                && let Some(button) = button.dyn_ref::<web_sys::HtmlElement>()
-            {
-                #[expect(clippy::let_underscore_must_use, reason = "focusing is best effort")]
-                let _ = button.focus();
+            if let Some(button) = document().get_element_by_id(&self.tab_id(offered[next])) {
+                focus(&button);
             }
         };
         view! {

@@ -86,6 +86,14 @@ pub(super) fn audit_request(route: &str) -> crate::AuditRequest {
 }
 
 impl Store {
+    /// Pins settings through `pin`, as `config.toml` would, so they apply at
+    /// once and nothing changes them.
+    pub(crate) fn pin(&self, pin: impl FnOnce(&mut piqueld_core::SettingsPins)) {
+        let mut pins = self.settings_changes().borrow().pins().clone();
+        pin(&mut pins);
+        self.pin_settings(pins);
+    }
+
     /// Makes every audit append fail while `refused`, as a full disk would:
     /// a record at the highest possible ID leaves none for the next one.
     pub(super) async fn refuse_audit(&self, refused: bool) {

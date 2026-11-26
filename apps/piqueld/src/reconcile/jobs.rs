@@ -108,7 +108,7 @@ impl<D: DockerApi> Controller<D> {
         ownership: &BTreeMap<String, String>,
         cancellation: &CancellationToken,
     ) -> Result<DesiredJobRun, OperationError> {
-        let mut deadline = tokio::time::Instant::now() + self.retry.convergence_timeout;
+        let mut deadline = tokio::time::Instant::now() + self.convergence_timeout();
         loop {
             let observed = self
                 .observe_with_retry(operation, cancellation, deadline)
@@ -138,7 +138,7 @@ impl<D: DockerApi> Controller<D> {
             )
             .await?;
             if matches!(action.kind, ActionKind::WaitForService { .. }) {
-                deadline = tokio::time::Instant::now() + self.retry.convergence_timeout;
+                deadline = tokio::time::Instant::now() + self.convergence_timeout();
             }
         }
     }
@@ -430,7 +430,7 @@ impl<D: DockerApi> Controller<D> {
         &self,
         released: impl Future<Output = Result<(), piqueld_docker::DockerError>>,
     ) -> Result<(), OperationError> {
-        tokio::time::timeout(self.retry.convergence_timeout, released)
+        tokio::time::timeout(self.convergence_timeout(), released)
             .await
             .map_err(|_| OperationError::ConvergenceTimeout)?
             .map_err(OperationError::from)

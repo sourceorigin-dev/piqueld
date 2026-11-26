@@ -475,8 +475,8 @@ repository and its latest check, with `system:read`. `piquelctl builder check`
 checks it now, with `system:operate`, and exits 6 while it is unreachable.
 
 `status` answers whether the daemon and its subsystems are up. Two more
-read-only commands, both requiring `system:read`, show what the dashboard's
-Daemon status and Host settings pages do:
+commands, both requiring `system:read`, show what the dashboard's Daemon
+status and Settings pages do:
 
 - `piquelctl resources` shows the daemon's
   [resource measurements](../operations/history.md#watch-the-daemon-itself): uptime,
@@ -488,11 +488,13 @@ Daemon status and Host settings pages do:
   The daemon measures at most every 5 seconds and averages CPU usage since
   its previous measurement, so its first measurement has none. What the host
   cannot measure is unavailable, never zero.
-- `piquelctl settings` shows the daemon's effective
-  [configuration](configuration.md), grouped as on the Host settings page.
-  Credentials appear only as the file they are read from. Change settings in
-  the daemon's TOML and restart it. Each read is recorded in the
-  [audit trail](../operations/audit.md).
+- `piquelctl settings` shows the daemon's settings, grouped as on the
+  Settings page: the host's, from its [configuration](configuration.md), and
+  the [daemon settings](../operations/settings.md) with their source.
+  Credentials appear only as the file they are read from. Each read is
+  recorded in the [audit trail](../operations/audit.md).
+  `piquelctl settings set` and `reset` change a daemon setting at once, with
+  `settings:manage`, unless the configuration pins it.
 
 Global `--timeout DURATION` defaults to `30s`. Durations are positive integer
 milliseconds (`ms`), seconds (`s`), minutes (`m`), hours (`h`), or days (`d`); a

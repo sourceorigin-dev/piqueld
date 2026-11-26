@@ -136,10 +136,10 @@ With `piquelctl`:
   one fails.
 - `piquelctl resources` shows the daemon's resource usage and counters.
 
-The **Host settings** page shows the daemon's
-[configuration](../reference/configuration.md) as it runs, and
-`piquelctl settings` prints it. Credentials appear only as the file they're
-read from. To change a setting, edit the configuration and restart the daemon.
+The **Settings** page shows the daemon's settings as it runs, and
+`piquelctl settings` prints them. Credentials appear only as the file they're
+read from. [Changing daemon settings](settings.md) explains which change at
+once and which need the configuration file and a restart.
 
 These pages, `doctor`, `resources` and `settings` need the `system:read`
 permission. `status` works for anyone signed in.

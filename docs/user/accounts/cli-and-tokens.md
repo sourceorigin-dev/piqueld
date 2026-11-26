@@ -199,7 +199,8 @@ leaked ones. piqueld only keeps a hash of it.
 lists all its options.
 
 The daemon's [`auth.max_token_days`](../reference/configuration-settings.md#authmax_token_days)
-setting can limit how long new tokens last. With a limit, tokens without
+setting can limit how long new tokens last; change it on the
+[Settings](../operations/settings.md) page or with `piquelctl settings set`. With a limit, tokens without
 expiry are refused, and so are tokens that outlive it.
 
 ### What tokens can't do

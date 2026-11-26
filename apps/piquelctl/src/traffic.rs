@@ -57,7 +57,7 @@ impl TrafficArgs {
         })?;
         if !traffic.counting {
             console.warning(format_args!(
-                "piqueld isn't counting traffic: it needs ingress.enabled and ingress.traffic in its configuration."
+                "piqueld isn't counting traffic: it needs ingress.enabled in its configuration, and the ingress.traffic setting on, as `piquelctl settings get ingress.traffic` shows."
             ))?;
         }
         Ok(())

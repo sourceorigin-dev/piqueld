@@ -167,6 +167,39 @@ fn parse_failures_keep_the_diagnostic_but_not_the_source_line() {
 }
 
 #[test]
+fn daemon_settings_set_in_the_file_are_pinned_and_checked_against_their_ranges() {
+    let config = DaemonConfig::from_toml(
+        "[auth]\nmax_token_days = 90\npublic_url = 'https://piqueld.example.com'\n[retention]\nevent_days = 7",
+    )
+    .unwrap();
+    let pins = config.pins();
+    assert_eq!(pins.auth.max_token_days, Some(Some(90)));
+    assert_eq!(pins.retention.event_days, Some(7));
+    assert_eq!(pins.retention.audit_days, None);
+
+    for (source, message) in [
+        (
+            "[auth]\nmax_token_days = 0",
+            "auth.max_token_days must be a whole number from 1 to 4294967295; omit it for no limit",
+        ),
+        (
+            "[reconciliation]\nscan_interval_seconds = 0",
+            "reconciliation.scan_interval_seconds",
+        ),
+    ] {
+        let error = format!(
+            "{:#}",
+            anyhow::Error::new(DaemonConfig::from_toml(source).unwrap_err())
+        );
+        assert!(error.contains(message), "{source}: {error}");
+    }
+    assert!(matches!(
+        DaemonConfig::from_toml("[auth]\nmax_token_day = 1"),
+        Err(ConfigError::Parse(_))
+    ));
+}
+
+#[test]
 fn tailscale_node_settings_are_validated() {
     let config = DaemonConfig::from_toml(
         "[tailscale]\nhostname = 'piqueld-dev'\nauth_key_file = '/run/credentials/ts-auth-key'",

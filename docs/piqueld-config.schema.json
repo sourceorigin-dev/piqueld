@@ -28,7 +28,7 @@
       "properties": {
         "max_token_days": {
           "default": null,
-          "description": "The longest lifetime, in days, of new API tokens. When unset, tokens\nmay have any lifetime, including none. Existing tokens keep theirs.",
+          "description": "The longest lifetime, in days, of new API tokens. When unset, tokens\nmay have any lifetime, including none. Existing tokens keep theirs.\nA daemon setting: set here, it is pinned to its value; otherwise\n`piquelctl settings`, the API or the dashboard changes it while the\ndaemon runs.",
           "format": "int32",
           "minimum": 1,
           "type": [
@@ -86,7 +86,7 @@
             },
             {
               "$ref": "#/definitions/WhenUnavailable",
-              "description": "What a deployment that has to build does while the build machine\ncan't be reached: `fail`, the default, fails it with\n`builder_unavailable`, and `local` builds on this host's Docker Engine\ninstead, where a build competes with the applications the host runs.\nRequires `builder`."
+              "description": "What a deployment that has to build does while the build machine\ncan't be reached: `fail`, the default, fails it with\n`builder_unavailable`, and `local` builds on this host's Docker Engine\ninstead, where a build competes with the applications the host runs.\nRequires `builder`. A daemon setting: set here, it is pinned to its\nvalue; otherwise `piquelctl settings` or the dashboard changes it."
             }
           ]
         }
@@ -95,7 +95,7 @@
     },
     "BuildHistoryConfig": {
       "additionalProperties": false,
-      "description": "How much output of each build is kept, and for how long. Builds\nthemselves are listed until deployment history pruning removes their\noperation.",
+      "description": "How much output of each build is kept, and for how long. Builds\nthemselves are listed until deployment history pruning removes their\noperation.\n\nDaemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.",
       "properties": {
         "log_max_bytes": {
           "default": 4194304,
@@ -255,7 +255,7 @@
     },
     "ImagesConfig": {
       "additionalProperties": false,
-      "description": "Cleanup of the images this installation builds. Cleanup keeps what every\nenvironment and preview runs or is deploying, and removes the rest. It\nnever removes pulled images, images built by hand, or images other\ninstallations built on the same Docker Engine. With a build machine, it\nalso deletes from the build registry the images this host's builds pushed\nthat no deployment it keeps there uses.",
+      "description": "Cleanup of the images this installation builds. Cleanup keeps what every\nenvironment and preview runs or is deploying, and removes the rest. It\nnever removes pulled images, images built by hand, or images other\ninstallations built on the same Docker Engine. With a build machine, it\nalso deletes from the build registry the images this host's builds pushed\nthat no deployment it keeps there uses.\n\nDaemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.",
       "properties": {
         "cleanup_interval_seconds": {
           "default": 3600,
@@ -308,9 +308,11 @@
           "type": "array"
         },
         "traffic": {
-          "default": true,
-          "description": "Count the requests each route serves, for each environment's\ntraffic page, while `ingress.enabled` is set. piqueld stores hourly\ntotals, not the requests themselves or visitors' addresses. While the\ndaemon isn't connected to the gateway, such as while it restarts, the\ngateway writes its requests, visitors' addresses and paths included, to\nits own Docker log, which keeps up to 30 MB.",
-          "type": "boolean"
+          "description": "Count the requests each route serves, for each environment's\ntraffic page, while `ingress.enabled` is set; by default it does. A\ndaemon setting: set here, it is pinned to its value; otherwise\n`piquelctl settings` or the dashboard changes it while the daemon\nruns.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "tunnel": {
           "$ref": "#/definitions/TunnelConfig",
@@ -379,7 +381,7 @@
     },
     "PreviewLimits": {
       "additionalProperties": false,
-      "description": "How many previews may exist, and what each preview service may use.\n\nCounts are checked when a preview is created, so lowering one below the\ncurrent count keeps every existing preview running and only refuses new\nones. Resource bounds apply when a preview's manifest is rendered, so a\npreview picks up changed bounds on its next deployment. Environments are\nnever bounded.",
+      "description": "How many previews may exist, and what each preview service may use.\n\nCounts are checked when a preview is created, so lowering one below the\ncurrent count keeps every existing preview running and only refuses new\nones. Resource bounds apply when a preview's manifest is rendered, so a\npreview picks up changed bounds on its next deployment. Environments are\nnever bounded.\n\nDaemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.",
       "properties": {
         "default_cpu_millis": {
           "default": 500,
@@ -465,7 +467,7 @@
     },
     "ReconciliationConfig": {
       "additionalProperties": false,
-      "description": "How often piqueld checks that Docker matches what is deployed, and how\nlong a deployment may take.",
+      "description": "How often piqueld checks that Docker matches what is deployed, and how\nlong a deployment may take.\n\nDaemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.",
       "properties": {
         "convergence_timeout_seconds": {
           "default": 120,
@@ -496,7 +498,7 @@
     },
     "RetentionConfig": {
       "additionalProperties": false,
-      "description": "How long history is kept. `0` keeps it forever.",
+      "description": "How long history is kept. `0` keeps it forever.\n\nDaemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.",
       "properties": {
         "audit_days": {
           "default": 365,
@@ -514,7 +516,7 @@
         },
         "deployment_days": {
           "default": 90,
-          "description": "Days each environment's deployment history is kept; `0` keeps it\nforever. A deployment is removed only once it is older than this and\nbeyond the newest `deployments_per_environment`, and never while it is\ncurrent or latest, among the newest `images.keep_deployments`\nsuccessful ones (at least one), restored by a remaining deployment, or\nhas jobs to clean up. Of a preview's deployments that finished over an\nhour ago, only its newest successful one and those a remaining one\nrestored stay. Unused releases beyond each application's newest 50, and\nthe build and job records of removed deployments, go too. `0` here or\nin `deployments_per_environment` stops all pruning.",
+          "description": "Days each environment's deployment history is kept; `0` keeps it\nforever. A deployment is removed once it is older than this and\nbeyond the newest `deployments_per_environment`, but never while\nit is still needed, such as its environment's current deployment\nor the newest successful one an automatic rollback restores. The\nhistory guide lists what is kept. `0` here or in\n`deployments_per_environment` stops this pruning, of previews,\nreleases and build records too.",
           "format": "int64",
           "minimum": 0,
           "type": "integer"
@@ -594,7 +596,7 @@
     },
     "SnapshotsConfig": {
       "additionalProperties": false,
-      "description": "Uploads of local worktrees by `piquelctl preview deploy --local`.",
+      "description": "Uploads of local worktrees by `piquelctl preview deploy --local`.\n\nDaemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.",
       "properties": {
         "max_upload_bytes": {
           "default": 268435456,
@@ -716,7 +718,7 @@
       "type": "string"
     }
   },
-  "description": "The daemon's configuration file, `/etc/piqueld/config.toml` unless\n`piqueld --config` selects another. Every setting is optional unless it\nsays otherwise. The daemon reads the file once at startup, so restart it\nto apply a change.",
+  "description": "The daemon's configuration file, `/etc/piqueld/config.toml` unless\n`piqueld --config` selects another. Every setting is optional unless it\nsays otherwise. The daemon reads the file once at startup, so restart it\nto apply a change.\n\nDaemon settings, such as `[retention]` and `[previews]`, are installation\npolicy, which `piquelctl settings`, the API and the dashboard also change\nwhile the daemon runs. Each one set here is pinned to its value, which\nonly this file changes.",
   "properties": {
     "auth": {
       "$ref": "#/definitions/AuthConfig",

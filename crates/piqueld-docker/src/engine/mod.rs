@@ -560,10 +560,12 @@ impl BollardDocker {
     /// The build machine a build runs on: the configured one, once it
     /// accepts connections. While it does not, the build fails with
     /// [`super::BuilderUnavailable`], or runs on the engine if
-    /// `build.unavailable` is `local`; `log` says which and why, without the
+    /// `when_unavailable`, the build's `build.unavailable` setting, is
+    /// `local`; `log` says which and why, without the
     /// `BuildKit` daemon's address, which only `system:read` may see.
     pub(super) async fn reachable_builder(
         &self,
+        when_unavailable: piqueld_core::build_machine::WhenUnavailable,
         log: Option<&dyn crate::command::OutputLog>,
     ) -> Result<Option<&super::RemoteBuilder>, ReachError> {
         let Some(remote) = self.builder.as_deref() else {
@@ -572,7 +574,7 @@ impl BollardDocker {
         let Err(unavailable) = remote.probe().await else {
             return Ok(Some(remote));
         };
-        let local = remote.unavailable == piqueld_core::build_machine::WhenUnavailable::Local;
+        let local = when_unavailable == piqueld_core::build_machine::WhenUnavailable::Local;
         tracing::warn!(error = ?unavailable, local, "the build machine is unreachable");
         if let Some(log) = log {
             let outcome = if local {

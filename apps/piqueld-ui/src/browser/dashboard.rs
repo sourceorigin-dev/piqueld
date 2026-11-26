@@ -122,7 +122,7 @@ pub(super) fn Sidebar() -> impl IntoView {
                             {nav_link(
                                 "/dashboard/settings",
                                 Icon::Settings,
-                                "Host settings",
+                                "Settings",
                                 false,
                             )}
                         </Show>

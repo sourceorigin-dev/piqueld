@@ -24,10 +24,9 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 const MAX_TICK: Duration = Duration::from_secs(1);
 
 impl<D: DockerApi> Controller<D> {
-    /// One event loop polls environment futures and discovery concurrently, so
-    /// no environment holds the loop while waiting for Docker, `SQLite`, or a
-    /// timer. Failures are recorded inside each future, never in the loop body.
-    /// Process startup closes abandoned actions before any worker starts.
+    /// One event loop polls environment futures and discovery concurrently,
+    /// each recording its own failures. Full scans run every `interval`, or
+    /// every `reconciliation.scan_interval_seconds` in effect when `None`.
     ///
     /// # Panics
     /// Panics if the scan interval is zero.
@@ -39,31 +38,29 @@ impl<D: DockerApi> Controller<D> {
     pub async fn run(
         &self,
         wake: Arc<Notify>,
-        interval: Duration,
-        finished_operation_days: u64,
-        event_days: u64,
+        interval: Option<Duration>,
         cancellation: CancellationToken,
     ) -> Result<(), StoreError> {
+        let interval =
+            || interval.unwrap_or_else(|| self.store.settings().reconciliation.scan_interval());
         let mut jobs = FuturesUnordered::new();
         let mut active = HashMap::new();
         let mut health_active = HashSet::new();
         let mut health_jobs = FuturesUnordered::new();
         let mut discovery: Option<BoxFuture<'_, Option<Discovered>>> = None;
-        let mut tick = tokio::time::interval(MAX_TICK.min(interval));
+        let mut tick = tokio::time::interval(MAX_TICK.min(interval()));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut next_scan = tokio::time::Instant::now();
+        let mut last_scan: Option<tokio::time::Instant> = None;
         let mut recovered = false;
         let mut requested = true;
         loop {
             if requested && discovery.is_none() {
-                let full = tokio::time::Instant::now() >= next_scan;
+                let now = tokio::time::Instant::now();
+                let full = last_scan.is_none_or(|last| now >= last + interval());
                 if full {
-                    next_scan = tokio::time::Instant::now() + interval;
+                    last_scan = Some(now);
                 }
-                discovery = Some(
-                    self.discovery_pass(!recovered, full, finished_operation_days, event_days)
-                        .boxed(),
-                );
+                discovery = Some(self.discovery_pass(!recovered, full).boxed());
                 requested = false;
             }
             let discovered = async {
@@ -80,7 +77,7 @@ impl<D: DockerApi> Controller<D> {
                 }
                 () = wake.notified() => requested = true,
                 () = self.relink.notified() => {
-                    next_scan = tokio::time::Instant::now();
+                    last_scan = None;
                     requested = true;
                 }
                 _ = tick.tick() => requested = true,
@@ -227,21 +224,14 @@ impl<D: DockerApi> Controller<D> {
 
     /// Recovers interrupted work on the first pass, prunes history on full
     /// scans, and finds environments to process. Failures are reported here.
-    async fn discovery_pass(
-        &self,
-        recover: bool,
-        full: bool,
-        finished_operation_days: u64,
-        event_days: u64,
-    ) -> Option<Discovered> {
+    async fn discovery_pass(&self, recover: bool, full: bool) -> Option<Discovered> {
         let result = async {
             if recover {
                 self.store.recover_interrupted().await?;
                 self.store.recover_builds().await?;
             }
             if full {
-                self.prune_history(finished_operation_days, event_days)
-                    .await?;
+                self.prune_history().await?;
             }
             self.discover(full).await
         }
@@ -723,7 +713,10 @@ impl<D: DockerApi> Controller<D> {
     /// the secret versions nothing can mount any more, including those this
     /// pass's history pruning just released (see `collect_secret_versions`),
     /// and refreshes the query planner's statistics.
-    async fn prune_history(&self, operation_days: u64, event_days: u64) -> Result<(), StoreError> {
+    async fn prune_history(&self) -> Result<(), StoreError> {
+        let retention = self.store.settings().retention;
+        let (operation_days, event_days) =
+            (retention.finished_operation_days, retention.event_days);
         self.store.prune_daemon_events().await?;
         self.store.prune_audit().await?;
         self.store.prune_receipts().await?;

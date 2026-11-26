@@ -149,11 +149,12 @@ impl Store {
             "degraded"
         };
         let now = now_ms();
+        let refresh_ms = crate::seconds_ms(self.settings().reconciliation.scan_interval_seconds);
         if recorded.is_some_and(|recorded| {
             recorded.runtime_health.as_deref() == Some(health)
                 && recorded
                     .health_observed_at_ms
-                    .is_some_and(|at| now.saturating_sub(at) < self.health_refresh_ms)
+                    .is_some_and(|at| now.saturating_sub(at) < refresh_ms)
         }) {
             return Ok(());
         }

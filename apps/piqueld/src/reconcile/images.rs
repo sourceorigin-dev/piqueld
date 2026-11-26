@@ -23,13 +23,6 @@ pub(super) struct ImageRetention {
     /// between operations and delays one by at most a pass. Shared with
     /// the runtime boundary, which accepts promotions.
     in_use: Arc<RwLock<()>>,
-    /// Successful deployments per environment whose images are kept.
-    keep_deployments: u32,
-    /// Successful deployments per environment whose images the build
-    /// registry keeps, never fewer than `keep_deployments`.
-    registry_keep_deployments: u32,
-    /// Time between periodic cleanups.
-    interval: Duration,
     /// Wakes cleanup when an operation finishes.
     requested: Notify,
     /// The status reported to the API after each cleanup.
@@ -38,25 +31,15 @@ pub(super) struct ImageRetention {
 
 impl Default for ImageRetention {
     fn default() -> Self {
-        Self::new(&piqueld_config::ImagesConfig::default())
-    }
-}
-
-impl ImageRetention {
-    /// Creates retention limits and a cleanup interval from `config`.
-    pub(super) fn new(config: &piqueld_config::ImagesConfig) -> Self {
         Self {
             in_use: Arc::default(),
-            keep_deployments: config.keep_deployments,
-            registry_keep_deployments: config
-                .registry_keep_deployments
-                .max(config.keep_deployments),
-            interval: Duration::from_secs(config.cleanup_interval_seconds),
             requested: Notify::new(),
             status: watch::Sender::default(),
         }
     }
+}
 
+impl ImageRetention {
     /// Asks for a cleanup soon, e.g. once a deployment finished.
     pub(super) fn request_cleanup(&self) {
         self.requested.notify_one();
@@ -188,7 +171,7 @@ impl<D: DockerApi> Controller<D> {
         };
         let retained = self
             .store
-            .retained_images(self.images.keep_deployments)
+            .retained_images(self.store.settings().images.keep_deployments)
             .await?;
         let (mut kept, mut reclaimed) = (0_u32, 0_u64);
         let mut on_host = BTreeSet::new();
@@ -258,7 +241,12 @@ impl<D: DockerApi> Controller<D> {
         };
         let retained = self
             .store
-            .retained_images(self.images.registry_keep_deployments)
+            .retained_images({
+                let images = self.store.settings().images;
+                images
+                    .registry_keep_deployments
+                    .max(images.keep_deployments)
+            })
             .await?;
         let keep: BTreeSet<Sha256Digest> = retained
             .iter()
@@ -299,17 +287,28 @@ impl<D: DockerApi> Controller<D> {
         Ok(pass)
     }
 
-    /// Cleans up every interval and after operations finish, until
-    /// cancelled. Failures are reported as daemon diagnostics.
+    /// Cleans up at once, then every `images.cleanup_interval_seconds` and
+    /// after operations finish, until cancelled. A changed interval applies
+    /// at once. Failures are reported as daemon diagnostics.
     pub async fn run_image_cleanup(&self, cancellation: CancellationToken) {
-        let mut interval = tokio::time::interval(self.images.interval);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut settings = self.store.settings_changes();
+        let mut last = None;
         loop {
+            let interval = Duration::from_secs(
+                settings
+                    .borrow_and_update()
+                    .effective()
+                    .images
+                    .cleanup_interval_seconds,
+            );
+            let next = last.map_or_else(tokio::time::Instant::now, |last| last + interval);
             tokio::select! {
                 () = cancellation.cancelled() => return,
-                _ = interval.tick() => {}
+                () = tokio::time::sleep_until(next) => {}
                 () = self.images.requested.notified() => {}
+                Ok(()) = settings.changed() => continue,
             }
+            last = Some(tokio::time::Instant::now());
             if let Err(error) = self.clean_images().await {
                 tracing::warn!(%error, "image cleanup failed");
                 self.store

@@ -396,6 +396,7 @@ impl From<StoreError> for ApiError {
                 lockout.message(),
             ),
             StoreError::Destination(error) => error.into(),
+            StoreError::Setting(error) => error.into(),
             StoreError::Retry(error) => error.into(),
             StoreError::Denied(denied) => denied.into(),
             StoreError::CredentialRevoked => crate::auth::AuthError::Unauthorized.into(),
@@ -445,6 +446,27 @@ impl From<piqueld_store::DestinationError> for ApiError {
             DestinationError::UnknownApplication(_) => ApiErrorCode::DestinationApplicationUnknown,
         };
         Self::new(StatusCode::BAD_REQUEST, code, error.to_string())
+    }
+}
+
+impl From<piqueld_core::settings::SettingError> for ApiError {
+    /// Refuses a setting change: 404 for an unknown setting, 409 for one the
+    /// configuration file pins or this installation lacks what it needs
+    /// for, 422 for a value it doesn't take.
+    fn from(error: piqueld_core::settings::SettingError) -> Self {
+        use piqueld_core::settings::SettingError;
+        let (status, code) = match error {
+            SettingError::Unknown(_) => (StatusCode::NOT_FOUND, ApiErrorCode::SettingUnknown),
+            SettingError::Pinned(_) => (StatusCode::CONFLICT, ApiErrorCode::SettingPinned),
+            SettingError::Unavailable { .. } => {
+                (StatusCode::CONFLICT, ApiErrorCode::SettingUnavailable)
+            }
+            SettingError::Invalid { .. } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ApiErrorCode::SettingInvalid,
+            ),
+        };
+        Self::new(status, code, error.to_string())
     }
 }
 
@@ -688,7 +710,7 @@ impl From<crate::git::snapshot::SnapshotError> for ApiError {
             SnapshotError::TooLarge { limit } => Self::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 ApiErrorCode::SnapshotTooLarge,
-                format!("{message}; raise [snapshots] max_upload_bytes, or upload against a base the repository has"),
+                format!("{message}; raise the snapshots.max_upload_bytes setting, or upload against a base the repository has"),
             )
             .details(json!({ "limit": limit })),
             SnapshotError::TreeTooLarge { limit } => Self::new(

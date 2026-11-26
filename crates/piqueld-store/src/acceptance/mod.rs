@@ -637,7 +637,8 @@ impl Store {
     ) -> Result<(super::StoredEnvironment, bool), StoreError> {
         let current = Self::checked_application_on(tx, application, None).await?;
         let (id, created) =
-            Self::create_preview_on(tx, &current, branch, slot, &self.previews, now).await?;
+            Self::create_preview_on(tx, &current, branch, slot, &self.preview_limits(), now)
+                .await?;
         Ok((Self::preview_on(tx, &id).await?, created))
     }
 

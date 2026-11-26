@@ -328,8 +328,8 @@ audited.
 
 ## Traffic counting
 
-While `ingress.traffic` and `ingress.enabled` are set, the daemon counts the
-requests each route proxies (`ingress/traffic.rs`), for the API's
+While the `ingress.traffic` setting and `ingress.enabled` are set, the daemon
+counts the requests each route proxies (`ingress/traffic.rs`), for the API's
 `GET /api/v1/environments/{id}/traffic`, `piquelctl env traffic` and the
 environment's **Traffic** tab.
 

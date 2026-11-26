@@ -42,6 +42,7 @@
 - [Seeing who visits an application](user/operations/traffic.md)
 - [Exporting telemetry](user/operations/telemetry.md)
 - [Deploying an observability stack](user/operations/observability-stack.md)
+- [Changing daemon settings](user/operations/settings.md)
 - [Backups and upgrades](user/operations/backups.md)
 
 # Reference

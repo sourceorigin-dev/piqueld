@@ -12,6 +12,16 @@ let
   ];
   withoutNulls = lib.filterAttrsRecursive (_: value: value != null);
   absolutePath = lib.types.strMatching "/.+";
+  # A daemon setting: null, its default, leaves it to `piquelctl settings`
+  # and the dashboard; a value pins it. `default` is the daemon's, for the
+  # description only.
+  daemonSetting =
+    type: default: description:
+    lib.mkOption {
+      type = lib.types.nullOr type;
+      default = null;
+      description = "${description} A daemon setting: null leaves it to `piquelctl settings` and the dashboard, defaulting to ${if builtins.isBool default then lib.boolToString default else toString default}; a value pins it.";
+    };
   nodeName = lib.types.strMatching "[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?";
   # A `_file` setting, which piqueld gets as a systemd credential: a string,
   # not a path, so the secret is never copied into the Nix store. Its
@@ -165,7 +175,7 @@ in
           auth.max_token_days = lib.mkOption {
             type = lib.types.nullOr (lib.types.ints.between 1 4294967295);
             default = null;
-            description = "Longest lifetime of new API tokens in days. Null allows any lifetime, including tokens that never expire.";
+            description = "Longest lifetime of new API tokens in days. A daemon setting: null leaves it to `piquelctl settings` and the dashboard, where by default tokens may have any lifetime, including none; a value pins it.";
           };
           tailscale.enabled = lib.mkOption {
             type = lib.types.bool;
@@ -213,16 +223,10 @@ in
             default = null;
             description = "Image repository the build machine pushes to and this host pulls from, as registry-host[:port]/path without a tag. Docker requires HTTPS of a registry on another machine. It takes no credentials, so only this host and the build machine should be able to reach it. Requires build.builder.";
           };
-          build.unavailable = lib.mkOption {
-            type = lib.types.nullOr (
-              lib.types.enum [
-                "fail"
-                "local"
-              ]
-            );
-            default = null;
-            description = "What a deployment that has to build does while the build machine is unreachable: fail (the default) fails it with builder_unavailable, local builds on this host instead. Requires build.builder.";
-          };
+          build.unavailable = daemonSetting (lib.types.enum [
+            "fail"
+            "local"
+          ]) "fail" "What a deployment that has to build does while the build machine can't be reached: fail fails it with builder_unavailable, and local builds on this host's Docker Engine instead. Requires build.builder.";
           ingress.enabled = lib.mkOption {
             type = lib.types.bool;
             default = false;
@@ -276,11 +280,7 @@ in
             example = "hooks.example.com";
             description = "Public hostname on which the gateway forwards GitHub push webhooks, and only them, to piqueld, for applications whose repository syncs with `webhook`. It gets a public route's DNS records, managed when a provider sets manage_records, and applications may not route it or its subdomains. Without ingress.enabled, the daemon still serves the webhook socket for another proxy running as its user. Restart piqueld to apply.";
           };
-          ingress.traffic = lib.mkOption {
-            type = lib.types.bool;
-            default = true;
-            description = "Count the requests each route serves, for each environment's traffic page, while ingress.enabled is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses. While the daemon isn't connected to the gateway, such as while it restarts, the gateway writes its requests, visitors' addresses and paths included, to its own Docker log, which keeps up to 30 MB. Restart piqueld to apply.";
-          };
+          ingress.traffic = daemonSetting lib.types.bool true "Count the requests each route serves, for each environment's traffic page, while ingress.enabled is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses. While the daemon isn't connected to the gateway, such as while it restarts, the gateway writes its requests, visitors' addresses and paths included, to its own Docker log, which keeps up to 30 MB.";
           dns.providers = lib.mkOption {
             type = lib.types.listOf (
               lib.types.submodule {
@@ -318,111 +318,27 @@ in
             default = [ ];
             description = "DNS provider accounts piqueld uses for DNS-01 certificates and, with manage_records, routes' DNS records. Cloudflare needs api_token_file; OVH needs endpoint and the three OVH files.";
           };
-          reconciliation.scan_interval_seconds = lib.mkOption {
-            type = lib.types.ints.between 1 86400;
-            default = 60;
-            description = "Seconds between full drift scans.";
-          };
-          reconciliation.prepare_timeout_seconds = lib.mkOption {
-            type = lib.types.ints.between 1 86400;
-            default = 300;
-            description = "Timeout in seconds for resolving application inputs.";
-          };
-          reconciliation.convergence_timeout_seconds = lib.mkOption {
-            type = lib.types.ints.between 1 86400;
-            default = 120;
-            description = "Timeout in seconds for runtime convergence; restarts each time a service converges.";
-          };
-          retention.finished_operation_days = lib.mkOption {
-            type = lib.types.ints.unsigned;
-            default = 10;
-            description = "Days to retain finished operations; zero disables pruning.";
-          };
-          retention.deployment_days = lib.mkOption {
-            type = lib.types.ints.unsigned;
-            default = 90;
-            description = "Days to retain deployment history beyond each environment's newest deployments; zero disables all deployment, preview, release and build-record pruning.";
-          };
-          retention.deployments_per_environment = lib.mkOption {
-            type = lib.types.ints.u32;
-            default = 50;
-            description = "Deployments each environment retains however old they are; previews instead keep their current, latest and newest successful deployments and those finished in the last hour, besides the other kept deployments the history docs list. Zero disables all deployment, preview, release and build-record pruning.";
-          };
-          build_history.log_max_bytes = lib.mkOption {
-            type = lib.types.ints.between 1 67108864;
-            default = 4194304;
-            description = "Maximum persisted output bytes per build. Output within it is kept whole. Of longer output, a build keeps the first half and the end, with a note of how many bytes it left out between them when the note fits.";
-          };
-          build_history.log_retention_days = lib.mkOption {
-            type = lib.types.ints.between 1 3650;
-            default = 30;
-            description = "Days to retain output after a build completes.";
-          };
-          images.keep_deployments = lib.mkOption {
-            type = lib.types.ints.u32;
-            default = 3;
-            description = "Successful deployments per environment whose built images are kept for restores, besides what environments and previews run or are deploying.";
-          };
-          images.registry_keep_deployments = lib.mkOption {
-            type = lib.types.ints.u32;
-            default = 10;
-            description = "Successful deployments per environment whose images the build registry keeps, never fewer than images.keep_deployments; cleanup deletes the other images this host's builds pushed there, and skips the registry while it is unreachable. Unused without a build machine.";
-          };
-          images.cleanup_interval_seconds = lib.mkOption {
-            type = lib.types.ints.between 1 86400;
-            default = 3600;
-            description = "Seconds between cleanups of unretained built images; cleanup also runs after each operation.";
-          };
-          retention.event_days = lib.mkOption {
-            type = lib.types.ints.unsigned;
-            default = 90;
-            description = "Days to retain application events; zero disables pruning.";
-          };
-          retention.daemon_event_days = lib.mkOption {
-            type = lib.types.ints.unsigned;
-            default = 90;
-            description = "Days to retain daemon diagnostics independently of application deletion; zero disables pruning.";
-          };
-          retention.traffic_days = lib.mkOption {
-            type = lib.types.ints.unsigned;
-            default = 90;
-            description = "Days to retain each environment's traffic counts; zero disables pruning. Deleting an environment also removes them.";
-          };
-          retention.audit_days = lib.mkOption {
-            type = lib.types.ints.unsigned;
-            default = 365;
-            description = "Days to retain the audit trail independently of application deletion; zero disables pruning.";
-          };
-          previews.max_per_application = lib.mkOption {
-            type = lib.types.ints.unsigned;
-            default = 10;
-            description = "Previews one application may have; creating more fails with preview_limit_reached.";
-          };
-          previews.max_total = lib.mkOption {
-            type = lib.types.ints.unsigned;
-            default = 30;
-            description = "Previews the installation may have; creating more fails with preview_limit_reached.";
-          };
-          previews.default_cpu_millis = lib.mkOption {
-            type = lib.types.ints.between 1 1048576;
-            default = 500;
-            description = "CPU limit, in millicores, of preview services that set none.";
-          };
-          previews.default_memory_bytes = lib.mkOption {
-            type = lib.types.ints.positive;
-            default = 536870912;
-            description = "Memory limit, in bytes, of preview services that set none.";
-          };
-          previews.max_replicas = lib.mkOption {
-            type = lib.types.ints.between 1 100;
-            default = 1;
-            description = "Most replicas a preview service runs; manifests asking for more are capped with a warning.";
-          };
-          snapshots.max_upload_bytes = lib.mkOption {
-            type = lib.types.ints.positive;
-            default = 268435456;
-            description = "Largest Git bundle `piquelctl preview deploy --local` may upload; larger ones fail with snapshot_too_large.";
-          };
+          reconciliation.scan_interval_seconds = daemonSetting (lib.types.ints.between 1 86400) 60 "Seconds between full drift scans.";
+          reconciliation.prepare_timeout_seconds = daemonSetting (lib.types.ints.between 1 86400) 300 "Timeout in seconds for resolving application inputs.";
+          reconciliation.convergence_timeout_seconds = daemonSetting (lib.types.ints.between 1 86400) 120 "Timeout in seconds for runtime convergence; restarts each time a service converges.";
+          retention.finished_operation_days = daemonSetting lib.types.ints.unsigned 10 "Days to retain finished operations; zero disables pruning.";
+          retention.deployment_days = daemonSetting lib.types.ints.unsigned 90 "Days to retain deployment history beyond each environment's newest deployments; zero disables all deployment, preview, release and build-record pruning.";
+          retention.deployments_per_environment = daemonSetting lib.types.ints.u32 50 "Deployments each environment retains however old they are; previews instead keep their current, latest and newest successful deployments and those finished in the last hour, besides the other kept deployments the history docs list. Zero disables all deployment, preview, release and build-record pruning.";
+          build_history.log_max_bytes = daemonSetting (lib.types.ints.between 1 67108864) 4194304 "Maximum persisted output bytes per build. Output within it is kept whole. Of longer output, a build keeps the first half and the end, with a note of how many bytes it left out between them when the note fits.";
+          build_history.log_retention_days = daemonSetting (lib.types.ints.between 1 3650) 30 "Days to retain output after a build completes.";
+          images.keep_deployments = daemonSetting lib.types.ints.u32 3 "Successful deployments per environment whose built images are kept for restores, besides what environments and previews run or are deploying.";
+          images.registry_keep_deployments = daemonSetting lib.types.ints.u32 10 "Successful deployments per environment whose images the build registry keeps, never fewer than images.keep_deployments; cleanup deletes the other images this host's builds pushed there, and skips the registry while it is unreachable. Unused without a build machine.";
+          images.cleanup_interval_seconds = daemonSetting (lib.types.ints.between 1 86400) 3600 "Seconds between cleanups of unretained built images; cleanup also runs after each operation.";
+          retention.event_days = daemonSetting lib.types.ints.unsigned 90 "Days to retain application events; zero disables pruning.";
+          retention.daemon_event_days = daemonSetting lib.types.ints.unsigned 90 "Days to retain daemon diagnostics independently of application deletion; zero disables pruning.";
+          retention.traffic_days = daemonSetting lib.types.ints.unsigned 90 "Days to retain each environment's traffic counts; zero disables pruning. Deleting an environment also removes them.";
+          retention.audit_days = daemonSetting lib.types.ints.unsigned 365 "Days to retain the audit trail independently of application deletion; zero disables pruning.";
+          previews.max_per_application = daemonSetting lib.types.ints.u32 10 "Previews one application may have; creating more fails with preview_limit_reached.";
+          previews.max_total = daemonSetting lib.types.ints.u32 30 "Previews the installation may have; creating more fails with preview_limit_reached.";
+          previews.default_cpu_millis = daemonSetting (lib.types.ints.between 1 1048576) 500 "CPU limit, in millicores, of preview services that set none.";
+          previews.default_memory_bytes = daemonSetting lib.types.ints.positive 536870912 "Memory limit, in bytes, of preview services that set none.";
+          previews.max_replicas = daemonSetting (lib.types.ints.between 1 100) 1 "Most replicas a preview service runs; manifests asking for more are capped with a warning.";
+          snapshots.max_upload_bytes = daemonSetting lib.types.ints.positive 268435456 "Largest Git bundle `piquelctl preview deploy --local` may upload; larger ones fail with snapshot_too_large.";
           checkouts.max_bytes = lib.mkOption {
             type = lib.types.ints.positive;
             default = 4294967296;

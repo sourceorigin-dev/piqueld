@@ -195,15 +195,7 @@ impl Backend {
         let run = tokio::spawn(async move {
             let cancellation = tokio_util::sync::CancellationToken::new();
             let reconcile = async {
-                let result = controller
-                    .run(
-                        wake,
-                        std::time::Duration::from_secs(config.reconciliation.scan_interval_seconds),
-                        config.retention.finished_operation_days,
-                        config.retention.event_days,
-                        cancellation.child_token(),
-                    )
-                    .await;
+                let result = controller.run(wake, None, cancellation.child_token()).await;
                 cancellation.cancel();
                 result
             };

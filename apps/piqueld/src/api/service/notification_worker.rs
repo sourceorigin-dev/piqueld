@@ -113,11 +113,7 @@ impl ApplicationService {
     /// health into the store's condition tracking (which emits failure and
     /// recovery events), then refreshes the cached daemon statistics. Sampling
     /// errors are logged and the loop continues.
-    pub(super) async fn observe_notifications(
-        &self,
-        scan_seconds: u64,
-        cancellation: CancellationToken,
-    ) {
+    pub(super) async fn observe_notifications(&self, cancellation: CancellationToken) {
         let mut tick = Ticker::new(OBSERVE_INTERVAL);
         while tick.tick(&cancellation).await {
             let result = async {
@@ -134,6 +130,7 @@ impl ApplicationService {
                         .observe_condition("swarm_manager_unavailable", None, failed, now, 45_000)
                         .await?;
                 }
+                let scan_seconds = self.store.settings().reconciliation.scan_interval_seconds;
                 self.store
                     .observe_services(
                         i64::try_from(scan_seconds.max(15).saturating_mul(3000))

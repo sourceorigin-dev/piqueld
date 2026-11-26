@@ -22,6 +22,8 @@ stands for each entry of an array of tables: `dns.providers[].kind` is the
 
 The daemon's configuration file, `/etc/piqueld/config.toml` unless `piqueld --config` selects another. Every setting is optional unless it says otherwise. The daemon reads the file once at startup, so restart it to apply a change.
 
+Daemon settings, such as `[retention]` and `[previews]`, are installation policy, which `piquelctl settings`, the API and the dashboard also change while the daemon runs. Each one set here is pinned to its value, which only this file changes.
+
 ### `auth`
 
 Type: table. Optional.
@@ -120,7 +122,7 @@ The website's origin and API token lifetimes.
 
 Type: integer of at least 1. Optional.
 
-The longest lifetime, in days, of new API tokens. When unset, tokens may have any lifetime, including none. Existing tokens keep theirs.
+The longest lifetime, in days, of new API tokens. When unset, tokens may have any lifetime, including none. Existing tokens keep theirs. A daemon setting: set here, it is pinned to its value; otherwise `piquelctl settings`, the API or the dashboard changes it while the daemon runs.
 
 ### `auth.public_url`
 
@@ -156,11 +158,13 @@ The image repository the build machine pushes to and this host pulls from, as `r
 
 Type: `"fail"` or `"local"`. Optional.
 
-What a deployment that has to build does while the build machine can't be reached: `fail`, the default, fails it with `builder_unavailable`, and `local` builds on this host's Docker Engine instead, where a build competes with the applications the host runs. Requires `builder`.
+What a deployment that has to build does while the build machine can't be reached: `fail`, the default, fails it with `builder_unavailable`, and `local` builds on this host's Docker Engine instead, where a build competes with the applications the host runs. Requires `builder`. A daemon setting: set here, it is pinned to its value; otherwise `piquelctl settings` or the dashboard changes it.
 
 ## `[build_history]` table
 
 How much output of each build is kept, and for how long. Builds themselves are listed until deployment history pruning removes their operation.
+
+Daemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.
 
 ### `build_history.log_max_bytes`
 
@@ -261,6 +265,8 @@ The absolute path of the Docker Engine's Unix socket.
 
 Cleanup of the images this installation builds. Cleanup keeps what every environment and preview runs or is deploying, and removes the rest. It never removes pulled images, images built by hand, or images other installations built on the same Docker Engine. With a build machine, it also deletes from the build registry the images this host's builds pushed that no deployment it keeps there uses.
 
+Daemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.
+
 ### `images.cleanup_interval_seconds`
 
 Type: integer from 1 to 86400. Default: `3600`.
@@ -309,9 +315,9 @@ This server's public IPv4 and IPv6 addresses, such as `["203.0.113.10", "2001:db
 
 ### `ingress.traffic`
 
-Type: boolean. Default: `true`.
+Type: boolean. Optional.
 
-Count the requests each route serves, for each environment's traffic page, while `ingress.enabled` is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses. While the daemon isn't connected to the gateway, such as while it restarts, the gateway writes its requests, visitors' addresses and paths included, to its own Docker log, which keeps up to 30 MB.
+Count the requests each route serves, for each environment's traffic page, while `ingress.enabled` is set; by default it does. A daemon setting: set here, it is pinned to its value; otherwise `piquelctl settings` or the dashboard changes it while the daemon runs.
 
 ### `ingress.tunnel`
 
@@ -391,6 +397,8 @@ How many previews may exist, and what each preview service may use.
 
 Counts are checked when a preview is created, so lowering one below the current count keeps every existing preview running and only refuses new ones. Resource bounds apply when a preview's manifest is rendered, so a preview picks up changed bounds on its next deployment. Environments are never bounded.
 
+Daemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.
+
 ### `previews.default_cpu_millis`
 
 Type: integer from 1 to 1048576. Default: `500`.
@@ -425,6 +433,8 @@ Previews the whole installation may have; creating more fails with `preview_limi
 
 How often piqueld checks that Docker matches what is deployed, and how long a deployment may take.
 
+Daemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.
+
 ### `reconciliation.convergence_timeout_seconds`
 
 Type: integer from 1 to 86400. Default: `120`.
@@ -447,6 +457,8 @@ Seconds between full scans for drift between Docker and what is deployed.
 
 How long history is kept. `0` keeps it forever.
 
+Daemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.
+
 ### `retention.audit_days`
 
 Type: integer. Default: `365`.
@@ -463,7 +475,7 @@ Days events not tied to an application, such as those about shared infrastructur
 
 Type: integer. Default: `90`.
 
-Days each environment's deployment history is kept; `0` keeps it forever. A deployment is removed only once it is older than this and beyond the newest `deployments_per_environment`, and never while it is current or latest, among the newest `images.keep_deployments` successful ones (at least one), restored by a remaining deployment, or has jobs to clean up. Of a preview's deployments that finished over an hour ago, only its newest successful one and those a remaining one restored stay. Unused releases beyond each application's newest 50, and the build and job records of removed deployments, go too. `0` here or in `deployments_per_environment` stops all pruning.
+Days each environment's deployment history is kept; `0` keeps it forever. A deployment is removed once it is older than this and beyond the newest `deployments_per_environment`, but never while it is still needed, such as its environment's current deployment or the newest successful one an automatic rollback restores. The history guide lists what is kept. `0` here or in `deployments_per_environment` stops this pruning, of previews, releases and build records too.
 
 ### `retention.deployments_per_environment`
 
@@ -531,6 +543,8 @@ The absolute path of the directory holding the Unix API socket, `piqueld.sock`. 
 ## `[snapshots]` table
 
 Uploads of local worktrees by `piquelctl preview deploy --local`.
+
+Daemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.
 
 ### `snapshots.max_upload_bytes`
 

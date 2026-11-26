@@ -17,6 +17,7 @@ mod output;
 mod previews;
 mod profiles;
 mod secrets;
+mod settings;
 mod snapshot;
 mod support;
 mod traffic;

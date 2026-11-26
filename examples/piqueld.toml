@@ -20,8 +20,8 @@ allowed_hosts = []
 # to the tailnet node's HTTPS URL when [tailscale] is enabled, and to
 # http://localhost:7845 otherwise. Other HTTPS origins need external TLS.
 # public_url = "https://piqueld.example"
-# Longest lifetime of new API tokens in days; unset allows tokens that never
-# expire.
+# Longest lifetime of new API tokens in days, a daemon setting; unset leaves it
+# to `piquelctl settings`, where by default tokens may never expire.
 # max_token_days = 90
 
 [tailscale]
@@ -51,7 +51,8 @@ parallel = 1
 # builder = "tcp://build.example.ts.net:1234"
 # repository = "registry.example.ts.net:5000/piqueld"
 # While the build machine is unreachable, a deployment that has to build
-# fails ("fail"), or builds on this host instead ("local").
+# fails ("fail"), or builds on this host instead ("local"). A daemon setting:
+# leave it out to change it with `piquelctl settings`.
 # unavailable = "fail"
 
 [ingress]
@@ -72,8 +73,9 @@ public_addresses = []
 # piqueld stores hourly totals, not the requests or visitors' addresses. While
 # the daemon isn't connected to the gateway, such as while it restarts, the
 # gateway writes its requests, addresses and paths included, to its own Docker
-# log (up to 30 MB).
-traffic = true
+# log (up to 30 MB). A daemon setting: leave it out to change it with
+# `piquelctl settings`.
+# traffic = true
 
 # Private routes, served to the tailnet through a second tailnet node, the apps
 # node: a Tailscale container beside the gateway, named
@@ -117,48 +119,53 @@ directory = "https://acme-v02.api.letsencrypt.org/directory"
 # application_secret_file = "/tmp/piqueld-dev-ovh-application-secret"
 # consumer_key_file = "/tmp/piqueld-dev-ovh-consumer-key"
 
+# Daemon settings, from here to [snapshots]: the installation's policy, which
+# `piquelctl settings` and the dashboard's Settings page change while the
+# daemon runs. Each one set in this file is pinned to its value instead, so
+# these are left at their defaults, commented out.
+
 [reconciliation]
-scan_interval_seconds = 60
-prepare_timeout_seconds = 300
-convergence_timeout_seconds = 120
+# scan_interval_seconds = 60
+# prepare_timeout_seconds = 300
+# convergence_timeout_seconds = 120
 
 [retention]
-finished_operation_days = 10
+# finished_operation_days = 10
 # Deployments go once older than this and beyond each environment's newest 50.
-deployment_days = 90
-deployments_per_environment = 50
-event_days = 90
-daemon_event_days = 90
-audit_days = 365
-traffic_days = 90
+# deployment_days = 90
+# deployments_per_environment = 50
+# event_days = 90
+# daemon_event_days = 90
+# audit_days = 365
+# traffic_days = 90
 
 [build_history]
 # Metadata remains until its deployment is pruned; these limits apply only to output.
-log_max_bytes = 4194304
-log_retention_days = 30
+# log_max_bytes = 4194304
+# log_retention_days = 30
 
 [images]
 # Successful deployments per environment whose built images are kept for
 # restores, besides what environments and previews run or are deploying.
-keep_deployments = 3
+# keep_deployments = 3
 # With a build machine, how many keep their images in the build registry.
-registry_keep_deployments = 10
-cleanup_interval_seconds = 3600
+# registry_keep_deployments = 10
+# cleanup_interval_seconds = 3600
 
 # Bounds on previews: how many may exist, and the limits of preview services
 # that set none.
 [previews]
-max_per_application = 10
-max_total = 30
-default_cpu_millis = 500
-default_memory_bytes = 536870912
-max_replicas = 1
+# max_per_application = 10
+# max_total = 30
+# default_cpu_millis = 500
+# default_memory_bytes = 536870912
+# max_replicas = 1
 
 # Largest Git bundle `piquelctl preview deploy --local` may upload.
 [snapshots]
-max_upload_bytes = 268435456
+# max_upload_bytes = 268435456
 
-# Most bytes all Git checkouts may take at once.
+# Most bytes all Git checkouts may take at once, a host setting.
 [checkouts]
 max_bytes = 4294967296
 

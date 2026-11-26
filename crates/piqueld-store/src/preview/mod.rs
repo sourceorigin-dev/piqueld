@@ -20,17 +20,10 @@ use piqueld_core::{
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 impl Store {
-    /// Applies the daemon's `[previews]` limits.
+    /// The `[previews]` limits that preview creation and rendering apply now.
     #[must_use]
-    pub fn with_previews(mut self, limits: PreviewLimits) -> Self {
-        self.previews = limits;
-        self
-    }
-
-    /// The `[previews]` limits that preview creation and rendering apply.
-    #[must_use]
-    pub const fn preview_limits(&self) -> &PreviewLimits {
-        &self.previews
+    pub fn preview_limits(&self) -> PreviewLimits {
+        self.settings().previews
     }
 
     /// The commits of the local snapshots previews' latest deployments use.
@@ -380,7 +373,7 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         let mut usage = PreviewUsage {
-            limits: self.previews.clone(),
+            limits: self.preview_limits(),
             ..PreviewUsage::default()
         };
         for row in rows {

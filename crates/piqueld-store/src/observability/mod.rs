@@ -20,27 +20,8 @@ use piqueld_core::EventKind;
 
 use super::{Store, StoreError, now_ms};
 use piqueld_core::observability::{ActionDuration, DaemonStats, DeploymentAnalytics, FailureCount};
-use piqueld_core::{ImagesConfig, RetentionConfig};
 
 impl Store {
-    /// Configures startup-loaded history retention, from the configuration
-    /// file's `[retention]` and `[images]` tables, and how often an unchanged
-    /// health observation is written again (see [`Store::record_health`]),
-    /// which the daemon sets to its reconciliation scan interval.
-    #[must_use]
-    pub fn with_observability(
-        mut self,
-        retention: &RetentionConfig,
-        images: &ImagesConfig,
-        health_refresh: std::time::Duration,
-    ) -> Self {
-        self.daemon_event_days = retention.daemon_event_days;
-        self.audit_days = retention.audit_days;
-        self.traffic_days = retention.traffic_days;
-        self.deployment_retention = super::history::DeploymentRetention::new(retention, images);
-        self.health_refresh_ms = i64::try_from(health_refresh.as_millis()).unwrap_or(i64::MAX);
-        self
-    }
     /// Returns a snapshot cached for five seconds to avoid expensive per-request scans.
     /// Combines database counters, database and WAL file sizes, free disk space,
     /// and process memory/CPU. CPU percent is derived from the previous snapshot,

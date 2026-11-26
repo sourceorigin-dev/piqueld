@@ -333,10 +333,11 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub async fn prune_traffic(&self) -> Result<(), StoreError> {
-        if self.traffic_days == 0 {
+        let days = self.settings().retention.traffic_days;
+        if days == 0 {
             return Ok(());
         }
-        let cutoff = days_ago_ms(self.traffic_days);
+        let cutoff = days_ago_ms(days);
         let (_writer, mut tx) = self.begin_immediate().await?;
         sqlx::query!("DELETE FROM traffic_hours WHERE hour_ms<?1", cutoff)
             .execute(&mut *tx)

@@ -244,9 +244,7 @@ impl ControllerHarness {
         let wake = Arc::new(tokio::sync::Notify::new());
         let run = self.controller.run(
             wake,
-            Duration::from_secs(60),
-            10,
-            30,
+            Some(Duration::from_secs(60)),
             CancellationToken::new(),
         );
         tokio::select! {
@@ -359,11 +357,11 @@ async fn history_passes_remove_versions_no_deployment_pins_from_docker_then_the_
 /// limits, but not while a service still mounts it, which fails nothing.
 #[tokio::test]
 async fn pruned_deployments_release_old_versions_unless_a_service_still_mounts_them() {
-    let mut harness = ControllerHarness::new().await;
+    let harness = ControllerHarness::new().await;
     let mut config = piqueld_config::DaemonConfig::default();
-    config.retention.deployments_per_environment = 1;
-    config.images.keep_deployments = 1;
-    harness.retain(&config).await;
+    config.retention.deployments_per_environment = Some(1);
+    config.images.keep_deployments = Some(1);
+    harness.retain(&config);
     let rotation = Rotation::new(&harness).await;
     let Rotation {
         environment, old, ..

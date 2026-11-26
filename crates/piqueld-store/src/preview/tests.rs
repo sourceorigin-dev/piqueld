@@ -7,7 +7,7 @@ use piqueld_core::{
     GitBranch, PreviewSlot,
     access::Scope,
     api::{CreatedPreview, EnvironmentAccess, PreviewLimit, SecretAccess},
-    manifest::{PreviewLimits, SecretMount, ValidatedTemplate, parse_template_toml},
+    manifest::{SecretMount, ValidatedTemplate, parse_template_toml},
 };
 
 /// The repository `template` reads its manifest from, unless saved.
@@ -125,10 +125,7 @@ async fn creating_a_preview_is_idempotent_on_branch_and_slot_and_leaves_the_revi
 )]
 async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count() {
     let (_temp, store) = Store::temporary().await;
-    let store = store.with_previews(PreviewLimits {
-        max_per_application: 2,
-        ..PreviewLimits::default()
-    });
+    store.pin(|pins| pins.previews.max_per_application = Some(2));
     let application = save(&store, false).await;
 
     let slots = (0..5)
@@ -192,18 +189,17 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
         .expect("create succeeds");
     assert!(!again.created);
 
-    let lowered = store.clone().with_previews(PreviewLimits {
-        max_total: 1,
-        ..PreviewLimits::default()
-    });
+    store
+        .pin(|pins| (pins.previews.max_per_application, pins.previews.max_total) = (None, Some(1)));
+    let lowered = &store;
     assert!(
-        !create(&lowered, &application, "feat/login", Some(slot.as_str()))
+        !create(lowered, &application, "feat/login", Some(slot.as_str()))
             .await
             .expect("create succeeds")
             .created
     );
     assert!(matches!(
-        create(&lowered, &application, "feat/other", None).await,
+        create(lowered, &application, "feat/other", None).await,
         Err(StoreError::PreviewLimitReached(reached)) if reached.limit == PreviewLimit::Total
     ));
     let usage = lowered
@@ -449,10 +445,7 @@ async fn local_preview() -> (tempfile::TempDir, Store, ApplicationId, CreatedPre
 #[tokio::test]
 async fn local_snapshots_create_previews_within_limits_and_record_their_provenance() {
     let (_temp, store) = Store::temporary().await;
-    let store = store.with_previews(PreviewLimits {
-        max_per_application: 1,
-        ..PreviewLimits::default()
-    });
+    store.pin(|pins| pins.previews.max_per_application = Some(1));
     let application = save(&store, false).await;
     let (first, second) = ("1".repeat(40), "2".repeat(40));
     let created = local(&store, &application, ("feat/x", None), (NOTES, &first))

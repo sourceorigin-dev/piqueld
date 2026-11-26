@@ -175,9 +175,7 @@ async fn reconciliation_leaves_concurrent_daemon_actions_open() {
     let cancellation = CancellationToken::new();
     let run = controller.run(
         Arc::new(tokio::sync::Notify::new()),
-        std::time::Duration::from_mins(1),
-        0,
-        0,
+        Some(std::time::Duration::from_mins(1)),
         cancellation.clone(),
     );
     let finished = async {

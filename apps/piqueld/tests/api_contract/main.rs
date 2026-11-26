@@ -418,14 +418,14 @@ async fn state(temp: &TempDir) -> ApiState {
     state_with(temp, None).await
 }
 
-/// [`state`] with the daemon's `[snapshots] max_upload_bytes`, if given.
+/// [`state`] with the daemon's `snapshots.max_upload_bytes` setting, if given.
 async fn state_with(temp: &TempDir, max_upload_bytes: Option<std::num::NonZeroU64>) -> ApiState {
     let store = Store::open_unsynced(database(temp))
         .await
         .expect("fresh database opens");
     let mut config = DaemonConfig::default();
     if let Some(limit) = max_upload_bytes {
-        config.snapshots.max_upload_bytes = limit;
+        config.snapshots.max_upload_bytes = Some(limit.get());
     }
     contract_state(temp, Arc::new(store), &config).await.1
 }
@@ -450,20 +450,17 @@ async fn contract_state(
     config: &DaemonConfig,
 ) -> (Arc<FakeRuntime>, ApiState) {
     seed_account(&database(temp), "contract-admin", &[("admin", None)]).await;
+    store.pin_settings(config.pins());
     let runtime = Arc::new(FakeRuntime::new(&store));
-    let state = ApiState::new(store, runtime.clone(), sources(temp, config).await)
-        .expect("the api state builds");
+    let sources = sources(temp, config).await;
+    let state = ApiState::new(store, runtime.clone(), sources).expect("the api state builds");
     (runtime, state)
 }
 
 /// The API service over `store` and `runtime`, with its Git sources in `temp`.
 async fn api_state(temp: &TempDir, store: Arc<Store>, runtime: Arc<FakeRuntime>) -> ApiState {
-    ApiState::new(
-        store,
-        runtime,
-        sources(temp, &DaemonConfig::default()).await,
-    )
-    .expect("the api state builds")
+    let sources = sources(temp, &DaemonConfig::default()).await;
+    ApiState::new(store, runtime, sources).expect("the api state builds")
 }
 
 /// The Git sources in `temp`, limited by `config`.
@@ -1295,5 +1292,6 @@ mod field_edits;
 mod openapi;
 mod previews;
 mod secrets;
+mod settings;
 mod streams;
 mod transport;

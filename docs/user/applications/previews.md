@@ -243,7 +243,8 @@ Deleting the application deletes its previews, with their volumes.
 
 Previews share the host with production, so the daemon's
 [`[previews]` settings](../reference/configuration-settings.md#previews-table)
-limit them:
+limit them. Change them on the dashboard's **Settings** page or with
+`piquelctl settings set`; see [changing daemon settings](../operations/settings.md):
 
 - `max_per_application` and `max_total` cap how many previews there are.
 - `max_replicas` caps the replicas of each preview service.

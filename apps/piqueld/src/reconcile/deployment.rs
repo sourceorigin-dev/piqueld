@@ -87,7 +87,7 @@ impl<D: DockerApi> Controller<D> {
             environment
                 .environment()
                 .kind
-                .bound(&mut rendering.application, self.store.preview_limits())
+                .bound(&mut rendering.application, &self.store.preview_limits())
                 .into_iter()
                 .map(DiagnosticView::from),
         );

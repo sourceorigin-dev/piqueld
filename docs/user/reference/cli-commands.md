@@ -77,7 +77,7 @@ Commands:
 - [`piquelctl notification`](#piquelctl-notification): Manage notification destinations and their deliveries.
 - [`piquelctl status`](#piquelctl-status): Show whether the daemon responds, its version, and the health of its subsystems.
 - [`piquelctl resources`](#piquelctl-resources): Show the daemon process's resource usage, storage, retained history, and queues, measured at most every 5 seconds (requires system:read).
-- [`piquelctl settings`](#piquelctl-settings): Show the daemon's effective host settings, read-only (requires system:read). Change them in its TOML configuration and restart it.
+- [`piquelctl settings`](#piquelctl-settings): Show and change the daemon's settings.
 - [`piquelctl doctor`](#piquelctl-doctor): Check this CLI's connection and the installation's health.
 - [`piquelctl dns`](#piquelctl-dns): Inspect the daemon's DNS providers.
 - [`piquelctl builder`](#piquelctl-builder): Inspect the build machine images build on.
@@ -129,6 +129,7 @@ Options:
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
   - `notifications:manage`: Manage notification destinations.
+  - `settings:manage`: Change daemon settings.
 - `--app <APPLICATION_ID>`: Limit the application permissions to this application.
 
   Repeat it to allow several applications. Without it, the permissions apply to every application. Installation-wide permissions, such as `system:read`, are never limited.
@@ -222,6 +223,7 @@ Options:
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
   - `notifications:manage`: Manage notification destinations.
+  - `settings:manage`: Change daemon settings.
 - `--app <NAME_OR_ID>`: Limit the application permissions to this application.
 
   Repeat it to allow several applications. Without it, the permissions apply to every application. Installation-wide permissions, such as `system:read`, are never limited.
@@ -265,6 +267,7 @@ Options:
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
   - `notifications:manage`: Manage notification destinations.
+  - `settings:manage`: Change daemon settings.
 - `--app <NAME_OR_ID>`: Limit the application permissions to this application.
 
   Repeat it to allow several applications. Without it, the permissions apply to every application. Installation-wide permissions, such as `system:read`, are never limited.
@@ -482,6 +485,7 @@ Options:
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
   - `notifications:manage`: Manage notification destinations.
+  - `settings:manage`: Change daemon settings.
 - `--app <NAME_OR_ID>`: Limit the application permissions to this application.
 
   Repeat it to allow several applications. Without it, the permissions apply to every application. Installation-wide permissions, such as `system:read`, are never limited.
@@ -805,11 +809,73 @@ piquelctl resources [OPTIONS]
 
 ## `piquelctl settings`
 
-Show the daemon's effective host settings, read-only (requires system:read). Change them in its TOML configuration and restart it.
+Show and change the daemon's settings.
+
+Daemon settings, such as how long history is kept or how many previews may exist, change at once with `settings set`, unless the daemon's configuration file pins them. The host's settings, such as its listeners, only change in that file, with a restart. `settings` alone lists them all.
 
 ```text
-piquelctl settings [OPTIONS]
+piquelctl settings [OPTIONS] [COMMAND]
 ```
+
+Commands:
+
+- [`piquelctl settings list`](#piquelctl-settings-list): List the host's settings, read-only, and every daemon setting with its value and where it comes from: its default, set with `settings set`, or pinned by the daemon's configuration file.
+- [`piquelctl settings get`](#piquelctl-settings-get): Show one daemon setting: its value, default, range and what it does.
+- [`piquelctl settings set`](#piquelctl-settings-set): Change a daemon setting. It applies at once, without a restart, and the change is recorded in the audit trail.
+- [`piquelctl settings reset`](#piquelctl-settings-reset): Reset a daemon setting to its default, at once.
+
+## `piquelctl settings list`
+
+List the host's settings, read-only, and every daemon setting with its value and where it comes from: its default, set with `settings set`, or pinned by the daemon's configuration file.
+
+Needs `system:read`. It is what `settings` alone shows.
+
+```text
+piquelctl settings list [OPTIONS]
+```
+
+## `piquelctl settings get`
+
+Show one daemon setting: its value, default, range and what it does.
+
+Needs `system:read`.
+
+```text
+piquelctl settings get [OPTIONS] <KEY>
+```
+
+Arguments:
+
+- `<KEY>`: The setting's key, such as `retention.event_days`, as `settings list` shows it.
+
+## `piquelctl settings set`
+
+Change a daemon setting. It applies at once, without a restart, and the change is recorded in the audit trail.
+
+A setting the daemon's configuration file sets is pinned: only the file changes it. One that needs what the installation lacks, such as `build.unavailable` without a build machine, can't be changed. Needs `settings:manage`.
+
+```text
+piquelctl settings set [OPTIONS] <KEY> <VALUE>
+```
+
+Arguments:
+
+- `<KEY>`: The setting's key, such as `retention.event_days`.
+- `<VALUE>`: Its new value, as `settings get` says it takes: a whole number, `none` for no limit where the setting allows it, `true` or `false`, or one of its choices, such as `local`.
+
+## `piquelctl settings reset`
+
+Reset a daemon setting to its default, at once.
+
+Needs `settings:manage`, and fails for a pinned setting like `set`.
+
+```text
+piquelctl settings reset [OPTIONS] <KEY>
+```
+
+Arguments:
+
+- `<KEY>`: The setting's key, such as `retention.event_days`.
 
 ## `piquelctl doctor`
 

@@ -10,6 +10,13 @@ piqueld --config /path/to/config.toml
 [Daemon configuration settings](configuration-settings.md) lists every
 setting with its type and default.
 
+Some sections hold daemon settings, the installation's policy, such as
+`[retention]` and `[previews]`: these change at once from the dashboard or
+`piquelctl settings`, without a restart (see
+[changing daemon settings](../operations/settings.md)). One set in this file
+is pinned to its value, which only the file changes. Leave them out to manage
+them from the dashboard.
+
 Check a file without starting the daemon:
 
 ```console
@@ -132,6 +139,10 @@ default_cpu_millis = 500
 default_memory_bytes = 536870912
 max_replicas = 1
 ```
+
+These are [daemon settings](../operations/settings.md): the dashboard or
+`piquelctl settings set previews.max_total 50` changes them without a
+restart, unless this file sets them.
 
 Creating a preview that would take its application's previews past
 `max_per_application`, or the installation's past `max_total`, fails with
@@ -268,8 +279,12 @@ runs. Without it, images build on the host's Docker Engine. Either way,
 parallel = 1
 builder = "tcp://build.example.ts.net:1234"
 repository = "registry.example.ts.net:5000/piqueld"
-unavailable = "fail"
 ```
+
+`unavailable`, what a deployment that has to build does while the build
+machine can't be reached, is a [daemon setting](../operations/settings.md),
+`build.unavailable`: `fail` by default, or `local`. It applies only with a
+build machine.
 
 Set `builder` and `repository` together, or neither. The host still checks repositories out, so Git
 credentials stay there, and sends each build's files to the build machine.
@@ -680,8 +695,9 @@ forwards to it while ingress is enabled. It is read once at startup. See
 [push webhooks](../networking/webhooks.md).
 
 `ingress.traffic`, on by default, makes the gateway count each route's
-requests, for each environment's traffic; it is read once at startup. See
-[seeing who visits an application](../operations/traffic.md).
+requests, for each environment's traffic. It is a
+[daemon setting](../operations/settings.md), so a change applies within
+seconds. See [seeing who visits an application](../operations/traffic.md).
 
 Gateway certificates, accepted configuration, and the private administration socket
 live below `<data_dir>/ingress`. Only dedicated subdirectories are mounted into

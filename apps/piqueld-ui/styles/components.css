@@ -288,6 +288,42 @@
         accent-color: var(--accent-strong);
     }
 
+    /* A switch: a checkbox whose change applies at once. */
+    input.switch {
+        appearance: none;
+        position: relative;
+        flex: none;
+        width: 34px;
+        height: 20px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background: var(--page);
+        cursor: pointer;
+        transition: background .12s, border-color .12s;
+    }
+
+    input.switch::before {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--muted);
+        transition: translate .12s, background .12s;
+    }
+
+    input.switch:checked {
+        border-color: var(--accent-strong);
+        background: var(--accent-strong);
+    }
+
+    input.switch:checked::before {
+        translate: 14px 0;
+        background: #fff;
+    }
+
     .checkbox {
         display: inline-flex;
         align-items: center;
@@ -440,6 +476,141 @@
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         user-select: all;
+    }
+
+    /* Settings changed in place: what each one is, then its field. The
+       field's column, the reset button's place and the note under the field
+       keep their size, so a change never moves the page; only a refusal
+       from the daemon too long for the note's line takes a second one. */
+    .setting-list > li {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 352px;
+        gap: 6px 32px;
+        padding: 14px 0;
+        border-top: 1px solid var(--line);
+    }
+
+    .setting-list > li:first-child {
+        padding-top: 0;
+        border-top: 0;
+    }
+
+    .setting-list > li:last-child {
+        padding-bottom: 0;
+    }
+
+    /* Puts the name on the field's line. */
+    .setting-name {
+        padding-top: 6px;
+    }
+
+    .setting-name label {
+        font-size: 13.5px;
+        font-weight: 600;
+    }
+
+    .setting-name > code {
+        margin-left: 8px;
+        font-size: 11.5px;
+        color: var(--muted);
+    }
+
+    .setting-name .hint {
+        max-width: 68ch;
+        margin-top: 3px;
+    }
+
+    .setting-value {
+        display: grid;
+        gap: 4px;
+        align-content: start;
+        justify-items: end;
+        text-align: right;
+    }
+
+    .setting-control {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 32px;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .setting-control .field {
+        width: 132px;
+    }
+
+    .setting-control input[type="text"] {
+        text-align: right;
+    }
+
+    /* A number that isn't saved, or was refused; the focus keeps its own
+       border. */
+    .setting-control input[data-unsaved]:not(:focus) {
+        border-color: var(--warn);
+    }
+
+    .setting-control input[aria-invalid="true"]:not(:focus) {
+        border-color: var(--bad);
+    }
+
+    .setting-control .btn-icon:disabled {
+        visibility: hidden;
+    }
+
+    .setting-aside {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+    }
+
+    /* A value without a field, in line with the fields' values. */
+    .setting-fixed {
+        padding-right: 11px;
+    }
+
+    /* Ends under the field, not under the reset button beside it. */
+    .setting-note {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0 12px;
+        min-height: 1lh;
+        margin-right: 35px;
+        font-size: 12px;
+        color: var(--muted);
+    }
+
+    /* Stays in the page while empty, so that what it comes to say is
+       announced, without taking a place in the note. */
+    .setting-status:empty {
+        position: absolute;
+    }
+
+    .setting-status[data-tone="ok"] {
+        color: var(--ok);
+    }
+
+    .setting-status[data-tone="bad"] {
+        color: var(--bad);
+    }
+
+    .setting-unsaved {
+        color: var(--warn);
+    }
+
+    /* Larger to press than to look at, without taking more room, nor
+       reaching over the field above. */
+    .setting-note button {
+        margin: -4px -4px -8px;
+        padding: 4px 4px 8px;
+        color: var(--accent);
+        cursor: pointer;
+    }
+
+    .setting-note button:hover {
+        text-decoration: underline;
     }
 
     /* Key/value lists */
@@ -2276,6 +2447,58 @@
 
         .event-feed {
             max-height: 24rem;
+        }
+    }
+
+    /* Below this, a description beside its field is a narrow ribbon:
+       the field goes under it. */
+    @media (max-width: 1100px) {
+        /* The note's line is room enough under each field. */
+        .setting-list > li {
+            grid-template-columns: minmax(0, 1fr);
+            padding-bottom: 8px;
+        }
+
+        .setting-name {
+            padding-top: 0;
+        }
+
+        .setting-name label {
+            display: block;
+        }
+
+        .setting-name > code {
+            margin-left: 0;
+        }
+
+        .setting-value {
+            justify-items: start;
+            text-align: left;
+        }
+
+        .setting-control input[type="text"] {
+            text-align: left;
+        }
+
+        /* After the field, so every field starts at the same edge, and
+           before the reset button, so it stays beside its number. */
+        .setting-aside {
+            order: 1;
+        }
+
+        .setting-control .btn-icon {
+            order: 2;
+        }
+
+        .setting-fixed {
+            padding-right: 0;
+        }
+
+        /* The note has the whole width here: its buttons stand apart. */
+        .setting-note {
+            justify-content: flex-start;
+            gap: 0 16px;
+            margin-right: 0;
         }
     }
 

@@ -8,7 +8,7 @@ const pages: [string, string][] = [
   ['Analytics', 'Analytics'],
   ['Notifications', 'Notifications'],
   ['Daemon status', 'Daemon status'],
-  ['Host settings', 'Host settings'],
+  ['Settings', 'Settings'],
   ['Accounts', 'Accounts'],
   ['Overview', 'Overview'],
 ];

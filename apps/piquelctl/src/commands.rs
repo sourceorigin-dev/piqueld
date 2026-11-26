@@ -58,7 +58,9 @@ pub(crate) async fn run(cli: &Cli, client: &Client, console: &mut Console) -> Re
         Command::Notification { command } => command.run(client, console).await,
         Command::Status => status(cli, client, console).await,
         Command::Resources => console.emit(&client.daemon_stats().await?),
-        Command::Settings => console.emit(&client.system_configuration().await?),
+        Command::Settings { command } => {
+            crate::settings::SettingsCommand::run(command.as_ref(), client, console).await
+        }
         Command::Doctor => Err(CliError::misrouted(
             "doctor runs without the command timeout",
         )),

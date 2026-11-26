@@ -439,7 +439,7 @@ async fn pending_pulls_do_not_block_other_apps_and_superseded_preparation_is_dis
     let token = cancellation.clone();
     let controller_task = tokio::spawn(async move {
         controller
-            .run(wake, Duration::from_millis(50), 10, 30, token)
+            .run(wake, Some(Duration::from_millis(50)), token)
             .await
     });
     tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())

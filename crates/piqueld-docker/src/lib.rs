@@ -22,6 +22,7 @@ use bollard::{
     },
 };
 use futures_util::{StreamExt, TryStreamExt, stream};
+use piqueld_core::build_machine::WhenUnavailable;
 use piqueld_core::manifest::{
     ValidatedHealthCheck as HealthCheck, ValidatedResourceLimits as ResourceLimits,
 };
@@ -211,6 +212,9 @@ pub struct ImageBuild<'a> {
     pub target: Option<&'a str>,
     /// The queue it waits in while every build slot is taken.
     pub priority: BuildPriority,
+    /// What it does while the build machine can't be reached: the
+    /// `build.unavailable` setting as the build was requested.
+    pub unavailable: WhenUnavailable,
 }
 
 impl ImageBuild<'_> {
@@ -613,6 +617,7 @@ mod tests {
             args: &args,
             target: Some("runtime"),
             priority: BuildPriority::Environment,
+            unavailable: WhenUnavailable::Fail,
         };
         assert_eq!(
             build.options().collect::<Vec<_>>(),
@@ -641,6 +646,7 @@ mod tests {
             args: &BTreeMap::new(),
             target: None,
             priority: BuildPriority::Environment,
+            unavailable: WhenUnavailable::Fail,
         };
         let hex = "c".repeat(64);
         let id =

@@ -10,6 +10,7 @@ mod management;
 mod notifications;
 mod observability;
 mod runtime;
+mod settings;
 mod stream;
 mod ui;
 
@@ -389,7 +390,7 @@ fn App() -> impl IntoView {
                 <ParentRoute path={path!("/dashboard")} view={auth::ProtectedDashboardLayout}>
                     <Route path={path!("")} view={OverviewPage} />
                     <Route path={path!("applications")} view={ApplicationsPage} />
-                    <Route path={path!("settings")} view={observability::HostPage} />
+                    <Route path={path!("settings")} view={settings::SettingsPage} />
                     <Route path={path!("accounts")} view={auth::AccountsPage} />
                     <Route path={path!("accounts/:id")} view={auth::AccountPage} />
                     <Route path={path!("builds")} view={builds::BuildsPage} />

@@ -498,8 +498,8 @@ impl Store {
     /// Replaces an account's grants, if `actor` may change that account, holds
     /// every new grant, and is not scoped: access handed to another account
     /// outlives the credential handing it out. Adding `admin`,
-    /// `accounts:manage` or `system:operate` also needs a recent passkey
-    /// sign-in (see [`Grants::escalates`]). Refuses to leave no administrator
+    /// `accounts:manage`, `system:operate` or `settings:manage` also needs a
+    /// recent passkey sign-in (see [`Grants::escalates`]). Refuses to leave no administrator
     /// able to sign in.
     ///
     /// # Errors

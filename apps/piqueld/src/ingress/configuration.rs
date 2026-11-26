@@ -107,6 +107,7 @@ impl Ingress {
         proxies: Option<&[String]>,
         tunnel: Option<&[String]>,
     ) -> Value {
+        let counting = self.counts_traffic();
         let mut public = Listener::default();
         let mut private = Listener::default();
         let matcher = |host: &RouteHostname| {
@@ -126,7 +127,7 @@ impl Ingress {
                 let host = matcher(&route.hostname);
                 let mut probe = host.clone();
                 probe["path"] = json!(["/.well-known/piqueld-ingress"]);
-                let mut handle = self.traffic_tags(id, route);
+                let mut handle = Self::traffic_tags(counting, id, route);
                 handle.push(Self::handler(id, route, tunnel.is_some()));
                 listener.serve(&route.hostname, &host, [
                     json!({"match":[probe],"handle":[{"handler":"static_response","body":self.instance_id}],"terminal":true}),
@@ -185,7 +186,9 @@ impl Ingress {
             "admin":{"listen":"unix//control/admin.sock"},
             "apps":{"http":{"servers":servers}}
         });
-        self.log_traffic(&mut configuration);
+        if counting {
+            Self::log_traffic(&mut configuration);
+        }
         let pems = self.certificates.loaded();
         if !pems.is_empty() {
             configuration["apps"]["tls"]["certificates"]["load_pem"] = pems
@@ -200,15 +203,12 @@ impl Ingress {
         configuration
     }
     /// Makes `configuration`'s HTTPS and tunnel servers log each request to
-    /// the daemon's traffic socket, while it counts traffic. Times and
+    /// the daemon's traffic socket, for it to count. Times and
     /// durations are integers, in ns. Caddy dials the socket again at most
     /// every 10 seconds once it fails, such as while the daemon restarts,
     /// writing to its output meanwhile, and starts without it rather than
     /// refusing the configuration.
-    fn log_traffic(&self, configuration: &mut Value) {
-        if !self.counts_traffic() {
-            return;
-        }
+    fn log_traffic(configuration: &mut Value) {
         let servers = &mut configuration["apps"]["http"]["servers"];
         for server in ["public", "tunnel", "private"] {
             if let Some(server) = servers.get_mut(server) {
@@ -226,11 +226,11 @@ impl Ingress {
     }
 
     /// Handlers tagging the access log line of each request `route` of
-    /// environment `id` proxies, while the daemon counts traffic: requests
-    /// to redirects aren't counted.
-    fn traffic_tags(&self, id: &EnvironmentId, route: &ValidatedRoute) -> Vec<Value> {
+    /// environment `id` proxies, while the daemon is `counting` traffic:
+    /// requests to redirects aren't counted.
+    fn traffic_tags(counting: bool, id: &EnvironmentId, route: &ValidatedRoute) -> Vec<Value> {
         match &route.target {
-            RouteTarget::Service { service, .. } if self.counts_traffic() => [
+            RouteTarget::Service { service, .. } if counting => [
                 ("piqueld_environment", id.to_string()),
                 ("piqueld_service", service.to_string()),
                 ("piqueld_hostname", route.hostname.to_string()),

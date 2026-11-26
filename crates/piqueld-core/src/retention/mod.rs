@@ -1,0 +1,191 @@
+//! Retention: which deployments keep their images when cleanup runs, and
+//! whether a release's images are still present. The `[retention]`,
+//! `[build_history]` and `[images]` settings live in [`crate::settings`].
+
+use crate::{
+    ApiErrorCode, BuiltImage, DiagnosticSeverity, ImmutableImage, PlanDiagnostic, RepositoryDigest,
+    ServiceName, resource::ResolvedApplication, resource::ResolvedSource,
+};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+use utoipa::ToSchema;
+
+/// Why cleanup keeps a deployment's images. Cleanup removes only images this
+/// installation built that no root keeps.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RetentionRoot {
+    /// What an environment or preview currently runs.
+    Current,
+    /// The latest deployment of an environment or preview: in progress, or
+    /// finished and retried with its prepared target until a newer one
+    /// replaces it.
+    Latest,
+    /// One of an environment's last `keep_deployments` successful
+    /// deployments, which restoring a deployment deploys again.
+    /// Previews keep none.
+    Recent,
+    /// What an environment that a promoted environment promotes from
+    /// currently runs: the release `env promote` takes by default. Promoting
+    /// then saves its target, which `Latest` keeps, while holding cleanup off.
+    PromotionSource,
+}
+
+impl RetentionRoot {
+    /// Every root, in the order cleanup reads them.
+    pub const ALL: [Self; 4] = [
+        Self::Current,
+        Self::Latest,
+        Self::Recent,
+        Self::PromotionSource,
+    ];
+}
+
+/// A service and the image it runs.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
+pub struct ServiceImage {
+    /// Logical service name.
+    pub service: ServiceName,
+    /// Its immutable image.
+    pub image: ImmutableImage,
+}
+
+/// Whether a release's images are still present, so it can be deployed again.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ReleaseAvailability {
+    /// Every image is present.
+    Present,
+    /// Only registry images are missing: deploying the release pulls them
+    /// again by digest.
+    Pullable {
+        /// The missing images.
+        missing: Vec<ServiceImage>,
+    },
+    /// Built images are missing, so the release can't be deployed again.
+    Unavailable {
+        /// The missing images, built or pulled.
+        missing: Vec<ServiceImage>,
+    },
+}
+
+impl ReleaseAvailability {
+    /// One blocking `image_unavailable` diagnostic per missing image of an
+    /// unavailable release, since deploying it fails; none otherwise.
+    #[must_use]
+    pub fn diagnostics(&self) -> Vec<PlanDiagnostic> {
+        match self {
+            Self::Present | Self::Pullable { .. } => Vec::new(),
+            Self::Unavailable { missing } => missing
+                .iter()
+                .map(|missing| {
+                    PlanDiagnostic::new(
+                        ApiErrorCode::ImageUnavailable,
+                        DiagnosticSeverity::Error,
+                        missing.service.as_str(),
+                        format!(
+                            "the release can't be deployed again: its built images were removed (image {} of service {} is missing)",
+                            missing.image, missing.service
+                        ),
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+/// The images present in the local Docker Engine, by local image ID and by
+/// repository digest.
+#[derive(Clone, Debug, Default)]
+pub struct LocalImages(BTreeSet<ImmutableImage>);
+
+impl LocalImages {
+    /// Images present under each of these IDs and repository digests.
+    pub fn new(images: impl IntoIterator<Item = ImmutableImage>) -> Self {
+        Self(images.into_iter().collect())
+    }
+
+    /// Whether `image` is present.
+    #[must_use]
+    pub fn contains(&self, image: &ImmutableImage) -> bool {
+        self.0.contains(image)
+    }
+
+    /// The services of `sources` whose images aren't present, in order.
+    pub fn missing<'a>(
+        &self,
+        sources: impl IntoIterator<Item = (&'a ServiceName, &'a ResolvedSource)>,
+    ) -> Vec<(&'a ServiceName, &'a ResolvedSource)> {
+        sources
+            .into_iter()
+            .filter(|(_, source)| !self.contains(&source.image()))
+            .collect()
+    }
+
+    /// Whether each image of `sources` is present, and if not, whether the
+    /// missing ones can be pulled again.
+    pub fn availability<'a>(
+        &self,
+        sources: impl IntoIterator<Item = (&'a ServiceName, &'a ResolvedSource)>,
+    ) -> ReleaseAvailability {
+        let missing = self.missing(sources);
+        let pullable = missing
+            .iter()
+            .all(|(_, source)| source.repository_digest().is_some());
+        let missing = missing
+            .into_iter()
+            .map(|(service, source)| ServiceImage {
+                service: service.clone(),
+                image: source.image(),
+            })
+            .collect::<Vec<_>>();
+        if missing.is_empty() {
+            ReleaseAvailability::Present
+        } else if pullable {
+            ReleaseAvailability::Pullable { missing }
+        } else {
+            ReleaseAvailability::Unavailable { missing }
+        }
+    }
+}
+
+impl ResolvedSource {
+    /// The registry digest Docker can pull again if the image is missing.
+    /// An image built on the local engine can't be recovered: rebuilding
+    /// may produce another one.
+    #[must_use]
+    pub const fn repository_digest(&self) -> Option<&RepositoryDigest> {
+        match self {
+            Self::Image {
+                digest_reference, ..
+            }
+            | Self::Git {
+                image_id: BuiltImage::Pushed(digest_reference),
+                ..
+            } => Some(digest_reference),
+            Self::Git {
+                image_id: BuiltImage::Local(_),
+                ..
+            } => None,
+        }
+    }
+}
+
+impl ResolvedApplication {
+    /// Each service and its resolved source. Jobs run their service's image.
+    pub fn sources(&self) -> impl Iterator<Item = (&ServiceName, &ResolvedSource)> {
+        self.services
+            .iter()
+            .map(|service| (&service.logical_name, &service.source))
+    }
+
+    /// Every image its services and jobs run.
+    pub fn images(&self) -> impl Iterator<Item = ImmutableImage> {
+        self.services
+            .iter()
+            .chain(self.jobs.iter().map(|job| &job.container))
+            .map(|service| service.image.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -501,7 +501,8 @@ pub enum SensitiveAction {
     CreateInvitation,
     /// Creating an enrollment link.
     CreateEnrollment,
-    /// Giving an account `admin`, `accounts:manage` or `system:operate`.
+    /// Giving an account `admin`, `accounts:manage`, `system:operate` or
+    /// `settings:manage`.
     SetGrants,
     /// Recovering a lost secret key, discarding stored values.
     RecoverSecretKey,

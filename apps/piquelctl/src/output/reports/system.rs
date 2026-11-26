@@ -371,10 +371,30 @@ report!(HostConfiguration, self, out, {
         if index > 0 {
             out.blank()?;
         }
-        out.heading(&format!("{group}:"))?;
+        out.heading(&format!("{group} (configuration file only):"))?;
         for (setting, value) in settings {
             out.label(&format!("  {setting}"), value)?;
         }
+    }
+    let mut section = None;
+    for setting in &self.settings {
+        if section != Some(&setting.section) {
+            out.blank()?;
+            out.heading(&format!("{}:", setting.section))?;
+            section = Some(&setting.section);
+        }
+        let needs = setting
+            .needs
+            .as_ref()
+            .map_or_default(|needs| format!(", applies only with {needs}"));
+        out.label(
+            &format!("  {}", setting.key),
+            format_args!(
+                "{} ({}{needs})",
+                crate::settings::display_value(&setting.value),
+                setting.source.label()
+            ),
+        )?;
     }
     Ok(())
 });

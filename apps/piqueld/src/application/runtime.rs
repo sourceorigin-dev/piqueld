@@ -34,8 +34,12 @@ pub struct ApplicationRuntime<D> {
     wake: Arc<Notify>,
     /// Shared with the reconciler loop so mutations can request a full scan.
     rescan: Arc<Notify>,
-    /// Upper bound for resolving every source and compiling one application.
-    prepare_timeout: Duration,
+    /// Upper bound for resolving every source and compiling one
+    /// application, when fixed; otherwise
+    /// `reconciliation.prepare_timeout_seconds` (see [`Self::prepare_timeout`]).
+    prepare_timeout: Option<Duration>,
+    /// The daemon settings, which set `prepare_timeout` unless fixed.
+    settings: tokio::sync::watch::Receiver<piqueld_store::SettingsState>,
     /// Set only for execution, never API previews. Records the source-preparation
     /// phase and service names, and journals each source-preparation action.
     progress: Option<(Arc<piqueld_store::Store>, String)>,
@@ -56,7 +60,8 @@ pub struct ApplicationRuntime<D> {
 
 impl<D> ApplicationRuntime<D> {
     /// Creates application runtime orchestration for `store`'s instance with
-    /// the supplied preparation budget, sharing `images`, the lock image cleanup takes,
+    /// the supplied preparation budget, or the one its settings set when
+    /// `None`, sharing `images`, the lock image cleanup takes,
     /// `mutations`, the controller's lock around Docker mutations, and
     /// the checkout admission of `sources`.
     #[must_use]
@@ -65,7 +70,7 @@ impl<D> ApplicationRuntime<D> {
         store: &piqueld_store::Store,
         sources: &crate::git::Sources,
         wake: Arc<Notify>,
-        prepare_timeout: Duration,
+        prepare_timeout: Option<Duration>,
         images: Arc<tokio::sync::RwLock<()>>,
         mutations: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
@@ -75,6 +80,7 @@ impl<D> ApplicationRuntime<D> {
             wake,
             rescan: Arc::new(Notify::new()),
             prepare_timeout,
+            settings: store.settings_changes(),
             progress: None,
             priority: BuildPriority::Environment,
             rebuild: false,
@@ -84,6 +90,17 @@ impl<D> ApplicationRuntime<D> {
             checkouts: Arc::clone(sources.checkouts()),
         }
     }
+    /// The preparation budget in effect now.
+    fn prepare_timeout(&self) -> Duration {
+        self.prepare_timeout.unwrap_or_else(|| {
+            self.settings
+                .borrow()
+                .effective()
+                .reconciliation
+                .prepare_timeout()
+        })
+    }
+
     /// Requests full scans through `rescan`, shared with the reconciler.
     #[must_use]
     pub(crate) fn with_rescan(mut self, rescan: Arc<Notify>) -> Self {
@@ -224,7 +241,7 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
         application: &NormalizedApplication,
         reusable: &ResolutionSet,
     ) -> Result<piqueld_core::ResolvedApplication, BoundaryError> {
-        tokio::time::timeout(self.prepare_timeout, async {
+        tokio::time::timeout(self.prepare_timeout(), async {
             let pending = application
                 .spec()
                 .services
@@ -282,15 +299,18 @@ impl<D: DockerApi> RuntimeBoundary for ApplicationRuntime<D> {
         sources: &std::collections::BTreeMap<piqueld_core::ServiceName, ResolvedSource>,
     ) -> Result<ImagesInUse, BoundaryError> {
         let in_use = ImagesInUse::hold(Arc::clone(&self.images)).await;
-        tokio::time::timeout(self.prepare_timeout, in_use.ensure(&*self.docker, sources))
-            .await
-            .map_err(|source| {
-                BoundaryError::Runtime(DockerError::unavailable("reuse release images", source))
-            })?
-            .map_err(|error| match error {
-                crate::operations::OperationError::Docker(error) => BoundaryError::Runtime(error),
-                error => BoundaryError::ImageUnavailable(Box::new(error)),
-            })?;
+        tokio::time::timeout(
+            self.prepare_timeout(),
+            in_use.ensure(&*self.docker, sources),
+        )
+        .await
+        .map_err(|source| {
+            BoundaryError::Runtime(DockerError::unavailable("reuse release images", source))
+        })?
+        .map_err(|error| match error {
+            crate::operations::OperationError::Docker(error) => BoundaryError::Runtime(error),
+            error => BoundaryError::ImageUnavailable(Box::new(error)),
+        })?;
         Ok(in_use)
     }
 
@@ -432,7 +452,8 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         let docker = self.docker.as_ref();
         let repository =
             crate::git::snapshot::SnapshotSource::checkout(self.snapshot.as_ref(), repository);
-        let owner = (&self.instance_id, self.priority);
+        let unavailable = self.settings.borrow().effective().build.unavailable;
+        let owner = (&self.instance_id, self.priority, unavailable);
         let Some((store, operation)) = &self.progress else {
             let checkout = self.checkouts.checkout(repository, None).await?;
             let image = checkout.build(build, owner, docker, None).await?;

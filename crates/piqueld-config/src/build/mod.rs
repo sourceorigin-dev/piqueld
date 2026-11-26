@@ -23,6 +23,8 @@ pub struct BuildConfig {
     pub parallel: NonZeroU8,
     /// The build machine images build on, if any.
     pub remote: Option<RemoteBuild>,
+    /// The `build.unavailable` daemon setting this file pins, if any.
+    pub unavailable: Option<WhenUnavailable>,
 }
 
 impl BuildConfig {
@@ -35,6 +37,7 @@ impl Default for BuildConfig {
         Self {
             parallel: Self::DEFAULT_PARALLEL,
             remote: None,
+            unavailable: None,
         }
     }
 }
@@ -77,7 +80,8 @@ struct RawBuildConfig {
     /// can't be reached: `fail`, the default, fails it with
     /// `builder_unavailable`, and `local` builds on this host's Docker Engine
     /// instead, where a build competes with the applications the host runs.
-    /// Requires `builder`.
+    /// Requires `builder`. A daemon setting: set here, it is pinned to its
+    /// value; otherwise `piquelctl settings` or the dashboard changes it.
     unavailable: Option<WhenUnavailable>,
 }
 
@@ -92,7 +96,6 @@ impl TryFrom<RawBuildConfig> for BuildConfig {
             (Some(builder), Some(repository)) => Some(RemoteBuild {
                 builder,
                 repository,
-                unavailable: raw.unavailable.unwrap_or_default(),
             }),
             (Some(_), None) => return Err("build.builder requires build.repository"),
             (None, Some(_)) => return Err("build.repository requires build.builder"),
@@ -100,6 +103,7 @@ impl TryFrom<RawBuildConfig> for BuildConfig {
         Ok(Self {
             parallel: raw.parallel.unwrap_or(Self::DEFAULT_PARALLEL),
             remote,
+            unavailable: raw.unavailable,
         })
     }
 }

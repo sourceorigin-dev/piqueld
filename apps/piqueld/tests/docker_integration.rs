@@ -1346,7 +1346,7 @@ async fn git_build_runs_as_a_local_swarm_image() {
         &store,
         &sources,
         std::sync::Arc::new(tokio::sync::Notify::new()),
-        Duration::from_mins(2),
+        Some(Duration::from_mins(2)),
         std::sync::Arc::default(),
         std::sync::Arc::default(),
     );

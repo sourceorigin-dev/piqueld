@@ -60,6 +60,16 @@ build` instead of `piqueld.service`. Credentials are not read during the check.
 Set `services.piqueld.checkConfig = false;` when the package cannot run on the
 build machine, such as when cross-compiling.
 
+[Daemon settings](../operations/settings.md), such as
+`settings.retention.event_days` or `settings.previews.max_total`, default to
+`null`. Left unset, they keep their daemon default and change from the
+dashboard or `piquelctl settings`. Set one, and it is pinned to that value,
+which only a new generation changes:
+
+```nix
+services.piqueld.settings.retention.audit_days = 730;
+```
+
 `dataDir` defaults to `/var/lib/piqueld`, with mode `0700`, holding `piqueld.db`.
 The daemon keeps the backups it takes before an upgrade in its `backups`
 directory. Set `services.piqueld.rollBack = true;` to run
@@ -146,7 +156,8 @@ the five [`previews`](configuration.md#previews) limits,
 [`snapshots.max_upload_bytes`](configuration.md#local-snapshots),
 [`checkouts.max_bytes`](configuration.md#git-checkouts), the three `images` settings,
 `telemetry.endpoint`, `telemetry.headers_file` (a systemd credential),
-and `telemetry.containers`, with the daemon's defaults. Reconciliation
+and `telemetry.containers`, with the daemon's defaults, except the daemon
+settings, which default to `null` (see above). Reconciliation
 values must be 1–86400 seconds; retention values are nonnegative days, or a
 count for `retention.deployments_per_environment`, with zero disabling pruning. Unknown settings are rejected.
 

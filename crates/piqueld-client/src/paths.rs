@@ -490,6 +490,12 @@ pub fn put_notification_destination(name: &str) -> String {
     )
 }
 
+/// `PUT /api/v1/system/settings/{key}`
+#[must_use]
+pub fn put_setting(key: &str) -> String {
+    format!("/api/v1/system/settings/{key}", key = encode_path(key))
+}
+
 /// `POST /api/v1/environments/{id}/reconcile`
 #[must_use]
 pub fn reconcile_environment(id: &str) -> String {
@@ -573,6 +579,12 @@ pub fn remove_service_mount(id: &str, service: &str) -> String {
 #[must_use]
 pub fn rename_environment(id: &str) -> String {
     format!("/api/v1/environments/{id}/rename", id = encode_path(id))
+}
+
+/// `DELETE /api/v1/system/settings/{key}`
+#[must_use]
+pub fn reset_setting(key: &str) -> String {
+    format!("/api/v1/system/settings/{key}", key = encode_path(key))
 }
 
 /// `POST /api/v1/environments/{id}/restore`

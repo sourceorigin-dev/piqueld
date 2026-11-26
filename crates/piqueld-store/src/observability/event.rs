@@ -502,8 +502,9 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub async fn prune_daemon_events(&self) -> Result<(), StoreError> {
-        if self.daemon_event_days > 0 {
-            let cutoff = days_ago_ms(self.daemon_event_days);
+        let days = self.settings().retention.daemon_event_days;
+        if days > 0 {
+            let cutoff = days_ago_ms(days);
             self.prune_scope(cutoff, EventScope::Daemon).await?;
         }
         Ok(())

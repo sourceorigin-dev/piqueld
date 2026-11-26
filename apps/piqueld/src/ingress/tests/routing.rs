@@ -147,9 +147,7 @@ impl Scenario {
                 self.controller
                     .run(
                         Arc::new(tokio::sync::Notify::new()),
-                        Duration::from_millis(100),
-                        30,
-                        30,
+                        Some(Duration::from_millis(100)),
                         cancellation.clone(),
                     )
                     .await

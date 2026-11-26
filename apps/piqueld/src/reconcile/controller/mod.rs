@@ -283,14 +283,14 @@ impl<D: DockerApi> Controller<D> {
                 .await?;
             self.run_jobs(operation, desired, cancellation).await?;
         }
-        let mut deadline = tokio::time::Instant::now() + self.retry.convergence_timeout;
+        let mut deadline = tokio::time::Instant::now() + self.convergence_timeout();
         if operation.kind == OperationKind::Delete {
             self.withdraw_routes(operation, deadline).await?;
             self.remove_jobs(operation, &ownership, JobRuns::All, cancellation)
                 .await?;
         }
         tracing::debug!(
-            timeout_seconds = self.retry.convergence_timeout.as_secs(),
+            timeout_seconds = self.convergence_timeout().as_secs(),
             "convergence started"
         );
         let mut recorded: Option<Vec<StepKey>> = None;
@@ -359,7 +359,7 @@ impl<D: DockerApi> Controller<D> {
                 steps.remove(0);
             }
             if matches!(action.kind, piqueld_core::ActionKind::WaitForService { .. }) {
-                deadline = tokio::time::Instant::now() + self.retry.convergence_timeout;
+                deadline = tokio::time::Instant::now() + self.convergence_timeout();
             }
         }
     }
@@ -430,7 +430,7 @@ impl<D: DockerApi> Controller<D> {
             return Ok(self.delete_request(&operation.environment_id));
         }
         let prepared = tokio::time::timeout(
-            self.prepare_timeout,
+            self.prepare_timeout(),
             self.prepare_target(operation, &application),
         );
         let desired = tokio::select! {
@@ -531,7 +531,7 @@ impl<D: DockerApi> Controller<D> {
     /// pins secret versions, then resolves images and builds sources. The result
     /// is saved only if the operation is still current and the topology still
     /// supported; image cleanup waits until then.
-    #[tracing::instrument(skip_all, fields(phase = "preparation", timeout_seconds = self.prepare_timeout.as_secs()))]
+    #[tracing::instrument(skip_all, fields(phase = "preparation", timeout_seconds = self.prepare_timeout().as_secs()))]
     async fn prepare_target(
         &self,
         operation: &Operation,

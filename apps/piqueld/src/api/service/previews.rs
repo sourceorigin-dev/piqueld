@@ -78,7 +78,7 @@ impl ApplicationService {
             .url
             .clone();
         let snapshots = self.sources.snapshots();
-        let limit = self.sources.max_upload_bytes();
+        let limit = self.store.settings().snapshots.max_upload_bytes;
         let received = snapshots
             .receive(
                 bundle,

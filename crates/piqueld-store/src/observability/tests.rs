@@ -741,18 +741,10 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
     for daemon in [false, true] {
         let temp = tempfile::tempdir().expect("the temp dir is created");
         let path = temp.path().join("db");
-        let retention = piqueld_core::RetentionConfig {
-            daemon_event_days: 1,
-            ..Default::default()
-        };
         let store = Store::open_unsynced(&path)
             .await
-            .expect("the store opens")
-            .with_observability(
-                &retention,
-                &piqueld_core::ImagesConfig::default(),
-                Duration::from_secs(60),
-            );
+            .expect("the store opens");
+        store.pin(|pins| pins.retention.daemon_event_days = Some(1));
         notify(&store).await;
         let op = application(&store).await;
         let application = (!daemon).then_some(op.environment_id.as_str());
@@ -802,12 +794,8 @@ async fn open_incidents_survive_retention_until_recovery_is_delivered() {
 
         let store = Store::open_unsynced(&path)
             .await
-            .expect("the store opens")
-            .with_observability(
-                &retention,
-                &piqueld_core::ImagesConfig::default(),
-                Duration::from_secs(60),
-            );
+            .expect("the store opens");
+        store.pin(|pins| pins.retention.daemon_event_days = Some(1));
         store
             .restart_failure_windows()
             .await
@@ -1499,8 +1487,8 @@ async fn operator_and_anonymous_refusals_burst_separately() {
 /// clock stepped back keeps it, rather than taking it along.
 #[tokio::test]
 async fn audit_pruning_keeps_records_after_a_retained_one() {
-    let (_temp, mut store) = Store::temporary().await;
-    store.audit_days = 1;
+    let (_temp, store) = Store::temporary().await;
+    store.pin(|pins| pins.retention.audit_days = Some(1));
     for (peer, at) in [("a", 0), ("b", now_ms()), ("c", 0)] {
         store
             .record_audit_at(&refused(peer), at)
@@ -1528,8 +1516,8 @@ async fn audit_pruning_keeps_records_after_a_retained_one() {
 #[tokio::test]
 #[expect(clippy::too_many_lines, reason = "one scenario reads top to bottom")]
 async fn the_audit_chain_detects_alteration_and_survives_pruning() {
-    let (_temp, mut store) = Store::temporary().await;
-    store.audit_days = 1;
+    let (_temp, store) = Store::temporary().await;
+    store.pin(|pins| pins.retention.audit_days = Some(1));
     let now = now_ms();
     for (peer, at) in [("a", 0), ("b", 0), ("c", now), ("d", now)] {
         let mut event = refused(peer);
@@ -1668,8 +1656,8 @@ async fn the_audit_chain_detects_alteration_and_survives_pruning() {
 /// verifiable.
 #[tokio::test]
 async fn audit_appends_commit_and_roll_back_with_their_transaction() {
-    let (_temp, mut store) = Store::temporary().await;
-    store.audit_days = 1;
+    let (_temp, store) = Store::temporary().await;
+    store.pin(|pins| pins.retention.audit_days = Some(1));
     let now = now_ms();
     let append = async |peer: &str, at: i64, commit: bool| {
         let (_writer, mut tx) = store

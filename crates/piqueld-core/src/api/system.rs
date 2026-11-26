@@ -71,7 +71,7 @@ pub struct BuilderCheck {
 /// so it can refuse one before writing it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct SnapshotLimits {
-    /// The largest bundle an upload may carry: `[snapshots] max_upload_bytes`.
+    /// The largest bundle an upload may carry: the `snapshots.max_upload_bytes` setting.
     pub max_upload_bytes: u64,
     /// The most bytes its files may take, each file and directory charged
     /// [`Self::file_cost`]: `[checkouts] max_bytes`.
@@ -147,11 +147,140 @@ pub struct RegistryImageStatus {
     pub failure: Option<String>,
 }
 
-/// Effective host settings loaded by the daemon; no mutation endpoint exists.
+/// The daemon's settings: the host's, which only its configuration file
+/// changes, and the daemon settings, which the API changes unless the file
+/// pins them.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct HostConfiguration {
-    /// Settings grouped by server, Docker, reconciliation and retention.
+    /// The host's settings, read-only, grouped by section, such as `Server`
+    /// or `Tailscale`, as display strings.
     pub groups: BTreeMap<String, BTreeMap<String, String>>,
+    /// Every daemon setting, in sections, with its effective value.
+    #[serde(default)]
+    pub settings: Vec<Setting>,
+}
+
+/// A daemon setting: installation policy, such as how long history is kept,
+/// which `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets,
+/// unless the configuration file pins it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct Setting {
+    /// Its key, `section.field`, which is also its path in the
+    /// configuration file, such as `retention.event_days`.
+    pub key: String,
+    /// The title of its section, such as `History`.
+    pub section: String,
+    /// A short name, such as `Application events (days)`.
+    pub label: String,
+    /// What it does, a paragraph per line.
+    pub description: String,
+    /// Its effective value.
+    pub value: serde_json::Value,
+    /// Its value when neither set nor pinned.
+    pub default: serde_json::Value,
+    /// Where `value` comes from.
+    pub source: SettingSource,
+    /// The values it takes.
+    pub kind: SettingKind,
+    /// What the installation lacks for the setting to apply, such as a
+    /// build machine; while set, the setting can't be changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<String>,
+}
+
+impl Setting {
+    /// Whether the configuration file pins it, so the API can't change it.
+    #[must_use]
+    pub fn pinned(&self) -> bool {
+        self.source == SettingSource::Configuration
+    }
+}
+
+/// Where a daemon setting's value comes from.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SettingSource {
+    /// Its default: nothing changed it.
+    Default,
+    /// Changed through the API, `piquelctl settings set` or the dashboard.
+    Changed,
+    /// Pinned by the daemon's configuration file, which alone changes it.
+    Configuration,
+}
+
+impl SettingSource {
+    /// How the CLI and the dashboard name it.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Changed => "changed",
+            Self::Configuration => "configuration file",
+        }
+    }
+}
+
+/// The values a daemon setting takes.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SettingKind {
+    /// A whole number from `minimum` to `maximum`, or `null` where
+    /// `nullable`, which means no limit.
+    Integer {
+        /// The smallest value.
+        minimum: u64,
+        /// The largest value; absent when only the integer's size bounds it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        maximum: Option<u64>,
+        /// Whether `null` is a value.
+        nullable: bool,
+    },
+    /// `true` or `false`.
+    Boolean,
+    /// One of `values`.
+    Choice {
+        /// Every value it takes.
+        values: Vec<String>,
+    },
+}
+
+impl std::fmt::Display for SettingKind {
+    /// What it takes, as error messages, the CLI and the dashboard say it:
+    ///
+    /// ```text
+    /// a whole number from 1 to 86400
+    /// a whole number of at least 1, or none for no limit
+    /// true or false
+    /// one of fail or local
+    /// ```
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Boolean => f.write_str("true or false"),
+            Self::Choice { values } => write!(f, "one of {}", values.join(" or ")),
+            &Self::Integer {
+                minimum,
+                maximum,
+                nullable,
+            } => {
+                match maximum {
+                    Some(maximum) => write!(f, "a whole number from {minimum} to {maximum}")?,
+                    None => write!(f, "a whole number of at least {minimum}")?,
+                }
+                if nullable {
+                    f.write_str(", or none for no limit")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// A new value for a daemon setting.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SettingChange {
+    /// The value, of the setting's kind.
+    pub value: serde_json::Value,
 }
 
 /// One diagnostic dependency probe, independent of application health.

@@ -180,7 +180,7 @@ write's transaction; `Actor::require_fresh` exempts the host operator, and
 account checks it at registration start, before any passkey is created, and
 again when storing it; secret key recovery checks it with `system:operate`.
 Creating tokens, invitations and enrollment links checks it, and so does
-granting `admin`, `accounts:manage` or `system:operate` (see
+granting `admin`, `accounts:manage`, `system:operate` or `settings:manage` (see
 [authorization](authorization.md#limited-credentials)).
 
 A browser session confirms through `POST /auth/reauthenticate/start` and

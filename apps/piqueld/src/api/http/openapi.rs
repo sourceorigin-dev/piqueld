@@ -51,6 +51,7 @@ use utoipa::{OpenApi, ToResponse};
         Envelope<Vec<piqueld_core::api::StoredSecret>>,
         Envelope<piqueld_core::api::StoredSecret>,
         Envelope<bool>,
+        piqueld_core::api::SettingChange,
         Route,
         RoutesValue,
         piqueld_core::api::PreviewLimitReached,

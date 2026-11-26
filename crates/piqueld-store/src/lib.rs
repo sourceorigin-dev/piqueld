@@ -48,6 +48,8 @@ mod restore;
 pub mod secrets;
 pub use restore::RestoreError;
 mod secret;
+mod settings;
+pub use settings::SettingsState;
 mod status;
 mod stopped;
 mod sync;
@@ -280,6 +282,9 @@ pub enum StoreError {
     /// A notification destination change was refused.
     #[error(transparent)]
     Destination(#[from] DestinationError),
+    /// A daemon setting change was refused.
+    #[error(transparent)]
+    Setting(#[from] piqueld_core::settings::SettingError),
     /// A delivery retry was refused.
     #[error(transparent)]
     Retry(#[from] RetryError),
@@ -561,11 +566,6 @@ pub const MAX_PAGE_SIZE: usize = piqueld_core::api::MAX_PAGE_SIZE as usize;
 /// error.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How old an unchanged health observation gets before it's written again,
-/// until [`Store::with_observability`] sets the daemon's scan interval: the
-/// default reconciliation scan interval of 60 seconds.
-const DEFAULT_HEALTH_REFRESH_MS: i64 = 60_000;
-
 /// Last observed environment status.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnvironmentStatus {
@@ -599,8 +599,10 @@ pub struct Store {
     pool: SqlitePool,
     /// Stable installation identity, generated when the database is first created.
     instance_id: piqueld_core::InstanceId,
-    /// Build output retention and per-build byte cap.
-    build_history: piqueld_core::BuildHistoryConfig,
+    /// The daemon settings: those set through the API, those `config.toml`
+    /// pins, and the effective settings, which every reader reads where it
+    /// applies them (see [`Store::settings`]).
+    settings: tokio::sync::watch::Sender<SettingsState>,
 
     /// Secret master key file, stored next to the database as `secrets.key`.
     secret_key_path: std::path::PathBuf,
@@ -616,19 +618,6 @@ pub struct Store {
     /// Recently sampled daemon statistics, reused for a few seconds.
     stats_cache:
         std::sync::Arc<tokio::sync::Mutex<Option<piqueld_core::observability::DaemonStats>>>,
-    /// Daemon-scoped event retention in days; zero keeps history forever.
-    daemon_event_days: u64,
-    /// Audit trail retention in days; zero keeps it forever.
-    audit_days: u64,
-    /// Traffic count retention in days; zero keeps them forever.
-    traffic_days: u64,
-    /// How much deployment history each environment keeps.
-    deployment_retention: history::DeploymentRetention,
-    /// How old an unchanged health observation gets before
-    /// [`Store::record_health`] writes its time again: one scan interval.
-    health_refresh_ms: i64,
-    /// How many previews may exist and what their services may use.
-    previews: piqueld_core::manifest::PreviewLimits,
     /// Signalled after each committed change to accounts, credentials, or
     /// grants (see [`Store::access_changes`]).
     access_changes: tokio::sync::watch::Sender<()>,
@@ -759,10 +748,11 @@ impl Store {
             return Err(StoreError::SchemaMismatch);
         }
         Self::optimize_on(&pool).await?;
+        let settings = tokio::sync::watch::Sender::new(Self::stored_settings(&pool).await?);
         Ok(Self {
             pool,
             instance_id,
-            build_history: piqueld_core::BuildHistoryConfig::default(),
+            settings,
 
             secret_key_path: path.with_file_name("secrets.key"),
             writers: std::sync::Arc::default(),
@@ -770,12 +760,6 @@ impl Store {
             database_path: path.to_path_buf(),
             started: std::time::Instant::now(),
             stats_cache: std::sync::Arc::default(),
-            daemon_event_days: 0,
-            audit_days: 0,
-            traffic_days: 0,
-            deployment_retention: history::DeploymentRetention::default(),
-            health_refresh_ms: DEFAULT_HEALTH_REFRESH_MS,
-            previews: piqueld_core::manifest::PreviewLimits::default(),
             access_changes: tokio::sync::watch::Sender::new(()),
         })
     }

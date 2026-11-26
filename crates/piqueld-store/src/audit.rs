@@ -715,10 +715,11 @@ impl Store {
     /// # Errors
     /// Returns storage errors.
     pub async fn prune_audit(&self) -> Result<(), StoreError> {
-        if self.audit_days == 0 {
+        let days = self.settings().retention.audit_days;
+        if days == 0 {
             return Ok(());
         }
-        let cutoff = days_ago_ms(self.audit_days);
+        let cutoff = days_ago_ms(days);
         while self.prune_audit_batch(cutoff).await? {}
         Ok(())
     }

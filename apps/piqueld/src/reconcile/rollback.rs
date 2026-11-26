@@ -100,7 +100,7 @@ impl<D: DockerApi> Controller<D> {
             .ok_or(RollbackError::NothingToRestore)?;
         let in_use = self.images_in_use().await;
         tokio::time::timeout(
-            self.prepare_timeout,
+            self.prepare_timeout(),
             in_use.ensure(&*self.docker, target.sources()),
         )
         .await

@@ -134,12 +134,10 @@ struct Inner {
     tokens: TokenPolicy,
 }
 
-/// Limits on new API tokens, from daemon configuration.
+/// What new API tokens may be, from daemon configuration. Their longest
+/// lifetime is the `auth.max_token_days` setting, read as each is created.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TokenPolicy {
-    /// Longest lifetime in days (`auth.max_token_days`); `None` allows
-    /// tokens that never expire.
-    pub max_days: Option<u32>,
     /// Whether the daemon identifies tailnet peers, through its tailnet node
     /// (`tailscale.enabled`) or the apps node behind its dashboard hostname
     /// (`ingress.private.dashboard_hostname`), without which a token bound to
@@ -152,7 +150,6 @@ impl TokenPolicy {
     #[must_use]
     pub fn new(config: &piqueld_config::DaemonConfig) -> Self {
         Self {
-            max_days: config.auth.max_token_days,
             tailnet: config.tailscale.enabled
                 || config.ingress.private.dashboard_hostname.is_some(),
         }

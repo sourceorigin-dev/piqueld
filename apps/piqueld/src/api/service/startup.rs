@@ -81,9 +81,6 @@ impl ApplicationService {
             .context("failed to bind the webhook socket")?;
         let traffic = ingress.bind_traffic().await?;
         service.record_start(config).await?;
-        let scan_interval = Duration::from_secs(config.reconciliation.scan_interval_seconds);
-        let finished_operation_days = config.retention.finished_operation_days;
-        let event_days = config.retention.event_days;
         let auto_initialize_swarm = config.docker.auto_initialize_swarm;
         let background = service.clone();
         let controller = tokio::spawn(async move {
@@ -97,15 +94,7 @@ impl ApplicationService {
                     return Ok(());
                 }
                 let reconcile = async {
-                    let result = reconciler
-                        .run(
-                            wake,
-                            scan_interval,
-                            finished_operation_days,
-                            event_days,
-                            cancellation.child_token(),
-                        )
-                        .await;
+                    let result = reconciler.run(wake, None, cancellation.child_token()).await;
                     cancellation.cancel();
                     result
                 };
@@ -118,8 +107,7 @@ impl ApplicationService {
             };
             let (result, (), (), (), (), (), _) = tokio::join!(
                 runtime,
-                background
-                    .observe_notifications(scan_interval.as_secs(), cancellation.child_token()),
+                background.observe_notifications(cancellation.child_token()),
                 background.deliver_notifications(cancellation.child_token()),
                 background.sync(cancellation.child_token()),
                 background.serve_webhooks(webhook_listener, cancellation.child_token()),
@@ -226,7 +214,8 @@ impl ApplicationService {
         Ok(docker.with_builder(builder))
     }
 
-    /// Opens the control-plane state with the daemon's settings, starts
+    /// Opens the control-plane state, pinning the daemon settings `config`
+    /// sets, starts
     /// `telemetry` export now that it names the installation, so even a
     /// start that fails later is exported, and reads where the journal stands
     /// before this start changes it.
@@ -236,14 +225,9 @@ impl ApplicationService {
     ) -> anyhow::Result<(Arc<Store>, piqueld_store::JournalPosition)> {
         let store = Store::open(config.server.database_path())
             .await
-            .context("failed to open control-plane state")?
-            .with_build_history(config.build_history.clone())
-            .with_observability(
-                &config.retention,
-                &config.images,
-                Duration::from_secs(config.reconciliation.scan_interval_seconds),
-            )
-            .with_previews(config.previews.clone());
+            .context("failed to open control-plane state")?;
+        store.pin_settings(config.pins());
+        store.meet_requirements(config.requirements());
         info!(path = %config.server.database_path().display(), "opened control-plane state");
         telemetry.start(store.instance_id());
         let journaled = store.journal_position().await?;

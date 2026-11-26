@@ -279,8 +279,9 @@ the journal in bounded pages, so slow clients never block writers.
 The dashboard adds Events, Errors, Analytics, Notifications and Daemon status.
 Application pages include scoped history; diagnostics link to related operation
 history. Error feedback links to the specific diagnostic where available. Views
-refresh while visible. Host settings are displayed read-only; credentials show
-only the file they were read from.
+refresh while visible. The Settings page shows the host's settings
+read-only, with credentials only as the file they were read from, and edits
+the daemon settings; see [persistence](persistence.md#daemon-settings).
 
 Resource snapshots are cached for five seconds. They include process uptime,
 resident memory and CPU, DB/WAL sizes, available disk, retained event and
