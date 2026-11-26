@@ -525,14 +525,15 @@ mod tests {
             endpoint: Some(piqueld_config::OtlpEndpoint::Unix(endpoint)),
             ..Default::default()
         };
-        Telemetry::new(&config, crate::telemetry::Sockets::new(directory)).unwrap()
+        Telemetry::new(&config, crate::telemetry::Sockets::new(directory))
+            .expect("the value is valid")
     }
 
     /// A follower skips lines before where it resumes, keeps the one at it,
     /// and the cursor saved for restarts stays put until lines are sent.
     #[tokio::test]
     async fn container_logs_resume_at_the_read_cursor() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let telemetry = unreachable(directory.path());
         let container = ContainerExport::new(vec![], 2_000_000_000, false);
         let lines = piqueld_docker::LogLines {
@@ -545,7 +546,7 @@ mod tests {
         telemetry
             .export_container_logs(&container, logs)
             .await
-            .unwrap();
+            .expect("export container logs succeeds");
         assert_eq!(container.since(), 3);
         assert_eq!(container.cursor(), 2_000_000_000, "lines still queued");
     }
@@ -554,15 +555,17 @@ mod tests {
     /// receiver, so a collector never receives its own output.
     #[tokio::test]
     async fn receivers_output_reaches_no_receiver() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let telemetry = unreachable(directory.path());
-        let receiver = piqueld_core::EnvironmentId::parse("app-otel").unwrap();
-        let service = piqueld_core::ServiceName::parse("collector").unwrap();
+        let receiver =
+            piqueld_core::EnvironmentId::parse("app-otel").expect("the environment id parses");
+        let service =
+            piqueld_core::ServiceName::parse("collector").expect("the service name parses");
         let listed = std::future::ready(Ok::<_, std::convert::Infallible>(vec![(
             receiver.clone(),
             service,
         )]));
-        telemetry.receive(listed).await.unwrap();
+        telemetry.receive(listed).await.expect("receive succeeds");
         let line = || piqueld_docker::LogLines {
             stream: Some(LogStream::Stdout),
             lines: vec![(1, "received".into())],
@@ -572,9 +575,9 @@ mod tests {
             telemetry
                 .export_container_logs(&container, logs)
                 .await
-                .unwrap();
+                .expect("export container logs succeeds");
         }
-        let hub = telemetry.0.as_ref().unwrap();
+        let hub = telemetry.0.as_ref().expect("the container exists");
         let mut queued = Vec::new();
         hub.destinations.each(|destination| {
             queued.push((destination.receiver().cloned(), destination.queued_logs()));

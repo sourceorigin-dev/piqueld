@@ -450,8 +450,8 @@ mod tests {
                 .stdin(Stdio::piped())
                 .kill_on_drop(true)
                 .spawn()
-                .unwrap();
-            let stdin = daemon.stdin.take().unwrap();
+                .expect("spawn succeeds");
+            let stdin = daemon.stdin.take().expect("the counter is present");
             let cancellation = CancellationToken::new();
             let refresh_dropped = CancellationToken::new();
             let guard = refresh_dropped.clone().drop_guard();
@@ -461,11 +461,11 @@ mod tests {
                 cancellation.clone(),
                 async move {
                     let _guard = guard;
-                    started.send(()).unwrap();
+                    started.send(()).expect("the request is sent");
                     std::future::pending::<()>().await;
                 },
             ));
-            running.await.unwrap();
+            running.await.expect("the task joins");
             if child_exits {
                 drop(stdin);
             } else {
@@ -474,16 +474,16 @@ mod tests {
             let result = tokio::time::timeout(Duration::from_secs(5), supervisor)
                 .await
                 .expect("a stalled refresh must not block supervision")
-                .unwrap();
+                .expect("the supervisor returns");
             if child_exits {
                 assert!(
                     result
-                        .unwrap_err()
+                        .expect_err("the supervisor fails")
                         .to_string()
                         .contains("tailscaled exited unexpectedly")
                 );
             } else {
-                result.unwrap();
+                result.expect("the supervisor succeeds");
             }
             assert!(cancellation.is_cancelled());
             assert!(refresh_dropped.is_cancelled());

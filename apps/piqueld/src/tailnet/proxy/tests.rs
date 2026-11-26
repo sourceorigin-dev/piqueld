@@ -4,7 +4,11 @@ use std::net::Ipv6Addr;
 fn header(family: u8, addresses: &[u8]) -> Vec<u8> {
     let mut header = SIGNATURE.to_vec();
     header.extend([PROXY_COMMAND, family]);
-    header.extend(u16::try_from(addresses.len()).unwrap().to_be_bytes());
+    header.extend(
+        u16::try_from(addresses.len())
+            .expect("the seconds fit")
+            .to_be_bytes(),
+    );
     header.extend(addresses);
     header
 }
@@ -13,8 +17,8 @@ fn header(family: u8, addresses: &[u8]) -> Vec<u8> {
 /// `100.64.0.2:443`.
 fn v4_header() -> Vec<u8> {
     ProxyListener::header(
-        "100.64.0.1:40000".parse().unwrap(),
-        "100.64.0.2:443".parse().unwrap(),
+        "100.64.0.1:40000".parse().expect("the value parses"),
+        "100.64.0.2:443".parse().expect("the value parses"),
     )
 }
 
@@ -31,12 +35,14 @@ async fn reads_ipv4_and_ipv6_clients_and_leaves_the_payload() {
     v4.extend(b"GET /");
     let mut stream = v4.as_slice();
     assert_eq!(
-        ProxyListener::client(&mut stream).await.unwrap(),
-        "100.64.0.1:40000".parse().unwrap()
+        ProxyListener::client(&mut stream)
+            .await
+            .expect("the docker client is available"),
+        "100.64.0.1:40000".parse().expect("the value parses")
     );
     assert_eq!(stream, b"GET /");
 
-    let client: Ipv6Addr = "fd7a:115c:a1e0::1".parse().unwrap();
+    let client: Ipv6Addr = "fd7a:115c:a1e0::1".parse().expect("the value parses");
     let v6 = [
         client.octets().as_slice(),
         &Ipv6Addr::LOCALHOST.octets(),
@@ -47,7 +53,7 @@ async fn reads_ipv4_and_ipv6_clients_and_leaves_the_payload() {
     assert_eq!(
         ProxyListener::client(&mut header(TCP_V6, &v6).as_slice())
             .await
-            .unwrap(),
+            .expect("the docker client is available"),
         SocketAddr::new(client.into(), 40000)
     );
 }
@@ -57,8 +63,8 @@ async fn reads_ipv4_and_ipv6_clients_and_leaves_the_payload() {
 /// is one whose client has already closed.
 #[test]
 fn connections_are_attributed_to_their_owner() {
-    let peer: SocketAddr = "127.0.0.1:40000".parse().unwrap();
-    let listener: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+    let peer: SocketAddr = "127.0.0.1:40000".parse().expect("the value parses");
+    let listener: SocketAddr = "127.0.0.1:8080".parse().expect("the value parses");
     let line = |local: SocketAddr, remote: SocketAddr, state: &str, uid: u32, inode: u32| {
         let (local, remote) = (
             ProxyListener::proc_address(local),
@@ -72,7 +78,7 @@ fn connections_are_attributed_to_their_owner() {
         line(peer, listener, "01", 1001, 8),
     ]);
     assert_eq!(ProxyListener::owner_in(&open, peer, listener), Some(1001));
-    let elsewhere = "127.0.0.1:1".parse().unwrap();
+    let elsewhere = "127.0.0.1:1".parse().expect("the value parses");
     assert_eq!(ProxyListener::owner_in(&open, listener, elsewhere), None);
     let closed = table([
         line(listener, peer, "01", 1000, 7),
@@ -95,8 +101,10 @@ fn connections_are_attributed_to_their_owner() {
 async fn serve() -> (SocketAddr, CancellationToken) {
     use axum::{extract::ConnectInfo, routing::get, serve::ListenerExt};
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener binds");
+    let address = listener.local_addr().expect("the listener has an address");
     let cancellation = CancellationToken::new();
     let tap: fn(&mut TcpStream) = |_| {};
     let proxied = ProxyListener::spawn(listener, address, cancellation.clone()).tap_io(tap);
@@ -119,12 +127,17 @@ async fn serve() -> (SocketAddr, CancellationToken) {
 async fn request(address: SocketAddr) -> TcpStream {
     use tokio::io::AsyncWriteExt;
 
-    let mut stream = TcpStream::connect(address).await.unwrap();
-    stream.write_all(&v4_header()).await.unwrap();
+    let mut stream = TcpStream::connect(address)
+        .await
+        .expect("the connection opens");
+    stream
+        .write_all(&v4_header())
+        .await
+        .expect("the bytes are written");
     stream
         .write_all(b"GET / HTTP/1.1\r\nHost: piqueld\r\nConnection: close\r\n\r\n")
         .await
-        .unwrap();
+        .expect("the bytes are written");
     stream
 }
 
@@ -136,7 +149,7 @@ async fn handlers_see_the_proxied_client_address() {
         .await
         .read_to_string(&mut response)
         .await
-        .unwrap();
+        .expect("read to string succeeds");
     cancellation.cancel();
     assert!(response.ends_with("100.64.0.1:40000"), "{response}");
 }
@@ -148,7 +161,11 @@ async fn stalled_connections_hold_a_bounded_number_of_checks() {
     let (address, cancellation) = serve().await;
     let mut stalled = Vec::new();
     for _ in 0..CHECKING {
-        stalled.push(TcpStream::connect(address).await.unwrap());
+        stalled.push(
+            TcpStream::connect(address)
+                .await
+                .expect("the connection opens"),
+        );
     }
     let mut waiting = request(address).await;
     let mut response = String::new();
@@ -159,7 +176,10 @@ async fn stalled_connections_hold_a_bounded_number_of_checks() {
     assert!(early.await.is_err(), "served past the limit: {response}");
 
     stalled.pop();
-    waiting.read_to_string(&mut response).await.unwrap();
+    waiting
+        .read_to_string(&mut response)
+        .await
+        .expect("read to string succeeds");
     cancellation.cancel();
     assert!(response.ends_with("100.64.0.1:40000"), "{response}");
 }

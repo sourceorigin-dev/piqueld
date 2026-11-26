@@ -10,7 +10,7 @@ async fn command_diagnostics_keep_stage_and_exit_code_without_output() {
         None,
     )
     .await
-    .unwrap_err();
+    .expect_err("run recorded fails");
     let diagnostic = crate::application::BoundaryError::GitBuild(error.into()).diagnostic();
     assert_eq!(
         diagnostic.causes,
@@ -21,7 +21,7 @@ async fn command_diagnostics_keep_stage_and_exit_code_without_output() {
     );
     assert!(
         !serde_json::to_string(&diagnostic)
-            .unwrap()
+            .expect("the value serializes")
             .contains("private-token")
     );
 }
@@ -35,7 +35,11 @@ fn operation_errors_retain_causes_without_exposing_them_publicly() {
     });
     assert_eq!(error.code(), "docker_request_failed");
     assert!(!error.message().contains(diagnostic));
-    let cause = error.source().unwrap().source().unwrap();
+    let cause = error
+        .source()
+        .expect("source succeeds")
+        .source()
+        .expect("source succeeds");
     assert!(cause.is::<std::io::Error>());
     assert_eq!(cause.to_string(), diagnostic);
 
@@ -46,15 +50,18 @@ fn operation_errors_retain_causes_without_exposing_them_publicly() {
     assert!(
         journal
             .source()
-            .unwrap()
+            .expect("source succeeds")
             .source()
-            .unwrap()
+            .expect("source succeeds")
             .is::<sqlx::Error>()
     );
 
     let git = OperationError::GitBuildFailed(anyhow::anyhow!(diagnostic));
     assert_eq!(git.code(), "git_build_failed");
-    assert_eq!(git.source().unwrap().to_string(), diagnostic);
+    assert_eq!(
+        git.source().expect("source succeeds").to_string(),
+        diagnostic
+    );
     assert!(!git.message().contains(diagnostic));
 }
 
@@ -132,9 +139,9 @@ fn registry_failures_keep_classification_and_original_status() {
         assert!(
             error
                 .source()
-                .unwrap()
+                .expect("source succeeds")
                 .source()
-                .unwrap()
+                .expect("source succeeds")
                 .is::<bollard::errors::Error>()
         );
         assert!(!error.message().contains("internal registry diagnostic"));
@@ -146,7 +153,7 @@ fn registry_failures_keep_classification_and_original_status() {
         );
         assert!(
             !serde_json::to_string(&diagnostic)
-                .unwrap()
+                .expect("the value serializes")
                 .contains("internal registry diagnostic")
         );
     }
@@ -172,7 +179,7 @@ fn preparation_diagnostics_preserve_safe_typed_causes() {
     );
     assert!(
         !serde_json::to_string(&diagnostic)
-            .unwrap()
+            .expect("the value serializes")
             .contains("registry-secret")
     );
     let io = crate::application::BoundaryError::GitBuild(
@@ -184,7 +191,11 @@ fn preparation_diagnostics_preserve_safe_typed_causes() {
     )
     .diagnostic();
     assert!(io.causes.contains(&"I/O failure: PermissionDenied".into()));
-    assert!(!serde_json::to_string(&io).unwrap().contains("secret"));
+    assert!(
+        !serde_json::to_string(&io)
+            .expect("the value serializes")
+            .contains("secret")
+    );
     let storage = OperationError::Journal(piqueld_store::StoreError::DatabaseSource(
         sqlx::Error::PoolClosed,
     ))
