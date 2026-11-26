@@ -206,8 +206,10 @@ database, or there is none. Otherwise it:
 4. restores the backup.
 
 If no backup fits, or the one it picked fails a check, it fails before it
-stops or moves anything. If it fails after stopping the ingress containers,
-it moves back what it moved, and they stay stopped until the daemon starts.
+stops or moves anything. If it stops part way once it has started moving
+state, the daemon refuses to start, and the next `piqueld roll-back`
+finishes the roll-back from where it stopped. The ingress containers stay
+stopped until the daemon starts.
 
 It doesn't delete the state it replaced: the database, with every change since
 the backup, and the rest of that state stay in `rolled-back-<time>`. It keeps
@@ -341,11 +343,20 @@ repairs any drift.
   none fits. Run a newer version again, or
   [restore a backup you took yourself](#roll-back-by-hand).
 - **The daemon refuses to start because of an unfinished restore.** A
-  `piqueld restore` or `piqueld roll-back` was interrupted, or failed and
-  couldn't undo what it had done. The `.restore-<time>` directory the error
-  names only holds a copy of the backup, so nothing is lost by removing it.
-  A roll-back already moved most of the state it replaced into the newest
-  `rolled-back-<time>` directory.
+  `piqueld restore` or `piqueld roll-back` stopped part way, or failed, such
+  as on a full disk. The next `piqueld roll-back` finishes it from where it
+  stopped. Fix the cause its error names, then:
+
+  - On a host that [rolls back on every start](#roll-back-on-every-start),
+    start the daemon: `sudo systemctl start piqueld`.
+  - Elsewhere, run `piqueld roll-back` as in [rolling back](#roll-back),
+    step 3, then start the daemon.
+
+  If you can't run `piqueld roll-back`, such as on NixOS without `rollBack`,
+  finish it by hand. The `.restore-<time>` or `.publish-<time>` directory the
+  error names only holds a copy of the backup, so nothing is lost by
+  removing it. A roll-back already moved most of the state it replaced into
+  the `rolled-back-<time>` directory with the same time.
 
   1. Stop the daemon, so it doesn't start on what's left:
 
@@ -362,8 +373,8 @@ repairs any drift.
 
      Move the data directory's other contents into it, but for `backups`,
      `telemetry`, `checkouts`, `snapshots`, `buildx`, the
-     `rolled-back-<time>` directories and the `.restore-<time>` directory.
-  3. Remove the `.restore-<time>` directory.
+     `rolled-back-<time>` directories and the directory the error names.
+  3. Remove the directory the error names.
   4. Restore the backup again, as the daemon's user. A roll-back's backup is
      in `/var/lib/piqueld/backups`; for another restore, use the backup you
      were restoring:

@@ -7,14 +7,13 @@
 //! its contents but [`Backups::kept`] ones move into a `rolled-back-<ms>`
 //! directory inside it, then the backup is restored around them.
 
-use super::{Backups, Manifest, Moved, PreMigration, Refusal, entries, move_entries};
+use super::{Backups, Manifest, PreMigration, Refusal, entries};
 use anyhow::{Context, Result, bail};
 use piqueld_core::InstanceId;
 use piqueld_store::SCHEMA_VERSION;
 use std::{
     ffi::OsStr,
     fs,
-    os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
 };
 
@@ -56,7 +55,7 @@ impl RolledBack {
     }
 
     /// The directory's name for a roll-back at `at_ms`.
-    fn name(at_ms: i64) -> String {
+    pub(super) fn name(at_ms: i64) -> String {
         format!("{}{at_ms}", Self::PREFIX)
     }
 
@@ -72,6 +71,9 @@ impl RolledBack {
 pub enum RollBack {
     /// This binary opens the database, or there is none: nothing changed.
     Unneeded,
+    /// An interrupted restore or roll-back was finished, rather than a new
+    /// one started.
+    Finished,
     /// The state was rolled back.
     Restored {
         /// The backup restored.
@@ -84,16 +86,17 @@ pub enum RollBack {
 }
 
 impl Backups {
-    /// Rolls the data directory back to the newest pre-migration backup this
-    /// binary opens, once a newer piqueld migrated its database: verifies the
-    /// backup as [`Self::restore`] does, calls `stop_ingress` with the
-    /// instance, makes room among the [`RolledBack`] directories, moves the
-    /// state into a new one, and publishes the backup. Does nothing when this binary opens the database, or there is
-    /// none.
+    /// Finishes an unfinished restore, if any. Otherwise, once a newer piqueld
+    /// migrated the database, rolls it back to the newest pre-migration
+    /// backup this binary opens: verifies it as [`Self::restore`] does, calls
+    /// `stop_ingress` with the instance, makes room among the [`RolledBack`]
+    /// directories, and [finishes](Self::finish) it. Does nothing when this
+    /// binary opens the database, or there is none.
     ///
     /// # Errors
     /// [`Refusal::NoBackup`] when no backup fits, before anything changes, or
-    /// the failed step. A failed move or publish is undone.
+    /// the failed step. Once state has started moving, a failure leaves the
+    /// restore unfinished, for the next run to finish.
     pub async fn roll_back(
         &self,
         stop_ingress: impl AsyncFnOnce(&InstanceId) -> Result<()>,
@@ -106,7 +109,10 @@ impl Backups {
             return Ok(RollBack::Unneeded);
         }
         let _lock = self.lock().await?;
-        self.ensure_restore_complete()?;
+        if let Some(staging) = self.unfinished()? {
+            self.finish(staging)?;
+            return Ok(RollBack::Finished);
+        }
         let Some(live) = self
             .identity()
             .await?
@@ -134,57 +140,19 @@ impl Backups {
         stop_ingress(&live.instance_id).await?;
         RolledBack::prune(data_dir, RolledBack::KEEP - 1)?;
 
-        let aside = data_dir.join(RolledBack::name(piqueld_store::now_ms()));
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(&aside)
-            .with_context(|| format!("create {}", aside.display()))?;
-        let staging = match self.mark(staged) {
-            Ok(staging) => staging,
-            Err(error) => return Err(Self::without_aside(error, &aside)),
-        };
-        let state = entries(data_dir, |name| {
-            Some(name) != staging.file_name() && !Self::kept(name)
+        let staging = self.mark(staged)?;
+        let aside = data_dir.join(RolledBack::name(staging.at_ms));
+        self.finish(staging).with_context(|| {
+            format!(
+                "roll back to {}, with the state it replaced in {}",
+                backup.display(),
+                aside.display()
+            )
         })?;
-        let published = move_entries(data_dir, &aside, &state).and_then(|()| {
-            self.publish(&staging).map_err(|failed| match failed.undo {
-                Some(_) => failed,
-                None => Moved {
-                    undo: move_entries(&aside, data_dir, &state)
-                        .err()
-                        .map(Moved::into_error),
-                    ..failed
-                },
-            })
-        });
-        let undone = published
-            .as_ref()
-            .is_err_and(|failed| failed.undo.is_none());
-        if let Err(error) = self.finish(&staging, published) {
-            return Err(if undone {
-                Self::without_aside(error, &aside)
-                    .context(format!("roll back to {}", backup.display()))
-            } else {
-                error.context(format!(
-                    "roll back to {}, with the state it replaced in {}",
-                    backup.display(),
-                    aside.display()
-                ))
-            });
-        }
         Ok(RollBack::Restored {
             backup,
             manifest,
             aside,
         })
-    }
-
-    /// `error`, once the empty `aside` a failed roll-back left is removed, or
-    /// with why it couldn't be.
-    fn without_aside(error: anyhow::Error, aside: &Path) -> anyhow::Error {
-        match fs::remove_dir(aside) {
-            Ok(()) => error,
-            Err(removal) => error.context(format!("remove {}: {removal}", aside.display())),
-        }
     }
 }

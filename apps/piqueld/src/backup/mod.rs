@@ -13,6 +13,7 @@
 mod restore;
 mod roll_back;
 mod rotation;
+mod staging;
 #[cfg(test)]
 mod tests;
 
@@ -405,22 +406,16 @@ impl Moved {
     }
 }
 
-impl From<anyhow::Error> for Moved {
-    /// A failure before anything moved.
-    fn from(error: anyhow::Error) -> Self {
-        Self { error, undo: None }
-    }
-}
-
 /// Moves the entries `names` of the directory `from` into the directory
-/// `to`, on the same filesystem, in order, then syncs both. If a move
+/// `to`, on the same filesystem, in order, never over an entry `to` already
+/// has, then syncs both. If a move
 /// fails, the entries already moved go back, so either all move or none.
 fn move_entries(from: &Path, to: &Path, names: &[OsString]) -> Result<(), Moved> {
     let mut moved = Vec::new();
     let forward = names
         .iter()
         .try_for_each(|name| {
-            fs::rename(from.join(name), to.join(name)).with_context(|| {
+            rename(&from.join(name), &to.join(name)).with_context(|| {
                 format!("move {} into {}", from.join(name).display(), to.display())
             })?;
             moved.push(name);
@@ -435,7 +430,7 @@ fn move_entries(from: &Path, to: &Path, names: &[OsString]) -> Result<(), Moved>
         .iter()
         .rev()
         .filter_map(|name| {
-            fs::rename(to.join(name), from.join(name))
+            rename(&to.join(name), &from.join(name))
                 .err()
                 .map(|undo| format!("{}: {undo}", name.display()))
         })
@@ -450,4 +445,10 @@ fn move_entries(from: &Path, to: &Path, names: &[OsString]) -> Result<(), Moved>
         ))
     };
     Err(Moved { error, undo })
+}
+
+/// Renames `from` to `to`, refusing to replace an entry at `to`.
+fn rename(from: &Path, to: &Path) -> io::Result<()> {
+    rustix::fs::renameat_with(CWD, from, CWD, to, rustix::fs::RenameFlags::NOREPLACE)
+        .map_err(io::Error::from)
 }
