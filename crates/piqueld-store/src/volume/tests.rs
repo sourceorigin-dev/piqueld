@@ -305,15 +305,17 @@ async fn branch_and_promoted_environments_take_any_unbound_name() {
         detached.push(volume.id);
     }
     let tracking = create(&store, &production, "tracking").await;
-    for (environment, source) in [(&tracking, "branch='main'"), (&staging, "promoted_from=?2")] {
-        sqlx::query(&format!(
-            "UPDATE environments SET {source},manifest_json=(SELECT desired_json FROM applications WHERE id=environments.application_id) WHERE id=?1"
-        ))
-        .bind(environment.as_str())
-        .bind(production.as_str())
-        .execute(&store.pool)
-        .await
-        .unwrap();
+    for (environment, branch, promoted_from) in [
+        (&tracking, Some("main"), None),
+        (&staging, None, Some(production.as_str())),
+    ] {
+        sqlx::query("UPDATE environments SET branch=?2,promoted_from=?3,manifest_json=(SELECT desired_json FROM applications WHERE id=environments.application_id) WHERE id=?1")
+            .bind(environment.as_str())
+            .bind(branch)
+            .bind(promoted_from)
+            .execute(&store.pool)
+            .await
+            .unwrap();
     }
     let undeclared = VolumeName::parse("restored").unwrap();
     for (environment, volume) in [&tracking, &staging].into_iter().zip(&detached) {

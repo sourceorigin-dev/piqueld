@@ -10594,7 +10594,7 @@ impl Client {
     /*Attaches a detached volume to an environment under a volume name
 
     The environment mounts it from its next deployment. Needs `apps:write` on
-    the environment and `system:operate`, since the volume may hold another
+    its application and `system:operate`, since the volume may hold another
     application's data. For an environment deploying the saved manifest, a
     name that manifest doesn't declare fails with 409
     `volume_name_undeclared`. A name the environment already binds fails with
