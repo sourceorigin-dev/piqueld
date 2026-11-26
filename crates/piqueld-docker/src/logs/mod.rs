@@ -10,7 +10,7 @@ use futures_util::StreamExt;
 use piqueld_core::{
     EnvironmentId, InstanceId,
     api::{ApplicationLogs, LogRecord},
-    resource::{APPLICATION_LABEL, INSTANCE_LABEL, MANAGED_LABEL, SERVICE_LABEL},
+    resource::{Ownership, SERVICE_LABEL},
 };
 use std::{
     cmp::Reverse,
@@ -237,20 +237,6 @@ impl BollardDocker {
         i32::try_from(timestamp).unwrap_or(i32::MAX)
     }
 
-    /// The labels, with their values, of every managed service of
-    /// `instance`'s environment `environment`. [`Self::owned_services`] lists
-    /// services by them, and `FakeDocker` matches them as Docker does.
-    pub(super) fn owner_labels(
-        instance: &InstanceId,
-        environment: &EnvironmentId,
-    ) -> [(&'static str, String); 3] {
-        [
-            (INSTANCE_LABEL, instance.to_string()),
-            (APPLICATION_LABEL, environment.to_string()),
-            (MANAGED_LABEL, "true".to_owned()),
-        ]
-    }
-
     /// Maps service IDs to logical service names for the application's
     /// managed services, filtered to `service` when one is requested. Shared by
     /// log collection and exec task selection.
@@ -265,9 +251,10 @@ impl BollardDocker {
             .list_services(Some(
                 ListServicesOptionsBuilder::default()
                     .filters(&Self::label_filter(
-                        Self::owner_labels(instance, application)
+                        Ownership::scope(instance, application)
+                            .into_iter()
                             .map(|(label, value)| format!("{label}={value}"))
-                            .to_vec(),
+                            .collect(),
                     ))
                     .build(),
             ))

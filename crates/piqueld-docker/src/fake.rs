@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt as _;
 use piqueld_core::resource::{
     APPLICATION_LABEL, Convergence, DesiredService, INSTANCE_LABEL, MANAGED_LABEL,
-    ObservedApplication, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume,
+    ObservedApplication, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume, Ownership,
     RuntimeMessage, SERVICE_LABEL, SPEC_HASH_LABEL, TaskState, image_repository,
 };
 use piqueld_core::wait;
@@ -796,12 +796,12 @@ impl DockerApi for FakeDocker {
         environment: &EnvironmentId,
         request: &piqueld_core::exec::ExecRequest,
     ) -> Result<Option<super::Exec>, DockerError> {
-        let owner = BollardDocker::owner_labels(instance, environment);
+        let owner = Ownership::scope(instance, environment);
         let observed = self.observed.lock().await;
         let Some(service) = observed.services.iter().find(|service| {
             owner
                 .iter()
-                .all(|(label, value)| service.labels.get(*label) == Some(value))
+                .all(|(label, value)| service.labels.get(label) == Some(value))
                 && service.labels.get(SERVICE_LABEL).map(String::as_str)
                     == Some(request.service.as_str())
         }) else {
