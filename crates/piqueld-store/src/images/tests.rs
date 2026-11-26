@@ -15,7 +15,7 @@ fn image(byte: char) -> ImmutableImage {
         "ghcr.io/example/notes@sha256:{}",
         byte.to_string().repeat(64)
     ))
-    .unwrap()
+    .expect("the immutable image parses")
 }
 
 /// Saves the repository-backed `notes` application, so it can have
@@ -27,16 +27,17 @@ async fn production_and_preview(store: &Store) -> (EnvironmentId, EnvironmentId)
          [[spec.services]]\nname='web'\n[spec.services.source]\ntype='image'\nimage='ghcr.io/example/notes:1'",
     );
     let saved = store.save_template(template, false).await;
-    let application = ApplicationId::parse(saved.application_id).unwrap();
+    let application =
+        ApplicationId::parse(saved.application_id).expect("the application id parses");
     let create = Mutation::Preview(PreviewMutation::Create {
         application: application.clone(),
-        branch: GitBranch::parse("feat/login").unwrap(),
+        branch: GitBranch::parse("feat/login").expect("the git branch parses"),
         slot: None,
     });
     let (MutationResponse::Preview(preview), _) = store
         .accept(Daemon, create, None, false, None)
         .await
-        .unwrap()
+        .expect("accept succeeds")
     else {
         panic!("preview")
     };
@@ -46,29 +47,41 @@ async fn production_and_preview(store: &Store) -> (EnvironmentId, EnvironmentId)
 /// Deploys `environment` and saves its prepared target, running `web` from
 /// [`image`]`(byte)`.
 async fn prepare(store: &Store, environment: &EnvironmentId, byte: char) -> Operation {
-    let operation = store.request_deploy(environment, None).await.unwrap();
+    let operation = store
+        .request_deploy(environment, None)
+        .await
+        .expect("request deploy succeeds");
     store.mark_running(&operation.id).await;
     let application = crate::testing::prebuilt("app-notes-test");
-    let web =
-        ResolvedSource::parse_image("ghcr.io/example/notes:1.4.0", image(byte).as_str()).unwrap();
+    let web = ResolvedSource::parse_image("ghcr.io/example/notes:1.4.0", image(byte).as_str())
+        .expect("parse image succeeds");
     let target = compile_application(
         &application,
         environment,
         store.instance_id().clone(),
         &ResolutionSet {
-            sources: BTreeMap::from([(ServiceName::parse("web").unwrap(), web)]),
+            sources: BTreeMap::from([(
+                ServiceName::parse("web").expect("the service name parses"),
+                web,
+            )]),
             secret_names: BTreeMap::new(),
         },
     )
-    .unwrap();
-    store.save_prepared(&operation, &target).await.unwrap();
+    .expect("compile application succeeds");
+    store
+        .save_prepared(&operation, &target)
+        .await
+        .expect("save prepared succeeds");
     operation
 }
 
 /// Deploys `environment` with [`image`]`(byte)` until it succeeds.
 async fn deploy(store: &Store, environment: &EnvironmentId, byte: char) {
     let operation = prepare(store, environment, byte).await;
-    store.publish_prepared(&operation).await.unwrap();
+    store
+        .publish_prepared(&operation)
+        .await
+        .expect("publish prepared succeeds");
     store
         .transition_operation(
             &operation.id,
@@ -77,15 +90,15 @@ async fn deploy(store: &Store, environment: &EnvironmentId, byte: char) {
             None,
         )
         .await
-        .unwrap();
+        .expect("transition operation succeeds");
 }
 
 /// The images `root` keeps.
 async fn kept(store: &Store, root: RetentionRoot, keep: u32) -> BTreeSet<ImmutableImage> {
-    let mut connection = store.pool.acquire().await.unwrap();
+    let mut connection = store.pool.acquire().await.expect("acquire succeeds");
     Store::retained_on(&mut connection, root, keep)
         .await
-        .unwrap()
+        .expect("retained on succeeds")
         .iter()
         .flat_map(ResolvedApplication::images)
         .collect()
@@ -115,17 +128,29 @@ async fn each_root_keeps_its_deployments_and_previews_keep_no_history() {
         application: store
             .get(&production)
             .await
-            .unwrap()
+            .expect("the environment exists")
             .environment
             .application_id,
-        name: piqueld_core::EnvironmentName::parse("canary").unwrap(),
+        name: piqueld_core::EnvironmentName::parse("canary").expect("the environment name parses"),
         source: Some(crate::SourceChoice::PromoteFrom(production.clone())),
     };
-    store.force(create).await.unwrap();
+    store.force(create).await.expect("force succeeds");
     assert_eq!(
         kept(&store, RetentionRoot::PromotionSource, 2).await,
         images("c")
     );
-    assert_eq!(store.retained_images(2).await.unwrap(), images("bcdef"));
-    assert_eq!(store.retained_images(3).await.unwrap(), images("abcdef"));
+    assert_eq!(
+        store
+            .retained_images(2)
+            .await
+            .expect("retained images succeeds"),
+        images("bcdef")
+    );
+    assert_eq!(
+        store
+            .retained_images(3)
+            .await
+            .expect("retained images succeeds"),
+        images("abcdef")
+    );
 }

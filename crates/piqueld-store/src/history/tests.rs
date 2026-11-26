@@ -26,7 +26,10 @@ async fn store() -> (tempfile::TempDir, Store, EnvironmentId) {
         succeeded: 1,
     };
     let template = ApplicationTemplate::from(&prebuilt("app-history-test"));
-    let template = template.to_manifest().validate_template().unwrap();
+    let template = template
+        .to_manifest()
+        .validate_template()
+        .expect("validate template succeeds");
     let saved = store.save_template(template, false).await;
     let production = store.saved_production(&saved).await;
     (temp, store, production)
@@ -37,7 +40,11 @@ async fn store() -> (tempfile::TempDir, Store, EnvironmentId) {
 async fn deploy(store: &Store, environment: &EnvironmentId, outcomes: &[Outcome]) -> Vec<String> {
     let mut ids = Vec::new();
     for outcome in outcomes {
-        let id = store.request_deploy(environment, None).await.unwrap().id;
+        let id = store
+            .request_deploy(environment, None)
+            .await
+            .expect("request deploy succeeds")
+            .id;
         let (state, old, succeeded, promoted) = match *outcome {
             Outcome::Pending => {
                 ids.push(id);
@@ -54,13 +61,13 @@ async fn deploy(store: &Store, environment: &EnvironmentId, outcomes: &[Outcome]
             .bind(&id)
             .execute(&store.pool)
             .await
-            .unwrap();
+            .expect("execute succeeds");
         sqlx::query("UPDATE deployments SET succeeded_at_ms=?1 WHERE id=?2")
             .bind(succeeded.then_some(finished))
             .bind(&id)
             .execute(&store.pool)
             .await
-            .unwrap();
+            .expect("execute succeeds");
         ids.push(id);
     }
     ids
@@ -71,7 +78,7 @@ async fn remaining(store: &Store, environment: &EnvironmentId) -> Vec<String> {
     let mut ids = store
         .deployments(environment, None, 100)
         .await
-        .unwrap()
+        .expect("deployments succeeds")
         .items
         .into_iter()
         .map(|deployment| deployment.operation.id)
@@ -86,7 +93,7 @@ async fn execute(store: &Store, sql: &str, id: &str) {
         .bind(id)
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
 }
 
 #[tokio::test]
@@ -128,7 +135,10 @@ async fn deployments_go_once_past_both_limits_unless_current_latest_or_restorabl
         &ids[1],
     )
     .await;
-    store.prune_deployment_history().await.unwrap();
+    store
+        .prune_deployment_history()
+        .await
+        .expect("prune deployment history succeeds");
     let kept = |indexes: &[usize]| {
         indexes
             .iter()
@@ -146,12 +156,18 @@ async fn deployments_go_once_past_both_limits_unless_current_latest_or_restorabl
         production.as_str(),
     )
     .await;
-    store.prune_deployment_history().await.unwrap();
+    store
+        .prune_deployment_history()
+        .await
+        .expect("prune deployment history succeeds");
     assert_eq!(
         remaining(&store, &production).await,
         kept(&[0, 1, 3, 4, 5, 7, 8])
     );
-    store.preview_origins(&production).await.unwrap();
+    store
+        .preview_origins(&production)
+        .await
+        .expect("preview origins succeeds");
 }
 
 /// The current deployment is the newest published one by creation time, not
@@ -186,7 +202,10 @@ async fn pruning_keeps_the_current_deployment_when_an_older_one_has_a_higher_id(
         let sql = format!("UPDATE {table} SET created_at_ms=created_at_ms-60000 WHERE id=?1");
         execute(&store, &sql, &ids[1]).await;
     }
-    store.prune_deployment_history().await.unwrap();
+    store
+        .prune_deployment_history()
+        .await
+        .expect("prune deployment history succeeds");
     assert_eq!(remaining(&store, &production).await, ids);
 }
 
@@ -208,7 +227,7 @@ async fn pruning_removes_expired_builds_and_unused_releases_of_pruned_deployment
     let application = store
         .get(&production)
         .await
-        .unwrap()
+        .expect("the environment exists")
         .environment
         .application_id;
     let application = application.as_str();
@@ -224,33 +243,36 @@ async fn pruning_removes_expired_builds_and_unused_releases_of_pruned_deployment
             .bind(expired)
             .execute(&store.pool)
             .await
-            .unwrap();
+            .expect("execute succeeds");
     }
     sqlx::query("UPDATE builds SET reused_build_id=4 WHERE id=3")
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
     for index in 0..=KEPT_RELEASES + 1 {
         sqlx::query("INSERT INTO releases(id,application_id,content_hash,release_json,created_at_ms) VALUES(?1,?2,?1,'{}',0)")
             .bind(format!("rel-test-{index:03}"))
             .bind(application)
             .execute(&store.pool)
             .await
-            .unwrap();
+            .expect("execute succeeds");
     }
     sqlx::query("UPDATE deployments SET release_id='rel-test-000' WHERE id=?1")
         .bind(&ids[4])
         .execute(&store.pool)
         .await
-        .unwrap();
+        .expect("execute succeeds");
 
-    store.prune_deployment_history().await.unwrap();
+    store
+        .prune_deployment_history()
+        .await
+        .expect("prune deployment history succeeds");
     assert_eq!(remaining(&store, &production).await, ids[2..]);
     let builds: Vec<(String, bool)> =
         sqlx::query_as("SELECT operation_id,log_expired FROM builds ORDER BY id")
             .fetch_all(&store.pool)
             .await
-            .unwrap();
+            .expect("fetch all succeeds");
     assert_eq!(
         builds,
         [
@@ -262,7 +284,7 @@ async fn pruning_removes_expired_builds_and_unused_releases_of_pruned_deployment
     let releases: Vec<String> = sqlx::query_scalar("SELECT id FROM releases ORDER BY id")
         .fetch_all(&store.pool)
         .await
-        .unwrap();
+        .expect("fetch all succeeds");
     assert_eq!(releases.len(), 51);
     assert_eq!(releases[..2], ["rel-test-000", "rel-test-002"]);
 }
@@ -282,10 +304,13 @@ async fn deployment_analytics_over_pruned_history_are_incomplete() {
         store
             .deployment_analytics(None, &crate::Visibility::ALL, 0, now_ms())
             .await
-            .unwrap()
+            .expect("deployment analytics succeeds")
             .incomplete
     };
     assert!(!incomplete().await);
-    store.prune_deployment_history().await.unwrap();
+    store
+        .prune_deployment_history()
+        .await
+        .expect("prune deployment history succeeds");
     assert!(incomplete().await);
 }

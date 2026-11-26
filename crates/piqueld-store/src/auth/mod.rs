@@ -1691,25 +1691,32 @@ impl Store {
 
 /// Fixtures for authentication tests that need states no API produces.
 #[cfg(any(test, feature = "testing"))]
+#[expect(
+    clippy::expect_used,
+    reason = "A test fixture fails the test by panicking."
+)]
 impl Store {
     /// Claims the installation for an account with `grants` and no passkey.
     ///
     /// # Panics
     /// If the store fails.
     pub async fn seed_auth_user(&self, user: &User, grants: &Grants) {
-        let (_writer, mut tx) = self.begin_immediate().await.unwrap();
+        let (_writer, mut tx) = self
+            .begin_immediate()
+            .await
+            .expect("begin immediate succeeds");
         Self::insert_user_on(&mut tx, user, now_secs())
             .await
-            .unwrap();
+            .expect("insert user on succeeds");
         Holder::User(&user.id)
             .replace(&mut tx, grants)
             .await
-            .unwrap();
+            .expect("replace succeeds");
         sqlx::query!("UPDATE auth_setup SET initialized=1,secret_hash=NULL")
             .execute(&mut *tx)
             .await
-            .unwrap();
-        tx.commit().await.unwrap();
+            .expect("execute succeeds");
+        tx.commit().await.expect("commit succeeds");
     }
 
     /// Stores a credential for an existing account, as a lineage root.
@@ -1757,7 +1764,7 @@ impl Store {
             last_used
         ))
         .await
-        .unwrap();
+        .expect("write succeeds");
     }
 
     /// Makes every host operator link and session expire now.
@@ -1771,7 +1778,7 @@ impl Store {
             now
         ))
         .await
-        .unwrap();
+        .expect("write succeeds");
     }
 
     /// Empties the account table behind the daemon's back.
@@ -1781,7 +1788,7 @@ impl Store {
     pub async fn clear_auth_users(&self) {
         self.write(sqlx::query!("DELETE FROM auth_users"))
             .await
-            .unwrap();
+            .expect("write succeeds");
     }
 }
 

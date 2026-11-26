@@ -15,7 +15,7 @@ fn alice() -> piqueld_core::EventActor {
 /// Saves an empty application named `name`, returning its ID.
 async fn application(store: &Store, name: &str) -> ApplicationId {
     let saved = store.save_template(template(name, "[spec]"), false).await;
-    ApplicationId::parse(saved.application_id).unwrap()
+    ApplicationId::parse(saved.application_id).expect("the application id parses")
 }
 
 /// Creating an application gives its creator's account matching grants
@@ -30,14 +30,17 @@ async fn only_unscoped_creators_receive_creator_grants() {
             Permission::Global(piqueld_core::access::GlobalPermission::AppsCreate),
             &Scope::All,
         )
-        .unwrap();
+        .expect("grant succeeds");
     store.seed_auth_user(&user("alice"), &grants).await;
     for (id, scoped) in [("token", Some(&grants)), ("session", None)] {
         let credential = NewCredential {
             grants: scoped,
             ..credential(id, CredentialKind::Cli)
         };
-        store.insert_credential("alice", &credential).await.unwrap();
+        store
+            .insert_credential("alice", &credential)
+            .await
+            .expect("insert credential succeeds");
     }
     let create = |credential_id, name: &str| {
         let manifest = template(name, "[spec]");
@@ -51,21 +54,21 @@ async fn only_unscoped_creators_receive_creator_grants() {
             let (MutationResponse::Saved(saved), _) = store
                 .accept(actor, mutation, Some(0), false, None)
                 .await
-                .unwrap()
+                .expect("accept succeeds")
             else {
                 panic!("saved application");
             };
-            ApplicationId::parse(saved.application_id).unwrap()
+            ApplicationId::parse(saved.application_id).expect("the application id parses")
         }
     };
     let readable = |store: &Store| {
         let store = store.clone();
         async move {
-            let mut db = store.pool.acquire().await.unwrap();
+            let mut db = store.pool.acquire().await.expect("acquire succeeds");
             Holder::User("alice")
                 .grants(&mut db)
                 .await
-                .unwrap()
+                .expect("grants succeeds")
                 .app_scope(AppPermission::Write)
         }
     };
@@ -87,8 +90,10 @@ async fn operations_and_their_events_record_the_caller() {
     let blog = application(&store, "blog").await;
     let actor = store.seed_caller("alice", &Grants::admin()).await;
     let deploy = Mutation::deploy(store.production(&blog).await);
-    let (MutationResponse::Operation(operation), _) =
-        store.accept(actor, deploy, None, true, None).await.unwrap()
+    let (MutationResponse::Operation(operation), _) = store
+        .accept(actor, deploy, None, true, None)
+        .await
+        .expect("accept succeeds")
     else {
         panic!("deployment");
     };
@@ -99,7 +104,7 @@ async fn operations_and_their_events_record_the_caller() {
     let accepted = store
         .filtered_events(&filter, &Visibility::ALL, None, 100)
         .await
-        .unwrap()
+        .expect("filtered events succeeds")
         .items
         .len();
     store.mark_running(&operation.operation_id).await;
@@ -107,12 +112,15 @@ async fn operations_and_their_events_record_the_caller() {
     let action = store
         .begin_action(Some(id), piqueld_core::Phase::EnsureService, None)
         .await;
-    let action = action.unwrap();
+    let action = action.expect("action is present");
     let shared = store
         .begin_daemon_action(Some(id), piqueld_core::Phase::IngressConfigureRoutes, None)
         .await;
-    let shared = shared.unwrap();
-    store.finish_action(&shared, None).await.unwrap();
+    let shared = shared.expect("shared is present");
+    store
+        .finish_action(&shared, None)
+        .await
+        .expect("finish action succeeds");
     let only_shared = EventFilter {
         action_id: Some(shared.id.clone()),
         ..EventFilter::default()
@@ -120,7 +128,7 @@ async fn operations_and_their_events_record_the_caller() {
     let shared = store
         .filtered_events(&only_shared, &Visibility::ALL, None, 100)
         .await
-        .unwrap()
+        .expect("filtered events succeeds")
         .items;
     assert_eq!(shared.len(), 2, "started and succeeded");
     assert!(
@@ -133,12 +141,15 @@ async fn operations_and_their_events_record_the_caller() {
         .bind(id)
         .execute(&store.pool)
         .await
-        .unwrap();
-    store.finish_action(&action, None).await.unwrap();
+        .expect("execute succeeds");
+    store
+        .finish_action(&action, None)
+        .await
+        .expect("finish action succeeds");
     let events = store
         .filtered_events(&filter, &Visibility::ALL, None, 100)
         .await
-        .unwrap()
+        .expect("filtered events succeeds")
         .items;
     assert!(events.len() > accepted, "{events:?}");
     for event in events {
@@ -164,23 +175,29 @@ async fn environment_mutations_record_the_caller() {
         let (store, filter) = (store.clone(), filter.clone());
         async move {
             let page = store.filtered_events(&filter, &Visibility::ALL, None, 100);
-            page.await.unwrap().items
+            page.await.expect("page is present").items
         }
     };
     let before = history(&store).await.len();
-    let names = ["production", "staging"].map(|name| EnvironmentName::parse(name).unwrap());
+    let names = ["production", "staging"]
+        .map(|name| EnvironmentName::parse(name).expect("the environment name parses"));
     let create = Mutation::CreateEnvironment {
         application: blog.clone(),
         name: names[1].clone(),
         source: None,
     };
-    store.accept(actor, create, None, true, None).await.unwrap();
+    store
+        .accept(actor, create, None, true, None)
+        .await
+        .expect("accept succeeds");
     let delete = Mutation::DeleteApplication {
         id: blog.clone(),
         environments: names.to_vec(),
     };
-    let (MutationResponse::Deleted(deleted), _) =
-        store.accept(actor, delete, None, true, None).await.unwrap()
+    let (MutationResponse::Deleted(deleted), _) = store
+        .accept(actor, delete, None, true, None)
+        .await
+        .expect("accept succeeds")
     else {
         panic!("deletion");
     };
@@ -191,7 +208,7 @@ async fn environment_mutations_record_the_caller() {
                 .bind(&operation.operation_id)
                 .fetch_one(&store.pool)
                 .await
-                .unwrap();
+                .expect("fetch one succeeds");
         assert_eq!(actor.as_deref(), Some("alice"));
     }
     let events = history(&store).await.split_off(before);
@@ -215,8 +232,10 @@ async fn superseded_operations_keep_their_caller() {
     for name in ["alice", "bob"] {
         let actor = store.seed_caller(name, &Grants::admin()).await;
         let deploy = Mutation::deploy(store.production(&blog).await);
-        let (MutationResponse::Operation(operation), _) =
-            store.accept(actor, deploy, None, true, None).await.unwrap()
+        let (MutationResponse::Operation(operation), _) = store
+            .accept(actor, deploy, None, true, None)
+            .await
+            .expect("accept succeeds")
         else {
             panic!("deployment");
         };
@@ -228,7 +247,7 @@ async fn superseded_operations_keep_their_caller() {
                 .bind(operation)
                 .fetch_one(&store.pool)
                 .await
-                .unwrap();
+                .expect("fetch one succeeds");
         assert_eq!(actor.as_deref(), Some(name));
     }
 }
@@ -254,7 +273,10 @@ async fn deleting_an_application_expires_tokens_left_without_grants() {
             grants,
             ..credential(id, CredentialKind::Token)
         };
-        store.insert_credential("alice", &credential).await.unwrap();
+        store
+            .insert_credential("alice", &credential)
+            .await
+            .expect("insert credential succeeds");
     }
     let delete = Mutation::DeleteApplication {
         id: blog.clone(),
@@ -263,24 +285,44 @@ async fn deleting_an_application_expires_tokens_left_without_grants() {
     let (MutationResponse::Deleted(deleted), _) = store
         .accept(Actor::Daemon, delete, None, true, None)
         .await
-        .unwrap()
+        .expect("accept succeeds")
     else {
         panic!("deletion");
     };
     let operation = &deleted.operations[0];
     store.mark_running(&operation.operation_id).await;
-    let operation = store.operation(&operation.operation_id).await.unwrap();
-    store.finish_delete_operation(&operation).await.unwrap();
-    let left = store.credential_owner("blog-only").await.unwrap().unwrap();
+    let operation = store
+        .operation(&operation.operation_id)
+        .await
+        .expect("operation succeeds");
+    store
+        .finish_delete_operation(&operation)
+        .await
+        .expect("finish delete operation succeeds");
+    let left = store
+        .credential_owner("blog-only")
+        .await
+        .expect("credential owner returns a value")
+        .expect("the value is present");
     assert!(left.grants.is_empty());
     let expires_at =
         sqlx::query_scalar!("SELECT expires_at FROM auth_credentials WHERE id='blog-only'")
             .fetch_one(&store.pool)
             .await
-            .unwrap();
+            .expect("fetch one succeeds");
     assert!(expires_at.is_some_and(|at| at <= now_secs() + 60));
-    assert!(store.credential_owner("session").await.unwrap().is_some());
-    let both = store.credential_owner("both").await.unwrap().unwrap();
+    assert!(
+        store
+            .credential_owner("session")
+            .await
+            .expect("credential owner succeeds")
+            .is_some()
+    );
+    let both = store
+        .credential_owner("both")
+        .await
+        .expect("credential owner returns a value")
+        .expect("the value is present");
     assert_eq!(both.grants.app_scope(AppPermission::Read), Scope::one(shop));
     assert!(both.grants.app_scope(AppPermission::Deploy).is_empty());
 }

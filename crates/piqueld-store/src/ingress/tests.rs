@@ -19,11 +19,13 @@ fn routed(name: &str, hostnames: &[&str]) -> NormalizedApplication {
             text,
             "\n[[spec.routes]]\nhostname='{hostname}'\nservice='web'\nport=80"
         )
-        .unwrap();
+        .expect("the tasks succeed");
     }
     piqueld_core::parse_toml(&text)
-        .unwrap()
-        .normalize(piqueld_core::ApplicationId::parse("input-app").unwrap())
+        .expect("parse toml succeeds")
+        .normalize(
+            piqueld_core::ApplicationId::parse("input-app").expect("the application id parses"),
+        )
 }
 
 async fn save(
@@ -54,22 +56,27 @@ async fn save(
 async fn installation_hostnames_and_subdomains_are_never_routed() {
     let (_directory, store) = Store::temporary().await;
     let early = app("early", Some("app.piqueld.example.com"));
-    let saved = save(&store, early.clone(), true).await.unwrap();
+    let saved = save(&store, early.clone(), true)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
     store
         .stage_routes(&id, &early.spec().routes, true, None)
         .await
-        .unwrap();
+        .expect("stage routes succeeds");
 
-    let website = Hostname::parse("piqueld.example.com").unwrap();
+    let website = Hostname::parse("piqueld.example.com").expect("the hostname parses");
     let conflicts = store
         .reserve_installation_hostnames(std::slice::from_ref(&website))
         .await
-        .unwrap();
+        .expect("reserve installation hostnames succeeds");
     assert_eq!(conflicts, [early.spec().routes[0].hostname.clone()]);
-    let table = store.routing_table().await.unwrap();
+    let table = store.routing_table().await.expect("routing table succeeds");
     assert_eq!(table[&id], []);
-    store.acknowledge_routes(&table).await.unwrap();
+    store
+        .acknowledge_routes(&table)
+        .await
+        .expect("acknowledge routes succeeds");
 
     for hostname in ["piqueld.example.com", "api.piqueld.example.com"] {
         assert!(matches!(
@@ -83,7 +90,7 @@ async fn installation_hostnames_and_subdomains_are_never_routed() {
         false,
     )
     .await
-    .unwrap();
+    .expect("save succeeds");
 }
 
 #[tokio::test]
@@ -95,10 +102,10 @@ async fn wildcards_keep_the_names_they_serve_from_other_applications() {
         false,
     )
     .await
-    .unwrap();
+    .expect("save succeeds");
     save(&store, app("tenants", Some("*.tenants.example.com")), false)
         .await
-        .unwrap();
+        .expect("save succeeds");
     assert!(matches!(
         save(&store, app("other", Some("late.tenants.example.com")), false).await,
         Err(StoreError::HostnameConflict { hostname }) if hostname == "late.tenants.example.com"
@@ -109,9 +116,11 @@ async fn wildcards_keep_the_names_they_serve_from_other_applications() {
         false,
     )
     .await
-    .unwrap();
+    .expect("save succeeds");
     let both = ["*.tenants.example.com", "admin.tenants.example.com"];
-    save(&store, routed("tenants", &both), false).await.unwrap();
+    save(&store, routed("tenants", &both), false)
+        .await
+        .expect("save succeeds");
 }
 
 #[tokio::test]
@@ -119,10 +128,11 @@ async fn environments_of_one_application_cannot_share_a_hostname() {
     let (_directory, store) = Store::temporary().await;
     let saved = save(&store, app("one", Some("site.example.com")), false)
         .await
-        .unwrap();
+        .expect("save succeeds");
     let staging = Mutation::CreateEnvironment {
-        application: piqueld_core::ApplicationId::parse(&saved.application_id).unwrap(),
-        name: piqueld_core::EnvironmentName::parse("staging").unwrap(),
+        application: piqueld_core::ApplicationId::parse(&saved.application_id)
+            .expect("the application id parses"),
+        name: piqueld_core::EnvironmentName::parse("staging").expect("the environment name parses"),
         source: None,
     };
     assert!(matches!(
@@ -132,9 +142,12 @@ async fn environments_of_one_application_cannot_share_a_hostname() {
     ));
     assert_eq!(
         store
-            .environments(&piqueld_core::ApplicationId::parse(saved.application_id).unwrap())
+            .environments(
+                &piqueld_core::ApplicationId::parse(saved.application_id)
+                    .expect("the application id parses")
+            )
             .await
-            .unwrap()
+            .expect("environments succeeds")
             .len(),
         1,
         "failed creation rolls back the environment"
@@ -149,14 +162,15 @@ async fn environments_render_their_own_hostnames_from_variables() {
         "[spec.variables]\ndomain='piquel.fr'\n[spec.environments.production]\n[spec.environments.staging.variables]\ndomain='staging.piquel.fr'\n[[spec.services]]\nname='web'\n[spec.services.source]\ntype='image'\nimage='nginx:alpine'\n[[spec.routes]]\nhostname='${{ vars.domain }}'\nservice='web'\nport=80",
     );
     let saved = store.save_template(template, false).await;
-    let application = piqueld_core::ApplicationId::parse(&saved.application_id).unwrap();
+    let application = piqueld_core::ApplicationId::parse(&saved.application_id)
+        .expect("the application id parses");
     let staging = store
         .environments(&application)
         .await
-        .unwrap()
+        .expect("environments succeeds")
         .into_iter()
         .find(|environment| environment.name.as_str() == "staging")
-        .unwrap();
+        .expect("the item exists");
     let production = store.production(&application).await;
     let mut deployed = Vec::new();
     for environment in [&production, &staging.id] {
@@ -169,16 +183,16 @@ async fn environments_render_their_own_hostnames_from_variables() {
                 None,
             )
             .await
-            .unwrap()
+            .expect("accept succeeds")
         else {
             panic!("operation response")
         };
         let rendering = store
             .deployment_snapshot(&operation.operation_id)
             .await
-            .unwrap()
+            .expect("deployment snapshot succeeds")
             .rendering
-            .unwrap();
+            .expect("rendering is present");
         deployed.push(rendering.application.spec().routes[0].hostname.to_string());
     }
     assert_eq!(deployed, ["piquel.fr", "staging.piquel.fr"]);
@@ -208,13 +222,13 @@ async fn replacing_pending_deployment_releases_only_superseded_hostnames() {
     let (_directory, store) = Store::temporary().await;
     save(&store, app("one", Some("old.example.com")), true)
         .await
-        .unwrap();
+        .expect("save succeeds");
     save(&store, app("one", Some("new.example.com")), true)
         .await
-        .unwrap();
+        .expect("save succeeds");
     save(&store, app("two", Some("old.example.com")), false)
         .await
-        .unwrap();
+        .expect("save succeeds");
     assert!(matches!(
         save(&store, app("three", Some("new.example.com")), false).await,
         Err(StoreError::HostnameConflict { .. })
@@ -226,8 +240,10 @@ async fn hostname_conflict_rolls_back_deployment_and_replay_receipt() {
     let (_directory, store) = Store::temporary().await;
     save(&store, app("one", Some("taken.example.com")), false)
         .await
-        .unwrap();
-    let saved = save(&store, app("two", None), false).await.unwrap();
+        .expect("save succeeds");
+    let saved = save(&store, app("two", None), false)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
     let result = store
         .accept(
@@ -250,9 +266,9 @@ async fn hostname_conflict_rolls_back_deployment_and_replay_receipt() {
         store
             .get(&id)
             .await
-            .unwrap()
+            .expect("the environment exists")
             .manifest()
-            .unwrap()
+            .expect("manifest succeeds")
             .spec()
             .routes,
         [] as [piqueld_core::manifest::Route; 0]
@@ -261,7 +277,7 @@ async fn hostname_conflict_rolls_back_deployment_and_replay_receipt() {
         store
             .latest_operation_for_environment(&id)
             .await
-            .unwrap()
+            .expect("latest operation for environment succeeds")
             .is_none()
     );
     store
@@ -280,7 +296,7 @@ async fn hostname_conflict_rolls_back_deployment_and_replay_receipt() {
             Some("conflicting-deploy"),
         )
         .await
-        .unwrap();
+        .expect("accept succeeds");
 }
 
 #[tokio::test]
@@ -296,7 +312,12 @@ async fn concurrent_saves_cannot_claim_the_same_hostname() {
             | (Err(StoreError::HostnameConflict { .. }), Ok(_))
     ));
     assert_eq!(
-        store.list(None, 10).await.unwrap().items.len(),
+        store
+            .list(None, 10)
+            .await
+            .expect("list succeeds")
+            .items
+            .len(),
         1,
         "failed reservation rolls back the entire save"
     );
@@ -309,29 +330,43 @@ async fn concurrent_saves_cannot_claim_the_same_hostname() {
 async fn stopped_environments_keep_their_routes_unserved() {
     let (_directory, store) = Store::temporary().await;
     let input = app("one", Some("site.example.com"));
-    let saved = save(&store, input.clone(), true).await.unwrap();
+    let saved = save(&store, input.clone(), true)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
     let routes = &input.spec().routes;
-    store.stage_routes(&id, routes, true, None).await.unwrap();
+    store
+        .stage_routes(&id, routes, true, None)
+        .await
+        .expect("stage routes succeeds");
     let accept = async |mutation| {
         let accepted = store.accept(crate::Actor::Daemon, mutation, None, true, None);
-        accepted.await.unwrap();
+        accepted.await.expect("accepted is present");
     };
 
     accept(Mutation::Stop { id: id.clone() }).await;
-    assert_eq!(store.served_table().await.unwrap()[&id], []);
-    assert_eq!(&store.routing_table().await.unwrap()[&id], routes);
+    assert_eq!(
+        store.served_table().await.expect("served table succeeds")[&id],
+        []
+    );
+    assert_eq!(
+        &store.routing_table().await.expect("routing table succeeds")[&id],
+        routes
+    );
     store
-        .acknowledge_routes(&store.served_table().await.unwrap())
+        .acknowledge_routes(&store.served_table().await.expect("served table succeeds"))
         .await
-        .unwrap();
+        .expect("acknowledge routes succeeds");
     assert!(matches!(
         save(&store, app("two", Some("site.example.com")), false).await,
         Err(StoreError::HostnameConflict { .. })
     ));
 
     accept(Mutation::deploy(id.clone())).await;
-    assert_eq!(&store.served_table().await.unwrap()[&id], routes);
+    assert_eq!(
+        &store.served_table().await.expect("served table succeeds")[&id],
+        routes
+    );
 }
 
 /// One hostname's routes read alone agree with the full tables.
@@ -339,57 +374,112 @@ async fn stopped_environments_keep_their_routes_unserved() {
 async fn one_hostnames_routes_match_the_tables() {
     let (_directory, store) = Store::temporary().await;
     let input = app("one", Some("site.example.com"));
-    let saved = save(&store, input.clone(), false).await.unwrap();
+    let saved = save(&store, input.clone(), false)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
-    let hostname = RouteHostname::parse("site.example.com").unwrap();
+    let hostname = RouteHostname::parse("site.example.com").expect("the route hostname parses");
     assert_eq!(
-        store.hostname_routes(&hostname).await.unwrap(),
+        store
+            .hostname_routes(&hostname)
+            .await
+            .expect("hostname routes succeeds"),
         HostnameRoutes::default()
     );
     let routes = &input.spec().routes;
-    store.stage_routes(&id, routes, true, None).await.unwrap();
+    store
+        .stage_routes(&id, routes, true, None)
+        .await
+        .expect("stage routes succeeds");
     let desired = HostnameRoutes {
         desired: true,
         ..HostnameRoutes::default()
     };
-    assert_eq!(store.hostname_routes(&hostname).await.unwrap(), desired);
+    assert_eq!(
+        store
+            .hostname_routes(&hostname)
+            .await
+            .expect("hostname routes succeeds"),
+        desired
+    );
     store
-        .acknowledge_routes(&store.routing_table().await.unwrap())
+        .acknowledge_routes(&store.routing_table().await.expect("routing table succeeds"))
         .await
-        .unwrap();
-    store.track_dns_records(&hostname, false).await.unwrap();
+        .expect("acknowledge routes succeeds");
+    store
+        .track_dns_records(&hostname, false)
+        .await
+        .expect("track dns records succeeds");
     let applied = HostnameRoutes {
         applied: Some(routes[0].visibility),
         desired: true,
         tracked: true,
     };
-    assert_eq!(store.hostname_routes(&hostname).await.unwrap(), applied);
-    let installation = Hostname::parse("example.com").unwrap();
+    assert_eq!(
+        store
+            .hostname_routes(&hostname)
+            .await
+            .expect("hostname routes succeeds"),
+        applied
+    );
+    let installation = Hostname::parse("example.com").expect("the hostname parses");
     store
         .reserve_installation_hostnames(std::slice::from_ref(&installation))
         .await
-        .unwrap();
-    assert!(!store.hostname_routes(&hostname).await.unwrap().desired);
+        .expect("reserve installation hostnames succeeds");
+    assert!(
+        !store
+            .hostname_routes(&hostname)
+            .await
+            .expect("hostname routes succeeds")
+            .desired
+    );
 }
 
 #[tokio::test]
 async fn only_changed_routes_are_acknowledged() {
     let (_directory, store) = Store::temporary().await;
     let input = app("one", Some("site.example.com"));
-    let saved = save(&store, input.clone(), false).await.unwrap();
+    let saved = save(&store, input.clone(), false)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
     store
         .stage_routes(&id, &input.spec().routes, true, None)
         .await
-        .unwrap();
-    let table = store.routing_table().await.unwrap();
-    assert!(store.acknowledge_routes(&table).await.unwrap());
-    assert!(!store.acknowledge_routes(&table).await.unwrap());
-    assert_eq!(store.applied_table().await.unwrap(), table);
-    store.stage_routes(&id, &[], true, None).await.unwrap();
-    let withdrawn = store.routing_table().await.unwrap();
-    assert!(store.acknowledge_routes(&withdrawn).await.unwrap());
-    assert_eq!(store.applied_table().await.unwrap(), withdrawn);
+        .expect("stage routes succeeds");
+    let table = store.routing_table().await.expect("routing table succeeds");
+    assert!(
+        store
+            .acknowledge_routes(&table)
+            .await
+            .expect("acknowledge routes succeeds")
+    );
+    assert!(
+        !store
+            .acknowledge_routes(&table)
+            .await
+            .expect("acknowledge routes succeeds")
+    );
+    assert_eq!(
+        store.applied_table().await.expect("applied table succeeds"),
+        table
+    );
+    store
+        .stage_routes(&id, &[], true, None)
+        .await
+        .expect("stage routes succeeds");
+    let withdrawn = store.routing_table().await.expect("routing table succeeds");
+    assert!(
+        store
+            .acknowledge_routes(&withdrawn)
+            .await
+            .expect("acknowledge routes succeeds")
+    );
+    assert_eq!(
+        store.applied_table().await.expect("applied table succeeds"),
+        withdrawn
+    );
 }
 
 /// Concurrent acknowledgements run one at a time, in order, so the later
@@ -401,14 +491,23 @@ async fn concurrent_acknowledgements_end_with_the_later_table() {
     let mut routes = Vec::new();
     for (name, hostname) in [("one", "one.example.com"), ("two", "two.example.com")] {
         let input = app(name, Some(hostname));
-        let saved = save(&store, input.clone(), false).await.unwrap();
+        let saved = save(&store, input.clone(), false)
+            .await
+            .expect("save succeeds");
         let id = store.saved_production(&saved).await;
-        store.stage_routes(&id, &[], true, None).await.unwrap();
+        store
+            .stage_routes(&id, &[], true, None)
+            .await
+            .expect("stage routes succeeds");
         routes.push((id, input.spec().routes.clone()));
     }
-    let [(one, one_routes), (two, two_routes)] = <[_; 2]>::try_from(routes).unwrap();
+    let [(one, one_routes), (two, two_routes)] =
+        <[_; 2]>::try_from(routes).expect("the value fits");
     let empty = RoutingTable::from([(one.clone(), vec![]), (two.clone(), vec![])]);
-    assert_eq!(store.applied_table().await.unwrap(), empty);
+    assert_eq!(
+        store.applied_table().await.expect("applied table succeeds"),
+        empty
+    );
     let earlier = RoutingTable::from([(one.clone(), one_routes), (two.clone(), vec![])]);
     let later = RoutingTable::from([(one, vec![]), (two, two_routes)]);
 
@@ -419,30 +518,40 @@ async fn concurrent_acknowledgements_end_with_the_later_table() {
     assert!(futures_util::poll!(second.as_mut()).is_pending());
     drop(held);
     let (first, second) = tokio::join!(first, second);
-    assert!(first.unwrap() && second.unwrap());
-    assert_eq!(store.applied_table().await.unwrap(), later);
+    assert!(first.expect("the first item exists") && second.expect("the second item exists"));
+    assert_eq!(
+        store.applied_table().await.expect("applied table succeeds"),
+        later
+    );
 }
 
 #[tokio::test]
 async fn deployed_names_survive_disabled_ingress_and_failed_gateway_withdrawal() {
     let (_directory, store) = Store::temporary().await;
     let input = app("one", Some("site.example.com"));
-    let saved = save(&store, input.clone(), false).await.unwrap();
+    let saved = save(&store, input.clone(), false)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
     store
         .stage_routes(&id, &input.spec().routes, true, None)
         .await
-        .unwrap();
+        .expect("stage routes succeeds");
     store
-        .acknowledge_routes(&store.routing_table().await.unwrap())
+        .acknowledge_routes(&store.routing_table().await.expect("routing table succeeds"))
         .await
-        .unwrap();
-    save(&store, app("one", None), false).await.unwrap();
+        .expect("acknowledge routes succeeds");
+    save(&store, app("one", None), false)
+        .await
+        .expect("save succeeds");
     assert!(matches!(
         save(&store, app("two", Some("site.example.com")), false).await,
         Err(StoreError::HostnameConflict { .. })
     ));
-    store.stage_routes(&id, &[], true, None).await.unwrap();
+    store
+        .stage_routes(&id, &[], true, None)
+        .await
+        .expect("stage routes succeeds");
     assert!(
         matches!(
             save(&store, app("two", Some("site.example.com")), false).await,
@@ -451,12 +560,12 @@ async fn deployed_names_survive_disabled_ingress_and_failed_gateway_withdrawal()
         "last accepted configuration still reserves its host"
     );
     store
-        .acknowledge_routes(&store.routing_table().await.unwrap())
+        .acknowledge_routes(&store.routing_table().await.expect("routing table succeeds"))
         .await
-        .unwrap();
+        .expect("acknowledge routes succeeds");
     save(&store, app("two", Some("site.example.com")), false)
         .await
-        .unwrap();
+        .expect("save succeeds");
 }
 
 #[tokio::test]
@@ -464,21 +573,31 @@ async fn captured_and_fetched_deployments_reserve_hostnames() {
     let (_directory, store) = Store::temporary().await;
     let saved = save(&store, app("one", Some("site.example.com")), true)
         .await
-        .unwrap();
-    save(&store, app("one", None), false).await.unwrap();
+        .expect("save succeeds");
+    save(&store, app("one", None), false)
+        .await
+        .expect("save succeeds");
     assert!(matches!(
         save(&store, app("two", Some("site.example.com")), false).await,
         Err(StoreError::HostnameConflict { .. })
     ));
     save(&store, app("two", Some("taken.example.com")), false)
         .await
-        .unwrap();
-    let operation = store.operation(&saved.operation_id.unwrap()).await.unwrap();
+        .expect("save succeeds");
+    let operation = store
+        .operation(&saved.operation_id.expect("operation id is present"))
+        .await
+        .expect("operation succeeds");
     store.mark_running(&operation.id).await;
-    let environment = store.get(&operation.environment_id).await.unwrap();
+    let environment = store
+        .get(&operation.environment_id)
+        .await
+        .expect("the environment exists");
     let fetched = ApplicationTemplate::from(&app("one", Some("taken.example.com")))
         .with_id(environment.application.application.id().clone());
-    let rendering = environment.render(&fetched, &operation.id).unwrap();
+    let rendering = environment
+        .render(&fetched, &operation.id)
+        .expect("render succeeds");
     assert!(matches!(
         store
             .save_deployment_input(&operation, (&fetched, None), &rendering, (None, None), &[])
@@ -491,55 +610,71 @@ async fn captured_and_fetched_deployments_reserve_hostnames() {
 async fn superseded_operations_cannot_publish_routes() {
     let (_directory, store) = Store::temporary().await;
     let input = app("one", Some("site.example.com"));
-    let saved = save(&store, input.clone(), true).await.unwrap();
+    let saved = save(&store, input.clone(), true)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
-    let operation = saved.operation_id.unwrap();
+    let operation = saved.operation_id.expect("operation id is present");
     store.mark_running(&operation).await;
     save(&store, app("one", Some("new.example.com")), true)
         .await
-        .unwrap();
+        .expect("save succeeds");
     assert!(matches!(
         store
             .stage_routes(&id, &input.spec().routes, true, Some(&operation))
             .await,
         Err(StoreError::IllegalTransition)
     ));
-    assert!(store.routing_table().await.unwrap().is_empty());
+    assert!(
+        store
+            .routing_table()
+            .await
+            .expect("routing table succeeds")
+            .is_empty()
+    );
 }
 
 #[tokio::test]
 async fn withdrawals_precede_cutover_and_repointing_waits_for_readiness() {
     let (_directory, store) = Store::temporary().await;
     let input = app("one", Some("site.example.com"));
-    let saved = save(&store, input.clone(), false).await.unwrap();
+    let saved = save(&store, input.clone(), false)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
     store
         .stage_routes(&id, &input.spec().routes, true, None)
         .await
-        .unwrap();
+        .expect("stage routes succeeds");
     let mut changed = input.spec().routes.clone();
-    changed[0].target =
-        serde_json::from_value(serde_json::json!({"service":"web","port":3000})).unwrap();
+    changed[0].target = serde_json::from_value(serde_json::json!({"service":"web","port":3000}))
+        .expect("from value succeeds");
     store
         .stage_routes(&id, &changed, false, None)
         .await
-        .unwrap();
+        .expect("stage routes succeeds");
     assert_eq!(
-        store.routing_table().await.unwrap()[&id][0]
+        store.routing_table().await.expect("routing table succeeds")[&id][0]
             .target
             .to_string(),
         "web:80"
     );
-    store.stage_routes(&id, &changed, true, None).await.unwrap();
+    store
+        .stage_routes(&id, &changed, true, None)
+        .await
+        .expect("stage routes succeeds");
     assert_eq!(
-        store.routing_table().await.unwrap()[&id][0]
+        store.routing_table().await.expect("routing table succeeds")[&id][0]
             .target
             .to_string(),
         "web:3000"
     );
-    store.stage_routes(&id, &[], false, None).await.unwrap();
+    store
+        .stage_routes(&id, &[], false, None)
+        .await
+        .expect("stage routes succeeds");
     assert_eq!(
-        store.routing_table().await.unwrap()[&id],
+        store.routing_table().await.expect("routing table succeeds")[&id],
         [] as [ValidatedRoute; 0]
     );
 }
@@ -548,22 +683,33 @@ async fn withdrawals_precede_cutover_and_repointing_waits_for_readiness() {
 async fn changing_visibility_withdraws_the_route_until_backends_are_ready() {
     let (_directory, store) = Store::temporary().await;
     let input = app("one", Some("site.example.com"));
-    let saved = save(&store, input.clone(), false).await.unwrap();
+    let saved = save(&store, input.clone(), false)
+        .await
+        .expect("save succeeds");
     let id = store.saved_production(&saved).await;
     let mut public = input.spec().routes.clone();
     public[0].visibility = piqueld_core::manifest::Visibility::Public;
-    store.stage_routes(&id, &public, true, None).await.unwrap();
+    store
+        .stage_routes(&id, &public, true, None)
+        .await
+        .expect("stage routes succeeds");
     let private = input.spec().routes.clone();
     store
         .stage_routes(&id, &private, false, None)
         .await
-        .unwrap();
+        .expect("stage routes succeeds");
     assert_eq!(
-        store.routing_table().await.unwrap()[&id],
+        store.routing_table().await.expect("routing table succeeds")[&id],
         [] as [ValidatedRoute; 0]
     );
-    store.stage_routes(&id, &private, true, None).await.unwrap();
-    assert_eq!(store.routing_table().await.unwrap()[&id], private);
+    store
+        .stage_routes(&id, &private, true, None)
+        .await
+        .expect("stage routes succeeds");
+    assert_eq!(
+        store.routing_table().await.expect("routing table succeeds")[&id],
+        private
+    );
 }
 
 #[tokio::test]
@@ -573,8 +719,11 @@ async fn route_statuses_are_limited_to_readable_applications() {
     let mut applications = Vec::new();
     for (name, hostname) in [("one", "one.example.com"), ("two", "two.example.com")] {
         let input = app(name, Some(hostname));
-        let saved = save(&store, input.clone(), false).await.unwrap();
-        let application = piqueld_core::ApplicationId::parse(saved.application_id).unwrap();
+        let saved = save(&store, input.clone(), false)
+            .await
+            .expect("save succeeds");
+        let application = piqueld_core::ApplicationId::parse(saved.application_id)
+            .expect("the application id parses");
         let route = &input.spec().routes[0];
         statuses.push(RouteStatus {
             name: None,
@@ -599,12 +748,15 @@ async fn route_statuses_are_limited_to_readable_applications() {
     };
     let all = store.readable_routes(&Scope::All, statuses.clone()).await;
     assert_eq!(
-        hostnames(all.unwrap()),
+        hostnames(all.expect("all is present")),
         ["one.example.com", "two.example.com"]
     );
     let one = Scope::one(applications[0].clone());
     let limited = store.readable_routes(&one, statuses.clone()).await;
-    assert_eq!(hostnames(limited.unwrap()), ["one.example.com"]);
+    assert_eq!(
+        hostnames(limited.expect("limited is present")),
+        ["one.example.com"]
+    );
     let none = store.readable_routes(&Scope::NONE, statuses).await;
-    assert_eq!(hostnames(none.unwrap()), [] as [String; 0]);
+    assert_eq!(hostnames(none.expect("none is present")), [] as [String; 0]);
 }
