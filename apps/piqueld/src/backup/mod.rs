@@ -53,9 +53,16 @@ const INGRESS_CONTROL: &str = "ingress/control";
 /// The data directory's subdirectory holding pre-migration backups.
 const BACKUPS: &str = "backups";
 /// The data directory's entries that restores and roll-backs leave in place:
-/// the backups, and the telemetry receivers' sockets, which their collectors
-/// keep listening on.
-const KEPT: [&str; 2] = [BACKUPS, crate::telemetry::Sockets::DIRECTORY];
+/// the backups, the telemetry receivers' sockets, which their collectors keep
+/// listening on, and what the daemon reuses whatever its database: Git
+/// checkouts, local-change snapshots and the build machine's registration.
+const KEPT: [&str; 5] = [
+    BACKUPS,
+    crate::telemetry::Sockets::DIRECTORY,
+    crate::git::Sources::CHECKOUTS,
+    crate::git::Sources::SNAPSHOTS,
+    piqueld_docker::RemoteBuilder::DIRECTORY,
+];
 /// How many pre-migration backups the daemon keeps.
 const PRE_MIGRATION_KEEP: usize = 3;
 

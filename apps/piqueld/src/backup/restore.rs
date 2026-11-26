@@ -66,7 +66,7 @@ pub enum Refusal {
     OtherInstance(String),
     /// A restore was interrupted, or failed and couldn't be undone.
     #[error(
-        "{} holds an unfinished restore, {}, which only holds a copy of the backup: with the daemon stopped, move the data directory's other entries but backups, telemetry, rolled-back-* and that copy into a new rolled-back-<name> directory there, then remove {} and run piqueld restore again",
+        "{} holds an unfinished restore, {}, which only holds a copy of the backup: with the daemon stopped, move the data directory's other entries but backups, telemetry, checkouts, snapshots, buildx, rolled-back-* and that copy into a new rolled-back-<name> directory there, then remove {} and run piqueld restore again",
         .0.display(), .1.display(), .1.display()
     )]
     Unfinished(PathBuf, PathBuf),

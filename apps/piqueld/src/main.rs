@@ -97,7 +97,7 @@ enum Command {
     /// before each start. When this piqueld can open the database, or there
     /// is none, it does nothing. Otherwise it stops this installation's
     /// ingress containers, moves the data directory's state into a
-    /// `rolled-back-<time>` directory inside it, keeping `backups/`, and
+    /// `rolled-back-<time>` directory inside it, keeping `backups/` and caches, and
     /// restores the newest backup there this piqueld can open, after the
     /// checks `piqueld restore` runs. When no backup fits, or a check fails,
     /// it fails before moving anything.
