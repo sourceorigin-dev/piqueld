@@ -29,6 +29,36 @@ with your flake's input, and update to its newest build with
 daemon which channel's newer builds to tell you about; set it to `nightly`
 when you follow nightly. See [updating piqueld](../operations/updates.md).
 
+## Update without rebuilding
+
+By default, the flake decides the version piqueld runs, and updating it means
+updating the flake and rebuilding the system. With managed updates, piqueld
+installs its own updates instead, like a host the install script set up: from
+the dashboard's **Update** button, `piquelctl update apply`, or
+`sudo piqueld update` on the host:
+
+```nix
+{
+  services.piqueld.managedUpdates = true;
+  # The channel whose builds it installs, stable by default.
+  services.piqueld.settings.updates.channel = "nightly";
+}
+```
+
+The module still writes the configuration and the units. Builds go to
+`/var/lib/piqueld-builds`, and the service runs the current one, or the
+flake's package before the first update; `piqueld` and `piquelctl` on the
+host are the running build's. A rollback returns to the build before, and
+from the first update, to the package; see
+[updating piqueld](../operations/updates.md). If you update the flake to a
+version whose configuration settings the installed build doesn't know, the
+service runs the package until piqueld installs a build as new.
+
+The running version then no longer follows the flake: rebuilding keeps the
+build piqueld installed. To go back to the flake's version, set
+`managedUpdates` to false and rebuild, once the build piqueld runs hasn't
+updated the database past what the flake's version reads.
+
 ## Daemon and CLI
 
 The default package embeds the dashboard. `services.piqueld.package` can select

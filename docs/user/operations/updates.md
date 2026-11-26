@@ -96,7 +96,9 @@ piqueld, as the panel and `piquelctl` say:
   install another published version, such as `--version 0.3.0`, and `--from`
   to install from a directory holding a release's archive and `SHA256SUMS`,
   such as on a host without internet access.
-- On NixOS, follow the channel's tag with the flake input, as in
+- On NixOS with [managed updates](../reference/nixos.md#update-without-rebuilding),
+  as with the install script.
+- On NixOS otherwise, follow the channel's tag with the flake input, as in
   [choose a channel](#choose-a-channel), update it, then rebuild:
 
   ```console
@@ -122,7 +124,9 @@ On the host, `sudo piqueld update rollback` does the same.
 It refuses when the version you run took the newest backup before updating
 the database, which older versions can't read. Then go forward instead with
 `piqueld update --version`, or [restore the backup](backups.md#roll-back),
-which undoes every change since. On NixOS, roll back the system:
+which undoes every change since. With NixOS's managed updates, a rollback
+from the first update returns to the module's package, which the panel shows
+as `package`. On NixOS otherwise, roll back the system:
 `sudo nixos-rebuild switch --rollback`.
 
 ## Troubleshooting

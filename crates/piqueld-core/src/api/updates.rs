@@ -12,7 +12,8 @@ string_enum! {
         /// From a Nix package, such as the NixOS module's: update the flake
         /// input, then rebuild.
         Nix => "nix",
-        /// By the install script: update with `sudo piqueld update`.
+        /// Where piqueld's updater installs builds: hosts the install script
+        /// set up, and NixOS's managed mode. It updates from piqueld.
         Script => "script",
         /// Some other way, such as `cargo install`.
         Other => "other",
@@ -50,7 +51,9 @@ pub struct UpdateStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// The build `piqueld update rollback` returns to, on a host the install
-    /// script set up; absent elsewhere, and before an update.
+    /// script set up or with NixOS's managed updates, where it is `package`,
+    /// the module's package, after the first update; absent elsewhere, and
+    /// before an update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous: Option<String>,
     /// The latest update or rollback on this host, as the updater records
@@ -58,6 +61,11 @@ pub struct UpdateStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<UpdateRun>,
 }
+
+/// The [`UpdateStatus::previous`] of NixOS's managed updates after the
+/// first one: the module's package, which a rollback returns to. No version
+/// starts with a letter, so no build has this name.
+pub const PACKAGE_BUILD: &str = "package";
 
 string_enum! {
     #[serde]

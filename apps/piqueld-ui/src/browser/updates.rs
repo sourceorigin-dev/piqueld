@@ -10,7 +10,7 @@ use leptos::task::spawn_local;
 use leptos_router::components::A;
 use piqueld_client::access::{GlobalPermission, Permission};
 use piqueld_client::system::{
-    InstallMethod, UpdateAction, UpdateRun, UpdateRunState, UpdateStatus,
+    InstallMethod, PACKAGE_BUILD, UpdateAction, UpdateRun, UpdateRunState, UpdateStatus,
 };
 use piqueld_client::version::Channel;
 use piqueld_client::{Client, ClientError};
@@ -173,7 +173,8 @@ impl Panel {
                 .get_untracked()
                 .and_then(|status| status.previous)
                 .unwrap_or_default();
-            if confirm(&format!("Go back to piqueld {target}? It restarts on it.")) {
+            let target = build_name(&target);
+            if confirm(&format!("Go back to {target}? It restarts on it.")) {
                 self.send(
                     true,
                     Box::pin(async { Client::browser().rollback_update().await }),
@@ -421,13 +422,23 @@ impl Controls {
             view! {
                 <li class="status-row">
                     <strong>"Previous build"</strong>
-                    <code>{previous}</code>
+                    <span>{build_name(&previous)}</span>
                     <span class="status-summary"></span>
                     {button}
                 </li>
             }
             .into_any(),
         )
+    }
+}
+
+/// How a build is named for people: its version, or the NixOS module's
+/// package that managed updates return to.
+fn build_name(build: &str) -> String {
+    if build == PACKAGE_BUILD {
+        "the NixOS module's package".to_owned()
+    } else {
+        format!("piqueld {build}")
     }
 }
 
@@ -470,9 +481,9 @@ fn last_run(run: UpdateRun) -> AnyView {
         Some(UpdateAction::Rollback) => "Rollback",
         _ => "Update",
     };
-    let target = run
-        .version
-        .map_or_else(String::new, |version| format!(" to {version}"));
+    let target = run.version.map_or_else(String::new, |version| {
+        format!(" to {}", build_name(&version))
+    });
     view! {
         <li class="status-row" data-tone={tone.attr()}>
             <strong>"Last update"</strong>

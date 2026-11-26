@@ -106,8 +106,9 @@ enum Command {
     /// the checks `piqueld restore` runs. When no backup fits, or a check
     /// fails, it fails before moving anything.
     RollBack,
-    /// Install a newer piqueld build on a host the install script set up,
-    /// and restart the service on it; run it as root.
+    /// Install a newer piqueld build on a host the install script set up, or
+    /// with NixOS's managed updates, and restart the service on it; run it
+    /// as root.
     ///
     /// Without --version, it installs the newest build of the channel the
     /// daemon follows. It checks the build's SHA-256 and that it accepts the
@@ -170,7 +171,7 @@ impl Args {
             .clone()
             .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH));
         let request = request.map(Updater::take_request).transpose()?;
-        let updater = Updater::new(Layout::script(), config)?;
+        let updater = Updater::new(Layout::detect(), config)?;
         match (action, request) {
             (_, Some(request)) => updater.requested(request).await,
             (Some(UpdateCommand::Rollback), None) => {
