@@ -12,10 +12,13 @@ use super::{
 use crate::ApiErrorCode;
 use std::collections::BTreeSet;
 
+/// Most mounts one service may declare.
 const MAX_MOUNTS_PER_SERVICE: usize = 32;
 /// Secret mounts a service, or a job in addition to its service, may declare.
 const MAX_SECRET_MOUNTS: usize = 64;
+/// Longest health-check interval, in seconds.
 const MAX_HEALTHCHECK_INTERVAL_SECONDS: u32 = 3_600;
+/// Longest health-check start period, in seconds.
 const MAX_HEALTHCHECK_START_PERIOD_SECONDS: u32 = 3_600;
 /// Accepted consecutive failures before a container is unhealthy.
 const HEALTHCHECK_RETRIES: std::ops::RangeInclusive<u32> = 1..=100;

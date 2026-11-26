@@ -129,6 +129,7 @@ impl ValidatedRollout {
             && Self::derived_order(read_only) == RolloutOrder::StopFirst
     }
 
+    /// The order a service rolls out in when none is set: stop first if any volume is writable, otherwise start first.
     fn derived_order(read_only: impl IntoIterator<Item = bool>) -> RolloutOrder {
         if read_only.into_iter().any(|read_only| !read_only) {
             RolloutOrder::StopFirst

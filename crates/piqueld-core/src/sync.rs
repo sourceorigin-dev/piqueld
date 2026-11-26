@@ -42,6 +42,7 @@ impl RepositorySync {
     /// Most seconds between polls: one day.
     pub const MAX_INTERVAL: u32 = 86_400;
 
+    /// Serde default for `interval`: [`Self::DEFAULT_INTERVAL`].
     const fn default_interval() -> u32 {
         Self::DEFAULT_INTERVAL
     }
