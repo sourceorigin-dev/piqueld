@@ -155,8 +155,8 @@ impl FakeRuntime {
                 let ValidatedSource::Image { image } = &service.source else {
                     panic!("expected image fixture")
                 };
-                let repository =
-                    image_repository(image).expect("validated fixture image has a repository");
+                let repository = image_repository(image.as_str())
+                    .expect("validated fixture image has a repository");
                 (
                     service.name.clone(),
                     ResolvedSource::parse_image(

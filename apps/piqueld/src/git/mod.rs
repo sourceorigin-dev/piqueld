@@ -6,8 +6,9 @@ pub(crate) mod snapshot;
 
 use anyhow::{Context, bail};
 use piqueld_core::api::BranchState;
-use piqueld_core::manifest::{GitRepository, valid_git_commit, valid_repository_path};
+use piqueld_core::manifest::{GitRepository, valid_repository_path};
 use piqueld_core::wait;
+use piqueld_core::{GitCommit, ValidationErrors};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{collections::BTreeMap, time::Duration};
@@ -387,7 +388,8 @@ impl Checkouts {
         let mut errors = Vec::new();
         repository.validate("repository", &mut errors);
         if !errors.is_empty() {
-            bail!("invalid Git repository configuration");
+            return Err(anyhow::Error::new(ValidationErrors(errors))
+                .context("invalid Git repository configuration"));
         }
         let _cloning = self.cloning.acquire().await?;
         let directory = tempfile::Builder::new()
@@ -639,7 +641,7 @@ pub(crate) struct Checkout {
     /// Its share of [`Checkouts`]' disk, released once the directory is gone.
     _disk: OwnedSemaphorePermit,
     /// Full commit hash actually checked out.
-    pub(crate) commit: String,
+    pub(crate) commit: GitCommit,
 }
 
 impl Checkout {
@@ -703,20 +705,17 @@ impl Checkout {
     }
 
     /// The full commit hash `HEAD` resolves to in the repository at `root`.
-    async fn head(root: &Path) -> anyhow::Result<String> {
+    async fn head(root: &Path) -> anyhow::Result<GitCommit> {
         let output = Self::command_in(root)
             .args(["rev-parse", "HEAD"])
             .output()
             .await
             .context("resolve Git commit")?;
-        let commit = String::from_utf8(output.stdout)
-            .context("decode Git commit")?
-            .trim()
-            .to_owned();
-        if !output.status.success() || !valid_git_commit(&commit) {
+        if !output.status.success() {
             bail!("Git did not resolve a full commit hash");
         }
-        Ok(commit)
+        let commit = String::from_utf8(output.stdout).context("decode Git commit")?;
+        GitCommit::parse(commit.trim()).context("Git did not resolve a full commit hash")
     }
 
     /// Gives the working tree the modes Git records, whatever the daemon's

@@ -202,9 +202,9 @@ async fn missing_images_are_pulled_again_by_digest_or_reported_unavailable() {
     let api = ServiceName::parse("api").expect("the service name parses");
     let built = ResolvedSource::Git {
         requested: piqueld_core::manifest::ValidatedSource::Image {
-            image: "unused".into(),
+            image: piqueld_core::ImageReference::parse("unused").expect("the image is valid"),
         },
-        commit: "a".repeat(40),
+        commit: piqueld_core::GitCommit::parse("a".repeat(40)).expect("the commit is valid"),
         image_id: image('c', &[]).id.into(),
     };
     let error = in_use

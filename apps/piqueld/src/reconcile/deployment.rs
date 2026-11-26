@@ -78,7 +78,7 @@ impl<D: DockerApi> Controller<D> {
                 target: environment.environment().target(),
                 git: Some(GitRevision {
                     branch: backing.repository.branch.clone(),
-                    sha: checkout.commit.clone(),
+                    sha: checkout.commit.to_string(),
                 }),
                 deployment: Some(operation.id.clone()),
             })
@@ -105,12 +105,14 @@ impl<D: DockerApi> Controller<D> {
                 operation,
                 (&template, Some(&fetched)),
                 &rendering,
-                (Some(&checkout.commit), branch_head.as_ref()),
+                (Some(checkout.commit.as_str()), branch_head.as_ref()),
                 &warnings,
             )
             .await?;
         Ok((
-            rendering.application.pin_manifest_sources(&checkout.commit),
+            rendering
+                .application
+                .pin_manifest_sources(checkout.commit.as_str()),
             source,
         ))
     }
@@ -230,7 +232,7 @@ impl<D: DockerApi> Controller<D> {
             && backing.repository.commit.is_none()
             && backing.repository.branch == tracked
         {
-            Some(checkout.commit.clone())
+            Some(checkout.commit.to_string())
         } else {
             crate::git::Heads::list(&url)
                 .await

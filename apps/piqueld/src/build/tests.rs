@@ -89,7 +89,7 @@ async fn attempt(directory: &std::path::Path, cap: u32) -> BuildAttempt {
         .await
         .expect("save application succeeds");
     let source = Source::Image {
-        image: "nginx".into(),
+        image: piqueld_core::ImageReference::parse("nginx").expect("the image is valid"),
     };
     BuildAttempt::start(
         Arc::new(store),

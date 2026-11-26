@@ -6,7 +6,7 @@ use super::{
 };
 use piqueld_core::manifest::ApplicationTemplate;
 use piqueld_core::{
-    EnvironmentId, EnvironmentName, EnvironmentSource,
+    EnvironmentId, EnvironmentName, EnvironmentSource, GitCommit,
     api::{ApplicationSummary, EnvironmentSummary, EnvironmentView, Page},
 };
 use sqlx::{Sqlite, SqliteConnection, Transaction};
@@ -353,7 +353,7 @@ impl Store {
         let source = EnvironmentSource::select(application.spec().manifest.as_ref(), None)?;
         match source.branch() {
             Some(branch) => {
-                let (name, commit) = (branch.branch(), branch.commit());
+                let (name, commit) = (branch.branch(), branch.commit().map(GitCommit::as_str));
                 sqlx::query!(
                     "UPDATE environments SET branch=?1,pinned_commit=?2 WHERE application_id=?3 AND branch IS NULL AND promoted_from IS NULL AND kind='environment'",
                     name,

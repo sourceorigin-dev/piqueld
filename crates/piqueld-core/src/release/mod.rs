@@ -6,7 +6,7 @@ use crate::manifest::{
     ValidatedSource, ValidationErrors,
 };
 use crate::resource::{ResolvedApplication, ResolvedSource, Sha256Digest};
-use crate::{EnvironmentName, ServiceName};
+use crate::{EnvironmentName, GitCommit, ServiceName};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -25,7 +25,7 @@ pub struct BuildInputs(BTreeMap<String, String>);
 impl BuildInputs {
     /// The inputs of a rendered `source`, built at `commit` when it is a Git source.
     #[must_use]
-    pub fn new(source: &ValidatedSource, commit: Option<&str>) -> Self {
+    pub fn new(source: &ValidatedSource, commit: Option<&GitCommit>) -> Self {
         let mut inputs = source.rendered_inputs();
         if let ValidatedSource::Git { repository, .. } = source {
             let url = match repository {
@@ -34,7 +34,7 @@ impl BuildInputs {
             };
             inputs.insert("source.repository".into(), url);
             if let Some(commit) = commit {
-                inputs.insert("source.commit".into(), commit.into());
+                inputs.insert("source.commit".into(), commit.to_string());
             }
         }
         Self(inputs)

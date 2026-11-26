@@ -8,10 +8,10 @@
 
 use crate::manifest::{
     GitRepository, ManifestRevision, PreviewLimits, RepositoryManifest, ValidationError,
-    ValidationErrors, valid_git_branch, valid_git_commit,
+    ValidationErrors, valid_git_branch,
 };
 use crate::{
-    ApiErrorCode, ApplicationName, EnvironmentId, EnvironmentName, GitBranch,
+    ApiErrorCode, ApplicationName, EnvironmentId, EnvironmentName, GitBranch, GitCommit,
     NormalizedApplication, PlanDiagnostic, PreviewSlot, PreviewSlug,
 };
 use serde::{Deserialize, Serialize};
@@ -232,7 +232,7 @@ pub struct TrackedBranch {
     branch: String,
     /// Full commit fetched instead of the branch head, when pinned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    commit: Option<String>,
+    commit: Option<GitCommit>,
 }
 
 impl TrackedBranch {
@@ -251,16 +251,17 @@ impl TrackedBranch {
                 "branch must be a valid Git branch name",
             ));
         }
-        if commit
-            .as_deref()
-            .is_some_and(|commit| !valid_git_commit(commit))
-        {
-            errors.push(ValidationError::new(
-                ApiErrorCode::GitCommitInvalid,
-                "commit",
-                "commit must be a full lowercase hexadecimal Git hash",
-            ));
-        }
+        let commit = match commit.map(GitCommit::parse).transpose() {
+            Ok(commit) => commit,
+            Err(error) => {
+                errors.push(ValidationError::new(
+                    ApiErrorCode::GitCommitInvalid,
+                    "commit",
+                    error.to_string(),
+                ));
+                None
+            }
+        };
         if errors.is_empty() {
             Ok(Self { branch, commit })
         } else {
@@ -300,8 +301,8 @@ impl TrackedBranch {
 
     /// The pinned commit, if any.
     #[must_use]
-    pub fn commit(&self) -> Option<&str> {
-        self.commit.as_deref()
+    pub fn commit(&self) -> Option<&GitCommit> {
+        self.commit.as_ref()
     }
 
     /// The application's `connection` at this branch: what a deployment fetches.
@@ -311,7 +312,7 @@ impl TrackedBranch {
             repository: GitRepository {
                 url: connection.repository.url.clone(),
                 branch: self.branch.clone(),
-                commit: self.commit.clone(),
+                commit: self.commit.clone().map(String::from),
             },
             path: connection.path.clone(),
             sync: connection.sync,

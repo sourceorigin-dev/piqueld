@@ -27,7 +27,10 @@ async fn commit(root: &Path, contents: &str) -> String {
     )
     .await
     .expect("run recorded succeeds");
-    Checkout::head(root).await.expect("the checkout has a head")
+    Checkout::head(root)
+        .await
+        .expect("the checkout has a head")
+        .to_string()
 }
 
 #[tokio::test]
@@ -120,14 +123,14 @@ async fn checkout_pins_commits_and_confines_paths() {
         .checkout(&source, None)
         .await
         .expect("checkout succeeds");
-    let first = checkout.commit.clone();
+    let first = checkout.commit.to_string();
     let second = commit(repository.path(), "FROM scratch\nLABEL version=2\n").await;
     {
         let latest = checkouts
             .checkout(&source, None)
             .await
             .expect("checkout succeeds");
-        assert_eq!(latest.commit, second);
+        assert_eq!(latest.commit.as_str(), second);
         let tree = Checkout::command_in(&latest.root())
             .args(["ls-tree", "-r", "--name-only", "HEAD"])
             .output()
@@ -145,7 +148,8 @@ async fn checkout_pins_commits_and_confines_paths() {
             .checkout(&source, None)
             .await
             .expect("checkout succeeds")
-            .commit,
+            .commit
+            .as_str(),
         first
     );
     checkout

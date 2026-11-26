@@ -118,7 +118,7 @@ async fn receives_thin_and_complete_bundles() {
         .checkout(&source.repository, None)
         .await
         .expect("checkout succeeds");
-    assert_eq!(checkout.commit, commit);
+    assert_eq!(checkout.commit.as_str(), commit);
     assert_eq!(
         tokio::fs::read_to_string(checkout.path("local.txt").await.expect("path succeeds"))
             .await

@@ -705,7 +705,7 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
             .await
             .expect("the item exists");
         assert!(
-            matches!(&stored.resolved.as_ref().expect("as ref succeeds").services[0].source, ResolvedSource::Git { commit, .. } if commit == &expected)
+            matches!(&stored.resolved.as_ref().expect("as ref succeeds").services[0].source, ResolvedSource::Git { commit, .. } if commit.as_str() == expected)
         );
         saved_main |= one_off.is_none();
         assert_eq!(
@@ -730,7 +730,7 @@ async fn self_sources_build_the_manifest_commit_including_one_time_revisions() {
         .await
         .expect("the item exists");
     assert!(
-        matches!(&stored.resolved.as_ref().expect("as ref succeeds").services[0].source, ResolvedSource::Git { commit, .. } if commit == &head)
+        matches!(&stored.resolved.as_ref().expect("as ref succeeds").services[0].source, ResolvedSource::Git { commit, .. } if commit.as_str() == head)
     );
 }
 
@@ -785,7 +785,9 @@ async fn local_snapshots_deploy_their_manifest_and_build_self_sources_from_the_s
         .await
         .expect("the item exists");
     let service = &stored.resolved.as_ref().expect("as ref succeeds").services[0];
-    assert!(matches!(&service.source, ResolvedSource::Git { commit, .. } if commit == &snapshot));
+    assert!(
+        matches!(&service.source, ResolvedSource::Git { commit, .. } if commit.as_str() == snapshot)
+    );
     assert_eq!(
         service.environment.get("SNAPSHOT").map(String::as_str),
         Some("yes")
@@ -855,10 +857,10 @@ async fn retry_after_reopening_store_builds_self_sources_at_the_fetched_commit()
         .services
         .iter()
         .find_map(|service| match &service.source {
-            ResolvedSource::Git { commit, .. } => Some(commit),
+            ResolvedSource::Git { commit, .. } => Some(commit.as_str()),
             ResolvedSource::Image { .. } => None,
         });
-    assert_eq!(commit, Some(&pinned));
+    assert_eq!(commit, Some(pinned.as_str()));
 }
 
 #[tokio::test]
@@ -903,6 +905,6 @@ async fn bootstrap_can_pin_manifest_revision_independently_from_git_build_revisi
         .resolved
         .expect("the resolved is present");
     assert!(
-        matches!(&resolved.services[0].source, ResolvedSource::Git { commit, .. } if commit == &build_commit)
+        matches!(&resolved.services[0].source, ResolvedSource::Git { commit, .. } if commit.as_str() == build_commit)
     );
 }

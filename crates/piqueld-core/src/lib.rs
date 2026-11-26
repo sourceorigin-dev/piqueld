@@ -54,8 +54,9 @@ pub use manifest::{
     ValidationErrors, Volume, parse_json, parse_toml,
 };
 pub use names::{
-    ApplicationName, EnvironmentName, EnvironmentNameError, GitBranch, GitBranchError, JobName,
-    PreviewSlot, PreviewSlotError, PreviewSlug, RouteName, ServiceName, VolumeName, is_request_id,
+    ApplicationName, EnvironmentName, EnvironmentNameError, GitBranch, GitBranchError, GitCommit,
+    GitCommitError, JobName, PreviewSlot, PreviewSlotError, PreviewSlug, RouteName, ServiceName,
+    VolumeName, is_request_id,
 };
 pub use operation::{ApplicationState, Operation, OperationKind, OperationState, Phase};
 pub(crate) use planner::ActionReason;

@@ -5,7 +5,7 @@ use super::input::{
 };
 use super::variables::{Template, Typed};
 use super::{RolloutPolicy, ValidatedRollout, ValidationError, ValidationErrors};
-use crate::{ApiErrorCode, ApplicationName, JobName, ServiceName, VolumeName};
+use crate::{ApiErrorCode, ApplicationName, ImageReference, JobName, ServiceName, VolumeName};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use utoipa::ToSchema;
@@ -82,8 +82,8 @@ pub struct ValidatedJob {
 pub enum ValidatedSource {
     /// Pull a prebuilt image from a registry.
     Image {
-        /// Image reference.
-        image: String,
+        /// Image reference, with its registry canonicalized.
+        image: ImageReference,
     },
     /// Build a checked-out Git revision.
     Git {
@@ -520,9 +520,15 @@ impl ValidatedSource {
     /// Requires literal source settings; `base` locates error paths.
     fn from_input(value: input::Source, base: &str) -> Result<Self, ValidationErrors> {
         Ok(match value {
-            input::Source::Image { image } => Self::Image {
-                image: image.into_text(|| format!("{base}.image"))?,
-            },
+            input::Source::Image { image } => {
+                let path = format!("{base}.image");
+                let image = image.into_text(|| path.clone())?;
+                Self::Image {
+                    image: ImageReference::parse(image).map_err(|error| {
+                        ValidationError::new(ApiErrorCode::ImageInvalid, path, error.to_string())
+                    })?,
+                }
+            }
             input::Source::Git {
                 repository,
                 build:
@@ -551,7 +557,7 @@ impl ValidatedSource {
     pub fn to_input(&self) -> input::Source {
         match self {
             Self::Image { image } => input::Source::Image {
-                image: Template::literal(image),
+                image: Template::literal(image.as_str()),
             },
             Self::Git {
                 repository,

@@ -4,7 +4,7 @@ use super::auth::access::scope_json;
 use super::{Paging, Store, StoreError, days_ago_ms, decode_name, now_ms};
 use piqueld_core::access::Scope;
 use piqueld_core::{
-    ApplicationId, BuildInputs, BuiltImage, EnvironmentId,
+    ApplicationId, BuildInputs, BuiltImage, EnvironmentId, GitCommit,
     api::{BuildLogChunk, BuildLogPage, BuildRecord, BuildState, LogStream, Page},
     manifest::ValidatedSource as Source,
 };
@@ -349,17 +349,17 @@ impl Store {
         &self,
         environment: &EnvironmentId,
         source: &Source,
-        commit: &str,
+        commit: &GitCommit,
     ) -> Result<Vec<ReusableBuild>, StoreError> {
         let inputs = BuildInputs::new(source, Some(commit));
-        let environment = environment.as_str();
+        let (commit_hash, environment) = (commit.as_str(), environment.as_str());
         Ok(sqlx::query!(
             r#"SELECT id AS "id!",source_json,image_id AS "image_id!",reused_build_id FROM builds
                WHERE commit_hash=?1 AND state='succeeded' AND job IS NULL AND image_id IS NOT NULL
                AND environment_id IN (SELECT id FROM environments WHERE application_id=
                    (SELECT application_id FROM environments WHERE id=?2))
                ORDER BY id DESC"#,
-            commit,
+            commit_hash,
             environment
         )
         .fetch_all(&self.pool)

@@ -844,9 +844,10 @@ async fn git_deploy_prepares_before_rollout_and_supersedes_pending_requests() {
         .expect("the item exists")
         .resolved
         .expect("the resolved is present");
-    assert!(
-        matches!(&active.services[0].source, ResolvedSource::Git { commit, .. } if piqueld_core::manifest::valid_git_commit(commit))
-    );
+    assert!(matches!(
+        &active.services[0].source,
+        ResolvedSource::Git { .. }
+    ));
     let pulls = harness.pulls().await;
     let keyed = || {
         let actor = Daemon;

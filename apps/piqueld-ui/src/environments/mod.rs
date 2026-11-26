@@ -138,7 +138,7 @@ impl EnvironmentEdit {
                     branch: branch.as_ref().map(|branch| branch.branch().to_owned()),
                     commit: branch
                         .as_ref()
-                        .and_then(|branch| branch.commit().map(str::to_owned)),
+                        .and_then(|branch| branch.commit().map(ToString::to_string)),
                     promote_from: promote_from.clone(),
                     expected_generation,
                 };
@@ -160,7 +160,7 @@ impl EnvironmentEdit {
             Self::Branch { id, branch } => {
                 let request = EnvironmentBranchRequest {
                     branch: branch.branch().to_owned(),
-                    commit: branch.commit().map(str::to_owned),
+                    commit: branch.commit().map(ToString::to_string),
                     expected_generation,
                 };
                 client
@@ -233,7 +233,9 @@ impl From<&TrackedBranch> for BranchDraft {
     fn from(branch: &TrackedBranch) -> Self {
         Self {
             branch: branch.branch().to_owned(),
-            commit: branch.commit().unwrap_or_default().to_owned(),
+            commit: branch
+                .commit()
+                .map_or_else(String::new, ToString::to_string),
         }
     }
 }
