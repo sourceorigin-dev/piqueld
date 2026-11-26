@@ -91,6 +91,30 @@ use utoipa::ToSchema;
 pub const APPLICATION_API_VERSION: &str = "piqueld.dev/v1alpha1";
 /// The supported manifest resource kind.
 pub const APPLICATION_KIND: &str = "Application";
+
+/// Declares a field type that always holds `$value`: it takes no space and
+/// serializes as that string, so validated applications don't store it.
+macro_rules! constant_string {
+    ($(#[$meta:meta])* $name:ident = $value:expr) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+        pub(crate) struct $name;
+
+        impl Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str($value)
+            }
+        }
+    };
+}
+constant_string!(
+    /// [`APPLICATION_API_VERSION`], the `api_version` of every validated application.
+    ApiVersion = APPLICATION_API_VERSION
+);
+constant_string!(
+    /// [`APPLICATION_KIND`], the `kind` of every validated application.
+    Kind = APPLICATION_KIND
+);
 /// Envelope version for the specification hash. Version 2 hashes only the
 /// canonical spec, so cosmetic metadata changes no longer redeploy services.
 const SPEC_HASH_VERSION: &str = "piqueld-spec-hash/v2";
@@ -106,7 +130,8 @@ pub struct ValidatedApplication {
 
 /// Canonical desired application plus persistence-assigned identity.
 ///
-/// Configuration is immutable. Export input with [`Self::to_manifest`] and
+/// Configuration is immutable and stays in canonical order, so hashing and
+/// serializing need no sort. Export input with [`Self::to_manifest`] and
 /// validate edits before constructing a replacement.
 ///
 /// ```compile_fail
@@ -119,9 +144,11 @@ pub struct NormalizedApplication {
     /// Stable application identity.
     id: ApplicationId,
     /// API version string.
-    api_version: String,
+    #[schema(value_type = String)]
+    api_version: ApiVersion,
     /// Resource kind string.
-    kind: String,
+    #[schema(value_type = String)]
+    kind: Kind,
     /// Canonical metadata.
     metadata: ValidatedMetadata,
     /// Canonical resource specification.
@@ -151,8 +178,8 @@ impl ValidatedApplication {
         sort_unordered!(spec);
         NormalizedApplication {
             id,
-            api_version: APPLICATION_API_VERSION.into(),
-            kind: APPLICATION_KIND.into(),
+            api_version: ApiVersion,
+            kind: Kind,
             metadata: self.metadata,
             spec,
             files: RepositoryFiles::default(),
@@ -223,13 +250,6 @@ impl NormalizedApplication {
         self
     }
 
-    /// Reapplies canonical ordering. This operation is idempotent.
-    #[must_use]
-    pub fn normalize(mut self) -> Self {
-        sort_unordered!(self.spec);
-        self
-    }
-
     /// Versioned SHA-256 over canonical JSON after defaults and normalization.
     ///
     /// The envelope covers only the canonical spec and the captured contents
@@ -242,9 +262,9 @@ impl NormalizedApplication {
     /// which indicates a bug in the domain types.
     #[must_use]
     pub fn spec_hash(&self) -> String {
-        let mut normalized = self.clone().normalize();
-        normalized.spec.manifest = None;
-        hash_spec(&normalized.spec, &normalized.files)
+        let mut spec = self.spec.clone();
+        spec.manifest = None;
+        hash_spec(&spec, &self.files)
     }
 
     /// Canonical JSON representation used for durable desired state.
@@ -254,7 +274,7 @@ impl NormalizedApplication {
     /// Returns a serialization error if the normalized manifest cannot be
     /// represented as JSON.
     pub fn canonical_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(&self.clone().normalize())
+        serde_json::to_string(self)
     }
 
     /// Portable desired TOML representation.
@@ -264,15 +284,15 @@ impl NormalizedApplication {
     /// Returns a serialization error if the normalized manifest cannot be
     /// represented as TOML.
     pub fn export_toml(&self) -> Result<String, toml::ser::Error> {
-        toml::to_string_pretty(&self.clone().normalize().to_manifest())
+        toml::to_string_pretty(&self.to_manifest())
     }
 
     /// Exports editable input; call `validate` after changing configuration.
     #[must_use]
     pub fn to_manifest(&self) -> ApplicationManifest {
         ApplicationManifest {
-            api_version: self.api_version.clone(),
-            kind: self.kind.clone(),
+            api_version: APPLICATION_API_VERSION.into(),
+            kind: APPLICATION_KIND.into(),
             metadata: Metadata {
                 name: self.metadata.name.to_string(),
             },

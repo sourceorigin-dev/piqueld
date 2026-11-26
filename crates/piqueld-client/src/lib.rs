@@ -111,11 +111,11 @@ pub use piqueld_core::manifest::{
     DeclaredSource, EnvironmentChange, EnvironmentConfig, Export, FileMode, FileSource,
     GitRepository, HealthCheck, Import, Job, JobRun, JobVolumeAccess, ManifestRepository,
     ManifestRevision, Metadata, Mount, Redirect, RedirectStatus, Reference, RepositoryManifest,
-    ResourceLimits, Rollback, Rollout, RolloutOrder, RolloutOrderSource, Route, RouteTarget,
-    SecretDeclaration, SecretEncoding, SecretGenerator, SecretMount, SecretSource, Segment,
-    Service, ServiceFile, ServiceSecurity, Source, SourceRepository, SystemVariable, Template,
-    Typed, ValidatedBuild, ValidatedRollout, ValidatedSource, Variable, VariableValue, Visibility,
-    Volume,
+    ResourceLimits, Rollback, Rollout, RolloutOrder, RolloutOrderSource, Route, RouteHostname,
+    RouteTarget, SecretDeclaration, SecretEncoding, SecretGenerator, SecretMount, SecretSource,
+    Segment, Service, ServiceFile, ServiceSecurity, Source, SourceRepository, SystemVariable,
+    Template, Typed, ValidatedBuild, ValidatedRollout, ValidatedSource, Variable, VariableValue,
+    Visibility, Volume,
 };
 pub use piqueld_core::planner::{ActionReason, ActionRisk};
 pub use piqueld_core::{

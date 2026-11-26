@@ -97,8 +97,6 @@ fn normalization_is_canonical_and_round_trips() {
         .expect("the toml parses")
         .normalize(normalized.id().clone());
     assert_eq!(normalized, reparsed);
-    let renormalized = reparsed.clone().normalize();
-    assert_eq!(renormalized, reparsed);
 }
 
 #[test]
@@ -111,6 +109,46 @@ fn spec_hash_is_pinned_and_ignores_metadata() {
         .normalize(app.id().clone());
     assert_eq!(renamed.metadata().name.as_str(), "renamed");
     assert_eq!(renamed.spec_hash(), app.spec_hash());
+}
+
+/// Normalizing sorts once; hashing and serializing rely on it and sort no
+/// more, so a manifest written out of order keeps its hash.
+#[test]
+fn an_unsorted_manifest_keeps_its_spec_hash() {
+    let app = parse_toml(
+        r#"
+api_version = "piqueld.dev/v1alpha1"
+kind = "Application"
+[metadata]
+name = "notes"
+[[spec.volumes]]
+name = "uploads"
+[[spec.volumes]]
+name = "data"
+[[spec.services]]
+name = "web"
+depends_on = ["worker", "api"]
+[spec.services.source]
+type = "image"
+image = "ghcr.io/example/notes:1.4.0"
+[[spec.services]]
+name = "worker"
+[spec.services.source]
+type = "image"
+image = "ghcr.io/example/notes:1.4.0"
+[[spec.services]]
+name = "api"
+[spec.services.source]
+type = "image"
+image = "ghcr.io/example/notes:1.4.0"
+"#,
+    )
+    .expect("the toml parses")
+    .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
+    assert_eq!(
+        app.spec_hash(),
+        "sha256:1b1d6533fce5246d90fc809d255a890c112ad1c643a4b8c743b15bdf12b50b97"
+    );
 }
 
 #[test]

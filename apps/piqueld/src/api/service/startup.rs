@@ -265,7 +265,7 @@ impl ApplicationService {
     fn installation_hostnames(config: &DaemonConfig) -> anyhow::Result<Vec<Hostname>> {
         let website = piqueld_config::AuthConfig::validate_origin(config.public_url())?
             .domain()
-            .and_then(|host| Hostname::parse(host.trim_end_matches('.')).ok());
+            .and_then(|host| Hostname::parse_canonical(host).ok());
         let dashboard = config.ingress.private.dashboard_hostname.clone();
         let webhooks = config.ingress.webhook_hostname.clone();
         let hostnames: std::collections::BTreeSet<_> = website
