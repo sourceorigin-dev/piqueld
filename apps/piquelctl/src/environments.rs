@@ -16,13 +16,14 @@ use crate::{
         Console, TaskOutcome,
         reports::{DeletionReport, EnvironmentRow, EnvironmentShowReport, Named, PromotionReport},
     },
-    support::{join_or, retry_transport},
+    support::{MAX_POLL_INTERVAL, POLL_INTERVAL, join_or, retry_transport},
 };
 use clap::{Args, Subcommand, ValueEnum};
 use piqueld_client::{
     ApplicationView, Client, ClientError, CreateEnvironmentRequest, EnvironmentBranchRequest,
-    EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView, EnvironmentView,
+    EnvironmentRequest, EnvironmentSourceRequest, EnvironmentStatusView, EnvironmentView, LogTime,
     Operation, PromoteRequest, Rollback, Visibility, edit::ApplicationEdit,
+    environments::LogRecordStream,
 };
 
 #[derive(Debug, Subcommand)]
@@ -1150,24 +1151,109 @@ async fn wait_until_stopped(
     }
 }
 
-/// Emits a bounded snapshot of runtime logs, warning when the daemon truncated it.
+/// How long a followed log stream may stay silent before it counts as
+/// dropped: the daemon sends a keep-alive every 15 seconds.
+const LOG_STREAM_IDLE: std::time::Duration = std::time::Duration::from_secs(45);
+
+/// Emits a bounded snapshot of runtime logs, warning when the daemon truncated
+/// it. With `--follow`, then emits each line written after it, one report
+/// each (one JSON object per line with `--json`), until interrupted or the
+/// daemon ends the stream. Following resumes after the snapshot's newest
+/// line, or the start of its window, taken before the snapshot is read, so
+/// no line written meanwhile is missed; `--timeout` doesn't count it.
 pub(crate) async fn logs(
     console: &mut Console,
     client: &Client,
     environment: &EnvironmentView,
     window: &LogArgs,
 ) -> Result<()> {
+    let id = environment.id.as_str();
+    let service = window.service.as_deref();
+    let since = std::time::Duration::from_secs(window.since_seconds.into());
+    let window_start = std::time::SystemTime::now()
+        .checked_sub(since)
+        .and_then(|start| start.duration_since(std::time::UNIX_EPOCH).ok())
+        .unwrap_or_default();
+    let window_start =
+        LogTime(i64::try_from(window_start.as_nanos()).unwrap_or(i64::MAX)).to_string();
     let logs = client
-        .environment_logs(
-            environment.id.as_str(),
-            window.service.as_deref(),
-            window.tail,
-            window.since_seconds,
-        )
+        .environment_logs(id, service, window.tail, window.since_seconds)
         .await?;
-    console.emit(&logs)?;
+    if window.follow {
+        logs.items.iter().try_for_each(|log| console.emit(log))?;
+    } else {
+        console.emit(&logs)?;
+    }
     if logs.truncated {
         console.warning("Log snapshot was truncated; narrow the service or time window.")?;
     }
-    Ok(())
+    if !window.follow {
+        return Ok(());
+    }
+    let after = logs
+        .items
+        .last()
+        .map_or(window_start, |newest| newest.timestamp.clone());
+    let stream = client
+        .environment_logs_stream(id, service, None, Some(&after))
+        .await?;
+    crate::support::interactive(follow_logs(console, client, id, service, stream, after)).await
+}
+
+/// Prints each line `stream` sends until interrupted. A stream that ends,
+/// or goes silent past the keep-alives, as when the daemon restarts, is
+/// reopened after the newest line printed, `after`, pausing longer between
+/// failed attempts, as long as the failure is one trying again may fix
+/// ([`CliError::is_unavailable`]). Any other ends it, such as the caller
+/// losing access or the environment being deleted. Timestamps share one
+/// fixed-width format, so the newest is found by comparing them as text.
+async fn follow_logs(
+    console: &mut Console,
+    client: &Client,
+    id: &str,
+    service: Option<&str>,
+    stream: LogRecordStream,
+    mut after: String,
+) -> Result<()> {
+    let mut stream = Some(stream);
+    let mut pause = POLL_INTERVAL;
+    loop {
+        let error = if let Some(open) = &mut stream {
+            match tokio::time::timeout(LOG_STREAM_IDLE, open.next()).await {
+                Ok(Some(Ok(Some(record)))) => {
+                    if record.timestamp > after {
+                        after.clone_from(&record.timestamp);
+                    }
+                    console.emit(&record)?;
+                    pause = POLL_INTERVAL;
+                    continue;
+                }
+                Ok(Some(Ok(None))) => continue,
+                Ok(Some(Err(error))) => error.into(),
+                Ok(None) => CliError::new(ErrorKind::Unavailable, "the daemon ended it"),
+                Err(_) => CliError::new(ErrorKind::Unavailable, "it went silent"),
+            }
+        } else {
+            tokio::time::sleep(pause).await;
+            pause = (pause * 2).min(MAX_POLL_INTERVAL);
+            match client
+                .environment_logs_stream(id, service, None, Some(&after))
+                .await
+            {
+                Ok(opened) => {
+                    stream = Some(opened);
+                    continue;
+                }
+                Err(error) => error.into(),
+            }
+        };
+        if !error.is_unavailable() {
+            return Err(error);
+        }
+        if stream.take().is_some() {
+            console.warning(format_args!(
+                "The log stream was interrupted ({error}); reconnecting."
+            ))?;
+        }
+    }
 }

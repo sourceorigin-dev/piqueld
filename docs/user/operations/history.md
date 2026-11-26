@@ -90,9 +90,16 @@ message, with a hint for what to do next.
 ## Read logs and build output
 
 - A service's output: in the dashboard, it's on the environment's **Logs**
-  tab. With `piquelctl`, run `piquelctl env logs <app> <environment>`, or
-  `piquelctl app logs <app>` when the application has a single environment.
-  These are recent lines read from Docker; for a lasting record,
+  tab, which shows the latest lines and then new output as Docker writes it,
+  including that of the tasks a deployment starts. **Pause** holds what it
+  shows, and **Resume** reads the latest lines again. With `piquelctl`, run
+  `piquelctl env logs <app> <environment>`, or `piquelctl app logs <app>` when
+  the application has a single environment, and add `--follow` (`-f`) to keep
+  printing new output until you press Ctrl-C. If the daemon restarts,
+  `--follow` reconnects and goes on after the last line it printed. With
+  `--json`, `--follow` prints one JSON object per line. The **Logs** tab stops
+  following while its browser tab is hidden, and reads the latest lines again
+  when you return. These are lines read from Docker; for a lasting record,
   [export them](telemetry.md).
 - A build's output: in the dashboard, see the **Builds** page and each
   application's **Builds** tab. With `piquelctl`, `piquelctl build list`

@@ -93,8 +93,8 @@ pub(super) struct LogStreamQuery {
     /// Only include this output stream; both when omitted.
     stream: Option<piqueld_core::api::LogStream>,
     /// Only include output written after this RFC 3339 UTC timestamp, at most a
-    /// day back; from when the stream opens when omitted. A `Last-Event-ID`
-    /// header takes its place.
+    /// day back; a later one, or none, starts when the stream opens. A
+    /// `Last-Event-ID` header takes its place.
     after: Option<String>,
 }
 
