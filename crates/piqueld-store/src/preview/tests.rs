@@ -121,7 +121,7 @@ async fn creating_a_preview_is_idempotent_on_branch_and_slot_and_leaves_the_revi
 #[tokio::test]
 async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count() {
     let (_temp, store) = Store::temporary().await;
-    store.pin(|pins| pins.previews.max_per_application = Some(2));
+    store.assume_settings(|settings| settings.previews.max_per_application = 2);
     let application = save(&store, false).await;
 
     let slots = (0..5)
@@ -185,20 +185,21 @@ async fn concurrent_creations_never_pass_a_preview_limit_and_repeats_never_count
         .expect("create succeeds");
     assert!(!again.created);
 
-    store
-        .pin(|pins| (pins.previews.max_per_application, pins.previews.max_total) = (None, Some(1)));
-    let lowered = &store;
+    store.assume_settings(|settings| {
+        settings.previews.max_per_application = 10;
+        settings.previews.max_total = 1;
+    });
     assert!(
-        !create(lowered, &application, "feat/login", Some(slot.as_str()))
+        !create(&store, &application, "feat/login", Some(slot.as_str()))
             .await
             .expect("create succeeds")
             .created
     );
     assert!(matches!(
-        create(lowered, &application, "feat/other", None).await,
+        create(&store, &application, "feat/other", None).await,
         Err(StoreError::PreviewLimitReached(reached)) if reached.limit == PreviewLimit::Total
     ));
-    let usage = lowered
+    let usage = store
         .preview_usage(&Scope::All)
         .await
         .expect("preview usage succeeds");
@@ -441,7 +442,7 @@ async fn local_preview() -> (tempfile::TempDir, Store, ApplicationId, CreatedPre
 #[tokio::test]
 async fn local_snapshots_create_previews_within_limits_and_record_their_provenance() {
     let (_temp, store) = Store::temporary().await;
-    store.pin(|pins| pins.previews.max_per_application = Some(1));
+    store.assume_settings(|settings| settings.previews.max_per_application = 1);
     let application = save(&store, false).await;
     let (first, second) = ("1".repeat(40), "2".repeat(40));
     let created = local(&store, &application, ("feat/x", None), (NOTES, &first))

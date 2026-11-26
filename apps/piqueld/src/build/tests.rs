@@ -74,12 +74,9 @@ async fn attempt(directory: &std::path::Path, cap: u32) -> BuildAttempt {
     let store = Store::open_unsynced(directory.join("db"))
         .await
         .expect("the store opens");
-    store.pin_settings(piqueld_core::SettingsPins {
-        build_history: piqueld_core::settings::BuildHistoryPins {
-            log_max_bytes: Some(cap),
-            log_retention_days: Some(1),
-        },
-        ..piqueld_core::SettingsPins::default()
+    store.assume_settings(|settings| {
+        settings.build_history.log_max_bytes = cap;
+        settings.build_history.log_retention_days = 1;
     });
     let app = piqueld_core::manifest::parse_template_toml(
         "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='notes'\n\

@@ -138,9 +138,8 @@ pub(super) async fn configuration(
 ///
 /// The value applies at once, without a restart, and the change is recorded
 /// in the audit trail. Fails with 404 `setting_unknown`, 409
-/// `setting_pinned` for a setting the configuration file sets, 409
-/// `setting_unavailable` for one the installation lacks what it needs for,
-/// or 422 `setting_invalid` for a value the setting doesn't take.
+/// `setting_unavailable` for a setting the installation lacks what it needs
+/// for, or 422 `setting_invalid` for a value the setting doesn't take.
 #[utoipa::path(put,path="/api/v1/system/settings/{key}",operation_id="putSetting",
     params(("key"=String,Path,description="The setting's key, such as `retention.event_days`")),
     request_body=piqueld_core::api::SettingChange,
@@ -162,11 +161,11 @@ pub(super) async fn put_setting(
 ///
 /// The default applies at once, and the reset is recorded in the audit
 /// trail, even while the installation lacks what the setting needs. Fails
-/// with 404 `setting_unknown` or 409 `setting_pinned`.
+/// with 404 `setting_unknown`.
 #[utoipa::path(delete,path="/api/v1/system/settings/{key}",operation_id="resetSetting",
     params(("key"=String,Path,description="The setting's key, such as `retention.event_days`")),
     responses((status=200,description="The setting, reset",body=Envelope<piqueld_core::api::Setting>),
-    ApiErrors<400, 404, 409, 503>))]
+    ApiErrors<400, 404, 503>))]
 pub(super) async fn reset_setting(
     State(state): State<ApiState>,
     Extension(identity): Extension<Identity>,

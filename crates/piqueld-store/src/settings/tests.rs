@@ -1,13 +1,13 @@
 use crate::{Actor, Author, Store, StoreError};
 use piqueld_core::access::{GlobalPermission, Grants, Permission, Scope};
 use piqueld_core::api::SettingSource;
-use piqueld_core::settings::{RetentionPins, SettingError, SettingsPins};
+use piqueld_core::settings::SettingError;
 use serde_json::json;
 
 /// A set value applies at once, is recorded in the audit trail, survives a
-/// restart, and a reset deletes it; a pinned setting refuses both.
+/// restart, and a reset deletes it.
 #[tokio::test]
-async fn set_settings_apply_at_once_and_survive_a_restart_unless_pinned() {
+async fn set_settings_apply_at_once_and_survive_a_restart() {
     let (directory, store) = Store::temporary().await;
     let route = "PUT /api/v1/system/settings/{key}";
     let request = crate::testing::audit_request(route);
@@ -41,31 +41,10 @@ async fn set_settings_apply_at_once_and_survive_a_restart_unless_pinned() {
     ));
     drop(store);
 
-    let pins = SettingsPins {
-        retention: RetentionPins {
-            audit_days: Some(30),
-            ..RetentionPins::default()
-        },
-        ..SettingsPins::default()
-    };
     let store = Store::open_unsynced(directory.path().join("db"))
         .await
         .expect("the store opens");
-    store.pin_settings(pins);
-    let settings = store.settings();
-    assert_eq!(
-        (settings.retention.event_days, settings.retention.audit_days),
-        (7, 30)
-    );
-    let pinned = store
-        .set_setting(author, "retention.audit_days", None)
-        .await;
-    assert!(matches!(
-        pinned,
-        Err(StoreError::Setting(SettingError::Pinned(
-            "retention.audit_days"
-        )))
-    ));
+    assert_eq!(store.settings().retention.event_days, 7);
     let reset = store
         .set_setting(author, "retention.event_days", None)
         .await

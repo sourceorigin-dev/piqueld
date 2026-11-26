@@ -12,16 +12,43 @@ let
   ];
   withoutNulls = lib.filterAttrsRecursive (_: value: value != null);
   absolutePath = lib.types.strMatching "/.+";
-  # A daemon setting: null, its default, leaves it to `piquelctl settings`
-  # and the dashboard; a value pins it. `default` is the daemon's, for the
-  # description only.
-  daemonSetting =
-    type: default: description:
-    lib.mkOption {
-      type = lib.types.nullOr type;
-      default = null;
-      description = "${description} A daemon setting: null leaves it to `piquelctl settings` and the dashboard, defaulting to ${if builtins.isBool default then lib.boolToString default else toString default}; a value pins it.";
-    };
+  # Daemon settings, which `piquelctl settings` and the dashboard change now,
+  # and the configuration no longer sets: hidden options, so a configuration
+  # that still sets one fails with what replaced it.
+  removedSettings = [
+    [
+      "auth"
+      "max_token_days"
+    ]
+    [
+      "build"
+      "unavailable"
+    ]
+    [
+      "ingress"
+      "traffic"
+    ]
+    [ "retention" ]
+    [ "build_history" ]
+    [ "images" ]
+    [ "previews" ]
+    [ "reconciliation" ]
+    [ "snapshots" ]
+  ];
+  removedSettingOptions = {
+    options = lib.foldl' lib.recursiveUpdate { } (
+      map (
+        path:
+        lib.setAttrByPath path (
+          lib.mkOption {
+            type = lib.types.nullOr lib.types.anything;
+            default = null;
+            visible = false;
+          }
+        )
+      ) removedSettings
+    );
+  };
   nodeName = lib.types.strMatching "[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?";
   # A `_file` setting, which piqueld gets as a systemd credential: a string,
   # not a path, so the secret is never copied into the Nix store. Its
@@ -114,9 +141,11 @@ let
 in
 {
   imports = [
-    (lib.mkRemovedOptionModule [ "services" "piqueld" "notificationDestinationsFile" ]
-      "Notification destinations are managed with `piquelctl notification` or the dashboard."
-    )
+    (lib.mkRemovedOptionModule [
+      "services"
+      "piqueld"
+      "notificationDestinationsFile"
+    ] "Notification destinations are managed with `piquelctl notification` or the dashboard.")
   ];
   options.services.piqueld = {
     enable = lib.mkEnableOption "the single-node piqueld control plane";
@@ -145,268 +174,249 @@ in
       description = "Before each start, run `piqueld roll-back` as the service user: when a newer piqueld has updated the database, it restores the newest backup this package can open, moving the state it replaces into `dataDir`'s `rolled-back-<time>` directory, so the daemon starts after a system rollback. Restoring undoes every change made since the backup. It only covers rolling back to a generation that enables it too.";
     };
     settings = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          server.listen_mode = lib.mkOption {
-            type = lib.types.enum [
-              "off"
-              "localhost"
-              "tailscale"
-              "both"
-            ];
-            default = "off";
-            description = "HTTP listen interfaces. Account authentication is required on every listener.";
-          };
-          server.allowed_hosts = lib.mkOption {
-            type = lib.types.listOf lib.types.str;
-            default = [ ];
-            description = "Additional trusted DNS hostnames for HTTP requests, without schemes or ports. IP literals and localhost are always allowed.";
-          };
-          server.port = lib.mkOption {
-            type = lib.types.ints.between 1 65535;
-            default = 7845;
-            description = "Shared HTTP port for all selected IPv4 and IPv6 addresses.";
-          };
-          auth.public_url = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Canonical HTTPS website origin for passkeys; HTTP localhost is allowed for development. Defaults to https://<ingress.private.dashboard_hostname> when one is set, then to the tailnet node's HTTPS URL when tailscale.enabled is set, otherwise http://localhost:7845.";
-          };
-          auth.max_token_days = lib.mkOption {
-            type = lib.types.nullOr (lib.types.ints.between 1 4294967295);
-            default = null;
-            description = "Longest lifetime of new API tokens in days. A daemon setting: null leaves it to `piquelctl settings` and the dashboard, where by default tokens may have any lifetime, including none; a value pins it.";
-          };
-          tailscale.enabled = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Join the tailnet as a dedicated node and serve the website over HTTPS on its https_port, with a tailnet-issued certificate. Requires HTTPS certificates to be enabled for the tailnet.";
-          };
-          tailscale.hostname = lib.mkOption {
-            type = nodeName;
-            default = "piqueld";
-            description = "Node name, which becomes <hostname>.<tailnet>.ts.net.";
-          };
-          tailscale.auth_key_file = credentialFile "Host file with a Tailscale auth key for the node's first login" " Node state in dataDir makes it unnecessary afterwards.";
-          tailscale.https_port = lib.mkOption {
-            type = lib.types.ints.between 1 65535;
-            default = 443;
-            description = "Node port serving the website over HTTPS.";
-          };
-          tailscale.socket = lib.mkOption {
-            type = lib.types.nullOr absolutePath;
-            default = null;
-            description = "Socket of a logged-in tailscaled, running as the piqueld user, to share instead of starting a dedicated one. piqueld then only adds https_port to its Serve configuration.";
-          };
-          docker.socket = lib.mkOption {
-            type = absolutePath;
-            default = "/var/run/docker.sock";
-            description = "Absolute path to the Docker Engine Unix socket.";
-          };
-          docker.auto_initialize_swarm = lib.mkOption {
-            type = lib.types.bool;
-            default = true;
-            description = "Initialize an inactive Docker Engine as a single-node Swarm.";
-          };
-          build.parallel = lib.mkOption {
-            type = lib.types.ints.between 1 255;
-            default = 1;
-            description = "How many images build at once, on this host or the build machine. Further builds wait, environments' before previews', and the wait counts against reconciliation.prepare_timeout_seconds.";
-          };
-          build.builder = lib.mkOption {
-            type = lib.types.nullOr (lib.types.strMatching "tcp://.+:[0-9]+");
-            default = null;
-            description = "BuildKit daemon of a build machine that builds images instead of this host, as tcp://host:port. The connection is neither authenticated nor encrypted, so only this host should be able to reach that port, over an encrypted network such as a tailnet. Requires build.repository.";
-          };
-          build.repository = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Image repository the build machine pushes to and this host pulls from, as registry-host[:port]/path without a tag. Docker requires HTTPS of a registry on another machine. It takes no credentials, so only this host and the build machine should be able to reach it. Requires build.builder.";
-          };
-          build.unavailable = daemonSetting (lib.types.enum [
-            "fail"
-            "local"
-          ]) "fail" "What a deployment that has to build does while the build machine can't be reached: fail fails it with builder_unavailable, and local builds on this host's Docker Engine instead. Requires build.builder.";
-          ingress.enabled = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Manage a Caddy gateway on ports 80/443. Requires Docker 28+. Restart piqueld to apply; disabling stops public routing but retains route configuration and certificates.";
-          };
-          ingress.public_addresses = lib.mkOption {
-            type = lib.types.listOf lib.types.str;
-            default = [ ];
-            example = [
-              "203.0.113.10"
-              "2001:db8::10"
-            ];
-            description = "This server's public IPv4 and IPv6 addresses. Where a DNS provider sets manage_records, direct public routes get A/AAAA records to them; without any, those records stay manual. Unused in tunnel mode.";
-          };
-          ingress.acme.directory = lib.mkOption {
-            type = lib.types.strMatching "https://.+";
-            default = "https://acme-v02.api.letsencrypt.org/directory";
-            description = "ACME directory piqueld orders DNS-01 certificates from.";
-          };
-          ingress.acme.email = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Optional ACME account contact address, sent only when piqueld first registers its account with the CA.";
-          };
-          ingress.private.enabled = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Serve private routes to the tailnet through a second tailnet node, run as a container beside the gateway. Private routes need DNS-01 certificates through dns.providers. Restart piqueld to apply.";
-          };
-          ingress.private.hostname = lib.mkOption {
-            type = nodeName;
-            default = "piqueld-apps";
-            description = "Apps node name, which becomes <hostname>.<tailnet>.ts.net. Must differ from tailscale.hostname.";
-          };
-          ingress.private.dashboard_hostname = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            example = "dashboard.example.com";
-            description = "Private hostname on which the gateway serves piqueld's website (dashboard and API) to the tailnet, with a DNS-01 certificate. It gets a private route's DNS records, managed when a provider sets manage_records, applications may not route it or its subdomains, and an unset auth.public_url becomes its HTTPS origin. Requires ingress.enabled and ingress.private.enabled. Restart piqueld to apply.";
-          };
-          ingress.private.auth_key_file = credentialFile "Host file with a Tailscale auth key for the apps node's first login" " Without one, the daemon logs the node's login URL.";
-          ingress.tunnel.enabled = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Serve public routes through a locally managed Cloudflare Tunnel instead of ports 80/443, which are then closed. Each public hostname needs a proxied CNAME to <tunnel-id>.cfargotunnel.com. Restart piqueld to apply.";
-          };
-          ingress.tunnel.credentials_file = credentialFile "Host file with the tunnel's credentials, from `cloudflared tunnel create`" " Required while the tunnel is enabled.";
-          ingress.webhook_hostname = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            example = "hooks.example.com";
-            description = "Public hostname on which the gateway forwards GitHub push webhooks, and only them, to piqueld, for applications whose repository syncs with `webhook`. It gets a public route's DNS records, managed when a provider sets manage_records, and applications may not route it or its subdomains. Without ingress.enabled, the daemon still serves the webhook socket for another proxy running as its user. Restart piqueld to apply.";
-          };
-          ingress.traffic = daemonSetting lib.types.bool true "Count the requests each route serves, for each environment's traffic page, while ingress.enabled is set. piqueld stores hourly totals, not the requests themselves or visitors' addresses.";
-          dns.providers = lib.mkOption {
-            type = lib.types.listOf (
-              lib.types.submodule {
-                options = {
-                  kind = lib.mkOption {
-                    type = lib.types.enum [
-                      "cloudflare"
-                      "ovh"
-                    ];
-                    description = "Provider API.";
+      type = lib.types.submodule [
+        removedSettingOptions
+        {
+          options = {
+            server.listen_mode = lib.mkOption {
+              type = lib.types.enum [
+                "off"
+                "localhost"
+                "tailscale"
+                "both"
+              ];
+              default = "off";
+              description = "HTTP listen interfaces. Account authentication is required on every listener.";
+            };
+            server.allowed_hosts = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              description = "Additional trusted DNS hostnames for HTTP requests, without schemes or ports. IP literals and localhost are always allowed.";
+            };
+            server.port = lib.mkOption {
+              type = lib.types.ints.between 1 65535;
+              default = 7845;
+              description = "Shared HTTP port for all selected IPv4 and IPv6 addresses.";
+            };
+            auth.public_url = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Canonical HTTPS website origin for passkeys; HTTP localhost is allowed for development. Defaults to https://<ingress.private.dashboard_hostname> when one is set, then to the tailnet node's HTTPS URL when tailscale.enabled is set, otherwise http://localhost:7845.";
+            };
+            tailscale.enabled = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Join the tailnet as a dedicated node and serve the website over HTTPS on its https_port, with a tailnet-issued certificate. Requires HTTPS certificates to be enabled for the tailnet.";
+            };
+            tailscale.hostname = lib.mkOption {
+              type = nodeName;
+              default = "piqueld";
+              description = "Node name, which becomes <hostname>.<tailnet>.ts.net.";
+            };
+            tailscale.auth_key_file = credentialFile "Host file with a Tailscale auth key for the node's first login" " Node state in dataDir makes it unnecessary afterwards.";
+            tailscale.https_port = lib.mkOption {
+              type = lib.types.ints.between 1 65535;
+              default = 443;
+              description = "Node port serving the website over HTTPS.";
+            };
+            tailscale.socket = lib.mkOption {
+              type = lib.types.nullOr absolutePath;
+              default = null;
+              description = "Socket of a logged-in tailscaled, running as the piqueld user, to share instead of starting a dedicated one. piqueld then only adds https_port to its Serve configuration.";
+            };
+            docker.socket = lib.mkOption {
+              type = absolutePath;
+              default = "/var/run/docker.sock";
+              description = "Absolute path to the Docker Engine Unix socket.";
+            };
+            docker.auto_initialize_swarm = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = "Initialize an inactive Docker Engine as a single-node Swarm.";
+            };
+            build.parallel = lib.mkOption {
+              type = lib.types.ints.between 1 255;
+              default = 1;
+              description = "How many images build at once, on this host or the build machine. Further builds wait, environments' before previews', and the wait counts against reconciliation.prepare_timeout_seconds.";
+            };
+            build.builder = lib.mkOption {
+              type = lib.types.nullOr (lib.types.strMatching "tcp://.+:[0-9]+");
+              default = null;
+              description = "BuildKit daemon of a build machine that builds images instead of this host, as tcp://host:port. The connection is neither authenticated nor encrypted, so only this host should be able to reach that port, over an encrypted network such as a tailnet. Requires build.repository.";
+            };
+            build.repository = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Image repository the build machine pushes to and this host pulls from, as registry-host[:port]/path without a tag. Docker requires HTTPS of a registry on another machine. It takes no credentials, so only this host and the build machine should be able to reach it. Requires build.builder.";
+            };
+            ingress.enabled = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Manage a Caddy gateway on ports 80/443. Requires Docker 28+. Restart piqueld to apply; disabling stops public routing but retains route configuration and certificates.";
+            };
+            ingress.public_addresses = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              example = [
+                "203.0.113.10"
+                "2001:db8::10"
+              ];
+              description = "This server's public IPv4 and IPv6 addresses. Where a DNS provider sets manage_records, direct public routes get A/AAAA records to them; without any, those records stay manual. Unused in tunnel mode.";
+            };
+            ingress.acme.directory = lib.mkOption {
+              type = lib.types.strMatching "https://.+";
+              default = "https://acme-v02.api.letsencrypt.org/directory";
+              description = "ACME directory piqueld orders DNS-01 certificates from.";
+            };
+            ingress.acme.email = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Optional ACME account contact address, sent only when piqueld first registers its account with the CA.";
+            };
+            ingress.private.enabled = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Serve private routes to the tailnet through a second tailnet node, run as a container beside the gateway. Private routes need DNS-01 certificates through dns.providers. Restart piqueld to apply.";
+            };
+            ingress.private.hostname = lib.mkOption {
+              type = nodeName;
+              default = "piqueld-apps";
+              description = "Apps node name, which becomes <hostname>.<tailnet>.ts.net. Must differ from tailscale.hostname.";
+            };
+            ingress.private.dashboard_hostname = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              example = "dashboard.example.com";
+              description = "Private hostname on which the gateway serves piqueld's website (dashboard and API) to the tailnet, with a DNS-01 certificate. It gets a private route's DNS records, managed when a provider sets manage_records, applications may not route it or its subdomains, and an unset auth.public_url becomes its HTTPS origin. Requires ingress.enabled and ingress.private.enabled. Restart piqueld to apply.";
+            };
+            ingress.private.auth_key_file = credentialFile "Host file with a Tailscale auth key for the apps node's first login" " Without one, the daemon logs the node's login URL.";
+            ingress.tunnel.enabled = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Serve public routes through a locally managed Cloudflare Tunnel instead of ports 80/443, which are then closed. Each public hostname needs a proxied CNAME to <tunnel-id>.cfargotunnel.com. Restart piqueld to apply.";
+            };
+            ingress.tunnel.credentials_file = credentialFile "Host file with the tunnel's credentials, from `cloudflared tunnel create`" " Required while the tunnel is enabled.";
+            ingress.webhook_hostname = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              example = "hooks.example.com";
+              description = "Public hostname on which the gateway forwards GitHub push webhooks, and only them, to piqueld, for applications whose repository syncs with `webhook`. It gets a public route's DNS records, managed when a provider sets manage_records, and applications may not route it or its subdomains. Without ingress.enabled, the daemon still serves the webhook socket for another proxy running as its user. Restart piqueld to apply.";
+            };
+            dns.providers = lib.mkOption {
+              type = lib.types.listOf (
+                lib.types.submodule {
+                  options = {
+                    kind = lib.mkOption {
+                      type = lib.types.enum [
+                        "cloudflare"
+                        "ovh"
+                      ];
+                      description = "Provider API.";
+                    };
+                    api_token_file = credentialFile "Cloudflare: host file with an API token scoped to Zone:Read and DNS:Edit" "";
+                    endpoint = lib.mkOption {
+                      type = lib.types.nullOr (
+                        lib.types.enum [
+                          "ovh-eu"
+                          "ovh-ca"
+                          "ovh-us"
+                        ]
+                      );
+                      default = null;
+                      description = "OVH: API region of the account.";
+                    };
+                    application_key_file = credentialFile "OVH: host file with the application key" "";
+                    application_secret_file = credentialFile "OVH: host file with the application secret" "";
+                    consumer_key_file = credentialFile "OVH: host file with the consumer key" "";
+                    manage_records = lib.mkOption {
+                      type = lib.types.bool;
+                      default = false;
+                      description = "Create, update and delete routes' A/AAAA/CNAME records in this provider's zones. Off by default, so its zones stay manual.";
+                    };
                   };
-                  api_token_file = credentialFile "Cloudflare: host file with an API token scoped to Zone:Read and DNS:Edit" "";
-                  endpoint = lib.mkOption {
-                    type = lib.types.nullOr (
-                      lib.types.enum [
-                        "ovh-eu"
-                        "ovh-ca"
-                        "ovh-us"
-                      ]
-                    );
-                    default = null;
-                    description = "OVH: API region of the account.";
-                  };
-                  application_key_file = credentialFile "OVH: host file with the application key" "";
-                  application_secret_file = credentialFile "OVH: host file with the application secret" "";
-                  consumer_key_file = credentialFile "OVH: host file with the consumer key" "";
-                  manage_records = lib.mkOption {
-                    type = lib.types.bool;
-                    default = false;
-                    description = "Create, update and delete routes' A/AAAA/CNAME records in this provider's zones. Off by default, so its zones stay manual.";
-                  };
-                };
-              }
-            );
-            default = [ ];
-            description = "DNS provider accounts piqueld uses for DNS-01 certificates and, with manage_records, routes' DNS records. Cloudflare needs api_token_file; OVH needs endpoint and the three OVH files.";
+                }
+              );
+              default = [ ];
+              description = "DNS provider accounts piqueld uses for DNS-01 certificates and, with manage_records, routes' DNS records. Cloudflare needs api_token_file; OVH needs endpoint and the three OVH files.";
+            };
+            checkouts.max_bytes = lib.mkOption {
+              type = lib.types.ints.positive;
+              default = 4294967296;
+              description = "Most bytes all Git checkouts, history and working tree, may take at once; a checkout waits for room, and a larger one, or a local snapshot that would be, is refused.";
+            };
+            telemetry.endpoint = lib.mkOption {
+              type = lib.types.nullOr (lib.types.strMatching "(https?://|unix:///).+");
+              default = null;
+              example = "unix:///run/otel/otlp.sock";
+              description = "OTLP/gRPC collector receiving the daemon's traces, metrics and logs: https://host:port, http://host:port, or unix:///path. Null disables export.";
+            };
+            telemetry.headers_file = credentialFile "Host file with gRPC headers for the collector, one `name: value` per line (such as `authorization: Bearer …`)" "";
+            telemetry.containers = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = "Also export the stdout/stderr and resource usage of every container piqueld runs, to the endpoint and to granted receiving services. A receiving service's own output goes only to the endpoint.";
+            };
           };
-          reconciliation.scan_interval_seconds = daemonSetting (lib.types.ints.between 1 86400) 60 "Seconds between full drift scans.";
-          reconciliation.prepare_timeout_seconds = daemonSetting (lib.types.ints.between 1 86400) 300 "Timeout in seconds for resolving application inputs.";
-          reconciliation.convergence_timeout_seconds = daemonSetting (lib.types.ints.between 1 86400) 120 "Timeout in seconds for runtime convergence; restarts each time a service converges.";
-          retention.finished_operation_days = daemonSetting lib.types.ints.unsigned 10 "Days to retain finished operations; zero disables pruning.";
-          retention.deployment_days = daemonSetting lib.types.ints.unsigned 90 "Days to retain deployment history beyond each environment's newest deployments; zero disables all deployment, preview, release and build-record pruning.";
-          retention.deployments_per_environment = daemonSetting lib.types.ints.u32 50 "Deployments each environment retains however old they are; previews instead keep their current, latest and newest successful deployments and those finished in the last hour, besides the other kept deployments the history docs list. Zero disables all deployment, preview, release and build-record pruning.";
-          build_history.log_max_bytes = daemonSetting (lib.types.ints.between 1 67108864) 4194304 "Maximum persisted output bytes per build. Output within it is kept whole. Of longer output, a build keeps the first half and the end, with a note of how many bytes it left out between them when the note fits.";
-          build_history.log_retention_days = daemonSetting (lib.types.ints.between 1 3650) 30 "Days to retain output after a build completes.";
-          images.keep_deployments = daemonSetting lib.types.ints.u32 3 "Successful deployments per environment whose built images are kept for restores, besides what environments and previews run or are deploying.";
-          images.registry_keep_deployments = daemonSetting lib.types.ints.u32 10 "Successful deployments per environment whose images the build registry keeps, never fewer than images.keep_deployments; cleanup deletes the other images this host's builds pushed there, and skips the registry while it is unreachable. Unused without a build machine.";
-          images.cleanup_interval_seconds = daemonSetting (lib.types.ints.between 1 86400) 3600 "Seconds between cleanups of unretained built images; cleanup also runs after each operation.";
-          retention.event_days = daemonSetting lib.types.ints.unsigned 90 "Days to retain application events; zero disables pruning.";
-          retention.daemon_event_days = daemonSetting lib.types.ints.unsigned 90 "Days to retain daemon diagnostics independently of application deletion; zero disables pruning.";
-          retention.traffic_days = daemonSetting lib.types.ints.unsigned 90 "Days to retain each environment's traffic counts; zero disables pruning. Deleting an environment also removes them.";
-          retention.audit_days = daemonSetting lib.types.ints.unsigned 365 "Days to retain the audit trail independently of application deletion; zero disables pruning.";
-          previews.max_per_application = daemonSetting lib.types.ints.u32 10 "Previews one application may have; creating more fails with preview_limit_reached.";
-          previews.max_total = daemonSetting lib.types.ints.u32 30 "Previews the installation may have; creating more fails with preview_limit_reached.";
-          previews.default_cpu_millis = daemonSetting (lib.types.ints.between 1 1048576) 500 "CPU limit, in millicores, of preview services that set none.";
-          previews.default_memory_bytes = daemonSetting lib.types.ints.positive 536870912 "Memory limit, in bytes, of preview services that set none.";
-          previews.max_replicas = daemonSetting (lib.types.ints.between 1 100) 1 "Most replicas a preview service runs; manifests asking for more are capped with a warning.";
-          snapshots.max_upload_bytes = daemonSetting lib.types.ints.positive 268435456 "Largest Git bundle `piquelctl preview deploy --local` may upload; larger ones fail with snapshot_too_large.";
-          checkouts.max_bytes = lib.mkOption {
-            type = lib.types.ints.positive;
-            default = 4294967296;
-            description = "Most bytes all Git checkouts, history and working tree, may take at once; a checkout waits for room, and a larger one, or a local snapshot that would be, is refused.";
-          };
-          telemetry.endpoint = lib.mkOption {
-            type = lib.types.nullOr (lib.types.strMatching "(https?://|unix:///).+");
-            default = null;
-            example = "unix:///run/otel/otlp.sock";
-            description = "OTLP/gRPC collector receiving the daemon's traces, metrics and logs: https://host:port, http://host:port, or unix:///path. Null disables export.";
-          };
-          telemetry.headers_file = credentialFile "Host file with gRPC headers for the collector, one `name: value` per line (such as `authorization: Bearer …`)" "";
-          telemetry.containers = lib.mkOption {
-            type = lib.types.bool;
-            default = true;
-            description = "Also export the stdout/stderr and resource usage of every container piqueld runs, to the endpoint and to granted receiving services. A receiving service's own output goes only to the endpoint.";
-          };
-        };
-      };
+        }
+      ];
       default = { };
       description = "Typed daemon TOML settings. dataDir and runtimeDir control server.data_dir and server.runtime_dir. These settings enter the Nix store, so give credentials through the `_file` variants.";
     };
   };
   config = lib.mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = dedicatedBelow "/var/lib/" cfg.dataDir;
-        message = "services.piqueld.dataDir must be a dedicated directory below /var/lib";
-      }
-      {
-        assertion = !(lib.hasInfix ":" cfg.dataDir || lib.hasInfix "," cfg.dataDir);
-        message = "services.piqueld.dataDir must not contain ':' or ','";
-      }
-      {
-        assertion = dedicatedBelow "/run/" cfg.runtimeDir;
-        message = "services.piqueld.runtimeDir must be a dedicated directory below /run";
-      }
-      {
-        assertion = (cfg.settings.build.builder == null) == (cfg.settings.build.repository == null);
-        message = "services.piqueld.settings.build needs both builder and repository, or neither";
-      }
-      {
-        assertion = cfg.settings.build.unavailable != null -> cfg.settings.build.builder != null;
-        message = "services.piqueld.settings.build.unavailable requires build.builder";
-      }
-      {
-        assertion = tunnel.enabled -> tunnel.credentials_file != null;
-        message = "services.piqueld.settings.ingress.tunnel.credentials_file is required while the tunnel is enabled";
-      }
-      {
-        assertion = lib.all (
-          provider:
-          let
-            ovh = [
-              provider.endpoint
-              provider.application_key_file
-              provider.application_secret_file
-              provider.consumer_key_file
-            ];
-          in
-          if provider.kind == "cloudflare" then
-            provider.api_token_file != null && lib.all (value: value == null) ovh
-          else
-            provider.api_token_file == null && lib.all (value: value != null) ovh
-        ) providers;
-        message = "services.piqueld.settings.dns.providers: cloudflare needs only api_token_file; ovh needs only endpoint, application_key_file, application_secret_file and consumer_key_file";
-      }
-    ];
+    assertions =
+      map (
+        path:
+        let
+          option = lib.concatStringsSep "." path;
+        in
+        {
+          assertion = lib.attrByPath path null cfg.settings == null;
+          message = "services.piqueld.settings.${option} is daemon policy, which the configuration no longer sets: remove it, and change it with `piquelctl settings set ${option}${
+            lib.optionalString (builtins.length path == 1) ".<setting>"
+          } <value>` or the dashboard's Settings page";
+        }
+      ) removedSettings
+      ++ [
+        {
+          assertion = dedicatedBelow "/var/lib/" cfg.dataDir;
+          message = "services.piqueld.dataDir must be a dedicated directory below /var/lib";
+        }
+        {
+          assertion = !(lib.hasInfix ":" cfg.dataDir || lib.hasInfix "," cfg.dataDir);
+          message = "services.piqueld.dataDir must not contain ':' or ','";
+        }
+        {
+          assertion = dedicatedBelow "/run/" cfg.runtimeDir;
+          message = "services.piqueld.runtimeDir must be a dedicated directory below /run";
+        }
+        {
+          assertion = (cfg.settings.build.builder == null) == (cfg.settings.build.repository == null);
+          message = "services.piqueld.settings.build needs both builder and repository, or neither";
+        }
+        {
+          assertion = tunnel.enabled -> tunnel.credentials_file != null;
+          message = "services.piqueld.settings.ingress.tunnel.credentials_file is required while the tunnel is enabled";
+        }
+        {
+          assertion = lib.all (
+            provider:
+            let
+              ovh = [
+                provider.endpoint
+                provider.application_key_file
+                provider.application_secret_file
+                provider.consumer_key_file
+              ];
+            in
+            if provider.kind == "cloudflare" then
+              provider.api_token_file != null && lib.all (value: value == null) ovh
+            else
+              provider.api_token_file == null && lib.all (value: value != null) ovh
+          ) providers;
+          message = "services.piqueld.settings.dns.providers: cloudflare needs only api_token_file; ovh needs only endpoint, application_key_file, application_secret_file and consumer_key_file";
+        }
+      ];
     # One-shot commands, such as `piqueld restore`, run outside the unit.
     environment.systemPackages = [ cfg.package ];
     users.groups.piqueld = { };

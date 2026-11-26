@@ -214,11 +214,11 @@ impl ApplicationService {
         Ok(docker.with_builder(builder))
     }
 
-    /// Opens the control-plane state, pinning the daemon settings `config`
-    /// sets, starts
-    /// `telemetry` export now that it names the installation, so even a
-    /// start that fails later is exported, and reads where the journal stands
-    /// before this start changes it.
+    /// Opens the control-plane state, records what the installation offers
+    /// the daemon settings that need it, starts `telemetry` export now that
+    /// it names the installation, so even a start that fails later is
+    /// exported, and reads where the journal stands before this start
+    /// changes it.
     async fn open_store(
         config: &DaemonConfig,
         telemetry: &crate::telemetry::Telemetry,
@@ -226,7 +226,6 @@ impl ApplicationService {
         let store = Store::open(config.server.database_path())
             .await
             .context("failed to open control-plane state")?;
-        store.pin_settings(config.pins());
         store.meet_requirements(config.requirements());
         info!(path = %config.server.database_path().display(), "opened control-plane state");
         telemetry.start(store.instance_id());

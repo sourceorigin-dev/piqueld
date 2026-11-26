@@ -75,6 +75,6 @@ pub use resource::{
 pub use retention::{LocalImages, ReleaseAvailability, RetentionRoot, ServiceImage};
 pub use settings::{
     AuthSettings, BuildHistoryConfig, ImagesConfig, ReconciliationConfig, RetentionConfig,
-    Settings, SettingsPins, SnapshotsConfig,
+    Settings, SnapshotsConfig,
 };
 pub use toml_diagnostic::{TomlDiagnostic, TomlLocation};

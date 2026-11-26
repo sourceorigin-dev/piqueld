@@ -343,7 +343,7 @@ prints the earlier part.
   [`build.parallel`](../reference/configuration-settings.md#buildparallel)
   says otherwise, and the time spent waiting for other builds counts too.
   Raise
-  [`reconciliation.prepare_timeout_seconds`](../reference/configuration-settings.md#reconciliationprepare_timeout_seconds)
+  [`reconciliation.prepare_timeout_seconds`](../reference/daemon-settings.md#reconciliationprepare_timeout_seconds)
   or `build.parallel` in the daemon's configuration.
 - **`piquelctl` times out, but the build goes on.** The command stopped
   waiting, not the deployment, and exited with code 4. Follow the deployment
@@ -372,7 +372,7 @@ prints the earlier part.
   the end. Between them, a note says how many bytes it left out, when the note
   fits within the limit: a limit of a few hundred bytes leaves it out. The end
   shows once the build ends.
-  [`build_history.log_max_bytes`](../reference/configuration-settings.md#build_historylog_max_bytes)
+  [`build_history.log_max_bytes`](../reference/daemon-settings.md#build_historylog_max_bytes)
   and
-  [`build_history.log_retention_days`](../reference/configuration-settings.md#build_historylog_retention_days)
+  [`build_history.log_retention_days`](../reference/daemon-settings.md#build_historylog_retention_days)
   in the daemon's configuration change that.

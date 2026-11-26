@@ -1390,12 +1390,10 @@ async fn device_confirmations_revive_nothing_and_only_serve_cli_logins() {
 async fn token_lifetimes_are_bounded_and_legacy_secrets_authenticate() {
     let f = Fixture::new().await;
     let alice = f.identity("alice", &Grants::admin()).await;
-    f.auth.0.store.pin_settings(piqueld_core::SettingsPins {
-        auth: piqueld_core::settings::AuthPins {
-            max_token_days: Some(Some(30)),
-        },
-        ..piqueld_core::SettingsPins::default()
-    });
+    f.auth
+        .0
+        .store
+        .assume_settings(|settings| settings.auth.max_token_days = Some(30));
     let auth = Auth::configured(&f.auth.0.store, ORIGIN, TokenPolicy::default())
         .expect("the auth is configured");
     let token = |days| create_token(developer(), "ci", days);

@@ -144,9 +144,9 @@ impl ControllerHarness {
         }
     }
 
-    /// Pins the daemon settings `config` sets, as the daemon does.
-    fn retain(&self, config: &piqueld_config::DaemonConfig) {
-        self.store.pin_settings(config.pins());
+    /// Changes the daemon settings `change` changes, as the API would.
+    fn retain(&self, change: impl FnOnce(&mut piqueld_core::settings::Settings)) {
+        self.store.assume_settings(change);
     }
 
     /// A controller over this harness's Docker, store and sources.

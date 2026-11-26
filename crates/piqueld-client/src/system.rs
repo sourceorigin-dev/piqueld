@@ -49,7 +49,7 @@ impl Client {
     /// Sets the daemon setting `key` to `value`, which applies at once.
     /// # Errors
     /// Returns transport, decoding or API errors, including
-    /// `setting_unknown`, `setting_pinned` and `setting_invalid`.
+    /// `setting_unknown`, `setting_unavailable` and `setting_invalid`.
     pub async fn put_setting(
         &self,
         key: &str,
@@ -64,7 +64,7 @@ impl Client {
     /// Resets the daemon setting `key` to its default, which applies at once.
     /// # Errors
     /// Returns transport, decoding or API errors, including
-    /// `setting_unknown` and `setting_pinned`.
+    /// `setting_unknown`.
     pub async fn reset_setting(&self, key: &str) -> Result<Setting, ClientError> {
         self.generated.reset_setting(key).data().await
     }

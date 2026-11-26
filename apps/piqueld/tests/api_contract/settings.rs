@@ -2,19 +2,18 @@
 use super::*;
 
 /// A setting changes and resets over the API, and the store applies it at
-/// once; unknown, pinned and out-of-range changes are refused with their
-/// status and code.
+/// once; unknown, unavailable and out-of-range changes are refused with
+/// their status and code.
 #[tokio::test]
-async fn settings_change_and_reset_unless_unknown_pinned_or_out_of_range() {
+async fn settings_change_and_reset_unless_unknown_unavailable_or_out_of_range() {
     let temp = tempfile::tempdir().expect("the temporary directory is created");
     let store = Arc::new(
         Store::open_unsynced(database(&temp))
             .await
             .expect("the store opens"),
     );
-    let mut config = DaemonConfig::default();
-    config.retention.audit_days = Some(30);
-    let (_runtime, state) = contract_state(&temp, Arc::clone(&store), &config).await;
+    let (_runtime, state) =
+        contract_state(&temp, Arc::clone(&store), &DaemonConfig::default()).await;
     let server = Server::tcp(router(state, FakeAuth)).await;
     let client = server.client();
 
@@ -39,12 +38,6 @@ async fn settings_change_and_reset_unless_unknown_pinned_or_out_of_range() {
             "setting_unknown",
         ),
         (
-            "retention.audit_days",
-            serde_json::json!(1),
-            409,
-            "setting_pinned",
-        ),
-        (
             "build.unavailable",
             serde_json::json!("local"),
             409,
@@ -65,5 +58,5 @@ async fn settings_change_and_reset_unless_unknown_pinned_or_out_of_range() {
         );
         assert_eq!((error.status, error.code.as_str()), (status, code), "{key}");
     }
-    assert_eq!(store.settings().retention.audit_days, 30);
+    assert_eq!(store.settings().reconciliation.scan_interval_seconds, 60);
 }

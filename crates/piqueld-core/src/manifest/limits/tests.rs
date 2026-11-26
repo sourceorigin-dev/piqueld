@@ -82,6 +82,6 @@ fn previews_get_default_limits_and_capped_replicas_with_warnings_and_environment
     );
     assert_eq!(
         warnings[2].message,
-        "web asks for 3 replicas; previews run at most 1 ([previews] max_replicas)"
+        "web asks for 3 replicas; previews run at most 1 (previews.max_replicas)"
     );
 }

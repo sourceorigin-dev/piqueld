@@ -174,7 +174,7 @@ impl ApiError {
     /// Maps environment selection and rename failures selected by
     /// `From<StoreError>`, naming the environments in `details`, previews
     /// of applications without a manifest repository, and previews over a
-    /// `[previews]` limit, listing the previews it counts in `details`.
+    /// `previews` limit, listing the previews it counts in `details`.
     ///
     /// Panics if given another variant; callers must pre-filter.
     fn from_environment_error(error: StoreError) -> Self {
@@ -450,14 +450,13 @@ impl From<piqueld_store::DestinationError> for ApiError {
 }
 
 impl From<piqueld_core::settings::SettingError> for ApiError {
-    /// Refuses a setting change: 404 for an unknown setting, 409 for one the
-    /// configuration file pins or this installation lacks what it needs
-    /// for, 422 for a value it doesn't take.
+    /// Refuses a setting change: 404 for an unknown setting, 409 for one
+    /// this installation lacks what it needs for, 422 for a value it
+    /// doesn't take.
     fn from(error: piqueld_core::settings::SettingError) -> Self {
         use piqueld_core::settings::SettingError;
         let (status, code) = match error {
             SettingError::Unknown(_) => (StatusCode::NOT_FOUND, ApiErrorCode::SettingUnknown),
-            SettingError::Pinned(_) => (StatusCode::CONFLICT, ApiErrorCode::SettingPinned),
             SettingError::Unavailable { .. } => {
                 (StatusCode::CONFLICT, ApiErrorCode::SettingUnavailable)
             }

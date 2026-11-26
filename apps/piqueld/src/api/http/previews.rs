@@ -24,7 +24,7 @@ use piqueld_core::{ApplicationId, EnvironmentId, GitBranch, PreviewSlot};
 /// Repeating the request returns the existing preview of that branch and
 /// slot with its latest operation, without redeploying it. Applications
 /// without a manifest repository fail with `preview_requires_repository`.
-/// A new preview beyond a `[previews]` limit fails with 409
+/// A new preview beyond a `previews` limit fails with 409
 /// `preview_limit_reached`, whose `details` are a `PreviewLimitReached`
 /// listing the previews it counts. Needs no application revision.
 #[utoipa::path(post,path="/api/v1/applications/{id}/previews",operation_id="createPreview",
@@ -69,9 +69,9 @@ pub(super) struct GitBundle(std::marker::PhantomData<()>);
 
 /// Deploys a snapshot of a local worktree to a preview.
 ///
-/// The body is a Git bundle of one snapshot commit, at most `[snapshots]
-/// max_upload_bytes`, thin or complete. It is verified and unbundled into a
-/// repository of its own. The preview of `branch` and `slot` is created first if
+/// The body is a Git bundle of one snapshot commit, at most
+/// `snapshots.max_upload_bytes`, thin or complete. It is verified and
+/// unbundled into a repository of its own. The preview of `branch` and `slot` is created first if
 /// needed, as `createPreview` does, and deploys the snapshot's manifest. Fails
 /// with 409 `preview_requires_repository` or `preview_limit_reached`; 413
 /// `snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,
@@ -113,7 +113,7 @@ pub(super) async fn deploy_local(
 /// Lists an application's previews.
 ///
 /// Each preview comes with its status, latest operation, hostnames, origin,
-/// `[previews]` bounds, sync state, and branch state, read with one
+/// `previews` bounds, sync state, and branch state, read with one
 /// `git ls-remote` of the manifest repository.
 /// Repository failures make every branch state `unknown`.
 #[utoipa::path(get,path="/api/v1/applications/{id}/previews",operation_id="listPreviews",

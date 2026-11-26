@@ -260,7 +260,7 @@ impl ApplicationService {
     ///
     /// Checks the generation and identity preconditions when supplied. Renders the
     /// manifest for `environment` (or the only one) at its branch, bounds a preview
-    /// by `[previews]`, plans it against its observation, and diffs it against its
+    /// by `previews`, plans it against its observation, and diffs it against its
     /// latest deployment; with several environments and none given, diffs the saved
     /// manifest only. Lists how saving would change the environments.
     /// # Errors

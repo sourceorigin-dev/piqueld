@@ -172,7 +172,7 @@ async fn ranks_stop_growing_at_their_limit_and_old_counts_are_pruned() {
         .record_traffic(&tally)
         .await
         .expect("the store can record traffic");
-    store.pin(|pins| pins.retention.traffic_days = Some(1));
+    store.assume_settings(|settings| settings.retention.traffic_days = 1);
     store
         .prune_traffic()
         .await

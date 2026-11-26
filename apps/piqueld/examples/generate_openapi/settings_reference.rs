@@ -1,8 +1,7 @@
-//! The settings reference pages, `docs/user/reference/manifest-settings.md`
-//! and `docs/user/reference/configuration-settings.md`, rendered from the
-//! manifest's and the daemon configuration's JSON Schemas: a section per TOML
-//! table, with an entry per setting giving its path, type, whether it is
-//! required or its default, and its description.
+//! The settings reference pages of the manifest, the daemon configuration
+//! and the daemon settings, under `docs/user/reference`, rendered from their
+//! JSON Schemas: a section per table, with an entry per setting giving its
+//! path, type, whether it is required or its default, and its description.
 //!
 //! Settings and tables take their description from their doc comment. A table
 //! keyed by name, such as `environments`, names its key first, as in
@@ -26,6 +25,10 @@ pub(crate) struct SettingsPage {
     title: &'static str,
     /// The introduction, after the title.
     intro: &'static str,
+    /// Whether the settings are a TOML file's, under `[table]` headers;
+    /// otherwise they are only named `section.setting`, with a section per
+    /// top-level table and no top level of their own.
+    toml: bool,
 }
 
 impl SettingsPage {
@@ -59,6 +62,7 @@ it are described under [value types](#value-types), at the end of the page.
 Names, such as those of applications, environments, services, volumes, jobs,
 secrets and routes, are 1 to 63 lowercase letters, digits or hyphens. They
 start with a letter and end with a letter or digit."#,
+        toml: true,
     };
 
     /// Every setting of the daemon's configuration file.
@@ -82,6 +86,26 @@ stands for each entry of an array of tables: `dns.providers[].kind` is the
 `kind` of each `[[dns.providers]]`. Settings ending in `_file` take the path of a
 [credential file](#credential-file): a relative path resolves against
 `$CREDENTIALS_DIRECTORY`.",
+        toml: true,
+    };
+
+    /// Every daemon setting, which the API changes while the daemon runs.
+    pub(crate) const DAEMON: Self = Self {
+        path: "docs/user/reference/daemon-settings.md",
+        source: "the `settings!` declaration in `crates/piqueld-core/src/settings`",
+        title: "Daemon settings",
+        intro: "\
+This page lists every daemon setting, with its type and default. Daemon
+settings are your installation's policy, such as how long history is kept.
+Change them with `piquelctl settings set`, the dashboard's **Settings** page,
+or the API, while the daemon runs; see
+[changing daemon settings](../operations/settings.md). The daemon's
+[configuration file](configuration-settings.md) doesn't set them.
+
+Each setting is named by its key, `section.setting`, as `piquelctl settings`
+names it: `retention.event_days` is the `event_days` setting of the
+`retention` section.",
+        toml: false,
     };
 
     /// Renders the page from `schema`, a standalone JSON Schema (see
@@ -97,6 +121,7 @@ stands for each entry of an array of tables: `dns.providers[].kind` is the
             definitions: &document.definitions,
             page: Page::new(self.source, self.title, self.intro),
             value_types: BTreeMap::new(),
+            toml: self.toml,
         }
         .render(&document.root)
         .with_context(|| format!("render {}", self.path))
@@ -234,6 +259,8 @@ struct Renderer<'a> {
     /// Value types settings link to, by name, described at the end of the
     /// page.
     value_types: BTreeMap<&'a str, &'a Schema>,
+    /// Whether the settings are a TOML file's (see [`SettingsPage`]).
+    toml: bool,
 }
 
 /// A TOML table at `path`, its section on the page.
@@ -315,10 +342,22 @@ impl<'a> Renderer<'a> {
     /// Writes a table's section, then the sections of the tables nested in
     /// it.
     fn section(&mut self, Section { path, table }: Section<'a>) -> Result<()> {
+        if path.is_empty() && !self.toml {
+            let mut settings = table.settings;
+            settings.sort_by(|left, right| left.key.cmp(&right.key));
+            for setting in settings {
+                if let Some(child) = self.child(setting.key.clone(), setting.value)? {
+                    self.section(child)?;
+                }
+            }
+            return Ok(());
+        }
         let heading = if path.is_empty() {
             "Top level".to_owned()
-        } else {
+        } else if self.toml {
             format!("`{}` table", Self::header(&path))
+        } else {
+            format!("`{path}` section")
         };
         let description = table
             .description

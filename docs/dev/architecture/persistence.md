@@ -57,23 +57,21 @@ comment. A type implementing `SettingType` says which values it takes: whole
 numbers, switches or choices. The macro generates:
 
 - the section types the daemon reads, such as `RetentionConfig`, gathered in
-  `Settings`;
-- their `config.toml` form, such as `RetentionPins`, with every field
-  optional, gathered in `SettingsPins`. `piqueld-config` embeds these in
-  `DaemonConfig`, so the file's schema and the
-  [configuration reference](../../user/reference/configuration-settings.md)
-  describe them. `[auth]`, `[build]` and `[ingress]` mix daemon
-  settings with host settings, so their config types spell out
-  `max_token_days`, `unavailable` and `traffic`, which `DaemonConfig::pins`
-  copies;
+  `Settings`, whose schema the
+  [daemon settings reference](../../user/reference/daemon-settings.md) is
+  generated from;
 - `SETTINGS`, one `SettingSpec` per setting, through which the API checks,
   applies and reports a value by key.
 
-`SettingLayers` resolves the effective settings: a value `config.toml` sets
-pins its setting, else the value set through the API applies, else the
-default. The store keeps the values set through the API in `daemon_settings`,
-one JSON value per key, and the layers and effective settings in a watch
-channel. `Store::set_setting` checks `settings:manage`, the pin and the range,
+`config.toml` doesn't set daemon settings: `DaemonConfig::from_toml` refuses a
+file that does, naming the key and the `piquelctl settings set` command that
+changes it now, since a file written for an older version may still set them.
+
+`SettingLayers` resolves the effective settings: the value set through the
+API, else the default. The store keeps the values set through the API in
+`daemon_settings`, one JSON value per key, and the layers and effective
+settings in a watch channel. `Store::set_setting` checks `settings:manage`,
+the requirement and the range,
 writes or deletes the row and its audit record in one transaction, then
 updates the channel while it still holds the writer, so changes apply in the
 order they commit. A stored value this version doesn't take is ignored.

@@ -459,23 +459,20 @@ string_enum! {
         /// 409: previews need an application whose manifest comes from a
         /// repository.
         PreviewRequiresRepository => "preview_requires_repository",
-        /// 409: creating a preview would exceed a `[previews]` count limit;
+        /// 409: creating a preview would exceed a `previews` count limit;
         /// `details` is a `PreviewLimitReached`.
         PreviewLimitReached => "preview_limit_reached",
         /// 404: no daemon setting has this key.
         SettingUnknown => "setting_unknown",
-        /// 409: the daemon's configuration file pins this setting, so only
-        /// the file changes it.
-        SettingPinned => "setting_pinned",
         /// 409: the setting doesn't apply to this installation, which lacks
         /// what it needs, such as a build machine.
         SettingUnavailable => "setting_unavailable",
         /// 422: the value is not one the setting takes; the message says
         /// which it does.
         SettingInvalid => "setting_invalid",
-        /// A preview service runs with a `[previews]` default limit it does not set.
+        /// A preview service runs with a `previews` default limit it does not set.
         PreviewLimitsDefaulted => "preview_limits_defaulted",
-        /// A preview service asks for more replicas than `[previews] max_replicas`.
+        /// A preview service asks for more replicas than `previews.max_replicas`.
         PreviewReplicasCapped => "preview_replicas_capped",
         /// 413: a local snapshot bundle is larger than
         /// the `snapshots.max_upload_bytes` setting, or its tree than

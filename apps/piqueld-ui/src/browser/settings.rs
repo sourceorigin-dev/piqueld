@@ -1,6 +1,5 @@
 //! `/settings` page: the daemon settings, each changed in its own field and
-//! applied at once unless the configuration file pins it, then the host's
-//! settings, read-only.
+//! applied at once, then the host's settings, read-only.
 use super::observability::Refresh;
 use super::ui::{Icon, PageHeader, Tone, focus, icon, key_values, loading, notice, prose};
 use super::{ClientErrorExt, UserError, access::can, confirm, live_row};
@@ -49,7 +48,7 @@ pub(super) fn SettingsPage() -> impl IntoView {
     view! {
         <PageHeader
             title="Settings"
-            description="Daemon settings apply as soon as they are saved, unless the daemon's configuration file sets them."
+            description="Daemon settings apply as soon as they are saved."
         />
         {status}
         <div class="stack">
@@ -123,11 +122,14 @@ fn sections(settings: Vec<Setting>) -> Vec<(String, Vec<Setting>)> {
 }
 
 /// A setting's value as people read it: `No limit` for `null`, `On` or
-/// `Off` for a switch, and sizes in bytes with their binary-prefixed size,
-/// such as `4294967296 (4.0 GiB)`.
+/// `Off` for a switch, `0 (forever)` for one that keeps history, and sizes
+/// in bytes with their binary-prefixed size, such as `4294967296 (4.0 GiB)`.
 fn display(setting: &Setting, value: &Value) -> String {
     match value {
         Value::Null => "No limit".into(),
+        Value::Number(number) if setting.prunes && number.as_u64() == Some(0) => {
+            "0 (forever)".into()
+        }
         Value::Bool(true) => "On".into(),
         Value::Bool(false) => "Off".into(),
         Value::String(choice) => choice.clone(),
@@ -163,9 +165,8 @@ struct Field {
     refresh: Refresh,
     /// Whether the account may change settings.
     manage: Signal<bool>,
-    /// Whether the field takes changes: the account may make them, the
-    /// configuration file doesn't pin the setting, and the installation has
-    /// what it needs.
+    /// Whether the field takes changes: the account may make them, and the
+    /// installation has what the setting needs.
     editable: Memo<bool>,
     /// What the field shows: the setting's value, until typed over.
     draft: RwSignal<String>,
@@ -191,9 +192,8 @@ impl Field {
         let draft = RwSignal::new(text(&initial.value));
         let live = live_row(settings, initial, |setting| &setting.key);
         let setting = Memo::new(move |_| live.get());
-        let editable = Memo::new(move |_| {
-            manage.get() && setting.with(|setting| !setting.pinned() && setting.needs.is_none())
-        });
+        let editable =
+            Memo::new(move |_| manage.get() && setting.with(|setting| setting.needs.is_none()));
         let saving = RwSignal::new(false);
         let unsaved = Memo::new(move |_| {
             !saving.get()
@@ -335,6 +335,9 @@ impl Field {
     /// Saves what the field shows, when it differs from the setting's
     /// value.
     fn save(self) {
+        if self.saving.get_untracked() {
+            return;
+        }
         let value = match self.typed() {
             Ok(value) => value,
             Err(refused) => {
@@ -372,8 +375,10 @@ impl Field {
         })
     }
 
-    /// Resets the setting to its default; the note then says what it was.
-    fn reset(self) {
+    /// Resets the setting to its default, once confirmed if it keeps less
+    /// history; the note then says what it was. Pressed with the keyboard,
+    /// `click` gives the field the focus, as the button goes away.
+    fn reset(self, click: &web_sys::MouseEvent) {
         if !self.confirmed(
             &self
                 .setting
@@ -381,6 +386,7 @@ impl Field {
         ) {
             return;
         }
+        self.focus(click);
         let (key, was) = self
             .setting
             .with_untracked(|setting| (setting.key.clone(), display(setting, &setting.value)));
@@ -467,10 +473,7 @@ impl Field {
                         || self.unsaved.get()
                         || self.setting.with(|setting| setting.source != SettingSource::Changed)
                 }}
-                on:click={move |click| {
-                    self.focus(&click);
-                    self.reset();
-                }}
+                on:click={move |click| self.reset(&click)}
             >
                 {icon(Icon::Restore)}
             </button>
@@ -537,9 +540,7 @@ impl Field {
             }
             self.setting
                 .with(|setting| {
-                    if setting.pinned() {
-                        Some("Set in the configuration file".to_owned())
-                    } else if let Some(needs) = &setting.needs {
+                    if let Some(needs) = &setting.needs {
                         Some(format!("Applies only with {needs}"))
                     } else if setting.source == SettingSource::Changed {
                         Some(format!("Default: {}", display(setting, &setting.default)))

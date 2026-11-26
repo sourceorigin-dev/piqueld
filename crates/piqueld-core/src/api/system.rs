@@ -24,7 +24,7 @@ pub struct SystemStatus {
     /// DNS providers and the certificates issued through them with DNS-01.
     #[serde(default)]
     pub dns: DnsStatus,
-    /// Previews against the `[previews]` limits; absent when they could not
+    /// Previews against the `previews` limits; absent when they could not
     /// be counted.
     #[serde(default)]
     pub previews: Option<PreviewUsage>,
@@ -148,8 +148,7 @@ pub struct RegistryImageStatus {
 }
 
 /// The daemon's settings: the host's, which only its configuration file
-/// changes, and the daemon settings, which the API changes unless the file
-/// pins them.
+/// changes, and the daemon settings, which the API changes.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct HostConfiguration {
     /// The host's settings, read-only, grouped by section, such as `Server`
@@ -161,12 +160,10 @@ pub struct HostConfiguration {
 }
 
 /// A daemon setting: installation policy, such as how long history is kept,
-/// which `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets,
-/// unless the configuration file pins it.
+/// which `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct Setting {
-    /// Its key, `section.field`, which is also its path in the
-    /// configuration file, such as `retention.event_days`.
+    /// Its key, `section.field`, such as `retention.event_days`.
     pub key: String,
     /// The title of its section, such as `History`.
     pub section: String,
@@ -176,7 +173,7 @@ pub struct Setting {
     pub description: String,
     /// Its effective value.
     pub value: serde_json::Value,
-    /// Its value when neither set nor pinned.
+    /// Its value until it is changed.
     pub default: serde_json::Value,
     /// Where `value` comes from.
     pub source: SettingSource,
@@ -193,12 +190,6 @@ pub struct Setting {
 }
 
 impl Setting {
-    /// Whether the configuration file pins it, so the API can't change it.
-    #[must_use]
-    pub fn pinned(&self) -> bool {
-        self.source == SettingSource::Configuration
-    }
-
     /// Whether changing it to `value` keeps less history than it does now,
     /// which deletes the rest for good.
     #[must_use]
@@ -219,8 +210,6 @@ pub enum SettingSource {
     Default,
     /// Changed through the API, `piquelctl settings set` or the dashboard.
     Changed,
-    /// Pinned by the daemon's configuration file, which alone changes it.
-    Configuration,
 }
 
 impl SettingSource {
@@ -230,7 +219,6 @@ impl SettingSource {
         match self {
             Self::Default => "default",
             Self::Changed => "changed",
-            Self::Configuration => "configuration file",
         }
     }
 }

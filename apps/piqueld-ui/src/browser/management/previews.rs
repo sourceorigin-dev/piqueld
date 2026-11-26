@@ -123,7 +123,7 @@ fn local_command(preview: &EnvironmentView) -> String {
     )
 }
 
-/// Badge for a preview whose deployed target `[previews]` bounded, with how
+/// Badge for a preview whose deployed target `previews` bounded, with how
 /// in its title: services given default limits or fewer replicas.
 fn bounds_badge(bounds: &[DiagnosticView]) -> Option<AnyView> {
     (!bounds.is_empty()).then(|| {
@@ -136,7 +136,7 @@ fn bounds_badge(bounds: &[DiagnosticView]) -> Option<AnyView> {
     })
 }
 
-/// Lists how `[previews]` bounded a preview's deployed target.
+/// Lists how `previews` bounded a preview's deployed target.
 fn bounds(bounds: Vec<DiagnosticView>) -> AnyView {
     if bounds.is_empty() {
         return view! { <span class="muted">"None"</span> }.into_any();
@@ -451,7 +451,7 @@ pub(super) fn PreviewActions() -> impl IntoView {
 }
 
 /// A preview's branch, slot, slug, and ID, with its branch state,
-/// `[previews]` bounds and sync state read when the page opens and on
+/// `previews` bounds and sync state read when the page opens and on
 /// refresh. Its URLs are in the runtime overview, as for environments.
 #[component]
 pub(super) fn PreviewSettings() -> impl IntoView {

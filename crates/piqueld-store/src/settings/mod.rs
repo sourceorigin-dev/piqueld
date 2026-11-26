@@ -4,7 +4,7 @@
 use crate::{Author, Store, StoreError};
 use piqueld_core::access::{GlobalPermission, Permission};
 use piqueld_core::api::Setting;
-use piqueld_core::settings::{Requirement, SettingLayers, SettingSpec, Settings, SettingsPins};
+use piqueld_core::settings::{Requirement, SettingLayers, SettingSpec, Settings};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,12 +31,6 @@ impl SettingsState {
     #[must_use]
     pub const fn effective(&self) -> &Settings {
         &self.effective
-    }
-
-    /// The settings `config.toml` pins.
-    #[must_use]
-    pub const fn pins(&self) -> &SettingsPins {
-        &self.layers.pins
     }
 
     /// Changes `layers`, then resolves them again.
@@ -68,17 +62,30 @@ impl Store {
             }
         }
         Ok(SettingsState::new(SettingLayers {
-            pins: SettingsPins::default(),
             stored,
             met: BTreeSet::new(),
         }))
     }
 
-    /// Pins the settings `config.toml` sets, which the API then refuses to
-    /// change. The daemon calls it once, at startup.
-    pub fn pin_settings(&self, pins: SettingsPins) {
-        self.settings
-            .send_modify(|state| state.change(|layers| layers.pins = pins));
+    /// Changes the settings `change` changes, in memory only, as though
+    /// set through the API, so they apply at once. For tests, which skip
+    /// the request, its permission check and its audit record.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn assume_settings(&self, change: impl FnOnce(&mut Settings)) {
+        self.settings.send_modify(|state| {
+            state.change(|layers| {
+                let before = layers.effective();
+                let mut after = before.clone();
+                change(&mut after);
+                for spec in piqueld_core::settings::SETTINGS {
+                    let value = spec.value_in(&after);
+                    debug_assert!(spec.check(&value).is_ok(), "{}: {value}", spec.key);
+                    if value != spec.value_in(&before) {
+                        layers.stored.insert(spec.key.to_owned(), value);
+                    }
+                }
+            });
+        });
     }
 
     /// Records what the installation offers the settings that need it, such
@@ -116,8 +123,8 @@ impl Store {
     /// concurrent changes apply in the order they commit.
     ///
     /// # Errors
-    /// Refusal, an unknown or pinned setting, a value it doesn't take, or
-    /// storage errors.
+    /// Refusal, an unknown setting, a value it doesn't take or one that
+    /// doesn't apply here, or storage errors.
     pub async fn set_setting(
         &self,
         author: impl Into<Author<'_>>,

@@ -811,7 +811,7 @@ piquelctl resources [OPTIONS]
 
 Show and change the daemon's settings.
 
-Daemon settings, such as how long history is kept or how many previews may exist, change at once with `settings set`, unless the daemon's configuration file pins them. The host's settings, such as its listeners, only change in that file, with a restart. `settings` alone lists them all.
+Daemon settings, such as how long history is kept or how many previews may exist, change at once with `settings set`. The host's settings, such as its listeners, only change in the daemon's configuration file, with a restart. `settings` alone lists them all.
 
 ```text
 piquelctl settings [OPTIONS] [COMMAND]
@@ -819,14 +819,14 @@ piquelctl settings [OPTIONS] [COMMAND]
 
 Commands:
 
-- [`piquelctl settings list`](#piquelctl-settings-list): List the host's settings, read-only, and every daemon setting with its value and where it comes from: its default, set with `settings set`, or pinned by the daemon's configuration file.
+- [`piquelctl settings list`](#piquelctl-settings-list): List the host's settings, read-only, and every daemon setting with its value and where it comes from: its default, or set with `settings set`.
 - [`piquelctl settings get`](#piquelctl-settings-get): Show one daemon setting: its value, default, range and what it does.
 - [`piquelctl settings set`](#piquelctl-settings-set): Change a daemon setting. It applies at once, without a restart, and the change is recorded in the audit trail.
 - [`piquelctl settings reset`](#piquelctl-settings-reset): Reset a daemon setting to its default, at once.
 
 ## `piquelctl settings list`
 
-List the host's settings, read-only, and every daemon setting with its value and where it comes from: its default, set with `settings set`, or pinned by the daemon's configuration file.
+List the host's settings, read-only, and every daemon setting with its value and where it comes from: its default, or set with `settings set`.
 
 Needs `system:read`. It is what `settings` alone shows.
 
@@ -852,7 +852,7 @@ Arguments:
 
 Change a daemon setting. It applies at once, without a restart, and the change is recorded in the audit trail.
 
-A setting the daemon's configuration file sets is pinned: only the file changes it. One that needs what the installation lacks, such as `build.unavailable` without a build machine, can't be changed. Needs `settings:manage`.
+A setting that needs what the installation lacks, such as `build.unavailable` without a build machine, can't be changed. Needs `settings:manage`.
 
 ```text
 piquelctl settings set [OPTIONS] <KEY> <VALUE>
@@ -867,7 +867,7 @@ Arguments:
 
 Reset a daemon setting to its default, at once.
 
-Needs `settings:manage`, and fails for a pinned setting like `set`.
+Needs `settings:manage`.
 
 ```text
 piquelctl settings reset [OPTIONS] <KEY>

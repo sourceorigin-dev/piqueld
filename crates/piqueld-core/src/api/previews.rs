@@ -1,4 +1,4 @@
-//! Previews of branches, and their `[previews]` limits.
+//! Previews of branches, and their `previews` limits.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -99,7 +99,7 @@ pub struct PreviewView {
     /// a local snapshot it runs.
     #[serde(default)]
     pub origin: DeploymentOrigin,
-    /// How `[previews]` bounded its deployed target: services that run with
+    /// How `previews` bounded its deployed target: services that run with
     /// default limits or fewer replicas than their manifest asks for.
     #[serde(default)]
     pub bounds: Vec<DiagnosticView>,
@@ -126,7 +126,7 @@ pub struct DeletedPreview {
     pub operation: AcceptedOperation,
 }
 
-/// A `[previews]` count limit.
+/// A `previews` count limit.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PreviewLimit {
@@ -160,7 +160,7 @@ pub struct PreviewLimitReached {
     pub previews: Vec<CountedPreview>,
 }
 
-/// A preview counted against a `[previews]` limit.
+/// A preview counted against a `previews` limit.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CountedPreview {
     /// Stable preview identifier.
@@ -184,7 +184,7 @@ pub struct LastDeployment {
     pub created_at_ms: i64,
 }
 
-/// Previews against the daemon's `[previews]` limits.
+/// Previews against the daemon's `previews` limits.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
 pub struct PreviewUsage {
     /// The configured limits.

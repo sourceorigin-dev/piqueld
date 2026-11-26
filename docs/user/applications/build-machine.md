@@ -277,8 +277,8 @@ piquelctl settings set build.unavailable local
 
 It applies to the next build, without a restart; set it back to `fail` once
 the build machine is back. `build.unavailable` is a
-[daemon setting](../operations/settings.md), which the configuration file can
-pin instead.
+[daemon setting](../operations/settings.md), which the configuration file
+doesn't set.
 
 A restore whose image the host no longer has pulls it from the build registry,
 so it needs the registry to be reachable, wherever it runs.

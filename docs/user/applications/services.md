@@ -409,7 +409,7 @@ health check.
   can't.
   Give a slow service a longer `start_period_seconds` so it isn't restarted
   while it starts, and raise
-  [`reconciliation.convergence_timeout_seconds`](../reference/configuration-settings.md#reconciliationconvergence_timeout_seconds),
+  [`reconciliation.convergence_timeout_seconds`](../reference/daemon-settings.md#reconciliationconvergence_timeout_seconds),
   in the daemon's configuration, if it needs more than that.
 - **Validation fails with `service_dependency_cycle`.** Two services depend on
   each other, directly or through others. Remove one of the dependencies.

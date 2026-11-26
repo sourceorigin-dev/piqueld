@@ -358,10 +358,10 @@ async fn history_passes_remove_versions_no_deployment_pins_from_docker_then_the_
 #[tokio::test]
 async fn pruned_deployments_release_old_versions_unless_a_service_still_mounts_them() {
     let harness = ControllerHarness::new().await;
-    let mut config = piqueld_config::DaemonConfig::default();
-    config.retention.deployments_per_environment = Some(1);
-    config.images.keep_deployments = Some(1);
-    harness.retain(&config);
+    harness.retain(|settings| {
+        settings.retention.deployments_per_environment = 1;
+        settings.images.keep_deployments = 1;
+    });
     let rotation = Rotation::new(&harness).await;
     let Rotation {
         environment, old, ..

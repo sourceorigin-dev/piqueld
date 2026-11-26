@@ -583,7 +583,7 @@ fn certificates_row(certificates: &[CertificateStatus]) -> Option<AnyView> {
     ))
 }
 
-/// Row for previews against their `[previews]` limits: the installation's
+/// Row for previews against their `previews` limits: the installation's
 /// count in a line, and on demand each readable application's and the limits
 /// of their replicas. A count at its limit refuses new previews; one over it,
 /// after the limit was lowered, keeps its existing previews running.

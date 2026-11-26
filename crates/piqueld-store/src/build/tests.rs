@@ -30,9 +30,9 @@ impl Fixture {
         let store = Store::open_unsynced(temp.path().join("state.db"))
             .await
             .expect("open unsynced succeeds");
-        store.pin(|pins| {
-            pins.build_history.log_max_bytes = Some(CAP);
-            pins.build_history.log_retention_days = Some(1);
+        store.assume_settings(|settings| {
+            settings.build_history.log_max_bytes = CAP;
+            settings.build_history.log_retention_days = 1;
         });
         let app = crate::testing::prebuilt("app-build-test");
         let operation = store

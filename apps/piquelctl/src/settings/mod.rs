@@ -1,6 +1,6 @@
 //! `settings`: the daemon's settings. Daemon settings, such as how long
-//! history is kept, change while it runs, unless its configuration file pins
-//! them; the host's settings only change in that file.
+//! history is kept, change while it runs; the host's settings only change
+//! in its configuration file.
 use crate::{
     error::{CliError, ErrorKind, Result},
     output::{Console, reports::report},
@@ -11,8 +11,8 @@ use piqueld_client::{Client, system::Setting};
 #[derive(Debug, Subcommand)]
 pub(crate) enum SettingsCommand {
     /// List the host's settings, read-only, and every daemon setting with its
-    /// value and where it comes from: its default, set with `settings set`,
-    /// or pinned by the daemon's configuration file.
+    /// value and where it comes from: its default, or set with `settings
+    /// set`.
     ///
     /// Needs `system:read`. It is what `settings` alone shows.
     List,
@@ -27,8 +27,7 @@ pub(crate) enum SettingsCommand {
     /// Change a daemon setting. It applies at once, without a restart, and
     /// the change is recorded in the audit trail.
     ///
-    /// A setting the daemon's configuration file sets is pinned: only the
-    /// file changes it. One that needs what the installation lacks, such as
+    /// A setting that needs what the installation lacks, such as
     /// `build.unavailable` without a build machine, can't be changed. Needs
     /// `settings:manage`.
     Set {
@@ -41,7 +40,7 @@ pub(crate) enum SettingsCommand {
     },
     /// Reset a daemon setting to its default, at once.
     ///
-    /// Needs `settings:manage`, and fails for a pinned setting like `set`.
+    /// Needs `settings:manage`.
     Reset {
         /// The setting's key, such as `retention.event_days`.
         key: String,

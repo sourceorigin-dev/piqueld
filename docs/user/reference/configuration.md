@@ -10,12 +10,13 @@ piqueld --config /path/to/config.toml
 [Daemon configuration settings](configuration-settings.md) lists every
 setting with its type and default.
 
-Some sections hold daemon settings, the installation's policy, such as
-`[retention]` and `[previews]`: these change at once from the dashboard or
-`piquelctl settings`, without a restart (see
-[changing daemon settings](../operations/settings.md)). One set in this file
-is pinned to its value, which only the file changes. Leave them out to manage
-them from the dashboard.
+Daemon settings, the installation's policy, such as how long history is kept
+and how many previews may exist, aren't set in this file: change them from the
+dashboard or `piquelctl settings`, without a restart (see
+[changing daemon settings](../operations/settings.md)).
+[Daemon settings](daemon-settings.md) lists them. The daemon refuses to start
+with a file that sets one, such as a file written for an older version, and
+names the command that changes it now.
 
 Check a file without starting the daemon:
 
@@ -128,21 +129,14 @@ socket serves the API alone.
 
 ## Previews
 
-`[previews]` bounds what [previews](manifest.md#previews), often
-created by agents, may use on the node that also runs production:
+The [`previews` daemon settings](daemon-settings.md#previews-section) bound
+what [previews](manifest.md#previews), often created by agents, may use on
+the node that also runs production. The dashboard or `piquelctl settings`
+changes them without a restart:
 
-```toml
-[previews]
-max_per_application = 10
-max_total = 30
-default_cpu_millis = 500
-default_memory_bytes = 536870912
-max_replicas = 1
+```console
+piquelctl settings set previews.max_total 50
 ```
-
-These are [daemon settings](../operations/settings.md): the dashboard or
-`piquelctl settings set previews.max_total 50` changes them without a
-restart, unless this file sets them.
 
 Creating a preview that would take its application's previews past
 `max_per_application`, or the installation's past `max_total`, fails with
@@ -169,51 +163,36 @@ next deployment; until then, previews deployed before the limits existed run
 without them, which status reports as unlimited replicas. Previews are never deleted automatically.
 
 
-`[build_history]` bounds persisted build output: `log_max_bytes` defaults to
-4194304 (maximum 64 MiB), and `log_retention_days` to 30 (1–3650). Build metadata
-remains until its deployment is pruned from
-[deployment history](../operations/history.md#how-long-history-is-kept) and its
-output has expired. Expiration removes output chunks while
-retaining the attempt and an explicit expired indicator.
+The `build_history` daemon settings bound persisted build output:
+`log_max_bytes` defaults to 4194304 (maximum 64 MiB), and `log_retention_days`
+to 30 (1–3650). Build metadata remains until its deployment is pruned from
+[deployment history](../operations/history.md#how-long-history-is-kept) and
+its output has expired. Expiration removes output chunks while retaining the
+attempt and an explicit expired indicator.
 
-`[images]` controls cleanup of the images this installation builds. It keeps
-what every environment and preview runs or is deploying, plus each
-environment's last `keep_deployments` successful deployments, so their releases
-can be promoted again, and removes the rest one by one, by ID. Images other installations
-built on the same Docker Engine, images built by hand, and pulled registry
-images are never removed. Builds on the host are tagged
-`piqueld-build/<instance>:<image ID>`, where `<instance>` is the installation's
-ID that `piquelctl status` prints, so `docker image prune` leaves them. Images
-from a [build machine](#build-machine) have no tag: on Docker's legacy image
-store, `docker image prune` may remove them, and piqueld then pulls them again
-from the registry when a restore or rollback needs them.
+The `images` daemon settings control cleanup of the images this installation
+builds. It keeps what every environment and preview runs or is deploying, plus
+each environment's last `keep_deployments` successful deployments, so their
+releases can be promoted again, and removes the rest one by one, by ID. Images
+other installations built on the same Docker Engine, images built by hand, and
+pulled registry images are never removed. Builds on the host are tagged
+`piqueld-build/<instance>:<image ID>`, where `<instance>` is the
+installation's ID that `piquelctl status` prints, so `docker image prune`
+leaves them. Images from a [build machine](#build-machine) have no tag: on
+Docker's legacy image store, `docker image prune` may remove them, and piqueld
+then pulls them again from the registry when a restore or rollback needs them.
 `docker image prune --all` removes any image no container uses, and restoring
 or rolling back to a build from the host then fails with `image_unavailable`.
 Images built on the host before piqueld tagged builds stay untagged, so
 `docker image prune` can still remove them until `keep_deployments` newer
 deployments replace them. With a build machine, cleanup also deletes images
-from the build registry; see [cleaning up the registry](#cleaning-up-the-registry).
-See
-[image retention](../../dev/architecture/docker-reconciliation.md#image-retention).
-
-```toml
-[images]
-keep_deployments = 3
-registry_keep_deployments = 10
-cleanup_interval_seconds = 3600
-```
+from the build registry; see [cleaning up the
+registry](#cleaning-up-the-registry). See [image
+retention](../../dev/architecture/docker-reconciliation.md#image-retention).
 
 ## Local snapshots
 
-`[snapshots]` bounds the snapshots of local worktrees that
-`piquelctl preview deploy --local` uploads:
-
-```toml
-[snapshots]
-max_upload_bytes = 268435456
-```
-
-`max_upload_bytes`, at least 1, bounds the Git bundle `piquelctl preview deploy --local`
+The `snapshots.max_upload_bytes` daemon setting, at least 1, bounds the Git bundle `piquelctl preview deploy --local`
 uploads, which is streamed to `<data_dir>/snapshots` and refused with 413
 `snapshot_too_large` once it exceeds the limit. It is separate from the 2 MiB
 limit of other request bodies. Bundles are usually thin, carrying only what
@@ -221,8 +200,8 @@ the application's repository lacks, so the limit mostly matters for branches
 whose history the repository does not have. `<data_dir>/snapshots` keeps only
 the snapshots previews' latest deployments use; the others are removed on the
 next full reconciliation scan. It need not be backed up. It is a section of its
-own, rather than part of `[previews]`, because the API reports the
-`[previews]` limits and older clients reject fields they don't know.
+own, rather than part of `previews`, because the API reports the
+`previews` limits and older clients reject fields they don't know.
 
 A bundle is kept as uploaded, so receiving one takes about as much disk as the
 upload, and every allocation Git makes for it is capped at 1 GiB, so a small
@@ -281,10 +260,9 @@ builder = "tcp://build.example.ts.net:1234"
 repository = "registry.example.ts.net:5000/piqueld"
 ```
 
-`unavailable`, what a deployment that has to build does while the build
-machine can't be reached, is a [daemon setting](../operations/settings.md),
-`build.unavailable`: `fail` by default, or `local`. It applies only with a
-build machine.
+What a deployment that has to build does while the build machine can't be
+reached is the [`build.unavailable` daemon setting](daemon-settings.md#buildunavailable):
+`fail` by default, or `local`. It applies only with a build machine.
 
 Set `builder` and `repository` together, or neither. The host still checks repositories out, so Git
 credentials stay there, and sends each build's files to the build machine.
@@ -348,13 +326,7 @@ pushed that no deployment keeps there. The registry keeps what every
 environment and preview runs or is deploying, plus each environment's last
 `images.registry_keep_deployments` successful deployments, 10 by default and
 never fewer than `images.keep_deployments`. It also keeps every image the
-host still has, which a deployment may reuse:
-
-```toml
-[images]
-keep_deployments = 3
-registry_keep_deployments = 10
-```
+host still has, which a deployment may reuse.
 
 The registry usually has the larger disk, so it can keep more than the host.
 A restore of a deployment whose image the host no longer has pulls it from
@@ -542,14 +514,14 @@ otherwise. Remote passkey login requires HTTPS even over Tailscale. See
 [invitations](../accounts/accounts.md#invite-someone), and
 [credential lifetimes](../accounts/cli-and-tokens.md#how-long-credentials-last).
 
-`auth.max_token_days` limits the lifetime of new API tokens. Unset (the default)
-allows any lifetime, including tokens that never expire; with a limit, tokens must
-expire within it. Existing tokens are unaffected. See
+The [`auth.max_token_days` daemon setting](daemon-settings.md#authmax_token_days)
+limits the lifetime of new API tokens. Unset (the default) allows any lifetime,
+including tokens that never expire; with a limit, tokens must expire within
+it. Existing tokens are unaffected. See
 [API tokens](../accounts/cli-and-tokens.md#create-an-api-token).
 
-```toml
-[auth]
-max_token_days = 90
+```console
+piquelctl settings set auth.max_token_days 90
 ```
 
 ## Credential files

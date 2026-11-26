@@ -1,4 +1,4 @@
-//! How the installation-wide preview limits, the daemon's `[previews]`
+//! How the installation-wide preview limits, the daemon's `previews`
 //! settings, bound what a preview deploys.
 
 use super::{NormalizedApplication, ValidatedResourceLimits};
@@ -45,7 +45,7 @@ impl PreviewLimits {
                 warnings.push(warning(
                     ApiErrorCode::PreviewLimitsDefaulted,
                     format!(
-                        "{} runs with the [previews] default of {}, since its manifest sets no limit",
+                        "{} runs with the previews default of {}, since its manifest sets no limit",
                         service.name,
                         defaulted.join(" and ")
                     ),
@@ -55,7 +55,7 @@ impl PreviewLimits {
                 warnings.push(warning(
                     ApiErrorCode::PreviewReplicasCapped,
                     format!(
-                        "{} asks for {} replicas; previews run at most {} ([previews] max_replicas)",
+                        "{} asks for {} replicas; previews run at most {} (previews.max_replicas)",
                         service.name, service.replicas, self.max_replicas
                     ),
                 ));

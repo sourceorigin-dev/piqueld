@@ -61,14 +61,14 @@ Set `services.piqueld.checkConfig = false;` when the package cannot run on the
 build machine, such as when cross-compiling.
 
 [Daemon settings](../operations/settings.md), such as
-`settings.retention.event_days` or `settings.previews.max_total`, default to
-`null`. Left unset, they keep their daemon default and change from the
-dashboard or `piquelctl settings`. Set one, and it is pinned to that value,
-which only a new generation changes:
-
-```nix
-services.piqueld.settings.retention.audit_days = 730;
-```
+`retention.event_days`, aren't module options: change them from the
+dashboard or `piquelctl settings`, which keep them in the daemon's database
+across generations. A configuration that still sets one, such as
+`services.piqueld.settings.retention.audit_days`, fails to build, saying
+which: remove it, and set the value with `piquelctl settings set` instead.
+The first start without it prunes history with the defaults, so what only a
+value that kept more kept is deleted for good; see
+[upgrading from a configuration that sets them](../operations/settings.md#upgrade-from-a-configuration-file-that-sets-them).
 
 `dataDir` defaults to `/var/lib/piqueld`, with mode `0700`, holding `piqueld.db`.
 The daemon keeps the backups it takes before an upgrade in its `backups`

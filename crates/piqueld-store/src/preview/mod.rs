@@ -2,7 +2,7 @@
 //! Their lifecycle never needs or advances the application revision, since
 //! they select no `[spec.environments.<name>]` block; creation is idempotent
 //! through the `preview_key` unique index instead, and bounded by the
-//! `[previews]` counts checked in the creating transaction.
+//! `previews` counts checked in the creating transaction.
 use super::{
     ApplicationState, Operation, ResolvedApplication, Store, StoreError, StoredApplication,
     StoredEnvironment, now_ms,
@@ -20,7 +20,7 @@ use piqueld_core::{
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 impl Store {
-    /// The `[previews]` limits that preview creation and rendering apply now.
+    /// The `previews` limits that preview creation and rendering apply now.
     #[must_use]
     pub fn preview_limits(&self) -> PreviewLimits {
         self.settings().previews
@@ -323,7 +323,7 @@ impl Store {
         .map_err(StoreError::database)
     }
 
-    /// How `[previews]` bounded a preview's current target: the default
+    /// How `previews` bounded a preview's current target: the default
     /// limit and replica cap warnings of the deployment it promoted last.
     ///
     /// # Errors
@@ -357,7 +357,7 @@ impl Store {
             .collect())
     }
 
-    /// Previews against the `[previews]` limits: the installation's count
+    /// Previews against the `previews` limits: the installation's count
     /// and the CPU and memory limits of their deployed replicas, and the
     /// count of each `readable` application with previews. Previews being
     /// deleted count until they are gone, as when creating one. Replicas

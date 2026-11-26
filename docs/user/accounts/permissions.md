@@ -123,7 +123,7 @@ These permissions always apply to the whole installation.
 | `accounts:manage` | Managing other accounts and invitations; see [who may manage accounts](#who-may-manage-accounts) |
 | `audit:read` | Reading every account's [audit trail](../operations/audit.md), and verifying its integrity. Everyone reads their own |
 | `telemetry:grant` | Granting and revoking an environment's [telemetry](#telemetry) |
-| `settings:manage` | Changing and resetting [daemon settings](../operations/settings.md), such as how long history and the audit trail are kept, except those the configuration file pins. Granting it needs a recent passkey sign-in |
+| `settings:manage` | Changing and resetting [daemon settings](../operations/settings.md), such as how long history and the audit trail are kept. Granting it needs a recent passkey sign-in |
 | `notifications:manage` | Creating, changing, testing and deleting [notification destinations](../operations/notifications.md). A destination can select any application, so this reveals every application's notifications |
 
 Every signed-in account may read the daemon's status and readiness, and the

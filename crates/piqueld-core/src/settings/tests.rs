@@ -117,18 +117,12 @@ fn a_setting_needing_a_build_machine_applies_only_with_one() {
     assert_eq!(layers.view(unavailable).needs, None);
 }
 
+/// A stored value applies when the setting takes it; otherwise, as for a
+/// value a newer version stored, the setting keeps its default.
 #[test]
-fn a_pin_beats_a_stored_value_which_beats_the_default() {
+fn a_stored_value_beats_the_default_when_the_setting_takes_it() {
     let layers = SettingLayers {
-        pins: SettingsPins {
-            retention: RetentionPins {
-                event_days: Some(7),
-                ..RetentionPins::default()
-            },
-            ..SettingsPins::default()
-        },
         stored: BTreeMap::from([
-            ("retention.event_days".into(), json!(30)),
             ("retention.audit_days".into(), json!(30)),
             ("reconciliation.scan_interval_seconds".into(), json!(0)),
             ("unknown.setting".into(), json!(1)),
@@ -136,30 +130,16 @@ fn a_pin_beats_a_stored_value_which_beats_the_default() {
         met: BTreeSet::new(),
     };
     let settings = layers.effective();
-    assert_eq!(settings.retention.event_days, 7);
     assert_eq!(settings.retention.audit_days, 30);
     assert_eq!(settings.reconciliation.scan_interval_seconds, 60);
     let sources: Vec<_> = [
-        "retention.event_days",
         "retention.audit_days",
         "reconciliation.scan_interval_seconds",
     ]
     .map(|key| layers.view(setting(key)).source)
     .into();
-    assert_eq!(
-        sources,
-        [
-            SettingSource::Configuration,
-            SettingSource::Changed,
-            SettingSource::Default
-        ]
-    );
+    assert_eq!(sources, [SettingSource::Changed, SettingSource::Default]);
 
-    let pinned = setting("retention.event_days");
-    assert_eq!(
-        layers.check(pinned, None),
-        Err(SettingError::Pinned("retention.event_days"))
-    );
     let tokens = setting("auth.max_token_days");
     layers
         .check(tokens, Some(&Value::Null))

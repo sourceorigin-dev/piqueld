@@ -1,6 +1,6 @@
 //! Retention: which deployments keep their images when cleanup runs, and
-//! whether a release's images are still present. The `[retention]`,
-//! `[build_history]` and `[images]` settings live in [`crate::settings`].
+//! whether a release's images are still present. The `retention`,
+//! `build_history` and `images` settings live in [`crate::settings`].
 
 use crate::{
     ApiErrorCode, BuiltImage, DiagnosticSeverity, ImmutableImage, PlanDiagnostic, RepositoryDigest,

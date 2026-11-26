@@ -379,10 +379,9 @@ pub(crate) enum Command {
     /// Show and change the daemon's settings.
     ///
     /// Daemon settings, such as how long history is kept or how many
-    /// previews may exist, change at once with `settings set`, unless the
-    /// daemon's configuration file pins them. The host's settings, such as
-    /// its listeners, only change in that file, with a restart. `settings`
-    /// alone lists them all.
+    /// previews may exist, change at once with `settings set`. The host's
+    /// settings, such as its listeners, only change in the daemon's
+    /// configuration file, with a restart. `settings` alone lists them all.
     Settings {
         #[command(subcommand)]
         command: Option<crate::settings::SettingsCommand>,

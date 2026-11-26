@@ -81,8 +81,8 @@ impl ApplicationService {
     /// Sets the daemon setting `key` to `value`, or resets it to its default
     /// when `None`; it applies at once (see `Store::set_setting`).
     /// # Errors
-    /// Refusal, an unknown or pinned setting, a value it doesn't take, or
-    /// storage errors.
+    /// Refusal, an unknown setting, a value it doesn't take or one that
+    /// doesn't apply here, or storage errors.
     pub async fn set_setting(
         &self,
         author: impl Into<piqueld_store::Author<'_>>,

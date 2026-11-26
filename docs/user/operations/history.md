@@ -161,11 +161,11 @@ with `--env` when the application has several.
 
 | Setting | Default | What it keeps |
 | --- | --- | --- |
-| [`retention.event_days`](../reference/configuration-settings.md#retentionevent_days) | `90` | Application and environment events |
-| [`retention.daemon_event_days`](../reference/configuration-settings.md#retentiondaemon_event_days) | `90` | Daemon events |
-| [`retention.audit_days`](../reference/configuration-settings.md#retentionaudit_days) | `365` | The [audit trail](audit.md) |
-| [`retention.deployment_days`](../reference/configuration-settings.md#retentiondeployment_days) | `90` | Deployments, with [`retention.deployments_per_environment`](../reference/configuration-settings.md#retentiondeployments_per_environment) |
-| [`retention.finished_operation_days`](../reference/configuration-settings.md#retentionfinished_operation_days) | `10` | Finished operations other than deployments |
+| [`retention.event_days`](../reference/daemon-settings.md#retentionevent_days) | `90` | Application and environment events |
+| [`retention.daemon_event_days`](../reference/daemon-settings.md#retentiondaemon_event_days) | `90` | Daemon events |
+| [`retention.audit_days`](../reference/daemon-settings.md#retentionaudit_days) | `365` | The [audit trail](audit.md) |
+| [`retention.deployment_days`](../reference/daemon-settings.md#retentiondeployment_days) | `90` | Deployments, with [`retention.deployments_per_environment`](../reference/daemon-settings.md#retentiondeployments_per_environment) |
+| [`retention.finished_operation_days`](../reference/daemon-settings.md#retentionfinished_operation_days) | `10` | Finished operations other than deployments |
 
 `0` keeps everything.
 
@@ -173,7 +173,7 @@ By default, each environment keeps its newest 50 deployments, and every
 deployment from the last 90 days. An older deployment goes only when it is
 past both limits. An environment always keeps its current deployment, its
 latest one, and the deployments
-[image cleanup](../reference/configuration-settings.md#imageskeep_deployments)
+[image cleanup](../reference/daemon-settings.md#imageskeep_deployments)
 keeps images for, so you can restore them: at least its newest successful one,
 even when `images.keep_deployments` is `0`. A preview keeps only its current,
 latest and newest successful deployments, and those that finished in the last
@@ -190,8 +190,8 @@ A deployment's steps, its phase and resource included, come from its events:
 once they expire, its page and timeline show none.
 
 Build output has its own limits, of
-[size](../reference/configuration-settings.md#build_historylog_max_bytes) and
-[age](../reference/configuration-settings.md#build_historylog_retention_days).
+[size](../reference/daemon-settings.md#build_historylog_max_bytes) and
+[age](../reference/daemon-settings.md#build_historylog_retention_days).
 
 Deleting an environment keeps its events in the application's history.
 Deleting an application deletes its history.

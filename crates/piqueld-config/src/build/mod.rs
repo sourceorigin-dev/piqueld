@@ -1,7 +1,7 @@
 //! Where images build, this host's Docker Engine or a build machine, and
 //! how many build at once.
 use super::schema_from_raw;
-use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild, WhenUnavailable};
+use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild};
 use serde::Deserialize;
 use std::num::NonZeroU8;
 
@@ -14,7 +14,6 @@ use std::num::NonZeroU8;
 /// parallel = 2
 /// builder = "tcp://build.example.ts.net:1234"
 /// repository = "registry.example.ts.net:5000/piqueld"
-/// unavailable = "fail" # or "local"
 /// ```
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(try_from = "RawBuildConfig")]
@@ -23,8 +22,6 @@ pub struct BuildConfig {
     pub parallel: NonZeroU8,
     /// The build machine images build on, if any.
     pub remote: Option<RemoteBuild>,
-    /// The `build.unavailable` daemon setting this file pins, if any.
-    pub unavailable: Option<WhenUnavailable>,
 }
 
 impl BuildConfig {
@@ -37,7 +34,6 @@ impl Default for BuildConfig {
         Self {
             parallel: Self::DEFAULT_PARALLEL,
             remote: None,
-            unavailable: None,
         }
     }
 }
@@ -76,22 +72,12 @@ struct RawBuildConfig {
     /// naming this installation, by which image cleanup finds it.
     #[schema(value_type = Option<String>)]
     repository: Option<BuildRepository>,
-    /// What a deployment that has to build does while the build machine
-    /// can't be reached: `fail`, the default, fails it with
-    /// `builder_unavailable`, and `local` builds on this host's Docker Engine
-    /// instead, where a build competes with the applications the host runs.
-    /// Requires `builder`. A daemon setting: set here, it is pinned to its
-    /// value; otherwise `piquelctl settings` or the dashboard changes it.
-    unavailable: Option<WhenUnavailable>,
 }
 
 impl TryFrom<RawBuildConfig> for BuildConfig {
     type Error = &'static str;
     fn try_from(raw: RawBuildConfig) -> Result<Self, Self::Error> {
         let remote = match (raw.builder, raw.repository) {
-            (None, None) if raw.unavailable.is_some() => {
-                return Err("build.unavailable requires build.builder");
-            }
             (None, None) => None,
             (Some(builder), Some(repository)) => Some(RemoteBuild {
                 builder,
@@ -103,7 +89,6 @@ impl TryFrom<RawBuildConfig> for BuildConfig {
         Ok(Self {
             parallel: raw.parallel.unwrap_or(Self::DEFAULT_PARALLEL),
             remote,
-            unavailable: raw.unavailable,
         })
     }
 }

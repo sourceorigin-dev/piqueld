@@ -243,9 +243,9 @@ pub enum StoreError {
         "previews deploy a branch of the application's manifest repository; connect one with `piquelctl app repository` first"
     )]
     PreviewRequiresRepository,
-    /// Creating a preview would exceed a `[previews]` count limit.
+    /// Creating a preview would exceed a `previews` count limit.
     #[error(
-        "creating this preview would exceed [previews] {} ({}); delete a preview first",
+        "creating this preview would exceed previews.{} ({}); delete a preview first",
         .0.limit,
         .0.max
     )]

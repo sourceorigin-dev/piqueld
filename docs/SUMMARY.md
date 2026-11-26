@@ -51,6 +51,7 @@
 - [Manifest settings](user/reference/manifest-settings.md)
 - [Daemon configuration](user/reference/configuration.md)
 - [Daemon configuration settings](user/reference/configuration-settings.md)
+- [Daemon settings](user/reference/daemon-settings.md)
 - [NixOS module](user/reference/nixos.md)
 - [piquelctl](user/reference/cli.md)
 - [piquelctl commands](user/reference/cli-commands.md)

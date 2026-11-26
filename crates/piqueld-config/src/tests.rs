@@ -102,7 +102,7 @@ fn schema_ranges_are_enforced() {
 
     let schema = DaemonConfig::json_schema();
     let checked = check(&schema["definitions"], &schema, "", false);
-    assert!(checked > 10, "only {checked} bounds were found");
+    assert!(checked > 5, "only {checked} bounds were found");
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn socket_and_database_use_separate_directories() {
 #[test]
 fn parse_failures_keep_the_diagnostic_but_not_the_source_line() {
     let error = DaemonConfig::from_toml(
-        "[server]\nport = 7845\n\n[auth]\nmax_token_days = 90\npublic_url = 'https://secret-token.example.com'\nunknown_key = true",
+        "[server]\nport = 7845\n\n[auth]\n# token lifetimes are daemon settings\npublic_url = 'https://secret-token.example.com'\nunknown_key = true",
     )
     .expect_err("the config is invalid");
     let ConfigError::Parse(diagnostic) = &error else {
@@ -166,39 +166,48 @@ fn parse_failures_keep_the_diagnostic_but_not_the_source_line() {
     );
 }
 
+/// A file an older version took may set daemon settings: each is refused,
+/// with the way to change it now, whether it has a table of its own or
+/// sits among host settings.
 #[test]
-fn daemon_settings_set_in_the_file_are_pinned_and_checked_against_their_ranges() {
-    let config = DaemonConfig::from_toml(
-        "[auth]\nmax_token_days = 90\npublic_url = 'https://piqueld.example.com'\n[retention]\nevent_days = 7",
-    )
-    .expect("the configuration parses");
-    let pins = config.pins();
-    assert_eq!(pins.auth.max_token_days, Some(Some(90)));
-    assert_eq!(pins.retention.event_days, Some(7));
-    assert_eq!(pins.retention.audit_days, None);
-
+fn daemon_settings_are_refused_with_how_to_change_them() {
     for (source, message) in [
         (
-            "[auth]\nmax_token_days = 0",
-            "auth.max_token_days must be a whole number from 1 to 4294967295; omit it for no limit",
+            "[retention]\nevent_days = 7",
+            "[retention] holds daemon settings, which the configuration file no longer sets",
+        ),
+        ("[previews]", "[previews] holds daemon settings"),
+        (
+            "[auth]\npublic_url = 'https://piqueld.example.com'\nmax_token_days = 90",
+            "auth.max_token_days is a daemon setting, which the configuration file no longer sets: remove it, and change it with `piquelctl settings set auth.max_token_days <value>`",
         ),
         (
-            "[reconciliation]\nscan_interval_seconds = 0",
-            "reconciliation.scan_interval_seconds",
+            "[build]\nunavailable = 'local'",
+            "build.unavailable is a daemon setting",
+        ),
+        (
+            "[ingress]\ntraffic = false",
+            "ingress.traffic is a daemon setting",
         ),
     ] {
-        let error = format!(
-            "{:#}",
-            anyhow::Error::new(
-                DaemonConfig::from_toml(source).expect_err("the configuration is refused")
-            )
+        let error = DaemonConfig::from_toml(source).expect_err("the configuration is refused");
+        assert!(
+            matches!(
+                error,
+                ConfigError::DaemonSetting(_) | ConfigError::DaemonSettings(_)
+            ),
+            "{source}: {error:?}"
         );
-        assert!(error.contains(message), "{source}: {error}");
+        assert!(error.to_string().contains(message), "{source}: {error}");
     }
     assert!(matches!(
         DaemonConfig::from_toml("[auth]\nmax_token_day = 1"),
         Err(ConfigError::Parse(_))
     ));
+    DaemonConfig::from_toml(
+        "[auth]\npublic_url = 'https://piqueld.example.com'\n[ingress]\nenabled = false",
+    )
+    .expect("host settings in a table that also held daemon settings still parse");
 }
 
 #[test]

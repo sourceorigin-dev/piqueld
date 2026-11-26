@@ -26,9 +26,8 @@ piquelctl settings set ingress.traffic false
 ```
 
 The gateway stops counting within seconds, without a restart. `ingress.traffic`
-is a [daemon setting](settings.md): setting it in the daemon's configuration
-pins it instead, such as `services.piqueld.settings.ingress.traffic = false;`
-on NixOS.
+is a [daemon setting](settings.md), which the daemon's configuration file
+doesn't set.
 
 ## See an environment's traffic
 
@@ -94,7 +93,7 @@ count as requests, but never as page views or visitors. The gateway's own
 health checks aren't counted.
 
 Counts are kept for
-[`retention.traffic_days`](../reference/configuration-settings.md#retentiontraffic_days),
+[`retention.traffic_days`](../reference/daemon-settings.md#retentiontraffic_days),
 90 by default. Deleting an environment deletes its counts.
 
 While the daemon restarts, the gateway can't hand it requests, so it writes

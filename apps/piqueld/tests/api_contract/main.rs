@@ -423,11 +423,12 @@ async fn state_with(temp: &TempDir, max_upload_bytes: Option<std::num::NonZeroU6
     let store = Store::open_unsynced(database(temp))
         .await
         .expect("fresh database opens");
-    let mut config = DaemonConfig::default();
     if let Some(limit) = max_upload_bytes {
-        config.snapshots.max_upload_bytes = Some(limit.get());
+        store.assume_settings(|settings| settings.snapshots.max_upload_bytes = limit.get());
     }
-    contract_state(temp, Arc::new(store), &config).await.1
+    contract_state(temp, Arc::new(store), &DaemonConfig::default())
+        .await
+        .1
 }
 
 /// Waits until `ready` finds what it looks for, checking again after each
@@ -450,7 +451,6 @@ async fn contract_state(
     config: &DaemonConfig,
 ) -> (Arc<FakeRuntime>, ApiState) {
     seed_account(&database(temp), "contract-admin", &[("admin", None)]).await;
-    store.pin_settings(config.pins());
     let runtime = Arc::new(FakeRuntime::new(&store));
     let sources = sources(temp, config).await;
     let state = ApiState::new(store, runtime.clone(), sources).expect("the api state builds");

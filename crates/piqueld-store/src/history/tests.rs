@@ -20,10 +20,10 @@ enum Outcome {
 /// day, and one successful one, with `production` of a saved application.
 async fn store() -> (tempfile::TempDir, Store, EnvironmentId) {
     let (temp, store) = Store::temporary().await;
-    store.pin(|pins| {
-        pins.retention.deployment_days = Some(1);
-        pins.retention.deployments_per_environment = Some(3);
-        pins.images.keep_deployments = Some(1);
+    store.assume_settings(|settings| {
+        settings.retention.deployment_days = 1;
+        settings.retention.deployments_per_environment = 3;
+        settings.images.keep_deployments = 1;
     });
     let template = ApplicationTemplate::from(&prebuilt("app-history-test"));
     let template = template

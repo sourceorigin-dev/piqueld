@@ -7,7 +7,8 @@ once, without restarting the daemon.
 
 The daemon's other settings describe its host, such as its listeners, its
 Docker socket and its DNS provider accounts. Those only change in its
-[configuration file](../reference/configuration.md), with a restart.
+[configuration file](../reference/configuration.md), with a restart. The
+configuration file doesn't set daemon settings.
 
 ## Before you start
 
@@ -32,8 +33,6 @@ comes from:
 
 - **default**: nobody changed it.
 - **changed**: someone changed it from the dashboard, `piquelctl` or the API.
-- **configuration file**: the daemon's configuration file sets it, which
-  pins it (see [below](#settings-the-configuration-file-pins)).
 
 ```console
 piquelctl settings
@@ -43,7 +42,7 @@ piquelctl settings
 History:
   retention.finished_operation_days: 10 (default)
   retention.event_days: 30 (changed)
-  retention.audit_days: 365 (configuration file)
+  retention.audit_days: 365 (default)
 ```
 
 Show one setting with its range, default and what it does:
@@ -90,13 +89,17 @@ next time piqueld prunes, and nothing brings it back. The dashboard asks you
 to confirm such a change, and a reset that does the same. `piquelctl settings
 set` doesn't ask.
 
+Lowering a setting under **Images** removes images too, at the next
+cleanup: from this host, and with a build machine, from its registry for
+good. A deployment whose images are gone can't be restored from this host,
+or, once the registry has deleted them, at all. The dashboard doesn't ask
+before this change.
+
 Every change is recorded in the [audit trail](audit.md), with the old and the
 new value.
 
-[Daemon configuration settings](../reference/configuration-settings.md) lists
-every setting, with its range and default. Daemon settings are the tables
-marked as such there, `auth.max_token_days`, `build.unavailable` and
-`ingress.traffic`.
+[Daemon settings](../reference/daemon-settings.md) lists every setting, with
+its range and default.
 
 Some settings apply only with what the installation has:
 `build.unavailable` needs a [build machine](../applications/build-machine.md).
@@ -114,25 +117,39 @@ field in the dashboard, which then says what the value was, or:
 piquelctl settings reset retention.event_days
 ```
 
-## Settings the configuration file pins
+## Upgrade from a configuration file that sets them
 
-A daemon setting the [configuration file](../reference/configuration.md)
-sets is pinned to that value. The dashboard shows it without a field, as
-**Set in the configuration file**, and `piquelctl settings set` fails with
-`setting_pinned`. To change it,
-edit the file and restart the daemon, or remove it from the file to manage it
-from the dashboard again; the value changed there before applies once more.
+Older versions read daemon settings, such as `[retention]` or
+`auth.max_token_days`, from the
+[configuration file](../reference/configuration.md). This version refuses to
+start with a file that still sets one, and names it:
 
-This keeps a declarative configuration declarative. On NixOS, a daemon
-setting you set under `services.piqueld.settings` is pinned, and one you leave
-unset is managed from the dashboard; see the [NixOS module](../reference/nixos.md).
+```text
+[retention] holds daemon settings, which the configuration file no longer sets: remove the table, and change them with `piquelctl settings set` or the dashboard's Settings page
+```
 
-A configuration file copied from an older example may set every daemon
-setting to its default, which pins them all. Comment out or remove those you
-want to manage from the dashboard, then restart the daemon.
+The daemon doesn't carry the file's values over. Until you set them again,
+each setting has its default, and **the first start prunes history with the
+defaults**: if the file kept more than they do, such as `audit_days = 730`
+or `event_days = 0` (forever), the daemon deletes what only the file's value
+kept, at once, for good. The same goes for images an `[images]` value kept.
 
-The configuration file can't pin a setting to no limit, such as
-`auth.max_token_days`: leaving it out leaves the setting to the dashboard.
+1. Note the values the file sets that differ from their defaults, which
+   [daemon settings](../reference/daemon-settings.md) lists.
+2. If any of them keeps more history or images than its default, back up the
+   daemon's state first to keep a copy of what it will delete; see
+   [backups](backups.md). The daemon can't take it back: restoring the backup
+   would prune it again on the next start.
+3. Remove them from the file, then start the daemon.
+4. Set each value you noted again, at once:
+
+   ```console
+   piquelctl settings set retention.audit_days 730
+   ```
+
+On NixOS, a generation that still sets one under `services.piqueld.settings`
+fails to build instead, saying which; see the
+[NixOS module](../reference/nixos.md). The same steps apply.
 
 ## Check that it works
 
@@ -145,8 +162,9 @@ piquelctl audit
 
 ## Troubleshooting
 
-- **`setting_pinned`.** The configuration file sets this setting. Change it
-  there, or remove it from the file and restart the daemon.
+- **The daemon won't start: "… is a daemon setting" or "[…] holds daemon
+  settings".** The configuration file still sets a daemon setting. See
+  [upgrade from a configuration file that sets them](#upgrade-from-a-configuration-file-that-sets-them).
 - **`setting_invalid`.** The value is out of the setting's range. The error,
   and `piquelctl settings get <key>`, say which values it takes.
 - **`setting_unavailable`.** The installation lacks what the setting needs,

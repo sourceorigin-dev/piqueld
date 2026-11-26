@@ -1507,7 +1507,7 @@ impl Client {
     /*Lists an application's previews
 
     Each preview comes with its status, latest operation, hostnames, origin,
-    `[previews]` bounds, sync state, and branch state, read with one
+    `previews` bounds, sync state, and branch state, read with one
     `git ls-remote` of the manifest repository.
     Repository failures make every branch state `unknown`.
 
@@ -1575,7 +1575,7 @@ impl Client {
     Repeating the request returns the existing preview of that branch and
     slot with its latest operation, without redeploying it. Applications
     without a manifest repository fail with `preview_requires_repository`.
-    A new preview beyond a `[previews]` limit fails with 409
+    A new preview beyond a `previews` limit fails with 409
     `preview_limit_reached`, whose `details` are a `PreviewLimitReached`
     listing the previews it counts. Needs no application revision.
 
@@ -1654,9 +1654,9 @@ impl Client {
     }
     /*Deploys a snapshot of a local worktree to a preview
 
-    The body is a Git bundle of one snapshot commit, at most `[snapshots]
-    max_upload_bytes`, thin or complete. It is verified and unbundled into a
-    repository of its own. The preview of `branch` and `slot` is created first if
+    The body is a Git bundle of one snapshot commit, at most
+    `snapshots.max_upload_bytes`, thin or complete. It is verified and
+    unbundled into a repository of its own. The preview of `branch` and `slot` is created first if
     needed, as `createPreview` does, and deploys the snapshot's manifest. Fails
     with 409 `preview_requires_repository` or `preview_limit_reached`; 413
     `snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,
@@ -12000,9 +12000,8 @@ impl Client {
 
     The value applies at once, without a restart, and the change is recorded
     in the audit trail. Fails with 404 `setting_unknown`, 409
-    `setting_pinned` for a setting the configuration file sets, 409
-    `setting_unavailable` for one the installation lacks what it needs for,
-    or 422 `setting_invalid` for a value the setting doesn't take.
+    `setting_unavailable` for a setting the installation lacks what it needs
+    for, or 422 `setting_invalid` for a value the setting doesn't take.
 
     Sends a `PUT` request to `/api/v1/system/settings/{key}`
 
@@ -12079,7 +12078,7 @@ impl Client {
 
     The default applies at once, and the reset is recorded in the audit
     trail, even while the installation lacks what the setting needs. Fails
-    with 404 `setting_unknown` or 409 `setting_pinned`.
+    with 404 `setting_unknown`.
 
     Sends a `DELETE` request to `/api/v1/system/settings/{key}`
 
@@ -12129,9 +12128,6 @@ impl Client {
                 crate::client::decode_response(response).await?,
             )),
             404u16 => Err(Error::ErrorResponse(
-                crate::client::decode_response(response).await?,
-            )),
-            409u16 => Err(Error::ErrorResponse(
                 crate::client::decode_response(response).await?,
             )),
             503u16 => Err(Error::ErrorResponse(

@@ -670,7 +670,6 @@
           "preview_requires_repository",
           "preview_limit_reached",
           "setting_unknown",
-          "setting_pinned",
           "setting_unavailable",
           "setting_invalid",
           "preview_limits_defaulted",
@@ -1971,7 +1970,7 @@
         "type": "object"
       },
       "CountedPreview": {
-        "description": "A preview counted against a `[previews]` limit.",
+        "description": "A preview counted against a `previews` limit.",
         "properties": {
           "application_id": {
             "$ref": "#/components/schemas/ApplicationId",
@@ -5194,7 +5193,7 @@
         "description": "Successful API response envelope.",
         "properties": {
           "data": {
-            "description": "The daemon's settings: the host's, which only its configuration file\nchanges, and the daemon settings, which the API changes unless the file\npins them.",
+            "description": "The daemon's settings: the host's, which only its configuration file\nchanges, and the daemon settings, which the API changes.",
             "properties": {
               "groups": {
                 "additionalProperties": {
@@ -6406,7 +6405,7 @@
             "description": "A preview with its status, latest operation, hostnames, and branch state.",
             "properties": {
               "bounds": {
-                "description": "How `[previews]` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
+                "description": "How `previews` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
                 "items": {
                   "$ref": "#/components/schemas/DiagnosticView"
                 },
@@ -6647,17 +6646,17 @@
         "description": "Successful API response envelope.",
         "properties": {
           "data": {
-            "description": "A daemon setting: installation policy, such as how long history is kept,\nwhich `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets,\nunless the configuration file pins it.",
+            "description": "A daemon setting: installation policy, such as how long history is kept,\nwhich `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets.",
             "properties": {
               "default": {
-                "description": "Its value when neither set nor pinned."
+                "description": "Its value until it is changed."
               },
               "description": {
                 "description": "What it does, a paragraph per line.",
                 "type": "string"
               },
               "key": {
-                "description": "Its key, `section.field`, which is also its path in the\nconfiguration file, such as `retention.event_days`.",
+                "description": "Its key, `section.field`, such as `retention.event_days`.",
                 "type": "string"
               },
               "kind": {
@@ -6815,7 +6814,7 @@
                         "$ref": "#/components/schemas/PreviewUsage"
                       }
                     ],
-                    "description": "Previews against the `[previews]` limits; absent when they could not\nbe counted."
+                    "description": "Previews against the `previews` limits; absent when they could not\nbe counted."
                   },
                   {
                     "enum": [
@@ -7071,7 +7070,7 @@
               "description": "A preview with its status, latest operation, hostnames, and branch state.",
               "properties": {
                 "bounds": {
-                  "description": "How `[previews]` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
+                  "description": "How `previews` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
                   "items": {
                     "$ref": "#/components/schemas/DiagnosticView"
                   },
@@ -8849,7 +8848,7 @@
         "type": "object"
       },
       "HostConfiguration": {
-        "description": "The daemon's settings: the host's, which only its configuration file\nchanges, and the daemon settings, which the API changes unless the file\npins them.",
+        "description": "The daemon's settings: the host's, which only its configuration file\nchanges, and the daemon settings, which the API changes.",
         "properties": {
           "groups": {
             "additionalProperties": {
@@ -10664,7 +10663,7 @@
         "type": "object"
       },
       "PreviewLimit": {
-        "description": "A `[previews]` count limit.",
+        "description": "A `previews` count limit.",
         "enum": [
           "per_application",
           "total"
@@ -10701,7 +10700,7 @@
       },
       "PreviewLimits": {
         "additionalProperties": false,
-        "description": "How many previews may exist, and what each preview service may use.\n\nCounts are checked when a preview is created, so lowering one below the\ncurrent count keeps every existing preview running and only refuses new\nones. Resource bounds apply when a preview's manifest is rendered, so a\npreview picks up changed bounds on its next deployment. Environments are\nnever bounded.\n\nDaemon settings: `piquelctl settings`, the API and the dashboard change them while the daemon runs, unless the configuration file sets them, which pins them.",
+        "description": "How many previews may exist, and what each preview service may use.\n\nCounts are checked when a preview is created, so lowering one below the\ncurrent count keeps every existing preview running and only refuses new\nones. Resource bounds apply when a preview's manifest is rendered, so a\npreview picks up changed bounds on its next deployment. Environments are\nnever bounded.",
         "properties": {
           "default_cpu_millis": {
             "default": 500,
@@ -10753,7 +10752,7 @@
         "type": "string"
       },
       "PreviewUsage": {
-        "description": "Previews against the daemon's `[previews]` limits.",
+        "description": "Previews against the daemon's `previews` limits.",
         "properties": {
           "applications": {
             "description": "Readable applications with previews, in name order.",
@@ -10804,7 +10803,7 @@
         "description": "A preview with its status, latest operation, hostnames, and branch state.",
         "properties": {
           "bounds": {
-            "description": "How `[previews]` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
+            "description": "How `previews` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
             "items": {
               "$ref": "#/components/schemas/DiagnosticView"
             },
@@ -12870,17 +12869,17 @@
         "description": "Who is signed in and what the current credential may do."
       },
       "Setting": {
-        "description": "A daemon setting: installation policy, such as how long history is kept,\nwhich `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets,\nunless the configuration file pins it.",
+        "description": "A daemon setting: installation policy, such as how long history is kept,\nwhich `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets.",
         "properties": {
           "default": {
-            "description": "Its value when neither set nor pinned."
+            "description": "Its value until it is changed."
           },
           "description": {
             "description": "What it does, a paragraph per line.",
             "type": "string"
           },
           "key": {
-            "description": "Its key, `section.field`, which is also its path in the\nconfiguration file, such as `retention.event_days`.",
+            "description": "Its key, `section.field`, such as `retention.event_days`.",
             "type": "string"
           },
           "kind": {
@@ -13018,8 +13017,7 @@
         "description": "Where a daemon setting's value comes from.",
         "enum": [
           "default",
-          "changed",
-          "configuration"
+          "changed"
         ],
         "type": "string"
       },
@@ -13482,7 +13480,7 @@
                     "$ref": "#/components/schemas/PreviewUsage"
                   }
                 ],
-                "description": "Previews against the `[previews]` limits; absent when they could not\nbe counted."
+                "description": "Previews against the `previews` limits; absent when they could not\nbe counted."
               },
               {
                 "enum": [
@@ -17673,7 +17671,7 @@
     },
     "/api/v1/applications/{id}/previews": {
       "get": {
-        "description": "Each preview comes with its status, latest operation, hostnames, origin,\n`[previews]` bounds, sync state, and branch state, read with one\n`git ls-remote` of the manifest repository.\nRepository failures make every branch state `unknown`.",
+        "description": "Each preview comes with its status, latest operation, hostnames, origin,\n`previews` bounds, sync state, and branch state, read with one\n`git ls-remote` of the manifest repository.\nRepository failures make every branch state `unknown`.",
         "operationId": "listPreviews",
         "parameters": [
           {
@@ -17751,7 +17749,7 @@
         "x-piqueld-access": "apps:read"
       },
       "post": {
-        "description": "Creates and deploys a preview of `branch` of the application's manifest\nrepository, distinguished by `slot` when several previews share a branch.\nRepeating the request returns the existing preview of that branch and\nslot with its latest operation, without redeploying it. Applications\nwithout a manifest repository fail with `preview_requires_repository`.\nA new preview beyond a `[previews]` limit fails with 409\n`preview_limit_reached`, whose `details` are a `PreviewLimitReached`\nlisting the previews it counts. Needs no application revision.",
+        "description": "Creates and deploys a preview of `branch` of the application's manifest\nrepository, distinguished by `slot` when several previews share a branch.\nRepeating the request returns the existing preview of that branch and\nslot with its latest operation, without redeploying it. Applications\nwithout a manifest repository fail with `preview_requires_repository`.\nA new preview beyond a `previews` limit fails with 409\n`preview_limit_reached`, whose `details` are a `PreviewLimitReached`\nlisting the previews it counts. Needs no application revision.",
         "operationId": "createPreview",
         "parameters": [
           {
@@ -17889,7 +17887,7 @@
     },
     "/api/v1/applications/{id}/previews/local": {
       "post": {
-        "description": "The body is a Git bundle of one snapshot commit, at most `[snapshots]\nmax_upload_bytes`, thin or complete. It is verified and unbundled into a\nrepository of its own. The preview of `branch` and `slot` is created first if\nneeded, as `createPreview` does, and deploys the snapshot's manifest. Fails\nwith 409 `preview_requires_repository` or `preview_limit_reached`; 413\n`snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,\nwhose `details.prerequisites` names the commits a complete bundle must\ncontain; or 408 `snapshot_timed_out`. Needs no application revision.",
+        "description": "The body is a Git bundle of one snapshot commit, at most\n`snapshots.max_upload_bytes`, thin or complete. It is verified and\nunbundled into a repository of its own. The preview of `branch` and `slot` is created first if\nneeded, as `createPreview` does, and deploys the snapshot's manifest. Fails\nwith 409 `preview_requires_repository` or `preview_limit_reached`; 413\n`snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,\nwhose `details.prerequisites` names the commits a complete bundle must\ncontain; or 408 `snapshot_timed_out`. Needs no application revision.",
         "operationId": "deployLocalPreview",
         "parameters": [
           {
@@ -34304,7 +34302,7 @@
     },
     "/api/v1/system/settings/{key}": {
       "delete": {
-        "description": "The default applies at once, and the reset is recorded in the audit\ntrail, even while the installation lacks what the setting needs. Fails\nwith 404 `setting_unknown` or 409 `setting_pinned`.",
+        "description": "The default applies at once, and the reset is recorded in the audit\ntrail, even while the installation lacks what the setting needs. Fails\nwith 404 `setting_unknown`.",
         "operationId": "resetSetting",
         "parameters": [
           {
@@ -34358,16 +34356,6 @@
             },
             "description": "Structured, sanitized error"
           },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            },
-            "description": "Structured, sanitized error"
-          },
           "503": {
             "content": {
               "application/json": {
@@ -34383,7 +34371,7 @@
         "x-piqueld-access": "settings:manage"
       },
       "put": {
-        "description": "The value applies at once, without a restart, and the change is recorded\nin the audit trail. Fails with 404 `setting_unknown`, 409\n`setting_pinned` for a setting the configuration file sets, 409\n`setting_unavailable` for one the installation lacks what it needs for,\nor 422 `setting_invalid` for a value the setting doesn't take.",
+        "description": "The value applies at once, without a restart, and the change is recorded\nin the audit trail. Fails with 404 `setting_unknown`, 409\n`setting_unavailable` for a setting the installation lacks what it needs\nfor, or 422 `setting_invalid` for a value the setting doesn't take.",
         "operationId": "putSetting",
         "parameters": [
           {

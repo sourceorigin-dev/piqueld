@@ -94,7 +94,7 @@ or gone, with shortened commits; local while it runs a local snapshot, with
 the branch head or "never pushed"; or unknown with the repository error), and
 status (or **Deleting**) with its status message on hover. A **Bounded**
 badge marks a preview whose deployment runs a service with the
-[`[previews]`](reference/configuration.md#previews) default limits or fewer replicas than
+[`previews`](reference/configuration.md#previews) default limits or fewer replicas than
 its manifest asks for, listed on hover. It also shows whether pushes
 redeploy it, with the commit sync last deployed or found.
 The list loads when the tab opens and on **Refresh**, not on a timer, since
@@ -319,8 +319,7 @@ local form values. **Reload saved configuration**, offered after a failure or a
 change made elsewhere, reloads it in place: forms without edits show the latest
 version, and edited ones keep their edits until saved or discarded, discarding
 back to the latest version. Navigation warns about unsaved edits. The host's
-settings are read-only, and so are daemon settings the configuration file
-pins. There is no raw manifest editor.
+settings are read-only. There is no raw manifest editor.
 
 The browser bundle uses HTTP DTOs and shared typed lifecycle records and
 fetches same-origin `/api/v1` resources. The daemon serves it only on the

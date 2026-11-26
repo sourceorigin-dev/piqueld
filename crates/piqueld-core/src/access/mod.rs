@@ -126,7 +126,7 @@ permissions! {
         /// receive notifications about every application.
         NotificationsManage => "notifications:manage", "Manage notification destinations",
         /// Change and reset daemon settings, such as how long history and the
-        /// audit trail are kept, except those the configuration file pins.
+        /// audit trail are kept.
         SettingsManage => "settings:manage", "Change daemon settings",
     }
 }

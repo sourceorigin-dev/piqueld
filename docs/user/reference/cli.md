@@ -311,7 +311,7 @@ existing one and its latest deployment without redeploying it, and fails with
 redeploys the head of its branch, replacing a local snapshot the preview runs.
 None of them needs the application revision.
 `preview create` fails with `preview_limit_reached` when a new preview would
-exceed the daemon's [`[previews]` limits](configuration.md#previews), listing
+exceed the daemon's [`previews` limits](configuration.md#previews), listing
 the previews it counts with their branch, slot, slug and last deployment so you
 can delete one; repeating an existing creation always succeeds.
 `preview list` and `preview show` report each branch as `exists`, `moved`,
@@ -494,7 +494,7 @@ status and Settings pages do:
   Credentials appear only as the file they are read from. Each read is
   recorded in the [audit trail](../operations/audit.md).
   `piquelctl settings set` and `reset` change a daemon setting at once, with
-  `settings:manage`, unless the configuration pins it.
+  `settings:manage`.
 
 Global `--timeout DURATION` defaults to `30s`. Durations are positive integer
 milliseconds (`ms`), seconds (`s`), minutes (`m`), hours (`h`), or days (`d`); a
