@@ -158,13 +158,13 @@ fn descriptions_are_prose_and_keys_are_unique() {
     assert_eq!(keys.len(), SETTINGS.len());
 }
 
-/// Only a setting that keeps history says a change keeps less of it: a
-/// lower number, where `0` keeps everything.
+/// Only a setting that keeps something says a change keeps less of it: a
+/// lower number, where `0` keeps all history but no extra images.
 #[test]
-fn only_history_settings_keep_less_at_a_lower_value() {
+fn only_settings_that_keep_something_keep_less_at_a_lower_value() {
     let layers = SettingLayers::default();
     let events = layers.view(setting("retention.event_days"));
-    assert!(events.prunes);
+    assert_eq!(events.prunes, Some(Pruning::History));
     assert!(events.keeps_less(&json!(30)));
     assert!(!events.keeps_less(&json!(90)));
     assert!(!events.keeps_less(&json!(365)));
@@ -174,12 +174,18 @@ fn only_history_settings_keep_less_at_a_lower_value() {
         ..events
     };
     assert!(forever.keeps_less(&json!(3650)));
-    assert!(
+    assert_eq!(
         layers
             .view(setting("build_history.log_retention_days"))
-            .prunes
+            .prunes,
+        Some(Pruning::History)
     );
+    let images = layers.view(setting("images.keep_deployments"));
+    assert_eq!(images.prunes, Some(Pruning::Images));
+    assert!(images.keeps_less(&json!(1)));
+    assert!(images.keeps_less(&json!(0)));
+    assert!(!images.keeps_less(&json!(5)));
     let previews = layers.view(setting("previews.max_total"));
-    assert!(!previews.prunes);
+    assert_eq!(previews.prunes, None);
     assert!(!previews.keeps_less(&json!(1)));
 }

@@ -2,10 +2,10 @@
 pub use piqueld_core::api::{
     BuilderCheck, BuilderStatus, BuiltOn, CertificateStatus, CheckStatus, DependencyStatus,
     DnsProviderStatus, DnsRecordState, DnsRecords, DnsStatus, HostConfiguration, ImageStatus,
-    IngressStatus, PrivateIngressStatus, PublicIngressStatus, ReadinessStatus, RegistryImageStatus,
-    RouteStatus, Setting, SettingChange, SettingKind, SettingSource, SnapshotLimits, SystemCheck,
-    SystemCheckId, SystemChecks, SystemStatus, TailnetStatus, TelemetryDestinationStatus,
-    TelemetryReceiver, TelemetryStatus,
+    IngressStatus, PrivateIngressStatus, Pruning, PublicIngressStatus, ReadinessStatus,
+    RegistryImageStatus, RouteStatus, Setting, SettingChange, SettingKind, SettingSource,
+    SnapshotLimits, SystemCheck, SystemCheckId, SystemChecks, SystemStatus, TailnetStatus,
+    TelemetryDestinationStatus, TelemetryReceiver, TelemetryStatus,
 };
 
 use crate::{Client, ClientError, client::EnvelopedCall};

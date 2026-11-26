@@ -7,7 +7,7 @@
 //! configuration file holds only host facts, in `piqueld-config`, and
 //! refuses a daemon setting.
 
-use crate::api::{Setting, SettingKind, SettingSource};
+use crate::api::{Pruning, Setting, SettingKind, SettingSource};
 use crate::build_machine::WhenUnavailable;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -187,13 +187,17 @@ macro_rules! requirement {
     };
 }
 
-/// Whether a setting declares that it keeps history, with `keeps history`.
+/// What a setting declares it keeps, with `keeps history` or
+/// `keeps images`, if anything.
 macro_rules! keeps {
     () => {
-        false
+        None
     };
     (history) => {
-        true
+        Some(Pruning::History)
+    };
+    (images) => {
+        Some(Pruning::Images)
     };
 }
 
@@ -211,9 +215,9 @@ macro_rules! keeps {
 /// An integer's range is optional, and may be open (`at least 1`). Its
 /// bounds are token trees, which `utoipa`'s derive reads unlike `literal`s;
 /// one beyond `i32` needs a suffix, such as `_u64`. `needs` names a
-/// [`Requirement`]. `keeps history` marks a setting whose lower value
-/// deletes what a higher one kept, where `0`, if it takes it, keeps
-/// everything. The type implements [`SettingType`].
+/// [`Requirement`]. `keeps history` or `keeps images` marks a setting whose
+/// lower value deletes what a higher one kept (see [`Pruning`]). The type
+/// implements [`SettingType`].
 macro_rules! settings {
     ($(
         $(#[doc = $section_doc:literal])*
@@ -337,11 +341,11 @@ settings! {
     images("Images") ImagesConfig {
         /// How many of each environment's latest successful deployments also
         /// keep their images, so their releases can be deployed again.
-        keep_deployments("Deployments kept per environment"): u32 = 3;
+        keep_deployments("Deployments kept per environment"): u32 = 3, keeps images;
         /// How many of each environment's latest successful deployments keep
         /// their images in the build registry, `build.repository`: never fewer
         /// than `keep_deployments`. Without a build machine, it does nothing.
-        registry_keep_deployments("Deployments kept in the registry"): u32 = 10;
+        registry_keep_deployments("Deployments kept in the registry"): u32 = 10, keeps images;
         /// Seconds between cleanups. Cleanup also runs after each operation.
         cleanup_interval_seconds("Cleanup interval (seconds)"): u64 = 3600, from 1 to 86_400;
     }
@@ -424,9 +428,8 @@ pub struct SettingSpec {
     pub values: Values,
     /// What it needs of the installation to apply, if anything.
     pub requires: Option<Requirement>,
-    /// Whether it keeps history, so that a lower value deletes what a
-    /// higher one kept.
-    pub prunes: bool,
+    /// What it keeps, if a lower value deletes what a higher one kept.
+    pub prunes: Option<Pruning>,
     /// Reads its value.
     value: fn(&Settings) -> Value,
     /// Sets its value, already [`Self::check`]ed.

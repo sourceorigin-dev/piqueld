@@ -9,7 +9,7 @@ use piqueld_client::{
     Client, ClientError,
     access::{GlobalPermission, Permission},
     observability::Bytes,
-    system::{Setting, SettingKind, SettingSource},
+    system::{Pruning, Setting, SettingKind, SettingSource},
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -127,7 +127,9 @@ fn sections(settings: Vec<Setting>) -> Vec<(String, Vec<Setting>)> {
 fn display(setting: &Setting, value: &Value) -> String {
     match value {
         Value::Null => "No limit".into(),
-        Value::Number(number) if setting.prunes && number.as_u64() == Some(0) => {
+        Value::Number(number)
+            if setting.prunes == Some(Pruning::History) && number.as_u64() == Some(0) =>
+        {
             "0 (forever)".into()
         }
         Value::Bool(true) => "On".into(),
@@ -361,17 +363,23 @@ impl Field {
     }
 
     /// Whether the change to `value` may go ahead: asked first when it
-    /// keeps less history than now, which deletes the rest for good.
-    /// Declined, a number stays in its field, not saved.
+    /// keeps less than now, which deletes the rest for good. Declined, a
+    /// number stays in its field, not saved.
     fn confirmed(self, value: &Value) -> bool {
         self.setting.with_untracked(|setting| {
-            !setting.keeps_less(value)
-                || confirm(&format!(
-                    "Change {} from {} to {}? That keeps less history: piqueld deletes the rest for good.",
-                    setting.label,
-                    display(setting, &setting.value),
-                    display(setting, value),
-                ))
+            let deletes = match setting.prunes {
+                _ if !setting.keeps_less(value) => return true,
+                Some(Pruning::Images) => {
+                    "That keeps fewer images: the next cleanup deletes the rest for good, and a deployment without its images can't be restored."
+                }
+                _ => "That keeps less history: piqueld deletes the rest for good.",
+            };
+            confirm(&format!(
+                "Change {} from {} to {}? {deletes}",
+                setting.label,
+                display(setting, &setting.value),
+                display(setting, value),
+            ))
         })
     }
 

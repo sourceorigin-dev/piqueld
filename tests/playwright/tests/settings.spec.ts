@@ -104,6 +104,13 @@ test('daemon settings change in their fields, say why a value is refused, and re
   await page.getByRole('button', { name: 'Reset Audit trail (days) to its default, 365', exact: true }).click();
   await expect(audit).toHaveValue('365');
 
+  // Keeping fewer images asks too, saying what it deletes.
+  const images = page.getByRole('textbox', { name: 'Deployments kept per environment', exact: true });
+  await images.fill('1');
+  confirmNext(page, 'Change Deployments kept per environment from 3 to 1? That keeps fewer images');
+  await images.press('Enter');
+  await expect(row('images.keep_deployments')).toContainText('Default: 3');
+
   // A switch saves when toggled, by its name too.
   const traffic = page.getByRole('switch', { name: 'Count traffic', exact: true });
   await row('ingress.traffic').getByText('Count traffic', { exact: true }).click();

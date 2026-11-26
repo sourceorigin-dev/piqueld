@@ -6673,8 +6673,23 @@
                 "type": "string"
               },
               "prunes": {
-                "description": "Whether it keeps history: a lower value deletes what only a higher\none kept, for good, and `0`, where it takes it, keeps everything.",
-                "type": "boolean"
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Pruning"
+                      }
+                    ],
+                    "description": "What it keeps, when a lower value deletes what only a higher one\nkept, for good."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
               },
               "section": {
                 "description": "The title of its section, such as `History`.",
@@ -10992,6 +11007,14 @@
         ],
         "type": "object"
       },
+      "Pruning": {
+        "description": "What a daemon setting keeps, so that a lower value deletes the rest.",
+        "enum": [
+          "history",
+          "images"
+        ],
+        "type": "string"
+      },
       "PublicIngressStatus": {
         "description": "How public routes reach the gateway: `[ingress.tunnel]` selects the mode.",
         "oneOf": [
@@ -12896,8 +12919,23 @@
             "type": "string"
           },
           "prunes": {
-            "description": "Whether it keeps history: a lower value deletes what only a higher\none kept, for good, and `0`, where it takes it, keeps everything.",
-            "type": "boolean"
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Pruning"
+                  }
+                ],
+                "description": "What it keeps, when a lower value deletes what only a higher one\nkept, for good."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
           },
           "section": {
             "description": "The title of its section, such as `History`.",

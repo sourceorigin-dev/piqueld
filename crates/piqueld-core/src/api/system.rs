@@ -183,22 +183,34 @@ pub struct Setting {
     /// build machine; while set, the setting can't be changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs: Option<String>,
-    /// Whether it keeps history: a lower value deletes what only a higher
-    /// one kept, for good, and `0`, where it takes it, keeps everything.
-    #[serde(default)]
-    pub prunes: bool,
+    /// What it keeps, when a lower value deletes what only a higher one
+    /// kept, for good.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prunes: Option<Pruning>,
+}
+
+/// What a daemon setting keeps, so that a lower value deletes the rest.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Pruning {
+    /// History, for a time or a count, where `0` keeps everything.
+    History,
+    /// Each environment's latest successful deployments' images, where `0`
+    /// keeps none beyond what runs; fewer also lets their deployments go
+    /// from history sooner.
+    Images,
 }
 
 impl Setting {
-    /// Whether changing it to `value` keeps less history than it does now,
-    /// which deletes the rest for good.
+    /// Whether changing it to `value` keeps less than it does now, which
+    /// deletes the rest for good.
     #[must_use]
     pub fn keeps_less(&self, value: &serde_json::Value) -> bool {
-        let kept = |value: &serde_json::Value| match value.as_u64() {
-            Some(0) | None => u64::MAX,
-            Some(kept) => kept,
+        let kept = |value: &serde_json::Value| match (self.prunes, value.as_u64()) {
+            (Some(Pruning::History), Some(0)) | (_, None) => u64::MAX,
+            (_, Some(kept)) => kept,
         };
-        self.prunes && kept(value) < kept(&self.value)
+        self.prunes.is_some() && kept(value) < kept(&self.value)
     }
 }
 

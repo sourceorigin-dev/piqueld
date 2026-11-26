@@ -89,11 +89,12 @@ next time piqueld prunes, and nothing brings it back. The dashboard asks you
 to confirm such a change, and a reset that does the same. `piquelctl settings
 set` doesn't ask.
 
-Lowering a setting under **Images** removes images too, at the next
-cleanup: from this host, and with a build machine, from its registry for
-good. A deployment whose images are gone can't be restored from this host,
-or, once the registry has deleted them, at all. The dashboard doesn't ask
-before this change.
+Lowering how many deployments keep their images, under **Images**, removes
+images too, at the next cleanup: from this host, and with a build machine,
+from its registry for good. A deployment whose images are gone can't be
+restored from this host, or, once the registry has deleted them, at all, and
+history keeps fewer deployments. The dashboard asks you to confirm this
+change too.
 
 Every change is recorded in the [audit trail](audit.md), with the old and the
 new value.
