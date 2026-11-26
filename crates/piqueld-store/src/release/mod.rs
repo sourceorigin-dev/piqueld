@@ -60,7 +60,10 @@ impl Store {
     /// Records the release deployment `id`'s prepared `target` runs, when its
     /// environment records releases, and references it from the deployment.
     /// A preparation with the content of one of the application's releases
-    /// shares it. Runs in the transaction that saves the prepared target.
+    /// shares it. Its creation time stays after the application's other
+    /// releases even across a restart with the clock behind, so history
+    /// pruning can keep the newest by it. Runs in the transaction that saves
+    /// the prepared target.
     pub(super) async fn record_release_on(
         tx: &mut Transaction<'_, Sqlite>,
         id: &str,
@@ -94,7 +97,7 @@ impl Store {
             environment.environment.application_id.as_str(),
         );
         sqlx::query!(
-            "INSERT INTO releases(id,application_id,content_hash,release_json,created_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(application_id,content_hash) DO NOTHING",
+            "INSERT INTO releases(id,application_id,content_hash,release_json,created_at_ms) VALUES(?1,?2,?3,?4,MAX(?5,(SELECT COALESCE(MAX(created_at_ms)+1,?5) FROM releases WHERE application_id=?2))) ON CONFLICT(application_id,content_hash) DO NOTHING",
             release_id,
             application,
             hash,

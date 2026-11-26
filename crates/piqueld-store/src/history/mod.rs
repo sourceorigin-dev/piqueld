@@ -8,10 +8,10 @@ const PRUNE_BATCH: usize = 1_000;
 /// How long ago a preview's deployment must have finished before it can be
 /// pruned: a superseded one may still be stopping.
 const PREVIEW_MIN_AGE_MS: i64 = 3_600_000;
-/// How many of each application's releases pruning keeps, highest IDs first,
-/// whether or not a deployment references them; it keeps every one a
-/// deployment references too. IDs follow creation time, except across a
-/// restart with the clock behind.
+/// How many of each application's releases pruning keeps, newest by creation
+/// time first (then highest ID), whether or not a deployment references them;
+/// it keeps every one a deployment references too. Not by ID alone, which
+/// follows creation time only within one daemon run.
 const KEPT_RELEASES: i64 = 50;
 
 /// How much deployment history each environment keeps; see
@@ -110,7 +110,7 @@ impl Store {
             .await
             .map_err(StoreError::database)?;
         sqlx::query!(
-            "DELETE FROM releases WHERE NOT EXISTS(SELECT 1 FROM deployments d WHERE d.release_id=releases.id) AND id NOT IN (SELECT id FROM (SELECT id,ROW_NUMBER() OVER (PARTITION BY application_id ORDER BY id DESC) AS rank FROM releases) WHERE rank<=?1)",
+            "DELETE FROM releases WHERE NOT EXISTS(SELECT 1 FROM deployments d WHERE d.release_id=releases.id) AND id NOT IN (SELECT id FROM (SELECT id,ROW_NUMBER() OVER (PARTITION BY application_id ORDER BY created_at_ms DESC,id DESC) AS rank FROM releases) WHERE rank<=?1)",
             KEPT_RELEASES
         )
         .execute(&mut *tx)
