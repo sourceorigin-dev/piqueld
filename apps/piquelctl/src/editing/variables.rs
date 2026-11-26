@@ -12,6 +12,7 @@ use piqueld_client::{
     edit::{ApplicationEdit, Variables},
 };
 
+/// A variable of an application, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct VariableTarget {
     /// Application name or stable ID.
@@ -26,9 +27,11 @@ pub(crate) struct VariableTarget {
     /// `[spec.previews.variables]`, instead of its default.
     #[arg(long, conflicts_with = "environment")]
     previews: bool,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
+/// `piquelctl app variable` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum VariableCommand {
     /// Set a variable's default value, or its value in one environment or in
@@ -36,6 +39,7 @@ pub(crate) enum VariableCommand {
     ///
     /// An environment's or the previews' value overrides the default.
     Set {
+        /// The variable to set.
         #[command(flatten)]
         target: VariableTarget,
         /// `true`, `false` and integers keep their type, and anything else is

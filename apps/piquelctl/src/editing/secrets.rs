@@ -17,22 +17,29 @@ fn secret_encoding() -> impl TypedValueParser<Value = SecretEncoding> {
         }
     })
 }
+/// A generated secret an application declares, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct GeneratedSecretTarget {
     /// Application name or stable ID.
     app: String,
     /// Secret name, as services and jobs mount it.
     name: String,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
+/// Arguments of `app generated-secret set`: the secret, and how it is
+/// generated.
 #[derive(Debug, Args)]
 pub(crate) struct SetGeneratedSecretArgs {
+    /// The secret to declare.
     #[command(flatten)]
     target: GeneratedSecretTarget,
+    /// How the secret is generated.
     #[command(flatten)]
     generator: Generator,
 }
+/// Flags that choose how a secret is generated: random bytes or an RSA key.
 #[derive(Debug, Args)]
 #[command(group(clap::ArgGroup::new("generator").required(true).args(["bytes", "rsa_bits"])))]
 struct GeneratorFlags {
@@ -65,6 +72,7 @@ impl GeneratorFlags {
 #[derive(Debug)]
 struct Generator(SecretGenerator);
 crate::cli::choice_args!(Generator, GeneratorFlags, GeneratorFlags::choice);
+/// `piquelctl app generated-secret` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum GeneratedSecretCommand {
     /// List the secrets the application declares for piqueld to generate, as

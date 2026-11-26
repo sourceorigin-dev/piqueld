@@ -19,12 +19,14 @@ use piqueld_client::{
 };
 use std::collections::BTreeMap;
 
+/// A service of an application, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct ServiceTarget {
     /// Application name or stable ID.
     pub(super) app: String,
     /// Service name.
     pub(super) service: String,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     pub(super) flags: EditFlags,
 }
@@ -36,6 +38,7 @@ impl ServiceTarget {
     }
 }
 
+/// `piquelctl app service` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum ServiceCommand {
     /// Add a service that runs an image, or builds a Git repository with
@@ -63,11 +66,13 @@ pub(crate) enum ServiceCommand {
     /// `image` and `git` replace the source. The other commands change one
     /// setting of the current Git source.
     Source {
+        /// The source operation to run.
         #[command(subcommand)]
         command: SourceCommand,
     },
     /// Set or remove one environment variable of a service.
     Env {
+        /// The environment variable operation to run.
         #[command(subcommand)]
         command: EnvironmentCommand,
     },
@@ -106,6 +111,7 @@ pub(crate) enum ServiceCommand {
     Security(SecurityArgs),
     /// Mount a volume into a service, or remove a mount.
     Mount {
+        /// The volume mount operation to run.
         #[command(subcommand)]
         command: MountCommand,
     },
@@ -114,6 +120,7 @@ pub(crate) enum ServiceCommand {
     /// These commands choose where secrets appear. Set their values, and who
     /// may mount them, with `app secret`.
     Secret {
+        /// The secret mount operation to run.
         #[command(subcommand)]
         command: SecretMountCommand,
     },
@@ -122,6 +129,7 @@ pub(crate) enum ServiceCommand {
     /// The commands that change one setting need a health check of the
     /// matching kind first.
     Health {
+        /// The health check operation to run.
         #[command(subcommand)]
         command: HealthCommand,
     },
@@ -130,8 +138,11 @@ pub(crate) enum ServiceCommand {
     /// Set the service's memory limit, or remove it with `--clear`.
     Memory(MemoryArgs),
 }
+/// Arguments of `app service rollout`: the service, its rollout order and
+/// monitor window.
 #[derive(Debug, Args)]
 pub(crate) struct RolloutArgs {
+    /// The service to change.
     #[command(flatten)]
     target: ServiceTarget,
     /// `stop-first` stops the old task before starting its replacement, and
@@ -145,8 +156,11 @@ pub(crate) struct RolloutArgs {
     #[arg(long, value_name = "SECONDS")]
     monitor_seconds: Option<Typed<u32>>,
 }
+/// Arguments of `app service telemetry`: the service, and whether it receives
+/// telemetry.
 #[derive(Debug, Args)]
 pub(crate) struct ReceivesTelemetryArgs {
+    /// The service to change.
     #[command(flatten)]
     target: ServiceTarget,
     /// `on` to receive telemetry where the environment is granted it, `off`
@@ -154,8 +168,11 @@ pub(crate) struct ReceivesTelemetryArgs {
     #[arg(value_name = "on|off", action = clap::ArgAction::Set, value_parser = on_off())]
     enabled: bool,
 }
+/// Arguments of `app service security`: the service, and its container
+/// hardening.
 #[derive(Debug, Args)]
 pub(crate) struct SecurityArgs {
+    /// The service to change.
     #[command(flatten)]
     target: ServiceTarget,
     /// Run as this numeric user, and group if given, instead of the image's
@@ -172,13 +189,17 @@ pub(crate) struct SecurityArgs {
     #[arg(long)]
     no_new_privileges: bool,
 }
+/// Arguments of `app service add`: the service, and what it runs or builds.
 #[derive(Debug, Args)]
 pub(crate) struct AddServiceArgs {
+    /// The service to add.
     #[command(flatten)]
     target: ServiceTarget,
+    /// The image to run, or the repository to build.
     #[command(flatten)]
     source: NewSource,
 }
+/// Flags that choose an image to run, or a Git repository to build.
 #[derive(Debug, Args)]
 struct NewSourceFlags {
     /// Image to run, such as `nginx:stable`. It may reference variables.
@@ -190,13 +211,16 @@ struct NewSourceFlags {
     /// manifest's own repository, at the commit the manifest was read from.
     #[arg(long, value_name = "URL|self")]
     git: Option<BuildRepository>,
+    /// How the repository is built.
     #[command(flatten)]
     build: Box<GitBuildArgs>,
 }
 /// The image `app service add` runs, or the repository it builds and how.
 #[derive(Debug)]
 enum NewSource {
+    /// Runs this image.
     Image(Template),
+    /// Builds this repository, with these build settings.
     Git(BuildRepository, Box<GitBuildArgs>),
 }
 impl NewSourceFlags {
@@ -209,10 +233,12 @@ impl NewSourceFlags {
     }
 }
 crate::cli::choice_args!(NewSource, NewSourceFlags, NewSourceFlags::choice);
+/// `piquelctl app service env` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum EnvironmentCommand {
     /// Set an environment variable, keeping the service's others.
     Set {
+        /// The service to change.
         #[command(flatten)]
         target: ServiceTarget,
         /// Variable name.
@@ -225,12 +251,15 @@ pub(crate) enum EnvironmentCommand {
     ///
     /// Removing one the service doesn't set fails.
     Remove {
+        /// The service to change.
         #[command(flatten)]
         target: ServiceTarget,
         /// Variable name.
         key: String,
     },
 }
+/// Arguments of the commands that list a setting of one service or of every
+/// service.
 #[derive(Debug, Args)]
 pub(crate) struct ServiceListArgs {
     /// Application name or stable ID.
@@ -270,6 +299,7 @@ impl ServiceListArgs {
         console.emit(&rows)
     }
 }
+/// `piquelctl app service health` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum HealthCommand {
     /// Replace the health check with an HTTP check.
@@ -277,6 +307,7 @@ pub(crate) enum HealthCommand {
     /// The check sends a `GET` request to the port inside the container and
     /// passes on a 2xx or 3xx status. It needs nothing in the image.
     Http {
+        /// The service to change.
         #[command(flatten)]
         target: ServiceTarget,
         /// Container port to probe, from 1 to 65535.
@@ -284,6 +315,7 @@ pub(crate) enum HealthCommand {
         /// Request path, starting with `/`.
         #[arg(long, default_value = "/health")]
         path: Template,
+        /// How often and how long the check runs.
         #[command(flatten)]
         timing: HealthTimingArgs,
     },
@@ -292,8 +324,10 @@ pub(crate) enum HealthCommand {
     /// The command runs inside the container, without a shell, and passes when
     /// it exits with status 0. Put the command's options before `--`.
     Command {
+        /// The service to change.
         #[command(flatten)]
         target: ServiceTarget,
+        /// How often and how long the check runs.
         #[command(flatten)]
         timing: HealthTimingArgs,
         /// Command elements, after `--`. Each one is passed as is, spaces
@@ -319,6 +353,7 @@ pub(crate) enum HealthCommand {
     /// Change how many consecutive failed checks make the container unhealthy.
     Retries(HealthRetriesArgs),
 }
+/// Timing of a health check: its interval, timeout, start period and retries.
 #[derive(Debug, Args)]
 pub(crate) struct HealthTimingArgs {
     /// Seconds between checks, from 1 to 3600.

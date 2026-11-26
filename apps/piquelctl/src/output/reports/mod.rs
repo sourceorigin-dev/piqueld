@@ -314,7 +314,9 @@ impl Names<'_> {
 /// A report whose human rendering names environments; its JSON is the
 /// value's own.
 pub(crate) struct Named<'a, T> {
+    /// The reported value.
     value: &'a T,
+    /// The environments to name in human output.
     names: Names<'a>,
 }
 
@@ -381,7 +383,9 @@ fn snapshot_origin(snapshot: &LocalSnapshot) -> String {
 /// One table row: its cells, and an optional note written on its own
 /// indented line beneath it. Callers without notes return the cells alone.
 pub(crate) struct Row<const N: usize> {
+    /// The row's cells, in column order.
     pub(crate) cells: [String; N],
+    /// A line written beneath the row.
     pub(crate) note: Option<String>,
 }
 

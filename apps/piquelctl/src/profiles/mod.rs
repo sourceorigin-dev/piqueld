@@ -10,7 +10,9 @@ use std::{borrow::Cow, collections::BTreeMap, fmt, path::PathBuf};
 /// Effective profile data, independent of its human or machine presentation.
 #[derive(Serialize)]
 pub(crate) struct ProfileSummary<'a> {
+    /// The profile's name.
     pub(crate) name: &'a str,
+    /// The profile's endpoint, as a socket path or URL.
     pub(crate) endpoint: Cow<'a, str>,
     /// Whether this profile is used when neither `--profile` nor `PIQUELD_PROFILE` names one.
     pub(crate) default: bool,
@@ -19,8 +21,11 @@ pub(crate) struct ProfileSummary<'a> {
 /// Sources are tracked independently: endpoint and timeout may use different overrides.
 #[derive(Debug, Default)]
 pub(crate) struct ConnectionSources {
+    /// Where the endpoint came from.
     pub(crate) endpoint: Source,
+    /// Where the `--timeout` value came from.
     pub(crate) timeout: Source,
+    /// Where the `--wait-timeout` value came from.
     pub(crate) wait_timeout: Source,
 }
 
@@ -34,12 +39,18 @@ pub(crate) struct ConnectionSources {
 /// ```
 #[derive(Clone, Debug, Default)]
 pub(crate) enum Source {
+    /// The built-in default.
     #[default]
     Default,
+    /// The named flag.
     Flag(&'static str),
+    /// The named environment variable.
     Environment(&'static str),
+    /// A profile in a profiles file.
     Profile {
+        /// The profile's name.
         name: String,
+        /// The profiles file that defines it.
         path: PathBuf,
     },
 }
@@ -62,13 +73,16 @@ impl fmt::Display for Source {
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Profiles {
+    /// The profile used when none is selected.
     default: Option<DefaultProfile>,
+    /// The named connections, by name.
     profiles: BTreeMap<String, Profile>,
 }
 /// The top-level `default = "<name>"`, used when no profile is selected.
 #[derive(Deserialize)]
 #[serde(transparent)]
 struct DefaultProfile {
+    /// The default profile's name.
     name: String,
     /// File that set the default, filled in after parsing.
     #[serde(skip)]
@@ -78,7 +92,9 @@ struct DefaultProfile {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Profile {
+    /// The Unix socket path to connect to.
     socket: Option<PathBuf>,
+    /// The daemon's URL to connect to.
     url: Option<String>,
     /// Unparsed duration, validated with `parse_duration`.
     timeout: Option<String>,

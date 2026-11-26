@@ -26,17 +26,22 @@ fn volume_access() -> impl TypedValueParser<Value = JobVolumeAccess> {
         }
     })
 }
+/// A job of an application, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct JobTarget {
     /// Application name or stable ID.
     app: String,
     /// Job name.
     job: String,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
+/// Arguments of `app job set`: the job, the service it reuses, and its
+/// settings.
 #[derive(Debug, Args)]
 pub(crate) struct SetJobArgs {
+    /// The job to add or replace.
     #[command(flatten)]
     target: JobTarget,
     /// Service whose image, environment, secrets, mounts and startup
@@ -106,8 +111,10 @@ impl SetJobArgs {
         current.map_or_default(|job| job.secrets.clone())
     }
 }
+/// Arguments of `app job move`: the job, and its new position.
 #[derive(Debug, Args)]
 pub(crate) struct MoveJobArgs {
+    /// The job to move.
     #[command(flatten)]
     target: JobTarget,
     /// New 1-based position in the run order. A position past the end moves
@@ -115,6 +122,7 @@ pub(crate) struct MoveJobArgs {
     #[arg(value_parser = clap::value_parser!(u32).range(1..))]
     position: u32,
 }
+/// `piquelctl app job` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum JobCommand {
     /// Add a job that runs before each rollout, or replace the job with this

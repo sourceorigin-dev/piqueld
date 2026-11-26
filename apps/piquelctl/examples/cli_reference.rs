@@ -24,6 +24,7 @@ and `piquelctl --version` prints the CLI's version.";
 
 /// Renders the reference, one section per command, depth first.
 struct CliReference {
+    /// The Markdown page being written.
     page: Page,
 }
 

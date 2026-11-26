@@ -11,11 +11,15 @@ use std::{
 /// Final state printed on a task's completion line.
 #[derive(Clone, Copy)]
 pub(crate) enum TaskOutcome {
+    /// The task finished successfully.
     Succeeded,
+    /// The task failed.
     Failed,
+    /// The task was not needed.
     Skipped,
 }
 impl TaskOutcome {
+    /// The outcome as printed on the completion line.
     pub(super) fn text(self) -> &'static str {
         match self {
             Self::Succeeded => "succeeded",
@@ -39,15 +43,20 @@ pub(super) enum Backend {
 
 /// Console-owned progress renderer; tasks keep their own reference to the output.
 pub(super) struct ProgressOutput {
+    /// The shared output of the console and its tasks.
     pub(super) inner: Arc<Output>,
 }
 /// Progress backend plus the shared stderr writer used for permanent lines.
 pub(super) struct Output {
+    /// How progress is presented.
     pub(super) backend: Backend,
+    /// Where permanent lines are written.
     writer: SharedWriter,
 }
 
 impl ProgressOutput {
+    /// Chooses the backend from the terminal and `--quiet` and `--json`
+    /// settings, writing to `writer`.
     pub(super) fn new(writer: SharedWriter, terminal: bool, quiet: bool, json: bool) -> Self {
         let backend = if quiet {
             Backend::Hidden
@@ -114,6 +123,8 @@ impl ProgressOutput {
 }
 
 impl Output {
+    /// Runs `event` with the spinner rows hidden on a terminal, or directly
+    /// otherwise.
     fn suspend<T>(&self, event: impl FnOnce() -> T) -> T {
         match &self.backend {
             Backend::Terminal(multi) => multi.suspend(event),
@@ -177,6 +188,7 @@ impl Progress for ProgressTask {
 /// transient row; explicit finish is idempotent across all clones.
 #[derive(Clone)]
 pub(crate) struct ProgressTask {
+    /// The task's shared state.
     state: Arc<Mutex<Task>>,
 }
 
@@ -249,10 +261,12 @@ pub(super) const SPINNER_TICK: Duration = Duration::from_millis(100);
 pub(super) struct Row {
     /// The spinner, present only on the terminal backend.
     bar: Option<ProgressBar>,
+    /// Whether the row was cleared already.
     finished: bool,
 }
 
 impl Row {
+    /// A row drawn by `bar`, if any.
     pub(super) fn new(bar: Option<ProgressBar>) -> Self {
         Self {
             bar,
@@ -260,10 +274,12 @@ impl Row {
         }
     }
 
+    /// The spinner, on the terminal backend.
     pub(super) fn bar(&self) -> Option<&ProgressBar> {
         self.bar.as_ref()
     }
 
+    /// Whether the row was cleared.
     pub(super) fn is_finished(&self) -> bool {
         self.finished
     }
@@ -287,10 +303,13 @@ impl Drop for Row {
 
 /// Shared state behind every clone of one `ProgressTask`.
 struct Task {
+    /// Where the task's lines are written.
     output: Arc<Output>,
     /// Task label, escaped when rendered for humans.
     label: String,
+    /// The task's terminal row.
     row: Row,
+    /// When the task started.
     started: Instant,
     /// Last message, used to suppress duplicate updates.
     last: Option<String>,

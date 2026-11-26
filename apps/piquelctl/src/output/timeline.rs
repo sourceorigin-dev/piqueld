@@ -40,6 +40,7 @@ const BAR_CELLS: usize = 12;
 /// with each timeline received; the terminal row redraws itself every
 /// 100 ms from the latest, so running steps' times advance between them.
 pub(crate) struct TimelineProgress {
+    /// Where the timeline's lines are written.
     output: Arc<Output>,
     /// What the terminal row draws, shared with its draw callback.
     view: Arc<Mutex<View>>,
@@ -360,6 +361,7 @@ struct Rows<'a> {
 }
 
 impl<'a> Rows<'a> {
+    /// Draws at most `max_rows` of `steps`, folding finished ones into counts.
     fn new(steps: &'a [Step], max_rows: usize) -> Self {
         let over = steps.len().saturating_sub(max_rows);
         let needed = if over > 0 { over + 1 } else { 0 };
@@ -463,7 +465,10 @@ impl fmt::Display for StepLabel<'_> {
 /// `now_ms`, also how long a step still running has run, its open monitor
 /// window and its downtime so far.
 struct StepDetail<'a> {
+    /// The step to describe.
     step: &'a Step,
+    /// The current time in Unix milliseconds, when running steps should show
+    /// how long they have run.
     now_ms: Option<i64>,
 }
 

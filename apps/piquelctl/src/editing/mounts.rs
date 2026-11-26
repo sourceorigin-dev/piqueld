@@ -15,10 +15,12 @@ use piqueld_client::{
     edit::{ApplicationEdit, ServiceEdit},
 };
 
+/// `piquelctl app service mount` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum MountCommand {
     /// Mount a volume at a container path, replacing any mount at that path.
     Set {
+        /// The service to mount the volume into.
         #[command(flatten)]
         target: ServiceTarget,
         /// Name of a volume the application declares, with `app volume add`.
@@ -33,6 +35,7 @@ pub(crate) enum MountCommand {
     /// Remove the mount at a container path.
     Remove(MountPathArgs),
 }
+/// `piquelctl app service secret` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum SecretMountCommand {
     /// List the secrets the application's services mount, as saved.
@@ -48,8 +51,10 @@ pub(crate) enum SecretMountCommand {
     /// Removing a path the service doesn't mount a secret at fails.
     Remove(SecretPathArgs),
 }
+/// Arguments of `app service secret add`: the secret, and where to mount it.
 #[derive(Debug, Args)]
 pub(crate) struct AddSecretMountArgs {
+    /// The service to mount the secret into.
     #[command(flatten)]
     target: ServiceTarget,
     /// Secret name: one set with `app secret`, or one the manifest declares
@@ -124,6 +129,7 @@ impl SecretMountCommand {
             .await
     }
 }
+/// `piquelctl app file` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum FileCommand {
     /// List the files the application's services mount, as saved.
@@ -137,13 +143,16 @@ pub(crate) enum FileCommand {
     /// Remove the file at a container path.
     Remove(FilePathArgs),
 }
+/// Arguments of `app file add`: the file's path, content and mode.
 #[derive(Debug, Args)]
 pub(crate) struct AddFileArgs {
+    /// The service to mount the file into.
     #[command(flatten)]
     target: ServiceTarget,
     /// Absolute container path of the file.
     #[arg(value_name = "TARGET")]
     file: String,
+    /// Where the file's content comes from.
     #[command(flatten)]
     source: FileSourceArgs,
     /// Octal permissions of the file, from `0000` to `0777`, such as `0440`.
@@ -151,6 +160,8 @@ pub(crate) struct AddFileArgs {
     #[arg(long, default_value_t = FileMode::default())]
     mode: FileMode,
 }
+/// Where a mounted file's content comes from: exactly one of text, a local file
+/// or a file in the manifest's repository.
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
 pub(crate) struct FileSourceArgs {
@@ -203,15 +214,18 @@ impl FileCommand {
         target.flags.save(client, console, &target.app, &edit).await
     }
 }
+/// A volume of an application, and how its edit is saved.
 #[derive(Debug, Args)]
 pub(crate) struct VolumeArgs {
     /// Application name or stable ID.
     app: String,
     /// Volume name.
     volume: String,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
+/// `piquelctl app volume` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum VolumeCommand {
     /// Declare a named volume that services can mount.

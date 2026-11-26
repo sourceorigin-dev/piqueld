@@ -11,6 +11,7 @@ use piqueld_client::{
     edit::{ApplicationEdit, ServiceEdit},
 };
 
+/// `piquelctl app service source` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum SourceCommand {
     /// Run a prebuilt image, replacing the service's source.
@@ -31,14 +32,18 @@ pub(crate) enum SourceCommand {
     /// Change the directory the service's build uses as its context.
     Context(ContextArgs),
 }
+/// Arguments of `app service source git`: the service, the repository, and its
+/// build settings.
 #[derive(Debug, Args)]
 pub(crate) struct GitSourceArgs {
+    /// The service to change.
     #[command(flatten)]
     target: ServiceTarget,
     /// Git clone URL, a path on the daemon's host, or `self`: the manifest's
     /// own repository, at the commit the manifest was read from.
     #[arg(id = "git", value_name = "URL|self")]
     repository: BuildRepository,
+    /// How the repository is built.
     #[command(flatten)]
     build: Box<GitBuildArgs>,
 }
@@ -47,7 +52,9 @@ pub(crate) struct GitSourceArgs {
 /// or host path.
 #[derive(Clone, Debug)]
 pub(crate) enum BuildRepository {
+    /// The manifest's own repository.
     Manifest,
+    /// A clone URL or a path on the daemon's host.
     Url(String),
 }
 impl From<String> for BuildRepository {
@@ -59,6 +66,8 @@ impl From<String> for BuildRepository {
         }
     }
 }
+/// Settings of a Git build: branch, commit, Dockerfile, context, build
+/// arguments and target stage.
 #[derive(Debug, Args)]
 pub(crate) struct GitBuildArgs {
     /// Branch to build when no commit is pinned. Default: `main`. `self`

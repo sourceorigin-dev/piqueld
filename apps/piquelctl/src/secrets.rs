@@ -17,6 +17,7 @@ use piqueld_client::{
 };
 use std::path::PathBuf;
 
+/// `piquelctl app secret` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum SecretAction {
     /// List the application's stored secrets and who may mount them.
@@ -44,6 +45,7 @@ pub(crate) enum SecretAction {
         /// terminal asks for it without echo.
         #[arg(long, conflicts_with = "file")]
         stdin: bool,
+        /// Which environments and previews may mount the secret.
         #[command(flatten)]
         access: AccessFlags,
         /// Fail unless the secret is at this generation; `0` requires that it
@@ -64,6 +66,7 @@ pub(crate) enum SecretAction {
     Access {
         /// Secret name.
         name: String,
+        /// Which environments and previews may mount the secret.
         #[command(flatten)]
         access: AccessFlags,
     },
@@ -74,6 +77,8 @@ pub(crate) enum SecretAction {
     Delete(SecretChange),
 }
 
+/// Arguments of `app secret delete`: the secret, and how the deletion is
+/// checked and confirmed.
 #[derive(Debug, Args)]
 pub(crate) struct SecretChange {
     /// Secret name.
@@ -98,6 +103,7 @@ impl SecretChange {
     }
 }
 
+/// Which environments, and whether previews, may mount a secret.
 #[derive(Debug, Args)]
 pub(crate) struct AccessFlags {
     /// Let only these environments mount the secret: comma-separated names or
@@ -271,6 +277,7 @@ impl SecretAction {
     }
 }
 
+/// `piquelctl env secret` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum GeneratedSecretAction {
     /// List the environment's generated secrets.
@@ -291,10 +298,14 @@ pub(crate) enum GeneratedSecretAction {
     Delete(GeneratedSecretChange),
 }
 
+/// Arguments of `env secret regenerate` and `delete`: the environment, and the
+/// secret.
 #[derive(Debug, Args)]
 pub(crate) struct GeneratedSecretChange {
+    /// The environment the secret belongs to.
     #[command(flatten)]
     target: NamedEnvironment,
+    /// The secret, and how the change is checked and confirmed.
     #[command(flatten)]
     change: SecretChange,
 }
@@ -338,6 +349,7 @@ impl GeneratedSecretAction {
     }
 }
 
+/// `piquelctl secrets` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum KeyAction {
     /// Recover from a lost secret key by discarding every value it encrypted.

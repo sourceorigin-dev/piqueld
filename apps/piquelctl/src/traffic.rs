@@ -13,8 +13,11 @@ use piqueld_client::{
     observability::{Bytes, Elapsed, TrafficCounts, TrafficRank, TrafficReport, UtcTime},
 };
 
+/// Arguments of `env traffic`: the environment, optional route filters, and the
+/// time window.
 #[derive(Debug, Args)]
 pub(crate) struct TrafficArgs {
+    /// The environment to report on.
     #[command(flatten)]
     target: EnvironmentArgs,
     /// Only the routes to this service.
@@ -24,6 +27,7 @@ pub(crate) struct TrafficArgs {
     /// *.example.com.
     #[arg(long)]
     hostname: Option<String>,
+    /// The time window to cover.
     #[command(flatten)]
     window: Window,
 }
@@ -62,6 +66,7 @@ impl TrafficArgs {
 
 /// `env traffic` result; human output also names the environment.
 struct TrafficView<'a> {
+    /// The daemon's traffic report.
     traffic: &'a TrafficReport,
     /// `sc2dle / production`.
     environment: String,

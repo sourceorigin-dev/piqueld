@@ -20,7 +20,9 @@ report!(Deployed, self, out, {
 /// the deployment's.
 #[derive(Serialize)]
 pub(crate) struct AcceptedDeploymentReport {
+    /// The application generation the accepted operation carries.
     pub(crate) generation: u64,
+    /// The deployment.
     #[serde(flatten)]
     pub(crate) deployed: Deployed,
 }
@@ -83,7 +85,9 @@ report!(Page<BuildRecord>, self, out, {
 /// `attempts` result: one page of a deployment's attempts, newest first. Its
 /// JSON is the page; every attempt's `id` is the deployment's.
 pub(crate) struct AttemptsReport {
+    /// The deployment's ID.
     pub(crate) deployment: String,
+    /// One page of the deployment's attempts.
     pub(crate) page: Page<Operation>,
 }
 report!(AttemptsReport as Page<Operation> = page, self, out, {
@@ -107,6 +111,7 @@ report!(AttemptsReport as Page<Operation> = page, self, out, {
 /// Name of a deleted secret or notification destination.
 #[derive(Serialize)]
 pub(crate) struct NameDeletionReport<'a> {
+    /// The name that was deleted.
     pub(crate) deleted: &'a str,
 }
 report!(NameDeletionReport<'_>, self, out, {
@@ -172,9 +177,11 @@ report!(AcceptedOperation, self, out, {
 /// Save followed by an awaited deployment; renders like the finished operation.
 #[derive(Serialize)]
 pub(crate) struct SavedDeploymentReport<'a> {
+    /// The saved application.
     pub(crate) saved: &'a SavedApplication,
     /// The first deployment's outcome and operation.
     pub(crate) outcome: OperationState,
+    /// The first deployment's operation.
     pub(crate) operation: &'a Operation,
     /// Every deployment, one per environment that builds.
     pub(crate) operations: &'a [Operation],
@@ -193,8 +200,11 @@ report!(SavedDeploymentReport<'_>, self, out, {
 /// deployment's fields; renders like the operation, with its URLs.
 #[derive(Serialize)]
 pub(crate) struct OperationOutcomeReport<'a> {
+    /// The operation the daemon accepted.
     pub(crate) accepted: &'a AcceptedOperation,
+    /// The operation once it ended.
     pub(crate) operation: Operation,
+    /// The deployment.
     #[serde(flatten)]
     pub(crate) deployed: Deployed,
 }
@@ -207,10 +217,12 @@ report!(OperationOutcomeReport<'_>, self, out, {
 /// waiting. Environments retain their volumes; previews remove theirs.
 #[derive(Serialize)]
 pub(crate) struct DeletionReport<'a> {
+    /// The deletion operation the daemon accepted.
     accepted: &'a AcceptedOperation,
     /// `Some("deleted")` once the environment is gone; omitted with `--no-wait`.
     #[serde(skip_serializing_if = "Option::is_none")]
     outcome: Option<&'static str>,
+    /// Whether the volumes were kept; false once a preview's are removed.
     volumes_retained: bool,
 }
 impl<'a> DeletionReport<'a> {
@@ -259,6 +271,7 @@ report!(DeletionReport<'_>, self, out, {
 /// environments retain their volumes, previews remove theirs.
 #[derive(Serialize)]
 pub(crate) struct ApplicationDeletionReport<'a> {
+    /// The application that was deleted.
     deleted: &'a DeletedApplication,
     /// `Some("deleted")` once the application is gone; omitted with `--no-wait`.
     #[serde(skip_serializing_if = "Option::is_none")]
