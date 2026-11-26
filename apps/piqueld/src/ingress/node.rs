@@ -39,6 +39,7 @@ use tokio::{net::TcpListener, task::JoinSet};
 
 /// Ports of the gateway's private listener, never published on the host.
 pub(super) const PRIVATE_HTTPS_PORT: u16 = 8443;
+/// Port the private listener serves plain HTTP on, from inside the edge network.
 pub(super) const PRIVATE_HTTP_PORT: u16 = 8081;
 /// Tailscale's address ranges. The private listener completes TLS only for
 /// clients in them, which only a PROXY header from the edge network can claim.
@@ -254,7 +255,9 @@ pub(super) async fn proxy_relay(
 /// An IP subnet such as `10.0.3.0/24`, as Docker reports network ranges.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Subnet {
+    /// Network address of the subnet.
     address: IpAddr,
+    /// Length of the subnet's prefix, in bits.
     prefix: u8,
 }
 
@@ -265,6 +268,7 @@ pub(super) struct Subnet {
     "ingress network subnet {subnet} overlaps the tailnet ranges the private listener trusts; this environment's routes are withdrawn until Swarm allocates its network outside 100.64.0.0/10 and fd7a:115c:a1e0::/48"
 )]
 pub(super) struct TailnetOverlap {
+    /// The overlapping subnet, as Docker reported it.
     pub(super) subnet: String,
 }
 

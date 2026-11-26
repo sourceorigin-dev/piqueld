@@ -1,3 +1,5 @@
+//! The coordinator loop: scans environments, starts their operations and
+//! repairs drift.
 use super::{
     ApplicationState, Arc, BlockedPlan, CancellationToken, Controller, DockerApi, Duration, Notify,
     Operation, OperationError, OperationKind, OperationState, Plan, PlanRequest, StoreError,

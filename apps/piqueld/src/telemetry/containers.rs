@@ -38,6 +38,7 @@ const LINE_BURST: f64 = 2_000.0;
 /// exporting its output through [`Telemetry::export_container_logs`].
 #[derive(Debug)]
 pub(crate) struct ContainerExport {
+    /// Attributes labelling the container's telemetry.
     resource: Mutex<ContainerResource>,
     /// Docker's timestamp of the last line read, or where reading starts, in
     /// Unix nanoseconds: where a follower started later resumes.
@@ -95,6 +96,7 @@ impl ContainerExport {
         i32::try_from(read.div_euclid(1_000_000_000).max(0)).unwrap_or(i32::MAX)
     }
 
+    /// A copy of the container's resource.
     fn resource(&self) -> ContainerResource {
         self.resource.lock().clone()
     }
@@ -107,7 +109,9 @@ impl ContainerExport {
 /// before it may still wait.
 #[derive(Debug)]
 pub(super) struct Handled {
+    /// The container's cursor, moved to `at` once the line is handled.
     cursor: Arc<AtomicI64>,
+    /// The line's timestamp, in Unix nanoseconds.
     at: i64,
     /// Cleared when a queue refused a copy.
     queued: AtomicBool,
@@ -142,7 +146,9 @@ impl ContainerResource {
 /// of up to [`LINE_BURST`].
 #[derive(Debug)]
 struct LineLimit {
+    /// Lines that may be exported now; refills over time.
     tokens: f64,
+    /// When `tokens` was last refilled.
     refilled: Instant,
 }
 
@@ -174,12 +180,14 @@ impl LineLimit {
 /// One container's resource usage at a poll.
 #[derive(Debug)]
 pub(crate) struct ContainerSample {
+    /// The container polled.
     pub(crate) container: Arc<ContainerExport>,
     /// When the container was created, in Unix nanoseconds: the start of its
     /// cumulative counters.
     pub(crate) created: i64,
     /// When it was polled, in Unix nanoseconds.
     pub(crate) time: i64,
+    /// The container's resource usage.
     pub(crate) usage: ContainerUsage,
     /// The previous poll's time and CPU time, from which CPU usage is derived.
     pub(crate) previous: Option<(i64, u64)>,

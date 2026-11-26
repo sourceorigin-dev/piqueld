@@ -109,6 +109,7 @@ pub struct Ingress {
     changes: wire::DockerChanges,
     /// Caddy's private admin API socket inside the control mount.
     caddy: CaddyApi,
+    /// Database the gateway reads routes and records from.
     store: Arc<Store>,
     /// Gateway writer lock serializing configuration and lifecycle changes.
     update: Mutex<()>,
@@ -116,6 +117,7 @@ pub struct Ingress {
     /// `update`; the pass's actions record its actor. `None` for the
     /// periodic repair pass, which the daemon makes on its own.
     requester: Mutex<Option<String>>,
+    /// The gateway's last reported status.
     health: RwLock<IngressStatus>,
     /// Unix timestamp (seconds) up to which each container's logs were relayed.
     logs_since: Mutex<BTreeMap<String, u64>>,

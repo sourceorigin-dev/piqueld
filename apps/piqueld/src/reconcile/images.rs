@@ -32,6 +32,7 @@ pub(super) struct ImageRetention {
     interval: Duration,
     /// Wakes cleanup when an operation finishes.
     requested: Notify,
+    /// The status reported to the API after each cleanup.
     status: watch::Sender<ImageStatus>,
 }
 
@@ -42,6 +43,7 @@ impl Default for ImageRetention {
 }
 
 impl ImageRetention {
+    /// Creates retention limits and a cleanup interval from `config`.
     pub(super) fn new(config: &piqueld_config::ImagesConfig) -> Self {
         Self {
             in_use: Arc::default(),
@@ -65,6 +67,7 @@ impl ImageRetention {
 /// they stop; promotions and restores from before choosing their images until
 /// their target is saved, after which those images are retention roots.
 pub struct ImagesInUse {
+    /// Keeps cleanup from starting while held.
     _guard: OwnedRwLockReadGuard<()>,
 }
 

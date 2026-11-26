@@ -203,12 +203,19 @@ const REQUEST_SECONDS: [f64; 14] = [
 
 /// Instruments recorded as things happen, and the snapshot gauges read.
 pub(super) struct Instruments {
+    /// The values the snapshot gauges read.
     pub(super) snapshot: Arc<Mutex<Snapshot>>,
+    /// Counts finished deployment attempts, by outcome.
     pub(super) deployments: Counter<u64>,
+    /// Records how long deployments took, in seconds.
     pub(super) deployment_duration: Histogram<f64>,
+    /// Counts finished builds, by outcome.
     pub(super) builds: Counter<u64>,
+    /// Records how long builds took, in seconds.
     pub(super) build_duration: Histogram<f64>,
+    /// Records how long API requests took, in seconds.
     pub(super) requests: Histogram<f64>,
+    /// Counts API requests refused for missing credentials or permission.
     pub(super) denials: Counter<u64>,
 }
 

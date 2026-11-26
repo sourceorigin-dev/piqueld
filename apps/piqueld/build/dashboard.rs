@@ -110,6 +110,8 @@ impl Dashboard {
     /// Every stylesheet in `apps/piqueld-ui/styles/`, in cascade order.
     const STYLESHEETS: [&str; 4] = ["reset.css", "theme.css", "layout.css", "components.css"];
 
+    /// Points the build at `piqueld-ui`, next to `manifest_dir`, and Cargo's
+    /// out dir. Fails when `piqueld-ui` isn't there, as in a published crate.
     fn new(manifest_dir: &Path) -> Result<Self, Box<dyn Error>> {
         let ui_dir = manifest_dir.join("../piqueld-ui");
         let ui_dir = ui_dir.canonicalize().map_err(|error| {

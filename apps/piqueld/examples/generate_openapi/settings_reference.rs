@@ -22,6 +22,7 @@ pub(crate) struct SettingsPage {
     pub path: &'static str,
     /// What the page is generated from, named in its do-not-edit comment.
     source: &'static str,
+    /// What the variant is.
     title: &'static str,
     /// The introduction, after the title.
     intro: &'static str,
@@ -106,8 +107,10 @@ stands for each entry of an array of tables: `dns.providers[].kind` is the
 /// point into.
 #[derive(Deserialize)]
 struct Document {
+    /// The schema's root.
     #[serde(flatten)]
     root: Schema,
+    /// Named schemas the root's `$ref`s point to.
     definitions: BTreeMap<String, Schema>,
 }
 
@@ -115,28 +118,40 @@ struct Document {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Schema {
+    /// The `$ref` target, such as `#/definitions/Name`.
     #[serde(rename = "$ref")]
     reference: Option<String>,
+    /// What the schema describes, in Markdown.
     description: Option<String>,
     /// The default, absent when it is `null`.
     default: Option<Value>,
+    /// The allowed values.
     #[serde(rename = "enum")]
     values: Option<Vec<Value>>,
+    /// The only allowed value.
     #[serde(rename = "const")]
     constant: Option<Value>,
+    /// The value types.
     #[serde(rename = "type")]
     types: Option<Types>,
+    /// The schema of each array item.
     items: Option<Box<Schema>>,
+    /// The schemas of an object's keys.
     properties: Option<BTreeMap<String, Schema>>,
+    /// Keys that must be present.
     #[serde(default)]
     required: Vec<String>,
+    /// The schema of other keys of an object, or whether they are allowed.
     additional_properties: Option<AdditionalProperties>,
+    /// Schemas of which exactly one applies.
     #[serde(default)]
     one_of: Vec<Schema>,
+    /// Schemas that all apply.
     #[serde(default)]
     all_of: Vec<Schema>,
     /// Signed bounds and the largest unsigned ones, such as `u64::MAX`, fit in `i128`.
     minimum: Option<i128>,
+    /// The inclusive upper bound.
     maximum: Option<i128>,
 }
 
@@ -144,7 +159,9 @@ struct Schema {
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Types {
+    /// A single type name.
     One(String),
+    /// Several type names, such as `["integer", "null"]`.
     Many(Vec<String>),
 }
 
@@ -212,6 +229,7 @@ impl Schema {
 struct Renderer<'a> {
     /// The schema's definitions, which its `$ref`s point into.
     definitions: &'a BTreeMap<String, Schema>,
+    /// The page being rendered.
     page: Page,
     /// Value types settings link to, by name, described at the end of the
     /// page.
@@ -222,6 +240,7 @@ struct Renderer<'a> {
 struct Section<'a> {
     /// The table's full path, empty for the top level.
     path: String,
+    /// The table's contents.
     table: Table<'a>,
 }
 
@@ -229,19 +248,25 @@ struct Section<'a> {
 struct Table<'a> {
     /// What the table is, from its type's description.
     description: Option<&'a str>,
+    /// The key selecting a variant, if the table is a tagged enum.
     tag: Option<Tag<'a>>,
+    /// The table's keys.
     settings: Vec<Setting<'a>>,
 }
 
 /// The key selecting a variant of a tagged enum, such as `type`.
 struct Tag<'a> {
+    /// The page's heading.
     key: String,
+    /// The tag key, such as `type`.
     variants: Vec<Variant<'a>>,
 }
 
 /// A variant of a tagged enum: its tag's value, and its description.
 struct Variant<'a> {
+    /// The variants, each selected by a value of the key.
     value: &'a str,
+    /// The value of the tag key that selects the variant.
     description: &'a str,
 }
 
@@ -255,6 +280,7 @@ struct Setting<'a> {
     /// The schema of the value, which differs from `property` for tables
     /// keyed by name.
     value: &'a Schema,
+    /// Whether the key must be set.
     required: bool,
     /// When the setting applies, if not always, e.g. ``with `type = "http"` ``.
     condition: Option<String>,

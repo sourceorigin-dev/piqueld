@@ -33,6 +33,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 /// The node's `tailscaled`: read through its `LocalAPI`, and changed with the
 /// `tailscale` CLI pointed at the same socket.
 struct Tailscaled {
+    /// Client of the node's `tailscaled` `LocalAPI`.
     api: LocalApi,
 }
 
@@ -91,6 +92,8 @@ impl Tailscaled {
         .await
     }
 
+    /// Runs `command` to completion and returns its standard output; fails with `operation` in the
+    /// context if it exits unsuccessfully.
     async fn run_command(command: &mut Command, operation: &str) -> Result<Vec<u8>> {
         let output = Self::output(command, operation);
         if operation == "up" {

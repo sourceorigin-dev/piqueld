@@ -54,13 +54,16 @@ pub trait TailnetLookup: Send + Sync {
 /// answer never waits for a lookup, and lookups of different addresses never
 /// wait for each other.
 pub struct Whois {
+    /// Client of the node's `tailscaled` `LocalAPI`.
     api: LocalApi,
+    /// Each looked-up address's slot.
     peers: parking_lot::Mutex<HashMap<IpAddr, Arc<Slot>>>,
 }
 
 /// One address's last successful lookup and its single-flight lock.
 #[derive(Default)]
 struct Slot {
+    /// The last successful lookup, if any.
     answer: parking_lot::Mutex<Option<Answer>>,
     /// Held while the address is looked up.
     querying: Mutex<()>,
@@ -70,6 +73,7 @@ struct Slot {
 struct Answer {
     /// When the lookup started: the identity is current as of then.
     asked: Instant,
+    /// The tailnet identity of the address.
     peer: TailnetPeer,
 }
 

@@ -17,12 +17,15 @@ use std::{collections::VecDeque, sync::Arc};
 /// its first half is full.
 #[derive(Clone)]
 pub struct BuildLog {
+    /// Database the output is stored in.
     store: Arc<Store>,
+    /// ID of the build the output belongs to.
     id: i64,
     /// Held across store writes, so output is stored in the order it arrived.
     output: Arc<tokio::sync::Mutex<Kept>>,
 }
 impl BuildLog {
+    /// Creates the log of build `id`, capped at the store's configured size.
     fn new(store: Arc<Store>, id: i64) -> Self {
         let cap = usize::try_from(store.build_log_max_bytes()).unwrap_or(usize::MAX);
         Self {
@@ -88,6 +91,7 @@ struct Kept {
     written: usize,
     /// The newest output past the head, oldest first, merged per stream.
     tail: VecDeque<(LogStream, Vec<u8>)>,
+    /// Total bytes in `tail`.
     tail_bytes: usize,
     /// The bytes of the cap the omission note takes from the tail once output
     /// is omitted; the note is left out when longer.
@@ -217,7 +221,9 @@ impl piqueld_docker::command::OutputLog for BuildLog {
 /// (e.g. the preparation future is cancelled) or finishing fails, `Drop` records
 /// the outcome in the background.
 pub(crate) struct BuildAttempt {
+    /// Where the attempt's output is stored.
     pub(crate) log: BuildLog,
+    /// How far its terminal state has been persisted.
     completion: Completion,
 }
 

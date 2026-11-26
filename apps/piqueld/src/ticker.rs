@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 pub(crate) struct Ticker(tokio::time::Interval);
 
 impl Ticker {
+    /// Creates a ticker ticking every `period`.
     pub(crate) fn new(period: Duration) -> Self {
         let mut interval = tokio::time::interval(period);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

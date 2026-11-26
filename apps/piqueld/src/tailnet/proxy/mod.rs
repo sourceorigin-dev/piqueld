@@ -27,15 +27,20 @@ const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 const QUEUE: usize = 64;
 /// Accepted connections whose owner and header are checked at once.
 const CHECKING: usize = 64;
+/// Bytes that open every PROXY protocol version 2 header.
 const SIGNATURE: [u8; 12] = *b"\r\n\r\n\0\r\nQUIT\n";
 /// Version 2 with the PROXY command; `LOCAL` health checks carry no client.
 const PROXY_COMMAND: u8 = 0x21;
+/// Address family and transport byte for TCP over IPv4.
 const TCP_V4: u8 = 0x11;
+/// Address family and transport byte for TCP over IPv6.
 const TCP_V6: u8 = 0x21;
 
 /// Forwarded connections paired with their tailnet client addresses.
 pub struct ProxyListener {
+    /// Connections that passed the header and owner checks.
     connections: mpsc::Receiver<(TcpStream, SocketAddr)>,
+    /// Address the listener is bound to.
     address: SocketAddr,
 }
 
@@ -56,6 +61,8 @@ impl ProxyListener {
         }
     }
 
+    /// Accepts connections on `listener` until cancelled, checks each one's owner and header, and
+    /// sends the checked ones to `connections`.
     async fn accept(
         mut listener: TcpListener,
         address: SocketAddr,

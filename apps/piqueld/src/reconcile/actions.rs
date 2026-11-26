@@ -1,3 +1,5 @@
+//! Journaled actions of an operation: running them, waiting for services and
+//! recording outcomes.
 use super::{
     ActionKind, CancellationToken, Controller, Convergence, DockerApi, DockerError, Duration,
     Operation, OperationError,
@@ -11,8 +13,11 @@ use piqueld_store::JournalAction;
 /// to be removed when `removed`, under the action `journal`; it stops waiting
 /// once the environment's stopped state no longer matches `stopped`.
 pub(super) struct Wait<'a> {
+    /// The action the wait is recorded under.
     pub(super) journal: &'a JournalAction,
+    /// Whether to wait until the service is removed instead of converged.
     pub(super) removed: bool,
+    /// Whether the environment is stopped; the wait ends once it no longer matches.
     pub(super) stopped: bool,
 }
 

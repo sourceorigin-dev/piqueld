@@ -39,8 +39,11 @@ const SHUTDOWN_RACE: Duration = Duration::from_secs(1);
 
 /// A logged-in tailnet node forwarding its HTTPS port to piqueld.
 pub struct Node {
+    /// The `tailscaled` behind the node.
     daemon: Daemon,
+    /// Supervises `tailscaled` and publishes the node's status.
     monitor: Monitor,
+    /// Loopback listener the HTTPS port forwards to.
     listener: TcpListener,
 }
 
@@ -272,14 +275,21 @@ impl Node {
 
 /// Supervises tailscaled and keeps the reported status current.
 struct Monitor {
+    /// The node's `tailscaled`.
     tailscaled: Tailscaled,
+    /// The node's name on the tailnet.
     dns_name: String,
+    /// The node's HTTPS URL.
     url: String,
+    /// Port the node serves HTTPS on.
     https_port: u16,
+    /// Whether `auth.public_url` is the node's URL.
     public_url_matches: bool,
+    /// When the node's certificate expires, in Unix milliseconds.
     expires_at_ms: i64,
     /// The loopback listener the HTTPS port forwards to.
     address: SocketAddr,
+    /// Where the node's status is published.
     status: watch::Sender<TailnetStatus>,
 }
 
@@ -348,6 +358,7 @@ impl Monitor {
         }
     }
 
+    /// Refreshes the status every refresh interval, forever.
     async fn refresh_loop(&mut self) {
         let mut ticker = tokio::time::interval_at(
             tokio::time::Instant::now() + REFRESH_INTERVAL,
@@ -359,6 +370,7 @@ impl Monitor {
         }
     }
 
+    /// Reads the node's login state and certificate expiry and publishes the status.
     async fn refresh(&mut self) {
         let state = match self.tailscaled.api.status().await {
             Ok(status) => status.backend_state,
@@ -393,12 +405,16 @@ impl Monitor {
 
 /// One refresh of the node's login state and certificate.
 struct Observation {
+    /// The node's backend state, such as `Running`.
     state: String,
+    /// Whether reading the certificate failed.
     certificate_error: bool,
+    /// When the node's certificate expires, in Unix milliseconds.
     expires_at_ms: i64,
 }
 
 impl Observation {
+    /// Builds the status to publish at `now_ms`, listing what is wrong with the node.
     fn report(
         self,
         dns_name: &str,

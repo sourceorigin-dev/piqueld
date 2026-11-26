@@ -143,7 +143,9 @@ struct Stored {
     chain: String,
     /// PEM private key.
     key: String,
+    /// When the certificate becomes valid, in Unix milliseconds.
     not_before_ms: i64,
+    /// When the certificate expires, in Unix milliseconds.
     not_after_ms: i64,
 }
 
@@ -190,8 +192,11 @@ impl Stored {
 
 /// A certificate to issue or renew now, through `provider`'s `zone`.
 struct Due {
+    /// Name the certificate is issued for.
     name: CertificateName,
+    /// Index of the DNS provider that owns the zone.
     provider: usize,
+    /// Zone the DNS challenge records go in.
     zone: Zone,
     /// A stored certificate is being replaced.
     renewal: bool,
@@ -203,6 +208,7 @@ type Owner = Result<(usize, Zone), ZoneError>;
 /// What piqueld knows about one certificate name.
 #[derive(Default)]
 struct Entry {
+    /// The stored certificate, if one exists.
     stored: Option<Stored>,
     /// Hostnames that currently need this certificate.
     hostnames: BTreeSet<RouteHostname>,
@@ -216,12 +222,15 @@ struct Entry {
 
 /// DNS providers, the ACME account and every known certificate.
 pub(super) struct Certificates {
+    /// DNS providers that issue challenge records and route records.
     pub(super) dns: Dns,
+    /// ACME account and directory settings.
     acme: AcmeConfig,
     /// `<data_dir>/ingress`.
     directory: PathBuf,
     /// ACME account, loaded or registered on first use.
     account: tokio::sync::Mutex<Option<Account>>,
+    /// Every known certificate name, with its state.
     entries: parking_lot::RwLock<BTreeMap<CertificateName, Entry>>,
     /// Backoff of leftover challenge records that failed to delete, by
     /// record name. Kept in memory: a restart retries them at once.

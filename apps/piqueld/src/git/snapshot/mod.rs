@@ -73,6 +73,7 @@ const SNAPSHOT_BRANCH: &str = "snapshot";
 /// bare repository per snapshot commit and `staging/` for uploads being
 /// received.
 pub(crate) struct Snapshots {
+    /// Directory holding the snapshots.
     root: PathBuf,
     /// Held while a received snapshot moves into place and is accepted, and
     /// while unused ones are removed, so removal never races an acceptance.

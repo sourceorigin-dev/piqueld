@@ -335,6 +335,7 @@ impl Listener {
         routes
     }
 
+    /// The response of the 404 fallback: a terminal static response.
     fn not_found() -> Value {
         json!({"handle":[{"handler":"static_response","status_code":404}],"terminal":true})
     }
