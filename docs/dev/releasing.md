@@ -26,7 +26,8 @@ users notice, so the release notes say so.
 
 Each release is tagged `v<version>`, such as `v0.1.0`, on a commit of `main`.
 A released [migration](architecture/persistence.md#adding-a-migration) is
-never edited, since databases that applied it won't run it again.
+never edited, since databases that applied it won't run it again; the store's build
+fails while one differs from its line in `migrations/checksums`.
 
 ## What gets published
 
@@ -34,7 +35,7 @@ never edited, since databases that applied it won't run it again.
 | --- | --- |
 | `piqueld` | The daemon, with its dashboard and health probe embedded |
 | `piquelctl` | The CLI |
-| `piqueld-build` | The nested Cargo builds of the daemon's and Docker crate's build scripts |
+| `piqueld-build` | The nested Cargo builds of the daemon's and Docker crate's build scripts, and the store's migration checks |
 | `piqueld-client` | The typed Rust client, with its documentation on [docs.rs](https://docs.rs/piqueld-client) |
 | `piqueld-config` | The daemon's configuration |
 | `piqueld-core` | The contracts the others share |

@@ -1278,10 +1278,10 @@ fn refused(peer: &str) -> NewAuditEvent {
     }
 }
 
-/// A refusal burst and a credential appearing on a new address each raise
-/// one security event, delivered as a `security` notification; a first
-/// address and further refusals within the burst cooldown do not. Failed
-/// security deliveries can be retried.
+/// A refusal burst, naming its address, and a credential appearing on a new
+/// address each raise one security event, delivered as a `security`
+/// notification; a first address and further refusals within the burst
+/// cooldown do not. Failed security deliveries can be retried.
 #[tokio::test]
 async fn refusal_bursts_and_new_addresses_notify_as_security() {
     let (_temp, store) = Store::temporary().await;
@@ -1347,6 +1347,9 @@ async fn refusal_bursts_and_new_addresses_notify_as_security() {
             .event(delivery.event_id)
             .await
             .expect("the store can event");
+        if event.kind == "access_denial_burst" {
+            assert_eq!(event.resource.as_deref(), Some("203.0.113.9"));
+        }
         notified.push(event.message.unwrap_or_default());
     }
     notified.sort();
@@ -1373,7 +1376,7 @@ async fn security_events_record_their_system_actor() {
         .await
         .expect("a connection is acquired");
     let by = Actor::System(system).attribution();
-    Store::security_event_on(&mut db, SecurityEvent::AdminGranted, "granted", by)
+    Store::security_event_on(&mut db, SecurityEvent::AdminGranted, None, "granted", by)
         .await
         .expect("the store can security event on");
     let id = sqlx::query_scalar("SELECT last_insert_rowid()")
@@ -1964,7 +1967,8 @@ async fn timeline_expectations_count_each_earlier_operations_last_run_of_a_step(
 }
 
 /// A failed operation names its failed action, never a request that was
-/// retried and then succeeded: a plan blocked after one names what blocks it.
+/// retried, after the delay its retry records, and then succeeded: a plan
+/// blocked after one names what blocks it.
 #[tokio::test]
 async fn failed_operations_name_their_failure_not_an_earlier_retry() {
     use piqueld_core::observability::DiagnosticCode;
@@ -1988,6 +1992,12 @@ async fn failed_operations_name_their_failure_not_an_earlier_retry() {
         .action_retry(&action, 1, Duration::from_secs(1), &busy)
         .await
         .expect("the store can action retry");
+    let delay = "SELECT retry_delay_ms FROM events WHERE kind='action_retry'";
+    let delay: Option<i64> = sqlx::query_scalar(delay)
+        .fetch_one(&store.pool)
+        .await
+        .expect("the retry is recorded");
+    assert_eq!(delay, Some(1_000));
     store
         .finish_action(&action, None)
         .await

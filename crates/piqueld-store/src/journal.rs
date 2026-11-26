@@ -68,10 +68,12 @@ enum Step<'a> {
         retry: i64,
     },
     /// `action_retry`: attempt `retry` failed with `diagnostic` and will be
-    /// retried, as `message` says.
+    /// retried after `delay`, as `message` says.
     Retry {
         /// Attempt number.
         retry: i64,
+        /// How long until the retry.
+        delay: std::time::Duration,
         /// Why the attempt failed.
         diagnostic: &'a Diagnostic,
         /// Description of the retry.
@@ -265,18 +267,11 @@ impl Store {
         );
         let step = Step::Retry {
             retry: i64::from(retry),
+            delay,
             diagnostic,
             message: &message,
         };
         Self::action_event_on(&mut tx, action, step).await?;
-        let delay_ms = i64::try_from(delay.as_millis()).unwrap_or(i64::MAX);
-        sqlx::query!(
-            "UPDATE events SET retry_delay_ms=?1 WHERE id=last_insert_rowid()",
-            delay_ms,
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(StoreError::database)?;
         tx.commit().await.map_err(StoreError::database)
     }
     /// Records what an open action observed while it runs
@@ -346,16 +341,23 @@ impl Store {
         step: Step<'_>,
     ) -> Result<(), StoreError> {
         let (kind, finished) = (step.kind().as_str(), matches!(step, Step::Finished(_)));
-        let (retry, diagnostic, message, detail) = match step {
-            Step::Started => (None, None, None, None),
-            Step::Requested { retry } => (Some(retry), None, None, None),
+        let (retry, delay_ms, diagnostic, message, detail) = match step {
+            Step::Started => (None, None, None, None, None),
+            Step::Requested { retry } => (Some(retry), None, None, None, None),
             Step::Retry {
                 retry,
+                delay,
                 diagnostic,
                 message,
-            } => (Some(retry), Some(diagnostic), Some(message), None),
-            Step::Progressed(detail) => (None, None, None, Some(detail)),
-            Step::Finished(diagnostic) => (None, diagnostic, None, None),
+            } => (
+                Some(retry),
+                Some(i64::try_from(delay.as_millis()).unwrap_or(i64::MAX)),
+                Some(diagnostic),
+                Some(message),
+                None,
+            ),
+            Step::Progressed(detail) => (None, None, None, None, Some(detail)),
+            Step::Finished(diagnostic) => (None, None, diagnostic, None, None),
         };
         let diagnostic = diagnostic.cloned().map(|mut d| {
             if action.environment_id.is_none() {
@@ -391,8 +393,9 @@ impl Store {
         sqlx::query!(
             "INSERT INTO events(application_id,environment_id,operation_id,generation,attempt,kind,message,
             error_code,phase,resource,created_at_ms,scope,action_id,retry,duration_ms,diagnostic_id,
-            diagnostic_json,actor_user_id,actor_credential_id,actor_operator_uid,actor_system,detail_json)
-            VALUES((SELECT application_id FROM environments WHERE id=?1),?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
+            diagnostic_json,actor_user_id,actor_credential_id,actor_operator_uid,actor_system,detail_json,
+            retry_delay_ms)
+            VALUES((SELECT application_id FROM environments WHERE id=?1),?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
             action.environment_id,
             action.operation_id,
             action.generation,
@@ -414,6 +417,7 @@ impl Store {
             action.actor_operator_uid,
             action.actor_system,
             detail,
+            delay_ms,
         )
         .execute(&mut **tx)
         .await

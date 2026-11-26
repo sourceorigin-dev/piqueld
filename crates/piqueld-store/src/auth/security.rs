@@ -71,13 +71,15 @@ const DENIAL_BURST: i64 = 20;
 const DENIAL_BURST_COOLDOWN_MS: i64 = 10 * 60_000;
 
 impl Store {
-    /// Records `event` in daemon history, caused by `actor`.
+    /// Records `event` in daemon history about `resource`, such as a peer
+    /// address, caused by `actor`.
     ///
     /// # Errors
     /// Returns a storage error.
     pub(crate) async fn security_event_on(
         db: &mut SqliteConnection,
         event: SecurityEvent,
+        resource: Option<&str>,
         message: &str,
         actor: Attribution<'_>,
     ) -> Result<(), StoreError> {
@@ -86,8 +88,8 @@ impl Store {
         let operator = actor.operator_uid();
         let system = actor.system.map(piqueld_core::sync::SystemActor::as_str);
         sqlx::query!(
-            "INSERT INTO events(scope,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid,actor_system)
-            VALUES('daemon',?1,?2,?3,?4,?5,?6,?7)",
+            "INSERT INTO events(scope,kind,message,created_at_ms,actor_user_id,actor_credential_id,actor_operator_uid,actor_system,resource)
+            VALUES('daemon',?1,?2,?3,?4,?5,?6,?7,?8)",
             kind,
             message,
             now,
@@ -95,6 +97,7 @@ impl Store {
             actor.credential_id,
             operator,
             system,
+            resource,
         )
         .execute(db)
         .await
@@ -120,7 +123,7 @@ impl Store {
         if grants.is_superuser() && !was_admin {
             let username = Self::username_on(db, user_id).await?;
             let message = format!("{username} became an administrator {how}");
-            Self::security_event_on(db, SecurityEvent::AdminGranted, &message, actor).await?;
+            Self::security_event_on(db, SecurityEvent::AdminGranted, None, &message, actor).await?;
         }
         Ok(())
     }
@@ -155,7 +158,7 @@ impl Store {
             "{username} created API token \"{}\" {detail}",
             credential.name
         );
-        Self::security_event_on(db, SecurityEvent::PrivilegedToken, &message, actor).await
+        Self::security_event_on(db, SecurityEvent::PrivilegedToken, None, &message, actor).await
     }
 
     /// An account's username.
@@ -219,15 +222,7 @@ impl Store {
                 str::to_owned,
             ),
         );
-        Self::security_event_on(db, SecurityEvent::DenialBurst, &message, actor).await?;
-        sqlx::query!(
-            "UPDATE events SET resource=?1 WHERE id=last_insert_rowid()",
-            peer
-        )
-        .execute(db)
-        .await
-        .map_err(StoreError::database)?;
-        Ok(())
+        Self::security_event_on(db, SecurityEvent::DenialBurst, peer, &message, actor).await
     }
 
     /// Notes that `credential_id`, owned by `user_id`, was used from
@@ -275,7 +270,7 @@ impl Store {
                     credential_id: Some(credential_id),
                     ..Attribution::default()
                 };
-                Self::security_event_on(&mut tx, SecurityEvent::NewAddress, &message, actor)
+                Self::security_event_on(&mut tx, SecurityEvent::NewAddress, None, &message, actor)
                     .await?;
             }
         }

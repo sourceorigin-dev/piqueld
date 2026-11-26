@@ -473,7 +473,7 @@ impl Store {
             operator,
             session: None,
         };
-        Self::security_event_on(db, event, &message, actor.attribution()).await
+        Self::security_event_on(db, event, None, &message, actor.attribution()).await
     }
 
     /// Stores a host operator sign-in link for `hash`, valid until

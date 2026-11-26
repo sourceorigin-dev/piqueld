@@ -62,12 +62,18 @@ Add `crates/piqueld-store/migrations/NNNN_<name>.sql` with the next number,
 starting with a comment that says what it changes and what happens to existing
 data. The store's build script embeds every file in name order and fails
 unless the numbers are contiguous from `0001`; migration `N` upgrades schema `N - 1` to `N`, and the
-number of embedded migrations is the schema version. It also applies them all
+number of embedded migrations is the schema version. Every table a migration
+from `0009` on creates must be `STRICT`, including an older table it
+rebuilds, so check that the rows it copies have their columns' declared
+types first: a `STRICT` table refuses the rest. Lock the migration by adding its
+`NNNN <sha256>` line to `migrations/checksums`, which the build error prints:
+the build fails while any migration differs from its line, so editing one
+shows in review. It also applies them all
 to a disposable database and points `DATABASE_URL` at it, so `sqlx::query!`
 macros are checked against the new schema at compile time. A migration runs as
 raw SQL inside the transaction that records its version, with foreign keys
 enforced, so it must not start or commit a transaction itself, and
 `PRAGMA foreign_keys` has no effect there. Never edit or renumber a released
-migration's statements: databases that already applied it would not run it
-again. Work that needs the daemon, such as re-encrypting secrets or hashing
+migration's statements, or its lock line: databases that already applied it
+would not run it again. Work that needs the daemon, such as re-encrypting secrets or hashing
 releases, belongs in `Store::open`, after the migrations.

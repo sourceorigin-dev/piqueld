@@ -303,6 +303,7 @@ impl Store {
         Self::security_event_on(
             &mut tx,
             SecurityEvent::DestinationChanged,
+            None,
             &message,
             actor.attribution(),
         )
@@ -567,6 +568,7 @@ impl Store {
         Self::security_event_on(
             &mut tx,
             SecurityEvent::DestinationChanged,
+            None,
             &message,
             actor.attribution(),
         )
