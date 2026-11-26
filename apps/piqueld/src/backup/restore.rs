@@ -89,6 +89,7 @@ impl Backups {
             return Ok(manifest);
         }
         let _lock = self.lock().await?;
+        self.ensure_restore_complete()?;
         let data_dir = &self.data_dir;
         if !entries(data_dir, |name| !Self::kept(name))?.is_empty() {
             bail!(Refusal::NotEmpty(data_dir.clone()));

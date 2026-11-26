@@ -748,3 +748,26 @@ async fn a_roll_back_keeps_the_newest_rolled_back_directories() {
     kept.sort_unstable();
     assert_eq!(rolled_back, kept);
 }
+
+/// A restore into a data directory holding an unfinished one says so, rather
+/// than that the directory isn't empty.
+#[tokio::test]
+async fn restore_names_an_unfinished_restore() {
+    let (_source, backup, _) = backed_up().await;
+    let target = tempfile::tempdir().expect("a directory is created");
+    let data_dir = target.path().join("data");
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .recursive(true)
+        .create(data_dir.join(".publish-1"))
+        .expect("an unfinished restore is left");
+
+    let error = Backups::new(&data_dir)
+        .restore(&backup, false)
+        .await
+        .expect_err("the restore is refused");
+    assert!(
+        matches!(error.downcast_ref(), Some(Refusal::Unfinished(..))),
+        "{error:#}"
+    );
+}

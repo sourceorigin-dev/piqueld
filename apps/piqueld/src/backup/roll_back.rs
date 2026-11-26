@@ -7,7 +7,7 @@
 //! its contents but [`Backups::kept`] ones move into a `rolled-back-<ms>`
 //! directory inside it, then the backup is restored around them.
 
-use super::{Backups, Manifest, PreMigration, Refusal, entries};
+use super::{Backups, Manifest, PreMigration, Refusal, entries, millis_after};
 use anyhow::{Context, Result, bail};
 use piqueld_core::InstanceId;
 use piqueld_store::SCHEMA_VERSION;
@@ -28,23 +28,14 @@ impl RolledBack {
     /// roll-back's included.
     const KEEP: usize = 3;
 
-    /// When the directory `name` was made, in Unix milliseconds, if a
-    /// roll-back generated its name.
-    fn made_at(name: &OsStr) -> Option<i64> {
-        let digits = name.to_str()?.strip_prefix(Self::PREFIX)?;
-        if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-        digits.parse().ok()
-    }
-
     /// Deletes all but the newest `keep` generated directories in
     /// `data_dir`. Others, such as one a person named, stay.
     fn prune(data_dir: &Path, keep: usize) -> Result<()> {
-        let mut generated: Vec<_> = entries(data_dir, |name| Self::made_at(name).is_some())?
-            .into_iter()
-            .filter_map(|name| Some((Self::made_at(&name)?, name)))
-            .collect();
+        let mut generated: Vec<_> =
+            entries(data_dir, |name| millis_after(name, Self::PREFIX).is_some())?
+                .into_iter()
+                .filter_map(|name| Some((millis_after(&name, Self::PREFIX)?, name)))
+                .collect();
         generated.sort_unstable_by(|left, right| right.cmp(left));
         for (_, name) in generated.into_iter().skip(keep) {
             let path = data_dir.join(name);

@@ -4,7 +4,7 @@
 //! refuses to start, and [`Backups::finish`] finishes the restore it marks,
 //! whether it just started or a crash interrupted it.
 
-use super::{Backups, Moved, Refusal, RolledBack, entries, move_entries, sync};
+use super::{Backups, Refusal, RolledBack, entries, millis_after, move_entries, sync};
 use anyhow::{Context, Result, bail};
 use std::{
     ffi::OsStr,
@@ -43,18 +43,11 @@ impl Staging {
 
     /// The staging directory named `name`, if it is one.
     pub(super) fn parse(name: &OsStr) -> Option<Self> {
-        let name = name.to_str()?;
-        let (at_ms, publishing) = match name.strip_prefix(Self::PUBLISHING) {
+        let (at_ms, publishing) = match millis_after(name, Self::PUBLISHING) {
             Some(at_ms) => (at_ms, true),
-            None => (name.strip_prefix(Self::MOVING)?, false),
+            None => (millis_after(name, Self::MOVING)?, false),
         };
-        if !at_ms.bytes().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-        Some(Self {
-            at_ms: at_ms.parse().ok()?,
-            publishing,
-        })
+        Some(Self { at_ms, publishing })
     }
 
     /// Its path in `data_dir`.
@@ -139,7 +132,7 @@ impl Backups {
                     })
                     .with_context(|| format!("create {}", aside.display()))?;
                 sync(data_dir)?;
-                move_entries(data_dir, &aside, &state).map_err(Moved::into_error)?;
+                move_entries(data_dir, &aside, &state)?;
             }
             let publishing = Staging {
                 publishing: true,
@@ -153,7 +146,7 @@ impl Backups {
         };
         let path = staging.path(data_dir);
         let names = entries(&path, |_| true)?;
-        move_entries(&path, data_dir, &names).map_err(Moved::into_error)?;
+        move_entries(&path, data_dir, &names)?;
         fs::remove_dir(&path).with_context(|| format!("remove {}", path.display()))?;
         sync(data_dir)
     }

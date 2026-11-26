@@ -387,64 +387,27 @@ fn entries(path: &Path, keep: impl Fn(&OsStr) -> bool) -> Result<Vec<OsString>> 
     Ok(names)
 }
 
-/// A failed [`move_entries`].
-struct Moved {
-    /// The move that failed.
-    error: anyhow::Error,
-    /// Why the entries already moved didn't all go back, if they didn't.
-    undo: Option<anyhow::Error>,
-}
-
-impl Moved {
-    /// The failure as one error, with why it couldn't be undone, if it
-    /// couldn't.
-    fn into_error(self) -> anyhow::Error {
-        match self.undo {
-            None => self.error,
-            Some(undo) => self.error.context(format!("{undo:#}")),
-        }
-    }
-}
-
 /// Moves the entries `names` of the directory `from` into the directory
 /// `to`, on the same filesystem, in order, never over an entry `to` already
-/// has, then syncs both. If a move
-/// fails, the entries already moved go back, so either all move or none.
-fn move_entries(from: &Path, to: &Path, names: &[OsString]) -> Result<(), Moved> {
-    let mut moved = Vec::new();
-    let forward = names
-        .iter()
-        .try_for_each(|name| {
-            rename(&from.join(name), &to.join(name)).with_context(|| {
-                format!("move {} into {}", from.join(name).display(), to.display())
-            })?;
-            moved.push(name);
-            Ok(())
-        })
-        .and_then(|()| sync(to))
-        .and_then(|()| sync(from));
-    let Err(error) = forward else {
-        return Ok(());
-    };
-    let stuck: Vec<_> = moved
-        .iter()
-        .rev()
-        .filter_map(|name| {
-            rename(&to.join(name), &from.join(name))
-                .err()
-                .map(|undo| format!("{}: {undo}", name.display()))
-        })
-        .collect();
-    let undo = if stuck.is_empty() {
-        sync(to).and_then(|()| sync(from)).err()
-    } else {
-        Some(anyhow::anyhow!(
-            "could not move back into {} {}",
-            from.display(),
-            stuck.join(", ")
-        ))
-    };
-    Err(Moved { error, undo })
+/// has, then syncs both. A failed move stops there, leaving the entries
+/// still to move in `from`.
+fn move_entries(from: &Path, to: &Path, names: &[OsString]) -> Result<()> {
+    for name in names {
+        rename(&from.join(name), &to.join(name))
+            .with_context(|| format!("move {} into {}", from.join(name).display(), to.display()))?;
+    }
+    sync(to)?;
+    sync(from)
+}
+
+/// The Unix milliseconds in the generated name `name`, `prefix` followed by
+/// digits only, if it is one.
+fn millis_after(name: &OsStr, prefix: &str) -> Option<i64> {
+    let digits = name.to_str()?.strip_prefix(prefix)?;
+    if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
 }
 
 /// Renames `from` to `to`, refusing to replace an entry at `to`.
