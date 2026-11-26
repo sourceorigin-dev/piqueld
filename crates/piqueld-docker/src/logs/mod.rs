@@ -9,7 +9,7 @@ use bollard::{
 use futures_util::StreamExt;
 use piqueld_core::{
     EnvironmentId, InstanceId,
-    api::{ApplicationLogs, LogRecord},
+    api::{ApplicationLogs, LogRecord, LogSource},
     resource::{APPLICATION_LABEL, INSTANCE_LABEL, MANAGED_LABEL, SERVICE_LABEL},
 };
 use std::{
@@ -200,11 +200,11 @@ impl BollardDocker {
                 break;
             };
             let source = match &item {
-                LogOutput::StdOut { .. } => "stdout",
-                LogOutput::StdErr { .. } => "stderr",
-                _ => "console",
+                LogOutput::StdOut { .. } => LogSource::Stdout,
+                LogOutput::StdErr { .. } => LogSource::Stderr,
+                _ => LogSource::Console,
             };
-            if stream.is_some_and(|filter| filter.as_str() != source) {
+            if stream.is_some_and(|filter| LogSource::from(filter) != source) {
                 continue;
             }
             for line in item.to_string().lines() {

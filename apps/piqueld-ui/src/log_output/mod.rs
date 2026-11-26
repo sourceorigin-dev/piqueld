@@ -1,5 +1,5 @@
 //! Presentation shared by the runtime and build terminals.
-use piqueld_client::{BuildLogChunk, LogRecord, LogStream};
+use piqueld_client::{BuildLogChunk, LogRecord, LogSource, LogStream};
 
 /// One rendered line, with metadata kept separate from its message.
 #[derive(Clone, Debug, PartialEq)]
@@ -76,7 +76,7 @@ impl LogLine {
             .any(|word| word.eq_ignore_ascii_case("error") || word.eq_ignore_ascii_case("fatal"))
         {
             "error"
-        } else if self.stream == "stderr" {
+        } else if self.stream == LogSource::Stderr {
             "stderr"
         } else {
             "normal"

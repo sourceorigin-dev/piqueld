@@ -1,7 +1,7 @@
 //! Shared asynchronous operation records.
 
 use crate::EnvironmentId;
-use crate::names::string_enum;
+use crate::names::{compared_as_string, string_enum};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -182,6 +182,24 @@ string_enum! {
         Failed => "failed",
     }
 }
+
+string_enum! {
+    /// An environment's observed runtime health.
+    /// [`EnvironmentStatusView::runtime_health`](crate::api::EnvironmentStatusView::runtime_health)
+    /// keeps it a `String`, because old rows hold it.
+    pub enum RuntimeHealth {
+        /// No service of the environment runs.
+        Absent => "absent",
+        /// Every service is converged, scaled to zero and has no live task,
+        /// as a stopped environment wants.
+        Stopped => "stopped",
+        /// Every expected service runs converged.
+        Ready => "ready",
+        /// A service is missing or not converged.
+        Degraded => "degraded",
+    }
+}
+compared_as_string!(RuntimeHealth);
 
 string_enum! {
     #[serde]

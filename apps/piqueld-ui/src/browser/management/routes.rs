@@ -8,7 +8,7 @@ use leptos::prelude::*;
 use piqueld_client::{
     ApplicationManifest, Redirect, RedirectStatus, Route, Visibility,
     edit::ApplicationEdit,
-    system::{DnsRecordState, RouteStatus},
+    system::{DnsRecordState, RouteState, RouteStatus},
 };
 
 /// One route as the dialog edits it. Both destinations keep their fields
@@ -140,13 +140,14 @@ fn destination(route: &Route) -> String {
     }
 }
 
-/// Badge tone of a deployed route's HTTPS state.
+/// Badge tone of a deployed route's HTTPS state, neutral for one this
+/// dashboard doesn't know.
 fn route_tone(state: &str) -> Tone {
-    match state {
-        "ready" => Tone::Ok,
-        "failed" => Tone::Bad,
-        "pending" => Tone::Pending,
-        _ => Tone::Neutral,
+    match RouteState::parse(state) {
+        Some(RouteState::Ready) => Tone::Ok,
+        Some(RouteState::Failed) => Tone::Bad,
+        Some(RouteState::Pending) => Tone::Pending,
+        Some(RouteState::Disabled) | None => Tone::Neutral,
     }
 }
 

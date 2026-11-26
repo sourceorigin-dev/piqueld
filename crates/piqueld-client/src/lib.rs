@@ -125,7 +125,7 @@ pub use piqueld_core::{
 };
 pub use piqueld_core::{
     ApplicationState, Convergence, Event, EventActor, Operation, OperationKind, OperationState,
-    Phase, TaskState,
+    Phase, RuntimeHealth, TaskState,
 };
 pub use previews::{
     ApplicationPreviews, BranchState, CountedPreview, CreatePreviewRequest, CreatedPreview,
@@ -142,8 +142,9 @@ pub use system::{
 
 pub use piqueld_core::api::{
     ApplicationLogs, BuildLogChunk, BuildLogPage, BuildRecord, BuildState, Envelope,
-    EnvironmentAccess, ErrorBody, LogRecord, LogStream, LogTime, ManifestChange, MountedSecret,
-    Page, SecretAccess, SecretAccessChange, SecretKeyRecovery, SecretMetadata, StoredSecret,
+    EnvironmentAccess, ErrorBody, LogRecord, LogSource, LogStream, LogTime, ManifestChange,
+    MountedSecret, Page, SecretAccess, SecretAccessChange, SecretKeyRecovery, SecretMetadata,
+    StoredSecret,
 };
 
 use http::StatusCode;

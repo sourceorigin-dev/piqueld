@@ -3,7 +3,7 @@
 use super::{
     ApplicationState, EnvironmentId, EnvironmentStatus, Store, StoreError, decode_name, now_ms,
 };
-use piqueld_core::EventKind;
+use piqueld_core::{EventKind, RuntimeHealth};
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 impl Store {
@@ -130,7 +130,7 @@ impl Store {
         .map_err(StoreError::database)?;
         tx.commit().await.map_err(StoreError::database)?;
         let health = if observed.services.is_empty() {
-            "absent"
+            RuntimeHealth::Absent
         } else if expected.iter().all(|name| {
             observed
                 .services
@@ -144,10 +144,15 @@ impl Store {
             let down = observed.services.iter().all(|service| {
                 service.replicas == 0 && service.tasks.iter().all(|task| !task.state.is_live())
             });
-            if stopped && down { "stopped" } else { "ready" }
+            if stopped && down {
+                RuntimeHealth::Stopped
+            } else {
+                RuntimeHealth::Ready
+            }
         } else {
-            "degraded"
+            RuntimeHealth::Degraded
         };
+        let health = health.as_str();
         let now = now_ms();
         if recorded.is_some_and(|recorded| {
             recorded.runtime_health.as_deref() == Some(health)
