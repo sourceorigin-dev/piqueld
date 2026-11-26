@@ -405,8 +405,8 @@ IPv4, and Unix socket callers share one peer bucket. Excess requests receive
 HTTP 429 `authentication_busy` and `Retry-After: 60`; ongoing ceremonies and
 authenticated API work are unaffected. Each limited route declares it where it
 is registered (`SignInRule::Throttled` in `api/http/auth.rs`), which the
-OpenAPI document records as `x-piqueld-throttled`. There is no daemon-wide limit, so one
-caller cannot block sign-in for everyone else. Client-supplied forwarded IP
+OpenAPI document records as `x-piqueld-throttled`. There is no daemon-wide
+limit, so one caller cannot block sign-in for everyone else. Client-supplied forwarded IP
 headers are deliberately ignored: callers behind the same external reverse
 proxy share its allowance. The daemon's own tailnet node and [dashboard
 hostname](../../user/networking/private-routes.md#serve-the-dashboard-on-your-own-domain)

@@ -287,8 +287,9 @@ fn finish_router(
 }
 
 /// Endpoints must be registered here, or in a module's router merged here,
-/// through `public!`, `authenticated!`, or `granted!` (see `access`), so Axum, the generated `OpenAPI` document, and the
-/// access table receive the same method, path, and requirement together.
+/// through `public!`, `authenticated!`, or `granted!` (see `access`), so
+/// Axum, the generated `OpenAPI` document, and the access table receive the
+/// same method, path, and requirement together.
 pub(crate) fn documented_router() -> OpenApiRouter<ApiState> {
     OpenApiRouter::with_openapi(openapi::base_document())
         .merge(editing::router())

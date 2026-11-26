@@ -174,8 +174,8 @@ impl SignInRoutes {
         Arc::new(Self(routes))
     }
 
-    /// Whether `rule` applies to `request`'s matched route.
-    fn applies(&self, rule: SignInRule, request: &Request) -> bool {
+    /// The rules of `request`'s matched route; none for other routes.
+    fn of(&self, request: &Request) -> &[SignInRule] {
         request
             .extensions()
             .get::<MatchedPath>()
@@ -183,7 +183,7 @@ impl SignInRoutes {
                 self.0
                     .get(&(path.as_str().to_owned(), request.method().clone()))
             })
-            .is_some_and(|rules| rules.contains(&rule))
+            .map_or(&[], Vec::as_slice)
     }
 }
 
@@ -294,7 +294,8 @@ async fn authorize(
     let operator = (authorization.is_none() && !request.headers().contains_key(header::COOKIE))
         .then(|| super::UnixPeer::host_operator(request.extensions()))
         .flatten();
-    let ceremony = rules.applies(SignInRule::Ceremony, &request);
+    let route = rules.of(&request);
+    let ceremony = route.contains(&SignInRule::Ceremony);
     if cross_site(
         auth,
         (request.method(), request.headers(), ceremony),
@@ -311,7 +312,7 @@ async fn authorize(
         .into_response();
         return refused(auth, secret, operator, response).await;
     }
-    if rules.applies(SignInRule::Throttled, &request) {
+    if route.contains(&SignInRule::Throttled) {
         let peer = request
             .extensions()
             .get::<ConnectInfo<SocketAddr>>()
