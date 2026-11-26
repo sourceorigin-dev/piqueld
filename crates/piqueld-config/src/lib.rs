@@ -160,7 +160,17 @@ impl DaemonConfig {
     /// Returns [`ConfigError`] when the file cannot be read or the configuration
     /// is malformed or invalid.
     pub fn check(path: impl AsRef<Path>) -> Result<(), ConfigError> {
-        Resolution::Structural.during(|| Self::load(path)).map(drop)
+        Self::load_structural(path).map(drop)
+    }
+
+    /// Loads a configuration file as [`Self::check`] checks it, locating
+    /// credential files without reading them, for a tool that needs its
+    /// settings but runs outside the service, such as `piqueld update`.
+    ///
+    /// # Errors
+    /// Returns read, parse, and validation failures.
+    pub fn load_structural(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        Resolution::Structural.during(|| Self::load(path))
     }
 
     /// Parses and validates a TOML configuration document. An unset

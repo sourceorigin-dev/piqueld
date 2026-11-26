@@ -42,7 +42,8 @@ starts it:
 - It checks that the host runs systemd and Docker Engine, and has `git` and
   `ssh`.
 - It downloads the release's binaries, checks them against the release's
-  checksums, and installs `piqueld` and `piquelctl` to `/usr/local/bin`.
+  checksums, and installs `piqueld` and `piquelctl` into
+  `/usr/local/lib/piqueld/<version>`, linked from `/usr/local/bin`.
 - It creates a `piqueld` system user in the `docker` group.
 - It writes the daemon's configuration to `/etc/piqueld/config.toml`, unless
   that file exists. The configuration serves the dashboard on the host's
@@ -59,6 +60,14 @@ group to apply. To let other users in later:
 
 ```console
 sudo usermod -aG piqueld alice
+```
+
+To install the newest nightly instead, and follow the
+[nightly channel](../operations/updates.md#choose-a-channel), pass
+`--channel nightly`:
+
+```console
+curl -fsSL https://piqueld.dev/install.sh | sh -s -- --channel nightly
 ```
 
 To install a specific version instead of the latest one, set
@@ -81,14 +90,21 @@ Then keep the dashboard on localhost, or
 
 ### Update piqueld
 
-piqueld tells you when an update is out, and the version to install; see
-[updating piqueld](../operations/updates.md). Run the script again, with
-`PIQUELD_VERSION` set to that version when you follow the nightly channel. It shows the version you have and the one it installs,
-then installs the latest release, or `PIQUELD_VERSION`, over the current one,
-and restarts the daemon. It keeps your configuration and
-the data in `/var/lib/piqueld`.
+piqueld tells you when an update is out. Install it on the host, which
+restarts the daemon on it, and `sudo piqueld update rollback` goes back; see
+[updating piqueld](../operations/updates.md):
 
-The script replaces the service's unit, so keep your changes to the service in
+```console
+sudo piqueld update
+```
+
+Running the script again also updates piqueld, to the latest release, or
+`PIQUELD_VERSION`. On the nightly channel, pass `--channel nightly` again:
+without it, the script installs the latest stable release, which is older
+than your nightly and can't read its database. Both keep your configuration
+and the data in `/var/lib/piqueld`.
+
+Both replace the service's unit, so keep your changes to the service in
 a drop-in, as [passing files to the daemon](#pass-files-to-the-daemon) does.
 Before 1.0, a minor release such as 0.2.0 may need changes to your
 configuration: read its release notes before you update.

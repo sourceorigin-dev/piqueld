@@ -176,6 +176,22 @@ impl Backups {
             .map(|backup| (directory.join(backup.name()), backup)))
     }
 
+    /// The newest pre-migration backup, and the version of the daemon that
+    /// took it, before updating the database.
+    ///
+    /// # Errors
+    /// Returns the error listing the backups or reading the manifest.
+    pub fn latest_migration(&self) -> Result<Option<(PathBuf, String)>> {
+        let Some((backup, _)) = self.latest_before_migration()? else {
+            return Ok(None);
+        };
+        let path = backup.join(MANIFEST);
+        let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        let manifest: Manifest =
+            serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
+        Ok(Some((backup, manifest.daemon_version)))
+    }
+
     /// Writes a backup of the data directory into `destination`, an empty
     /// private directory: a snapshot of the database first, then the secret
     /// key and the state directories, all synced to disk. The manifest is

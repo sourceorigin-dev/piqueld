@@ -341,8 +341,9 @@ backup you [took yourself](#back-up), restore it by hand:
    ```
 
 6. Go back to the previous version: on NixOS, run
-   `sudo nixos-rebuild switch --rollback`; elsewhere, reinstall the previous
-   binary.
+   `sudo nixos-rebuild switch --rollback`; with the install script, run
+   `sudo piqueld update rollback`, which also starts the daemon, so skip the
+   next step; elsewhere, reinstall the previous binary.
 7. Start the daemon:
 
    ```console

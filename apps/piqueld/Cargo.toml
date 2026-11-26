@@ -56,6 +56,7 @@ hyper-util.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 piqueld-config.workspace = true
+piqueld-client.workspace = true
 piqueld-core.workspace = true
 piqueld-docker.workspace = true
 piqueld-store.workspace = true
@@ -91,7 +92,6 @@ openssl = { workspace = true, features = ["vendored"] }
 piqueld = { path = ".", features = ["fake-docker"] }
 reqwest = { workspace = true, features = ["http2"] }
 tokio = { workspace = true, features = ["test-util"] }
-piqueld-client.workspace = true
 # The ingress tests' DNS providers, and the resolver checking their records.
 piqueld-config = { workspace = true, features = ["testing"] }
 hickory-resolver.workspace = true
