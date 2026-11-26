@@ -11,6 +11,7 @@
 use super::{ApplicationService, ListedHead, Mutation, MutationResponse, SyncOutcome};
 use crate::git::Heads;
 use futures_util::{StreamExt, stream};
+use piqueld_core::wait;
 use piqueld_core::{ApplicationId, GitBranch, sync::RepositorySync, sync::SystemActor};
 use piqueld_store::{Actor, SyncApplication};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -146,7 +147,7 @@ impl ApplicationService {
             tokio::select! {
                 () = cancellation.cancelled() => return,
                 () = self.hints.wake.notified() => {}
-                () = tokio::time::sleep(TICK) => {}
+                () = wait::pause(TICK) => {}
             }
         }
     }

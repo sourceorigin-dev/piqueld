@@ -6,6 +6,7 @@ use super::{
     auth::{FreshTailnet, TailnetSource},
 };
 use crate::auth::Identity;
+use piqueld_core::wait;
 use std::time::Duration;
 use tokio::{sync::watch, time::Instant};
 
@@ -99,7 +100,7 @@ impl Lease {
             _ = ready => {}
             () = self.state.shutdown().cancelled() => {}
             _ = changes.changed() => {}
-            () = tokio::time::sleep_until(self.next) => {}
+            () = wait::pause(self.next) => {}
         }
     }
 
@@ -130,7 +131,7 @@ impl Lease {
         mut check: impl FnMut(ApiState, Identity) -> F,
     ) -> Ended {
         loop {
-            tokio::time::sleep(self.state.connection_timing().tick).await;
+            wait::pause(self.state.connection_timing().tick).await;
             if self.due()
                 && let Err(ended) = self.recheck(&mut check).await
             {

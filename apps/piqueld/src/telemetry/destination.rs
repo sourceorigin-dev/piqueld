@@ -13,6 +13,7 @@ use opentelemetry_sdk::{Resource, logs::SdkLogRecord, trace::SpanData};
 use parking_lot::Mutex;
 use piqueld_config::{Credential, Headers, OtlpEndpoint};
 use piqueld_core::EnvironmentId;
+use piqueld_core::wait;
 use piqueld_store::now_ms;
 use rustix::fs::{Mode, OFlags};
 use std::sync::Arc;
@@ -369,7 +370,7 @@ impl Destination {
                 () = self.closing.cancelled() => queue.close(),
             }
             tokio::select! {
-                () = tokio::time::sleep(BATCH_WINDOW) => {}
+                () = wait::pause(BATCH_WINDOW) => {}
                 () = self.closing.cancelled() => {}
             }
             while batch.len() < BATCH

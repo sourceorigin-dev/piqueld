@@ -7,6 +7,7 @@ pub(crate) mod snapshot;
 use anyhow::{Context, bail};
 use piqueld_core::api::BranchState;
 use piqueld_core::manifest::{GitRepository, valid_git_commit, valid_repository_path};
+use piqueld_core::wait;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{collections::BTreeMap, time::Duration};
@@ -570,7 +571,7 @@ impl Checkouts {
     ) -> Result<T, E> {
         let watch = async {
             loop {
-                tokio::time::sleep(Self::WATCH).await;
+                wait::pause(Self::WATCH).await;
                 if Self::measured(directory)
                     .await
                     .is_some_and(|bytes| bytes > limit)

@@ -6,6 +6,7 @@ use super::{
 };
 use piqueld_core::Phase;
 use piqueld_core::timeline::RolloutTask;
+use piqueld_core::wait;
 use piqueld_core::{EventDetail, ObservedService};
 use piqueld_store::JournalAction;
 
@@ -163,7 +164,7 @@ impl<D: DockerApi> Controller<D> {
     ) -> Result<(), OperationError> {
         tokio::select! {
             () = cancellation.cancelled() => Err(OperationError::Cancelled),
-            () = tokio::time::sleep(delay) => Ok(()),
+            () = wait::pause(delay) => Ok(()),
         }
     }
 
