@@ -14,6 +14,7 @@ use bollard::{
     },
     query_parameters::{ListContainersOptionsBuilder, LogsOptionsBuilder},
 };
+use piqueld_core::wait;
 use piqueld_core::{
     DesiredJobRun,
     api::LogStream,
@@ -397,7 +398,7 @@ impl BollardDocker {
         mut released: impl FnMut() -> F,
     ) -> Result<(), DockerError> {
         while !released().await? {
-            tokio::time::sleep(JOB_STOP_POLL_INTERVAL).await;
+            wait::pause(JOB_STOP_POLL_INTERVAL).await;
         }
         Ok(())
     }

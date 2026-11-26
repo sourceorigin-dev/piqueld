@@ -8,6 +8,7 @@ use futures_util::TryStreamExt as _;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Method, Request, StatusCode, body::Bytes, header};
 use hyper_util::rt::TokioIo;
+use piqueld_core::wait;
 use std::time::Duration;
 use tokio::net::UnixStream;
 
@@ -431,7 +432,7 @@ impl BollardDocker {
                     if Self::update_out_of_sequence(&error)
                         && tokio::time::Instant::now() < deadline =>
                 {
-                    tokio::time::sleep(SERVICE_UPDATE_RETRY_DELAY).await;
+                    wait::pause(SERVICE_UPDATE_RETRY_DELAY).await;
                     let refreshed =
                         tokio::time::timeout_at(deadline, self.inspect_service_wire(id))
                             .await

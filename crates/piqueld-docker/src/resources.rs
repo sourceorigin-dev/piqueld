@@ -10,6 +10,7 @@ use super::{
     TryStreamExt, VolumeCreateOptions, async_trait, identity::Filters, resolve_image_digest,
     stream,
 };
+use piqueld_core::wait;
 
 /// Inspections attempted before an incomplete network response is an error.
 const NETWORK_INSPECT_ATTEMPTS: usize = 10;
@@ -448,7 +449,7 @@ impl BollardDocker {
                 return Ok(Some(network));
             }
             if attempt < NETWORK_INSPECT_ATTEMPTS {
-                tokio::time::sleep(NETWORK_INSPECT_RETRY_DELAY).await;
+                wait::pause(NETWORK_INSPECT_RETRY_DELAY).await;
             }
         }
         Err(DockerError::Request("read complete network inspection"))
