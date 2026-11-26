@@ -40,6 +40,7 @@ pub(crate) enum ErrorKind {
 }
 
 impl ErrorKind {
+    /// The process exit code of this class.
     const fn exit_code(self) -> u8 {
         match self {
             Self::General => 1,
@@ -110,6 +111,7 @@ pub(crate) enum CliCode {
 enum Code {
     /// From an API error response.
     Api(String),
+    /// A failure the CLI itself found.
     Cli(CliCode),
 }
 
@@ -117,10 +119,13 @@ enum Code {
 /// and optional API context rendered by `ErrorReport`.
 #[derive(Debug)]
 pub(crate) struct CliError {
+    /// The failure class, which sets the exit code.
     kind: ErrorKind,
+    /// The stable code, the daemon's or the CLI's own.
     code: Code,
     /// The message, without the API code a human report appends.
     message: String,
+    /// The API request's ID, when the failure came from one.
     request_id: Option<String>,
     /// Structured context; an `operation` object gets a dedicated rendering.
     details: Option<Value>,
@@ -209,6 +214,7 @@ impl Diagnostic {
 }
 
 impl CliError {
+    /// Builds an error of class `kind` with its default code and `message`.
     pub(crate) fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
@@ -354,6 +360,7 @@ impl CliError {
         .invalid_response()
     }
 
+    /// The process exit code of the error's class.
     pub(crate) fn exit_code(&self) -> u8 {
         self.kind.exit_code()
     }
@@ -371,6 +378,7 @@ impl CliError {
         }
     }
 
+    /// Attaches structured context to the error, replacing any earlier.
     pub(crate) fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
         self
@@ -499,12 +507,15 @@ impl From<ClientError> for CliError {
     }
 }
 
+/// The result of a command.
 pub(crate) type Result<T> = std::result::Result<T, CliError>;
 
 /// Human rendering of a `CliError` on stderr, with connection context from the
 /// resolved CLI configuration.
 pub(crate) struct ErrorReport<'a> {
+    /// The failure to report.
     error: &'a CliError,
+    /// The resolved configuration, for connection context.
     cli: &'a Cli,
     /// Set for per-application warnings, which render as `Warning` instead of `Error`.
     application: Option<&'a str>,
@@ -715,10 +726,14 @@ impl DiagnosticReport for ErrorReport<'_> {
 /// daemon's or a [`CliCode`]. `request_id` is present for API errors.
 #[derive(Serialize)]
 pub(crate) struct ErrorBody<'a> {
+    /// The stable code of the failure.
     code: ErrorCode<'a>,
+    /// The one-line message.
     message: &'a str,
+    /// Structured context, when the failure has any.
     #[serde(skip_serializing_if = "Option::is_none")]
     details: Option<Value>,
+    /// The API request's ID, for API errors.
     #[serde(skip_serializing_if = "Option::is_none")]
     request_id: Option<&'a str>,
 }
@@ -727,6 +742,8 @@ pub(crate) struct ErrorBody<'a> {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum ErrorCode<'a> {
+    /// A code the daemon sent.
     Api(&'a str),
+    /// A code of the CLI's own.
     Cli(CliCode),
 }

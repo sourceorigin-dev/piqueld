@@ -143,6 +143,7 @@ pub(crate) struct Cli {
     )]
     pub(crate) socket: Option<PathBuf>,
 
+    /// The saved login to use, and whether plain HTTP may carry credentials.
     #[command(flatten)]
     pub(crate) auth: AuthArgs,
 
@@ -225,6 +226,7 @@ pub(crate) struct Cli {
     #[arg(long, global = true, value_name = "ID", value_parser = parse_request_id, help_heading = GLOBAL)]
     pub(crate) request_id: Option<String>,
 
+    /// The command to run.
     #[command(subcommand)]
     pub(crate) command: Command,
 }
@@ -251,6 +253,7 @@ impl Cli {
     }
 }
 
+/// Global flags that choose the login and how far to trust the connection.
 #[derive(Debug, Args)]
 pub(crate) struct AuthArgs {
     /// Act as this saved login, by account ID, or by username ignoring case.
@@ -269,6 +272,7 @@ pub(crate) struct AuthArgs {
     pub(crate) allow_insecure_http: bool,
 }
 
+/// The top-level `piquelctl` commands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
     /// Sign in with a passkey through your browser, and save the login.
@@ -285,6 +289,7 @@ pub(crate) enum Command {
     /// cannot be looked up before signing in.
     #[command(mut_arg("applications", |arg| arg.value_name("APPLICATION_ID")))]
     Login {
+        /// The grants the login is limited to.
         #[command(flatten)]
         limit: crate::accounts::GrantArgs,
     },
@@ -297,11 +302,13 @@ pub(crate) enum Command {
     Whoami,
     /// Manage accounts: list, edit and delete them, change their grants and passkeys, and create and revoke invitation and enrollment links.
     Account {
+        /// The account operation to run.
         #[command(subcommand)]
         command: crate::accounts::AccountCommand,
     },
     /// Create, list and revoke your API tokens and sessions, or revoke an account's.
     Token {
+        /// The token operation to run.
         #[command(subcommand)]
         command: crate::accounts::TokenCommand,
     },
@@ -354,11 +361,13 @@ pub(crate) enum Command {
     },
     /// Manage the daemon's encryption key for secrets.
     Secrets {
+        /// The secrets key operation to run.
         #[command(subcommand)]
         action: crate::secrets::KeyAction,
     },
     /// Manage notification destinations and their deliveries.
     Notification {
+        /// The notification operation to run.
         #[command(subcommand)]
         command: crate::notifications::NotificationCommand,
     },
@@ -377,26 +386,31 @@ pub(crate) enum Command {
     Doctor,
     /// Inspect the daemon's DNS providers.
     Dns {
+        /// The DNS operation to run.
         #[command(subcommand)]
         command: DnsCommand,
     },
     /// Inspect the build machine images build on.
     Builder {
+        /// The builder operation to run.
         #[command(subcommand)]
         command: BuilderCommand,
     },
     /// Create, inspect, edit and deploy applications.
     App {
+        /// The application operation to run.
         #[command(subcommand)]
         command: AppCommand,
     },
     /// Create, inspect, deploy and delete an application's environments.
     Env {
+        /// The environment operation to run.
         #[command(subcommand)]
         command: crate::environments::EnvCommand,
     },
     /// Create, inspect, deploy and delete previews: disposable deployments of a branch.
     Preview {
+        /// The preview operation to run.
         #[command(subcommand)]
         command: crate::previews::PreviewCommand,
     },
@@ -419,6 +433,7 @@ pub(crate) enum Command {
     /// environment's events outlive it: find them with `--env` and its ID.
     #[command(alias = "events")]
     Event {
+        /// Which application and environment's events to show.
         #[command(flatten)]
         scope: crate::commands::HistoryScope,
         /// Only show events of this kind, such as `operation_failed`.
@@ -429,11 +444,13 @@ pub(crate) enum Command {
         /// Only show failures: events that carry an error code.
         #[arg(long)]
         errors_only: bool,
+        /// Which page of events to show.
         #[command(flatten)]
         page: crate::support::PageArgs,
     },
 }
 
+/// `piquelctl dns` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum DnsCommand {
     /// Check every DNS provider's credentials and zones now.
@@ -444,6 +461,7 @@ pub(crate) enum DnsCommand {
     Refresh,
 }
 
+/// `piquelctl builder` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum BuilderCommand {
     /// Check that the build machine answers now.
@@ -454,6 +472,7 @@ pub(crate) enum BuilderCommand {
     Check,
 }
 
+/// `piquelctl app` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum AppCommand {
     /// Create an empty application.
@@ -463,46 +482,55 @@ pub(crate) enum AppCommand {
     Create(CreateArgs),
     /// Add, change and remove an application's services.
     Service {
+        /// The service operation to run.
         #[command(subcommand)]
         command: crate::editing::ServiceCommand,
     },
     /// List, add and remove the read-only files services mount.
     File {
+        /// The file operation to run.
         #[command(subcommand)]
         command: crate::editing::FileCommand,
     },
     /// Declare and remove named volumes.
     Volume {
+        /// The volume operation to run.
         #[command(subcommand)]
         command: crate::editing::VolumeCommand,
     },
     /// Add, change and remove HTTPS routes and redirects.
     Route {
+        /// The route operation to run.
         #[command(subcommand)]
         command: crate::editing::RouteCommand,
     },
     /// Add, reorder and remove the jobs that run before each rollout.
     Job {
+        /// The job operation to run.
         #[command(subcommand)]
         command: crate::editing::JobCommand,
     },
     /// Let other applications reach this application's services privately.
     Export {
+        /// The export operation to run.
         #[command(subcommand)]
         command: crate::editing::ExportCommand,
     },
     /// Reach the services other applications export, as `<service>.<application>`.
     Import {
+        /// The import operation to run.
         #[command(subcommand)]
         command: crate::editing::ImportCommand,
     },
     /// Set and remove manifest variables, and their values per environment and for previews.
     Variable {
+        /// The variable operation to run.
         #[command(subcommand)]
         command: crate::editing::VariableCommand,
     },
     /// Connect the application to a manifest in Git, and manage that connection.
     Repository {
+        /// The repository operation to run.
         #[command(subcommand)]
         command: crate::editing::RepositoryCommand,
     },
@@ -519,6 +547,7 @@ pub(crate) enum AppCommand {
     Logs {
         /// Application name or stable ID.
         name_or_id: String,
+        /// Which logs to show.
         #[command(flatten)]
         window: LogArgs,
     },
@@ -536,6 +565,7 @@ pub(crate) enum AppCommand {
     /// keeps values already generated; replace one with `env secret
     /// regenerate`.
     GeneratedSecret {
+        /// The generated secret operation to run.
         #[command(subcommand)]
         command: crate::editing::GeneratedSecretCommand,
     },
@@ -545,6 +575,7 @@ pub(crate) enum AppCommand {
     Secret {
         /// Application name or stable ID.
         application: String,
+        /// The stored secret operation to run.
         #[command(subcommand)]
         action: crate::secrets::SecretAction,
     },
@@ -617,10 +648,12 @@ pub(crate) enum AppCommand {
     },
 }
 
+/// Arguments of `piquelctl app create`.
 #[derive(Debug, Args)]
 pub(crate) struct CreateArgs {
     /// Name of the new application, unused by any other.
     pub(crate) name: String,
+    /// Whether to also deploy, and whether to wait for the result.
     #[command(flatten)]
     pub(crate) deployment: DeploymentArgs,
     /// Skip the confirmation prompt.
@@ -628,18 +661,23 @@ pub(crate) struct CreateArgs {
     pub(crate) yes: bool,
 }
 
+/// Arguments of `piquelctl build`.
 #[derive(Debug, Args)]
 pub(crate) struct BuildArgs {
+    /// The build operation to run.
     #[command(subcommand)]
     pub(crate) command: BuildCommand,
 }
 
+/// `piquelctl build` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum BuildCommand {
     /// List Git source builds and job runs, newest first.
     List {
+        /// Which application and environment's builds to list.
         #[command(flatten)]
         scope: crate::commands::HistoryScope,
+        /// Which page of builds to show.
         #[command(flatten)]
         page: crate::support::PageArgs,
     },
@@ -656,6 +694,8 @@ pub(crate) enum BuildCommand {
     },
 }
 
+/// The manifest file of a plan or validation, with the expected generation and
+/// the environment to render for.
 #[derive(Debug, Args)]
 pub(crate) struct ManifestArgs {
     /// Manifest file: UTF-8 TOML of at most 2 MiB.
@@ -674,8 +714,11 @@ pub(crate) struct ManifestArgs {
     pub(crate) environment: Option<String>,
 }
 
+/// Arguments of `piquelctl app apply`: the manifest to save, and how to deploy
+/// it.
 #[derive(Debug, Args)]
 pub(crate) struct ApplyArgs {
+    /// Whether to also deploy, and whether to wait for the result.
     #[command(flatten)]
     pub(crate) deployment: DeploymentArgs,
     /// Manifest file: UTF-8 TOML of at most 2 MiB.
@@ -701,6 +744,7 @@ pub(crate) struct ApplyArgs {
     pub(crate) force: bool,
 }
 
+/// Whether a change also deploys, and whether to wait for the result.
 #[derive(Debug, Args)]
 pub(crate) struct DeploymentArgs {
     /// Also deploy the saved configuration to each declared environment that
@@ -713,6 +757,7 @@ pub(crate) struct DeploymentArgs {
     pub(crate) no_wait: bool,
 }
 
+/// Arguments of `piquelctl app delete`.
 #[derive(Debug, Args)]
 pub(crate) struct DeleteArgs {
     /// Application name or stable ID.
@@ -722,10 +767,12 @@ pub(crate) struct DeleteArgs {
     /// Required when it has several, to confirm that you delete them all.
     #[arg(long, value_delimiter = ',', value_name = "NAMES")]
     pub(crate) environments: Vec<String>,
+    /// How to confirm, check and wait for the deletion.
     #[command(flatten)]
     pub(crate) deletion: DeletionFlags,
 }
 
+/// How a deletion is confirmed, checked against the generation, and waited for.
 #[derive(Debug, Args)]
 pub(crate) struct DeletionFlags {
     /// Fail unless the application is at this generation.
@@ -749,6 +796,8 @@ pub(crate) struct DeletionFlags {
     pub(crate) no_wait: bool,
 }
 
+/// Arguments of `piquelctl operation`: which operation to show, and whether to
+/// wait for it.
 #[derive(Debug, Args)]
 pub(crate) struct OperationArgs {
     /// Operation ID.
@@ -814,24 +863,32 @@ pub(crate) fn expected_generation(force: bool, expected: Option<u64>, current: u
     (!force).then_some(expected.unwrap_or(current))
 }
 
+/// Arguments of `piquelctl app rename`.
 #[derive(Debug, Args)]
 pub(crate) struct RenameArgs {
     /// Application name or stable ID.
     pub(crate) name_or_id: String,
     /// New name of the application, unused by any other.
     pub(crate) new_name: String,
+    /// How to check and confirm the edit.
     #[command(flatten)]
     pub(crate) edit: crate::editing::EditFlags,
 }
 
+/// Arguments of `piquelctl app deploy`: the application, and what to override
+/// in this deployment.
 #[derive(Debug, Args)]
 pub(crate) struct DeployArgs {
+    /// The application to deploy, and how to run the operation.
     #[command(flatten)]
     pub(crate) target: TargetArgs,
+    /// What to override in this deployment.
     #[command(flatten)]
     pub(crate) overrides: DeployOverrides,
 }
 
+/// The overrides of one deployment: the manifest revision to read, and whether
+/// to rebuild images.
 #[derive(Debug, Args)]
 pub(crate) struct DeployOverrides {
     /// Fetch the repository manifest from this branch, for this deployment only.
@@ -866,14 +923,18 @@ impl DeployOverrides {
     }
 }
 
+/// An application to act on, and how to run the operation.
 #[derive(Debug, Args)]
 pub(crate) struct TargetArgs {
     /// Application name or stable ID.
     pub(crate) name_or_id: String,
+    /// How to check, confirm and wait for the operation.
     #[command(flatten)]
     pub(crate) flags: OperationFlags,
 }
 
+/// How an operation is checked against the generation, confirmed and waited
+/// for.
 #[derive(Debug, Args)]
 pub(crate) struct OperationFlags {
     /// Fail unless the application is at this generation.
@@ -890,6 +951,8 @@ pub(crate) struct OperationFlags {
     pub(crate) no_wait: bool,
 }
 
+/// Which logs to show: the service, the amount, the time range, and whether to
+/// follow.
 #[derive(Debug, Args)]
 pub(crate) struct LogArgs {
     /// Only show this service's output.

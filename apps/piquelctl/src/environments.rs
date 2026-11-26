@@ -26,6 +26,7 @@ use piqueld_client::{
     environments::LogRecordStream,
 };
 
+/// `piquelctl env` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum EnvCommand {
     /// List an application's environments and their status.
@@ -128,10 +129,13 @@ pub(crate) enum EnvCommand {
     /// asks for confirmation and waits for the deployment. Promoted
     /// environments deploy with `env promote` instead.
     Deploy {
+        /// The environment to deploy.
         #[command(flatten)]
         target: EnvironmentArgs,
+        /// How to confirm, check and wait for the deployment.
         #[command(flatten)]
         flags: OperationFlags,
+        /// What to override in this deployment.
         #[command(flatten)]
         overrides: DeployOverrides,
     },
@@ -140,8 +144,10 @@ pub(crate) enum EnvCommand {
     /// If the operation is still in progress, the command waits for it
     /// instead of starting it again. A stopped environment starts.
     Reconcile {
+        /// The environment to reconcile.
         #[command(flatten)]
         target: EnvironmentArgs,
+        /// How to confirm, check and wait for the operation.
         #[command(flatten)]
         flags: OperationFlags,
     },
@@ -153,8 +159,10 @@ pub(crate) enum EnvCommand {
     /// confirmation and waits until its services have stopped. Previews are
     /// deleted instead.
     Stop {
+        /// The environment to stop.
         #[command(flatten)]
         target: EnvironmentArgs,
+        /// How to confirm, check and wait for the operation.
         #[command(flatten)]
         flags: OperationFlags,
     },
@@ -164,20 +172,25 @@ pub(crate) enum EnvCommand {
     /// `env reconcile`, it retries the latest operation with the inputs it was
     /// given, or waits for it while it is in progress.
     Start {
+        /// The environment to start.
         #[command(flatten)]
         target: EnvironmentArgs,
+        /// How to confirm, check and wait for the operation.
         #[command(flatten)]
         flags: OperationFlags,
     },
     /// List, regenerate, or delete an environment's generated secrets.
     Secret {
+        /// The generated secret operation to run.
         #[command(subcommand)]
         action: crate::secrets::GeneratedSecretAction,
     },
     /// Print the most recent lines of an environment's Docker logs.
     Logs {
+        /// The environment whose logs to print.
         #[command(flatten)]
         target: EnvironmentArgs,
+        /// Which logs to show.
         #[command(flatten)]
         window: LogArgs,
     },
@@ -217,6 +230,7 @@ pub(crate) enum EnvCommand {
     Traffic(crate::traffic::TrafficArgs),
 }
 
+/// An application and, when it has several, one of its environments.
 #[derive(Debug, Args)]
 pub(crate) struct EnvironmentArgs {
     /// Application name or stable ID.
@@ -226,6 +240,7 @@ pub(crate) struct EnvironmentArgs {
     pub(crate) environment: Option<String>,
 }
 
+/// An application and one of its environments, both named.
 #[derive(Debug, Args)]
 pub(crate) struct NamedEnvironment {
     /// Application name or stable ID.
@@ -234,6 +249,8 @@ pub(crate) struct NamedEnvironment {
     environment: String,
 }
 
+/// How a change to an environment is checked against the generation, confirmed
+/// and forced.
 #[derive(Debug, Args)]
 pub(crate) struct ChangeFlags {
     /// Change the environment only if the application's generation is still
@@ -321,8 +338,10 @@ impl EnvCommand {
     }
 }
 
+/// Arguments of `env sync`: the environment, and whether it follows its branch.
 #[derive(Debug, Args)]
 pub(crate) struct SyncArgs {
+    /// The environment to change.
     #[command(flatten)]
     target: NamedEnvironment,
     /// `on` deploys the environment when its branch moves; `off` deploys it
@@ -341,8 +360,11 @@ impl SyncArgs {
     }
 }
 
+/// Arguments of `env telemetry`: the environment, and whether it receives
+/// telemetry.
 #[derive(Debug, Args)]
 pub(crate) struct TelemetryArgs {
+    /// The environment to change.
     #[command(flatten)]
     target: NamedEnvironment,
     /// `on` grants the environment every application's telemetry; `off`
@@ -362,14 +384,17 @@ impl TelemetryArgs {
     }
 }
 
+/// Arguments of `env visibility`: the environment, and its visibility ceiling.
 #[derive(Debug, Args)]
 pub(crate) struct VisibilityArgs {
+    /// The environment to change.
     #[command(flatten)]
     target: NamedEnvironment,
     /// The strictest visibility the environment's routes get. `private` keeps
     /// every route on the tailnet; `public`, the default, restricts nothing.
     #[arg(value_parser = visibility())]
     visibility: Visibility,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
@@ -389,17 +414,22 @@ impl VisibilityArgs {
     }
 }
 
+/// Arguments of `env rollback`: the environment, and what happens when a
+/// rollout fails.
 #[derive(Debug, Args)]
 pub(crate) struct RollbackArgs {
+    /// The environment to change.
     #[command(flatten)]
     target: NamedEnvironment,
     /// What happens when a rollout fails.
     #[arg(value_enum)]
     rollback: RollbackChoice,
+    /// How to check, confirm and save the edit.
     #[command(flatten)]
     flags: EditFlags,
 }
 
+/// What happens when an environment's rollout fails.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum RollbackChoice {
     /// Restore the last successful deployment.
@@ -441,6 +471,7 @@ async fn list(cli: &Cli, client: &Client, console: &mut Console, application: &s
     console.emit(&rows)
 }
 
+/// Arguments of `env create`.
 #[derive(Debug, Args)]
 pub(crate) struct CreateArgs {
     /// Application name or stable ID.
@@ -463,6 +494,7 @@ pub(crate) struct CreateArgs {
     /// name or stable ID, with `env promote`.
     #[arg(long, value_name = "ENV", conflicts_with_all = ["branch", "commit"])]
     promote_from: Option<String>,
+    /// How to check and confirm the change.
     #[command(flatten)]
     change: ChangeFlags,
 }
@@ -505,8 +537,11 @@ impl CreateArgs {
     }
 }
 
+/// Arguments of `env branch`: the environment, its branch and an optional
+/// commit.
 #[derive(Debug, Args)]
 pub(crate) struct BranchArgs {
+    /// The environment to change.
     #[command(flatten)]
     target: NamedEnvironment,
     /// Branch of the manifest repository the environment follows.
@@ -516,6 +551,7 @@ pub(crate) struct BranchArgs {
     /// the environment follows the branch's head, unpinning any commit.
     #[arg(long, value_name = "SHA")]
     commit: Option<String>,
+    /// How to check and confirm the change.
     #[command(flatten)]
     change: ChangeFlags,
 }
@@ -558,8 +594,11 @@ fn promotion_source(application: &ApplicationView, source: &str) -> Result<Strin
         .ok_or_else(|| CliError::environment_not_found(source, application))
 }
 
+/// Arguments of `env source`: the environment, and where its releases come
+/// from.
 #[derive(Debug, Args)]
 pub(crate) struct SourceArgs {
+    /// The environment to change.
     #[command(flatten)]
     target: NamedEnvironment,
     /// Receive releases promoted from this environment of the application,
@@ -571,6 +610,7 @@ pub(crate) struct SourceArgs {
     /// follow another branch.
     #[arg(long, conflicts_with = "promote_from")]
     tracking: bool,
+    /// How to check and confirm the change.
     #[command(flatten)]
     change: ChangeFlags,
 }
@@ -611,6 +651,8 @@ impl SourceArgs {
     }
 }
 
+/// Arguments of `env promote`: the promoted environment, and the release it
+/// deploys.
 #[derive(Debug, Args)]
 pub(crate) struct PromoteArgs {
     /// Application name or stable ID.
@@ -635,6 +677,7 @@ pub(crate) struct PromoteArgs {
     /// It still asks for confirmation.
     #[arg(long, conflicts_with = "expected_generation")]
     force: bool,
+    /// How to check, confirm and wait for the promotion.
     #[command(flatten)]
     flags: OperationFlags,
 }
@@ -722,14 +765,17 @@ async fn show(client: &Client, console: &mut Console, target: &EnvironmentArgs) 
     Ok(())
 }
 
+/// Arguments of `env rename`.
 #[derive(Debug, Args)]
 pub(crate) struct RenameArgs {
+    /// The environment to rename.
     #[command(flatten)]
     target: NamedEnvironment,
     /// New environment name, unique within the application: 1 to 63
     /// lowercase letters, digits, or hyphens, starting with a letter and
     /// ending with a letter or digit.
     new_name: String,
+    /// How to check and confirm the change.
     #[command(flatten)]
     change: ChangeFlags,
 }
@@ -761,10 +807,13 @@ impl RenameArgs {
     }
 }
 
+/// Arguments of `env delete`.
 #[derive(Debug, Args)]
 pub(crate) struct DeleteArgs {
+    /// The environment to delete.
     #[command(flatten)]
     target: NamedEnvironment,
+    /// How to confirm, check and wait for the deletion.
     #[command(flatten)]
     deletion: DeletionFlags,
 }
@@ -1068,8 +1117,11 @@ impl Lifecycle {
 
 /// An operation's attempt as of a moment, to tell whether it ran since.
 struct Baseline {
+    /// The operation's ID.
     operation: String,
+    /// The operation's attempt number.
     attempt: u64,
+    /// Whether the attempt had ended.
     terminal: bool,
 }
 

@@ -24,6 +24,7 @@ use piqueld_client::{
     CreatedPreview, EnvironmentView, PrunePreviewsRequest,
 };
 
+/// `piquelctl preview` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum PreviewCommand {
     /// Create a preview of a branch and deploy it.
@@ -66,8 +67,10 @@ pub(crate) enum PreviewCommand {
     Show(PreviewArgs),
     /// Print the most recent lines of a preview's Docker logs.
     Logs {
+        /// The preview whose logs to print.
         #[command(flatten)]
         target: PreviewArgs,
+        /// Which logs to show.
         #[command(flatten)]
         window: LogArgs,
     },
@@ -102,8 +105,10 @@ pub(crate) enum PreviewCommand {
     /// The volumes' data is lost. The command asks for confirmation and
     /// waits until the preview is gone.
     Delete {
+        /// The preview to delete.
         #[command(flatten)]
         target: PreviewArgs,
+        /// How to confirm and wait for the deletion.
         #[command(flatten)]
         flags: PreviewDeletionFlags,
     },
@@ -119,11 +124,13 @@ pub(crate) enum PreviewCommand {
         /// Select the previews whose branch no longer exists.
         #[arg(long, required = true)]
         branch_gone: bool,
+        /// How to confirm and wait for the deletion.
         #[command(flatten)]
         flags: PreviewDeletionFlags,
     },
 }
 
+/// Arguments of `preview deploy`: the preview to deploy, or a local snapshot.
 #[derive(Debug, Args)]
 pub(crate) struct DeployArgs {
     /// Application name or stable ID.
@@ -146,6 +153,7 @@ pub(crate) struct DeployArgs {
     /// need a longer `--timeout`.
     #[arg(long)]
     local: bool,
+    /// How a local snapshot is uploaded.
     #[command(flatten)]
     snapshot: SnapshotArgs,
     /// Return once the daemon accepts the deployment, without waiting for it
@@ -157,6 +165,8 @@ pub(crate) struct DeployArgs {
 /// How many files `preview deploy --local` names in a message.
 const LISTED: usize = 20;
 
+/// Arguments of `preview deploy --local`: what the snapshot includes, and which
+/// branch it is.
 #[derive(Debug, Args)]
 pub(crate) struct SnapshotArgs {
     /// Upload every commit of `HEAD` with the snapshot.
@@ -183,6 +193,7 @@ pub(crate) struct SnapshotArgs {
     allow_secret_files: bool,
 }
 
+/// An application and one of its previews.
 #[derive(Debug, Args)]
 pub(crate) struct PreviewArgs {
     /// Application name or stable ID.
@@ -195,6 +206,7 @@ pub(crate) struct PreviewArgs {
     slot: Option<String>,
 }
 
+/// How a preview deletion is confirmed and waited for.
 #[derive(Debug, Args)]
 pub(crate) struct PreviewDeletionFlags {
     /// Skip the confirmation prompt. You need it when not on a terminal.

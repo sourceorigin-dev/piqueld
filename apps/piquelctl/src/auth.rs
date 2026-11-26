@@ -31,6 +31,8 @@ const LOCK_WAIT: Duration = Duration::from_secs(if cfg!(test) { 3600 } else { 30
 /// Kept separate from profiles so shareable connection config never holds tokens.
 #[derive(Default, Serialize, Deserialize)]
 pub(crate) struct Credentials {
+    /// The saved accounts of each daemon endpoint, keyed by the endpoint's
+    /// address.
     endpoints: BTreeMap<String, Endpoint>,
 }
 /// Saved accounts for one daemon endpoint.
@@ -44,7 +46,9 @@ struct Endpoint {
 /// One saved login: display username and its bearer token.
 #[derive(Serialize, Deserialize)]
 struct Account {
+    /// The account's username, for display.
     username: String,
+    /// The account's bearer token.
     token: String,
 }
 impl Credentials {
@@ -316,8 +320,16 @@ impl Credentials {
 /// none
 /// ```
 pub(crate) enum TokenSource {
+    /// The `PIQUELD_TOKEN` environment variable.
     Environment,
-    Saved { username: String, path: PathBuf },
+    /// A login saved in the credentials file.
+    Saved {
+        /// The saved login's username.
+        username: String,
+        /// The credentials file it was read from.
+        path: PathBuf,
+    },
+    /// No token: requests are sent unauthenticated.
     None,
 }
 impl std::fmt::Display for TokenSource {
@@ -492,7 +504,10 @@ where
 /// login, or confirming this one with a passkey before an action.
 #[derive(Clone, Copy)]
 enum Approval {
+    /// Signing in a new login.
     Login,
+    /// Confirming the current login with a passkey before the given sensitive
+    /// action.
     Confirm(SensitiveAction),
 }
 

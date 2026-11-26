@@ -25,18 +25,22 @@ use serde_json::json;
 /// Deploy, create, and `wait` results flatten it into their own objects.
 #[derive(Serialize)]
 pub(crate) struct Deployed {
+    /// The application the environment belongs to.
     pub(crate) application_id: ApplicationId,
+    /// The environment, or preview, deployed.
     pub(crate) environment_id: EnvironmentId,
     /// The environment's name, or the preview's slug: `env.slug`.
     pub(crate) slug: EnvironmentName,
     /// Deployments are identified by their operation.
     pub(crate) deployment_id: String,
+    /// The operation that carries out the deployment.
     pub(crate) operation_id: String,
     /// The release its prepared target runs; null until prepared, and for previews.
     pub(crate) release_id: Option<ReleaseId>,
     /// Branch and commit its manifest was read from; null until fetched, and
     /// for saved manifests. For a local snapshot, the snapshot commit.
     pub(crate) branch: Option<String>,
+    /// The commit its manifest was read from, as `branch` says.
     pub(crate) commit: Option<String>,
     /// Whether it deploys a snapshot of a local worktree.
     pub(crate) local: bool,
@@ -215,6 +219,7 @@ pub(crate) async fn wait_for_accepted(
     })
 }
 
+/// How ready a deployment must be for `wait` to end.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub(crate) enum Readiness {
     /// The deployment succeeded, and the daemon observes every service
@@ -255,8 +260,10 @@ pub(crate) trait Target {
     }
 }
 
+/// Arguments of `wait`, for the environment or preview `T` selects.
 #[derive(Debug, Args)]
 pub(crate) struct WaitArgs<T: Args> {
+    /// The environment or preview to wait for.
     #[command(flatten)]
     target: T,
     /// ID of the deployment to wait for. By default, the latest deployment
@@ -338,8 +345,10 @@ impl<T: Args + Target> WaitArgs<T> {
     }
 }
 
+/// Arguments of `history`, for the environment or preview `T` selects.
 #[derive(Debug, Args)]
 pub(crate) struct HistoryArgs<T: Args> {
+    /// The environment or preview whose deployments to list.
     #[command(flatten)]
     target: T,
     /// Cursor from the previous page.
@@ -361,8 +370,10 @@ impl<T: Args + Target> HistoryArgs<T> {
     }
 }
 
+/// Arguments of `attempts`, for the environment or preview `T` selects.
 #[derive(Debug, Args)]
 pub(crate) struct AttemptsArgs<T: Args> {
+    /// The environment or preview whose deployment to inspect.
     #[command(flatten)]
     target: T,
     /// ID of the deployment, as `history` lists it. By default, the latest
@@ -409,8 +420,10 @@ impl<T: Args + Target> AttemptsArgs<T> {
     }
 }
 
+/// Arguments of `restore`, for the environment or preview `T` selects.
 #[derive(Debug, Args)]
 pub(crate) struct RestoreArgs<T: Args> {
+    /// The environment or preview to restore a deployment on.
     #[command(flatten)]
     target: T,
     /// The deployment to restore, as `history` lists it; it must have succeeded.
@@ -454,8 +467,10 @@ fn superseded(deployment: &str, newer: Option<&str>) -> CliError {
     .with_details(json!({"deployment_id": deployment, "superseded_by": newer}))
 }
 
+/// Arguments of `url`, for the environment or preview `T` selects.
 #[derive(Debug, Args)]
 pub(crate) struct UrlArgs<T: Args> {
+    /// The environment or preview whose URLs to print.
     #[command(flatten)]
     target: T,
     /// Print only the URL of the route with this name, with a warning while

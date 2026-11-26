@@ -22,6 +22,7 @@ use piqueld_client::{
 };
 use std::{collections::BTreeMap, path::PathBuf};
 
+/// `piquelctl notification` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum NotificationCommand {
     /// List notification destinations and what each receives.
@@ -71,6 +72,8 @@ pub(crate) enum NotificationCommand {
     },
 }
 
+/// Arguments of `notification set`: the destination to create or change, and
+/// its settings.
 #[derive(Debug, Args)]
 pub(crate) struct SetArgs {
     /// Destination name.
@@ -129,6 +132,7 @@ pub(crate) struct SetArgs {
     previews: Option<bool>,
 }
 
+/// Parses a notification category name, returning the allowed names on failure.
 fn parse_category(value: &str) -> std::result::Result<NotificationCategory, String> {
     NotificationCategory::parse(value).ok_or_else(|| {
         let names: Vec<_> = NotificationCategory::ALL
@@ -139,6 +143,8 @@ fn parse_category(value: &str) -> std::result::Result<NotificationCategory, Stri
     })
 }
 
+/// Parses `CATEGORY=TEXT` into a category and its message, returning the
+/// error's message on failure.
 fn parse_message(
     value: &str,
 ) -> std::result::Result<(NotificationCategory, NotificationMessage), String> {
@@ -336,6 +342,7 @@ async fn application_names(client: &Client) -> Result<BTreeMap<ApplicationId, St
 
 /// Destinations with their settings; JSON is the destinations.
 struct DestinationsReport<'a> {
+    /// The destinations to print.
     destinations: &'a [NotificationDestination],
     /// Application names by ID; applications not listed show their ID.
     applications: &'a BTreeMap<ApplicationId, String>,
@@ -380,7 +387,9 @@ report!(DestinationsReport<'_> as [NotificationDestination] = destinations, self
 
 /// An acknowledged test notification; JSON is the outcome.
 struct TestReport<'a> {
+    /// The destination's name.
     name: &'a str,
+    /// The outcome of the test.
     test: DestinationTest,
 }
 report!(TestReport<'_> as DestinationTest = test, self, out, {

@@ -13,6 +13,8 @@ use piqueld_client::{
 };
 use std::time::Duration;
 
+/// Arguments of `piquelctl analytics`: which environment to cover, and the time
+/// window.
 #[derive(Debug, Args)]
 pub(crate) struct AnalyticsArgs {
     /// Only deployments of this application's environment, by name or ID;
@@ -22,10 +24,12 @@ pub(crate) struct AnalyticsArgs {
     /// The environment of --app, by name or ID; required when it has several.
     #[arg(long, requires = "app")]
     env: Option<String>,
+    /// The time window to cover.
     #[command(flatten)]
     window: Window,
 }
 
+/// A time window, as how long ago it starts and ends.
 #[derive(Debug, Args)]
 pub(crate) struct Window {
     /// Start this long ago, such as 24h or 7d; defaults to 30 days before the end.
@@ -102,6 +106,7 @@ impl Window {
 
 /// `analytics` result; human output also names the environment it covers.
 struct AnalyticsReport<'a> {
+    /// The daemon's analytics for the window.
     analytics: &'a DeploymentAnalytics,
     /// `shop / staging`, when limited to one environment.
     environment: Option<String>,

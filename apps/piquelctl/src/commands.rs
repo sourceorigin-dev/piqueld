@@ -663,7 +663,9 @@ pub(crate) async fn resolve_application(
 /// failures that reading again may fix, such as the daemon restarting, are
 /// shown as progress instead of ending the wait.
 pub(crate) struct Wait<P = ProgressTask> {
+    /// What the wait reports its progress through.
     pub(crate) progress: P,
+    /// The pause before the next read, growing as the wait goes on.
     interval: Duration,
     /// When the pause under way ends, kept if it is cut short so the next
     /// pause or [`Wait::resume`] finishes it rather than starting over.
@@ -671,6 +673,8 @@ pub(crate) struct Wait<P = ProgressTask> {
     /// Whether the daemon answered a read yet: until then, a failure is more
     /// likely a wrong endpoint than a restart, and ends the wait.
     answered: Cell<bool>,
+    /// Bounds the command by `--wait-timeout` instead of `--timeout` while it
+    /// lives.
     _waiting: Waiting,
 }
 
@@ -693,6 +697,7 @@ impl Wait {
 }
 
 impl<P: Progress> Wait<P> {
+    /// Starts a wait reporting through `progress`.
     pub(crate) fn new(progress: P) -> Self {
         Self {
             progress,
@@ -790,6 +795,7 @@ pub(crate) async fn wait_for_operation(
 
 /// Whether a terminal operation's caller is done waiting.
 pub(crate) enum Settled<T> {
+    /// The wait is over, with this result.
     Done(T),
     /// Keep waiting; the message is shown as progress.
     Waiting(String),
@@ -855,8 +861,11 @@ pub(crate) async fn wait_for_operation_until<T>(
 /// open. Its reads go through a [`Wait`]: once the daemon answered, a
 /// stream that fails or ends is reopened.
 struct TimelineFollower<'a> {
+    /// The client to read through.
     client: &'a Client,
+    /// The operation to follow.
     operation_id: &'a str,
+    /// Where the next timeline comes from.
     source: TimelineSource,
 }
 
@@ -877,6 +886,7 @@ impl<'a> TimelineFollower<'a> {
     /// daemon sends a keep-alive every 15 seconds.
     const IDLE: Duration = Duration::from_secs(45);
 
+    /// Starts following `operation_id`, with no stream open.
     fn new(client: &'a Client, operation_id: &'a str) -> Self {
         Self {
             client,

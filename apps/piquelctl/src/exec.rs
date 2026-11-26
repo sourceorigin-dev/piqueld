@@ -27,8 +27,10 @@ use tokio::{
     sync::mpsc,
 };
 
+/// Arguments of `exec`, for the application or environment `T` selects.
 #[derive(Debug, Args)]
 pub(crate) struct ExecArgs<T: Args> {
+    /// The application, environment or preview to run the command in.
     #[command(flatten)]
     target: T,
     /// Service that runs the command, in one of its running tasks.
@@ -48,6 +50,7 @@ pub(crate) struct ExecArgs<T: Args> {
     command: Vec<String>,
 }
 
+/// An application, and one of its environments when it has several.
 #[derive(Debug, Args)]
 pub(crate) struct ApplicationTarget {
     /// Application name or stable ID.
@@ -124,6 +127,7 @@ async fn receive(mut output: ExecReader) -> Result<i64> {
     }
 }
 
+/// Writes `data` to `target` and flushes it, failing as a local error.
 async fn write(target: &mut (impl AsyncWrite + Unpin), data: &[u8]) -> Result<()> {
     let written = async {
         target.write_all(data).await?;
@@ -212,6 +216,7 @@ impl RawTerminal {
             .map_err(|error| local_error("enable raw terminal mode", &error))
     }
 
+    /// The terminal's size in columns and rows, as a local error on failure.
     fn size() -> Result<TerminalSize> {
         let size = tcgetwinsize(std::io::stdin())
             .map_err(|error| local_error("read terminal size", &error))?;
@@ -222,6 +227,7 @@ impl RawTerminal {
     }
 }
 
+/// A general failure for a local `action` that went wrong with `error`.
 fn local_error(action: &str, error: &impl std::fmt::Display) -> CliError {
     CliError::new(ErrorKind::General, format!("could not {action}: {error}"))
 }
