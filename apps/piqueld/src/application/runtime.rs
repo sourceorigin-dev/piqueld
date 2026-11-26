@@ -9,7 +9,7 @@ use piqueld_core::{
     EnvironmentId, EnvironmentKind, GitCommit, InstanceId, NormalizedApplication, ResolutionSet,
     compile_application,
     manifest::{SourceRepository, ValidatedSource as Source},
-    resource::ResolvedSource,
+    resource::{GitSource, ResolvedSource},
 };
 use piqueld_docker::{BuildPriority, DockerApi, DockerError, DockerTimeout};
 use piqueld_store::StoredEnvironment;
@@ -405,7 +405,10 @@ impl<D: DockerApi> ApplicationRuntime<D> {
                         }
                     })?;
                 Ok(ResolvedSource::Git {
-                    requested: source,
+                    requested: GitSource {
+                        repository: repository.clone(),
+                        build: build.clone(),
+                    },
                     commit,
                     image_id,
                 })

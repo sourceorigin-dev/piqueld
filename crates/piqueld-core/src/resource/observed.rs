@@ -445,7 +445,7 @@ impl ObservedService {
     #[must_use]
     pub fn drift(&self, desired: &DesiredService) -> Vec<&'static str> {
         [
-            ("image", self.image == desired.image.as_str()),
+            ("image", self.image == desired.image().as_str()),
             ("replicas", self.replicas == desired.replicas),
             ("environment", self.environment == desired.environment),
             ("command", self.command == desired.command),

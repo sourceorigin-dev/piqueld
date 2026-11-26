@@ -84,7 +84,7 @@ fn observed(desired: &ResolvedApplication) -> ObservedApplication {
                 secrets: Vec::new(),
                 files: Vec::new(),
                 name: service.name.to_string(),
-                image: service.image.to_string(),
+                image: service.image().to_string(),
                 replicas: service.replicas,
                 environment: service.environment.clone(),
                 command: service.command.clone(),

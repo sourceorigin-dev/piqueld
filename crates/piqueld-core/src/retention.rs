@@ -5,7 +5,7 @@
 
 use crate::{
     ApiErrorCode, BuiltImage, DiagnosticSeverity, ImmutableImage, PlanDiagnostic, RepositoryDigest,
-    ServiceName, resource::ResolvedApplication, resource::ResolvedSource,
+    ServiceName, resource::DesiredService, resource::ResolvedApplication, resource::ResolvedSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -184,7 +184,7 @@ impl ResolvedApplication {
         self.services
             .iter()
             .chain(self.jobs.iter().map(|job| &job.container))
-            .map(|service| service.image.clone())
+            .map(DesiredService::image)
     }
 }
 
@@ -299,7 +299,8 @@ impl Default for ImagesConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{GitCommit, ImageReference, Sha256Digest, manifest::ValidatedSource};
+    use crate::manifest::{GitRepository, ValidatedBuild};
+    use crate::{GitCommit, GitSource, Sha256Digest};
     use std::collections::BTreeMap;
 
     fn pulled(digest: char) -> ResolvedSource {
@@ -312,8 +313,18 @@ mod tests {
 
     fn built(id: char) -> ResolvedSource {
         ResolvedSource::Git {
-            requested: ValidatedSource::Image {
-                image: ImageReference::parse("unused").expect("the image is valid"),
+            requested: GitSource {
+                repository: GitRepository {
+                    url: "https://example.com/web.git".into(),
+                    branch: "main".into(),
+                    commit: None,
+                },
+                build: ValidatedBuild::Docker {
+                    dockerfile: "Dockerfile".into(),
+                    context: ".".into(),
+                    args: BTreeMap::new(),
+                    target: None,
+                },
             },
             commit: GitCommit::parse("a".repeat(40)).expect("the commit is valid"),
             image_id: Sha256Digest::parse(format!("sha256:{}", id.to_string().repeat(64)))

@@ -26,7 +26,7 @@ fn jobs_reuse_their_service_container_under_a_distinct_identity() {
     let (service, job) = (&desired.services[0], &desired.jobs[0]);
     assert!(job.has_valid_identity());
     assert_ne!(job.container.name, service.name);
-    assert_eq!(job.container.image, service.image);
+    assert_eq!(job.container.image(), service.image());
     assert_eq!(job.container.environment, service.environment);
     assert_eq!(job.container.mounts, service.mounts);
     assert!(!service.mounts[0].read_only);

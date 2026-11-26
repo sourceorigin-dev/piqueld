@@ -92,7 +92,7 @@ async fn a_build_machine_image_runs_by_its_repository_digest_and_is_reused() {
             .resolved
             .expect("the resolved is present")
             .services[0]
-            .image
+            .image()
             .to_string()
     };
     assert_eq!(running().await, pushed);

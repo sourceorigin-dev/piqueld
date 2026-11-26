@@ -3070,7 +3070,7 @@
           },
           "rollout": {
             "$ref": "#/components/schemas/ValidatedRollout",
-            "description": "Rollout settings, resolved by [`Self::rollout_policy`]. Omitted when\ndefault, so targets prepared before the setting existed still decode."
+            "description": "Rollout settings, resolved by [`DesiredService::rollout_policy`]. Omitted when\ndefault, so targets prepared before the setting existed still decode."
           },
           "secrets": {
             "description": "Immutable secret file bindings.",

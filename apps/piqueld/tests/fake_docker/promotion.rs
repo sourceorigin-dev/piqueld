@@ -166,7 +166,7 @@ impl Shop {
     async fn web(&self, environment: &EnvironmentId) -> (String, String) {
         let target = self.harness.target(environment).await;
         let web = &target.services[0];
-        (web.environment["ORIGIN"].clone(), web.image.to_string())
+        (web.environment["ORIGIN"].clone(), web.image().to_string())
     }
 
     async fn release(&self, deployment: &str) -> ReleaseId {

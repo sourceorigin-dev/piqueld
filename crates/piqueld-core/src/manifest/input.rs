@@ -653,12 +653,7 @@ impl std::fmt::Display for SourceRepository {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Manifest(_) => formatter.write_str("self (manifest repository)"),
-            Self::Git(repository) => write!(
-                formatter,
-                "{} ({})",
-                repository.url,
-                repository.commit.as_ref().unwrap_or(&repository.branch)
-            ),
+            Self::Git(repository) => repository.fmt(formatter),
         }
     }
 }
@@ -703,6 +698,19 @@ pub struct GitRepository {
     /// Full commit hash to check out instead of the branch's head.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit: Option<String>,
+}
+
+/// Shows the URL and the requested revision, such as
+/// `https://github.com/example/notes.git (main)`.
+impl std::fmt::Display for GitRepository {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} ({})",
+            self.url,
+            self.commit.as_ref().unwrap_or(&self.branch)
+        )
+    }
 }
 
 impl GitRepository {

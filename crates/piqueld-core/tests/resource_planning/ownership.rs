@@ -10,7 +10,7 @@ use piqueld_core::resource::{
 };
 use piqueld_core::{DockerNetworkName, EnvironmentId, InstanceId, Plan};
 
-use super::{application, digest, environment, instance, labels_for, observed, resolutions};
+use super::{application, environment, instance, labels_for, observed, resolutions};
 
 #[test]
 fn desired_identity_matrices_reject_non_canonical_resources() {
@@ -67,8 +67,6 @@ fn desired_identity_matrices_reject_non_canonical_resources() {
         ))
         .expect("the docker service name is valid"),
         source: resolved,
-        image: piqueld_core::ImmutableImage::parse(format!("ghcr.io/example/notes@{}", digest()))
-            .expect("the immutable image is valid"),
         replicas: 1,
         environment: BTreeMap::default(),
         command: Vec::new(),

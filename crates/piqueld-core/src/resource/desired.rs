@@ -103,9 +103,72 @@ pub struct DesiredFile {
     pub content: String,
 }
 
+/// Declares [`DesiredService`] and `DesiredServiceWire`, the form it is stored
+/// and sent in, from one field list. The wire adds `image`, the image the
+/// source resolves to, where `@image` stands; reading one whose `image`
+/// differs from its source fails, so the two never disagree.
+macro_rules! desired_service {
+    (
+        $(#[$meta:meta])*
+        pub struct DesiredService {
+            $($(#[$before_meta:meta])* pub $before:ident: $before_ty:ty,)*
+            @image
+            $($(#[$after_meta:meta])* pub $after:ident: $after_ty:ty,)*
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+        #[serde(into = "DesiredServiceWire", try_from = "DesiredServiceWire")]
+        pub struct DesiredService {
+            $($(#[$before_meta])* pub $before: $before_ty,)*
+            $($(#[$after_meta])* pub $after: $after_ty,)*
+        }
+
+        $(#[$meta])*
+        #[derive(Deserialize, Serialize, ToSchema)]
+        #[serde(deny_unknown_fields)]
+        struct DesiredServiceWire {
+            $($(#[$before_meta])* $before: $before_ty,)*
+            /// Digest-pinned image reference.
+            image: ImmutableImage,
+            $($(#[$after_meta])* $after: $after_ty,)*
+        }
+
+        impl From<DesiredService> for DesiredServiceWire {
+            fn from(service: DesiredService) -> Self {
+                Self {
+                    image: service.image(),
+                    $($before: service.$before,)*
+                    $($after: service.$after,)*
+                }
+            }
+        }
+
+        impl TryFrom<DesiredServiceWire> for DesiredService {
+            type Error = ServiceImageMismatch;
+
+            fn try_from(wire: DesiredServiceWire) -> Result<Self, ServiceImageMismatch> {
+                let service = Self {
+                    $($before: wire.$before,)*
+                    $($after: wire.$after,)*
+                };
+                let derived = service.image();
+                if wire.image == derived {
+                    Ok(service)
+                } else {
+                    Err(ServiceImageMismatch {
+                        service: service.logical_name,
+                        stored: wire.image,
+                        derived,
+                    })
+                }
+            }
+        }
+    };
+}
+
+desired_service! {
 /// Desired Docker service state.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
 pub struct DesiredService {
     /// Manifest-level service name.
     pub logical_name: ServiceName,
@@ -113,8 +176,7 @@ pub struct DesiredService {
     pub name: DockerServiceName,
     /// Immutable source resolution used by the service.
     pub source: ResolvedSource,
-    /// Digest-pinned image reference.
-    pub image: ImmutableImage,
+    @image
     /// Desired replica count.
     pub replicas: u16,
     /// Environment variables keyed by name.
@@ -149,7 +211,7 @@ pub struct DesiredService {
     /// Planning order only; it is not part of the Docker specification.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<ServiceName>,
-    /// Rollout settings, resolved by [`Self::rollout_policy`]. Omitted when
+    /// Rollout settings, resolved by [`DesiredService::rollout_policy`]. Omitted when
     /// default, so targets prepared before the setting existed still decode.
     #[serde(default, skip_serializing_if = "ValidatedRollout::is_default")]
     pub rollout: ValidatedRollout,
@@ -167,6 +229,42 @@ pub struct DesiredService {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryMount>,
 }
+}
+
+/// A stored or received [`DesiredService`] whose `image` isn't the one its
+/// source resolves to.
+#[derive(Debug, thiserror::Error)]
+#[error("service {service}'s image {stored} is not {derived}, the image its source resolves to")]
+pub struct ServiceImageMismatch {
+    /// The service read.
+    service: ServiceName,
+    /// The image read.
+    stored: ImmutableImage,
+    /// The image the source resolves to.
+    derived: ImmutableImage,
+}
+
+/// Described as its wire form, which adds `image`.
+impl utoipa::PartialSchema for DesiredService {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        <DesiredServiceWire as utoipa::PartialSchema>::schema()
+    }
+}
+
+impl ToSchema for DesiredService {
+    fn name() -> std::borrow::Cow<'static, str> {
+        "DesiredService".into()
+    }
+
+    fn schemas(
+        schemas: &mut Vec<(
+            String,
+            utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+        )>,
+    ) {
+        <DesiredServiceWire as ToSchema>::schemas(schemas);
+    }
+}
 
 /// A telemetry receiver's socket directory, bind-mounted at
 /// [`TELEMETRY_TARGET`], and the user the service runs as instead of the
@@ -181,6 +279,12 @@ pub struct TelemetryMount {
 }
 
 impl DesiredService {
+    /// The digest-pinned image the service runs: its source's.
+    #[must_use]
+    pub fn image(&self) -> ImmutableImage {
+        self.source.image()
+    }
+
     /// Builds the desired Docker service for one validated service.
     ///
     /// Must only run after [`ResolutionSet::errors`] finds none: it indexes the
@@ -206,7 +310,6 @@ impl DesiredService {
         Self {
             logical_name: service.name.clone(),
             name: DockerServiceName::for_service(environment, &service.name),
-            image: source.image(),
             source,
             replicas: service.replicas,
             environment: service.environment.clone(),

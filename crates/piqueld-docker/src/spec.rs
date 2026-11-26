@@ -133,7 +133,7 @@ impl BollardDocker {
                 ..Default::default()
             }),
             container_spec: Some(TaskSpecContainerSpec {
-                image: Some(desired.image.to_string()),
+                image: Some(desired.image().to_string()),
                 command: Self::nonempty(&desired.command),
                 args: Self::nonempty(&desired.arguments),
                 env: Some(

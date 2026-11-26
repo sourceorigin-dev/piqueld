@@ -12,7 +12,10 @@ use super::application::SourceOrigin;
 use super::compile_application;
 use super::image_repository;
 use crate::manifest::domain::ValidatedSecretMount;
-use crate::manifest::{FileSource, NormalizedApplication, SourceRepository, ValidatedSource};
+use crate::manifest::{
+    FileSource, GitRepository, NormalizedApplication, SourceRepository, ValidatedBuild,
+    ValidatedSource,
+};
 use crate::{
     ApiErrorCode, BuildInputs, BuiltImage, GitCommit, ImageReference, ImmutableImage,
     RepositoryDigest, ServiceName,
@@ -32,13 +35,55 @@ pub enum ResolvedSource {
     /// A Git revision built into an immutable image.
     Git {
         /// Exact source and build inputs requested.
-        requested: ValidatedSource,
+        #[schema(value_type = ValidatedSource)]
+        requested: GitSource,
         /// Resolved full commit hash.
         commit: GitCommit,
         /// The image it was built into: Docker's content-addressed local
         /// image ID, or its digest in the build registry.
         image_id: BuiltImage,
     },
+}
+
+/// A Git source whose repository is resolved, as a build checks it out:
+/// `"self"` already replaced by the manifest's repository. It reads and writes
+/// as the [`ValidatedSource`] it is, tagged `"type": "git"`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(into = "ValidatedSource", try_from = "ValidatedSource")]
+pub struct GitSource {
+    /// Repository and revision to check out.
+    pub repository: GitRepository,
+    /// Build instructions.
+    pub build: ValidatedBuild,
+}
+
+/// A source that isn't a [`GitSource`]: an image, or a Git source whose
+/// repository is still `"self"`.
+#[derive(Debug, thiserror::Error)]
+#[error("a built source must be a Git source of a resolved repository")]
+pub struct NotGitSource;
+
+impl From<GitSource> for ValidatedSource {
+    fn from(source: GitSource) -> Self {
+        Self::Git {
+            repository: SourceRepository::Git(source.repository),
+            build: source.build,
+        }
+    }
+}
+
+impl TryFrom<ValidatedSource> for GitSource {
+    type Error = NotGitSource;
+
+    fn try_from(source: ValidatedSource) -> Result<Self, NotGitSource> {
+        match source {
+            ValidatedSource::Git {
+                repository: SourceRepository::Git(repository),
+                build,
+            } => Ok(Self { repository, build }),
+            ValidatedSource::Git { .. } | ValidatedSource::Image { .. } => Err(NotGitSource),
+        }
+    }
 }
 
 /// Invalid raw image-resolution result received at a runtime boundary.
@@ -85,7 +130,7 @@ impl ResolvedSource {
             Self::Image { requested, .. } => ValidatedSource::Image {
                 image: requested.clone(),
             },
-            Self::Git { requested, .. } => requested.clone(),
+            Self::Git { requested, .. } => requested.clone().into(),
         }
     }
 
@@ -126,13 +171,14 @@ impl ResolvedSource {
             (
                 ValidatedSource::Git {
                     repository: SourceRepository::Git(repository),
-                    ..
+                    build,
                 },
                 Self::Git {
                     requested, commit, ..
                 },
             ) => {
-                source == requested
+                requested.repository == *repository
+                    && requested.build == *build
                     && repository
                         .commit
                         .as_ref()
