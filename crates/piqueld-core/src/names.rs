@@ -272,6 +272,14 @@ validated_string!(
     "branch must be a valid Git branch name",
     crate::manifest::valid_git_branch
 );
+validated_string!(
+    /// A full Git object hash: 40 (SHA-1) or 64 (SHA-256) lowercase
+    /// hexadecimal digits, such as the commit a Git source was built from.
+    GitCommit,
+    GitCommitError,
+    "commit must be a full lowercase hexadecimal Git hash",
+    crate::manifest::valid_git_commit
+);
 logical_name!(
     /// Distinguishes several previews of one branch, e.g. one per agent.
     PreviewSlot,

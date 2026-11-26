@@ -431,7 +431,7 @@ fn registry_host_case_is_canonicalized_and_ipv6_is_rejected() {
             .normalize(ApplicationId::parse("app-notes-01").expect("the application id is valid"));
         match &app.spec().services[0].source {
             piqueld_core::manifest::ValidatedSource::Image { image } => {
-                assert_eq!(image, canonical);
+                assert_eq!(image.as_str(), canonical);
             }
             piqueld_core::manifest::ValidatedSource::Git { .. } => panic!("expected image source"),
         }

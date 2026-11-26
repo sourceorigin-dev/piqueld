@@ -136,7 +136,11 @@ async fn only_the_applications_builds_of_the_same_commit_and_settings_are_reusab
     let preview = git_source("feat/notes", "release");
     let reusable = |source| async move {
         store
-            .reusable_builds(ours, source, &hex('c', 40))
+            .reusable_builds(
+                ours,
+                source,
+                &GitCommit::parse(hex('c', 40)).expect("the commit is valid"),
+            )
             .await
             .expect("reusable builds succeeds")
     };

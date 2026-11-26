@@ -74,7 +74,7 @@ fn staging_release(template: ApplicationTemplate) -> Release {
             web.name.clone(),
             ResolvedSource::Git {
                 requested: web.source.clone(),
-                commit: COMMIT.into(),
+                commit: GitCommit::parse(COMMIT).expect("the commit is valid"),
                 image_id: Sha256Digest::parse(format!("sha256:{}", "a".repeat(64)))
                     .expect("the sha256 digest is valid")
                     .into(),

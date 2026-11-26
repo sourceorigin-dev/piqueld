@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, TryStreamExt, stream};
 use piqueld_core::timeline::{PlanCoverage, StepKey};
 use piqueld_core::{
-    EnvironmentId, EnvironmentKind, InstanceId, NormalizedApplication, ResolutionSet,
+    EnvironmentId, EnvironmentKind, GitCommit, InstanceId, NormalizedApplication, ResolutionSet,
     compile_application,
     manifest::{SourceRepository, ValidatedSource as Source},
     resource::ResolvedSource,
@@ -374,7 +374,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         match &source {
             Source::Image { image } => {
                 let digest = DockerTimeout::ImageResolution
-                    .run("resolve image", self.docker.resolve_image(image))
+                    .run("resolve image", self.docker.resolve_image(image.as_str()))
                     .await?;
                 ResolvedSource::parse_image(image.clone(), digest).map_err(|source| {
                     BoundaryError::Runtime(DockerError::RequestSource {
@@ -428,7 +428,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         source: &Source,
         repository: &piqueld_core::manifest::GitRepository,
         build: &piqueld_core::manifest::ValidatedBuild,
-    ) -> anyhow::Result<(String, piqueld_core::BuiltImage)> {
+    ) -> anyhow::Result<(GitCommit, piqueld_core::BuiltImage)> {
         let docker = self.docker.as_ref();
         let repository =
             crate::git::snapshot::SnapshotSource::checkout(self.snapshot.as_ref(), repository);
@@ -450,7 +450,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         let log = &attempt.log;
         let result = async {
             let checkout = self.checkouts.checkout(repository, Some(log)).await?;
-            log.commit(&checkout.commit).await?;
+            log.commit(checkout.commit.as_str()).await?;
             let image = match self
                 .reusable_build(store, environment, source, &checkout.commit)
                 .await?
@@ -505,7 +505,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         store: &piqueld_store::Store,
         environment: &EnvironmentId,
         source: &Source,
-        commit: &str,
+        commit: &GitCommit,
     ) -> anyhow::Result<Option<piqueld_store::ReusableBuild>> {
         if self.rebuild {
             return Ok(None);

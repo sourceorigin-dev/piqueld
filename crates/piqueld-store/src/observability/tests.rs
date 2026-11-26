@@ -1184,7 +1184,8 @@ async fn visibility_limits_history_builds_and_analytics() {
         let op = named_application(&store, name).await;
         succeed(&store, &op).await;
         let source = piqueld_core::manifest::ValidatedSource::Image {
-            image: "example/web:1".into(),
+            image: piqueld_core::ImageReference::parse("example/web:1")
+                .expect("the image is valid"),
         };
         store
             .start_build(&op.environment_id, &op.id, "web", &source, None)

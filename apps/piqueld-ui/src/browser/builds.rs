@@ -554,7 +554,7 @@ fn source_details(source: Source) -> AnyView {
         Source::Image { image } => view! {
             <dt>"Source"</dt>
             <dd>
-                <code>{image}</code>
+                <code>{image.to_string()}</code>
             </dd>
         }
         .into_any(),

@@ -541,7 +541,7 @@ impl HumanWriter<'_> {
 fn repository(source: &piqueld_client::ValidatedSource) -> String {
     match source {
         piqueld_client::ValidatedSource::Git { repository, .. } => repository.to_string(),
-        piqueld_client::ValidatedSource::Image { image } => image.clone(),
+        piqueld_client::ValidatedSource::Image { image } => image.to_string(),
     }
 }
 

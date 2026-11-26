@@ -14,8 +14,8 @@ use super::image_repository;
 use crate::manifest::domain::ValidatedSecretMount;
 use crate::manifest::{FileSource, NormalizedApplication, SourceRepository, ValidatedSource};
 use crate::{
-    ApiErrorCode, BuildInputs, BuiltImage, ImageReference, ImmutableImage, RepositoryDigest,
-    ServiceName,
+    ApiErrorCode, BuildInputs, BuiltImage, GitCommit, ImageReference, ImmutableImage,
+    RepositoryDigest, ServiceName,
 };
 
 /// Immutable image resolution used by the Docker runtime.
@@ -34,7 +34,7 @@ pub enum ResolvedSource {
         /// Exact source and build inputs requested.
         requested: ValidatedSource,
         /// Resolved full commit hash.
-        commit: String,
+        commit: GitCommit,
         /// The image it was built into: Docker's content-addressed local
         /// image ID, or its digest in the build registry.
         image_id: BuiltImage,
@@ -83,7 +83,7 @@ impl ResolvedSource {
     pub fn requested(&self) -> ValidatedSource {
         match self {
             Self::Image { requested, .. } => ValidatedSource::Image {
-                image: requested.to_string(),
+                image: requested.clone(),
             },
             Self::Git { requested, .. } => requested.clone(),
         }
@@ -91,7 +91,7 @@ impl ResolvedSource {
 
     /// The commit a Git build was resolved to.
     #[must_use]
-    pub fn commit(&self) -> Option<&str> {
+    pub fn commit(&self) -> Option<&GitCommit> {
         match self {
             Self::Image { .. } => None,
             Self::Git { commit, .. } => Some(commit),
@@ -107,8 +107,8 @@ impl ResolvedSource {
     /// Whether this is a valid immutable resolution of `source`.
     ///
     /// Images must match the requested reference exactly and resolve within the
-    /// same repository. Git sources must be identical, resolve to a full commit
-    /// hash, and honour a pinned commit when one is set.
+    /// same repository. Git sources must be identical and honour a pinned
+    /// commit when one is set.
     pub(super) fn resolves(&self, source: &ValidatedSource) -> bool {
         match (source, self) {
             (
@@ -118,8 +118,8 @@ impl ResolvedSource {
                     digest_reference,
                 },
             ) => {
-                image == requested.as_str()
-                    && image_repository(image).is_some_and(|repository| {
+                image == requested
+                    && image_repository(image.as_str()).is_some_and(|repository| {
                         image_repository(digest_reference.as_str()) == Some(repository)
                     })
             }
@@ -133,11 +133,10 @@ impl ResolvedSource {
                 },
             ) => {
                 source == requested
-                    && crate::manifest::valid_git_commit(commit)
                     && repository
                         .commit
                         .as_ref()
-                        .is_none_or(|pinned| pinned == commit)
+                        .is_none_or(|pinned| pinned == commit.as_str())
             }
             _ => false,
         }
@@ -313,7 +312,7 @@ pub fn preview_resolution(
         .map(|service| match &service.source {
             ValidatedSource::Image { image } => ResolutionRequirement::ResolveImage {
                 service: service.name.clone(),
-                reference: image.clone(),
+                reference: image.to_string(),
             },
             ValidatedSource::Git { .. } => ResolutionRequirement::BuildGit {
                 service: service.name.clone(),

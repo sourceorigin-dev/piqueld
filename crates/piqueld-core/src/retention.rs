@@ -299,7 +299,7 @@ impl Default for ImagesConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Sha256Digest, manifest::ValidatedSource};
+    use crate::{GitCommit, ImageReference, Sha256Digest, manifest::ValidatedSource};
     use std::collections::BTreeMap;
 
     fn pulled(digest: char) -> ResolvedSource {
@@ -313,9 +313,9 @@ mod tests {
     fn built(id: char) -> ResolvedSource {
         ResolvedSource::Git {
             requested: ValidatedSource::Image {
-                image: "unused".into(),
+                image: ImageReference::parse("unused").expect("the image is valid"),
             },
-            commit: "a".repeat(40),
+            commit: GitCommit::parse("a".repeat(40)).expect("the commit is valid"),
             image_id: Sha256Digest::parse(format!("sha256:{}", id.to_string().repeat(64)))
                 .expect("the sha256 digest is valid")
                 .into(),

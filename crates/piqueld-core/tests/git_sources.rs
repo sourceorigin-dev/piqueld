@@ -74,7 +74,7 @@ fn git_resolution_retains_commit_and_local_image_and_rejects_mismatched_inputs()
         piqueld_core::ServiceName::parse("web").expect("the service name is valid"),
         ResolvedSource::Git {
             requested: app.spec().services[0].source.clone(),
-            commit: "b".repeat(40),
+            commit: piqueld_core::GitCommit::parse("b".repeat(40)).expect("the commit is valid"),
             image_id: image_id.clone().into(),
         },
     );
@@ -199,7 +199,8 @@ fn docker_build_arguments_and_target_validate_and_are_part_of_source_identity() 
             piqueld_core::ServiceName::parse("web").expect("the service name is valid"),
             ResolvedSource::Git {
                 requested: app.spec().services[0].source.clone(),
-                commit: "b".repeat(40),
+                commit: piqueld_core::GitCommit::parse("b".repeat(40))
+                    .expect("the commit is valid"),
                 image_id: Sha256Digest::parse(format!("sha256:{}", "a".repeat(64)))
                     .expect("the sha256 digest is valid")
                     .into(),

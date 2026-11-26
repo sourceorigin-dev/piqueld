@@ -8564,6 +8564,10 @@
         "description": "A valid Git branch name, such as the branch a preview deploys.",
         "type": "string"
       },
+      "GitCommit": {
+        "description": "A full Git object hash: 40 (SHA-1) or 64 (SHA-256) lowercase\nhexadecimal digits, such as the commit a Git source was built from.",
+        "type": "string"
+      },
       "GitRepository": {
         "additionalProperties": false,
         "description": "A Git repository and the revision to check out. Git uses the host's\ncredentials.",
@@ -11507,8 +11511,8 @@
             "description": "A Git revision built into an immutable image.",
             "properties": {
               "commit": {
-                "description": "Resolved full commit hash.",
-                "type": "string"
+                "$ref": "#/components/schemas/GitCommit",
+                "description": "Resolved full commit hash."
               },
               "image_id": {
                 "$ref": "#/components/schemas/BuiltImage",
@@ -13707,9 +13711,23 @@
             "type": "string"
           },
           "commit": {
-            "description": "Full commit fetched instead of the branch head, when pinned.",
-            "nullable": true,
-            "type": "string"
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/GitCommit"
+                  }
+                ],
+                "description": "Full commit fetched instead of the branch head, when pinned."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
           }
         },
         "required": [
@@ -14649,8 +14667,8 @@
             "description": "Pull a prebuilt image from a registry.",
             "properties": {
               "image": {
-                "description": "Image reference.",
-                "type": "string"
+                "$ref": "#/components/schemas/ImageReference",
+                "description": "Image reference, with its registry canonicalized."
               },
               "type": {
                 "enum": [

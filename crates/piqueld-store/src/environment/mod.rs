@@ -12,7 +12,7 @@ use super::{
 use crate::SourceChoice;
 use piqueld_core::EventKind;
 use piqueld_core::{
-    EnvironmentKind, EnvironmentName, EnvironmentSource, PromotedFrom, TrackedBranch,
+    EnvironmentKind, EnvironmentName, EnvironmentSource, GitCommit, PromotedFrom, TrackedBranch,
     manifest::RenderTarget,
 };
 use sqlx::{Sqlite, SqliteConnection, Transaction};
@@ -68,7 +68,9 @@ impl Store {
         let branch = source.branch();
         (
             branch.map(TrackedBranch::branch),
-            branch.and_then(TrackedBranch::commit),
+            branch
+                .and_then(TrackedBranch::commit)
+                .map(GitCommit::as_str),
             source.promoted_from().map(EnvironmentId::as_str),
         )
     }
