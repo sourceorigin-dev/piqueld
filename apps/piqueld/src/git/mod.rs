@@ -27,6 +27,13 @@ pub struct Sources {
 }
 
 impl Sources {
+    /// The data directory's entry holding Git checkouts, a cache of the
+    /// repositories applications build from.
+    pub const CHECKOUTS: &str = "checkouts";
+    /// The data directory's entry holding the snapshots of local changes that
+    /// previews deploy.
+    pub const SNAPSHOTS: &str = "snapshots";
+
     /// Opens `checkouts/` and `snapshots/` in `directory` with the default
     /// limits, removing what a previous process left in progress.
     ///
@@ -34,8 +41,8 @@ impl Sources {
     /// Returns the file system error preparing either directory.
     pub async fn open(directory: &Path) -> std::io::Result<Self> {
         Ok(Self {
-            checkouts: Arc::new(Checkouts::open(directory.join("checkouts")).await?),
-            snapshots: snapshot::Snapshots::open(directory.join("snapshots")).await?,
+            checkouts: Arc::new(Checkouts::open(directory.join(Self::CHECKOUTS)).await?),
+            snapshots: snapshot::Snapshots::open(directory.join(Self::SNAPSHOTS)).await?,
             max_upload_bytes: piqueld_config::SnapshotsConfig::default().max_upload_bytes,
         })
     }

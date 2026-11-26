@@ -19,12 +19,41 @@ use std::{
 };
 
 /// A directory a roll-back moved the state it replaced into,
-/// `rolled-back-<ms>`, which nothing deletes.
+/// `rolled-back-<ms>`. Roll-backs keep the newest [`Self::KEEP`].
 pub(super) struct RolledBack;
 
 impl RolledBack {
     /// The name prefix of these directories.
     const PREFIX: &str = "rolled-back-";
+    /// How many generated directories the data directory keeps, the newest
+    /// roll-back's included.
+    const KEEP: usize = 3;
+
+    /// When the directory `name` was made, in Unix milliseconds, if a
+    /// roll-back generated its name.
+    fn made_at(name: &OsStr) -> Option<i64> {
+        let digits = name.to_str()?.strip_prefix(Self::PREFIX)?;
+        if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        digits.parse().ok()
+    }
+
+    /// Deletes all but the newest `keep` generated directories in
+    /// `data_dir`. Others, such as one a person named, stay.
+    fn prune(data_dir: &Path, keep: usize) -> Result<()> {
+        let mut generated: Vec<_> = entries(data_dir, |name| Self::made_at(name).is_some())?
+            .into_iter()
+            .filter_map(|name| Some((Self::made_at(&name)?, name)))
+            .collect();
+        generated.sort_unstable_by(|left, right| right.cmp(left));
+        for (_, name) in generated.into_iter().skip(keep) {
+            let path = data_dir.join(name);
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("delete the old rolled-back state {}", path.display()))?;
+        }
+        Ok(())
+    }
 
     /// The directory's name for a roll-back at `at_ms`.
     fn name(at_ms: i64) -> String {
@@ -56,10 +85,10 @@ pub enum RollBack {
 
 impl Backups {
     /// Rolls the data directory back to the newest pre-migration backup this
-    /// binary opens, once a newer piqueld migrated its database: verifies it
-    /// as [`Self::restore`] does, calls `stop_ingress` with the instance,
-    /// moves the state into a [`RolledBack`] directory, and publishes the
-    /// backup. Does nothing when this binary opens the database, or there is
+    /// binary opens, once a newer piqueld migrated its database: verifies the
+    /// backup as [`Self::restore`] does, calls `stop_ingress` with the
+    /// instance, makes room among the [`RolledBack`] directories, moves the
+    /// state into a new one, and publishes the backup. Does nothing when this binary opens the database, or there is
     /// none.
     ///
     /// # Errors
@@ -103,6 +132,7 @@ impl Backups {
         }
         let staged = self.copy_verified(&backup, &manifest).await?;
         stop_ingress(&live.instance_id).await?;
+        RolledBack::prune(data_dir, RolledBack::KEEP - 1)?;
 
         let aside = data_dir.join(RolledBack::name(piqueld_store::now_ms()));
         fs::DirBuilder::new()

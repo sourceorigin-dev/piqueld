@@ -491,8 +491,8 @@ async fn roll_back_leaves_a_database_this_binary_opens() {
 
 /// After a newer daemon migrated the database, a roll-back stops the
 /// instance's ingress, moves the state aside and restores the newest backup
-/// this binary opens, past one the newer daemon took, leaving the backups
-/// and telemetry sockets in place.
+/// this binary opens, past one the newer daemon took, leaving the backups,
+/// telemetry sockets and caches, such as local-change snapshots, in place.
 #[tokio::test]
 async fn roll_back_restores_the_newest_backup_this_binary_opens() {
     let (data_dir, backup, instance) = migrated_by_a_newer_daemon().await;
@@ -530,6 +530,7 @@ async fn roll_back_restores_the_newest_backup_this_binary_opens() {
             DATABASE,
             aside_name,
             SECRET_KEY,
+            "snapshots",
             "tailscale",
             "telemetry"
         ]
@@ -543,7 +544,6 @@ async fn roll_back_restores_the_newest_backup_this_binary_opens() {
             "piqueld.db-shm",
             "piqueld.db-wal",
             SECRET_KEY,
-            "snapshots",
             "tailscale"
         ]
     );
@@ -657,4 +657,40 @@ async fn a_roll_back_that_cannot_publish_moves_the_state_back() {
     assert!(error.downcast_ref::<Refusal>().is_none(), "{error:#}");
     assert_eq!(state(data_dir), before);
     assert_eq!(entries_now(), entries_before);
+}
+
+/// A roll-back keeps the newest rolled-back directories, its own included,
+/// and leaves ones a person named.
+#[tokio::test]
+async fn a_roll_back_keeps_the_newest_rolled_back_directories() {
+    let (data_dir, _, _) = migrated_by_a_newer_daemon().await;
+    let data_dir = data_dir.path();
+    for name in [
+        "rolled-back-1",
+        "rolled-back-2",
+        "rolled-back-3",
+        "rolled-back-recovered",
+    ] {
+        fs::create_dir(data_dir.join(name)).expect("an earlier roll-back's directory is made");
+    }
+
+    let (result, _) = roll_back(data_dir).await;
+    let Ok(RollBack::Restored { aside, .. }) = result else {
+        panic!("the state is rolled back: {result:?}");
+    };
+    let mut rolled_back = names(data_dir);
+    rolled_back.retain(|name| name.starts_with("rolled-back-"));
+    let newest = aside
+        .file_name()
+        .expect("it has a name")
+        .to_str()
+        .expect("UTF-8");
+    let mut kept = vec![
+        "rolled-back-2",
+        "rolled-back-3",
+        newest,
+        "rolled-back-recovered",
+    ];
+    kept.sort_unstable();
+    assert_eq!(rolled_back, kept);
 }

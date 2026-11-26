@@ -61,6 +61,10 @@ pub struct RemoteBuilder {
 }
 
 impl RemoteBuilder {
+    /// The data directory's entry holding Buildx's registration of the build
+    /// machine.
+    pub const DIRECTORY: &str = "buildx";
+
     /// The builder's name in Buildx.
     const NAME: &str = "piqueld";
     /// Longest a connection to the build machine may take before it counts
@@ -75,7 +79,7 @@ impl RemoteBuilder {
     /// Returns why the directory could not be replaced or Buildx refused.
     pub async fn register(remote: &RemoteBuild, data_dir: &Path) -> Result<Self, RegisterError> {
         let builder = Self {
-            config: data_dir.join("buildx"),
+            config: data_dir.join(Self::DIRECTORY),
             endpoint: remote.builder.clone(),
             registry: crate::BuildRegistry::new(remote.repository.clone())
                 .map_err(RegisterError::Registry)?,

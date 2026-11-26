@@ -192,22 +192,28 @@ database, or there is none. Otherwise it:
 2. stops this installation's [ingress](../networking/routes.md#enable-the-gateway)
    containers, which use the data directory. Your applications' routes stay
    unreachable until the daemon starts again, and starts them;
-3. moves the data directory's contents into
+3. moves the data directory's state into
    `/var/lib/piqueld/rolled-back-<time>`, where `<time>` is when it rolled
-   back, in Unix milliseconds. The backups, earlier `rolled-back-<time>`
-   directories, and the directory telemetry collectors
-   [listen in](telemetry.md#receive-telemetry-in-an-application) stay where
-   they are, so collectors keep receiving, and a later roll-back still finds
-   the backups;
+   back, in Unix milliseconds. These stay where they are:
+   - the backups, so a later roll-back still finds them;
+   - the directory telemetry collectors
+     [listen in](telemetry.md#receive-telemetry-in-an-application), so they
+     keep receiving;
+   - the caches the daemon reuses: Git checkouts in `checkouts`, the
+     snapshots of local changes that previews deploy in `snapshots`, and the
+     build machine's registration in `buildx`;
+   - earlier `rolled-back-<time>` directories;
 4. restores the backup.
 
 If no backup fits, or the one it picked fails a check, it fails before it
 stops or moves anything. If it fails after stopping the ingress containers,
 it moves back what it moved, and they stay stopped until the daemon starts.
 
-It never deletes the state it replaced: the database, with every change since
-the backup, and everything else stay in `rolled-back-<time>`. Delete that
-directory once you no longer need it.
+It doesn't delete the state it replaced: the database, with every change since
+the backup, and the rest of that state stay in `rolled-back-<time>`. It keeps
+the three newest of these directories, deleting older ones when it rolls back
+again. A directory you name `rolled-back-<anything>` yourself stays until you
+delete it.
 
 ### Roll back on every start
 
@@ -279,7 +285,8 @@ backup you [took yourself](#back-up), restore it by hand:
    Use the upgraded version's `piqueld`: the previous one may not have this
    command. It runs the same checks as `piqueld roll-back`, and restores
    nothing if one fails. Add `--check` to run the checks only. The data
-   directory must be empty, but for `backups`, `telemetry` and
+   directory must be empty, but for what `piqueld roll-back` leaves in place:
+   `backups`, `telemetry`, `checkouts`, `snapshots`, `buildx` and
    `rolled-back-<time>` directories.
 
    To restore a backup you [took yourself](#back-up) instead, copy it in
@@ -354,8 +361,8 @@ repairs any drift.
      ```
 
      Move the data directory's other contents into it, but for `backups`,
-     `telemetry`, the `rolled-back-<time>` directories and the
-     `.restore-<time>` directory.
+     `telemetry`, `checkouts`, `snapshots`, `buildx`, the
+     `rolled-back-<time>` directories and the `.restore-<time>` directory.
   3. Remove the `.restore-<time>` directory.
   4. Restore the backup again, as the daemon's user. A roll-back's backup is
      in `/var/lib/piqueld/backups`; for another restore, use the backup you
