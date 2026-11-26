@@ -8,7 +8,9 @@ const EXAMPLE: &str = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46
 
 /// GitHub's `X-Hub-Signature-256` for `body` under `secret`.
 fn sign(secret: &[u8], body: &[u8]) -> String {
-    Signature::of(secret, body).unwrap().to_string()
+    Signature::of(secret, body)
+        .expect("the signature computes")
+        .to_string()
 }
 
 /// Posts a push delivery to `router`.
@@ -24,9 +26,13 @@ async fn deliver(
     }
     router
         .clone()
-        .oneshot(request.body(axum::body::Body::from(body)).unwrap())
+        .oneshot(
+            request
+                .body(axum::body::Body::from(body))
+                .expect("the request builds"),
+        )
         .await
-        .unwrap()
+        .expect("the request is served")
         .status()
 }
 
@@ -38,7 +44,7 @@ async fn only_signed_deliveries_hint_sync_which_deploys_the_head_it_lists() {
         .service
         .generate_webhook_secret(piqueld_store::Actor::Daemon, &fixture.application)
         .await
-        .unwrap()
+        .expect("generate webhook secret succeeds")
         .secret;
     let router = crate::api::http::webhook_router(fixture.service.clone());
     let path = format!("{WEBHOOK_PATH}{}", fixture.application);
@@ -104,7 +110,7 @@ async fn only_signed_deliveries_hint_sync_which_deploys_the_head_it_lists() {
 #[test]
 fn signatures_verify_only_their_secret_and_body() {
     let secret = b"It's a Secret to Everybody";
-    let signature = Signature::parse(EXAMPLE).unwrap();
+    let signature = Signature::parse(EXAMPLE).expect("the signature parses");
     assert!(signature.verifies(secret, b"Hello, World!"));
     assert!(!signature.verifies(secret, b"Hello, World?"));
     assert!(!signature.verifies(b"another secret", b"Hello, World!"));

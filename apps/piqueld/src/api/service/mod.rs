@@ -581,12 +581,18 @@ impl ApplicationService {
     /// never reaches Docker: its socket in `dir` does not exist, so any
     /// Docker call fails at once.
     pub(crate) async fn unconnected(store: Arc<Store>, dir: &std::path::Path) -> Self {
-        let docker =
-            Arc::new(piqueld_docker::BollardDocker::connect(&dir.join("docker.sock")).unwrap());
-        let sources = Arc::new(crate::git::Sources::open(dir).await.unwrap());
+        let docker = Arc::new(
+            piqueld_docker::BollardDocker::connect(&dir.join("docker.sock"))
+                .expect("the connection opens"),
+        );
+        let sources = Arc::new(
+            crate::git::Sources::open(dir)
+                .await
+                .expect("the store opens"),
+        );
         let runtime =
             crate::reconcile::Controller::new(docker, Arc::clone(&store), Arc::clone(&sources))
                 .runtime(Arc::new(tokio::sync::Notify::new()));
-        Self::new(store, runtime, sources).unwrap()
+        Self::new(store, runtime, sources).expect("the value is valid")
     }
 }

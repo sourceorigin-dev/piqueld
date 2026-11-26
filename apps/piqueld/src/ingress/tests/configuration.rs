@@ -9,7 +9,7 @@ async fn each_listener_serves_only_its_own_routes() {
     let hosts = |server: &serde_json::Value| {
         server["routes"]
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
             .filter_map(|route| route["match"][0]["host"][0].as_str().map(str::to_owned))
             .collect::<BTreeSet<_>>()
@@ -17,7 +17,10 @@ async fn each_listener_serves_only_its_own_routes() {
     let edge = edge();
     let configuration = ingress.build_configuration(
         &table,
-        &ingress.exact_hostnames(&table).await.unwrap(),
+        &ingress
+            .exact_hostnames(&table)
+            .await
+            .expect("the exact hostnames load"),
         Some(&edge),
         None,
     );
@@ -65,13 +68,16 @@ async fn each_listener_serves_only_its_own_routes() {
 
     let configuration = ingress.build_configuration(
         &table,
-        &ingress.exact_hostnames(&table).await.unwrap(),
+        &ingress
+            .exact_hostnames(&table)
+            .await
+            .expect("the exact hostnames load"),
         None,
         None,
     );
     let servers = configuration["apps"]["http"]["servers"]
         .as_object()
-        .unwrap();
+        .expect("the value is an object");
     assert_eq!(
         servers.keys().map(String::as_str).collect::<Vec<_>>(),
         ["public", "public_http"]
@@ -85,14 +91,14 @@ async fn each_listener_serves_only_its_own_routes() {
 #[tokio::test]
 async fn exact_hostnames_win_over_wildcards_covering_them() {
     let (engine, ingress) = private_ingress().await;
-    let hooks = Hostname::parse("hooks.example.com").unwrap();
-    let website = Hostname::parse("piqueld.example.com").unwrap();
+    let hooks = Hostname::parse("hooks.example.com").expect("the hostname parses");
+    let website = Hostname::parse("piqueld.example.com").expect("the hostname parses");
     let reserved = [hooks.clone(), website];
     engine
         .store
         .reserve_installation_hostnames(&reserved)
         .await
-        .unwrap();
+        .expect("reserve installation hostnames succeeds");
     let ingress = ingress.with_webhooks(Some(hooks));
     let table: RoutingTable = [
         (
@@ -106,12 +112,20 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
         ),
         ("env-wildcard", routes(Visibility::Public, "*.example.com")),
     ]
-    .map(|(id, routes)| (EnvironmentId::parse(id).unwrap(), routes))
+    .map(|(id, routes)| {
+        (
+            EnvironmentId::parse(id).expect("the environment id parses"),
+            routes,
+        )
+    })
     .into();
     let edge = edge();
     let configuration = ingress.build_configuration(
         &table,
-        &ingress.exact_hostnames(&table).await.unwrap(),
+        &ingress
+            .exact_hostnames(&table)
+            .await
+            .expect("the exact hostnames load"),
         Some(&edge),
         None,
     );
@@ -119,7 +133,7 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
     let matchers = |server: &str, host: &str| {
         servers[server]["routes"]
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
             .filter(|route| route["match"][0]["host"][0] == host)
             .map(|route| route["match"][0].clone())
@@ -158,7 +172,7 @@ async fn exact_hostnames_win_over_wildcards_covering_them() {
             "ignore_loaded_certificates":true
         })
     );
-    let wildcard = RouteHostname::parse("*.example.com").unwrap();
+    let wildcard = RouteHostname::parse("*.example.com").expect("the route hostname parses");
     assert!(ingress.dns01_hostnames(&table).contains(&wildcard));
     let (_engine, tunneled) = private_ingress().await;
     let tunneled = tunneled.with_tunnel(&tunnel::tunnel("c2VjcmV0"));
@@ -176,26 +190,27 @@ async fn the_apps_node_forwards_to_the_private_listener_without_privileges() {
             "80":{"TCPForward":format!("{gateway}:8081"),"ProxyProtocol":2}
         }})
     );
-    let spec = ingress.node_spec(ingress.node.as_ref().unwrap());
+    let spec = ingress.node_spec(ingress.node.as_ref().expect("the node is configured"));
     assert_eq!(spec["HostConfig"]["NetworkMode"], json!(gateway));
     assert_eq!(spec["HostConfig"]["CapDrop"], json!(["ALL"]));
     assert_eq!(spec["HostConfig"]["ReadonlyRootfs"], true);
     assert!(spec["HostConfig"].get("PortBindings").is_none());
-    let environment = spec["Env"].as_array().unwrap();
+    let environment = spec["Env"].as_array().expect("the value is an array");
     assert!(environment.contains(&json!("TS_USERSPACE=true")));
     assert!(environment.contains(&json!("TS_HOSTNAME=piqueld-apps")));
-    assert!(
-        !environment
-            .iter()
-            .any(|value| value.as_str().unwrap().starts_with("TS_AUTHKEY"))
-    );
+    assert!(!environment.iter().any(|value| {
+        value
+            .as_str()
+            .expect("the value is a string")
+            .starts_with("TS_AUTHKEY")
+    }));
     let hash = |key: &str| {
         let config = PrivateIngressConfig {
             enabled: true,
             auth_key: Some(key.into()),
             ..Default::default()
         };
-        let node = node::Node::new(&config, &ingress.directory).unwrap();
+        let node = node::Node::new(&config, &ingress.directory).expect("the value is valid");
         ingress.node_spec(&node)["Labels"]["io.piqueld.ingress-configuration"].clone()
     };
     assert_ne!(hash("tskey-auth-old"), hash("tskey-auth-new"));
@@ -216,7 +231,13 @@ async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
     assert!(configuration.get("logging").is_none());
     let servers = &configuration["apps"]["http"]["servers"];
     assert!(servers["public"].get("logs").is_none());
-    assert!(ingress.bind_traffic().await.unwrap().is_none());
+    assert!(
+        ingress
+            .bind_traffic()
+            .await
+            .expect("bind traffic succeeds")
+            .is_none()
+    );
 
     let ingress = ingress.with_traffic(true);
     let configuration = build(&ingress);
@@ -229,9 +250,13 @@ async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
             servers[server]["logs"],
             json!({"default_logger_name":"traffic"})
         );
-        let routes = servers[server]["routes"].as_array().unwrap();
+        let routes = servers[server]["routes"]
+            .as_array()
+            .expect("the value is an array");
         assert_eq!(routes[0]["handle"][0]["handler"], "static_response");
-        let handle = routes[1]["handle"].as_array().unwrap();
+        let handle = routes[1]["handle"]
+            .as_array()
+            .expect("the value is an array");
         assert_eq!(
             handle[..3],
             [
@@ -253,7 +278,11 @@ async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
         json!({"output":"net","address":"unix//control/traffic.sock","soft_start":true})
     );
 
-    ingress.bind_traffic().await.unwrap().unwrap();
+    ingress
+        .bind_traffic()
+        .await
+        .expect("bind traffic succeeds")
+        .expect("the listener is enabled");
     let socket = engine.directory.path().join("ingress/control/traffic.sock");
     assert!(socket.exists());
 }
@@ -261,7 +290,7 @@ async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
 #[tokio::test]
 async fn the_webhook_hostname_forwards_only_its_webhook_path_to_the_daemon() {
     use std::os::unix::fs::PermissionsExt;
-    let hooks = Hostname::parse("hooks.example.com").unwrap();
+    let hooks = Hostname::parse("hooks.example.com").expect("the hostname parses");
     let (engine, ingress) = private_ingress().await;
     let ingress = ingress.with_webhooks(Some(hooks.clone()));
     let configuration = ingress.build_configuration(&RoutingTable::new(), &[], None, None);
@@ -270,7 +299,7 @@ async fn the_webhook_hostname_forwards_only_its_webhook_path_to_the_daemon() {
         public["tls_connection_policies"][0]["match"]["sni"],
         json!([hooks.as_str()])
     );
-    let routes = public["routes"].as_array().unwrap();
+    let routes = public["routes"].as_array().expect("the value is an array");
     assert_eq!(routes.len(), 2);
     assert_eq!(
         routes[0]["match"],
@@ -285,31 +314,53 @@ async fn the_webhook_hostname_forwards_only_its_webhook_path_to_the_daemon() {
     );
     assert_eq!(routes[1]["handle"][0]["status_code"], 404);
 
-    let listener = ingress.bind_webhooks().await.unwrap().unwrap();
+    let listener = ingress
+        .bind_webhooks()
+        .await
+        .expect("bind webhooks succeeds")
+        .expect("the listener is enabled");
     let path = engine
         .directory
         .path()
         .join("ingress/control/webhooks.sock");
     assert_eq!(
-        listener.local_addr().unwrap().as_pathname(),
+        listener
+            .local_addr()
+            .expect("the listener has an address")
+            .as_pathname(),
         Some(path.as_path())
     );
     assert_eq!(
-        std::fs::metadata(&path).unwrap().permissions().mode() & 0o077,
+        std::fs::metadata(&path)
+            .expect("the file has metadata")
+            .permissions()
+            .mode()
+            & 0o077,
         0
     );
     drop(listener);
     let disabled = engine.ingress(false).with_webhooks(Some(hooks));
-    assert!(disabled.bind_webhooks().await.unwrap().is_some());
+    assert!(
+        disabled
+            .bind_webhooks()
+            .await
+            .expect("bind webhooks succeeds")
+            .is_some()
+    );
     assert_eq!(disabled.webhook_hostname(), None);
     let none = engine.ingress(true);
-    assert!(none.bind_webhooks().await.unwrap().is_none());
+    assert!(
+        none.bind_webhooks()
+            .await
+            .expect("bind webhooks succeeds")
+            .is_none()
+    );
 }
 
 #[tokio::test]
 async fn the_dashboard_hostname_is_a_private_host_forwarded_to_the_daemon() {
     use std::os::unix::fs::PermissionsExt;
-    let dashboard = Hostname::parse("dashboard.example.com").unwrap();
+    let dashboard = Hostname::parse("dashboard.example.com").expect("the hostname parses");
     let (engine, ingress) = private_ingress().await;
     let ingress = ingress.with_private(&PrivateIngressConfig {
         dashboard_hostname: Some(dashboard.clone()),
@@ -346,17 +397,28 @@ async fn the_dashboard_hostname_is_a_private_host_forwarded_to_the_daemon() {
     let mut config = piqueld_config::DaemonConfig::default();
     config.server.data_dir = engine.directory.path().into();
     config.ingress.private.dashboard_hostname = Some(dashboard.clone());
-    let socket = Ingress::bind_dashboard(&config).await.unwrap().unwrap();
+    let socket = Ingress::bind_dashboard(&config)
+        .await
+        .expect("bind dashboard succeeds")
+        .expect("the listener is enabled");
     let path = engine
         .directory
         .path()
         .join("ingress/control/dashboard.sock");
     assert_eq!(
-        socket.listener.local_addr().unwrap().as_pathname(),
+        socket
+            .listener
+            .local_addr()
+            .expect("the listener has an address")
+            .as_pathname(),
         Some(path.as_path())
     );
     assert_eq!(
-        std::fs::metadata(&path).unwrap().permissions().mode() & 0o077,
+        std::fs::metadata(&path)
+            .expect("the file has metadata")
+            .permissions()
+            .mode()
+            & 0o077,
         0
     );
     assert_eq!(socket.hostname, dashboard);

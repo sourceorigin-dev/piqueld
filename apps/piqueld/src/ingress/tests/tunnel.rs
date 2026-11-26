@@ -22,7 +22,7 @@ const ID: &str = "6ff42ae2-765d-4adf-8112-31c55c1551ef";
 pub(super) fn tunnel(secret: &str) -> TunnelConfig {
     TunnelConfig {
         credentials: Some(TunnelCredentials {
-            id: ID.parse().unwrap(),
+            id: ID.parse().expect("the value parses"),
             file: Credential::from(format!(
                 r#"{{"AccountTag":"account","TunnelSecret":"{secret}","TunnelID":"{ID}"}}"#
             )),
@@ -50,7 +50,7 @@ fn owned_container(store: &Store, mut fields: Value) -> Value {
 async fn cloudflared_forwards_everything_to_the_tunnel_listener_without_privileges() {
     let (engine, ingress) = tunnel_ingress().await;
     let gateway = &ingress.name;
-    let credentials = ingress.tunnel.as_ref().unwrap();
+    let credentials = ingress.tunnel.as_ref().expect("the tunnel is configured");
     assert_eq!(
         ingress.tunnel_configuration(credentials),
         json!({
@@ -93,8 +93,12 @@ async fn cloudflared_forwards_everything_to_the_tunnel_listener_without_privileg
     );
     let hash = |secret: &str| {
         let config = tunnel(secret);
-        ingress.tunnel_spec(config.credentials.as_ref().unwrap())["Labels"]
-            ["io.piqueld.ingress-configuration"]
+        ingress.tunnel_spec(
+            config
+                .credentials
+                .as_ref()
+                .expect("the tunnel is configured"),
+        )["Labels"]["io.piqueld.ingress-configuration"]
             .clone()
     };
     assert_eq!(
@@ -115,19 +119,26 @@ async fn the_tunnel_listener_serves_only_public_routes_to_edge_peers() {
     let edge = super::edge();
     let configuration = ingress.build_configuration(
         &table,
-        &ingress.exact_hostnames(&table).await.unwrap(),
+        &ingress
+            .exact_hostnames(&table)
+            .await
+            .expect("the exact hostnames load"),
         Some(&edge),
         Some(&edge),
     );
     let servers = &configuration["apps"]["http"]["servers"];
     assert_eq!(
-        servers.as_object().unwrap().keys().collect::<Vec<_>>(),
+        servers
+            .as_object()
+            .expect("the value is an object")
+            .keys()
+            .collect::<Vec<_>>(),
         ["private", "private_http", "tunnel"]
     );
     let tunnel = &servers["tunnel"];
     assert_eq!(tunnel["listen"], json!([":8080"]));
     assert_eq!(tunnel["automatic_https"], json!({"disable":true}));
-    let routes = tunnel["routes"].as_array().unwrap();
+    let routes = tunnel["routes"].as_array().expect("the value is an array");
     assert_eq!(
         routes[0],
         json!({"match":[{"not":[{"remote_ip":{"ranges":edge}}]}],"handle":[{"handler":"static_response","abort":true}],"terminal":true})
@@ -149,7 +160,7 @@ async fn the_tunnel_listener_serves_only_public_routes_to_edge_peers() {
                 .get(0)
                 .filter(|handle| handle["handler"] == "reverse_proxy")
         })
-        .unwrap();
+        .expect("the match exists");
     assert_eq!(
         proxy["headers"]["request"]["set"],
         json!({
@@ -160,14 +171,14 @@ async fn the_tunnel_listener_serves_only_public_routes_to_edge_peers() {
     );
     let private = servers["private"]["routes"]
         .as_array()
-        .unwrap()
+        .expect("the value is an array")
         .iter()
         .find_map(|route| {
             route["handle"]
                 .get(0)
                 .filter(|handle| handle["handler"] == "reverse_proxy")
         })
-        .unwrap();
+        .expect("the match exists");
     assert!(private.get("headers").is_none());
 }
 
@@ -216,7 +227,7 @@ async fn defers_replacing_a_direct_gateway(tunnel: Option<&TunnelConfig>) -> any
         ingress = ingress.with_tunnel(tunnel);
     }
     let table = [(
-        EnvironmentId::parse("env-broken").unwrap(),
+        EnvironmentId::parse("env-broken").expect("the environment id parses"),
         routes(Visibility::Public, "www.example.com"),
     )]
     .into();
@@ -231,10 +242,12 @@ async fn defers_replacing_a_direct_gateway(tunnel: Option<&TunnelConfig>) -> any
 
 #[tokio::test]
 async fn a_deferred_replacement_never_switches_modes() {
-    defers_replacing_a_direct_gateway(None).await.unwrap();
+    defers_replacing_a_direct_gateway(None)
+        .await
+        .expect("the replacement is deferred");
     let error = defers_replacing_a_direct_gateway(Some(&tunnel("c2VjcmV0")))
         .await
-        .unwrap_err();
+        .expect_err("the direct gateway stays in place");
     assert!(
         error
             .to_string()
@@ -276,12 +289,24 @@ async fn kept_beside_a_direct_gateway(
     let app = application("broken", "www.example.com", "body");
     let (id, _) = request_deployment(store, crate::api::Actor::Daemon, app).await;
     let route = routes(Visibility::Public, "www.example.com");
-    store.stage_routes(&id, &route, true, None).await.unwrap();
-    let table = store.routing_table().await.unwrap();
-    store.acknowledge_routes(&table).await.unwrap();
-    let (mut prepared, _, failures) = ingress.prepare_routes(&table).await.unwrap();
+    store
+        .stage_routes(&id, &route, true, None)
+        .await
+        .expect("stage routes succeeds");
+    let table = store
+        .routing_table()
+        .await
+        .expect("the routing table loads");
+    store
+        .acknowledge_routes(&table)
+        .await
+        .expect("acknowledge routes succeeds");
+    let (mut prepared, _, failures) = ingress
+        .prepare_routes(&table)
+        .await
+        .expect("prepare routes succeeds");
     assert!(failures.contains_key(&id), "{failures:?}");
-    prepared.remove(&id).unwrap()
+    prepared.remove(&id).expect("the entry exists")
 }
 
 /// A switch to tunnel mode goes ahead when one application's network is
@@ -305,10 +330,14 @@ async fn disabled_ingress_removes_the_tunnel_credentials_even_if_docker_fails() 
         .directory
         .path()
         .join("ingress/tunnel/credentials.json");
-    std::fs::create_dir_all(credentials.parent().unwrap()).unwrap();
-    std::fs::write(&credentials, "{}").unwrap();
+    std::fs::create_dir_all(credentials.parent().expect("the path has a parent"))
+        .expect("the directory is created");
+    std::fs::write(&credentials, "{}").expect("the file is written");
     let disabled = engine.ingress(false).with_tunnel(&tunnel("c2VjcmV0"));
-    disabled.synchronize().await.unwrap_err();
+    disabled
+        .synchronize()
+        .await
+        .expect_err("synchronizing fails");
     assert!(!credentials.exists());
 }
 
@@ -329,9 +358,12 @@ async fn disabled_ingress_stops_containers_even_if_the_credentials_remain() {
             .path()
             .join("ingress/tunnel/credentials.json/x"),
     )
-    .unwrap();
+    .expect("the directory is created");
     let disabled = engine.ingress(false).with_tunnel(&tunnel("c2VjcmV0"));
-    let error = disabled.synchronize().await.unwrap_err();
+    let error = disabled
+        .synchronize()
+        .await
+        .expect_err("synchronizing fails");
     assert!(
         format!("{error:#}").contains("remove the Cloudflare Tunnel credentials"),
         "{error:#}"
@@ -358,23 +390,28 @@ impl Scenario {
             .await;
         let mut admin = application("admin", "admin.example.test", "admin").to_manifest();
         admin.spec.routes[0].visibility = Visibility::Private;
-        let admin = admin
-            .validate()
-            .unwrap()
-            .normalize(piqueld_core::ApplicationId::parse("admin-input").unwrap());
+        let admin = admin.validate().expect("the manifest validates").normalize(
+            piqueld_core::ApplicationId::parse("admin-input").expect("the application id parses"),
+        );
         self.deploy(admin).await;
         let ingress = self.ingress(true).with_tunnel(&tunnel("c2VjcmV0"));
-        ingress.synchronize().await.unwrap();
+        ingress
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
         self.tunnel_publishes_no_ports(&ingress).await;
         self.only_cloudflared_reaches_the_tunnel_listener(&ingress, &echo)
             .await;
 
-        self.gateway.synchronize().await.unwrap();
+        self.gateway
+            .synchronize()
+            .await
+            .expect("the ingress synchronizes");
         assert!(
             self.gateway
                 .named_container(&ingress.tunnel_name())
                 .await
-                .unwrap()
+                .expect("the named container lookup succeeds")
                 .is_none()
         );
         assert!(
@@ -391,7 +428,11 @@ impl Scenario {
     /// harness's published ports 80/443 lead nowhere.
     async fn tunnel_publishes_no_ports(&self, ingress: &Ingress) {
         for name in [ingress.name.clone(), ingress.tunnel_name()] {
-            let container = ingress.named_container(&name).await.unwrap().unwrap();
+            let container = ingress
+                .named_container(&name)
+                .await
+                .expect("the named container lookup succeeds")
+                .expect("the container exists");
             let bindings = &container["HostConfig"]["PortBindings"];
             assert!(
                 bindings.is_null() || bindings.as_object().is_some_and(serde_json::Map::is_empty),
@@ -401,8 +442,8 @@ impl Scenario {
         let cloudflared = ingress
             .named_container(&ingress.tunnel_name())
             .await
-            .unwrap()
-            .unwrap();
+            .expect("the named container lookup succeeds")
+            .expect("the container exists");
         assert_eq!(cloudflared["HostConfig"]["ReadonlyRootfs"], true);
         self.client
             .get(self.url("one.example.test"))
@@ -456,10 +497,14 @@ impl Scenario {
         assert_eq!((code, output.as_str()), (0, " 404"));
 
         let network = piqueld_core::DockerNetworkName::for_ingress(echo).to_string();
-        let gateway = ingress.container().await.unwrap().unwrap();
+        let gateway = ingress
+            .container()
+            .await
+            .expect("the container lookup succeeds")
+            .expect("the container exists");
         let address = gateway["NetworkSettings"]["Networks"][&network]["IPAddress"]
             .as_str()
-            .unwrap()
+            .expect("the value is a string")
             .to_owned();
         let (code, output) = self
             .curl(&network, &request(&address, "echo.example.test"))

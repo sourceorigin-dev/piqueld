@@ -181,18 +181,22 @@ mod tests {
         );
         let event = Event {
             id: 48_213,
-            application_id: Some(ApplicationId::parse("app-00000001").unwrap()),
-            environment_id: Some(EnvironmentId::parse("env-00000001").unwrap()),
+            application_id: Some(
+                ApplicationId::parse("app-00000001").expect("the application id parses"),
+            ),
+            environment_id: Some(
+                EnvironmentId::parse("env-00000001").expect("the environment id parses"),
+            ),
             kind: "operation_failed".into(),
             diagnostic: Some(diagnostic),
             created_at_ms: 1_792_672_425_063,
             ..Event::default()
         };
         let subject = NotificationSubject {
-            application: Some("shop".parse().unwrap()),
-            environment: Some("feat-checkout".parse().unwrap()),
+            application: Some("shop".parse().expect("the value parses")),
+            environment: Some("feat-checkout".parse().expect("the value parses")),
             preview: true,
-            branch: Some("feat/checkout".parse().unwrap()),
+            branch: Some("feat/checkout".parse().expect("the value parses")),
         };
         let notification = Notification {
             category: Some(NotificationCategory::DeploymentFailures),
@@ -216,9 +220,9 @@ mod tests {
         assert_eq!(embed["footer"]["text"], "piqueld · piqueld.example");
         let fields: Vec<_> = embed["fields"]
             .as_array()
-            .unwrap()
+            .expect("the value is an array")
             .iter()
-            .map(|field| field["name"].as_str().unwrap())
+            .map(|field| field["name"].as_str().expect("the value is a string"))
             .collect();
         assert_eq!(fields, ["Application", "Preview", "Branch", "Next step"]);
         let rendered = message.to_string();

@@ -8,16 +8,32 @@ use std::time::Duration;
 impl Scenario {
     async fn configure_acme_test(&self) -> serde_json::Value {
         let hosts = ["http-acme.example.test", "alpn-acme.example.test"];
-        let original = self.gateway.caddy.get("/config/").await.unwrap();
-        let mut table = self.store.routing_table().await.unwrap();
+        let original = self
+            .gateway
+            .caddy
+            .get("/config/")
+            .await
+            .expect("the Caddy configuration is read");
+        let mut table = self
+            .store
+            .routing_table()
+            .await
+            .expect("the routing table loads");
         for host in hosts {
             let mut route = table[&self.first][0].clone();
             route.hostname = super::application("acme", host, "unused").spec().routes[0]
                 .hostname
                 .clone();
-            table.get_mut(&self.first).unwrap().push(route);
+            table
+                .get_mut(&self.first)
+                .expect("the entry exists")
+                .push(route);
         }
-        let mut configuration = self.gateway.configuration(&table).await.unwrap();
+        let mut configuration = self
+            .gateway
+            .configuration(&table)
+            .await
+            .expect("the gateway configuration is read");
         configuration["apps"]["http"]["servers"]["acme"] = json!({
             "listen":["127.0.0.1:9072"], "tls_connection_policies":[{}],
             "routes":[{"match":[{"host":["127.0.0.1"]}], "handle":[{"handler":"acme_server", "lifetime":300_000_000_000_u64,
@@ -30,13 +46,16 @@ impl Scenario {
             .caddy
             .external(Method::POST, "/load", Some(&directory))
             .await
-            .unwrap();
+            .expect("the Caddy admin call succeeds");
         tokio::time::timeout(Duration::from_secs(10), async {
             let certificate = self
                 .directory
                 .path()
                 .join("ingress/data/caddy/certificates/local/127.0.0.1/127.0.0.1.crt");
-            while !tokio::fs::try_exists(&certificate).await.unwrap() {
+            while !tokio::fs::try_exists(&certificate)
+                .await
+                .expect("the path is checked")
+            {
                 // wall-clock: Caddy, a real process, writes the certificate on its
                 // own and signals nothing; look again until the file exists.
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -61,7 +80,7 @@ impl Scenario {
             .caddy
             .external(Method::POST, "/load", Some(&configuration))
             .await
-            .unwrap();
+            .expect("the Caddy admin call succeeds");
         self.restart_gateway().await;
         original
     }
@@ -75,12 +94,16 @@ impl Scenario {
                 .tls_info(true)
                 .pool_max_idle_per_host(0)
                 .build()
-                .unwrap()
+                .expect("the client builds")
                 .get(format!("{}.well-known/piqueld-ingress", self.url(host)))
                 .send()
                 .await?;
-            let certificate = peer_certificate(&response).unwrap();
-            assert_eq!(response.text().await.unwrap(), self.gateway.instance_id);
+            let certificate =
+                peer_certificate(&response).expect("the response has a peer certificate");
+            assert_eq!(
+                response.text().await.expect("the body reads"),
+                self.gateway.instance_id
+            );
             reqwest::Result::Ok(certificate)
         };
         for host in hosts {
@@ -98,7 +121,7 @@ impl Scenario {
             .expect("ACME challenge produces a trusted certificate");
             tokio::time::timeout(Duration::from_secs(90), async {
                 loop {
-                    if served(host).await.unwrap() != first {
+                    if served(host).await.expect("the host answers") != first {
                         break;
                     }
                     // wall-clock: Caddy renews on its own one-second ticker and signals
@@ -113,7 +136,7 @@ impl Scenario {
             .caddy
             .external(Method::POST, "/load", Some(&original))
             .await
-            .unwrap();
+            .expect("the Caddy admin call succeeds");
     }
 }
 

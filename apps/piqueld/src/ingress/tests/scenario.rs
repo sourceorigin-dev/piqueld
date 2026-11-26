@@ -27,22 +27,27 @@ pub(super) struct Scenario {
 impl Scenario {
     pub(super) async fn new() -> Self {
         assert_eq!(std::env::var("PIQUELD_DOCKER_ISOLATED").as_deref(), Ok("1"));
-        let socket = PathBuf::from(std::env::var("PIQUELD_DOCKER_SOCKET").unwrap());
+        let socket =
+            PathBuf::from(std::env::var("PIQUELD_DOCKER_SOCKET").expect("the variable is set"));
         assert_ne!(
-            std::fs::canonicalize(&socket).unwrap(),
+            std::fs::canonicalize(&socket).expect("the path resolves"),
             PathBuf::from("/run/docker.sock")
         );
-        let root = PathBuf::from(std::env::var("PIQUELD_DOCKER_DATA_DIR").unwrap());
-        let directory = tempfile::tempdir_in(root).unwrap();
+        let root =
+            PathBuf::from(std::env::var("PIQUELD_DOCKER_DATA_DIR").expect("the variable is set"));
+        let directory = tempfile::tempdir_in(root).expect("the temp dir is created");
         let store = Arc::new(
             Store::open_unsynced(directory.path().join("db"))
                 .await
-                .unwrap(),
+                .expect("the store opens"),
         );
-        let docker = Arc::new(BollardDocker::connect(&socket).unwrap());
-        docker.ensure_swarm(true).await.unwrap();
-        let mut gateway =
-            Ingress::new(true, &socket, directory.path(), Arc::clone(&store)).unwrap();
+        let docker = Arc::new(BollardDocker::connect(&socket).expect("the connection opens"));
+        docker
+            .ensure_swarm(true)
+            .await
+            .expect("ensure swarm succeeds");
+        let mut gateway = Ingress::new(true, &socket, directory.path(), Arc::clone(&store))
+            .expect("the value is valid");
         gateway.issuer = Some(json!({"module":"internal"}));
         gateway.extra_hosts = vec![
             "http-acme.example.test:127.0.0.1".into(),
@@ -52,9 +57,17 @@ impl Scenario {
         gateway.traffic = true;
         let gateway = Arc::new(gateway);
         let counting = CancellationToken::new();
-        let traffic = gateway.bind_traffic().await.unwrap().unwrap();
+        let traffic = gateway
+            .bind_traffic()
+            .await
+            .expect("bind traffic succeeds")
+            .expect("the listener is enabled");
         let counter = tokio::spawn(traffic.run(counting.clone()));
-        let sources = Arc::new(Sources::open(directory.path()).await.unwrap());
+        let sources = Arc::new(
+            Sources::open(directory.path())
+                .await
+                .expect("the store opens"),
+        );
         let controller = Controller::new(Arc::clone(&docker), Arc::clone(&store), sources)
             .with_ingress(Arc::clone(&gateway));
         let first = deploy(
@@ -65,8 +78,8 @@ impl Scenario {
         .await;
         let root = tokio::fs::read(directory.path().join(ROOT_CERTIFICATE))
             .await
-            .unwrap();
-        let root = reqwest::Certificate::from_pem(&root).unwrap();
+            .expect("read succeeds");
+        let root = reqwest::Certificate::from_pem(&root).expect("from pem succeeds");
         let client = Self::trusting(
             &root,
             &[
@@ -82,7 +95,7 @@ impl Scenario {
         .pool_max_idle_per_host(0)
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .unwrap();
+        .expect("the client builds");
         let scenario = Self {
             directory,
             socket,
@@ -120,7 +133,11 @@ impl Scenario {
             eprintln!("could not relay the gateway's logs: {error:#}");
         }
         cleanup(&scenario).await;
-        scenario.gateway.stop_gateway().await.unwrap();
+        scenario
+            .gateway
+            .stop_gateway()
+            .await
+            .expect("stop gateway succeeds");
         if let Err(panic) = result {
             std::panic::resume_unwind(panic);
         }
@@ -133,7 +150,7 @@ impl Scenario {
             .no_proxy()
             .add_root_certificate(root.clone());
         hosts.iter().fold(client, |client, host| {
-            client.resolve(host, "127.0.0.1:443".parse().unwrap())
+            client.resolve(host, "127.0.0.1:443".parse().expect("the value parses"))
         })
     }
 
@@ -145,7 +162,7 @@ impl Scenario {
             self.directory.path(),
             Arc::clone(&self.store),
         )
-        .unwrap()
+        .expect("the value is valid")
     }
 
     /// Another manager of this installation's gateway, with the same
@@ -167,7 +184,12 @@ impl Scenario {
     pub(super) async fn succeeded(&self, operation: &str) {
         self.store
             .wait_until(async || {
-                self.store.operation(operation).await.unwrap().state == OperationState::Succeeded
+                self.store
+                    .operation(operation)
+                    .await
+                    .expect("the operation loads")
+                    .state
+                    == OperationState::Succeeded
             })
             .await;
     }
@@ -179,8 +201,11 @@ impl Scenario {
     ) -> NormalizedApplication {
         manifest
             .validate()
-            .unwrap()
-            .normalize(piqueld_core::ApplicationId::parse(self.first.as_str()).unwrap())
+            .expect("the manifest validates")
+            .normalize(
+                piqueld_core::ApplicationId::parse(self.first.as_str())
+                    .expect("the application id parses"),
+            )
     }
 
     /// Restarts the gateway's container behind the daemon's back.
@@ -190,10 +215,10 @@ impl Scenario {
             .build();
         self.docker
             .client()
-            .unwrap()
+            .expect("the docker client is available")
             .restart_container(&self.gateway.name, Some(restart))
             .await
-            .unwrap();
+            .expect("restart container succeeds");
     }
 
     /// Requests `/<path>` from the plain HTTP listener with `host` as `Host`.
@@ -203,7 +228,7 @@ impl Scenario {
             .header("Host", host)
             .send()
             .await
-            .unwrap()
+            .expect("the request is sent")
     }
 
     pub(super) fn url(&self, host: &str) -> String {
@@ -235,10 +260,10 @@ impl Scenario {
             .get(self.url(host))
             .send()
             .await
-            .unwrap()
+            .expect("the request is sent")
             .text()
             .await
-            .unwrap()
+            .expect("the body reads")
     }
 
     /// Caddy's graceful reload may close a connection it accepted just before
@@ -246,7 +271,7 @@ impl Scenario {
     /// requests once; routing itself must still answer on that retry.
     pub(super) async fn body_across_reload(&self, host: &str) -> String {
         match self.client.get(self.url(host)).send().await {
-            Ok(response) => response.text().await.unwrap(),
+            Ok(response) => response.text().await.expect("the body reads"),
             Err(error) if error.is_request() && !error.is_timeout() => self.body(host).await,
             Err(error) => panic!("request failed across reload: {error:?}"),
         }
@@ -263,6 +288,10 @@ pub(super) fn peer_certificate(response: &reqwest::Response) -> Option<Vec<u8>> 
 impl Ingress {
     /// The serving gateway container's ID; the container must exist.
     pub(super) async fn container_id(&self) -> serde_json::Value {
-        self.container().await.unwrap().unwrap()["Id"].clone()
+        self.container()
+            .await
+            .expect("the container lookup succeeds")
+            .expect("the container exists")["Id"]
+            .clone()
     }
 }

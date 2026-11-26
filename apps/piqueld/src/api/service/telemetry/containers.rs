@@ -443,7 +443,12 @@ mod tests {
         exported.reap();
         assert!(exported.needs_follower());
         exported.follower = Some(tokio::spawn(async { Ok(()) }));
-        while !exported.follower.as_ref().unwrap().is_finished() {
+        while !exported
+            .follower
+            .as_ref()
+            .expect("the follower is running")
+            .is_finished()
+        {
             tokio::task::yield_now().await;
         }
         exported.reap();

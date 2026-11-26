@@ -1184,13 +1184,13 @@ mod tests {
         let journal = ingress
             .journal(piqueld_core::Phase::IngressStartGateway, "gateway")
             .await
-            .unwrap();
+            .expect("the journal records the phase");
         let result = ingress.start_container(&journal).await;
         let error = journal
             .finish(result)
             .await
             .context("prepare the Caddy gateway")
-            .unwrap_err();
+            .expect_err("the journal rejects a failing phase");
         assert!(
             matches!(error.downcast_ref(), Some(UnmetRequirement::Ports)),
             "{error:?}"

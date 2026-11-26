@@ -18,11 +18,11 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) async fn new(sync: &str) -> Self {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("the temp dir is created");
         let store = Arc::new(
             piqueld_store::Store::open_unsynced(temp.path().join("db"))
                 .await
-                .unwrap(),
+                .expect("the store opens"),
         );
         let service = ApplicationService::unconnected(store, temp.path()).await;
         Self {
@@ -42,8 +42,8 @@ impl Fixture {
         let template = parse_template_toml(&format!(
             "api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='{name}'\n[spec.manifest]\npath='app.toml'\nsync={sync}\n[spec.manifest.repository]\nurl='{URL}'\nbranch='main'\n"
         ))
-        .unwrap()
-        .normalize(ApplicationId::parse("app-pending-01").unwrap());
+        .expect("parse template toml succeeds")
+        .normalize(ApplicationId::parse("app-pending-01").expect("the application id parses"));
         let save = Mutation::Save {
             application: Box::new(template),
             expected_application_id: None,
@@ -52,18 +52,21 @@ impl Fixture {
         let MutationResponse::Saved(saved) = service
             .accept(Actor::Daemon, save, Some(0), false, None)
             .await
-            .unwrap()
+            .expect("the connection is accepted")
         else {
             panic!("saved")
         };
-        ApplicationId::parse(saved.application_id).unwrap()
+        ApplicationId::parse(saved.application_id).expect("the application id parses")
     }
 
     /// The application's first environment, `production` following
     /// `main`, opted in and deployed at `OLD`.
     pub(crate) async fn production(&self) -> EnvironmentId {
         let store = &self.service.store;
-        let production = store.environments(&self.application).await.unwrap()[0]
+        let production = store
+            .environments(&self.application)
+            .await
+            .expect("the environments load")[0]
             .id
             .clone();
         self.follow(&production).await;
@@ -79,7 +82,7 @@ impl Fixture {
         self.service
             .accept(Actor::Daemon, opt_in, None, false, None)
             .await
-            .unwrap();
+            .expect("the connection is accepted");
         self.service.store.deployed_at(id, OLD).await;
     }
 
@@ -87,16 +90,16 @@ impl Fixture {
     pub(crate) async fn environment(&self, name: &str, branch: &str) -> EnvironmentId {
         let create = Mutation::CreateEnvironment {
             application: self.application.clone(),
-            name: EnvironmentName::parse(name).unwrap(),
+            name: EnvironmentName::parse(name).expect("the environment name parses"),
             source: Some(crate::api::SourceChoice::Branch(
-                TrackedBranch::new(branch.into(), None).unwrap(),
+                TrackedBranch::new(branch.into(), None).expect("the value is valid"),
             )),
         };
         let MutationResponse::Environment(environment) = self
             .service
             .accept(Actor::Daemon, create, None, true, None)
             .await
-            .unwrap()
+            .expect("the connection is accepted")
         else {
             panic!("environment")
         };
@@ -108,14 +111,14 @@ impl Fixture {
     async fn preview(&self, branch: &str) -> EnvironmentId {
         let create = Mutation::Preview(PreviewMutation::Create {
             application: self.application.clone(),
-            branch: GitBranch::parse(branch).unwrap(),
+            branch: GitBranch::parse(branch).expect("the git branch parses"),
             slot: None,
         });
         let MutationResponse::Preview(created) = self
             .service
             .accept(Actor::Daemon, create, None, false, None)
             .await
-            .unwrap()
+            .expect("the connection is accepted")
         else {
             panic!("preview")
         };
@@ -134,7 +137,7 @@ impl Fixture {
         .bind(id.as_str())
         .fetch_all(self.service.store.pool())
         .await
-        .unwrap()
+        .expect("fetch all succeeds")
     }
 }
 
@@ -186,7 +189,12 @@ async fn polling_lists_a_repository_once_for_every_application_and_deploys_only_
         "{mode='poll',interval_seconds=600}",
     )
     .await;
-    let wiki = fixture.service.store.environments(&wiki).await.unwrap()[0]
+    let wiki = fixture
+        .service
+        .store
+        .environments(&wiki)
+        .await
+        .expect("the environments load")[0]
         .id
         .clone();
     fixture.follow(&wiki).await;
@@ -194,13 +202,13 @@ async fn polling_lists_a_repository_once_for_every_application_and_deploys_only_
     let pinned = fixture.environment("pinned", "main").await;
     let pin = Mutation::SetBranch {
         id: pinned.clone(),
-        branch: TrackedBranch::new("main".into(), Some(OLD.into())).unwrap(),
+        branch: TrackedBranch::new("main".into(), Some(OLD.into())).expect("the value is valid"),
     };
     fixture
         .service
         .accept(Actor::Daemon, pin, None, true, None)
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     let manual = fixture.environment("manual", "main").await;
     let opt_out = Mutation::SetSync {
         id: manual.clone(),
@@ -210,7 +218,7 @@ async fn polling_lists_a_repository_once_for_every_application_and_deploys_only_
         .service
         .accept(Actor::Daemon, opt_out, None, false, None)
         .await
-        .unwrap();
+        .expect("the connection is accepted");
     let moved = fixture.preview("feat/login").await;
     let gone = fixture.preview("feat/gone").await;
     let lister = Fake::with(vec![("main", NEW), ("develop", OLD), ("feat/login", NEW)]);
@@ -261,9 +269,14 @@ async fn failed_listings_deploy_nothing_and_back_off() {
         .store
         .sync_check(&fixture.application)
         .await
-        .unwrap()
-        .unwrap();
-    assert!(check.error.unwrap().contains("ls-remote failed"));
+        .expect("sync check succeeds")
+        .expect("the check has a result");
+    assert!(
+        check
+            .error
+            .expect("the error is set")
+            .contains("ls-remote failed")
+    );
 
     fixture
         .service
@@ -292,7 +305,7 @@ async fn failed_listings_deploy_nothing_and_back_off() {
         .store
         .sync_check(&fixture.application)
         .await
-        .unwrap()
-        .unwrap();
+        .expect("sync check succeeds")
+        .expect("the check has a result");
     assert_eq!(check.error, None);
 }

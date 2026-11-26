@@ -38,11 +38,11 @@ pub(super) struct Engine {
 
 impl Engine {
     async fn open() -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("the temp dir is created");
         let store = Arc::new(
             Store::open_unsynced(directory.path().join("db"))
                 .await
-                .unwrap(),
+                .expect("the store opens"),
         );
         Self {
             directory,
@@ -55,7 +55,7 @@ impl Engine {
     /// exist, and every request fails at once.
     pub(super) async fn unused() -> Self {
         let engine = Self::open().await;
-        drop(tokio::net::UnixListener::bind(engine.socket()).unwrap());
+        drop(tokio::net::UnixListener::bind(engine.socket()).expect("the listener binds"));
         engine
     }
 
@@ -63,7 +63,7 @@ impl Engine {
     /// this installation's store.
     pub(super) async fn serving(serve: impl FnOnce(&Store) -> axum::Router) -> Self {
         let mut engine = Self::open().await;
-        let listener = tokio::net::UnixListener::bind(engine.socket()).unwrap();
+        let listener = tokio::net::UnixListener::bind(engine.socket()).expect("the listener binds");
         let router = serve(&engine.store);
         engine.server = Some(tokio::spawn(
             async move { axum::serve(listener, router).await },
@@ -92,15 +92,20 @@ impl Engine {
             self.directory.path(),
             Arc::clone(&self.store),
         )
-        .unwrap()
+        .expect("the value is valid")
     }
 
     /// The history so far, which never holds [`PRIVATE_BODY`].
     async fn history(&self) -> Vec<piqueld_core::Event> {
-        let events = self.store.events(None, None, 100).await.unwrap().items;
+        let events = self
+            .store
+            .events(None, None, 100)
+            .await
+            .expect("the events load")
+            .items;
         assert!(
             !serde_json::to_string(&events)
-                .unwrap()
+                .expect("the value serializes")
                 .contains(PRIVATE_BODY)
         );
         events
@@ -127,14 +132,19 @@ pub(super) fn private_config() -> PrivateIngressConfig {
 pub(super) fn routes(visibility: Visibility, host: &str) -> Vec<ValidatedRoute> {
     let mut manifest = application("one", host, "body").to_manifest();
     manifest.spec.routes[0].visibility = visibility;
-    manifest.validate().unwrap().spec().routes.clone()
+    manifest
+        .validate()
+        .expect("the manifest validates")
+        .spec()
+        .routes
+        .clone()
 }
 
 /// An application `name` whose `web` service answers `body` for `host`.
 /// Docker watches each new container for one second instead of the default
 /// 30, so deployments replacing one finish without that wait.
 pub(super) fn application(name: &str, host: &str, body: &str) -> NormalizedApplication {
-    piqueld_core::parse_toml(&format!("api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='{name}'\n[[spec.services]]\nname='web'\ncommand=['caddy']\narguments=['respond','--listen',':8080','--body','{body}']\nrollout={{monitor_seconds=1}}\n[spec.services.source]\ntype='image'\nimage='{CADDY_IMAGE}'\n[[spec.routes]]\nhostname='{host}'\nvisibility='public'\nservice='web'\nport=8080")).unwrap().normalize(piqueld_core::ApplicationId::parse("input-app").unwrap())
+    piqueld_core::parse_toml(&format!("api_version='piqueld.dev/v1alpha1'\nkind='Application'\n[metadata]\nname='{name}'\n[[spec.services]]\nname='web'\ncommand=['caddy']\narguments=['respond','--listen',':8080','--body','{body}']\nrollout={{monitor_seconds=1}}\n[spec.services.source]\ntype='image'\nimage='{CADDY_IMAGE}'\n[[spec.routes]]\nhostname='{host}'\nvisibility='public'\nservice='web'\nport=8080")).expect("parse toml succeeds").normalize(piqueld_core::ApplicationId::parse("input-app").expect("the application id parses"))
 }
 
 /// Saves `app` on behalf of `actor`, and deploys it if `deploy` is set.
@@ -158,12 +168,15 @@ pub(super) async fn save(
             None,
         )
         .await
-        .unwrap()
+        .expect("the connection is accepted")
     else {
         panic!("saved")
     };
     let id = store
-        .production(&piqueld_core::ApplicationId::parse(saved.application_id).unwrap())
+        .production(
+            &piqueld_core::ApplicationId::parse(saved.application_id)
+                .expect("the application id parses"),
+        )
         .await;
     (id, saved.operation_id)
 }
@@ -176,7 +189,7 @@ pub(super) async fn request_deployment(
     app: NormalizedApplication,
 ) -> (EnvironmentId, String) {
     let (id, operation) = save(store, actor, &app, true).await;
-    (id, operation.unwrap())
+    (id, operation.expect("the operation loads"))
 }
 
 /// Requests a deployment of `app` and scans until it succeeds. A failed
@@ -189,8 +202,14 @@ async fn deploy(
     let (id, operation) = request_deployment(store, Actor::Daemon, app).await;
     tokio::time::timeout(Duration::from_mins(3), async {
         loop {
-            controller.scan(&CancellationToken::new()).await.unwrap();
-            let status = store.operation(&operation).await.unwrap();
+            controller
+                .scan(&CancellationToken::new())
+                .await
+                .expect("scan succeeds");
+            let status = store
+                .operation(&operation)
+                .await
+                .expect("the operation loads");
             if status.state == OperationState::Succeeded {
                 break;
             }
@@ -214,7 +233,10 @@ async fn deploy(
 
 /// The loopback port the harness publishes in environment `variable`.
 fn port(variable: &str) -> u16 {
-    std::env::var(variable).unwrap().parse().unwrap()
+    std::env::var(variable)
+        .expect("the variable is set")
+        .parse()
+        .expect("the value parses")
 }
 
 /// One public route on `www.example.com` and one private route on
@@ -222,11 +244,11 @@ fn port(variable: &str) -> u16 {
 fn listener_table() -> RoutingTable {
     [
         (
-            EnvironmentId::parse("env-public").unwrap(),
+            EnvironmentId::parse("env-public").expect("the environment id parses"),
             routes(Visibility::Public, "www.example.com"),
         ),
         (
-            EnvironmentId::parse("env-private").unwrap(),
+            EnvironmentId::parse("env-private").expect("the environment id parses"),
             routes(Visibility::Private, "admin.example.com"),
         ),
     ]
