@@ -19,10 +19,12 @@ COPY docs docs
 COPY apps/piqueld-ui/assets apps/piqueld-ui/assets
 RUN nix develop /flake#docs --command mdbook build
 
-# Serves the built book on port 8080, with its 404.html for missing pages. The
-# image sets no user, so this runs the server as an unprivileged one: it binds
-# an unprivileged port and reads the world-readable book.
+# Serves the built book on port 8080, with its 404.html for missing pages and
+# the redirects sws.toml configures. The image sets no user, so this runs the
+# server as an unprivileged one: it binds an unprivileged port and reads the
+# world-readable book.
 FROM joseluisq/static-web-server:2.44.1@sha256:94618e3d17802265a21926217e6f9e7832b311b6fbf5933684001739fafed06a
-ENV SERVER_PORT=8080
+ENV SERVER_PORT=8080 SERVER_CONFIG_FILE=/etc/sws.toml
+COPY deploy/docs/sws.toml /etc/sws.toml
 COPY --from=book /book/target/book /public
 USER 65532:65532
