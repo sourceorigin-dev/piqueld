@@ -68,12 +68,12 @@ enum Step<'a> {
         retry: i64,
     },
     /// `action_retry`: attempt `retry` failed with `diagnostic` and will be
-    /// retried in `delay_ms`, as `message` says.
+    /// retried after `delay`, as `message` says.
     Retry {
         /// Attempt number.
         retry: i64,
-        /// How long until the retry, in milliseconds.
-        delay_ms: i64,
+        /// How long until the retry.
+        delay: std::time::Duration,
         /// Why the attempt failed.
         diagnostic: &'a Diagnostic,
         /// Description of the retry.
@@ -267,7 +267,7 @@ impl Store {
         );
         let step = Step::Retry {
             retry: i64::from(retry),
-            delay_ms: i64::try_from(delay.as_millis()).unwrap_or(i64::MAX),
+            delay,
             diagnostic,
             message: &message,
         };
@@ -346,12 +346,12 @@ impl Store {
             Step::Requested { retry } => (Some(retry), None, None, None, None),
             Step::Retry {
                 retry,
-                delay_ms,
+                delay,
                 diagnostic,
                 message,
             } => (
                 Some(retry),
-                Some(delay_ms),
+                Some(i64::try_from(delay.as_millis()).unwrap_or(i64::MAX)),
                 Some(diagnostic),
                 Some(message),
                 None,

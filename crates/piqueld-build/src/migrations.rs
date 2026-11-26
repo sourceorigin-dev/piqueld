@@ -8,6 +8,9 @@ use sha2::{Digest, Sha256};
 /// migration, so editing one shows in review as a changed lock line.
 pub const LOCK: &str = "migrations/checksums";
 
+/// Hex digits in a SHA-256 checksum.
+const CHECKSUM_DIGITS: usize = 64;
+
 /// One migration file.
 pub struct Migration<'a> {
     /// Its number, the schema version it upgrades to.
@@ -51,8 +54,11 @@ pub enum MigrationError {
         /// The locked number.
         version: u64,
     },
-    /// A lock file line isn't `NNNN <sha256>`.
-    #[error("{LOCK} line {line} is not `NNNN <sha256>`: {text}")]
+    /// A lock file line isn't `NNNN <sha256>`, with 64 lowercase hex
+    /// digits, or repeats an earlier line's number.
+    #[error(
+        "{LOCK} line {line} must be `NNNN <sha256>`, with 64 lowercase hex digits, once per migration: {text}"
+    )]
     Malformed {
         /// Its 1-based line number.
         line: usize,
@@ -102,7 +108,14 @@ impl Migration<'_> {
             }
             let entry = text
                 .split_once(' ')
-                .and_then(|(version, checksum)| Some((version.parse::<u64>().ok()?, checksum)));
+                .and_then(|(version, checksum)| Some((version.parse::<u64>().ok()?, checksum)))
+                .filter(|(version, checksum)| {
+                    checksum.len() == CHECKSUM_DIGITS
+                        && checksum
+                            .bytes()
+                            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+                        && !locked.iter().any(|(locked, _)| locked == version)
+                });
             let Some(entry) = entry else {
                 return Err(MigrationError::Malformed {
                     line: index + 1,
@@ -245,7 +258,7 @@ mod tests {
     use super::{Migration, MigrationError};
 
     #[test]
-    fn the_lock_refuses_unlocked_changed_and_missing_migrations() {
+    fn the_lock_refuses_malformed_unlocked_changed_and_missing_migrations() {
         let name = "0001_a.sql";
         let migrations = [Migration {
             version: 1,
@@ -272,6 +285,12 @@ mod tests {
             Migration::check_lock(&[], &lock),
             Err(MigrationError::Missing { version: 1 })
         );
+        for malformed in [format!("{lock}0001 {checksum}\n"), "0001 abc\n".to_owned()] {
+            assert!(matches!(
+                Migration::check_lock(&migrations, &malformed),
+                Err(MigrationError::Malformed { .. })
+            ));
+        }
     }
 
     #[test]

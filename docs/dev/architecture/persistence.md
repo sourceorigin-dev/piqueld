@@ -63,7 +63,9 @@ starting with a comment that says what it changes and what happens to existing
 data. The store's build script embeds every file in name order and fails
 unless the numbers are contiguous from `0001`; migration `N` upgrades schema `N - 1` to `N`, and the
 number of embedded migrations is the schema version. Every table a migration
-from `0009` on creates must be `STRICT`. Lock the migration by adding its
+from `0009` on creates must be `STRICT`, including an older table it
+rebuilds, so check that the rows it copies have their columns' declared
+types first: a `STRICT` table refuses the rest. Lock the migration by adding its
 `NNNN <sha256>` line to `migrations/checksums`, which the build error prints:
 the build fails while any migration differs from its line, so editing one
 shows in review. It also applies them all
