@@ -349,6 +349,34 @@ async fn stalled_response_bodies_time_out_over_tcp_and_unix_sockets() {
     unix_server.abort();
 }
 
+/// A connection reset while the body is read is a connection failure, like
+/// one before the response, not a failed exchange.
+#[tokio::test]
+async fn a_reset_while_reading_the_body_is_a_connection_failure() {
+    let (listener, client) = listen().await;
+    let server = tokio::spawn(async move {
+        let (mut socket, head) = accept_head(listener).await;
+        assert!(head.starts_with("GET "), "{head}");
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 64\r\n\r\nshort")
+            .await
+            .expect("the response is written");
+        socket.set_zero_linger().expect("linger is set");
+    });
+    let result = client.system_status().await;
+    server.await.expect("the server finishes");
+    assert!(
+        matches!(
+            result,
+            Err(ClientError::Transport {
+                kind: TransportFailure::Connect(std::io::ErrorKind::ConnectionReset),
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+}
+
 #[tokio::test]
 async fn oversized_response_bodies_are_rejected() {
     let (listener, client) = listen().await;
