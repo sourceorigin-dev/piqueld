@@ -4,8 +4,8 @@
 //! refuses to start, and [`Backups::finish`] finishes the restore it marks,
 //! whether it just started or a crash interrupted it.
 
+use super::{BackupError, Result, StagingKept};
 use super::{Backups, Refusal, RolledBack, entries, millis_after, move_entries, sync};
-use anyhow::{Context, Result, bail};
 use std::{
     ffi::OsStr,
     fs,
@@ -73,10 +73,9 @@ impl Backups {
     /// Returns [`Refusal::Unfinished`], or the error reading the directory.
     pub fn ensure_restore_complete(&self) -> Result<()> {
         match self.unfinished()? {
-            Some(staging) => bail!(Refusal::Unfinished(
-                self.data_dir.clone(),
-                staging.path(&self.data_dir)
-            )),
+            Some(staging) => {
+                Err(Refusal::Unfinished(self.data_dir.clone(), staging.path(&self.data_dir)).into())
+            }
             None => Ok(()),
         }
     }
@@ -92,16 +91,22 @@ impl Backups {
         };
         let path = staging.path(data_dir);
         fs::rename(staged.path(), &path)
-            .with_context(|| format!("move the verified backup to {}", path.display()))?;
+            .map_err(BackupError::io("move the verified backup to", &path))?;
         drop(staged.keep());
         let Err(error) = sync(data_dir) else {
             return Ok(staging);
         };
         Err(match fs::remove_dir_all(&path) {
             Ok(()) => error,
-            Err(removal) => error
-                .context(format!("remove {}: {removal}", path.display()))
-                .context(Refusal::Unfinished(data_dir.clone(), path)),
+            Err(removal) => BackupError::Unfinished {
+                data_dir: data_dir.clone(),
+                staging: path.clone(),
+                source: Box::new(StagingKept {
+                    path,
+                    removal,
+                    source: Box::new(error),
+                }),
+            },
         })
     }
 
@@ -130,7 +135,7 @@ impl Backups {
                         std::io::ErrorKind::AlreadyExists => Ok(()),
                         _ => Err(error),
                     })
-                    .with_context(|| format!("create {}", aside.display()))?;
+                    .map_err(BackupError::io("create", &aside))?;
                 sync(data_dir)?;
                 move_entries(data_dir, &aside, &state)?;
             }
@@ -138,8 +143,11 @@ impl Backups {
                 publishing: true,
                 ..staging
             };
-            fs::rename(staging.path(data_dir), publishing.path(data_dir)).with_context(|| {
-                format!("move {} to publish it", staging.path(data_dir).display())
+            fs::rename(staging.path(data_dir), publishing.path(data_dir)).map_err(|source| {
+                BackupError::Publish {
+                    path: staging.path(data_dir),
+                    source,
+                }
             })?;
             sync(data_dir)?;
             publishing
@@ -147,7 +155,7 @@ impl Backups {
         let path = staging.path(data_dir);
         let names = entries(&path, |_| true)?;
         move_entries(&path, data_dir, &names)?;
-        fs::remove_dir(&path).with_context(|| format!("remove {}", path.display()))?;
+        fs::remove_dir(&path).map_err(BackupError::io("remove", &path))?;
         sync(data_dir)
     }
 }

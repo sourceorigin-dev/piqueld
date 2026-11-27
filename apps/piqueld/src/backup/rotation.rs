@@ -3,7 +3,7 @@
 //! directory is ever deleted.
 
 use super::Manifest;
-use anyhow::{Context, Result};
+use super::{BackupError, Result};
 use std::{fs, io, path::Path};
 
 /// A pre-migration backup, named `pre-<schema>-<ms>` after its manifest.
@@ -53,12 +53,12 @@ impl PreMigration {
     pub(super) fn list(directory: &Path) -> Result<Vec<Self>> {
         let entries = match fs::read_dir(directory) {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-            entries => entries.with_context(|| format!("read {}", directory.display()))?,
+            entries => entries.map_err(BackupError::io("read", directory))?,
         };
         let mut backups = Vec::new();
         for entry in entries {
             let name = entry
-                .with_context(|| format!("read {}", directory.display()))?
+                .map_err(BackupError::io("read", directory))?
                 .file_name();
             backups.extend(name.to_str().and_then(Self::parse));
         }
@@ -74,10 +74,8 @@ impl PreMigration {
             .skip(keep)
             .map(|backup| directory.join(backup.name()))
             .collect();
-        for entry in
-            fs::read_dir(directory).with_context(|| format!("read {}", directory.display()))?
-        {
-            let entry = entry.with_context(|| format!("read {}", directory.display()))?;
+        for entry in fs::read_dir(directory).map_err(BackupError::io("read", directory))? {
+            let entry = entry.map_err(BackupError::io("read", directory))?;
             if entry
                 .file_name()
                 .as_encoded_bytes()
@@ -87,8 +85,7 @@ impl PreMigration {
             }
         }
         for path in doomed {
-            fs::remove_dir_all(&path)
-                .with_context(|| format!("delete the old backup {}", path.display()))?;
+            fs::remove_dir_all(&path).map_err(BackupError::io("delete the old backup", &path))?;
         }
         Ok(())
     }

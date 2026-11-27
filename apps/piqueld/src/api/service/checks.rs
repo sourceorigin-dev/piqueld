@@ -5,6 +5,7 @@
 
 use super::{ApplicationError, ApplicationService};
 use crate::{backup::Backups, ingress::Ingress};
+use piqueld_core::ErrorChain as _;
 use piqueld_core::api::{CheckStatus, SystemCheck, SystemCheckId, SystemChecks, TailnetStatus};
 use std::{os::unix::fs::MetadataExt, path::PathBuf, time::Duration};
 
@@ -45,7 +46,10 @@ impl CheckSettings {
                 piqueld_core::observability::UtcTime(backup.created_at_ms).rfc3339()
             ),
             Ok(None) => "no upgrade has migrated the database yet".to_owned(),
-            Err(error) => format!("could not list the backups taken before upgrades: {error:#}"),
+            Err(error) => format!(
+                "could not list the backups taken before upgrades: {}",
+                error.chain()
+            ),
         };
         SystemCheck::new(
             SystemCheckId::Backups,
