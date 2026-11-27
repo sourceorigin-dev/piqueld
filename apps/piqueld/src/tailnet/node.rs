@@ -6,11 +6,12 @@
 //! it shares one that is already logged in, which several daemons can serve
 //! from, each on its own port.
 
+use super::TailnetError;
 use super::{ProxyListener, Tailscaled};
-use anyhow::{Context, Result, bail, ensure};
 use axum::serve::{ListenerExt, TapIo};
 use piqueld_config::DaemonConfig;
 use piqueld_config::tailscale::PortUse;
+use piqueld_core::ErrorChain as _;
 use piqueld_core::api::TailnetStatus;
 use piqueld_core::wait;
 use std::{
@@ -75,7 +76,7 @@ impl Node {
     /// Returns state directory, tailscaled, login, certificate, or forwarding
     /// errors. A shared node fails when the port is already served, unless it
     /// forwards to an address that refuses connections.
-    pub async fn join(config: &mut DaemonConfig) -> Result<Option<Self>> {
+    pub async fn join(config: &mut DaemonConfig) -> Result<Option<Self>, TailnetError> {
         if !config.tailscale.enabled {
             return Ok(None);
         }
@@ -85,20 +86,20 @@ impl Node {
         };
 
         let status = tailscaled.api.status().await?;
-        ensure!(
-            status.running(),
-            "the tailscaled at {} is {}; log it in first",
-            tailscaled.api.socket().display(),
-            status.backend_state
-        );
-        let dns_name = status
-            .dns_name()
-            .context("logged-in tailnet node reported no DNS name")?;
+        if !status.running() {
+            return Err(TailnetError::NotRunning {
+                socket: tailscaled.api.socket().to_owned(),
+                state: status.backend_state,
+            });
+        }
+        let dns_name = status.dns_name().ok_or(TailnetError::NoDnsName)?;
         let expires_at_ms = tailscaled.certificate_expiry_ms(&dns_name).await?;
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
-            .context("failed to bind the tailnet forwarding listener")?;
-        let address = listener.local_addr()?;
+            .map_err(TailnetError::BindForwarder)?;
+        let address = listener
+            .local_addr()
+            .map_err(TailnetError::ForwarderAddress)?;
         let https_port = config.tailscale.https_port.get();
         if matches!(daemon, Daemon::Shared) {
             Tailscaled::check_takeover(https_port, tailscaled.serving(https_port).await?).await?;
@@ -112,11 +113,10 @@ impl Node {
                 &format!("tcp://{address}"),
             ])
             .await
-            .context("failed to forward the tailnet node's HTTPS port")?;
-        ensure!(
-            tailscaled.serving(https_port).await? == PortUse::Forwarded(address),
-            "another process took tailnet HTTPS port {https_port} over while piqueld started; stop it or set another tailscale.https_port"
-        );
+            .map_err(TailnetError::Forward)?;
+        if tailscaled.serving(https_port).await? != PortUse::Forwarded(address) {
+            return Err(TailnetError::PortTakenOver { port: https_port });
+        }
 
         let url = match https_port {
             443 => format!("https://{dns_name}"),
@@ -163,11 +163,14 @@ impl Node {
 
     /// Starts a dedicated tailscaled with state in the data directory and
     /// logs it in.
-    async fn start(config: &DaemonConfig) -> Result<(Daemon, Tailscaled)> {
+    async fn start(config: &DaemonConfig) -> Result<(Daemon, Tailscaled), TailnetError> {
         let dir = config.server.tailscale_dir();
         piqueld_config::directories::prepare_data_dir(&dir)
             .await
-            .with_context(|| format!("failed to prepare tailnet state {}", dir.display()))?;
+            .map_err(|source| TailnetError::PrepareState {
+                dir: dir.clone(),
+                source,
+            })?;
         let tailscaled = Tailscaled::at(dir.join("tailscaled.sock"));
         let mut daemon = Self::spawn(&dir, tailscaled.api.socket()).await?;
 
@@ -180,8 +183,10 @@ impl Node {
         let mut up = vec!["up", "--reset", &hostname];
         up.extend(auth_key.as_deref());
         tokio::select! {
-            exit = daemon.wait() => bail!("tailscaled exited during login: {}", exit?),
-            result = tailscaled.run(&up) => result.context("failed to log the tailnet node in")?,
+            exit = daemon.wait() => {
+                return Err(TailnetError::ExitedDuringLogin(exit.map_err(TailnetError::Process)?));
+            }
+            result = tailscaled.run(&up) => result.map_err(TailnetError::Login)?,
         };
         Ok((Daemon::Owned(daemon), tailscaled))
     }
@@ -189,10 +194,10 @@ impl Node {
     /// Starts tailscaled with private state and waits for its socket. Its logs
     /// are forwarded at debug level. It shares piqueld's process group, so
     /// terminal interrupts stop both, and is killed when piqueld drops it.
-    async fn spawn(dir: &Path, socket: &Path) -> Result<Child> {
+    async fn spawn(dir: &Path, socket: &Path) -> Result<Child, TailnetError> {
         piqueld_config::directories::remove_file(socket)
             .await
-            .context("failed to remove the stale tailscaled socket")?;
+            .map_err(TailnetError::RemoveStaleSocket)?;
         let mut daemon = Command::new("tailscaled")
             .arg("--tun=userspace-networking")
             .arg("--port=0")
@@ -205,9 +210,9 @@ impl Node {
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .context("failed to start tailscaled")?;
+            .map_err(TailnetError::Start)?;
         let mut logs =
-            BufReader::new(daemon.stderr.take().context("capture tailscaled logs")?).lines();
+            BufReader::new(daemon.stderr.take().ok_or(TailnetError::CaptureLogs)?).lines();
         tokio::spawn(async move {
             while let Ok(Some(line)) = logs.next_line().await {
                 tracing::debug!("tailscaled: {line}");
@@ -215,14 +220,15 @@ impl Node {
         });
         let started = Instant::now();
         while !socket.exists() {
-            if let Some(exit) = daemon.try_wait()? {
-                bail!("tailscaled exited during startup ({exit}); its logs are at debug level");
+            if let Some(exit) = daemon.try_wait().map_err(TailnetError::Process)? {
+                return Err(TailnetError::ExitedDuringStartup(exit));
             }
-            ensure!(
-                started.elapsed() < STARTUP_TIMEOUT,
-                "tailscaled did not open {} within {STARTUP_TIMEOUT:?}",
-                socket.display()
-            );
+            if started.elapsed() >= STARTUP_TIMEOUT {
+                return Err(TailnetError::StartupTimedOut {
+                    socket: socket.to_owned(),
+                    timeout: STARTUP_TIMEOUT,
+                });
+            }
             wait::pause(STARTUP_POLL).await;
         }
         Ok(daemon)
@@ -265,7 +271,7 @@ impl Node {
     pub fn listener(
         self,
         cancellation: CancellationToken,
-    ) -> (NodeListener, JoinHandle<Result<()>>) {
+    ) -> (NodeListener, JoinHandle<Result<(), TailnetError>>) {
         let listener =
             ProxyListener::spawn(self.listener, self.monitor.address, cancellation.clone());
         let supervisor = tokio::spawn(self.monitor.run(self.daemon, cancellation));
@@ -298,7 +304,11 @@ impl Monitor {
     /// Owns a dedicated tailscaled until cancellation, then drops (and so
     /// kills) it, failing if it exits on its own. A shared tailscaled keeps
     /// running, so its HTTPS port is removed instead.
-    async fn run(mut self, daemon: Daemon, cancellation: CancellationToken) -> Result<()> {
+    async fn run(
+        mut self,
+        daemon: Daemon,
+        cancellation: CancellationToken,
+    ) -> Result<(), TailnetError> {
         match daemon {
             Daemon::Owned(daemon) => {
                 Self::supervise(daemon, cancellation, self.refresh_loop()).await
@@ -318,7 +328,7 @@ impl Monitor {
     /// which would otherwise keep forwarding it to a closed listener. A port
     /// another daemon has taken over since is left alone.
     async fn remove_port(&self) {
-        let result = async {
+        let result: Result<(), TailnetError> = async {
             let serving = self.tailscaled.serving(self.https_port).await?;
             if serving != PortUse::Forwarded(self.address) {
                 tracing::info!(
@@ -332,10 +342,11 @@ impl Monitor {
                 .run(&["serve", &port, "off"])
                 .await
                 .map(drop)
+                .map_err(TailnetError::from)
         }
         .await;
         if let Err(error) = result {
-            tracing::warn!(error = %format!("{error:#}"), "failed to remove the tailnet HTTPS port");
+            tracing::warn!(error = %error.chain(), "failed to remove the tailnet HTTPS port");
         }
     }
 
@@ -344,7 +355,7 @@ impl Monitor {
         mut daemon: Child,
         cancellation: CancellationToken,
         refresh: impl Future<Output = ()>,
-    ) -> Result<()> {
+    ) -> Result<(), TailnetError> {
         tokio::select! {
             () = cancellation.cancelled() => Ok(()),
             exit = daemon.wait() => {
@@ -353,7 +364,7 @@ impl Monitor {
                 }
                 tracing::error!(?exit, "tailscaled exited; stopping piqueld");
                 cancellation.cancel();
-                bail!("tailscaled exited unexpectedly ({})", exit?);
+                Err(TailnetError::Exited(exit.map_err(TailnetError::Process)?))
             }
             () = refresh => Ok(()),
         }
@@ -376,7 +387,7 @@ impl Monitor {
         let state = match self.tailscaled.api.status().await {
             Ok(status) => status.backend_state,
             Err(error) => {
-                tracing::warn!(error = %format!("{error:#}"), "tailnet status refresh failed");
+                tracing::warn!(error = %error.chain(), "tailnet status refresh failed");
                 "Unknown".into()
             }
         };
@@ -386,7 +397,7 @@ impl Monitor {
                 false
             }
             Err(error) => {
-                tracing::warn!(error = %format!("{error:#}"), "tailnet certificate refresh failed");
+                tracing::warn!(error = %error.chain(), "tailnet certificate refresh failed");
                 true
             }
         };

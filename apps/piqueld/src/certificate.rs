@@ -12,7 +12,7 @@ pub(crate) struct Validity {
 /// Why a chain's leaf certificate could not be read. Callers prefix their own
 /// verb, as in "invalid certificate PEM: ...".
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum LeafError {
+pub enum LeafError {
     /// The first PEM block could not be decoded.
     #[error("certificate PEM: {0}")]
     Pem(x509_parser::nom::Err<x509_parser::error::PEMError>),

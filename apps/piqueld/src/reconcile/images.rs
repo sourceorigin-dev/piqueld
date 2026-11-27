@@ -1,6 +1,7 @@
 //! Retention of the images this installation builds: cleanup, and making
 //! sure a retained image is present before a deployment uses it again.
 use super::{Controller, DockerApi, OperationError};
+use piqueld_core::ErrorChain as _;
 use piqueld_core::Phase;
 use piqueld_core::{
     InstanceId, RepositoryDigest, ServiceImage, ServiceName, Sha256Digest,
@@ -250,7 +251,7 @@ impl<D: DockerApi> Controller<D> {
         let pushed = match pushed {
             Ok(pushed) => pushed,
             Err(error) => {
-                let reason = format!("{:#}", anyhow::Error::new(error));
+                let reason = error.chain();
                 tracing::info!(error = %reason, "skipping registry cleanup while the registry is unavailable");
                 pass.failure = Some(reason);
                 return Ok(pass);
@@ -288,7 +289,7 @@ impl<D: DockerApi> Controller<D> {
             } else {
                 IMAGE_FAILURES
             };
-            pass.failure = Some(format!("{:#}", anyhow::Error::new(error)));
+            pass.failure = Some(error.chain());
             if image_failures == IMAGE_FAILURES {
                 kept += count(unused.len() - index);
                 break;

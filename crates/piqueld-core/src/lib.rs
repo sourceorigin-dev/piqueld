@@ -12,6 +12,7 @@ mod changes;
 mod docker_names;
 pub mod edit;
 mod environment;
+mod error_chain;
 pub mod event;
 pub mod exec;
 mod identity;
@@ -40,6 +41,7 @@ pub use docker_names::{
     DockerServiceName, DockerServiceNameError, DockerVolumeName, DockerVolumeNameError,
 };
 pub use environment::{EnvironmentKind, EnvironmentSource, Preview, PromotedFrom, TrackedBranch};
+pub use error_chain::ErrorChain;
 pub use event::{Event, EventActor, EventDetail, EventKind};
 pub use identity::{
     ApplicationId, ApplicationIdError, EnvironmentId, EnvironmentIdError, ReleaseId,

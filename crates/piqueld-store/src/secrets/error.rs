@@ -1,6 +1,5 @@
 //! The error of loading the master key and of encrypting or generating secrets.
 use super::KeyFailure;
-use std::error::Error;
 use thiserror::Error;
 
 /// Why the master key or a secret value could not be used.
@@ -76,14 +75,5 @@ impl SecretError {
             Self::Key(failure) => Some(*failure),
             _ => None,
         }
-    }
-
-    /// This error and its causes, joined as `outer: inner`.
-    #[must_use]
-    pub fn chain(&self) -> String {
-        std::iter::successors(Some(self as &dyn Error), |error| (*error).source())
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(": ")
     }
 }

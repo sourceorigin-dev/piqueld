@@ -1,5 +1,6 @@
 use super::*;
 use piqueld_config::tailscale::{FakeLocalApi, ServeConfig};
+use piqueld_core::ErrorChain as _;
 
 #[tokio::test(start_paused = true)]
 async fn noninteractive_commands_time_out_but_login_can_wait() {
@@ -70,7 +71,7 @@ async fn certificate_expiry_is_read_from_the_local_api() {
         .certificate_expiry_ms("other.tail1234.ts.net")
         .await
         .expect_err("certificate expiry ms fails");
-    let refused = format!("{refused:#}");
+    let refused = refused.chain();
     assert!(
         refused.starts_with("failed to obtain the tailnet HTTPS certificate"),
         "{refused}"
@@ -127,8 +128,9 @@ async fn only_unserved_or_stale_ports_are_taken_over() {
         .await
         .expect_err("check takeover fails");
     assert!(
-        format!("{refused:#}").contains("192.0.2.1:7"),
-        "{refused:#}"
+        refused.chain().contains("192.0.2.1:7"),
+        "{}",
+        refused.chain()
     );
     check(7003).await.expect("the port check succeeds");
     check(443).await.expect_err("the port check fails");

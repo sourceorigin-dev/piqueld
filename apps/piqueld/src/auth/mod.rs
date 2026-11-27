@@ -14,7 +14,12 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use piqueld_core::auth::{AuthStatus, SetupLink};
 use piqueld_store::{CredentialKind, NewCredential, now_secs};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::Mutex;
 use webauthn_rs_core::WebauthnCore;
 
@@ -71,6 +76,21 @@ pub enum AuthError {
     /// Operating-system entropy was unavailable.
     #[error("could not generate an authentication secret")]
     Random(#[source] getrandom::Error),
+    /// The consumed first-account setup link could not be removed.
+    #[error("remove consumed setup link")]
+    RemoveSetupLink(#[source] std::io::Error),
+    /// The existing setup link file exists but can't be read.
+    #[error("read setup link {}", path.display())]
+    ReadSetupLink {
+        /// The setup link file.
+        path: PathBuf,
+        /// The I/O failure.
+        #[source]
+        source: std::io::Error,
+    },
+    /// The setup link file could not be written.
+    #[error("write private setup link")]
+    WriteSetupLink(#[source] piqueld_config::directories::PrivateFileError),
 }
 /// Result of an authentication operation.
 type Result<T> = std::result::Result<T, AuthError>;
@@ -169,7 +189,7 @@ impl Auth {
     pub async fn initialize(
         store: &piqueld_store::Store,
         config: &piqueld_config::DaemonConfig,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self> {
         let tokens = TokenPolicy::new(config);
         let auth = Self::configured(store, config.public_url(), tokens)?;
         let path = config.server.data_dir.join("setup-link");
@@ -236,16 +256,18 @@ impl Auth {
     /// # Errors
     /// Returns filesystem or database errors with their underlying cause,
     /// including a setup file that exists but can't be read.
-    pub async fn prepare_setup(&self, path: &Path) -> anyhow::Result<()> {
-        use anyhow::Context;
+    pub async fn prepare_setup(&self, path: &Path) -> Result<()> {
         if self.status().await?.initialized {
             return piqueld_config::directories::remove_file(path)
                 .await
-                .context("remove consumed setup link");
+                .map_err(AuthError::RemoveSetupLink);
         }
         let existing = match tokio::fs::read(path).await {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            read => read.with_context(|| format!("read setup link {}", path.display()))?,
+            read => read.map_err(|source| AuthError::ReadSetupLink {
+                path: path.to_path_buf(),
+                source,
+            })?,
         };
         let existing = String::from_utf8_lossy(&existing);
         let preserved = match existing.trim().split_once("#invite=") {
@@ -260,7 +282,7 @@ impl Auth {
         piqueld_config::directories::PrivateFile::at(path)
             .write(format!("{link}\n"))
             .await
-            .context("write private setup link")?;
+            .map_err(AuthError::WriteSetupLink)?;
         self.0.store.set_setup_secret(&Self::hash(&secret)).await?;
         *self.0.setup_link.lock().await = Some(link);
         Ok(())

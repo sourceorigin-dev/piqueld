@@ -13,12 +13,14 @@
 
 mod containers;
 mod destination;
+mod error;
 mod journal;
 mod metrics;
 mod sockets;
 
 pub(crate) use containers::{ContainerExport, ContainerSample};
 use destination::{Destination, LogItem};
+pub use error::TelemetryError;
 pub(crate) use journal::{EventContext, Journal};
 pub use metrics::{ServiceSample, Snapshot};
 pub use sockets::Sockets;
@@ -190,7 +192,7 @@ impl Telemetry {
     ///
     /// # Errors
     /// Returns invalid headers or TLS configuration.
-    pub fn new(config: &TelemetryConfig, sockets: Sockets) -> anyhow::Result<Self> {
+    pub fn new(config: &TelemetryConfig, sockets: Sockets) -> Result<Self, TelemetryError> {
         let destinations = Arc::new(Destinations::default());
         if let Some(endpoint) = &config.endpoint {
             destinations.0.write().push(Arc::new(Destination::new(
