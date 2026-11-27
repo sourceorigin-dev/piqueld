@@ -23,7 +23,7 @@ pub use tunnel::{TunnelConfig, TunnelConfigError, TunnelCredentials};
 
 use piqueld_core::TomlDiagnostic;
 use piqueld_core::names::{DNS_LABEL, is_label};
-use piqueld_core::settings::{Requirement, SETTINGS};
+use piqueld_core::settings::Requirement;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -64,7 +64,7 @@ pub(crate) use schema_from_raw;
 ///
 /// Daemon settings, such as how long history is kept, aren't set here:
 /// `piquelctl settings`, the API and the dashboard change them while the
-/// daemon runs, and a file that sets one is refused.
+/// daemon runs.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DaemonConfig {
@@ -151,12 +151,9 @@ impl DaemonConfig {
     ///
     /// # Errors
     ///
-    /// Returns [`ConfigError`] when the document is malformed, sets a daemon
-    /// setting, or violates a host configuration invariant.
+    /// Returns [`ConfigError`] when the document is malformed or violates a
+    /// host configuration invariant.
     pub fn from_toml(source: &str) -> Result<Self, ConfigError> {
-        if let Ok(document) = toml::from_str::<toml::Table>(source) {
-            Self::refuse_daemon_settings(&document)?;
-        }
         let mut config: Self = toml::from_str(source)
             .map_err(|error| ConfigError::Parse(TomlDiagnostic::new(source, &error)))?;
         if config.auth.public_url.is_none() {
@@ -169,35 +166,6 @@ impl DaemonConfig {
         }
         config.validate()?;
         Ok(config)
-    }
-
-    /// Refuses a daemon setting in `document`, which an older version's
-    /// file may still set: a table of them, such as `[retention]`, or one
-    /// in a table of host settings, such as `auth.max_token_days`. The
-    /// error says how to change it instead.
-    fn refuse_daemon_settings(document: &toml::Table) -> Result<(), ConfigError> {
-        let host = Self::json_schema();
-        let host = &host["properties"];
-        for (section, table) in document {
-            let mut keys = SETTINGS
-                .iter()
-                .filter_map(|spec| spec.key.split_once('.'))
-                .filter(|(of, _)| of == section);
-            if keys.clone().next().is_none() {
-                continue;
-            }
-            if host.get(section).is_none() {
-                return Err(ConfigError::DaemonSettings(section.clone()));
-            }
-            if let Some((_, field)) = keys.find(|(_, field)| {
-                table
-                    .as_table()
-                    .is_some_and(|table| table.contains_key(*field))
-            }) {
-                return Err(ConfigError::DaemonSetting(format!("{section}.{field}")));
-            }
-        }
-        Ok(())
     }
 
     /// What this installation offers the daemon settings that need it, such
@@ -776,18 +744,6 @@ pub enum ConfigError {
     /// A parsed setting violated a semantic invariant.
     #[error("configuration is invalid: {0}")]
     Invalid(String),
-    /// The file sets a daemon setting, which `piquelctl settings` changes
-    /// instead.
-    #[error(
-        "{0} is a daemon setting, which the configuration file no longer sets: remove it, and change it with `piquelctl settings set {0} <value>` or the dashboard's Settings page"
-    )]
-    DaemonSetting(String),
-    /// The file has a table of daemon settings, such as `[retention]`,
-    /// which `piquelctl settings` changes instead.
-    #[error(
-        "[{0}] holds daemon settings, which the configuration file no longer sets: remove the table, and change them with `piquelctl settings set` or the dashboard's Settings page"
-    )]
-    DaemonSettings(String),
 }
 
 impl ConfigError {

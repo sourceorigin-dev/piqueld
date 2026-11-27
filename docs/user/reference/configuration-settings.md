@@ -22,7 +22,7 @@ stands for each entry of an array of tables: `dns.providers[].kind` is the
 
 The daemon's configuration file, `/etc/piqueld/config.toml` unless `piqueld --config` selects another. Every setting is optional unless it says otherwise. The daemon reads the file once at startup, so restart it to apply a change.
 
-Daemon settings, such as how long history is kept, aren't set here: `piquelctl settings`, the API and the dashboard change them while the daemon runs, and a file that sets one is refused.
+Daemon settings, such as how long history is kept, aren't set here: `piquelctl settings`, the API and the dashboard change them while the daemon runs.
 
 ### `auth`
 

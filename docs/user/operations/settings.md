@@ -118,40 +118,6 @@ field in the dashboard, which then says what the value was, or:
 piquelctl settings reset retention.event_days
 ```
 
-## Upgrade from a configuration file that sets them
-
-Older versions read daemon settings, such as `[retention]` or
-`auth.max_token_days`, from the
-[configuration file](../reference/configuration.md). This version refuses to
-start with a file that still sets one, and names it:
-
-```text
-[retention] holds daemon settings, which the configuration file no longer sets: remove the table, and change them with `piquelctl settings set` or the dashboard's Settings page
-```
-
-The daemon doesn't carry the file's values over. Until you set them again,
-each setting has its default, and **the first start prunes history with the
-defaults**: if the file kept more than they do, such as `audit_days = 730`
-or `event_days = 0` (forever), the daemon deletes what only the file's value
-kept, at once, for good. The same goes for images an `[images]` value kept.
-
-1. Note the values the file sets that differ from their defaults, which
-   [daemon settings](../reference/daemon-settings.md) lists.
-2. If any of them keeps more history or images than its default, back up the
-   daemon's state first to keep a copy of what it will delete; see
-   [backups](backups.md). The daemon can't take it back: restoring the backup
-   would prune it again on the next start.
-3. Remove them from the file, then start the daemon.
-4. Set each value you noted again, at once:
-
-   ```console
-   piquelctl settings set retention.audit_days 730
-   ```
-
-On NixOS, a generation that still sets one under `services.piqueld.settings`
-fails to build instead, saying which; see the
-[NixOS module](../reference/nixos.md). The same steps apply.
-
 ## Check that it works
 
 `piquelctl settings get <key>` shows the value in effect and its source. The
@@ -163,9 +129,6 @@ piquelctl audit
 
 ## Troubleshooting
 
-- **The daemon won't start: "… is a daemon setting" or "[…] holds daemon
-  settings".** The configuration file still sets a daemon setting. See
-  [upgrade from a configuration file that sets them](#upgrade-from-a-configuration-file-that-sets-them).
 - **`setting_invalid`.** The value is out of the setting's range. The error,
   and `piquelctl settings get <key>`, say which values it takes.
 - **`setting_unavailable`.** The installation lacks what the setting needs,

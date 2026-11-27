@@ -63,10 +63,6 @@ numbers, switches or choices. The macro generates:
 - `SETTINGS`, one `SettingSpec` per setting, through which the API checks,
   applies and reports a value by key.
 
-`config.toml` doesn't set daemon settings: `DaemonConfig::from_toml` refuses a
-file that does, naming the key and the `piquelctl settings set` command that
-changes it now, since a file written for an older version may still set them.
-
 `SettingLayers` resolves the effective settings: the value set through the
 API, else the default. The store keeps the values set through the API in
 `daemon_settings`, one JSON value per key, and the layers and effective
@@ -90,9 +86,7 @@ with. Tests
 that need sub-second timeouts fix them on the controller instead.
 
 To add a setting, declare it in `settings!`, read it from `Store::settings`
-where it applies, and run `just generate`. If it moves out of the
-configuration file, add its path to the NixOS module's `removedSettings`, so
-a configuration that still sets it fails to build with what replaced it.
+where it applies, and run `just generate`.
 
 ## Migrations
 

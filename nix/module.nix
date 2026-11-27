@@ -12,43 +12,6 @@ let
   ];
   withoutNulls = lib.filterAttrsRecursive (_: value: value != null);
   absolutePath = lib.types.strMatching "/.+";
-  # Daemon settings, which `piquelctl settings` and the dashboard change now,
-  # and the configuration no longer sets: hidden options, so a configuration
-  # that still sets one fails with what replaced it.
-  removedSettings = [
-    [
-      "auth"
-      "max_token_days"
-    ]
-    [
-      "build"
-      "unavailable"
-    ]
-    [
-      "ingress"
-      "traffic"
-    ]
-    [ "retention" ]
-    [ "build_history" ]
-    [ "images" ]
-    [ "previews" ]
-    [ "reconciliation" ]
-    [ "snapshots" ]
-  ];
-  removedSettingOptions = {
-    options = lib.foldl' lib.recursiveUpdate { } (
-      map (
-        path:
-        lib.setAttrByPath path (
-          lib.mkOption {
-            type = lib.types.nullOr lib.types.anything;
-            default = null;
-            visible = false;
-          }
-        )
-      ) removedSettings
-    );
-  };
   nodeName = lib.types.strMatching "[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?";
   # A `_file` setting, which piqueld gets as a systemd credential: a string,
   # not a path, so the secret is never copied into the Nix store. Its
@@ -175,7 +138,6 @@ in
     };
     settings = lib.mkOption {
       type = lib.types.submodule [
-        removedSettingOptions
         {
           options = {
             server.listen_mode = lib.mkOption {
@@ -364,59 +326,46 @@ in
     };
   };
   config = lib.mkIf cfg.enable {
-    assertions =
-      map (
-        path:
-        let
-          option = lib.concatStringsSep "." path;
-        in
-        {
-          assertion = lib.attrByPath path null cfg.settings == null;
-          message = "services.piqueld.settings.${option} is daemon policy, which the configuration no longer sets: remove it, and change it with `piquelctl settings set ${option}${
-            lib.optionalString (builtins.length path == 1) ".<setting>"
-          } <value>` or the dashboard's Settings page";
-        }
-      ) removedSettings
-      ++ [
-        {
-          assertion = dedicatedBelow "/var/lib/" cfg.dataDir;
-          message = "services.piqueld.dataDir must be a dedicated directory below /var/lib";
-        }
-        {
-          assertion = !(lib.hasInfix ":" cfg.dataDir || lib.hasInfix "," cfg.dataDir);
-          message = "services.piqueld.dataDir must not contain ':' or ','";
-        }
-        {
-          assertion = dedicatedBelow "/run/" cfg.runtimeDir;
-          message = "services.piqueld.runtimeDir must be a dedicated directory below /run";
-        }
-        {
-          assertion = (cfg.settings.build.builder == null) == (cfg.settings.build.repository == null);
-          message = "services.piqueld.settings.build needs both builder and repository, or neither";
-        }
-        {
-          assertion = tunnel.enabled -> tunnel.credentials_file != null;
-          message = "services.piqueld.settings.ingress.tunnel.credentials_file is required while the tunnel is enabled";
-        }
-        {
-          assertion = lib.all (
-            provider:
-            let
-              ovh = [
-                provider.endpoint
-                provider.application_key_file
-                provider.application_secret_file
-                provider.consumer_key_file
-              ];
-            in
-            if provider.kind == "cloudflare" then
-              provider.api_token_file != null && lib.all (value: value == null) ovh
-            else
-              provider.api_token_file == null && lib.all (value: value != null) ovh
-          ) providers;
-          message = "services.piqueld.settings.dns.providers: cloudflare needs only api_token_file; ovh needs only endpoint, application_key_file, application_secret_file and consumer_key_file";
-        }
-      ];
+    assertions = [
+      {
+        assertion = dedicatedBelow "/var/lib/" cfg.dataDir;
+        message = "services.piqueld.dataDir must be a dedicated directory below /var/lib";
+      }
+      {
+        assertion = !(lib.hasInfix ":" cfg.dataDir || lib.hasInfix "," cfg.dataDir);
+        message = "services.piqueld.dataDir must not contain ':' or ','";
+      }
+      {
+        assertion = dedicatedBelow "/run/" cfg.runtimeDir;
+        message = "services.piqueld.runtimeDir must be a dedicated directory below /run";
+      }
+      {
+        assertion = (cfg.settings.build.builder == null) == (cfg.settings.build.repository == null);
+        message = "services.piqueld.settings.build needs both builder and repository, or neither";
+      }
+      {
+        assertion = tunnel.enabled -> tunnel.credentials_file != null;
+        message = "services.piqueld.settings.ingress.tunnel.credentials_file is required while the tunnel is enabled";
+      }
+      {
+        assertion = lib.all (
+          provider:
+          let
+            ovh = [
+              provider.endpoint
+              provider.application_key_file
+              provider.application_secret_file
+              provider.consumer_key_file
+            ];
+          in
+          if provider.kind == "cloudflare" then
+            provider.api_token_file != null && lib.all (value: value == null) ovh
+          else
+            provider.api_token_file == null && lib.all (value: value != null) ovh
+        ) providers;
+        message = "services.piqueld.settings.dns.providers: cloudflare needs only api_token_file; ovh needs only endpoint, application_key_file, application_secret_file and consumer_key_file";
+      }
+    ];
     # One-shot commands, such as `piqueld restore`, run outside the unit.
     environment.systemPackages = [ cfg.package ];
     users.groups.piqueld = { };

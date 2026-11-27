@@ -14,9 +14,7 @@ Daemon settings, the installation's policy, such as how long history is kept
 and how many previews may exist, aren't set in this file: change them from the
 dashboard or `piquelctl settings`, without a restart (see
 [changing daemon settings](../operations/settings.md)).
-[Daemon settings](daemon-settings.md) lists them. The daemon refuses to start
-with a file that sets one, such as a file written for an older version, and
-names the command that changes it now.
+[Daemon settings](daemon-settings.md) lists them.
 
 Check a file without starting the daemon:
 
