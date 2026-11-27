@@ -213,7 +213,7 @@ async fn checkouts_wait_for_room_and_refuse_trees_that_never_fit() {
         .await
         .err()
         .expect("the checkout is refused");
-    assert!(error.downcast_ref::<TreeTooLarge>().is_some(), "{error:#}");
+    assert!(matches!(error, GitError::TooLarge(_)), "{error:#}");
     assert_eq!(
         std::fs::read_dir(&small.root)
             .expect("read dir succeeds")
@@ -350,19 +350,19 @@ async fn downloads_past_their_limit_are_stopped() {
         tokio::fs::write(&pack, vec![0; 8192])
             .await
             .expect("the file is written");
-        std::future::pending::<anyhow::Result<()>>().await
+        std::future::pending::<Result<(), GitError>>().await
     };
     let finished = async {
         tokio::fs::write(&pack, vec![0; 8192])
             .await
             .expect("the file is written");
-        anyhow::Ok(())
+        Ok::<(), GitError>(())
     };
     for result in [
         Checkouts::bounded(directory.path(), 4096, stalled).await,
         Checkouts::bounded(directory.path(), 4096, finished).await,
     ] {
         let error = result.expect_err("the bounded checkout is refused");
-        assert!(error.downcast_ref::<TreeTooLarge>().is_some(), "{error:#}");
+        assert!(matches!(error, GitError::TooLarge(_)), "{error:#}");
     }
 }

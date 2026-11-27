@@ -7,11 +7,11 @@
 //! its tree must fit `[checkouts] max_bytes` (see [`Checkouts::measure`]). The
 //! repository then moves to `<commit>.git`, from which deployments read their
 //! manifest. Unused snapshots are removed (see [`Snapshots::prune`]).
-use super::{Checkout, Checkouts, TreeTooLarge};
+use super::{Checkout, Checkouts, GitError, TreeTooLarge};
 use axum::body::Bytes;
 use futures_util::{Stream, StreamExt};
 use piqueld_core::manifest::{GitRepository, valid_git_commit};
-use piqueld_docker::command::LoggedCommand;
+use piqueld_docker::command::{CommandError, LoggedCommand};
 use piqueld_store::StoreError;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -50,7 +50,27 @@ pub enum SnapshotError {
     TimedOut,
     /// The upload could not be read or stored.
     #[error("the snapshot could not be received")]
-    Internal(#[source] anyhow::Error),
+    Internal(#[source] SnapshotFailure),
+}
+
+/// What went wrong receiving an upload that is the daemon's own failure.
+#[derive(Debug, thiserror::Error)]
+pub enum SnapshotFailure {
+    /// A file in staging could not be created, read, written or moved.
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    /// The upload's body failed while streaming.
+    #[error("{0}")]
+    Body(#[source] std::io::Error),
+    /// Receiving was closed to new uploads.
+    #[error("{0}")]
+    Closed(#[from] tokio::sync::AcquireError),
+    /// A Git command on the staging repository failed.
+    #[error("{0}")]
+    Command(#[from] CommandError),
+    /// The bundle's tree could not be measured.
+    #[error("{0}")]
+    Measure(#[from] GitError),
 }
 
 impl From<TreeTooLarge> for SnapshotError {
@@ -61,7 +81,7 @@ impl From<TreeTooLarge> for SnapshotError {
 
 impl SnapshotError {
     /// An upload that could not be read or stored because of `error`.
-    fn internal(error: impl Into<anyhow::Error>) -> Self {
+    fn internal(error: impl Into<SnapshotFailure>) -> Self {
         Self::Internal(error.into())
     }
 }
@@ -186,9 +206,9 @@ impl Snapshots {
         checkouts
             .measure(&repository.0, SNAPSHOT_BRANCH)
             .await
-            .map_err(|error| match error.downcast::<TreeTooLarge>() {
-                Ok(too_large) => too_large.into(),
-                Err(error) => SnapshotError::Internal(error),
+            .map_err(|error| match error {
+                GitError::TooLarge(too_large) => too_large.into(),
+                error => SnapshotError::internal(error),
             })?;
         Ok((header.commit, base, staging))
     }
@@ -212,7 +232,9 @@ impl Snapshots {
             .await
             .map_err(|_| SnapshotError::TimedOut)?
         {
-            let chunk = chunk.map_err(SnapshotError::internal)?;
+            let chunk = chunk.map_err(|error| {
+                SnapshotError::internal(SnapshotFailure::Body(std::io::Error::other(error)))
+            })?;
             written = written.saturating_add(chunk.len() as u64);
             if written > limit {
                 return Err(SnapshotError::TooLarge { limit });
@@ -317,10 +339,14 @@ impl Staged {
     }
 
     /// Runs Git in the repository.
-    async fn git(&self, operation: &'static str, arguments: &[&str]) -> anyhow::Result<Vec<u8>> {
+    async fn git(
+        &self,
+        operation: &'static str,
+        arguments: &[&str],
+    ) -> Result<Vec<u8>, CommandError> {
         let mut command = Checkout::command_in(&self.0);
         command.args(arguments);
-        Ok(LoggedCommand::output(&mut command, operation, Self::OUTPUT_LIMIT).await?)
+        LoggedCommand::output(&mut command, operation, Self::OUTPUT_LIMIT).await
     }
 
     /// Creates the bare repository.
@@ -338,7 +364,7 @@ impl Staged {
         LoggedCommand::output(&mut init, "create snapshot repository", Self::OUTPUT_LIMIT)
             .await
             .map(drop)
-            .map_err(|error| SnapshotError::Internal(error.into()))
+            .map_err(SnapshotError::internal)
     }
 
     /// Fetches `prerequisites` and their history from `url`, under refs so
@@ -377,7 +403,7 @@ impl Staged {
     async fn unbundle(&self, bundle: &Path, header: &BundleHeader) -> Result<(), SnapshotError> {
         let bundle = bundle.to_str().ok_or(SnapshotError::Invalid("path"))?;
         let invalid = |reason| {
-            move |error: anyhow::Error| {
+            move |error: CommandError| {
                 tracing::warn!(?error, reason, "snapshot bundle refused");
                 SnapshotError::Invalid(reason)
             }
@@ -420,7 +446,7 @@ impl Staged {
     /// is an ancestor of, which the snapshot commit descends from. `None`
     /// for a complete bundle.
     async fn base(&self, header: &BundleHeader) -> Result<Option<String>, SnapshotError> {
-        let invalid = |error| {
+        let invalid = |error: &dyn std::fmt::Debug| {
             tracing::warn!(?error, "snapshot prerequisites refused");
             SnapshotError::Invalid("its prerequisites are not the history of one base")
         };
@@ -432,19 +458,17 @@ impl Staged {
         let bases = self
             .git("find snapshot base", &independent)
             .await
-            .map_err(invalid)?;
+            .map_err(|error| invalid(&error))?;
         let bases = String::from_utf8_lossy(&bases);
         let [base] = bases.split_whitespace().collect::<Vec<_>>()[..] else {
-            return Err(invalid(anyhow::anyhow!(
-                "several independent prerequisites"
-            )));
+            return Err(invalid(&"several independent prerequisites"));
         };
         self.git(
             "check snapshot base",
             &["merge-base", "--is-ancestor", base, &header.commit],
         )
         .await
-        .map_err(invalid)?;
+        .map_err(|error| invalid(&error))?;
         Ok(Some(base.to_owned()))
     }
 }

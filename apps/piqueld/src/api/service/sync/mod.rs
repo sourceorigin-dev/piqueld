@@ -9,8 +9,9 @@
 //! starts. A listing that fails never deploys anything: the repository is
 //! retried with exponential backoff, as it is when a submission fails.
 use super::{ApplicationService, ListedHead, Mutation, MutationResponse, SyncOutcome};
-use crate::git::Heads;
+use crate::git::{GitError, Heads};
 use futures_util::{StreamExt, stream};
+use piqueld_core::ErrorChain as _;
 use piqueld_core::wait;
 use piqueld_core::{ApplicationId, GitBranch, sync::RepositorySync, sync::SystemActor};
 use piqueld_store::{Actor, SyncApplication};
@@ -35,14 +36,14 @@ const LISTINGS: usize = 4;
 /// fake in tests.
 pub(crate) trait Lister: Sync {
     /// Lists every branch of `url` with its head commit.
-    fn list(&self, url: &str) -> impl Future<Output = anyhow::Result<Heads>> + Send;
+    fn list(&self, url: &str) -> impl Future<Output = Result<Heads, GitError>> + Send;
 }
 
 /// Lists branches with `git ls-remote`.
 pub(crate) struct Git;
 
 impl Lister for Git {
-    fn list(&self, url: &str) -> impl Future<Output = anyhow::Result<Heads>> + Send {
+    fn list(&self, url: &str) -> impl Future<Output = Result<Heads, GitError>> + Send {
         Heads::list(url)
     }
 }
@@ -205,7 +206,7 @@ impl ApplicationService {
             for application in &applications {
                 let result = match &heads {
                     Ok(heads) => self.sync_application(application, heads, trigger).await,
-                    Err(error) => Err(format!("{error:#}")),
+                    Err(error) => Err(error.chain()),
                 };
                 let error = result.map(|retry| busy |= retry).err();
                 if let Some(error) = &error {

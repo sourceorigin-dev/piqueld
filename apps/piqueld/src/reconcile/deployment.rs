@@ -129,7 +129,7 @@ impl<D: DockerApi> Controller<D> {
                 .await
                 .map_err(|error| {
                     tracing::error!(?error, "manifest repository fetch failed");
-                    OperationError::ManifestFetchFailed(error)
+                    OperationError::ManifestFetchFailed(error.into())
                 })
         };
         self.journaled(&operation.id, Phase::FetchManifest, None, Box::pin(fetch))
@@ -236,7 +236,7 @@ impl<D: DockerApi> Controller<D> {
                 .await
                 .map_err(|error| {
                     tracing::error!(?error, "listing the tracked branch failed");
-                    OperationError::ManifestFetchFailed(error)
+                    OperationError::ManifestFetchFailed(error.into())
                 })?
                 .head(tracked)
                 .map(str::to_owned)
@@ -280,10 +280,7 @@ impl<D: DockerApi> Controller<D> {
         relative: &str,
     ) -> Result<String, OperationError> {
         let path = checkout.path(relative).await.map_err(|error| {
-            let missing = error
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound);
-            if missing {
+            if error.not_found() {
                 FileCaptureError::Missing(relative.into())
             } else {
                 FileCaptureError::NotAFile(relative.into())
@@ -316,7 +313,10 @@ impl<D: DockerApi> Controller<D> {
     ) -> Result<ApplicationManifest, OperationError> {
         let path = checkout.path(relative).await.map_err(|error| {
             tracing::error!(?error, "manifest file lookup failed");
-            OperationError::manifest_input(error)
+            OperationError::ManifestInput {
+                not_found: error.not_found(),
+                source: error.into(),
+            }
         })?;
         let metadata = tokio::fs::metadata(&path)
             .await

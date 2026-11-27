@@ -2,9 +2,10 @@
 //! and the snapshots of local worktrees deployments check out instead (see
 //! [`snapshot`]). No shared mutable repository or credential store.
 
+mod error;
 pub(crate) mod snapshot;
 
-use anyhow::{Context, bail};
+pub use error::{GitError, ModeError};
 use piqueld_core::api::BranchState;
 use piqueld_core::manifest::{GitRepository, valid_git_commit, valid_repository_path};
 use piqueld_core::wait;
@@ -106,7 +107,7 @@ impl Heads {
     /// Lists every branch of `url` with its head commit. Any repository,
     /// network, or authentication failure is an error, never an empty
     /// listing, so a branch only counts as gone when the repository answered.
-    pub(crate) async fn list(url: &str) -> anyhow::Result<Self> {
+    pub(crate) async fn list(url: &str) -> Result<Self, GitError> {
         let mut command = Checkout::command();
         command.args(["ls-remote", "--heads", "--"]).arg(url);
         let output = tokio::time::timeout(
@@ -118,22 +119,22 @@ impl Heads {
             ),
         )
         .await
-        .context("git ls-remote timed out")?
+        .map_err(GitError::ListTimedOut)?
         .map_err(|error| {
             tracing::warn!(?error, "git ls-remote failed");
             match error.failure() {
-                Some(failure) => anyhow::anyhow!("git ls-remote failed ({})", failure.status),
-                None => anyhow::anyhow!("git ls-remote could not run"),
+                Some(failure) => GitError::ListFailed {
+                    status: failure.status,
+                },
+                None => GitError::ListNotRun,
             }
         })?;
         let mut heads = BTreeMap::new();
         for line in String::from_utf8(output)
-            .context("decode git ls-remote output")?
+            .map_err(GitError::DecodeListing)?
             .lines()
         {
-            let (commit, reference) = line
-                .split_once('\t')
-                .context("parse git ls-remote output")?;
+            let (commit, reference) = line.split_once('\t').ok_or(GitError::ParseListing)?;
             if let Some(branch) = reference.strip_prefix("refs/heads/") {
                 heads.insert(branch.to_owned(), commit.to_owned());
             }
@@ -193,7 +194,7 @@ pub(crate) struct Listings {
 }
 
 /// A finished listing.
-type Listed = (std::time::Instant, Arc<anyhow::Result<Heads>>);
+type Listed = (std::time::Instant, Arc<Result<Heads, GitError>>);
 
 impl Default for Listings {
     fn default() -> Self {
@@ -210,7 +211,7 @@ impl Listings {
 
     /// Lists `url`'s branches (see [`Heads::list`]), or shares the listing
     /// of a read that was already listing them.
-    pub(crate) async fn list(&self, url: &str) -> Arc<anyhow::Result<Heads>> {
+    pub(crate) async fn list(&self, url: &str) -> Arc<Result<Heads, GitError>> {
         let requested = std::time::Instant::now();
         let reader = Reader {
             listings: self,
@@ -296,7 +297,7 @@ pub(crate) struct Checkouts {
 /// A checkout, or a download, larger than [`Checkouts`] admits.
 #[derive(Debug, thiserror::Error)]
 #[error("it takes more than {limit} bytes, or has more than {files} files", files = Checkouts::FILES)]
-pub(crate) struct TreeTooLarge {
+pub struct TreeTooLarge {
     /// `[checkouts] max_bytes`.
     pub(crate) limit: u64,
 }
@@ -383,17 +384,17 @@ impl Checkouts {
         &self,
         repository: &GitRepository,
         log: Option<&dyn piqueld_docker::command::OutputLog>,
-    ) -> anyhow::Result<Checkout> {
+    ) -> Result<Checkout, GitError> {
         let mut errors = Vec::new();
         repository.validate("repository", &mut errors);
         if !errors.is_empty() {
-            bail!("invalid Git repository configuration");
+            return Err(GitError::InvalidRepository);
         }
         let _cloning = self.cloning.acquire().await?;
         let directory = tempfile::Builder::new()
             .prefix("checkout-")
             .tempdir_in(&self.root)
-            .context("create Git checkout directory")?;
+            .map_err(GitError::CreateDirectory)?;
         let root = directory.path().join("repository");
         let download = Box::pin(Self::download(repository, &root, log));
         let share = self.max_bytes / Self::CLONING as u64;
@@ -410,10 +411,10 @@ impl Checkouts {
         let info = root.join(".git/info");
         tokio::fs::create_dir_all(&info)
             .await
-            .context("create Git info directory")?;
+            .map_err(GitError::CreateInfo)?;
         tokio::fs::write(info.join("attributes"), Self::ATTRIBUTES)
             .await
-            .context("write Git checkout attributes")?;
+            .map_err(GitError::WriteAttributes)?;
         piqueld_docker::command::LoggedCommand::run_recorded(
             Checkout::command_in(&root).args(["checkout", "--detach", revision, "--"]),
             "checkout Git commit",
@@ -442,10 +443,9 @@ impl Checkouts {
         &self,
         directory: &Path,
         mut disk: OwnedSemaphorePermit,
-    ) -> anyhow::Result<OwnedSemaphorePermit> {
+    ) -> Result<OwnedSemaphorePermit, GitError> {
         let needed = Self::permits(Self::disk_usage(directory).await?)?;
-        let held =
-            u32::try_from(disk.num_permits()).context("count the checkout's disk permits")?;
+        let held = u32::try_from(disk.num_permits()).map_err(GitError::DiskPermits)?;
         if let Some(more) = needed.checked_sub(held).filter(|more| *more > 0) {
             let more = Arc::clone(&self.disk)
                 .try_acquire_many_owned(more)
@@ -456,8 +456,8 @@ impl Checkouts {
     }
 
     /// The permits of `disk` that `bytes` take.
-    fn permits(bytes: u64) -> anyhow::Result<u32> {
-        u32::try_from(bytes.div_ceil(Self::MIB).max(1)).context("count the checkout's disk permits")
+    fn permits(bytes: u64) -> Result<u32, GitError> {
+        u32::try_from(bytes.div_ceil(Self::MIB).max(1)).map_err(GitError::DiskPermits)
     }
 
     /// The bytes `revision`'s working tree takes in the repository at
@@ -468,7 +468,7 @@ impl Checkouts {
     /// # Errors
     /// Returns a Git failure, or [`TreeTooLarge`] when it takes more than
     /// `[checkouts] max_bytes` or has more than [`Self::FILES`] files.
-    pub(crate) async fn measure(&self, repository: &Path, revision: &str) -> anyhow::Result<u64> {
+    pub(crate) async fn measure(&self, repository: &Path, revision: &str) -> Result<u64, GitError> {
         let mut command = Checkout::command_in(repository);
         command.args([
             "ls-tree",
@@ -486,13 +486,13 @@ impl Checkouts {
         .await
         .map_err(|error| match error.limit() {
             Some(_) => self.too_large().into(),
-            None => anyhow::Error::from(error),
+            None => GitError::Command(error),
         })?;
-        let output = String::from_utf8(output).context("decode Git tree sizes")?;
+        let output = String::from_utf8(output).map_err(GitError::DecodeSizes)?;
         let mut bytes = 0_u64;
         for (files, entry) in output.lines().enumerate() {
             let size = match entry.split_once(' ') {
-                Some(("blob", size)) => size.parse().context("parse a Git blob size")?,
+                Some(("blob", size)) => size.parse().map_err(GitError::ParseSize)?,
                 _ => 0,
             };
             let cost = piqueld_core::api::SnapshotLimits::file_cost(size);
@@ -510,7 +510,7 @@ impl Checkouts {
         repository: &GitRepository,
         root: &Path,
         log: Option<&dyn piqueld_docker::command::OutputLog>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), GitError> {
         let mut clone = Checkout::command();
         clone.args([
             "clone",
@@ -601,7 +601,7 @@ impl Checkouts {
 
     /// The disk allocated to `directory` and everything under it, which
     /// Git may be writing.
-    async fn disk_usage(directory: &Path) -> anyhow::Result<u64> {
+    async fn disk_usage(directory: &Path) -> Result<u64, GitError> {
         let directory = directory.to_owned();
         tokio::task::spawn_blocking(move || {
             use std::os::unix::fs::MetadataExt;
@@ -628,7 +628,8 @@ impl Checkouts {
             Ok(bytes)
         })
         .await
-        .context("measure Git checkout")?
+        .map_err(GitError::MeasureTask)?
+        .map_err(GitError::DiskUsage)
     }
 }
 
@@ -652,7 +653,7 @@ impl Checkout {
         (owner, priority): (&piqueld_core::InstanceId, piqueld_docker::BuildPriority),
         docker: &impl piqueld_docker::DockerApi,
         log: Option<&dyn piqueld_docker::command::OutputLog>,
-    ) -> anyhow::Result<piqueld_core::BuiltImage> {
+    ) -> Result<piqueld_core::BuiltImage, GitError> {
         let piqueld_core::manifest::ValidatedBuild::Docker {
             dockerfile,
             context,
@@ -670,7 +671,7 @@ impl Checkout {
         docker
             .build_image(&build, log)
             .await
-            .context("build Git source image")
+            .map_err(GitError::Build)
     }
 
     /// Most memory one Git allocation may take, such as an object being
@@ -703,18 +704,18 @@ impl Checkout {
     }
 
     /// The full commit hash `HEAD` resolves to in the repository at `root`.
-    async fn head(root: &Path) -> anyhow::Result<String> {
+    async fn head(root: &Path) -> Result<String, GitError> {
         let output = Self::command_in(root)
             .args(["rev-parse", "HEAD"])
             .output()
             .await
-            .context("resolve Git commit")?;
+            .map_err(GitError::ResolveCommit)?;
         let commit = String::from_utf8(output.stdout)
-            .context("decode Git commit")?
+            .map_err(GitError::DecodeCommit)?
             .trim()
             .to_owned();
         if !output.status.success() || !valid_git_commit(&commit) {
-            bail!("Git did not resolve a full commit hash");
+            return Err(GitError::NoCommit);
         }
         Ok(commit)
     }
@@ -725,25 +726,36 @@ impl Checkout {
     /// these modes, so a service running as an unprivileged user can read
     /// the files it was built with. The checkout's temporary directory stays
     /// private, and so does `.git`; symlinks are left alone.
-    async fn restore_modes(&self) -> anyhow::Result<()> {
+    async fn restore_modes(&self) -> Result<(), GitError> {
         let root = self.root();
         tokio::task::spawn_blocking(move || {
             use std::os::unix::fs::PermissionsExt;
             let set = |path: &Path, mode| {
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
-                    .with_context(|| format!("set the mode of {}", path.display()))
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).map_err(
+                    |source| ModeError {
+                        action: "set the mode of",
+                        path: path.to_owned(),
+                        source,
+                    },
+                )
             };
             let mut directories = vec![root.clone()];
             while let Some(directory) = directories.pop() {
                 set(&directory, 0o755)?;
-                let entries = std::fs::read_dir(&directory)
-                    .with_context(|| format!("read {}", directory.display()))?;
+                let read = |source| ModeError {
+                    action: "read",
+                    path: directory.clone(),
+                    source,
+                };
+                let entries = std::fs::read_dir(&directory).map_err(read)?;
                 for entry in entries {
-                    let entry = entry.with_context(|| format!("read {}", directory.display()))?;
+                    let entry = entry.map_err(read)?;
                     let path = entry.path();
-                    let metadata = entry
-                        .metadata()
-                        .with_context(|| format!("read the mode of {}", path.display()))?;
+                    let metadata = entry.metadata().map_err(|source| ModeError {
+                        action: "read the mode of",
+                        path: path.clone(),
+                        source,
+                    })?;
                     if metadata.is_dir() && path != root.join(".git") {
                         directories.push(path);
                     } else if metadata.is_file() {
@@ -752,11 +764,11 @@ impl Checkout {
                     }
                 }
             }
-            anyhow::Ok(())
+            Ok(())
         })
         .await
-        .context("join the Git checkout mode restoration")?
-        .context("restore Git checkout modes")
+        .map_err(GitError::RestoreTask)?
+        .map_err(GitError::RestoreModes)
     }
 
     /// Working tree root inside the temporary directory.
@@ -773,18 +785,18 @@ impl Checkout {
     /// "../Dockerfile"      -> error (leaves the repository)
     /// "link-to-etc/passwd" -> error (symlink escapes the checkout)
     /// ```
-    pub(crate) async fn path(&self, relative: &str) -> anyhow::Result<PathBuf> {
+    pub(crate) async fn path(&self, relative: &str) -> Result<PathBuf, GitError> {
         if !valid_repository_path(relative) {
-            bail!("path must remain within the repository root");
+            return Err(GitError::PathOutside);
         }
         let root = tokio::fs::canonicalize(self.root())
             .await
-            .context("locate checkout root")?;
+            .map_err(GitError::LocateRoot)?;
         let path = tokio::fs::canonicalize(root.join(relative))
             .await
-            .context("locate repository file")?;
+            .map_err(GitError::LocateFile)?;
         if !path.starts_with(&root) || path.starts_with(root.join(".git")) {
-            bail!("repository path escapes the checkout");
+            return Err(GitError::PathEscapes);
         }
         Ok(path)
     }
