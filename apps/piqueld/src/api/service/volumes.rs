@@ -52,10 +52,10 @@ impl ApplicationService {
             .await?)
     }
 
-    /// Deletes the detached volume `id` and its data: forgets it, then
-    /// removes it from Docker as a journaled `remove_volumes` action. If
-    /// Docker fails, the next volume survey adopts it again as detached, so
-    /// deleting it again retries.
+    /// Deletes the detached volume `id` and its data: marks it removing,
+    /// removes it from Docker as a journaled `remove_volumes` action, then
+    /// forgets it. If Docker fails, the volume is kept, so deleting it again
+    /// retries.
     ///
     /// # Errors
     /// Returns `Attached` for an attached volume, storage errors, or the
@@ -78,6 +78,9 @@ impl ApplicationService {
             Ok(()) => self.runtime.remove_volume(&volume).await,
             Err(error) => Err(error.into()),
         };
+        self.store
+            .finish_volume_removal(&volume.id, result.is_ok())
+            .await?;
         self.store
             .finish_action(
                 &journal,

@@ -46,6 +46,7 @@ impl ApplicationService {
         }
         let docker = Arc::new(Self::connect_docker(config).await?);
         store.interrupt_actions(None).await?;
+        store.resume_volume_removals().await?;
         store.restart_failure_windows().await?;
         let ingress = Arc::new(crate::ingress::Ingress::from_config(
             config,

@@ -290,6 +290,64 @@ async fn a_survey_adopts_unknown_volumes_records_sizes_and_forgets_gone_detached
     );
 }
 
+/// While Docker removes a deleted volume, it is hidden, can't be attached,
+/// and a survey still listing it doesn't adopt it again; a failed removal
+/// keeps it under its ID, and a finished one forgets it.
+#[tokio::test]
+async fn a_volume_being_removed_is_hidden_until_docker_removed_it() {
+    let (_temp, store) = Store::temporary().await;
+    let (production, staging) = notes(&store).await;
+    deploy(&store, &staging).await;
+    let [volume] = store
+        .environment_volumes(&staging)
+        .await
+        .expect("environment volumes succeeds")
+        .try_into()
+        .expect("exactly one volume");
+    delete(&store, &staging).await;
+    let qa = create(&store, &production, "qa").await;
+    let removing = store
+        .delete_volume(Actor::Daemon, &volume.id)
+        .await
+        .expect("delete volume succeeds");
+    let listed = ManagedVolume {
+        name: removing.docker_name.clone(),
+        owner: removing.owner.clone(),
+    };
+    store
+        .record_volume_survey(&[listed], now_ms())
+        .await
+        .expect("record volume survey succeeds");
+    assert_eq!(store.volumes(false).await.expect("volumes succeeds"), []);
+    assert!(matches!(
+        store
+            .attach_volume(Actor::Daemon, &qa, &data(), &volume.id)
+            .await,
+        Err(StoreError::NotFound)
+    ));
+
+    store
+        .finish_volume_removal(&volume.id, false)
+        .await
+        .expect("finish volume removal succeeds");
+    assert_eq!(
+        store.volume(&volume.id).await.expect("volume succeeds").id,
+        volume.id
+    );
+    store
+        .delete_volume(Actor::Daemon, &volume.id)
+        .await
+        .expect("delete volume succeeds");
+    store
+        .finish_volume_removal(&volume.id, true)
+        .await
+        .expect("finish volume removal succeeds");
+    assert!(matches!(
+        store.volume(&volume.id).await,
+        Err(StoreError::NotFound)
+    ));
+}
+
 #[tokio::test]
 async fn a_survey_keeps_detached_volumes_recorded_after_its_listing() {
     let (_temp, store) = Store::temporary().await;

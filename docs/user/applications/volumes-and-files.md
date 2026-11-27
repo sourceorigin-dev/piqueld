@@ -331,11 +331,9 @@ $ piquelctl app exec notes web -- ls -l /etc/nginx/conf.d/default.conf
   environment's manifest dropped that volume name before piqueld tracked
   volumes. Declare the name again, and the environment's next deployment
   binds it to that volume, with its data.
-- **A deleted volume is listed again.** Docker couldn't remove it, for example
-  because a container you started yourself mounts it. piqueld lists it again as
-  detached within 15 minutes, under a new ID, and as coming from the
-  environment that created it, if that still exists, rather than the one it
-  was last attached to; delete it again once nothing uses it.
+- **Deleting a volume fails, and it is listed again.** Docker couldn't remove
+  it, for example because a container you started yourself mounts it. piqueld
+  keeps the volume, under the same ID; delete it again once nothing uses it.
 - **The database's data is gone after a new deployment.** Check that the volume
   is mounted where the image keeps its data, such as `/var/lib/postgresql/data`
   for PostgreSQL. Data written anywhere else is lost when the container is

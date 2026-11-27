@@ -29,7 +29,12 @@ CREATE TABLE volumes (
     -- the environment's record goes with it.
     detached_application TEXT,
     detached_environment TEXT,
-    detached_name TEXT
+    detached_name TEXT,
+    -- Whether deleting it is removing it from Docker: meanwhile it is not
+    -- listed, nothing can attach it, and a survey can't adopt it again. Its
+    -- record goes once Docker removed it. No removal outlives the daemon,
+    -- so starting it clears the flag.
+    removing INTEGER NOT NULL DEFAULT 0 CHECK (removing IN (0, 1))
 ) STRICT;
 CREATE INDEX volumes_owner ON volumes(owner_environment_id);
 

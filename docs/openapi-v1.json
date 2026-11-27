@@ -34774,7 +34774,7 @@
     },
     "/api/v1/volumes/{volume}": {
       "delete": {
-        "description": "Attached volumes fail with 409 `volume_attached`. If Docker can't remove\nit, the volume reappears as detached at the next volume survey, under a\nnew ID, and deleting it again retries.",
+        "description": "Attached volumes fail with 409 `volume_attached`. If Docker can't remove\nit, the volume is kept, and deleting it again retries.",
         "operationId": "deleteVolume",
         "parameters": [
           {

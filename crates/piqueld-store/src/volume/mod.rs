@@ -173,7 +173,7 @@ impl Store {
         }
         let (id, environment_id, binding) = (volume.as_str(), environment.as_str(), name.as_str());
         let row = sqlx::query!(
-            r#"SELECT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=v.id) AS "bound!: bool",EXISTS(SELECT 1 FROM environments WHERE id=v.owner_environment_id AND kind='preview') AS "preview!: bool" FROM volumes v WHERE v.id=?1"#,
+            r#"SELECT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=v.id) AS "bound!: bool",EXISTS(SELECT 1 FROM environments WHERE id=v.owner_environment_id AND kind='preview') AS "preview!: bool" FROM volumes v WHERE v.id=?1 AND v.removing=0"#,
             id
         )
         .fetch_optional(&mut *tx)
@@ -226,11 +226,10 @@ impl Store {
         self.volume(volume).await
     }
 
-    /// Forgets the detached volume `id` for `author`, who needs
-    /// `system:operate`, returning what removing it from Docker needs. Its
-    /// record goes first, so it can't be attached through this record; a
-    /// survey listing it before Docker removes it adopts it again, under a
-    /// new ID, until the next survey forgets it.
+    /// Starts deleting the detached volume `id` for `author`, who needs
+    /// `system:operate`: marks it removing, which hides it and keeps it from
+    /// being attached or adopted again, and returns what removing it from
+    /// Docker needs. Finish with [`Self::finish_volume_removal`].
     ///
     /// # Errors
     /// Returns `Attached` for an attached volume, `Denied`, `NotFound`, or a
@@ -245,7 +244,7 @@ impl Store {
         author.actor.require_on(&mut tx, OPERATE, None).await?;
         let volume = id.as_str();
         let row = sqlx::query!(
-            r#"SELECT docker_name AS "docker_name!",owner_environment_id AS "owner!",EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=v.id) AS "bound!: bool" FROM volumes v WHERE v.id=?1"#,
+            r#"SELECT docker_name AS "docker_name!",owner_environment_id AS "owner!",EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=v.id) AS "bound!: bool" FROM volumes v WHERE v.id=?1 AND v.removing=0"#,
             volume
         )
         .fetch_optional(&mut *tx)
@@ -255,7 +254,7 @@ impl Store {
         if row.bound {
             return Err(VolumeError::Attached { volume: id.clone() }.into());
         }
-        sqlx::query!("DELETE FROM volumes WHERE id=?1", volume)
+        sqlx::query!("UPDATE volumes SET removing=1 WHERE id=?1", volume)
             .execute(&mut *tx)
             .await
             .map_err(StoreError::database)?;
@@ -268,6 +267,41 @@ impl Store {
             docker_name: DockerVolumeName::parse(row.docker_name).map_err(StoreError::corrupt)?,
             owner: EnvironmentId::parse(row.owner).map_err(StoreError::corrupt)?,
         })
+    }
+
+    /// Ends deleting `volume` (see [`Self::delete_volume`]): forgets it once
+    /// Docker `removed` it, or else keeps it, listed again under its ID, so
+    /// deleting it again retries.
+    ///
+    /// # Errors
+    /// Returns a storage error.
+    pub async fn finish_volume_removal(
+        &self,
+        volume: &VolumeId,
+        removed: bool,
+    ) -> Result<(), StoreError> {
+        let volume = volume.as_str();
+        let query = if removed {
+            sqlx::query!("DELETE FROM volumes WHERE id=?1 AND removing=1", volume)
+        } else {
+            sqlx::query!("UPDATE volumes SET removing=0 WHERE id=?1", volume)
+        };
+        self.write(query).await.map_err(StoreError::database)?;
+        Ok(())
+    }
+
+    /// Keeps the volumes a removal was interrupted for, as daemon startup
+    /// finds them: no removal outlives the daemon.
+    ///
+    /// # Errors
+    /// Returns a storage error.
+    pub async fn resume_volume_removals(&self) -> Result<(), StoreError> {
+        self.write(sqlx::query!(
+            "UPDATE volumes SET removing=0 WHERE removing=1"
+        ))
+        .await
+        .map_err(StoreError::database)?;
+        Ok(())
     }
 
     /// The volumes a preview created, which its deletion removes, including
@@ -459,7 +493,7 @@ impl Store {
         let (environment_id, binding, legacy_name) =
             (environment.as_str(), name.as_str(), legacy.as_str());
         let existing = sqlx::query_scalar!(
-            "SELECT id FROM volumes v WHERE docker_name=?1 AND owner_environment_id=?2 AND NOT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=v.id)",
+            "SELECT id FROM volumes v WHERE docker_name=?1 AND owner_environment_id=?2 AND removing=0 AND NOT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=v.id)",
             legacy_name,
             environment_id
         )
@@ -543,7 +577,7 @@ impl Store {
             Selection::One(id) => (Some(id.as_str()), None, false),
         };
         sqlx::query!(
-            r#"SELECT v.id AS "id!",v.docker_name AS "docker_name!",v.pool AS "pool!",v.created_at_ms AS "created_at_ms!",v.size_bytes,v.measured_at_ms,v.detached_application,v.detached_environment,v.detached_name,b.name AS "binding?",e.id AS "environment_id?",e.name AS "environment?",a.id AS "application_id?",a.name AS "application?" FROM volumes v LEFT JOIN volume_bindings b ON b.volume_id=v.id LEFT JOIN environments e ON e.id=b.environment_id LEFT JOIN applications a ON a.id=e.application_id WHERE (?1 IS NULL OR v.id=?1) AND (?2 IS NULL OR b.environment_id=?2) AND (?3=0 OR b.volume_id IS NULL) ORDER BY b.volume_id IS NULL,a.name,e.name,b.name,v.created_at_ms,v.id"#,
+            r#"SELECT v.id AS "id!",v.docker_name AS "docker_name!",v.pool AS "pool!",v.created_at_ms AS "created_at_ms!",v.size_bytes,v.measured_at_ms,v.detached_application,v.detached_environment,v.detached_name,b.name AS "binding?",e.id AS "environment_id?",e.name AS "environment?",a.id AS "application_id?",a.name AS "application?" FROM volumes v LEFT JOIN volume_bindings b ON b.volume_id=v.id LEFT JOIN environments e ON e.id=b.environment_id LEFT JOIN applications a ON a.id=e.application_id WHERE v.removing=0 AND (?1 IS NULL OR v.id=?1) AND (?2 IS NULL OR b.environment_id=?2) AND (?3=0 OR b.volume_id IS NULL) ORDER BY b.volume_id IS NULL,a.name,e.name,b.name,v.created_at_ms,v.id"#,
             id,
             environment,
             detached

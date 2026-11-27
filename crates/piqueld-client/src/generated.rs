@@ -12296,8 +12296,7 @@ impl Client {
     /*Deletes a detached volume and its data
 
     Attached volumes fail with 409 `volume_attached`. If Docker can't remove
-    it, the volume reappears as detached at the next volume survey, under a
-    new ID, and deleting it again retries.
+    it, the volume is kept, and deleting it again retries.
 
     Sends a `DELETE` request to `/api/v1/volumes/{volume}`
 
